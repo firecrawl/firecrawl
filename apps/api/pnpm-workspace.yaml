@@ -27,7 +27,7 @@ overrides:
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
-  undici: "7.29.1"
+  undici: "7.30.0"
   # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
   # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
   # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
@@ -79,6 +79,10 @@ overrides:
   "@opentelemetry/core@<2.9.0": "2.9.0"
   "@opentelemetry/resources@<2.9.0": "2.9.0"
   "@opentelemetry/sdk-metrics@<2.9.0": "2.9.0"
+  # GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
+  # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
+  # ip-address@^6, but only its updatedb script loads it; lookup() never does.
+  "geoip-country>ip-address": "10.7.3"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:

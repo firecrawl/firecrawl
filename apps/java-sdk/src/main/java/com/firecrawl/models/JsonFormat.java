@@ -33,6 +33,8 @@ public class JsonFormat {
     public String getType() { return type; }
     public String getPrompt() { return prompt; }
     public Map<String, Object> getSchema() { return schema; }
+    /** @deprecated Use {@link ScrapeOptions#getCheckPromptInjection()} instead. */
+    @Deprecated
     public Boolean getCheckPromptInjection() { return checkPromptInjection; }
 
     public static Builder builder() { return new Builder(); }
@@ -50,7 +52,12 @@ public class JsonFormat {
         /** JSON Schema for structured extraction. */
         public Builder schema(Map<String, Object> schema) { this.schema = schema; return this; }
 
-        /** Check scraped content for prompt-injection attempts before extraction. */
+        /**
+         * Check scraped content for prompt-injection attempts before extraction.
+         *
+         * @deprecated Use the top-level {@link ScrapeOptions.Builder#checkPromptInjection(Boolean)} option instead.
+         */
+        @Deprecated
         public Builder checkPromptInjection(Boolean checkPromptInjection) { this.checkPromptInjection = checkPromptInjection; return this; }
 
         public JsonFormat build() {

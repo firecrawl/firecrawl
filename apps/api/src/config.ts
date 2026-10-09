@@ -90,8 +90,7 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
-  // Optional external agent hints provider. Inert unless the URL is set; see
-  // AGENT_HINTS.md for the request/response contract.
+  // Optional external agent hints provider. Inert unless the URL is set.
   AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
     z
       .string()
@@ -222,6 +221,21 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1200),
+  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
 
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
@@ -566,6 +580,18 @@ const configSchema = z.object({
   // background and record how its answer compares (lib/branding/jev-shadow.ts).
   // Customers always get the LLM's answer.
   BRANDING_JEV_SHADOW_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Warn scrapes of search engine results pages (google.*/search, ...) that
+  // /search returns those results directly (lib/serp-url.ts).
+  // SERP_SCRAPE_WARNING turns it on for every team, SERP_SCRAPE_WARNING_TEAM_IDS
+  // (comma-separated) for listed teams, and SERP_SCRAPE_WARNING_ROLLOUT_PERCENT
+  // for a stable share of teams.
+  SERP_SCRAPE_WARNING: emptyStringAsUndefined(z.stringbool()),
+  SERP_SCRAPE_WARNING_TEAM_IDS: delimitedList(",").optional(),
+  SERP_SCRAPE_WARNING_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),

@@ -14,9 +14,7 @@ import request, {
   scrapeTimeout,
   TEST_API_URL,
 } from "./lib";
-import { and, desc, eq } from "drizzle-orm";
-import { db } from "../../../db/connection";
-import * as schema from "../../../db/schema";
+import { HAS_JOB_LOG, jobLogRows, waitForJobLogRow } from "../job-log";
 import { config } from "../../../config";
 import { getRedisConnection } from "../../../services/queue-service";
 
@@ -715,7 +713,7 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION) return;
+      if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(
@@ -732,38 +730,19 @@ describe("/v2/parse", () => {
         identity,
       );
 
-      const requestLog = await waitForSingleRow<{ id: string }>(async () => {
-        const data = await db
-          .select({ id: schema.requests.id })
-          .from(schema.requests)
-          .where(
-            and(
-              eq(schema.requests.team_id, identity.teamId),
-              eq(schema.requests.kind, "parse"),
-              eq(schema.requests.target_hint, filename),
-            ),
-          )
-          .orderBy(desc(schema.requests.created_at))
-          .limit(1);
-        return data[0] ?? null;
-      });
+      const requestLog = await waitForJobLogRow<{ id: string }>(
+        "requests",
+        "team_id = {teamId: UUID} AND kind = 'parse' AND target_hint = {filename: String}",
+        { teamId: identity.teamId, filename },
+      );
 
       expect(requestLog).not.toBeNull();
 
-      const parseLog = await waitForSingleRow<{
+      const parseLog = await waitForJobLogRow<{
         request_id: string;
         url: string;
-      }>(async () => {
-        const data = await db
-          .select({
-            request_id: schema.parses.request_id,
-            url: schema.parses.url,
-          })
-          .from(schema.parses)
-          .where(eq(schema.parses.request_id, requestLog!.id))
-          .orderBy(desc(schema.parses.created_at))
-          .limit(1);
-        return data[0] ?? null;
+      }>("parses", "request_id = {requestId: UUID}", {
+        requestId: requestLog!.id,
       });
 
       expect(parseLog).not.toBeNull();
@@ -772,11 +751,12 @@ describe("/v2/parse", () => {
         `https://parse.firecrawl.dev/uploads/${encodeURIComponent(filename)}`,
       );
 
-      const scrapeRows = await db
-        .select({ id: schema.scrapes.id })
-        .from(schema.scrapes)
-        .where(eq(schema.scrapes.request_id, requestLog!.id))
-        .limit(1);
+      const scrapeRows = await jobLogRows<{ id: string }>(
+        "scrapes",
+        "request_id = {requestId: UUID}",
+        { requestId: requestLog!.id },
+        { limit: 1 },
+      );
       expect(scrapeRows).toHaveLength(0);
     },
     scrapeTimeout,

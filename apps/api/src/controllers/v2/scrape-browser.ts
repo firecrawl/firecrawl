@@ -52,6 +52,10 @@ import { integrationSchema } from "../../utils/integration";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import {
+  type BrowserOptions,
+  browserOptionsFromScrape,
+} from "../../lib/browser-options";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 
 const browserExecuteRequestSchema = z
@@ -264,17 +268,19 @@ async function scrapeInteractInternal(
           "Replay context is unavailable. Supply url or an existingSessionId to continue without retained scrape context.",
       });
     }
-    const profile =
-      state?.profile ??
-      (nuqJob?.data.mode === "single_urls"
-        ? nuqJob.data.scrapeOptions.profile
-        : undefined);
+    const browserOptions =
+      state?.browser ??
+      browserOptionsFromScrape(
+        nuqJob?.data.mode === "single_urls"
+          ? nuqJob.data.scrapeOptions
+          : { profile: state?.profile },
+      );
     const created = await createSessionForScrape(
       req,
       scrapeId,
       replayContext,
       logger,
-      profile,
+      browserOptions,
       zeroDataRetention,
     );
     if (created.error === true) {
@@ -470,14 +476,14 @@ async function createSessionForScrape(
     ReturnType<typeof buildReplayContextFromScrape>["context"]
   >,
   logger: typeof _logger,
-  profile: { name: string; saveChanges: boolean } | undefined,
+  browserOptions: BrowserOptions,
   zeroDataRetention: boolean,
 ) {
   try {
     const { session } = await createBrowserSession(req, {
       ...browserCreateRequestSchema.parse({}),
+      ...browserOptions,
       scrapeId,
-      profile,
       zeroDataRetention,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {

@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 import { FirecrawlClient } from "../../../v2/client";
 
 const ALIAS_MAP: Record<string, string> = {
@@ -22,7 +22,7 @@ describe("V1 deprecated aliases", () => {
 
   for (const [alias, target] of Object.entries(ALIAS_MAP)) {
     it(`${alias} delegates to ${target}`, async () => {
-      const spy = jest
+      const spy = vi
         .spyOn(app, target as any)
         .mockResolvedValue({ ok: true } as any);
       await (app as any)[alias]("https://example.com");

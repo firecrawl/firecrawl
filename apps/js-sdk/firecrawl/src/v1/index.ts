@@ -681,9 +681,7 @@ export default class FirecrawlApp {
       return packageJson.default.version;
     } catch (error) {
       // Suppress noisy logs under test environments
-      const isTest = typeof process !== 'undefined' && (
-        process.env.JEST_WORKER_ID != null || process.env.NODE_ENV === 'test'
-      );
+      const isTest = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
       if (!isTest) {
         // eslint-disable-next-line no-console
         console.error("Error getting version:", error);

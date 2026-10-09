@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import {
   processingContinuesDelayMs,
   scrape,
@@ -30,7 +30,7 @@ function processingContinues408(retryAfterSeconds = 10) {
 
 describe("v2.scrape auto-resume", () => {
   test("resumes after processing_continues and returns the finished document", async () => {
-    const post = jest
+    const post = vi
       .fn()
       .mockRejectedValueOnce(processingContinues408(10))
       .mockResolvedValueOnce({ status: 200, data: { success: true, data: DOC } });
@@ -49,8 +49,8 @@ describe("v2.scrape auto-resume", () => {
   });
 
   test("autoResume: false surfaces the timeout immediately and never sleeps", async () => {
-    const post = jest.fn().mockRejectedValueOnce(processingContinues408());
-    const sleepImpl = jest.fn();
+    const post = vi.fn().mockRejectedValueOnce(processingContinues408());
+    const sleepImpl = vi.fn();
 
     await expect(
       scrape({ post } as any, "https://example.com/big.pdf", { autoResume: false }, {
@@ -62,7 +62,7 @@ describe("v2.scrape auto-resume", () => {
   });
 
   test("autoResume never enters the wire payload", async () => {
-    const post = jest
+    const post = vi
       .fn()
       .mockResolvedValueOnce({ status: 200, data: { success: true, data: DOC } });
     await scrape({ post } as any, "https://example.com/x", { autoResume: true });
@@ -71,8 +71,8 @@ describe("v2.scrape auto-resume", () => {
   });
 
   test("gives up after the attempt bound and surfaces the error", async () => {
-    const post = jest.fn().mockRejectedValue(processingContinues408(10));
-    const sleepImpl = jest.fn().mockResolvedValue(undefined);
+    const post = vi.fn().mockRejectedValue(processingContinues408(10));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
 
     await expect(
       scrape({ post } as any, "https://example.com/big.pdf", undefined, {
@@ -85,7 +85,7 @@ describe("v2.scrape auto-resume", () => {
   });
 
   test("plain timeouts without the processing signal do not resume", async () => {
-    const post = jest.fn().mockRejectedValueOnce({
+    const post = vi.fn().mockRejectedValueOnce({
       isAxiosError: true,
       response: {
         status: 408,
@@ -93,7 +93,7 @@ describe("v2.scrape auto-resume", () => {
         data: { success: false, code: "SCRAPE_TIMEOUT", error: "Request timed out" },
       },
     });
-    const sleepImpl = jest.fn();
+    const sleepImpl = vi.fn();
 
     await expect(
       scrape({ post } as any, "https://example.com/slow", undefined, {
@@ -107,11 +107,11 @@ describe("v2.scrape auto-resume", () => {
   test("request timeout: opt-out keeps legacy behavior, resume adds the cushion", async () => {
     const ok = { status: 200, data: { success: true, data: DOC } };
     // Opt-out, no explicit timeout → no per-request override at all.
-    const post1 = jest.fn().mockResolvedValueOnce(ok);
+    const post1 = vi.fn().mockResolvedValueOnce(ok);
     await scrape({ post: post1 } as any, "https://example.com/x", { autoResume: false });
     expect(post1.mock.calls[0][2]).toEqual({});
     // Opt-out with explicit timeout → the pre-existing +5s.
-    const post2 = jest.fn().mockResolvedValueOnce(ok);
+    const post2 = vi.fn().mockResolvedValueOnce(ok);
     await scrape({ post: post2 } as any, "https://example.com/x", {
       autoResume: false,
       timeout: 10_000,
@@ -119,14 +119,14 @@ describe("v2.scrape auto-resume", () => {
     expect(post2.mock.calls[0][2]).toEqual({ timeoutMs: 15_000 });
     // Resume enabled → cushion over the server wall, respecting a larger
     // configured client default as the floor.
-    const post3 = jest.fn().mockResolvedValueOnce(ok);
+    const post3 = vi.fn().mockResolvedValueOnce(ok);
     await scrape(
       { post: post3, getTimeoutMs: () => 600_000 } as any,
       "https://example.com/x",
     );
     expect(post3.mock.calls[0][2]).toEqual({ timeoutMs: 630_000 });
     // Resume enabled, no client getter → server wall default + cushion.
-    const post4 = jest.fn().mockResolvedValueOnce(ok);
+    const post4 = vi.fn().mockResolvedValueOnce(ok);
     await scrape({ post: post4 } as any, "https://example.com/x", { timeout: 900_000 });
     expect(post4.mock.calls[0][2]).toEqual({ timeoutMs: 930_000 });
   });

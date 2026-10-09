@@ -22,7 +22,7 @@ import { JsonExtractionContentTooLargeError } from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
-const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
+export const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
 
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
@@ -265,6 +265,7 @@ export async function extractData({
   extractOptions,
   urls,
   useAgent,
+  checkPromptInjection,
   extractId,
   sessionId,
   scrapeId,
@@ -273,6 +274,8 @@ export async function extractData({
   extractOptions: GenerateCompletionsOptions;
   urls: string[];
   useAgent: boolean;
+  /** Scans the pages SmartScrape fetches; the page itself is scanned upstream. */
+  checkPromptInjection?: boolean;
   extractId?: string;
   sessionId?: string;
   scrapeId?: string;
@@ -286,7 +289,7 @@ export async function extractData({
   const logger = extractOptions.logger;
   const isSingleUrl = urls.length === 1;
   let costLimitExceededTokenUsage: number | null = null;
-  // Set when the prompt injection guard failed open on part of the content.
+  // Set when the prompt injection guard failed open on a SmartScrape page.
   let promptInjectionScanIncomplete = false;
 
   if (
@@ -396,18 +399,8 @@ export async function extractData({
     warning: string | undefined,
     totalUsage: TokenUsage | undefined;
 
-  // Runs concurrently with extraction; guard verdict is checked before `extract` is used.
-  const [guardSettled, generateSettled] = await Promise.allSettled([
-    extractOptions.options.checkPromptInjection
-      ? checkForPromptInjection({
-          markdown: extractOptions.markdown,
-          logger,
-          costTracking: extractOptions.costTrackingOptions.costTracking,
-          metadata: { ...metadata, scrapeId, extractId },
-          zeroDataRetention: !!extractOptions.zeroDataRetention,
-        })
-      : Promise.resolve(true),
-    generateCompletions({
+  try {
+    const completion = await generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
         costTracking: extractOptions.costTrackingOptions.costTracking,
@@ -417,22 +410,11 @@ export async function extractData({
           description: "Check if using smartScrape is needed for this case",
         },
       },
-    }),
-  ]);
-
-  if (guardSettled.status === "rejected") {
-    throw guardSettled.reason;
-  }
-  if (!guardSettled.value) {
-    promptInjectionScanIncomplete = true;
-  }
-
-  if (generateSettled.status === "fulfilled") {
-    extract = generateSettled.value.extract;
-    warning = generateSettled.value.warning;
-    totalUsage = generateSettled.value.totalUsage;
-  } else {
-    const error = generateSettled.reason;
+    });
+    extract = completion.extract;
+    warning = completion.warning;
+    totalUsage = completion.totalUsage;
+  } catch (error) {
     if (error instanceof CostLimitExceededError) {
       throw error;
     }
@@ -537,7 +519,7 @@ export async function extractData({
       const guardLimiter = createPromptInjectionGuardLimiter();
       extractedData = await Promise.all(
         markdowns.map(async markdown => {
-          if (extractOptions.options.checkPromptInjection) {
+          if (checkPromptInjection) {
             const scannedFully = await checkForPromptInjection({
               markdown,
               logger,

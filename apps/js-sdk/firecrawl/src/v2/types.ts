@@ -31,6 +31,7 @@ export interface JsonFormat extends Format {
   type: "json";
   prompt?: string;
   schema?: Record<string, unknown> | ZodTypeAny;
+  /** @deprecated Use the top-level `checkPromptInjection` scrape option. */
   checkPromptInjection?: boolean;
 }
 
@@ -276,6 +277,13 @@ export interface ScrapeOptions {
   minAge?: number;
   storeInCache?: boolean;
   lockdown?: boolean;
+  /**
+   * Scans the page content for prompt injection with any format except
+   * rawBase64, before LLM-backed formats run. A detection fails the scrape
+   * with SCRAPE_PROMPT_INJECTION_DETECTED.
+   * Adds 4 credits when the check scans the whole page.
+   */
+  checkPromptInjection?: boolean;
   redactPII?: boolean | RedactPIIOptions;
   threatProtection?: ThreatProtectionOptions;
   auditMetadata?: AuditMetadata;
@@ -806,6 +814,16 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export interface GovSearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+}
+
+export interface GovSearchResponse {
+  success: boolean;
+  data: { web: SearchResultWeb[] };
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;
@@ -973,6 +991,8 @@ export interface AlexandriaOptions {
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
  * - `developer` — developer-index results (issues, pull requests, READMEs and
  *   documentation) served in `web`; cannot be combined with other categories.
+ * - `gov` — Government Index results served in `web`; cannot be combined
+ *   with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.
  * To search papers themselves — ~43M abstracts, roughly 90% biomedical
@@ -984,7 +1004,7 @@ export interface AlexandriaOptions {
  * happen to live on academic domains → `search({ categories: ["research"] })`.
  */
 export interface CategoryOption {
-  type: "github" | "research" | "pdf" | "developer";
+  type: "github" | "research" | "pdf" | "developer" | "gov";
 }
 
 export interface SearchRequest {
@@ -1006,7 +1026,7 @@ export interface SearchRequest {
    * `firecrawl.research.searchPapers()` instead.
    */
   categories?: Array<
-    "github" | "research" | "pdf" | "developer" | CategoryOption
+    "github" | "research" | "pdf" | "developer" | "gov" | CategoryOption
   >;
   includeDomains?: string[];
   excludeDomains?: string[];

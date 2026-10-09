@@ -16,10 +16,14 @@ export async function browser(
     ttl?: number;
     activityTtl?: number;
     streamWebView?: boolean;
+    /** Block ads, trackers and cookie notices, as in scrape (default true). */
+    blockAds?: boolean;
     profile?: {
       name: string;
       saveChanges?: boolean;
     };
+    /** Country the session browses from, as an ISO 3166-1 alpha-2 code (default US). */
+    location?: { country: string };
     integration?: string;
     origin?: string;
   } = {},
@@ -28,7 +32,9 @@ export async function browser(
   if (args.ttl != null) body.ttl = args.ttl;
   if (args.activityTtl != null) body.activityTtl = args.activityTtl;
   if (args.streamWebView != null) body.streamWebView = args.streamWebView;
+  if (args.blockAds != null) body.blockAds = args.blockAds;
   if (args.profile != null) body.profile = args.profile;
+  if (args.location != null) body.location = args.location;
   if (args.integration != null) body.integration = args.integration;
   if (args.origin) body.origin = args.origin;
 

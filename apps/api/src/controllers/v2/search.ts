@@ -55,6 +55,7 @@ import { wantsGovCategory } from "../../search/gov";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyNotice, type Notice } from "../../lib/deprecations";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
@@ -485,25 +486,22 @@ async function searchControllerInner(
     const searchCreditsRecord =
       !isSearchPreview && shouldBill ? Math.round(result.searchCredits) : 0;
 
-    logSearch(
-      {
-        id: jobId,
-        request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: result.response as any,
-        num_results: result.totalResultsCount,
-        time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        options: req.body,
-        // Don't record preview tokens as billed in the ledger — only record
-        // credits when billing is actually applied.
-        credits_cost: searchCreditsRecord,
-        zeroDataRetention,
-      },
-      false,
-    ).catch(error => {
+    logSearch({
+      id: jobId,
+      request_id: agentRequestId ?? jobId,
+      query: req.body.query,
+      is_successful: true,
+      error: undefined,
+      results: result.response as any,
+      num_results: result.totalResultsCount,
+      time_taken: timeTakenInSeconds,
+      team_id: req.auth.team_id,
+      options: req.body,
+      // Don't record preview tokens as billed in the ledger — only record
+      // credits when billing is actually applied.
+      credits_cost: searchCreditsRecord,
+      zeroDataRetention,
+    }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
 
@@ -554,6 +552,7 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    if (result.response.tools) markAlexandriaActivity(req.auth.team_id);
     return res.status(200).json({
       success: true,
       data: result.response,

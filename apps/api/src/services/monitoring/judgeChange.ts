@@ -124,7 +124,7 @@ function sanitizeMeaningfulChanges(
   return value.filter(isMeaningfulChangeEvent);
 }
 
-const JUDGE_MODEL_NAME = "gemini-3-flash-preview";
+const JUDGE_MODEL_NAME = "gemini-3.5-flash";
 const JUDGE_ATTEMPT_TIMEOUT_MS = 30_000;
 const JUDGE_MAX_ATTEMPTS = 3;
 const JUDGE_BACKOFF_MS = [300, 800];

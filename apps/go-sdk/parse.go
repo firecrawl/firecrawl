@@ -92,6 +92,11 @@ type ParseOptions struct {
 	RedactPII           *bool             `json:"redactPII,omitempty"`
 	AuditMetadata       *AuditMetadata    `json:"auditMetadata,omitempty"`
 	JsonOptions         *JsonOptions      `json:"jsonOptions,omitempty"`
+	// CheckPromptInjection scans the parsed content for prompt injection before
+	// LLM-backed formats run. A detection fails the parse with
+	// SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the
+	// whole content.
+	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
 }
 
 // MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.

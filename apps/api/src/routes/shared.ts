@@ -13,6 +13,7 @@ import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
+import { logAuthDenied } from "../lib/auth-denied-log";
 import {
   httpRequestDurationSeconds,
   getRoutePattern,
@@ -29,7 +30,10 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { ThirdPartyDataTermsRequiredError } from "../lib/exchange";
+import {
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
@@ -62,6 +66,7 @@ export function checkCreditsMiddleware(
         const sponsor = req.acuc._agentSponsor;
 
         if (sponsor.status === "blocked") {
+          logAuthDenied(req, 403, "agent_key_blocked", req.acuc);
           return res.status(403).json({
             success: false,
             error: "This API key has been blocked by the account holder.",
@@ -71,6 +76,7 @@ export function checkCreditsMiddleware(
         if (sponsor.status === "pending") {
           const deadline = new Date(sponsor.verification_deadline);
           if (deadline < new Date()) {
+            logAuthDenied(req, 403, "agent_key_verification_expired", req.acuc);
             return res.status(403).json({
               success: false,
               error: "sponsor_verification_expired",
@@ -311,6 +317,9 @@ export function authMiddleware(
           if (auth.status === 401 || auth.agentAuthDiscovery) {
             applyAgentAuthDiscoveryHeader(res);
           }
+          if (auth.retryAfterSeconds) {
+            res.setHeader("Retry-After", String(auth.retryAfterSeconds));
+          }
           return res.status(auth.status).json({
             success: false,
             error: auth.error,
@@ -364,13 +373,13 @@ export function blocklistMiddleware(
 
 /**
  * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where a
- * blocklisted URL still passes when the exchange engine can serve it, and
- * asks for the provider's terms when unaccepted terms are all that stands in
- * the way. Unblocked URLs never consult the Exchange here: engine selection
- * decides for them, identically on every route, and scrapes them normally
- * when terms are missing. Everything else (map, search, batch scrape,
- * monitors) keeps plain blocklist behavior - batch stays out until its jobs
- * carry the access flags the worker-side recheck needs.
+ * blocklisted URL still passes when the exchange engine can serve it, asks
+ * for the provider's terms when unaccepted terms are all that stands in the
+ * way, and names the request option that keeps a provider out. Unblocked
+ * URLs never consult the Exchange here: engine selection decides for them,
+ * identically on every route, and scrapes them normally when terms are
+ * missing. v2 batch scrape runs the same check per URL in its controller;
+ * map, search and monitors keep plain blocklist behavior.
  */
 export function scrapeBlocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
@@ -424,6 +433,20 @@ function blocklistGate(
           .json(
             new ThirdPartyDataTermsRequiredError(
               exchangeAccess.terms,
+            ).response(),
+          );
+      }
+
+      if (
+        !exchangeAccess.termsRequired &&
+        exchangeAccess.unsupportedOption !== undefined &&
+        !res.headersSent
+      ) {
+        return res
+          .status(400)
+          .json(
+            new ThirdPartyDataUnsupportedOptionError(
+              exchangeAccess.unsupportedOption,
             ).response(),
           );
       }

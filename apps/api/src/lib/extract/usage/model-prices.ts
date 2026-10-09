@@ -19405,6 +19405,21 @@ export const modelPrices = {
     supports_tool_choice: true,
     supports_web_search: true,
   },
+  "gemini-3.5-flash": {
+    max_tokens: 65536,
+    max_input_tokens: 1048576,
+    max_output_tokens: 65536,
+    input_cost_per_token: 1.5e-6,
+    output_cost_per_token: 9e-6,
+    output_cost_per_reasoning_token: 9e-6,
+    cache_read_input_token_cost: 1.5e-7,
+    litellm_provider: "vertex_ai-language-models",
+    mode: "chat",
+    supports_reasoning: true,
+    supports_system_messages: true,
+    source:
+      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing",
+  },
   "gemini-3.5-flash-lite": {
     max_tokens: 65536,
     max_input_tokens: 1048576,

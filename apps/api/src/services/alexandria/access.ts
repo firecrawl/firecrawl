@@ -17,6 +17,7 @@ const requirementsSchema = z.object({
     z.object({
       provider: z.string(),
       required: z.boolean(),
+      exchangeRequired: z.boolean().optional(),
       terms: z
         .object({
           key: z.string(),
@@ -70,12 +71,18 @@ export async function authorizeProviders(
 
   let ledger: Map<string, LedgerAcceptance> | undefined;
   for (const item of parsed.data.providers) {
+    const required = item.exchangeRequired ?? item.required;
     const access = flags?.organizationDataSourceAccess?.[item.provider];
     if (access && access.status !== "enabled") {
       const revokedByOwner =
         access.status === "disabled" &&
         access.disabledReason === "revoked_by_organization_admin";
-      if (revokedByOwner && item.required && item.terms && orgId !== null) {
+      if (
+        revokedByOwner &&
+        (item.required || required) &&
+        item.terms &&
+        orgId !== null
+      ) {
         ledger ??= await acceptedProviders(teamId, orgId);
         const accepted = ledger.get(item.provider);
         if (
@@ -93,7 +100,7 @@ export async function authorizeProviders(
         `Access to ${item.provider} is disabled for this organization.`,
       );
     }
-    if (!item.required || !item.terms) continue;
+    if (!required || !item.terms) continue;
     if (
       access?.termsKey === item.terms.key &&
       access?.termsVersion === item.terms.version

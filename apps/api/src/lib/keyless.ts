@@ -151,8 +151,8 @@ type KeylessConsumeResult = {
   retryAfterSeconds?: number;
 };
 
-function positiveRedisTtl(ttl: number): number | undefined {
-  return ttl > 0 ? ttl : undefined;
+function positiveRedisTtl(pttl: number): number | undefined {
+  return pttl > 0 ? Math.ceil(pttl / 1000) : undefined;
 }
 
 /**
@@ -162,7 +162,7 @@ function positiveRedisTtl(ttl: number): number | undefined {
  */
 async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   try {
-    return positiveRedisTtl(await redisRateLimitClient.ttl(key));
+    return positiveRedisTtl(await redisRateLimitClient.pttl(key));
   } catch {
     return undefined;
   }
@@ -259,7 +259,7 @@ export async function keylessLimitBody(
   let retryAfterSeconds: number | undefined;
   try {
     retryAfterSeconds = ip
-      ? positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip)))
+      ? positiveRedisTtl(await redisRateLimitClient.pttl(creditsKey(ip)))
       : undefined;
   } catch {
     // The reservation already proved the limit; missing TTL must not turn its

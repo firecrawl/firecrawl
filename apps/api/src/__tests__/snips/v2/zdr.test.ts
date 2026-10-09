@@ -8,7 +8,7 @@ import {
   idmux,
   searchRaw,
 } from "./lib";
-import { describeIf, TEST_PRODUCTION, scrapeTimeout } from "../lib";
+import { describeIf, itIf, TEST_PRODUCTION, scrapeTimeout } from "../lib";
 import {
   getLogs,
   expectScrapeIsCleanedUp,
@@ -17,9 +17,11 @@ import {
   expectScrapesAreFullyCleanedAfterZDRCleaner,
   expectBatchScrapeIsCleanedUp,
 } from "../zdr-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 
 describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
-  describe.each(["Team-scoped", "Request-scoped"] as const)("%s", scope => {
+  const scopes = ["Team-scoped", "Request-scoped"] as const;
+  describeIf(HAS_JOB_LOG).each(scopes)("%s", scope => {
     it("should clean up a scrape immediately", async () => {
       let identity = await idmux({
         name: `zdr/${scope}/scrape`,
@@ -150,7 +152,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     );
   });
 
-  it(
+  itIf(HAS_JOB_LOG)(
     "should allow screenshots and clean them up",
     async () => {
       const identity = await idmux({
@@ -178,7 +180,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(HAS_JOB_LOG)(
     "should allow pdf actions and clean them up",
     async () => {
       const identity = await idmux({

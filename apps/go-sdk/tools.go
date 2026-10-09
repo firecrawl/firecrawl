@@ -22,6 +22,22 @@ func (e *AlexandriaExecutionError) Error() string {
 }
 func (e *AlexandriaExecutionError) Unwrap() error { return e.Err }
 
+const (
+	// alexandriaMaxTimeoutMs matches the API's default and maximum execution timeout.
+	alexandriaMaxTimeoutMs = 120_000
+	// alexandriaResponseMarginMs gives the API time to deliver a response after its execution deadline.
+	alexandriaResponseMarginMs = 30_000
+)
+
+// alexandriaTransportTimeout returns how long the client waits for an Alexandria response.
+func alexandriaTransportTimeout(timeout *int) time.Duration {
+	executionMs := alexandriaMaxTimeoutMs
+	if timeout != nil && *timeout < alexandriaMaxTimeoutMs {
+		executionMs = *timeout
+	}
+	return time.Duration(executionMs+alexandriaResponseMarginMs) * time.Millisecond
+}
+
 func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, opts *AlexandriaOptions) (*AlexandriaScrapeData, error) {
 	if len(calls) == 0 {
 		return nil, &FirecrawlError{Message: "at least one alexandria call is required"}
@@ -37,14 +53,16 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 			return nil, &FirecrawlError{Message: fmt.Sprintf("alexandria call %d: capability is required", i)}
 		}
 	}
+	var timeout *int
 	if opts != nil && opts.Timeout != nil {
 		if *opts.Timeout <= 0 {
 			return nil, &FirecrawlError{Message: "timeout must be positive"}
 		}
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(*opts.Timeout+5000)*time.Millisecond)
-		defer cancel()
+		timeout = opts.Timeout
 	}
+	// Allow response delivery after the API's capped execution deadline.
+	ctx, cancel := context.WithTimeout(ctx, alexandriaTransportTimeout(timeout))
+	defer cancel()
 
 	body := map[string]interface{}{"alexandria": calls}
 	mergeOptions(body, opts)

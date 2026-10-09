@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { type BrowserOptions, hangarBrowserOptions } from "./browser-options";
 
 export interface HangarBrowser {
   id: string;
@@ -106,12 +107,11 @@ export const stopHangarBrowser = (id: string) =>
 export async function createHangarBrowser(
   key: string,
   teamId: string,
-  options: {
+  options: BrowserOptions & {
     ttl: number;
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
-    profile?: { name: string; saveChanges: boolean };
   },
 ): Promise<HangarCreated> {
   const body = {
@@ -124,14 +124,7 @@ export async function createHangarBrowser(
     },
     recording: { enabled: options.recordSession },
     execution: { enabled: true },
-    ...(options.profile
-      ? {
-          profile: {
-            name: options.profile.name,
-            save_changes: options.profile.saveChanges,
-          },
-        }
-      : {}),
+    ...hangarBrowserOptions(options),
   };
   let created: HangarCreated | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { AutumnError } from "autumn-js";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -31,6 +32,7 @@ import type {
   TrackCreditsParams,
   TrackParams,
 } from "./types";
+import { ExistingCreditsLockError } from "./types";
 
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
@@ -645,18 +647,31 @@ export class AutumnService {
         return { status: "denied", reason: "gate_unavailable" };
       }
 
-      const { allowed } = await autumnClient.check({
-        customerId,
-        entityId: teamId,
-        featureId,
-        requiredBalance: value,
-        properties,
-        lock: {
-          enabled: true,
-          lockId: resolvedLockId,
-          expiresAt,
-        },
-      });
+      const { allowed } = await autumnClient
+        .check({
+          customerId,
+          entityId: teamId,
+          featureId,
+          requiredBalance: value,
+          properties,
+          lock: {
+            enabled: true,
+            lockId: resolvedLockId,
+            expiresAt,
+          },
+        })
+        .catch(error => {
+          if (error instanceof AutumnError && error.statusCode === 409) {
+            let body: { code?: unknown } | null = null;
+            try {
+              body = JSON.parse(error.body);
+            } catch {}
+            if (body?.code === "lock_already_exists") {
+              throw new ExistingCreditsLockError(resolvedLockId);
+            }
+          }
+          throw error;
+        });
 
       if (!allowed) {
         logger.info("Autumn lockCredits denied", {
@@ -677,6 +692,7 @@ export class AutumnService {
       });
       return { status: "locked", lockId: resolvedLockId };
     } catch (error) {
+      if (error instanceof ExistingCreditsLockError) throw error;
       logger.error(
         "Autumn lockCredits failed — billing API may be unavailable, falling back",
         {
@@ -876,6 +892,7 @@ export class AutumnService {
 
   /**
    * Reverses a prior trackCredits call by tracking a negative usage event.
+   * Never throws; resolves true only when billing accepted the refund.
    */
   async refundCredits({
     teamId,
@@ -885,16 +902,16 @@ export class AutumnService {
     idempotencyKey,
     externalRequestId,
     orgId,
-  }: TrackCreditsParams): Promise<void> {
-    if (!autumnClient) return;
-    if (this.isPreviewTeam(teamId)) return;
+  }: TrackCreditsParams): Promise<boolean> {
+    if (!autumnClient) return false;
+    if (this.isPreviewTeam(teamId)) return false;
 
     try {
       const { customerId, routed } = await this.resolveBillingRoute(
         teamId,
         orgId,
       );
-      await this.track(
+      return await this.track(
         {
           customerId,
           entityId: teamId,
@@ -911,6 +928,7 @@ export class AutumnService {
         "Autumn refundCredits failed — billing API may be unavailable",
         { teamId, value, error },
       );
+      return false;
     }
   }
 }

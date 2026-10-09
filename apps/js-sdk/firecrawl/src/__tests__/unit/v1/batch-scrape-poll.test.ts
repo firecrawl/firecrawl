@@ -1,4 +1,4 @@
-import { describe, test, expect, jest, afterEach, beforeEach } from "@jest/globals";
+import { describe, test, expect, vi, afterEach, beforeEach } from "vitest";
 import axios from "axios";
 import FirecrawlApp from "../../../v1";
 
@@ -20,7 +20,7 @@ const lastPage = () => ({ success: true, status: "completed", data: [{ markdown:
 function mockPoll(path: string, nextOrigin = API_URL) {
   const sent: string[] = [];
   let polls = 0;
-  jest.spyOn(axios, "get").mockImplementation(async (url: string) => {
+  vi.spyOn(axios, "get").mockImplementation(async (url: string) => {
     sent.push(url);
     if (new URL(url).searchParams.has("skip")) return { status: 200, data: lastPage() };
     polls++;
@@ -33,18 +33,18 @@ describe("v1 batch scrape waits on the batch scrape status endpoint", () => {
   const app = new FirecrawlApp({ apiKey: API_KEY, apiUrl: API_URL });
 
   beforeEach(() => {
-    jest.spyOn(global, "setTimeout").mockImplementation(((fn: () => void) => {
+    vi.spyOn(global, "setTimeout").mockImplementation(((fn: () => void) => {
       fn();
       return 0;
     }) as any);
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   test("batchScrapeUrls polls /v1/batch/scrape/{id} and follows pinned next pages", async () => {
-    const post = jest.spyOn(axios, "post").mockResolvedValue({ status: 200, data: { success: true, id: "abc" } });
+    const post = vi.spyOn(axios, "post").mockResolvedValue({ status: 200, data: { success: true, id: "abc" } });
     const path = "/v1/batch/scrape/abc";
     const sent = mockPoll(path, "https://evil.example");
 
@@ -58,9 +58,9 @@ describe("v1 batch scrape waits on the batch scrape status endpoint", () => {
   });
 
   test("batchScrapeUrls reports batch scrape failures as batch scrape errors", async () => {
-    jest.spyOn(axios, "post").mockResolvedValue({ status: 200, data: { success: true, id: "abc" } });
+    vi.spyOn(axios, "post").mockResolvedValue({ status: 200, data: { success: true, id: "abc" } });
     const sent: string[] = [];
-    jest.spyOn(axios, "get").mockImplementation(async (url: string) => {
+    vi.spyOn(axios, "get").mockImplementation(async (url: string) => {
       sent.push(url);
       return { status: 200, data: { success: true, status: "failed", data: [] } };
     });

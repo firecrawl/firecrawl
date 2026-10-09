@@ -191,7 +191,7 @@ const scraped = await app.search('firecrawl changelog', {
 ```
 
 Results are grouped by source: `.web`, `.news` and `.images`. Developer
-category results are served inside `.web`.
+and gov category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -235,6 +235,26 @@ console.log(evidence.repos); // indexed-status echoes for requested repos
 `developerSearch` also supports `sources`, `topic`, `minStars`, `maxStars`,
 `archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
+
+### Government search
+
+Use `govSearch` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search('food labeling requirements', { categories: ['gov'] })`
+returns index results inside `.web`; like `developer`, it cannot be combined
+with other categories.
+
+```js
+const law = await app.govSearch('food labeling requirements', {
+  k: 5,
+});
+
+for (const result of law.data.web) {
+  console.log(result.position, result.title, result.url);
+}
+```
 
 ### Research / paper search
 

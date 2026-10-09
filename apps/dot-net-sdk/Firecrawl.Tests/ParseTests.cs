@@ -70,6 +70,18 @@ public class ParseTests
     }
 
     [Fact]
+    public void ParseOptions_Serializes_CheckPromptInjection()
+    {
+        var options = new ParseOptions { CheckPromptInjection = true };
+
+        var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
+        Assert.Contains("\"checkPromptInjection\":true", json);
+
+        var unset = JsonSerializer.Serialize(new ParseOptions(), FirecrawlHttpClient.JsonOptions);
+        Assert.DoesNotContain("\"checkPromptInjection\"", unset);
+    }
+
+    [Fact]
     public void ParseOptions_Validate_RejectsUnsupportedFormats()
     {
         var options = new ParseOptions

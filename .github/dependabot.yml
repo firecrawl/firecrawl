@@ -30,16 +30,6 @@ updates:
       prefix: "apps/api"
       include: "scope"
 
-  # test-suite
-  - package-ecosystem: "npm"
-    directory: "/apps/test-suite"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 0  # Disable version updates
-    commit-message:
-      prefix: "apps/test-suite"
-      include: "scope"
-
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

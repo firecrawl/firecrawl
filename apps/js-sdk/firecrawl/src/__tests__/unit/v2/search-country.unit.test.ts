@@ -1,9 +1,9 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { search } from "../../../v2/methods/search";
 
 function httpMock() {
   return {
-    post: jest.fn(async () => ({ status: 200, data: { success: true } })),
+    post: vi.fn(async () => ({ status: 200, data: { success: true } })),
   } as any;
 }
 

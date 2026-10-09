@@ -1,36 +1,10 @@
 # Test Suite for Firecrawl
 
-This document provides an overview of the test suite for the Firecrawl project. It includes instructions on how to run the tests and interpret the results.
+This document provides an overview of the test suite for the Firecrawl project. It includes notes on how to interpret the results.
 
 ## Overview
 
 The test suite is designed to ensure the reliability and performance of the Firecrawl system. It includes a series of automated tests that check various functionalities and performance metrics.
-
-## Running the Tests
-
-To run the tests, navigate to the `test-suite` directory and execute the following command:
-
-```bash
-npm install
-npx playwright install
-npm run test
-```
-
-## Running Load Tests with Artillery
-
-To run load tests using Artillery, follow these steps:
-
-1. Install Artillery globally if you haven't already:
-
-```bash
-npm install -g artillery
-```
-
-2. Run the load test:
-
-```bash
-artillery run load-test.yml
-```
 
 ## Test Results
 

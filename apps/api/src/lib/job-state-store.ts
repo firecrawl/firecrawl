@@ -3,6 +3,7 @@ import { getBigtableTable } from "./bigtable-client";
 import { saltedUuidV7RowKey } from "./bigtable-row-key";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 import type { ScrapeReplayContext } from "./scrape-interact/scrape-replay";
+import { type BrowserOptions, isBrowserOptions } from "./browser-options";
 
 const QUALIFIER = "v";
 const FAMILY = "s";
@@ -17,6 +18,8 @@ type ScrapeJobState = {
   creditsBilled: number;
   error?: string;
   replay?: ScrapeReplayContext;
+  browser?: BrowserOptions;
+  /** Written before `browser`; unused once that state has expired. */
   profile?: { name: string; saveChanges: boolean };
   origin?: string;
 };
@@ -75,6 +78,8 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
           typeof (candidate.replay as any).targetUrl === "string" &&
           isFiniteNumber((candidate.replay as any).waitForMs) &&
           Array.isArray((candidate.replay as any).actions))) &&
+      (candidate.browser === undefined ||
+        isBrowserOptions(candidate.browser)) &&
       (candidate.profile === undefined ||
         (typeof candidate.profile === "object" &&
           candidate.profile !== null &&

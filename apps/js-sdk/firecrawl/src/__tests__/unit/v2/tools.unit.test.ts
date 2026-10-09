@@ -4,9 +4,9 @@ import {
   beforeEach,
   describe,
   expect,
-  jest,
   test,
-} from "@jest/globals";
+  vi,
+} from "vitest";
 import { createServer, type Server } from "node:http";
 import { FirecrawlClient } from "../../../v2/client";
 
@@ -272,14 +272,16 @@ describe("Alexandria contracts and execution", () => {
 });
 
 test.each([
-  [undefined, 80000],
+  [undefined, 150000],
   [1000, 31000],
-  [100000, 80000],
+  [100000, 130000],
+  [120000, 150000],
+  [300000, 150000],
 ])(
   "Alexandria timeout %s allows response delivery (%s ms)",
   async (timeout, timeoutMs) => {
     const http = {
-      post: jest.fn(async () => ({
+      post: vi.fn(async () => ({
         status: 200,
         data: {
           success: true,

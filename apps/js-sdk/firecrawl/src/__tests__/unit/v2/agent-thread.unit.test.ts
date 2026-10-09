@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import {
   getAgentStatus,
   getAgentThread,
@@ -6,7 +6,7 @@ import {
 } from "../../../v2/methods/agent";
 
 const okPost = () =>
-  jest.fn().mockResolvedValue({
+  vi.fn().mockResolvedValue({
     status: 200,
     data: { success: true, id: "agent-job", threadId: "thread-1", threadTurn: 2 },
   });
@@ -51,7 +51,7 @@ describe("v2.agent threads unit", () => {
   });
 
   test("getAgentStatus parses a chat-mode status payload", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -95,7 +95,7 @@ describe("v2.agent threads unit", () => {
   });
 
   test("getAgentStatus parses a status payload without the thread fields", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -116,7 +116,7 @@ describe("v2.agent threads unit", () => {
   });
 
   test("getAgentThread hits the thread endpoint", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -150,7 +150,7 @@ describe("v2.agent threads unit", () => {
   });
 
   test("getAgentThread appends includeData when requested", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: { success: true, thread: { id: "thread-1", runs: [] } },
     });
@@ -197,7 +197,7 @@ describe("v2.agent threads unit", () => {
 
   test("getAgentStatus parses skippedProviders, requiresAction and a terms approval", async () => {
     const approvalId = "0199aaaa-0000-7000-8000-000000000000";
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,

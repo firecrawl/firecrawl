@@ -9,7 +9,7 @@ vi.mock("ioredis", () => ({
   },
 }));
 vi.mock("../services/rate-limiter", () => ({
-  redisRateLimitClient: { ttl: vi.fn().mockResolvedValue(-1), on: vi.fn() },
+  redisRateLimitClient: { pttl: vi.fn().mockResolvedValue(-1), on: vi.fn() },
 }));
 vi.mock("./keyless-prompt-analytics", () => ({
   trackKeylessPromptShown: vi.fn(),

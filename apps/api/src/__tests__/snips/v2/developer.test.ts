@@ -1,9 +1,7 @@
 import { config } from "../../../config";
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchPostRaw, researchRaw } from "./lib";
-import { and, desc, eq } from "drizzle-orm";
-import { db } from "../../../db/connection";
-import * as schema from "../../../db/schema";
+import { HAS_JOB_LOG, jobLogJson, waitForJobLogRow } from "../job-log";
 
 const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
 const KEYLESS_ENABLED =
@@ -17,20 +15,6 @@ const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const sleepForBilling = () => sleep(40000);
-
-async function waitForSingleRow<T>(
-  fetcher: () => Promise<T | null>,
-  timeoutMs: number = 10000,
-  intervalMs: number = 250,
-): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const row = await fetcher();
-    if (row) return row;
-    await sleep(intervalMs);
-  }
-  return null;
-}
 
 describeIf(HAS_RESEARCH)("Developer Search API", () => {
   describe.each(SERVING_PATHS)("developer search on %s", path => {
@@ -118,7 +102,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   });
 
   it("logs the developer search request kind with origin and integration", async () => {
-    if (!config.USE_DB_AUTHENTICATION) return;
+    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/logs metadata",
@@ -136,27 +120,14 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
 
-    const requestLog = await waitForSingleRow<{
+    const requestLog = await waitForJobLogRow<{
       origin: string | null;
       integration: string | null;
-    }>(async () => {
-      const data = await db
-        .select({
-          origin: schema.requests.origin,
-          integration: schema.requests.integration,
-        })
-        .from(schema.requests)
-        .where(
-          and(
-            eq(schema.requests.team_id, identity.teamId),
-            eq(schema.requests.kind, "code_search"),
-            eq(schema.requests.target_hint, query),
-          ),
-        )
-        .orderBy(desc(schema.requests.created_at))
-        .limit(1);
-      return data[0] ?? null;
-    });
+    }>(
+      "requests",
+      "team_id = {teamId: UUID} AND kind = 'code_search' AND target_hint = {query: String}",
+      { teamId: identity.teamId, query },
+    );
 
     expect(requestLog).not.toBeNull();
     expect(requestLog?.origin).toBe("mcp");
@@ -164,7 +135,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   it("redacts stored payloads for a forced-ZDR team", async () => {
-    if (!config.USE_DB_AUTHENTICATION) return;
+    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/forced ZDR retention",
@@ -182,54 +153,32 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     );
     expect(res.statusCode).toBe(200);
 
-    const requestLog = await waitForSingleRow<{
+    const requestLog = await waitForJobLogRow<{
       id: string;
       target_hint: string;
-      dr_clean_by: string | null;
-    }>(async () => {
-      const data = await db
-        .select({
-          id: schema.requests.id,
-          target_hint: schema.requests.target_hint,
-          dr_clean_by: schema.requests.dr_clean_by,
-        })
-        .from(schema.requests)
-        .where(
-          and(
-            eq(schema.requests.team_id, identity.teamId),
-            eq(schema.requests.kind, "code_search"),
-          ),
-        )
-        .orderBy(desc(schema.requests.created_at))
-        .limit(1);
-      return data[0] ?? null;
+    }>("requests", "team_id = {teamId: UUID} AND kind = 'code_search'", {
+      teamId: identity.teamId,
     });
 
     expect(requestLog).not.toBeNull();
     expect(requestLog?.target_hint).toBe(
       "<redacted due to zero data retention>",
     );
-    expect(requestLog?.dr_clean_by).not.toBeNull();
 
-    const usageLog = await waitForSingleRow<{
+    const usageRow = await waitForJobLogRow<{
       target: string;
-      options: unknown;
-      response: unknown;
+      options: string | null;
+      response: string | null;
       error: string | null;
-    }>(async () => {
-      if (!requestLog) return null;
-      const data = await db
-        .select({
-          target: schema.code_searches.target,
-          options: schema.code_searches.options,
-          response: schema.code_searches.response,
-          error: schema.code_searches.error,
-        })
-        .from(schema.code_searches)
-        .where(eq(schema.code_searches.request_id, requestLog.id))
-        .limit(1);
-      return data[0] ?? null;
+    }>("code_searches", "request_id = {requestId: UUID}", {
+      requestId: requestLog!.id,
     });
+    const usageLog = usageRow && {
+      target: usageRow.target,
+      options: jobLogJson(usageRow.options),
+      response: jobLogJson(usageRow.response),
+      error: usageRow.error,
+    };
 
     expect(usageLog).toEqual({
       target: "<redacted due to zero data retention>",
@@ -240,7 +189,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   it("writes a usage row with the billed credits", async () => {
-    if (!config.USE_DB_AUTHENTICATION) return;
+    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/logs usage",
@@ -252,23 +201,11 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(res.statusCode).toBe(200);
 
     const expected = Math.ceil(res.body.results.length / 10) * 2;
-    const usageLog = await waitForSingleRow<{
+    const usageLog = await waitForJobLogRow<{
       credits_cost: number;
       num_results: number;
       is_successful: boolean;
-    }>(async () => {
-      const data = await db
-        .select({
-          credits_cost: schema.code_searches.credits_cost,
-          num_results: schema.code_searches.num_results,
-          is_successful: schema.code_searches.is_successful,
-        })
-        .from(schema.code_searches)
-        .where(eq(schema.code_searches.target, query))
-        .orderBy(desc(schema.code_searches.created_at))
-        .limit(1);
-      return data[0] ?? null;
-    });
+    }>("code_searches", "target = {query: String}", { query });
 
     expect(usageLog).not.toBeNull();
     expect(usageLog?.is_successful).toBe(true);

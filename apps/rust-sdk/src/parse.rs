@@ -170,6 +170,10 @@ pub struct ParseOptions {
     /// Redact personally identifiable information from returned content.
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
+    /// Scan the parsed content for prompt injection before LLM-backed formats run.
+    /// A detection fails the parse with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits
+    /// when the check scans the whole content.
+    pub check_prompt_injection: Option<bool>,
     /// User attribution to include with SIEM logging events.
     pub audit_metadata: Option<AuditMetadata>,
     /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
@@ -482,6 +486,20 @@ mod tests {
         );
         mock.assert();
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_options_serializes_check_prompt_injection() {
+        let options = ParseOptions {
+            check_prompt_injection: Some(true),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(payload["checkPromptInjection"], serde_json::json!(true));
+
+        let unset = serde_json::to_value(ParseOptions::default()).unwrap();
+        assert!(unset.get("checkPromptInjection").is_none());
     }
 
     #[test]

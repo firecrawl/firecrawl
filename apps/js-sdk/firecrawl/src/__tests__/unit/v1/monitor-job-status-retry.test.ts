@@ -1,5 +1,5 @@
 import FirecrawlApp from '../../../v1';
-import { describe, test, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const successResponse = {
   status: 200,
@@ -21,17 +21,17 @@ describe('monitorJobStatus retry logic', () => {
   beforeEach(() => {
     app = new FirecrawlApp({ apiKey: 'test-key', apiUrl: 'https://test.com' });
     delays = [];
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const fakeSetTimeout = globalThis.setTimeout;
-    jest.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
       delays.push(ms ?? 0);
       return fakeSetTimeout(fn, ms);
     }) as any);
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
-    jest.useRealTimers();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   function failFirst(n: number, error: Error, statuses: string[] = []) {
@@ -48,7 +48,7 @@ describe('monitorJobStatus retry logic', () => {
   async function monitor() {
     const result = app.monitorJobStatus('test-id', {} as any, 1);
     result.catch(() => {});
-    await jest.runAllTimersAsync();
+    await vi.runAllTimersAsync();
     return result;
   }
 

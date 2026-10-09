@@ -1,7 +1,6 @@
 import { vi } from "vitest";
 
 // vi.mock is hoisted; factory-referenced values must be created in vi.hoisted().
-// (Jest didn't hoist jest.mock here because `jest` was imported from @jest/globals.)
 const {
   withAuth,
   queueBillingOperation,

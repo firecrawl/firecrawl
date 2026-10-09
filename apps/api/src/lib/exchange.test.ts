@@ -16,10 +16,11 @@ import {
   getExchangeResponseLogContext,
   getExchangeSuccessCredits,
   isSuccessfulExchangeStatusCode,
-  isSupportedExchangeFormatRequest,
+  getUnsupportedExchangeFormat,
   resolveExchangeProvider,
   setExchangeProvidersForTest,
   ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
 } from "./exchange";
 
 vi.mock("undici", () => ({
@@ -300,25 +301,22 @@ describe("Exchange routing", () => {
   });
 
   it("accepts only formats derivable from the Exchange's markdown", () => {
-    expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
-    expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
+    expect(getUnsupportedExchangeFormat(undefined)).toBeNull();
+    expect(getUnsupportedExchangeFormat([{ type: "markdown" }])).toBeNull();
+    expect(getUnsupportedExchangeFormat(["json"])).toBeNull();
     expect(
-      isSupportedExchangeFormatRequest([
-        { type: "markdown" },
-        { type: "json" },
-      ]),
-    ).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "screenshot" }])).toBe(
-      false,
+      getUnsupportedExchangeFormat([{ type: "markdown" }, { type: "json" }]),
+    ).toBeNull();
+    expect(getUnsupportedExchangeFormat([{ type: "html" }])).toBeNull();
+    expect(getUnsupportedExchangeFormat([{ type: "screenshot" }])).toBe(
+      "the `screenshot` format",
     );
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
-    expect(
-      isSupportedExchangeFormatRequest([{ type: "deterministicJson" }]),
-    ).toBe(false);
-    expect(isSupportedExchangeFormatRequest([])).toBe(false);
+    expect(getUnsupportedExchangeFormat([{ type: "deterministicJson" }])).toBe(
+      "the `deterministicJson` format",
+    );
+    expect(getUnsupportedExchangeFormat([])).toBe("`formats`");
   });
 
   it("allows eligible requests when access and terms are current", async () => {
@@ -557,21 +555,27 @@ describe("Exchange routing", () => {
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 12 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 12, steps: [] },
+        },
         statusCode: 200,
       }),
     ).toBe(12);
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 0 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 0, steps: [] },
+        },
         statusCode: 304,
       }),
     ).toBe(0);
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 12 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 12, steps: [] },
+        },
         statusCode: 404,
       }),
     ).toBeNull();
@@ -733,6 +737,7 @@ describe("Exchange terms acceptance", () => {
               {
                 provider: "acme",
                 required: true,
+                exchangeRequired: false,
                 terms: { ...ACME_TERMS, digest: DIGEST },
               },
             ],
@@ -767,6 +772,16 @@ describe("Exchange terms acceptance", () => {
     config.FIRE_EXCHANGE_URL = originalConfig.FIRE_EXCHANGE_URL;
     config.USE_DB_AUTHENTICATION = originalConfig.USE_DB_AUTHENTICATION;
     clearExchangeProvidersForTest();
+  });
+
+  it("still gates universal scrape when Exchange acceptance is optional", async () => {
+    ledgerAnswers([]);
+    expect(
+      await getExchangeAccessForRequest({
+        ...PROFILE_REQUEST,
+        flags: { professionalProfileCompanyDataBeta: true },
+      }),
+    ).toMatchObject({ allowed: false, termsRequired: true, terms: ACME_TERMS });
   });
 
   it("routes when the terms were accepted on the Exchange ledger", async () => {
@@ -944,6 +959,18 @@ describe("Exchange terms acceptance", () => {
       flags: revokedFlags,
     });
     expect(access.allowed).toBe(true);
+  });
+
+  it("carries the unsupported-option response through the worker queue", () => {
+    const original = new ThirdPartyDataUnsupportedOptionError("`actions`");
+    const error = deserializeTransportableError(
+      serializeTransportableError(original),
+    );
+
+    expect(error).toBeInstanceOf(ThirdPartyDataUnsupportedOptionError);
+    expect((error as ThirdPartyDataUnsupportedOptionError).response()).toEqual(
+      original.response(),
+    );
   });
 
   it("carries the terms-required response through the worker queue", () => {

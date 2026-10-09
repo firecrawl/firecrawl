@@ -1,4 +1,4 @@
-import { describe, test, expect } from "@jest/globals";
+import { describe, test, expect } from "vitest";
 import { ResearchClient } from "../../../v2/methods/research";
 import { SdkError } from "../../../v2/types";
 import type { HttpClient } from "../../../v2/utils/httpClient";

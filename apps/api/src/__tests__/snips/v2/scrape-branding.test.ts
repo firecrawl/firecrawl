@@ -2,6 +2,7 @@ import {
   type CostTrackingCall,
   getCostTrackingCalls,
 } from "../cost-tracking-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
@@ -66,7 +67,7 @@ const JEV_MAY_APPLY =
     Number(process.env.BRANDING_JEV_ROLLOUT_PERCENT || 0) > 0);
 
 describe("Branding cost tracking", () => {
-  concurrentIf(TEST_PRODUCTION && !JEV_MAY_APPLY)(
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && !JEV_MAY_APPLY)(
     "records the branding LLM call with its model and cost",
     async () => {
       const response = await scrape(
@@ -90,7 +91,7 @@ describe("Branding cost tracking", () => {
     scrapeTimeout + 15000,
   );
 
-  concurrentIf(TEST_PRODUCTION)(
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG)(
     "records no branding call when branding is not requested",
     async () => {
       const response = await scrape(
@@ -117,7 +118,7 @@ const JEV_ON =
   !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV === "true";
 
 describe("Branding with Jev", () => {
-  concurrentIf(TEST_PRODUCTION && JEV_ON)(
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && JEV_ON)(
     "answers branding with Jev and records its cost, not an LLM call",
     async () => {
       const response = await scrape(

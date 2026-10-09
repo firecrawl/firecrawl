@@ -162,6 +162,19 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsSerializesCheckPromptInjection(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		CheckPromptInjection: Bool(true),
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"checkPromptInjection":true`) {
+		t.Fatalf("serialized checkPromptInjection = %s", payload)
+	}
+}
+
 func TestScrapeOptionsSerializesDomainTools(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
 		DomainTools: Bool(true),

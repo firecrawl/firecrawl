@@ -1200,6 +1200,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               }
           : {}),
         postprocessorsUsed: engineResult.postprocessorsUsed,
+        provider: engineResult.exchange?.provider,
       },
     };
 
@@ -1432,7 +1433,9 @@ export async function scrapeURL(
                   setSpanAttributes(span, {
                     "scrape.blocked_by_robots": true,
                   });
-                  throw new CrawlDenialError("URL blocked by robots.txt");
+                  throw new CrawlDenialError("URL blocked by robots.txt", {
+                    robotsBlockedUrl: urlToCheck,
+                  });
                 }
               } catch (error) {
                 if (error instanceof CrawlDenialError) {

@@ -68,7 +68,7 @@ export function calculateThreatScanCredits(
  * chunk it attempted and fails open on a chunk it could not classify
  * (verdict "none"): a scan that left any chunk unscanned does not bill. A
  * detection is a verdict for the whole page even if a concurrent chunk failed,
- * since it blocked the extraction.
+ * since it blocked the scrape.
  */
 function promptInjectionGuardGaveVerdict(
   costTrackingJSON: ReturnType<typeof CostTracking.prototype.toJSON>,
@@ -178,13 +178,6 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += jsonCostBonus;
   }
 
-  if (
-    hasFormatOfType(options.formats, "json")?.checkPromptInjection &&
-    promptInjectionGuardGaveVerdict(costTrackingJSON)
-  ) {
-    creditsToBeBilled += 4;
-  }
-
   if (hasFormatOfType(options.formats, "deterministicJson")) {
     // 10 when this run generated the extractor script, 3 when it reused a
     // cached one. The codegen call is tagged in deterministicJson/llm/client.ts.
@@ -194,6 +187,13 @@ export async function calculateCreditsToBeBilled(
         call.metadata?.role === "codegen",
     );
     creditsToBeBilled = generatedScript ? 10 : 3;
+  }
+
+  if (
+    options.checkPromptInjection &&
+    promptInjectionGuardGaveVerdict(costTrackingJSON)
+  ) {
+    creditsToBeBilled += 4;
   }
 
   if (

@@ -12,7 +12,7 @@ A Python tool that uses GPT-4.1, Firecrawl, and SerpAPI to research companies an
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - OpenAI API key (with GPT-4.1 access)
 - Firecrawl API key
 - SerpAPI key

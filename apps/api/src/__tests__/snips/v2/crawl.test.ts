@@ -350,6 +350,43 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
+  it.concurrent(
+    "crawl status completedAt follows the failed jobs when no page succeeds",
+    async () => {
+      // The start URL cannot resolve, so the only job in the crawl fails.
+      const results = await crawl(
+        {
+          url: `https://crawl-completed-at-${crypto.randomUUID()}.invalid/`,
+          limit: 1,
+        },
+        identity,
+        false,
+      );
+      const afterCrawl = Date.now();
+
+      expect(results.success).toBe(true);
+      if (!results.success) return;
+      expect(results.status).not.toBe("scraping");
+      expect(results.completed).toBe(0);
+      expect(typeof results.createdAt).toBe("string");
+      expect(typeof results.completedAt).toBe("string");
+
+      const createdAtMs = new Date(results.createdAt!).getTime();
+      const completedAtMs = new Date(results.completedAt!).getTime();
+
+      // Before the fix, completedAt fell back to createdAt (duration 0)
+      // because only successful jobs had a finish time.
+      expect(completedAtMs).toBeGreaterThan(createdAtMs);
+      expect(results.duration).toBeGreaterThan(0);
+
+      // completedAt must not be later than the moment the crawl was seen as
+      // done. Allow a small gap for clock differences between the test
+      // runner and the worker.
+      expect(completedAtMs).toBeLessThanOrEqual(afterCrawl + 1000);
+    },
+    10 * scrapeTimeout,
+  );
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "delay parameter works",
     async () => {
@@ -706,7 +743,7 @@ describe("Crawl tests", () => {
       // Check specifically for robots.txt warning
       if (results.warning && results.warning.includes("robots.txt")) {
         expect(results.warning).toContain("robots.txt");
-        expect(results.warning).toContain("/scrape endpoint");
+        expect(results.warning).toContain("robotsBlocked");
       }
     },
     10 * scrapeTimeout,

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import { integrationSchema } from "../../utils/integration";
+import { countries } from "../../lib/validate-country";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import {
   getBrowserSession,
@@ -44,10 +45,22 @@ export const browserCreateRequestSchema = z.object({
   recordSession: z.boolean().default(false),
   zeroDataRetention: z.boolean().optional(),
   integration: integrationSchema.optional().transform(value => value || null),
+  blockAds: z.boolean().default(true),
   profile: z
     .object({
       name: browserProfileNameSchema,
       saveChanges: z.boolean().default(true),
+    })
+    .optional(),
+  location: z
+    .strictObject({
+      country: z
+        .string()
+        .refine(
+          value => Object.keys(countries).includes(value.toUpperCase()),
+          "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
+        )
+        .transform(value => value.toLowerCase()),
     })
     .optional(),
   __agentInterop: z

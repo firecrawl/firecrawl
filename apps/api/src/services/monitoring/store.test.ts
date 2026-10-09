@@ -290,6 +290,23 @@ describe("monitoring store credit helpers", () => {
     expect(estimateMonitorCreditsPerRun(targets, false)).toBe(9);
   });
 
+  it("estimates the top-level prompt injection guard on a markdown monitor", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/a"],
+        scrapeOptions: {
+          formats: ["markdown"],
+          checkPromptInjection: true,
+        },
+      },
+    ];
+
+    // 1 base + 4 prompt injection guard.
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(5);
+  });
+
   it("uses target options when page rows do not have recorded scrape credits", () => {
     const targets: MonitorTarget[] = [
       {

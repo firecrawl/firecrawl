@@ -25,6 +25,35 @@ const JEV_MODEL = "jev-latest";
 const JEV_INPUT_USD_PER_MTOK = 0.042;
 const DEFAULT_TIMEOUT_MS = 5000;
 
+// Circuit breaker: after this many calls in a row fail (timeouts, 5xx), skip
+// Jev for the cooldown and answer with the LLM, so an outage doesn't add the
+// timeout to every branding request. After the cooldown calls go through
+// again; one more failure reopens it.
+const BREAKER_FAILURES = 5;
+const BREAKER_COOLDOWN_MS = 60_000;
+let consecutiveFailures = 0;
+let breakerOpenUntil = 0;
+
+export function isJevBreakerOpen(now = Date.now()): boolean {
+  return now < breakerOpenUntil;
+}
+
+function recordJevFailure(input: BrandingLLMInput): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= BREAKER_FAILURES && !isJevBreakerOpen()) {
+    breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    input.logger.warn("Jev branding calls failing, using the LLM for a while", {
+      consecutiveFailures,
+      cooldownMs: BREAKER_COOLDOWN_MS,
+    });
+  }
+}
+
+export function resetJevBreaker(): void {
+  consecutiveFailures = 0;
+  breakerOpenUntil = 0;
+}
+
 const MAX_LOGOS = 20;
 const MAX_BUTTONS = 12;
 const MAX_COLORS = 24;
@@ -311,6 +340,8 @@ type JevRequest = {
   buttonCount: number;
   /** Background + text color per button, to group look-alike buttons. */
   buttonStyles: string[];
+  /** Raw background per button: merge drops a secondary that matches the primary's. */
+  buttonBackgrounds: string[];
 };
 
 export function buildJevRequest(input: BrandingLLMInput): JevRequest {
@@ -563,6 +594,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     logoCount: logos.length,
     buttonCount: buttons.length,
     buttonStyles: buttons.map(buttonStyle),
+    buttonBackgrounds: buttons.map(b => b.background),
   };
 }
 
@@ -623,15 +655,24 @@ function mapJevAnswers(
   const { answers } = response;
   const tag = `jev ${response.model}`;
 
-  // Buttons: secondary must differ from primary.
+  // Buttons: the secondary must not share the primary's background, or merge
+  // drops it. Skip every look-alike, not just the primary itself.
   const primaryButton = choiceOf(answers, "primary_button");
   const secondaryButton = choiceOf(answers, "secondary_button");
   const primaryButtonIndex = indexOf(primaryButton?.choice, "button");
+  const primaryBackground = request.buttonBackgrounds[primaryButtonIndex];
+  const looksLikePrimary = (option: string) =>
+    option === primaryButton?.choice ||
+    (primaryBackground !== undefined &&
+      request.buttonBackgrounds[indexOf(option, "button")] ===
+        primaryBackground);
   let secondaryOption = secondaryButton?.choice;
-  if (secondaryButton && secondaryOption === primaryButton?.choice) {
+  if (secondaryButton && secondaryOption && looksLikePrimary(secondaryOption)) {
     secondaryOption = bestExcluding(
       secondaryButton,
-      new Set([primaryButton!.choice]),
+      new Set(
+        Object.keys(secondaryButton.probabilities).filter(looksLikePrimary),
+      ),
     );
   }
 
@@ -769,15 +810,17 @@ export async function enhanceBrandingWithJev(
   options: { shadow?: boolean } = {},
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
-  if (!typesafe) return null;
+  if (!typesafe || isJevBreakerOpen()) return null;
   const started = Date.now();
   let request: JevRequest;
   let response: JevResponse;
+  let called = false;
   try {
     request = buildJevRequest(input);
     response = await withSpan(
       "typesafe.systemone",
       async span => {
+        called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
@@ -792,6 +835,7 @@ export async function enhanceBrandingWithJev(
         setSpanAttributes(span, {
           "typesafe.model": result.model,
           "typesafe.usage.input_tokens": result.usage?.input_tokens,
+          "typesafe.usage.output_tokens": result.usage?.output_tokens,
         });
         return result as JevResponse;
       },
@@ -805,10 +849,13 @@ export async function enhanceBrandingWithJev(
           "branding.jev.questions": Object.keys(request.questions).length,
           ...(options.shadow ? { "branding.jev.shadow": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
+          ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
   } catch (error) {
+    // Only TypeSafe's own failures say anything about its health.
+    if (called) recordJevFailure(input);
     input.logger.warn(
       options.shadow
         ? "Jev branding shadow call failed"
@@ -820,6 +867,9 @@ export async function enhanceBrandingWithJev(
     );
     return null;
   }
+  // A call that started before the breaker opened and succeeds late doesn't
+  // close it: the next failure after the cooldown should reopen it at once.
+  if (!isJevBreakerOpen()) consecutiveFailures = 0;
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;

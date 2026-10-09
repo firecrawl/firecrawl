@@ -363,29 +363,26 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logSearch(
-      {
-        id: jobId,
-        request_id: jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: responseData.data,
-        num_results: responseData.data.length,
-        time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        options: {
-          ...req.body,
-          query: undefined,
-          scrapeOptions: undefined,
-        },
-        // Whole-number record of the charge. The credits_cost column is
-        // integer; the charge in Autumn keeps the exact decimal.
-        credits_cost: Math.round(result.searchCredits),
-        zeroDataRetention,
+    logSearch({
+      id: jobId,
+      request_id: jobId,
+      query: req.body.query,
+      is_successful: true,
+      error: undefined,
+      results: responseData.data,
+      num_results: responseData.data.length,
+      time_taken: timeTakenInSeconds,
+      team_id: req.auth.team_id,
+      options: {
+        ...req.body,
+        query: undefined,
+        scrapeOptions: undefined,
       },
-      false,
-    ).catch(error => {
+      // Whole-number record of the charge. The credits_cost column is
+      // integer; the charge in Autumn keeps the exact decimal.
+      credits_cost: Math.round(result.searchCredits),
+      zeroDataRetention,
+    }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
 

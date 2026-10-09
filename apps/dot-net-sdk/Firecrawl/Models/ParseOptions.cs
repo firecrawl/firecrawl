@@ -79,6 +79,14 @@ public class ParseOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Integration { get; set; }
 
+    /// <summary>
+    /// Scans the parsed content for prompt injection before LLM-backed formats run.
+    /// A detection fails the parse with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole content.
+    /// </summary>
+    [JsonPropertyName("checkPromptInjection")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckPromptInjection { get; set; }
+
     [JsonPropertyName("redactPII")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? RedactPII { get; set; }

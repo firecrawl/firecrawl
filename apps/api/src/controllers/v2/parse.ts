@@ -720,7 +720,8 @@ export async function parseController(
         !!hasFormatOfType(req.body.formats, "summary") ||
         !!hasFormatOfType(req.body.formats, "question") ||
         !!hasFormatOfType(req.body.formats, "highlights") ||
-        !!hasFormatOfType(req.body.formats, "query");
+        !!hasFormatOfType(req.body.formats, "query") ||
+        req.body.checkPromptInjection;
 
       if (!usedLlm) {
         const ct = hasFormatOfType(req.body.formats, "changeTracking");

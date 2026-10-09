@@ -351,6 +351,7 @@ export async function browserCreateRaw(
     recordSession?: boolean;
     streamWebView?: boolean;
     profile?: { name: string; saveChanges?: boolean };
+    location?: Record<string, unknown>;
   },
   identity: Identity,
 ) {
@@ -503,7 +504,7 @@ export async function asyncCrawlWaitForFinish(
   return x.body;
 }
 
-async function crawlErrors(
+export async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {

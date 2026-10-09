@@ -130,7 +130,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: 1.24
+          go-version: 1.26
           cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
 
       - name: Verify go.sum is up to date (sharedLibs/go-html-to-md)
@@ -218,11 +218,23 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true'
 
+      - name: Run Exchange terms compatibility regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/services/alexandria/access.test.ts
+          src/services/alexandria/terms.test.ts
+          src/lib/exchange.test.ts
+          src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+          --maxWorkers=1 --reporter=default
+        working-directory: apps/api
+
       - name: Run monitor finalization regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-
           pnpm exec vitest run
           src/services/monitoring/runner.finalization.test.ts
+          src/services/monitoring/runner.reservation.test.ts
           src/services/monitoring/store.finalization.test.ts
           src/services/monitoring/scheduler.test.ts
           --reporter=default
@@ -241,6 +253,11 @@ jobs:
       - name: Run browser session DELETE regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/controllers/v2/__tests__/browser-delete.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run browser options regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/lib/browser-options.test.ts --reporter=default
         working-directory: apps/api
 
       - name: Run search safe filter regression tests
@@ -265,8 +282,9 @@ jobs:
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-
           pnpm exec vitest run
-          src/lib/agent-hints.test.ts
           src/lib/agent-hints-provider.test.ts
+          src/lib/agent-hint-rules.test.ts
+          src/lib/agent-hint-signals.test.ts
           src/middlewares/__tests__/agent-hints.test.ts
           --reporter=default
         working-directory: apps/api

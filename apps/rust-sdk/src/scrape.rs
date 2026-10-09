@@ -79,6 +79,11 @@ pub struct ScrapeOptions {
     /// Lockdown mode: serve only previously cached results, never make outbound requests.
     pub lockdown: Option<bool>,
 
+    /// Scan the page content for prompt injection with any format except rawBase64,
+    /// before LLM-backed formats run. A detection fails the scrape with
+    /// SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole page.
+    pub check_prompt_injection: Option<bool>,
+
     /// Redact personally identifiable information from returned content.
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
@@ -172,6 +177,19 @@ pub struct AlexandriaOptions {
     pub timeout: Option<u32>,
     pub integration: Option<String>,
     pub origin: Option<String>,
+}
+
+/// Matches the API's default and maximum execution timeout for Alexandria calls.
+const ALEXANDRIA_MAX_TIMEOUT_MS: u32 = 120_000;
+/// Extra time for the API to deliver a response after its execution deadline.
+const ALEXANDRIA_RESPONSE_MARGIN_MS: u64 = 30_000;
+
+/// Returns how long the client waits for an Alexandria response.
+fn alexandria_transport_timeout(timeout: Option<u32>) -> std::time::Duration {
+    let execution_ms = timeout
+        .unwrap_or(ALEXANDRIA_MAX_TIMEOUT_MS)
+        .min(ALEXANDRIA_MAX_TIMEOUT_MS);
+    std::time::Duration::from_millis(u64::from(execution_ms) + ALEXANDRIA_RESPONSE_MARGIN_MS)
 }
 
 #[derive(Serialize, Debug)]
@@ -409,9 +427,8 @@ impl Client {
         if options.origin.is_none() {
             options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
         }
-        let request_timeout = options
-            .timeout
-            .map(|ms| std::time::Duration::from_millis(u64::from(ms) + 5000));
+        // Allow response delivery after the API's capped execution deadline.
+        let request_timeout = alexandria_transport_timeout(options.timeout);
         let request_id = options
             .request_id
             .clone()
@@ -431,16 +448,13 @@ impl Client {
 
         let headers = self.prepare_headers(None);
 
-        let mut request = self
+        let response = self
             .client
             .post(self.url("/scrape"))
             .headers(headers)
             .header("x-request-id", &request_id)
-            .json(&body);
-        if let Some(timeout) = request_timeout {
-            request = request.timeout(timeout);
-        }
-        let response = request
+            .json(&body)
+            .timeout(request_timeout)
             .send()
             .await
             .map_err(|e| FirecrawlError::AlexandriaExecution {
@@ -646,6 +660,23 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn test_alexandria_transport_timeout() {
+        for (timeout, expected_secs) in [
+            (None, 150),
+            (Some(1_000), 31),
+            (Some(100_000), 130),
+            (Some(120_000), 150),
+            (Some(300_000), 150),
+        ] {
+            assert_eq!(
+                alexandria_transport_timeout(timeout),
+                std::time::Duration::from_secs(expected_secs),
+                "timeout {timeout:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_query_format_serializes_mode() {
         let options = ScrapeOptions {
             formats: Some(vec![Format::Query(QueryFormat {
@@ -718,6 +749,20 @@ mod tests {
         let payload = serde_json::to_value(options).unwrap();
         assert_eq!(payload["redactPII"], json!(true));
         assert!(payload.get("formats").is_none());
+    }
+
+    #[test]
+    fn test_scrape_options_serializes_check_prompt_injection() {
+        let options = ScrapeOptions {
+            check_prompt_injection: Some(true),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(payload["checkPromptInjection"], json!(true));
+
+        let unset = serde_json::to_value(ScrapeOptions::default()).unwrap();
+        assert!(unset.get("checkPromptInjection").is_none());
     }
 
     #[test]

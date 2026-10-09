@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { FirecrawlClient } from "../../../v2/client";
 import { SdkError } from "../../../v2/types";
 
@@ -31,7 +31,7 @@ const response = {
 describe("developerSearch", () => {
   test("forwards every dedicated developer filter", async () => {
     const http = {
-      post: jest.fn(async () => ({ status: 200, data: response })),
+      post: vi.fn(async () => ({ status: 200, data: response })),
     } as any;
 
     const client = new FirecrawlClient({
@@ -77,7 +77,7 @@ describe("developerSearch", () => {
 
   test("normalizes transport errors to SdkError", async () => {
     const http = {
-      post: jest.fn(async () => {
+      post: vi.fn(async () => {
         throw {
           isAxiosError: true,
           code: "ECONNABORTED",
@@ -102,7 +102,7 @@ describe("developerSearch", () => {
       results: [{ ...response.results[0], license: "MIT" }],
     };
     const http = {
-      post: jest.fn(async () => ({ status: 200, data: flattened })),
+      post: vi.fn(async () => ({ status: 200, data: flattened })),
     } as any;
 
     const client = new FirecrawlClient({

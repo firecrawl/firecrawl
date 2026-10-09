@@ -446,6 +446,46 @@ describe("Scrape tests", () => {
   );
 
   itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "runs the top-level checkPromptInjection on a markdown scrape and bills it",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${TEST_SUITE_WEBSITE}/product`,
+          formats: ["markdown"],
+          checkPromptInjection: true,
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toBeDefined();
+      expect(response.metadata.creditsUsed).toBe(5);
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "blocks a markdown scrape when the top-level checkPromptInjection detects a prompt injection",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: `${TEST_SUITE_WEBSITE}/prompt-injection`,
+          formats: ["markdown"],
+          checkPromptInjection: true,
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(403);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_PROMPT_INJECTION_DETECTED");
+      expect(typeof raw.body.error).toBe("string");
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
     "blocks when checkPromptInjection detects a prompt injection",
     async () => {
       const raw = await scrapeRaw(
