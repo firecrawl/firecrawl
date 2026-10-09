@@ -731,6 +731,31 @@ describe("Jev request building", () => {
     ]);
   });
 
+  it("sends only well-formed Unicode text", () => {
+    // "𝐁" (U+1D401) is a surrogate pair. The branding script truncates button
+    // text by code unit, which can leave its first half alone at the end.
+    const bold = "\u{1D401}";
+    const input = baseInput(new CostTracking());
+    input.pageTitle = "a".repeat(199) + bold;
+    input.buttons![0].text = "Beyond the Storefront " + bold + "\uD835";
+    input.buttons![1].text = "x".repeat(39) + bold;
+
+    const request = buildJevRequest(input);
+    const page = request.state.page as Record<string, string>;
+    const buttons = request.state.buttons as Record<
+      string,
+      Record<string, string>
+    >;
+
+    // clip() drops a pair it would cut in half rather than keep one half.
+    expect(page.title).toBe("a".repeat(199));
+    expect(buttons.button_0.text).toBe(
+      "Beyond the Storefront " + bold + "\uFFFD",
+    );
+    // JSON.stringify escapes lone surrogates as \udxxx; none may remain.
+    expect(JSON.stringify(request.state)).not.toMatch(/\\ud[89a-f]/i);
+  });
+
   it("names common colors", () => {
     expect(describeColor("#E2511A")).toBe("vivid orange");
     expect(describeColor("#0A2540")).toBe("very dark blue");

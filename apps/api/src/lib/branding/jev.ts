@@ -179,7 +179,7 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
   }
   const buttons = (input.buttons ?? []).slice(0, MAX_BUTTONS);
   for (const button of buttons) {
-    const label = button.text?.trim().slice(0, 40) || "unlabeled";
+    const label = clip(button.text, 40) || "unlabeled";
     add(button.background, `background of button "${label}"`);
     add(button.textColor, `text on button "${label}"`);
     add(button.borderColor, `border of button "${label}"`);
@@ -303,7 +303,7 @@ function sizeLabel(width: number, height: number): string {
 function fileName(src: string): string {
   if (src.startsWith("data:")) return "inline SVG";
   const path = src.split(/[?#]/)[0];
-  return (path.split("/").pop() || "").slice(0, 80);
+  return clip(path.split("/").pop(), 80);
 }
 
 // Cookie-consent controls are page chrome, never the site's call to action.
@@ -328,8 +328,32 @@ const buttonStyle = (b: {
     b.shadow ?? "",
   ].join("/");
 
-const clip = (value: string | undefined, max: number) =>
-  (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+
+// slice() counts UTF-16 code units, so never end on the first half of a pair.
+const clip = (value: string | undefined, max: number) => {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  return text.slice(
+    0,
+    isHighSurrogate(text.charCodeAt(max - 1)) ? max - 1 : max,
+  );
+};
+
+// TypeSafe rejects text with lone surrogates as invalid Unicode. Page text can
+// carry them (the branding script truncates by code unit), so replace them
+// with U+FFFD, as String.prototype.toWellFormed does.
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const wellFormed = (value: JsonValue): JsonValue =>
+  typeof value === "string"
+    ? value.replace(LONE_SURROGATE, "\uFFFD")
+    : Array.isArray(value)
+      ? value.map(wellFormed)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [k, wellFormed(v)]),
+          )
+        : value;
 
 type JevRequest = {
   state: Record<string, JsonValue>;
@@ -587,7 +611,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
   };
 
   return {
-    state,
+    state: wellFormed(state) as Record<string, JsonValue>,
     questions,
     colors,
     fonts,
