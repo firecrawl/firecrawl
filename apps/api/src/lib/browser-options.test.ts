@@ -3,15 +3,14 @@ import { vi } from "vitest";
 vi.mock("../config", () => ({ config: { HANGAR_URL: "http://hangar.test" } }));
 
 import {
+  type BrowserOptions,
   browserOptionsFromScrape,
   hangarBrowserOptions,
   isBrowserOptions,
 } from "./browser-options";
 import { createHangarBrowser } from "./hangar";
 
-async function hangarCreateBody(
-  scrapeOptions: Parameters<typeof browserOptionsFromScrape>[0],
-) {
+async function hangarCreateBody(options: BrowserOptions) {
   const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
     Response.json({
       id: "br_1",
@@ -21,7 +20,7 @@ async function hangarCreateBody(
   );
   vi.stubGlobal("fetch", fetchMock);
   await createHangarBrowser("key", "team", {
-    ...browserOptionsFromScrape(scrapeOptions),
+    ...options,
     ttl: 600,
     activityTtl: 300,
     streamWebView: true,
@@ -41,33 +40,37 @@ describe("hangarBrowserOptions", () => {
   });
 });
 
-describe("Hangar create body for a scrape", () => {
+describe("Hangar create body", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
+  const fromScrape = (
+    options: Parameters<typeof browserOptionsFromScrape>[0],
+  ) => hangarCreateBody(browserOptionsFromScrape(options));
+
   it("selects a proxy in the scrape's location country", async () => {
-    const body = await hangarCreateBody({
+    const body = await fromScrape({
       location: { country: "gb" },
       proxy: "auto",
     });
     expect(body.proxy).toEqual({ country: "gb", type: "basic" });
   });
 
-  it("lowercases the country", async () => {
-    const body = await hangarCreateBody({ location: { country: "GB" } });
+  it("lowercases the scrape's country", async () => {
+    const body = await fromScrape({ location: { country: "GB" } });
     expect(body.proxy).toEqual({ country: "gb", type: "basic" });
   });
 
-  it("sends no proxy without a location", async () => {
-    const body = await hangarCreateBody({ proxy: "auto" });
+  it("sends no proxy for a scrape without a location", async () => {
+    const body = await fromScrape({ proxy: "auto" });
     expect(body).not.toHaveProperty("proxy");
   });
 
   it.each(["us-generic", "us-whitelist"])(
-    "sends no proxy for %s",
+    "sends no proxy for a scrape located in %s",
     async country => {
-      const body = await hangarCreateBody({ location: { country } });
+      const body = await fromScrape({ location: { country } });
       expect(body).not.toHaveProperty("proxy");
     },
   );
@@ -76,13 +79,24 @@ describe("Hangar create body for a scrape", () => {
     "uses the mobile pool for a %s scrape",
     async proxy => {
       expect(
-        (await hangarCreateBody({ location: { country: "de" }, proxy })).proxy,
+        (await fromScrape({ location: { country: "de" }, proxy })).proxy,
       ).toEqual({ country: "de", type: "mobile" });
-      expect((await hangarCreateBody({ proxy })).proxy).toEqual({
-        type: "mobile",
-      });
+      expect((await fromScrape({ proxy })).proxy).toEqual({ type: "mobile" });
     },
   );
+
+  it("selects a basic proxy in a /v2/browser session's country", async () => {
+    const body = await hangarCreateBody({
+      blockAds: true,
+      location: { country: "jp" },
+    });
+    expect(body.proxy).toEqual({ country: "jp", type: "basic" });
+  });
+
+  it("sends no proxy for a /v2/browser session without a location", async () => {
+    const body = await hangarCreateBody({ blockAds: true });
+    expect(body).not.toHaveProperty("proxy");
+  });
 });
 
 describe("isBrowserOptions", () => {

@@ -351,6 +351,7 @@ export async function browserCreateRaw(
     recordSession?: boolean;
     streamWebView?: boolean;
     profile?: { name: string; saveChanges?: boolean };
+    location?: Record<string, unknown>;
   },
   identity: Identity,
 ) {
