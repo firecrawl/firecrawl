@@ -706,12 +706,14 @@ final class FirecrawlClient
      * Create a new browser session.
      *
      * @param array<string, string>|null $profile
+     * @param array{country: string}|null $location Country the session browses from, e.g. ['country' => 'GB'] (default US)
      */
     public function browser(
         ?int $ttl = null,
         ?int $activityTtl = null,
         ?bool $streamWebView = null,
         ?array $profile = null,
+        ?array $location = null,
     ): BrowserCreateResponse {
         $body = [];
         if ($ttl !== null) {
@@ -725,6 +727,9 @@ final class FirecrawlClient
         }
         if ($profile !== null) {
             $body['profile'] = $profile;
+        }
+        if ($location !== null) {
+            $body['location'] = $location;
         }
 
         return BrowserCreateResponse::fromArray($this->http->post('/v2/browser', $body));

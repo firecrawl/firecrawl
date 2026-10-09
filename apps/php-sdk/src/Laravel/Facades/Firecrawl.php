@@ -41,7 +41,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static AgentStatusResponse agent(AgentOptions $options, int $pollIntervalSec = 2, int $timeoutSec = 300)
  * @method static array<string, mixed> cancelAgent(string $jobId)
  * @method static AgentListResponse listAgents(?int $before = null)
- * @method static BrowserCreateResponse browser(?int $ttl = null, ?int $activityTtl = null, ?bool $streamWebView = null)
+ * @method static BrowserCreateResponse browser(?int $ttl = null, ?int $activityTtl = null, ?bool $streamWebView = null, array<string, string>|null $profile = null, array{country: string}|null $location = null)
  * @method static BrowserExecuteResponse browserExecute(string $sessionId, string $code, string $language = 'bash', ?int $timeout = null)
  * @method static BrowserDeleteResponse deleteBrowser(string $sessionId)
  * @method static BrowserListResponse listBrowsers(?string $status = null)

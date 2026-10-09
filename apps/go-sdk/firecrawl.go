@@ -905,6 +905,9 @@ func (c *Client) Browser(ctx context.Context, opts *BrowserOptions) (*BrowserCre
 		if opts.StreamWebView != nil {
 			body["streamWebView"] = *opts.StreamWebView
 		}
+		if opts.Location != nil {
+			body["location"] = opts.Location
+		}
 	}
 
 	raw, err := c.http.post(ctx, "/v2/browser", body, nil)
@@ -1142,6 +1145,14 @@ type BrowserOptions struct {
 	TTL           *int
 	ActivityTTL   *int
 	StreamWebView *bool
+	// Location sets the country the session browses from (default US).
+	Location *BrowserLocation
+}
+
+// BrowserLocation selects a browser session's country.
+type BrowserLocation struct {
+	// Country is an ISO 3166-1 alpha-2 code, such as "GB".
+	Country string `json:"country"`
 }
 
 // BrowserExecuteParams holds optional parameters for browser code execution.

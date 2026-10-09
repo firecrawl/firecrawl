@@ -644,7 +644,7 @@ export class FirecrawlClient {
   // Browser
   /**
    * Create a new browser session.
-   * @param args Session options (ttl, activityTtl, streamWebView, blockAds, profile).
+   * @param args Session options (ttl, activityTtl, streamWebView, blockAds, profile, location).
    * @returns Session id, CDP URL, live view URL, and expiration time.
    */
   async browser(

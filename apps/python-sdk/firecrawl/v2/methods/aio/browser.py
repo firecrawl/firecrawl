@@ -59,6 +59,7 @@ async def browser(
     stream_web_view: Optional[bool] = None,
     block_ads: Optional[bool] = None,
     profile: Optional[Dict[str, Any]] = None,
+    location: Optional[Dict[str, str]] = None,
 ) -> BrowserCreateResponse:
     """Create a new browser session.
 
@@ -70,6 +71,8 @@ async def browser(
         block_ads: Block ads, trackers and cookie notices (default ``True``)
         profile: Profile config with ``name`` (str) and
             optional ``save_changes`` (bool, default ``True``)
+        location: ``{"country": "GB"}`` to browse from that country
+            (ISO 3166-1 alpha-2, default US)
 
     Returns:
         BrowserCreateResponse with session id and CDP URL
@@ -88,6 +91,8 @@ async def browser(
             "name": profile["name"],
             "saveChanges": profile.get("save_changes", True),
         }
+    if location is not None:
+        body["location"] = {"country": location["country"]}
 
     resp = await client.post("/v2/browser", body)
     payload = _normalize_browser_create_response(resp.json())

@@ -5129,6 +5129,20 @@
                     "required": [
                       "name"
                     ]
+                  },
+                  "location": {
+                    "type": "object",
+                    "description": "Country the session browses from (default US). Sessions started from a scrape with interact use the scrape's location.",
+                    "properties": {
+                      "country": {
+                        "type": "string",
+                        "description": "ISO 3166-1 alpha-2 country code, such as GB."
+                      }
+                    },
+                    "required": [
+                      "country"
+                    ],
+                    "additionalProperties": false
                   }
                 }
               }

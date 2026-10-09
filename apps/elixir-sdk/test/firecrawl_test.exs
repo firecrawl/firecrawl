@@ -835,6 +835,43 @@ defmodule FirecrawlTest do
     end)
   end
 
+  test "create_browser_session sends location only when set" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "id" => "session-1"})
+      )
+
+      {request, resp}
+    end
+
+    sent_body = fn params ->
+      assert {:ok, %Req.Response{status: 200}} =
+               Firecrawl.create_browser_session(params, api_key: "test-key", adapter: adapter)
+
+      assert_receive {:request, request}
+
+      cond do
+        is_binary(request.body) -> Jason.decode!(request.body)
+        is_map(request.body) -> request.body
+        true -> request.options[:json]
+      end
+    end
+
+    assert sent_body.(location: [country: "GB"])["location"] == %{"country" => "GB"}
+    refute Map.has_key?(sent_body.(ttl: 60), "location")
+  end
+
+  test "create_browser_session rejects a location without a country" do
+    assert {:error, %NimbleOptions.ValidationError{}} =
+             Firecrawl.create_browser_session([location: []], api_key: "test-key")
+  end
+
   test "audit_metadata rejects unsupported fields" do
     assert_raise NimbleOptions.ValidationError, fn ->
       Firecrawl.scrape_and_extract_from_url!(
