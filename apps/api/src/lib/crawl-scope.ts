@@ -44,3 +44,19 @@ export function describeCrawlScope(scope: CrawlScope): string {
     ? `${scope.exact} or ${scope.prefix}*`
     : `${scope.prefix}*`;
 }
+
+/**
+ * The crawl's start URL on the host its start page redirected to. Keeps the
+ * start URL's path, so the redirect moves the crawl to the new host without
+ * narrowing it to the page the redirect landed on.
+ */
+export function startUrlOnHost(
+  startUrl: string,
+  redirectedUrl: string,
+): string {
+  const moved = new URL(startUrl);
+  const target = new URL(redirectedUrl);
+  moved.protocol = target.protocol;
+  moved.host = target.host;
+  return moved.href;
+}
