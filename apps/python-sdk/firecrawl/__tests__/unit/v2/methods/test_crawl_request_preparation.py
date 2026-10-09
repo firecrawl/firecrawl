@@ -143,6 +143,18 @@ class TestCrawlRequestPreparation:
         assert "mobile" in scrape_data
         assert scrape_data["mobile"] is True
 
+    def test_stop_on_content_conversion(self):
+        """Test that stop_on_content is sent as stopOnContent."""
+        request = CrawlRequest(
+            url="https://example.com",
+            stop_on_content=["No release notes found"],
+        )
+        data = _prepare_crawl_request(request)
+
+        assert data["stopOnContent"] == ["No release notes found"]
+        assert "stop_on_content" not in data
+        assert "stopOnContent" not in _prepare_crawl_request(CrawlRequest(url="https://example.com"))
+
     def test_none_values_handling(self):
         """Test that None values are handled correctly."""
         request = CrawlRequest(
