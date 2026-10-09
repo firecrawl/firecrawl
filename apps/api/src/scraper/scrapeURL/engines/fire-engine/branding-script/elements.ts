@@ -4,6 +4,7 @@ import {
   getComputedStyleCached,
   recordError,
   toPx,
+  truncateText,
 } from "./helpers";
 import { isButtonElement } from "./buttons";
 
@@ -224,9 +225,9 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     el.tagName.toLowerCase() === "input" &&
     (inputEl.type === "submit" || inputEl.type === "button")
   ) {
-    text = (inputEl.value && inputEl.value.trim().substring(0, 100)) || "";
+    text = (inputEl.value && truncateText(inputEl.value.trim(), 100)) || "";
   } else {
-    text = (el.textContent && el.textContent.trim().substring(0, 100)) || "";
+    text = (el.textContent && truncateText(el.textContent.trim(), 100)) || "";
   }
 
   const isInputField = el.matches(
@@ -249,14 +250,14 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
           const label = document.querySelector(
             'label[for="' + CSS.escape(el.id) + '"]',
           );
-          if (label) return (label.textContent || "").trim().substring(0, 100);
+          if (label) return truncateText((label.textContent || "").trim(), 100);
         }
         const parentLabel = el.closest("label");
         if (parentLabel) {
           const clone = parentLabel.cloneNode(true) as HTMLElement;
           const inputInClone = clone.querySelector("input,select,textarea");
           if (inputInClone) inputInClone.remove();
-          return (clone.textContent || "").trim().substring(0, 100);
+          return truncateText((clone.textContent || "").trim(), 100);
         }
         return "";
       })(),
