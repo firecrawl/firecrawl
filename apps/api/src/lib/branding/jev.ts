@@ -262,10 +262,10 @@ export function cleanFontFamily(raw: string): string | undefined {
 type FontRole = BrandingEnhancement["cleanedFonts"][number]["role"];
 type FontCandidate = { family: string; count: number; role?: FontRole };
 
-/** Role from the page's own typography: the heading and body stacks it measured. */
 /** Matching key for a family: case and spacing don't make a different font. */
 const familyKey = (family: string) => family.toLowerCase().replace(/\s/g, "");
 
+/** Role from the page's own typography: the heading and body stacks it measured. */
 function typographyRole(
   family: string,
   input: BrandingLLMInput,
