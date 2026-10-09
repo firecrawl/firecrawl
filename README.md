@@ -80,6 +80,7 @@ _Pst. Hey, you, join our stargazers :)_
 | [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
+| [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
 
 ---
 
