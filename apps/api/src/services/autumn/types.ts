@@ -1,3 +1,12 @@
+export class ExistingCreditsLockError extends Error {
+  constructor(readonly lockId: string) {
+    super(
+      "Credit reservation already exists; execution ownership is unresolved.",
+    );
+    this.name = "ExistingCreditsLockError";
+  }
+}
+
 export type GetOrCreateCustomerParams = {
   customerId: string;
   name?: string | null;
