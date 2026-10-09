@@ -19,6 +19,7 @@ vi.mock("../../../lib/generic-ai", () => ({
 }));
 
 import { config } from "../../../config";
+import { resetJevBreaker } from "../../../lib/branding/jev";
 import { compareBrandingAnswers } from "../../../lib/branding/jev-shadow";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { BrandingEnhancement } from "../../../lib/branding/schema";
@@ -171,6 +172,7 @@ const saved = {
 let attributes: Record<string, unknown>[];
 
 beforeEach(() => {
+  resetJevBreaker();
   config.TYPESAFE_API_KEY = "ts-test";
   config.BRANDING_JEV_TEAM_IDS = ["team-jev"];
   config.BRANDING_JEV_SHADOW_PERCENT = 100;
@@ -263,6 +265,24 @@ describe("Jev branding shadow", () => {
       "Jev branding shadow call failed",
       expect.anything(),
     );
+  });
+
+  it("pauses while the Jev breaker is open", async () => {
+    mocks.systemOne
+      .mockReset()
+      .mockRejectedValue(new Error("529 high traffic"));
+    for (let i = 0; i < 5; i++) {
+      await enhanceBrandingWithLLM(input(new CostTracking()));
+      await vi.waitFor(() =>
+        expect(mocks.systemOne).toHaveBeenCalledTimes(i + 1),
+      );
+    }
+    await new Promise(r => setTimeout(r, 20));
+
+    await enhanceBrandingWithLLM(input(new CostTracking()));
+    await new Promise(r => setTimeout(r, 20));
+
+    expect(mocks.systemOne).toHaveBeenCalledTimes(5);
   });
 
   it("skips zero-data-retention requests", async () => {

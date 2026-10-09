@@ -23,6 +23,7 @@ import {
   buildJevRequest,
   cleanFontFamily,
   describeColor,
+  resetJevBreaker,
 } from "../../../lib/branding/jev";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { mergeBrandingResults } from "../../../lib/branding/merge";
@@ -212,6 +213,7 @@ const saved = {
 };
 
 beforeEach(() => {
+  resetJevBreaker();
   config.TYPESAFE_API_KEY = "ts-test";
   config.BRANDING_JEV = undefined;
   config.BRANDING_JEV_TEAM_IDS = ["team-jev"];
@@ -375,6 +377,60 @@ describe("branding with Jev", () => {
     );
     const result = await enhanceBrandingWithLLM(input);
     expect(result.buttonClassification.primaryButtonIndex).toBe(-1);
+  });
+
+  it("stops calling Jev for a minute after repeated failures, then tries again", async () => {
+    let now = Date.parse("2026-10-08T12:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    mocks.systemOne.mockRejectedValue(new Error("529 high traffic"));
+
+    for (let i = 0; i < 5; i++) {
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    }
+    expect(mocks.systemOne).toHaveBeenCalledTimes(5);
+
+    // Open: answered by the LLM without waiting on Jev.
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    expect(mocks.systemOne).toHaveBeenCalledTimes(5);
+    expect(generateObject).toHaveBeenCalledTimes(6);
+
+    // After the cooldown Jev is tried again, and a success keeps it in use.
+    now += 61_000;
+    mocks.systemOne.mockReset().mockResolvedValue(jevResponse());
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+    expect(generateObject).toHaveBeenCalledTimes(6);
+    vi.mocked(Date.now).mockRestore();
+  });
+
+  it("reopens on the first failure after the cooldown", async () => {
+    let now = Date.parse("2026-10-08T12:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    mocks.systemOne.mockRejectedValue(new Error("503 no healthy upstream"));
+    for (let i = 0; i < 5; i++) {
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    }
+
+    now += 61_000;
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+    expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+    vi.mocked(Date.now).mockRestore();
+  });
+
+  it("does not count unusable answers as failures", async () => {
+    mocks.systemOne.mockResolvedValue({
+      model: "jev-1.13.0",
+      usage: { input_tokens: 10, output_tokens: 0 },
+    });
+
+    for (let i = 0; i < 6; i++) {
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    }
+
+    expect(mocks.systemOne).toHaveBeenCalledTimes(6);
   });
 
   it("falls back to the LLM when Jev's answers have an unexpected shape", async () => {
