@@ -6,6 +6,9 @@ import {
   insertBrowserSession,
   getBrowserSession,
   listUnsettledHangarSessions,
+  settleBrowserSessionOnce,
+  withLockedBrowserSession,
+  didBrowserSessionUsePrompt,
 } from "../../../lib/browser-sessions";
 import {
   createHangarBrowser,
@@ -27,6 +30,8 @@ import {
   getBrowserZDR,
   BrowserSessionError,
   reconcileBrowserSessions,
+  settleBrowserSession,
+  reserveBrowserPromptCredits,
 } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
 import { getModel } from "../../../lib/generic-ai";
@@ -116,6 +121,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   updateBrowserSessionActivity: vi.fn(() => Promise.resolve()),
   updateBrowserSessionScrapeId: vi.fn(() => Promise.resolve()),
   settleBrowserSessionOnce: vi.fn(),
+  withLockedBrowserSession: vi.fn(),
   getBrowserSessionFromScrape: vi.fn(),
   markBrowserSessionUsedPrompt: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
@@ -289,6 +295,61 @@ describe("scrapeInteractController", () => {
         }),
       );
     });
+
+    it("reserves the ZDR code-only rate at create", async () => {
+      await browserCreateController(buildRequest(), buildRes());
+      // 600s default TTL at 240/hr
+      expect(updateKeylessBrowserCredits).toHaveBeenCalledWith(
+        "team-123",
+        "session-123",
+        40,
+      );
+    });
+
+    it("reserves the ZDR prompt rate on the first prompt", async () => {
+      const row = {
+        ...session,
+        should_bill: true,
+        ttl_total: 600,
+        credits_used: null,
+      };
+      vi.mocked(didBrowserSessionUsePrompt)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
+      vi.mocked(withLockedBrowserSession).mockImplementationOnce(
+        async (_id, fn) => fn(row, undefined as any),
+      );
+      await reserveBrowserPromptCredits(buildRequest(), row);
+      // 600s TTL at 540/hr
+      expect(updateKeylessBrowserCredits).toHaveBeenCalledWith(
+        "team-123",
+        "session-123",
+        90,
+      );
+    });
+
+    it.each([
+      [false, 20],
+      [true, 45],
+    ])(
+      "settles a 5 minute ZDR session (usedPrompt=%s) at %i credits",
+      async (usedPrompt, expected) => {
+        const row = { ...session, should_bill: true };
+        vi.mocked(didBrowserSessionUsePrompt).mockResolvedValueOnce(usedPrompt);
+        vi.mocked(settleBrowserSessionOnce).mockImplementationOnce(
+          async (_id, bill) => ({
+            creditsBilled: await bill(row),
+            newlySettled: false,
+          }),
+        );
+        const result = await settleBrowserSession(row, {
+          status: "stopped",
+          created_at: 0,
+          ended_at: 300,
+        } as any);
+        expect(result?.creditsBilled).toBe(expected);
+      },
+    );
 
     it("keeps the session's ZDR policy when later execution omits the option and team flag", async () => {
       const req = {

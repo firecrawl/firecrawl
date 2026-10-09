@@ -24,7 +24,9 @@ vi.mock("../../../lib/logger", () => ({
 
 import {
   calculateBrowserSessionCredits,
+  browserCreditsPerHour,
   BROWSER_CREDITS_PER_HOUR,
+  BROWSER_ZDR_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
 } from "../../../lib/browser-billing";
 
@@ -54,6 +56,44 @@ describe("billing constants", () => {
 
   it("interact rate is 420 credits/hour (7 credits/min)", () => {
     expect(INTERACT_CREDITS_PER_HOUR).toBe(420);
+  });
+
+  it("ZDR surcharge is 120 credits/hour (2 credits/min)", () => {
+    expect(BROWSER_ZDR_CREDITS_PER_HOUR).toBe(120);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// browserCreditsPerHour
+// ---------------------------------------------------------------------------
+
+describe("browserCreditsPerHour", () => {
+  it("uses the base rates without ZDR", () => {
+    expect(browserCreditsPerHour(false, false)).toBe(120);
+    expect(browserCreditsPerHour(true, false)).toBe(420);
+  });
+
+  it("adds 2 credits/min to both rates with ZDR", () => {
+    expect(browserCreditsPerHour(false, true)).toBe(240);
+    expect(browserCreditsPerHour(true, true)).toBe(540);
+  });
+
+  it("bills ZDR code-only sessions at 4 credits/min (minimum 4)", () => {
+    const rate = browserCreditsPerHour(false, true);
+    expect(calculateBrowserSessionCredits(0, rate)).toBe(4);
+    expect(calculateBrowserSessionCredits(60_000, rate)).toBe(4);
+    expect(calculateBrowserSessionCredits(5 * 60_000, rate)).toBe(20);
+    expect(calculateBrowserSessionCredits(3_600_000, rate)).toBe(240);
+  });
+
+  it("bills ZDR prompt sessions at 9 credits/min (minimum 9)", () => {
+    const rate = browserCreditsPerHour(true, true);
+    expect(calculateBrowserSessionCredits(0, rate)).toBe(9);
+    expect(calculateBrowserSessionCredits(60_000, rate)).toBe(9);
+    expect(calculateBrowserSessionCredits(5 * 60_000, rate)).toBe(45);
+    expect(calculateBrowserSessionCredits(3_600_000, rate)).toBe(540);
+    // 91s / 3600s * 540 = 13.65 → ceil = 14
+    expect(calculateBrowserSessionCredits(91_000, rate)).toBe(14);
   });
 });
 
