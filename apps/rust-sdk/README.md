@@ -131,9 +131,9 @@ for f in formats.iter().filter(|f| f.available) {
 }
 ```
 
-### Scraping with Extract
+### Scraping with JSON extraction
 
-With Extract, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
+With the JSON format, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
 
 ```rust
 let json_schema = json!({
@@ -160,8 +160,8 @@ let json_schema = json!({
 });
 
 let llm_extraction_options = ScrapeOptions {
-    formats: vec![ ScrapeFormats::Extract ].into(),
-    extract: ExtractOptions {
+    formats: vec![ Format::Json ].into(),
+    json_options: JsonOptions {
         schema: json_schema.into(),
         ..Default::default()
     }.into(),
@@ -169,11 +169,11 @@ let llm_extraction_options = ScrapeOptions {
 };
 
 let llm_extraction_result = app
-    .scrape_url("https://news.ycombinator.com", llm_extraction_options)
+    .scrape("https://news.ycombinator.com", llm_extraction_options)
     .await;
 
 match llm_extraction_result {
-    Ok(data) => println!("LLM Extraction Result:\n{:#?}", data.extract.unwrap()),
+    Ok(data) => println!("LLM Extraction Result:\n{:#?}", data.json.unwrap()),
     Err(e) => eprintln!("LLM Extraction failed: {}", e),
 }
 ```
