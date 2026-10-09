@@ -330,6 +330,19 @@ jobs:
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
 
+      - name: Run monitor bounded progress regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          pnpm exec vitest run src/services/monitoring/runner.progress.test.ts --reporter=verbose
+        working-directory: apps/api
+        env:
+          MONITOR_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          DOTENV_CONFIG_PATH: /dev/null
+
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'
         run: |

@@ -6,8 +6,10 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
+  lte,
   ne,
   sql,
 } from "drizzle-orm";
@@ -908,18 +910,49 @@ export async function getMonitorCheckForUpdate(
 
 export async function listRunningMonitorChecks(
   limit: number = 100,
-): Promise<MonitorCheckRow[]> {
+  page?: {
+    after?: Pick<MonitorCheckRow, "created_at" | "id">;
+    through?: Pick<MonitorCheckRow, "created_at" | "id">;
+    newest?: boolean;
+  },
+): Promise<
+  Pick<MonitorCheckRow, "id" | "monitor_id" | "team_id" | "created_at">[]
+> {
+  const order = page?.newest ? desc : asc;
   const data = await run(
     () =>
       dbRr
-        .select()
+        .select({
+          id: schema.monitor_checks.id,
+          monitor_id: schema.monitor_checks.monitor_id,
+          team_id: schema.monitor_checks.team_id,
+          created_at: schema.monitor_checks.created_at,
+        })
         .from(schema.monitor_checks)
-        .where(eq(schema.monitor_checks.status, "running"))
-        .orderBy(asc(schema.monitor_checks.created_at))
+        .where(
+          and(
+            eq(schema.monitor_checks.status, "running"),
+            page?.through &&
+              lte(schema.monitor_checks.created_at, page.through.created_at),
+            page?.through &&
+              sql`(${schema.monitor_checks.created_at}, ${schema.monitor_checks.id}) <= (${page.through.created_at}::timestamptz, ${page.through.id}::uuid)`,
+            page?.after &&
+              gte(schema.monitor_checks.created_at, page.after.created_at),
+            page?.after &&
+              sql`(${schema.monitor_checks.created_at}, ${schema.monitor_checks.id}) > (${page.after.created_at}::timestamptz, ${page.after.id}::uuid)`,
+          ),
+        )
+        .orderBy(
+          order(schema.monitor_checks.created_at),
+          order(schema.monitor_checks.id),
+        )
         .limit(limit),
     "Failed to list running monitor checks",
   );
-  return data as MonitorCheckRow[];
+  return data as Pick<
+    MonitorCheckRow,
+    "id" | "monitor_id" | "team_id" | "created_at"
+  >[];
 }
 
 export async function listMonitorChecks(params: {
