@@ -147,7 +147,7 @@ Output:
 
 ### Scrape
 
-Get LLM-ready data from any website — markdown, JSON, screenshots, and more.
+Get LLM-ready context from any website — markdown, JSON, screenshots, and more.
 
 ```python
 from firecrawl import Firecrawl
@@ -473,7 +473,7 @@ Response:
 {
   "success": true,
   "links": [
-    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Turn websites into LLM-ready data"},
+    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Supercharge your AI agents with data from the web and beyond. Building the library for superintelligence. 🔥"},
     {"url": "https://firecrawl.dev/pricing", "title": "Pricing", "description": "Firecrawl pricing plans"},
     {"url": "https://firecrawl.dev/blog", "title": "Blog", "description": "Firecrawl blog"}
   ]
