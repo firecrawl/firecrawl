@@ -507,6 +507,21 @@ describe("direct monitor reservation ownership", () => {
     expect(sdk.check).not.toHaveBeenCalled();
   });
 
+  it("does not fail or release a winner when the admission reread is unavailable", async () => {
+    current.status = "running";
+    current.started_at = new Date().toISOString();
+    current.autumn_lock_id = "monitor_check-1";
+    current.billing_status = "reserved";
+    const failure = new Error("Primary read unavailable");
+    vi.mocked(store.getMonitorCheckForUpdate)
+      .mockResolvedValueOnce(structuredClone(current))
+      .mockRejectedValueOnce(failure);
+    const before = snapshot();
+    await expect(processMonitorCheckJob(job)).rejects.toThrow(failure);
+    expect(snapshot()).toEqual(before);
+    expect(sdk.check).not.toHaveBeenCalled();
+  });
+
   it.each(["queued", "running"] as const)(
     "does not reserve when a %s delivery completes during org resolution",
     async status => {
