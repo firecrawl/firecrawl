@@ -292,7 +292,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0");
       },
       scrapeTimeout,
     );
@@ -310,7 +311,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers");
       },
       scrapeTimeout,
     );
@@ -328,7 +330,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers");
       },
       scrapeTimeout,
     );
@@ -346,7 +349,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0.maxPages");
       },
       scrapeTimeout,
     );
@@ -364,7 +368,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0.maxPages");
       },
       scrapeTimeout,
     );
@@ -382,7 +387,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0.mode");
       },
       scrapeTimeout,
     );
@@ -400,7 +406,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0.pages");
       },
       scrapeTimeout,
     );
@@ -418,7 +425,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).not.toBe("Bad Request");
+        expect(raw.body.error).toContain("parsers.0");
       },
       scrapeTimeout,
     );
