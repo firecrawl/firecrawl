@@ -37,6 +37,7 @@ export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
   let job;
   try {
@@ -54,6 +55,8 @@ export async function lookupFeedbackJob(
   const storedEndpoint = endpointForRefundClass(job.refundClass);
   if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
 
+  if (requireOptions && (!job.keyless || job.zeroDataRetention)) return null;
+
   const feedbackWindowSec =
     endpoint === "search"
       ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
@@ -65,10 +68,12 @@ export async function lookupFeedbackJob(
     team_id: job.teamId,
     credits_cost: job.creditsBilled,
     created_at: new Date(
-      job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+      requireOptions
+        ? job.keyless!.createdAtMs
+        : job.feedbackDeadlineMs - feedbackWindowSec * 1000,
     ).toISOString(),
     is_successful: job.succeeded,
-    options: null,
+    options: requireOptions ? job.keyless!.options : null,
     feedback_deadline_ms: job.feedbackDeadlineMs,
     refund_class: job.refundClass,
     zero_data_retention: job.zeroDataRetention,

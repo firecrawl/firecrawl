@@ -1,0 +1,1462 @@
+import express from "express";
+import { EventEmitter } from "node:events";
+import request from "supertest";
+import { v7 as uuidv7 } from "uuid";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { readFeedbackJob } from "../../../lib/feedback-job-store";
+
+type CompactFeedbackJob = NonNullable<
+  Awaited<ReturnType<typeof readFeedbackJob>>
+>;
+
+const fixture = vi.hoisted(() => ({
+  pool: undefined as Pool | undefined,
+  refund: vi.fn(),
+  readFeedbackJob: vi.fn(),
+  realReadFeedbackJob: undefined as typeof readFeedbackJob | undefined,
+  bigtableRows: new Map<string, Buffer>(),
+  compactJobs: new Map<string, CompactFeedbackJob>(),
+  results: new Map<string, unknown>(),
+  readResult: vi.fn<(id: string) => Promise<unknown>>(),
+  db: undefined as ReturnType<typeof drizzle> | undefined,
+}));
+vi.mock("../../../db/connection", () => ({ db: fixture.db, dbRr: fixture.db }));
+vi.mock("../../../lib/spur", () => ({
+  isKeylessIpSuspicious: async (ip: string) => ip === "203.0.113.99",
+}));
+
+vi.mock("../../../lib/bigtable-client", () => ({
+  getBigtableTable: async () => ({
+    mutate: async (rows: any[]) => {
+      for (const row of rows)
+        fixture.bigtableRows.set(row.key.toString("hex"), row.data.f.v.value);
+    },
+    getRows: async ({ keys }: { keys: Buffer[] }) => [
+      [
+        ...keys.flatMap(key => {
+          const value = fixture.bigtableRows.get(key.toString("hex"));
+          return value ? [{ data: { f: { v: [{ value }] } } }] : [];
+        }),
+      ],
+    ],
+  }),
+}));
+vi.mock("../../../lib/feedback-job-store", async importOriginal => {
+  const original =
+    await importOriginal<typeof import("../../../lib/feedback-job-store")>();
+  fixture.realReadFeedbackJob = original.readFeedbackJob;
+  return { ...original, readFeedbackJob: fixture.readFeedbackJob };
+});
+vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
+  saveSearchToGCS: async (search: { id: string; results: unknown }) => {
+    fixture.results.set(search.id, structuredClone(search.results));
+  },
+  getJobFromGCS: fixture.readResult,
+}));
+vi.mock("../../../services/posthog", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../../services/posthog")>()),
+  trackFirstSurfaceUse: vi.fn(),
+}));
+vi.mock("../../../lib/zdr-queue", () => ({
+  enqueueZdrCleanupJob: vi.fn(),
+}));
+
+// Opt-in integration database. Each run owns a separate schema on a local server.
+const databaseUrl = process.env.KEYLESS_FEEDBACK_TEST_DATABASE_URL;
+const suite = databaseUrl ? describe : describe.skip;
+suite("keyless feedback HTTP and persistence", () => {
+  const schemaName = `feedback_test_${uuidv7().replaceAll("-", "")}`;
+  let app: express.Express;
+  let api: typeof import("./keyless-invitation");
+  let identity: typeof import("../../../lib/keyless");
+  let redis: typeof import("../../../services/rate-limiter").redisRateLimitClient;
+  let logging: typeof import("../../../services/logging/log_job");
+  let table: typeof import("../../../db/schema").search_feedback;
+  let config: typeof import("../../../config").config;
+  const ip = "203.0.113.71";
+  const secondaryIps = ["203.0.113.72", "203.0.113.73"];
+  const authenticatedTeam = uuidv7();
+  const orgId = uuidv7();
+  const authenticatedJob = (
+    endpoint: "search" | "scrape" | "parse",
+    succeeded = true,
+    creditsBilled = 8,
+  ) => {
+    const jobId = uuidv7();
+    fixture.compactJobs.set(jobId, {
+      requestId: jobId,
+      teamId: authenticatedTeam,
+      refundClass: endpoint === "scrape" ? "scrape_basic" : endpoint,
+      feedbackDeadlineMs:
+        Date.now() +
+        (endpoint === "search"
+          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+          : config.FEEDBACK_MAX_AGE_SEC) *
+          1000,
+      succeeded,
+      creditsBilled,
+      zeroDataRetention: false,
+    });
+    return { jobId };
+  };
+  const team = () => identity.keylessTeamUuid(identity.keylessTeamId(ip))!;
+  const attemptKeys = () =>
+    [ip, ...secondaryIps].flatMap(clientIp => {
+      const teamId = identity.keylessTeamUuid(identity.keylessTeamId(clientIp));
+      return [
+        `keyless_feedback_attempts:${teamId}`,
+        `keyless_feedback_attempts_day:${teamId}`,
+      ];
+    });
+  const body = (endpoint: "search" | "scrape" | "parse", jobId: string) => ({
+    endpoint,
+    jobId,
+    ...(endpoint === "parse" ? { docClass: "unknown" } : {}),
+    rating: "partial",
+    task: "Read the API retry documentation",
+    assessment: "The output answered part of the retry question.",
+    observations:
+      endpoint === "search"
+        ? [
+            {
+              kind: "useful",
+              basis: "output",
+              source: "web",
+              position: 1,
+              detail: "The reference identifies the supported retry intervals.",
+            },
+          ]
+        : [
+            {
+              kind: "correct",
+              basis: "output",
+              detail: "The output includes the documented retry intervals.",
+            },
+          ],
+  });
+  const submit = (payload: object, clientIp = ip) =>
+    request(app)
+      .post("/v2/feedback")
+      .set("x-firecrawl-keyless-secret", "feedback-integration-secret")
+      .set("x-firecrawl-keyless-ip", clientIp)
+      .send(payload);
+  async function persistJob(
+    endpoint: "search" | "scrape" | "parse",
+    jobId: string,
+    options: Record<string, unknown> = {},
+    success = true,
+    clientIp = ip,
+  ) {
+    const owner = identity.keylessTeamId(clientIp);
+    const zeroDataRetention =
+      options.zeroDataRetention === true ||
+      (Array.isArray(options.enterprise) && options.enterprise.includes("zdr"));
+    await logging.logRequest({
+      id: jobId,
+      kind: endpoint,
+      api_version: "v2",
+      team_id: owner,
+      origin: "api",
+      target_hint: "https://example.com/retry",
+      zeroDataRetention,
+    });
+    if (endpoint === "search") {
+      await logging.logSearch({
+        id: jobId,
+        request_id: jobId,
+        team_id: owner,
+        query: "retry behavior",
+        options,
+        is_successful: success,
+        time_taken: 0.1,
+        credits_cost: 0,
+        num_results: 1,
+        zeroDataRetention,
+        results: {
+          web: [
+            {
+              url: "https://example.com/retry",
+              category: "developer",
+              title: "Retries",
+            },
+          ],
+          news: [],
+        },
+      });
+    } else {
+      await logging.logScrape({
+        id: jobId,
+        request_id: jobId,
+        team_id: owner,
+        url: "https://example.com/retry",
+        options: options as any,
+        is_successful: success,
+        time_taken: 0.1,
+        credits_cost: 0,
+        skipNuq: true,
+        zeroDataRetention,
+        is_parse: endpoint === "parse",
+      });
+    }
+  }
+  async function job(
+    endpoint: "search" | "scrape" | "parse",
+    success = true,
+    clientIp = ip,
+    options: Record<string, unknown> = {},
+  ) {
+    const jobId = uuidv7();
+    const savedOptions = {
+      ...options,
+      query: "retry behavior",
+      privateFixture: "job-private-content",
+    };
+    await persistJob(endpoint, jobId, savedOptions, success, clientIp);
+    const response = new EventEmitter();
+    const metadata = await api.keylessFeedbackMetadata(
+      {
+        res: response,
+        auth: { team_id: identity.keylessTeamId(clientIp) },
+        body: savedOptions,
+      } as any,
+      endpoint,
+      jobId,
+    );
+    expect(metadata.jobId).toBe(jobId);
+    response.emit("finish");
+    return { jobId, metadata };
+  }
+  beforeAll(async () => {
+    if (!["localhost", "127.0.0.1"].includes(new URL(databaseUrl!).hostname))
+      throw new Error("Integration database must be local.");
+    fixture.pool = new Pool({
+      connectionString: databaseUrl,
+      options: `-c search_path=${schemaName} -c timezone=America/Los_Angeles`,
+    });
+    await fixture.pool.query(`CREATE SCHEMA ${schemaName}`);
+    fixture.db = drizzle({ client: fixture.pool });
+    ({ config } = await import("../../../config.js"));
+    config.USE_DB_AUTHENTICATION = true;
+    config.PUBSUB_CREDENTIALS = undefined;
+    config.BIGTABLE_FEEDBACK_JOBS_TABLE = "feedback-test";
+    config.BIGTABLE_JOB_ACCESS_TABLE = undefined;
+    config.BIGTABLE_SCRAPE_STATE_TABLE = undefined;
+    config.KEYLESS_FEEDBACK_ENABLED = true;
+    config.FEEDBACK_REFUND_ENABLED = true;
+    config.KEYLESS_PROXY_SECRET = "feedback-integration-secret";
+    config.KEYLESS_REQUESTS_PER_DAY = 100;
+    config.KEYLESS_CREDITS_PER_DAY = 100;
+    identity = await import("../../../lib/keyless.js");
+    ({ redisRateLimitClient: redis } = await import(
+      "../../../services/rate-limiter.js"
+    ));
+    ({ search_feedback: table } = await import("../../../db/schema/index.js"));
+    api = await import("./keyless-invitation.js");
+    logging = await import("../../../services/logging/log_job.js");
+    await vi.waitFor(() => expect(redis.status).toBe("ready"));
+    await fixture.pool.query(`CREATE TABLE search_feedback (
+      id uuid PRIMARY KEY, search_id uuid CONSTRAINT search_feedback_search_id_unique UNIQUE,
+      endpoint text NOT NULL DEFAULT 'search', job_id uuid,
+      request_id uuid, api_version text DEFAULT 'v2', team_id uuid NOT NULL, api_key_id bigint,
+      overall_rating text NOT NULL, issue_types text[] NOT NULL DEFAULT '{}', tags text[] NOT NULL DEFAULT '{}',
+      comment text, valuable_sources jsonb NOT NULL DEFAULT '[]', missing_content jsonb NOT NULL DEFAULT '[]',
+      query_suggestions text, metadata jsonb NOT NULL DEFAULT '{}', job_status text,
+      credits_billed integer NOT NULL DEFAULT 0, integration text, origin text,
+      credits_refunded integer NOT NULL DEFAULT 0, refund_policy jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT search_feedback_job_unique UNIQUE(team_id, endpoint, job_id)
+    )`);
+    await fixture.pool.query(`CREATE TABLE alexandria_feedback (
+      id uuid PRIMARY KEY, team_id uuid NOT NULL, api_key_id bigint, api_version text NOT NULL DEFAULT 'v2',
+      rating text NOT NULL, requested_url text NOT NULL, requested_functionality text NOT NULL,
+      requested_host text GENERATED ALWAYS AS (lower(substring(requested_url from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))) STORED,
+      rationale text NOT NULL, objective text, origin text, integration text, schema_version integer NOT NULL DEFAULT 2,
+      credits_refunded integer NOT NULL DEFAULT 0, refund_policy jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    for (const name of ["providers", "capabilities"]) {
+      await fixture.pool.query(`CREATE TABLE alexandria_feedback_${name} (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        feedback_id uuid NOT NULL REFERENCES alexandria_feedback (id) ON DELETE CASCADE,
+        team_id uuid NOT NULL, position smallint NOT NULL, name text NOT NULL, provider text,
+        issue text NOT NULL, why text NOT NULL, requested_functionality text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`);
+    }
+    const { authMiddleware } = await import("../../../routes/shared.js");
+    const { RateLimiterMode } = await import("../../../types.js");
+    const { feedbackController } = await import("./controller.js");
+    const { searchFeedbackController } = await import("../search-feedback.js");
+    const { autumnService } = await import(
+      "../../../services/autumn/autumn.service.js"
+    );
+    vi.spyOn(autumnService, "refundCredits").mockImplementation(fixture.refund);
+    app = express();
+    app.use(express.json());
+    const authenticated: express.RequestHandler = (req, _res, next) => {
+      Object.assign(req, {
+        auth: { team_id: authenticatedTeam },
+        acuc: { org_id: orgId, flags: {} },
+      });
+      next();
+    };
+    app.post(
+      "/test/authenticated/feedback",
+      authenticated,
+      feedbackController as any,
+    );
+    app.post(
+      "/test/authenticated/search/:jobId/feedback",
+      authenticated,
+      searchFeedbackController as any,
+    );
+    app.post("/test/jobs/:endpoint/:jobId", async (req, res) => {
+      await persistJob(
+        req.params.endpoint as "search" | "scrape" | "parse",
+        req.params.jobId,
+        req.body,
+      );
+      const metadata = await api.keylessFeedbackMetadata(
+        Object.assign(req, {
+          auth: { team_id: identity.keylessTeamId(ip) },
+        }) as any,
+        req.params.endpoint as "search" | "scrape" | "parse",
+        req.params.jobId,
+      );
+      res.json({ success: true, metadata });
+    });
+    app.post(
+      "/v2/feedback",
+      authMiddleware(RateLimiterMode.Account, {
+        allowKeyless: true,
+        keylessFeedback: true,
+      }),
+      feedbackController as any,
+    );
+  });
+  beforeEach(async () => {
+    fixture.refund.mockReset().mockResolvedValue(undefined);
+    fixture.compactJobs.clear();
+    fixture.bigtableRows.clear();
+    fixture.readFeedbackJob
+      .mockReset()
+      .mockImplementation(
+        async id =>
+          fixture.compactJobs.get(id) ?? fixture.realReadFeedbackJob!(id),
+      );
+    fixture.results.clear();
+    fixture.readResult
+      .mockReset()
+      .mockImplementation(async id => fixture.results.get(id) ?? null);
+    await fixture.pool!.query(
+      "TRUNCATE search_feedback, alexandria_feedback CASCADE",
+    );
+    await redis.del(...attemptKeys());
+  });
+  afterAll(async () => {
+    if (redis) {
+      await redis.del(
+        `keyless_requests:${ip}`,
+        `keyless_credits:${ip}`,
+        ...attemptKeys(),
+        `alexandria:activity:${authenticatedTeam}`,
+      );
+    }
+    if (fixture.pool) {
+      await fixture.pool.query(`DROP SCHEMA ${schemaName} CASCADE`);
+      await fixture.pool.end();
+    }
+  });
+
+  it.each(["search", "scrape", "parse"] as const)(
+    "accepts %s feedback and later distinct jobs from one caller with operation quota exhausted",
+    async endpoint => {
+      await redis.set(`keyless_requests:${ip}`, "100000");
+      await redis.set(`keyless_credits:${ip}`, "100000");
+      const { jobId, metadata } = await job(endpoint);
+      expect(metadata.feedback).toBeDefined();
+      const accepted = await submit({
+        ...body(endpoint, jobId),
+        origin: "mcp",
+        integration: "cli",
+      });
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.creditsRefunded).toBe(0);
+      expect(fixture.refund).not.toHaveBeenCalled();
+      const retry = await submit({ ...body(endpoint, jobId), origin: "api" });
+      expect(retry.status).toBe(200);
+      expect(retry.body.alreadySubmitted).toBe(true);
+      expect(retry.body.feedbackId).toBe(accepted.body.feedbackId);
+      const feedbackIds = new Set([accepted.body.feedbackId]);
+      for (const category of ["search", "scrape", "parse"] as const) {
+        const next = await job(category);
+        expect(next.metadata.feedback).toBeDefined();
+        const later = await submit({
+          ...body(category, next.jobId),
+          origin: "cli",
+        });
+        expect(later.status).toBe(200);
+        expect(later.body.alreadySubmitted).toBeUndefined();
+        feedbackIds.add(later.body.feedbackId);
+      }
+      expect(feedbackIds.size).toBe(4);
+      expect(await redis.get(`keyless_requests:${ip}`)).toBe("100000");
+      expect(await redis.get(`keyless_credits:${ip}`)).toBe("100000");
+      const rows = await fixture.db!.select().from(table);
+      expect(rows).toHaveLength(4);
+      const first = rows.find(row => row.job_id === jobId)!;
+      expect(first.metadata).toMatchObject({
+        schemaVersion: 1,
+        answers: { origin: "mcp", integration: "cli" },
+      });
+      expect(first.request_id).toBe(jobId);
+      expect(first.metadata).not.toHaveProperty("context");
+      expect(JSON.stringify(rows)).not.toContain("job-private-content");
+    },
+  );
+  describe.each([
+    ["search", false],
+    ["search", true],
+    ["scrape", false],
+    ["parse", false],
+  ] as const)(
+    "%s feedback metadata size (unverified: %s)",
+    (endpoint, unverified) => {
+      it.each(["x", "é", '"'])(
+        "enforces 8192 serialized UTF-8 bytes with %j text without recording oversized feedback",
+        async character => {
+          const { jobId } = await job(endpoint);
+          if (unverified) fixture.results.delete(jobId);
+          const base = body(endpoint, jobId);
+          const characterBytes =
+            Buffer.byteLength(JSON.stringify(character)) - 2;
+          const metadata = {
+            ...(unverified ? { unverified: true } : {}),
+            schemaVersion: 1,
+            answers: {
+              ...base,
+              origin: "api",
+              task: "x".repeat(2000),
+              assessment: "x".repeat(2000),
+              observations: Array.from({ length: 5 }, () => ({
+                ...base.observations[0],
+                detail: character.repeat(600 / characterBytes),
+              })),
+            },
+          };
+          const padding = 8192 - Buffer.byteLength(JSON.stringify(metadata));
+          expect(padding).toBeGreaterThanOrEqual(0);
+          metadata.answers.observations[0].detail += "x".repeat(padding);
+          expect(
+            metadata.answers.observations[0].detail.length,
+          ).toBeLessThanOrEqual(2000);
+          expect(Buffer.byteLength(JSON.stringify(metadata))).toBe(8192);
+
+          // Defaults are added by the server and count toward the saved limit.
+          const payload = {
+            ...metadata.answers,
+            origin: undefined,
+            observations: metadata.answers.observations.map(item => ({
+              ...item,
+              source: undefined,
+            })),
+          };
+          const oversized = structuredClone(payload);
+          oversized.observations[0].detail += "x";
+          const rejected = await submit(oversized);
+          expect(rejected.status).toBe(400);
+          expect(rejected.body).toMatchObject({
+            success: false,
+            feedbackErrorCode: "INVALID_BODY",
+            error: expect.stringContaining("8192 bytes"),
+          });
+          expect(await fixture.db!.select().from(table)).toHaveLength(0);
+
+          expect((await submit(payload)).status).toBe(200);
+          const rows = await fixture.db!.select().from(table);
+          expect(rows).toHaveLength(1);
+          expect(rows[0].metadata).toEqual(metadata);
+          expect(Buffer.byteLength(JSON.stringify(rows[0].metadata))).toBe(
+            8192,
+          );
+          expect(fixture.refund).not.toHaveBeenCalled();
+        },
+      );
+    },
+  );
+
+  it("excludes validated Search lockdown jobs from feedback and invitations", async () => {
+    const { searchRequestSchema } = await import("../types.js");
+    const { jobId, metadata } = await job(
+      "search",
+      true,
+      ip,
+      searchRequestSchema.parse({
+        query: "retry reference",
+        scrapeOptions: { formats: ["markdown"], lockdown: true },
+      }),
+    );
+    expect(metadata).toEqual({ jobId });
+    expect((await submit(body("search", jobId))).status).toBe(404);
+    expect(fixture.readResult).not.toHaveBeenCalled();
+    const eligible = await job("search");
+    expect((await submit(body("search", eligible.jobId))).status).toBe(200);
+  });
+
+  it("rejects unsupported nested Search zeroDataRetention before job execution", async () => {
+    const { searchRequestSchema } = await import("../types.js");
+    expect(
+      searchRequestSchema.safeParse({
+        query: "retry reference",
+        scrapeOptions: { formats: ["markdown"], zeroDataRetention: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("ignores caller invitation opt-out headers for keyless jobs", async () => {
+    const jobId = uuidv7();
+    const response = await request(app)
+      .post(`/test/jobs/parse/${jobId}`)
+      .set("x-firecrawl-no-feedback", "1")
+      .send({});
+    expect(response.body.metadata.jobId).toBe(jobId);
+    expect(response.body.metadata.feedback).toBeDefined();
+  });
+
+  it("suppresses invitations and rejects submissions when disabled", async () => {
+    const { jobId } = await job("scrape");
+    config.KEYLESS_FEEDBACK_ENABLED = false;
+    try {
+      const metadata = await api.keylessFeedbackMetadata(
+        { auth: { team_id: identity.keylessTeamId(ip) }, body: {} } as any,
+        "scrape",
+        uuidv7(),
+      );
+      expect(metadata).toEqual({ jobId: expect.any(String) });
+      expect((await submit(body("scrape", jobId))).status).toBe(503);
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    } finally {
+      config.KEYLESS_FEEDBACK_ENABLED = true;
+    }
+  });
+
+  it("keeps one record per job for concurrent retries while other jobs succeed", async () => {
+    const jobs = await Promise.all(
+      (["search", "scrape", "parse"] as const).map(async endpoint => ({
+        endpoint,
+        ...(await job(endpoint)),
+      })),
+    );
+    // Prove keyless idempotency without relying on either database constraint.
+    // Restore both before the authenticated compatibility cases run.
+    await fixture.pool!.query(`ALTER TABLE search_feedback
+      DROP CONSTRAINT search_feedback_search_id_unique,
+      DROP CONSTRAINT search_feedback_job_unique`);
+    try {
+      const attempts = jobs.flatMap(({ endpoint, jobId }) =>
+        ["api", "mcp", "cli"].map(origin => ({ jobId, endpoint, origin })),
+      );
+      const responses = await Promise.all(
+        attempts.map(({ endpoint, jobId, origin }) =>
+          submit({ ...body(endpoint, jobId), origin }),
+        ),
+      );
+      expect(responses.every(response => response.status === 200)).toBe(true);
+      const idsByJob = new Map<string, Set<string>>();
+      responses.forEach((response, index) => {
+        const ids = idsByJob.get(attempts[index].jobId) ?? new Set();
+        idsByJob.set(attempts[index].jobId, ids.add(response.body.feedbackId));
+      });
+      expect([...idsByJob.values()].map(ids => ids.size)).toEqual([1, 1, 1]);
+      expect(
+        new Set([...idsByJob.values()].flatMap(ids => [...ids])).size,
+      ).toBe(3);
+      expect(
+        responses.filter(response => !response.body.alreadySubmitted),
+      ).toHaveLength(3);
+      const rows = await fixture.db!.select().from(table);
+      expect(rows.map(row => row.id).sort()).toEqual(
+        [...idsByJob.values()].flatMap(ids => [...ids]).sort(),
+      );
+    } finally {
+      await fixture.pool!.query(`ALTER TABLE search_feedback
+        ADD CONSTRAINT search_feedback_search_id_unique UNIQUE(search_id),
+        ADD CONSTRAINT search_feedback_job_unique UNIQUE(team_id, endpoint, job_id)`);
+    }
+  });
+  it("rejects another identity, wrong category, nonexistent positions and malformed evidence without recording feedback", async () => {
+    const { jobId } = await job("search");
+    expect((await submit(body("search", jobId), secondaryIps[0])).status).toBe(
+      404,
+    );
+    expect((await submit(body("parse", jobId))).status).toBe(404);
+    expect(fixture.readResult).not.toHaveBeenCalled();
+    const invalid = body("search", jobId);
+    (invalid.observations[0] as any).source = "news";
+    expect((await submit(invalid)).status).toBe(400);
+    expect(
+      (await submit({ endpoint: "search", jobId, rating: "good" })).status,
+    ).toBe(400);
+    expect((await submit(body("search", jobId))).status).toBe(200);
+  });
+  it("ignores untrusted identity headers", async () => {
+    const { jobId } = await job("parse");
+    const result = await request(app)
+      .post("/v2/feedback")
+      .set("x-firecrawl-keyless-ip", ip)
+      .set("x-firecrawl-keyless-secret", "incorrect-secret")
+      .send(body("parse", jobId));
+    expect(result.status).toBe(404);
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it.each(["search", "scrape", "parse"] as const)(
+    "returns the same record for concurrent %s retries",
+    async endpoint => {
+      const { jobId } = await job(endpoint);
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, () => submit(body(endpoint, jobId))),
+      );
+      expect(responses.map(response => response.status)).toEqual(
+        Array(6).fill(200),
+      );
+      expect(
+        new Set(responses.map(response => response.body.feedbackId)).size,
+      ).toBe(1);
+      expect(await fixture.db!.select().from(table)).toHaveLength(1);
+    },
+  );
+  it("invites every eligible job after earlier submissions", async () => {
+    for (const endpoint of ["search", "scrape", "parse"] as const) {
+      const { metadata } = await job(endpoint);
+      expect(metadata.feedback).toMatchObject({
+        endpoint,
+        docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
+      });
+    }
+    const { jobId } = await job("scrape");
+    expect((await submit(body("scrape", jobId))).status).toBe(200);
+    expect((await job("parse")).metadata.feedback).toBeDefined();
+  });
+
+  it.each(["search", "scrape", "parse"] as const)(
+    "accepts failure observations only for failed %s jobs, and only failure observations for them",
+    async endpoint => {
+      const observation = {
+        kind: "failure",
+        reason: "proxy_error",
+        basis: "output",
+        detail: "The operation returned an explicit proxy error.",
+      };
+      const completed = await job(endpoint);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, completed.jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(400);
+      const { jobId, metadata } = await job(endpoint, false);
+      expect(metadata.feedback).toBeDefined();
+      const mixed = await submit({
+        ...body(endpoint, jobId),
+        observations: [observation, body(endpoint, jobId).observations[0]],
+      });
+      expect(mixed.status).toBe(400);
+      expect(mixed.body.error).toBe(
+        "Failed jobs accept only failure observations.",
+      );
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.job_status).toBe("failed");
+      expect(row.metadata).toMatchObject({
+        answers: { observations: [observation] },
+      });
+      expect(fixture.readResult).not.toHaveBeenCalled();
+    },
+  );
+
+  it("requires an explicit group for multi-source Search and persists valid reasons and verticals", async () => {
+    const { jobId } = await job("search", true, ip, {
+      sources: [{ type: "web" }, { type: "news" }],
+    });
+    const item = {
+      kind: "irrelevant",
+      position: 1,
+      reason: "off_topic",
+      vertical: "developer",
+      basis: "output",
+      detail: "The delivered result covers a different API.",
+    };
+    expect(
+      (await submit({ ...body("search", jobId), observations: [item] })).status,
+    ).toBe(400);
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [{ ...item, source: "news" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [
+            { ...item, source: "web" },
+            {
+              kind: "missing",
+              vertical: "research",
+              basis: "expectation",
+              detail: "The task needed a study of retry performance.",
+            },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      answers: {
+        observations: [expect.objectContaining(item), expect.anything()],
+      },
+    });
+  });
+  it("defaults omitted Search source to web and validates positions", async () => {
+    const { jobId } = await job("search");
+    const item = {
+      kind: "useful",
+      position: 1,
+      basis: "output",
+      detail: "The reference documents supported retry intervals.",
+    };
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [{ ...item, position: 2 }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await submit({ ...body("search", jobId), observations: [item] })).status,
+    ).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      answers: { observations: [{ source: "web" }] },
+    });
+  });
+  it.each(["images", "news"])(
+    "keeps single-source %s positions in their delivered group",
+    async source => {
+      const { jobId } = await job("search", true, ip, { sources: [source] });
+      fixture.results.set(jobId, {
+        [source]: [{ title: "A result without a URL" }],
+      });
+      const item = {
+        kind: "useful",
+        position: 1,
+        basis: "output",
+        detail: "The first delivered result answered the retry question.",
+      };
+      expect(
+        (await submit({ ...body("search", jobId), observations: [item] }))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body("search", jobId),
+            observations: [{ ...item, source }],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        answers: { observations: [{ source, position: 1 }] },
+      });
+    },
+  );
+  it.each(["scrape", "parse"] as const)(
+    "validates %s output formats against job options, including object formats",
+    async endpoint => {
+      const { jobId } = await job(endpoint, true, ip, {
+        padding: "x".repeat(20000),
+        formats: ["markdown", { type: "json", schema: { type: "object" } }],
+      });
+      const item = {
+        kind: "incorrect",
+        reason: "missing_fields",
+        basis: "output",
+        detail: "The returned object omits the documented retry interval.",
+      };
+      for (const format of [undefined, "html"])
+        expect(
+          (
+            await submit({
+              ...body(endpoint, jobId),
+              observations: [{ ...item, format }],
+            })
+          ).status,
+        ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [
+              {
+                ...item,
+                basis: "source_comparison",
+                comparison: {
+                  reference: "Source retry section",
+                  detail:
+                    "The source contains the interval missing from output.",
+                },
+              },
+            ],
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [
+              { ...item, format: "json" },
+              { ...item, basis: "expectation" },
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        answers: {
+          observations: [
+            expect.objectContaining({ ...item, format: "json" }),
+            expect.anything(),
+          ],
+        },
+      });
+      if (endpoint === "parse")
+        expect(row.metadata).toMatchObject({
+          answers: { docClass: "unknown" },
+        });
+    },
+  );
+  it("accepts any requested format type and does not require format for single-format output", async () => {
+    const { jobId } = await job("scrape", true, ip, {
+      formats: [{ type: "links" }],
+    });
+    const item = {
+      kind: "incomplete",
+      reason: "pagination",
+      basis: "output",
+      detail: "The output only includes links from the first page.",
+    };
+    expect(
+      (
+        await submit({
+          ...body("scrape", jobId),
+          observations: [item, { ...item, format: "links" }],
+        })
+      ).status,
+    ).toBe(200);
+  });
+  it("stores replacement sources for an irrelevant Search result", async () => {
+    const { jobId } = await job("search");
+    const observation = {
+      kind: "irrelevant",
+      position: 1,
+      reason: "aggregator_over_official",
+      knownSources: ["https://example.com/official"],
+      basis: "output",
+      detail: "The official reference should appear before the aggregator.",
+    };
+    expect(
+      (await submit({ ...body("search", jobId), observations: [observation] }))
+        .status,
+    ).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      answers: { observations: [{ ...observation, source: "web" }] },
+    });
+  });
+  it.each([
+    ["scrape", "markdown", "hallucinated", false],
+    ["scrape", "summary", "missing_fields", false],
+    ["scrape", "json", "missing_fields", true],
+    ["scrape", "deterministicJson", "missing_fields", true],
+    ["scrape", "json", "hallucinated", true],
+    ["scrape", "deterministicJson", "hallucinated", true],
+    ["scrape", "summary", "hallucinated", true],
+    ["scrape", "question", "hallucinated", true],
+    ["scrape", "highlights", "hallucinated", true],
+    [
+      "scrape",
+      { type: "changeTracking", modes: ["json"] },
+      "hallucinated",
+      true,
+    ],
+    [
+      "scrape",
+      { type: "changeTracking", modes: ["git-diff"] },
+      "hallucinated",
+      false,
+    ],
+    ["scrape", "markdown", "wrong", true],
+    ["parse", "markdown", "wrong", false],
+    ["parse", "json", "missing_fields", true],
+    ["parse", "summary", "hallucinated", true],
+  ] as const)(
+    "checks %s incorrect reason compatibility: %j / %s",
+    async (endpoint, format, reason, accepted) => {
+      const { jobId } = await job(endpoint, true, ip, {
+        padding: "x".repeat(20000),
+        formats: [format],
+      });
+      const observation = {
+        kind: "incorrect",
+        reason,
+        basis: "output",
+        detail: "The returned output does not match the expected information.",
+      };
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(accepted ? 200 : 400);
+    },
+  );
+  it("does not load or copy Parse document content", async () => {
+    const { jobId } = await job("parse");
+    fixture.results.set(jobId, { markdown: "document-private-content" });
+    expect((await submit(body("parse", jobId))).status).toBe(200);
+    expect(fixture.readResult).not.toHaveBeenCalled();
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).not.toHaveProperty("context");
+    expect(JSON.stringify(row.metadata)).not.toContain(
+      "document-private-content",
+    );
+  });
+
+  it("throttles malformed attempts separately and rejects blocked or invalid identities", async () => {
+    for (let i = 0; i < 30; i++) expect((await submit({})).status).toBe(400);
+    expect((await submit({})).status).toBe(429);
+    const invitation = await job("scrape");
+    expect(invitation.metadata.feedback).toBeDefined();
+    expect((await submit({}, "203.0.113.99")).status).toBe(403);
+    expect((await submit({}, "not-an-ip")).status).toBe(401);
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("caps sustained feedback attempts without spending the job quota", async () => {
+    const dailyKey = `keyless_feedback_attempts_day:${team()}`;
+    const requestKey = `keyless_requests:${ip}`;
+    const requestsBefore = await redis.get(requestKey);
+    await redis.set(dailyKey, "299", "EX", 86400);
+    expect((await submit({})).status).toBe(400);
+    const blocked = await submit({});
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.retry_after_seconds).toBeGreaterThan(60);
+    expect(await redis.get(requestKey)).toBe(requestsBefore);
+  });
+  it("records accepted, duplicate and rejected outcomes without feedback content", async () => {
+    const { logger } = await import("../../../lib/logger.js");
+    const info = vi.spyOn(logger, "info");
+    try {
+      const { jobId } = await job("scrape");
+      const payload = body("scrape", jobId);
+      const accepted = await submit(payload);
+      await submit(payload);
+      await submit({ ...payload, observations: [] });
+      for (let i = 0; i < 27; i++) await submit({});
+      expect((await submit(payload)).status).toBe(429);
+      const events = info.mock.calls
+        .map(
+          call => (call as unknown[])[1] as Record<string, unknown> | undefined,
+        )
+        .filter(
+          fields => fields?.canonicalLog === "keyless/feedback_submission",
+        );
+      const reference = { identity: team(), endpoint: "scrape", jobId };
+      expect(events[0]).toMatchObject({
+        ...reference,
+        outcome: "accepted",
+        status: 200,
+        feedbackId: accepted.body.feedbackId,
+      });
+      expect(events[1]).toMatchObject({
+        ...reference,
+        outcome: "duplicate",
+        feedbackId: accepted.body.feedbackId,
+      });
+      expect(events[2]).toMatchObject({
+        ...reference,
+        outcome: "rejected",
+        status: 400,
+        feedbackErrorCode: "INVALID_BODY",
+      });
+      expect(events.at(-1)).toMatchObject({
+        ...reference,
+        outcome: "rejected",
+        status: 429,
+        reason: "attempt_limit",
+      });
+      const logged = JSON.stringify(events);
+      for (const text of [
+        payload.task,
+        payload.assessment,
+        payload.observations[0].detail,
+      ])
+        expect(logged).not.toContain(text);
+    } finally {
+      info.mockRestore();
+    }
+  });
+  it("dispatches keyless, authenticated Alexandria and authenticated job feedback through one controller", async () => {
+    const keyless = await job("scrape");
+    const owned = authenticatedJob("scrape");
+    const { recordAlexandriaActivity } = await import(
+      "../../../lib/alexandria-activity.js"
+    );
+    await recordAlexandriaActivity(authenticatedTeam);
+    fixture.refund.mockResolvedValue(true);
+    const alexandria = {
+      endpoint: "alexandria",
+      rating: "partial",
+      requestedWebsite: {
+        url: "https://example.com/retry",
+        requestedFunctionality: "Return the documented retry intervals.",
+      },
+      rationale: "No catalogued provider returned the retry intervals.",
+    };
+    const [keylessResponse, alexandriaResponse, jobResponse] =
+      await Promise.all([
+        submit(body("scrape", keyless.jobId)),
+        request(app).post("/test/authenticated/feedback").send(alexandria),
+        request(app).post("/test/authenticated/feedback").send({
+          endpoint: "scrape",
+          jobId: owned.jobId,
+          rating: "bad",
+          note: "The output omitted the requested retry intervals.",
+        }),
+      ]);
+    expect(keylessResponse.status).toBe(200);
+    expect(keylessResponse.body.creditsRefunded).toBe(0);
+    expect(alexandriaResponse.status).toBe(200);
+    expect(alexandriaResponse.body.creditsRefunded).toBe(1);
+    expect(jobResponse.status).toBe(200);
+    expect(jobResponse.body.creditsRefunded).toBe(1);
+    expect(fixture.refund).toHaveBeenCalledTimes(2);
+    const keylessAlexandria = await submit(alexandria);
+    expect(keylessAlexandria.status).toBe(403);
+    expect(keylessAlexandria.body.feedbackErrorCode).toBe(
+      "PREVIEW_TEAM_NOT_ALLOWED",
+    );
+    const rows = await fixture.db!.select().from(table);
+    expect(
+      rows.map(row => `${row.team_id}:${row.endpoint}:${row.job_id}`).sort(),
+    ).toEqual(
+      [
+        `${team()}:scrape:${keyless.jobId}`,
+        `${authenticatedTeam}:scrape:${owned.jobId}`,
+      ].sort(),
+    );
+    const sessions = await fixture.pool!.query(
+      "SELECT id, team_id, rating FROM alexandria_feedback",
+    );
+    expect(sessions.rows).toEqual([
+      {
+        id: alexandriaResponse.body.feedbackId,
+        team_id: authenticatedTeam,
+        rating: "partial",
+      },
+    ]);
+  });
+  it("uses the same identity for IPv4-mapped addresses", async () => {
+    const { jobId } = await job("parse");
+    expect((await submit(body("parse", jobId), `::ffff:${ip}`)).status).toBe(
+      200,
+    );
+    expect((await submit(body("parse", jobId))).body.alreadySubmitted).toBe(
+      true,
+    );
+  });
+  it("records feedback for different identities independently", async () => {
+    const otherIp = secondaryIps[1];
+    const first = await job("search");
+    expect((await submit(body("search", first.jobId))).status).toBe(200);
+    const second = await job("search", true, otherIp);
+    expect(second.metadata.feedback).toBeDefined();
+    expect((await submit(body("search", second.jobId), otherIp)).status).toBe(
+      200,
+    );
+    expect(await fixture.db!.select().from(table)).toHaveLength(2);
+  });
+  it("accepts a retry after persistence fails", async () => {
+    const { jobId } = await job("parse");
+    await fixture.pool!.query(
+      "ALTER TABLE search_feedback ADD CONSTRAINT reject_fixture CHECK (endpoint <> 'parse')",
+    );
+    expect((await submit(body("parse", jobId))).status).toBe(503);
+    await fixture.pool!.query(
+      "ALTER TABLE search_feedback DROP CONSTRAINT reject_fixture",
+    );
+    expect((await submit(body("parse", jobId))).status).toBe(200);
+  });
+  it("uses the persisted job timestamp for the feedback window", async () => {
+    const { jobId } = await job("scrape");
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() - 86401000 },
+    });
+    expect((await submit(body("scrape", jobId))).body.feedbackErrorCode).toBe(
+      "FEEDBACK_WINDOW_EXPIRED",
+    );
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("does not invite feedback when the Bigtable job was not saved", async () => {
+    fixture.readFeedbackJob.mockResolvedValue(null);
+    const { jobId, metadata } = await job("scrape");
+    expect(metadata).toEqual({ jobId });
+    expect((await submit(body("scrape", jobId))).status).toBe(404);
+  });
+  it("accepts a job timestamp slightly ahead of this host's clock", async () => {
+    const { jobId } = await job("scrape");
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() + 2000 },
+    });
+    expect((await submit(body("scrape", jobId))).status).toBe(200);
+  });
+  it("rejects a job timestamp beyond the allowed clock skew", async () => {
+    const { jobId } = await job("scrape");
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() + 600000 },
+    });
+    const response = await submit(body("scrape", jobId));
+    expect(response.status).toBe(409);
+    expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it.each(["search", "scrape", "parse"] as const)(
+    "excludes zero-retention %s jobs",
+    async endpoint => {
+      const options =
+        endpoint === "search"
+          ? { enterprise: ["zdr"] }
+          : { zeroDataRetention: true };
+      const { jobId, metadata } = await job(endpoint, true, ip, options);
+      expect(metadata).toEqual({ jobId });
+      expect((await submit(body(endpoint, jobId))).status).toBe(404);
+      expect(fixture.readResult).not.toHaveBeenCalled();
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    },
+  );
+  it("rejects a job without saved options before reading its formats", async () => {
+    const { jobId } = await job("scrape");
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, { ...saved, keyless: undefined });
+    const response = await submit(body("scrape", jobId));
+    expect(response.status).toBe(404);
+    expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("retries a job that becomes visible after the first lookup", async () => {
+    const store = await import("./feedback-store.js");
+    const jobId = uuidv7();
+    const lookup = vi.spyOn(store, "lookupFeedbackJob");
+    // The first lookup persists the job but reports it missing, so only the
+    // retry can find the row.
+    lookup.mockImplementationOnce(async () => {
+      await persistJob("scrape", jobId);
+      return null;
+    });
+    try {
+      expect((await submit(body("scrape", jobId))).status).toBe(200);
+      expect(lookup).toHaveBeenCalledTimes(2);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+  it("does not record feedback for a missing job", async () => {
+    expect((await submit(body("scrape", uuidv7()))).status).toBe(404);
+    const { jobId } = await job("scrape");
+    expect((await submit(body("scrape", jobId))).status).toBe(200);
+  });
+  it.each(["missing", "error", "malformed"])(
+    "accepts Search observations as unverified when its artifact is %s",
+    async state => {
+      const { jobId } = await job("search");
+      fixture.results.delete(jobId);
+      if (state === "error")
+        fixture.readResult.mockRejectedValue(new Error("Unavailable"));
+      if (state === "malformed") fixture.readResult.mockResolvedValue([]);
+      const invalid = body("search", jobId);
+      (invalid.observations[0] as any).source = "news";
+      expect((await submit(invalid)).status).toBe(400);
+      expect(fixture.readResult).not.toHaveBeenCalled();
+      const accepted = await submit(body("search", jobId));
+      expect(accepted.status).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        unverified: true,
+        answers: { jobId },
+      });
+      const retry = await submit(body("search", jobId));
+      expect(retry.body.feedbackId).toBe(accepted.body.feedbackId);
+      expect(retry.body.alreadySubmitted).toBe(true);
+      expect(await fixture.db!.select().from(table)).toHaveLength(1);
+    },
+  );
+  it("verifies Search positions when the saved response appears after the first read", async () => {
+    const { jobId } = await job("search");
+    fixture.readResult.mockResolvedValueOnce(null);
+    const invalid = body("search", jobId);
+    (invalid.observations[0] as any).position = 2;
+    expect((await submit(invalid)).status).toBe(400);
+    fixture.readResult.mockResolvedValueOnce(null);
+    expect((await submit(body("search", jobId))).status).toBe(200);
+    expect(fixture.readResult).toHaveBeenCalledTimes(4);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).not.toHaveProperty("unverified");
+  });
+  it("does not load Search results for missing-content observations", async () => {
+    const { jobId } = await job("search");
+    fixture.results.delete(jobId);
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [
+            {
+              kind: "missing",
+              vertical: "developer",
+              basis: "expectation",
+              detail: "The task needed a reference on retry intervals.",
+            },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    expect(fixture.readResult).not.toHaveBeenCalled();
+  });
+  it("validates positions against each delivered group", async () => {
+    const { jobId } = await job("search", true, ip, {
+      sources: ["web", "news"],
+    });
+    fixture.results.set(jobId, {
+      web: [{ url: "https://example.com/web" }],
+      news: [
+        { url: "https://example.com/first" },
+        { url: "https://example.com/second" },
+      ],
+    });
+    const payload = body("search", jobId);
+    (payload.observations[0] as any).position = 2;
+    expect((await submit(payload)).status).toBe(400);
+    (payload.observations[0] as any).source = "news";
+    expect((await submit(payload)).status).toBe(200);
+    expect(fixture.readResult).toHaveBeenCalledWith(jobId);
+  });
+  it.each(["generic", "legacy"] as const)(
+    "preserves authenticated %s Search feedback and refunds",
+    async route => {
+      const { jobId } = authenticatedJob("search", true, 4);
+      config.KEYLESS_FEEDBACK_ENABLED = false;
+      try {
+        const path =
+          route === "generic"
+            ? "/test/authenticated/feedback"
+            : `/test/authenticated/search/${jobId}/feedback`;
+        const payload = {
+          ...(route === "generic" ? { endpoint: "search", jobId } : {}),
+          rating: "bad",
+          querySuggestions: "Search for the official retry documentation.",
+        };
+        const accepted = await request(app).post(path).send(payload);
+        expect(accepted.status).toBe(200);
+        expect(accepted.body.creditsRefunded).toBe(1);
+        expect(fixture.refund).toHaveBeenCalledWith(
+          expect.objectContaining({
+            teamId: authenticatedTeam,
+            orgId,
+            value: 1,
+          }),
+        );
+        expect(fixture.refund).toHaveBeenCalledTimes(1);
+        expect(fixture.readResult).not.toHaveBeenCalled();
+        const [row] = await fixture.db!.select().from(table);
+        expect(row).toMatchObject({
+          request_id: jobId,
+          team_id: authenticatedTeam,
+          credits_refunded: 1,
+        });
+      } finally {
+        config.KEYLESS_FEEDBACK_ENABLED = true;
+      }
+    },
+  );
+  it.each(["search", "scrape", "parse"] as const)(
+    "accepts keyless %s using Bigtable without PostgreSQL job tables",
+    async endpoint => {
+      const { jobId } = await job(endpoint);
+      const saved = await fixture.readFeedbackJob(jobId);
+      expect(saved.keyless).toEqual({
+        createdAtMs: expect.any(Number),
+        options: {},
+      });
+      expect((await submit(body(endpoint, jobId))).status).toBe(200);
+      expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
+    },
+  );
+
+  it("keeps authenticated feedback on compact records without PostgreSQL job rows", async () => {
+    const jobId = uuidv7();
+    fixture.readFeedbackJob.mockResolvedValue({
+      requestId: jobId,
+      teamId: authenticatedTeam,
+      refundClass: "scrape_basic",
+      feedbackDeadlineMs: Date.now() + 120000,
+      succeeded: true,
+      creditsBilled: 8,
+      zeroDataRetention: false,
+    });
+    const response = await request(app)
+      .post("/test/authenticated/feedback")
+      .send({
+        endpoint: "scrape",
+        jobId,
+        rating: "bad",
+        note: "The output omitted the requested retry intervals.",
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.creditsRefunded).toBe(1);
+    expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
+    expect(fixture.refund).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["missing", "error"])(
+    "does not fall back to PostgreSQL for an authenticated compact-record miss: %s",
+    async state => {
+      const { jobId } = await job("scrape");
+      fixture.readFeedbackJob.mockResolvedValue(null);
+      if (state === "error")
+        fixture.readFeedbackJob.mockRejectedValue(new Error("Unavailable"));
+      const response = await request(app)
+        .post("/test/authenticated/feedback")
+        .send({
+          endpoint: "scrape",
+          jobId,
+          rating: "bad",
+          note: "The output omitted the requested retry intervals.",
+        });
+      expect(response.status).toBe(404);
+      expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
+      expect(fixture.refund).not.toHaveBeenCalled();
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    },
+  );
+
+  it("preserves authenticated Search failure and age restrictions", async () => {
+    const { jobId } = authenticatedJob("search", false);
+    const payload = {
+      endpoint: "search",
+      jobId,
+      rating: "bad",
+      querySuggestions: "Search for the official retry documentation.",
+    };
+    const failed = await request(app)
+      .post("/test/authenticated/feedback")
+      .send(payload);
+    expect(failed.status).toBe(409);
+    expect(failed.body.feedbackErrorCode).toBe("SEARCH_FAILED");
+    Object.assign(fixture.compactJobs.get(jobId)!, {
+      succeeded: true,
+      feedbackDeadlineMs: Date.now() - 10 * 60 * 1000,
+    });
+    const expired = await request(app)
+      .post("/test/authenticated/feedback")
+      .send(payload);
+    expect(expired.status).toBe(409);
+    expect(fixture.refund).not.toHaveBeenCalled();
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("preserves the authenticated metadata limit independently of other feedback fields", async () => {
+    const { jobId } = authenticatedJob("scrape");
+    const metadata = { context: "" };
+    metadata.context = "x".repeat(
+      8192 - Buffer.byteLength(JSON.stringify(metadata)),
+    );
+    const payload = {
+      endpoint: "scrape",
+      jobId,
+      rating: "bad",
+      note: "The output omitted the requested retry intervals.",
+      url: "https://example.com/retry",
+      pageNumbers: [1],
+      metadata,
+    };
+    const rejected = await request(app)
+      .post("/test/authenticated/feedback")
+      .send({ ...payload, metadata: { context: metadata.context + "x" } });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.feedbackErrorCode).toBe("INVALID_BODY");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    expect(fixture.refund).not.toHaveBeenCalled();
+
+    const accepted = await request(app)
+      .post("/test/authenticated/feedback")
+      .send(payload);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.creditsRefunded).toBe(1);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toEqual({
+      ...metadata,
+      url: payload.url,
+      pageNumbers: payload.pageNumbers,
+    });
+    expect(Buffer.byteLength(JSON.stringify(row.metadata))).toBeGreaterThan(
+      8192,
+    );
+    expect(fixture.refund).toHaveBeenCalledTimes(1);
+  });
+  it.each(["scrape", "parse"] as const)(
+    "preserves authenticated %s refunds independently of keyless limits",
+    async endpoint => {
+      const { jobId } = authenticatedJob(endpoint);
+      const payload = {
+        endpoint,
+        jobId,
+        rating: "bad",
+        note: "The output omitted the requested retry intervals.",
+      };
+      const accepted = await request(app)
+        .post("/test/authenticated/feedback")
+        .send(payload);
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.creditsRefunded).toBe(endpoint === "parse" ? 2 : 1);
+      expect(fixture.refund).toHaveBeenCalledTimes(1);
+      expect(fixture.readResult).not.toHaveBeenCalled();
+      const keyless = await job(endpoint);
+      expect((await submit(body(endpoint, keyless.jobId))).status).toBe(200);
+      expect(fixture.refund).toHaveBeenCalledTimes(1);
+    },
+  );
+});

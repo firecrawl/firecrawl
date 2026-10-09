@@ -787,6 +787,9 @@ async function logScrapeInternal(
   }
 
   const feedbackJob = {
+    ...(config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(scrape.team_id)
+      ? { keylessOptions: scrape.options }
+      : {}),
     jobId: scrape.id,
     requestId: scrape.request_id,
     teamId: storedTeamId,
@@ -1104,21 +1107,29 @@ export type LoggedSearch = {
   zeroDataRetention: boolean;
 };
 
-export async function logSearch(search: LoggedSearch, force: boolean = false) {
+export async function logSearch(
+  search: LoggedSearch,
+  {
+    saveResultsInBackground = false,
+  }: { saveResultsInBackground?: boolean } = {},
+) {
   return withLogSpan(
     {
       operation: "search",
       table: "searches",
       id: search.id,
       requestId: search.request_id,
-      force,
+      force: false,
       zeroDataRetention: search.zeroDataRetention,
     },
-    () => logSearchInternal(search, force),
+    () => logSearchInternal(search, saveResultsInBackground),
   );
 }
 
-async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
+async function logSearchInternal(
+  search: LoggedSearch,
+  saveResultsInBackground: boolean = false,
+) {
   const logger = _logger.child({
     module: "log_job",
     method: "logSearch",
@@ -1133,12 +1144,16 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
       ? search.options
       : { ...search.options, query: sanitizeString(search.options.query) };
   const storedTeamId =
-    search.team_id === "preview" || search.team_id?.startsWith("preview_")
+    keylessTeamUuid(search.team_id) ??
+    (search.team_id === "preview" || search.team_id?.startsWith("preview_")
       ? previewTeamId
-      : search.team_id;
+      : search.team_id);
 
   await writeFeedbackJobSafely(
     {
+      ...(config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(search.team_id)
+        ? { keylessOptions: search.options }
+        : {}),
       jobId: search.id,
       requestId: search.request_id,
       teamId: storedTeamId,
@@ -1168,7 +1183,7 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
       num_results: search.num_results,
       time_taken: search.time_taken,
     },
-    force,
+    false,
     logger,
   );
 
@@ -1184,7 +1199,17 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
   }
 
   if (search.results && !search.zeroDataRetention) {
-    await saveSearchToGCS(search, logger);
+    const savedResults = saveSearchToGCS(search, logger);
+    if (saveResultsInBackground) {
+      savedResults.catch(error => {
+        logger.warn("Background search result save failed", {
+          error,
+          searchId: search.id,
+        });
+      });
+    } else {
+      await savedResults;
+    }
   }
 }
 
