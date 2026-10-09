@@ -473,7 +473,7 @@ Response:
 {
   "success": true,
   "links": [
-    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Supercharge your AI agents with data from the web and beyond. Building the library for superintelligence. 🔥"},
+    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "The context API for AI agents"},
     {"url": "https://firecrawl.dev/pricing", "title": "Pricing", "description": "Firecrawl pricing plans"},
     {"url": "https://firecrawl.dev/blog", "title": "Blog", "description": "Firecrawl blog"}
   ]
