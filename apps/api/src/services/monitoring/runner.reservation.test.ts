@@ -118,6 +118,7 @@ import { redisEvictConnection } from "../redis";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget } from "./search/run";
 import { config } from "../../config";
+import { autumnService } from "../autumn/autumn.service";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -141,7 +142,11 @@ function conflict() {
 describe("direct monitor reservation ownership", () => {
   let current: MonitorCheckRow;
   let monitor: MonitorRow;
-  let recordedPages: number;
+  let recordedPages: Array<{
+    checkId: string;
+    targetId: string;
+    status: "same" | "changed" | "new" | "removed" | "error";
+  }>;
   const job = { teamId: "team-1", monitorId: "monitor-1", checkId: "check-1" };
   const effects = [
     store.updateMonitorCheck,
@@ -165,7 +170,7 @@ describe("direct monitor reservation ownership", () => {
     vi.resetAllMocks();
     logger.child.mockReturnValue(logger);
     (config as { USE_DB_AUTHENTICATION: boolean }).USE_DB_AUTHENTICATION = true;
-    recordedPages = 0;
+    recordedPages = [];
     current = {
       id: "check-1",
       monitor_id: "monitor-1",
@@ -221,7 +226,13 @@ describe("direct monitor reservation ownership", () => {
       },
     );
     vi.mocked(store.countMonitorCheckPages).mockImplementation(
-      async ({ status }) => (!status || status === "same" ? recordedPages : 0),
+      async ({ checkId, targetId, status }) =>
+        recordedPages.filter(
+          page =>
+            page.checkId === checkId &&
+            (!targetId || page.targetId === targetId) &&
+            (!status || page.status === status),
+        ).length,
     );
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(1);
     vi.mocked(store.listMonitorCheckPages).mockResolvedValue([]);
@@ -231,17 +242,26 @@ describe("direct monitor reservation ownership", () => {
     vi.mocked(redisEvictConnection.eval).mockResolvedValue(1);
   });
 
-  async function settleWinner(credits = 1) {
-    recordedPages = 1;
+  async function settleWinner(
+    credits = 1,
+    status: (typeof recordedPages)[number]["status"] = "same",
+  ) {
+    recordedPages = [{ checkId: current.id, targetId: "target-1", status }];
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(
       credits,
     );
     await reconcileRunningMonitorChecks();
     await reconcileRunningMonitorChecks();
     expect(current).toMatchObject({
-      status: "completed",
+      status: status === "error" ? "partial" : "completed",
       billing_status: "confirmed",
       autumn_lock_id: "monitor_check-1",
+      total_pages: 1,
+      same_count: Number(status === "same"),
+      changed_count: Number(status === "changed"),
+      new_count: Number(status === "new"),
+      removed_count: Number(status === "removed"),
+      error_count: Number(status === "error"),
     });
     expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
@@ -278,14 +298,14 @@ describe("direct monitor reservation ownership", () => {
             return structuredClone(current);
           });
       } else {
-        vi.mocked(store.markMonitorRunning).mockImplementationOnce(async () => {
+        sdk.check.mockImplementationOnce(async () => {
           paused.resolve();
           await resume.promise;
+          return { allowed: true };
         });
       }
-      sdk.check
-        .mockResolvedValueOnce({ allowed: true })
-        .mockRejectedValueOnce(conflict());
+      if (stored) sdk.check.mockResolvedValueOnce({ allowed: true });
+      sdk.check.mockRejectedValueOnce(conflict());
       const winner = processMonitorCheckJob(job);
       await paused.promise;
       const before = snapshot();
@@ -383,7 +403,9 @@ describe("direct monitor reservation ownership", () => {
     monitor.team_id = "preview_team";
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(0);
     await processMonitorCheckJob({ ...job, teamId: monitor.team_id });
-    recordedPages = 1;
+    recordedPages = [
+      { checkId: current.id, targetId: "target-1", status: "same" },
+    ];
     await reconcileRunningMonitorChecks();
     expect(current).toMatchObject({
       status: "completed",
@@ -398,8 +420,22 @@ describe("direct monitor reservation ownership", () => {
   it("dead-letters recovery of an unlinked orphan hold and leaves expiry to the provider", async () => {
     current.status = "running";
     current.started_at = new Date().toISOString();
-    await sdk.check({ lock: { lockId: "monitor_check-1" } });
-    sdk.check.mockRejectedValueOnce(conflict());
+    const held = new Set<string>();
+    sdk.check.mockImplementation(async ({ lock }) => {
+      if (held.has(lock.lockId)) throw conflict();
+      held.add(lock.lockId);
+      return { allowed: true };
+    });
+    await expect(
+      autumnService.lockCredits({
+        teamId: job.teamId,
+        orgId: "org-1",
+        value: 1,
+        lockId: "monitor_check-1",
+      }),
+    ).resolves.toEqual({ status: "locked", lockId: "monitor_check-1" });
+    expect(held.has("monitor_check-1")).toBe(true);
+    expect(current.autumn_lock_id).toBeNull();
     await consumeMonitorCheckJobs(processMonitorCheckJob);
     const message = { content: Buffer.from(JSON.stringify(job)) };
     const before = snapshot();
@@ -444,6 +480,80 @@ describe("direct monitor reservation ownership", () => {
     expect(bill).not.toHaveBeenCalled();
   });
 
+  it.each(["same", "changed", "new", "removed", "error"] as const)(
+    "settles the winner using recorded %s page counts",
+    async status => {
+      await processMonitorCheckJob(job);
+      recordedPages = [
+        { checkId: current.id, targetId: "other-target", status },
+      ];
+      await reconcileRunningMonitorChecks();
+      expect(current.status).toBe("running");
+      expect(sdk.balances.finalize).not.toHaveBeenCalled();
+      expect(bill).not.toHaveBeenCalled();
+      await settleWinner(status === "error" ? 0 : 1, status);
+    },
+  );
+
+  it("does not reserve a running delivery that became terminal after its initial read", async () => {
+    current.status = "running";
+    const initial = structuredClone(current);
+    current.status = "completed";
+    current.billing_status = "confirmed";
+    vi.mocked(store.getMonitorCheckForUpdate).mockResolvedValueOnce(initial);
+    const before = snapshot();
+    await processMonitorCheckJob(job);
+    expect(snapshot()).toEqual(before);
+    expect(sdk.check).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "running"] as const)(
+    "does not reserve when a %s delivery completes during org resolution",
+    async status => {
+      current.status = status;
+      const reached = deferred();
+      const pending = deferred<any>();
+      vi.mocked(getACUCTeam).mockImplementationOnce(() => {
+        reached.resolve();
+        return pending.promise;
+      });
+      const delivery = processMonitorCheckJob(job);
+      await reached.promise;
+      current.status = "completed";
+      current.billing_status = "confirmed";
+      const before = snapshot();
+      pending.resolve({ org_id: "org-1" });
+      await delivery;
+      expect(snapshot()).toEqual(before);
+      expect(sdk.check).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not mark a terminal check when a successful reservation arrives late", async () => {
+    current.status = "running";
+    current.autumn_lock_id = "monitor_check-1";
+    current.billing_status = "reserved";
+    const reached = deferred();
+    const pending = deferred<{ allowed: boolean }>();
+    sdk.check.mockImplementationOnce(() => {
+      reached.resolve();
+      return pending.promise;
+    });
+    const delivery = processMonitorCheckJob(job);
+    await reached.promise;
+    current.status = "completed";
+    current.billing_status = "confirmed";
+    const terminal = structuredClone(current);
+    pending.resolve({ allowed: true });
+    await delivery;
+    expect(current).toEqual(terminal);
+    expect(store.markMonitorRunning).not.toHaveBeenCalled();
+    expect(trackMonitorCheckStartedInterest).not.toHaveBeenCalled();
+    expect(sdk.balances.finalize).not.toHaveBeenCalled();
+    expect(addScrapeJob).not.toHaveBeenCalled();
+    expect(bill).not.toHaveBeenCalled();
+  });
+
   it("rejects linked orphan recovery and only stale reconciliation releases its hold", async () => {
     current.status = "running";
     current.started_at = new Date().toISOString();
@@ -470,7 +580,7 @@ describe("direct monitor reservation ownership", () => {
   });
 
   it("releases a newly acquired unpersisted hold if later admission fails", async () => {
-    vi.mocked(store.markMonitorRunning).mockRejectedValueOnce(
+    vi.mocked(store.updateMonitorCheckIfRunning).mockRejectedValueOnce(
       new Error("Admission failed"),
     );
     await expect(processMonitorCheckJob(job)).rejects.toThrow(
@@ -480,6 +590,25 @@ describe("direct monitor reservation ownership", () => {
       status: "failed",
       billing_status: "released",
       autumn_lock_id: null,
+    });
+    expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ action: "release", lockId: "monitor_check-1" }),
+    );
+    expect(addScrapeJob).not.toHaveBeenCalled();
+    expect(bill).not.toHaveBeenCalled();
+  });
+
+  it("releases the acquired persisted hold if marking the monitor fails", async () => {
+    vi.mocked(store.markMonitorRunning).mockRejectedValueOnce(
+      new Error("Admission failed"),
+    );
+    await expect(processMonitorCheckJob(job)).rejects.toThrow(
+      "Admission failed",
+    );
+    expect(current).toMatchObject({
+      status: "failed",
+      billing_status: "released",
+      autumn_lock_id: "monitor_check-1",
     });
     expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ action: "release", lockId: "monitor_check-1" }),

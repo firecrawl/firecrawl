@@ -1055,6 +1055,13 @@ export async function processMonitorCheckJob(
   // makes it, so every hold, settle and release below shares this one. A
   // failure answers null, which is what the lookup inside the biller did.
   const orgId = await orgIdForTeam(monitor.team_id);
+  const admissionCheck = await getMonitorCheckForUpdate(
+    job.teamId,
+    job.monitorId,
+    job.checkId,
+  );
+  if (!admissionCheck || admissionCheck.status !== "running") return;
+  check = admissionCheck;
   const partnerJobToken = check.partner_run_token
     ? null
     : monitor.partner_job_token;
@@ -1138,20 +1145,6 @@ export async function processMonitorCheckJob(
 
     lockId = lock.status === "locked" ? lock.lockId : null;
 
-    await markMonitorRunning({
-      monitorId: monitor.id,
-      checkId: job.checkId,
-    });
-
-    trackMonitorCheckStartedInterest({ monitor, check }).catch(error =>
-      logger.warn("Failed to track monitor target interest", {
-        error,
-        monitorId: monitor.id,
-        checkId: check.id,
-        eventType: "check_started",
-      }),
-    );
-
     const reserved = await updateMonitorCheckIfRunning(check.id, {
       autumn_lock_id: lockId,
       // A token already on the row wins: the gate was not re-asked, so there
@@ -1168,6 +1161,20 @@ export async function processMonitorCheckJob(
       return;
     }
     check = reserved;
+
+    await markMonitorRunning({
+      monitorId: monitor.id,
+      checkId: job.checkId,
+    });
+
+    trackMonitorCheckStartedInterest({ monitor, check }).catch(error =>
+      logger.warn("Failed to track monitor target interest", {
+        error,
+        monitorId: monitor.id,
+        checkId: check.id,
+        eventType: "check_started",
+      }),
+    );
 
     const targetResults = monitor.targets.map(createMonitorTargetRun);
     const initialized = await updateMonitorCheckIfRunning(check.id, {
