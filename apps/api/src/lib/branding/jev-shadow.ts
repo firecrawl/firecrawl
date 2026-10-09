@@ -3,7 +3,7 @@ import { differenceCiede2000, parse } from "culori";
 import { config } from "../../config";
 import { CostTracking } from "../cost-tracking";
 import { setSpanAttributes, withSpan } from "../otel-tracer";
-import { enhanceBrandingWithJev } from "./jev";
+import { enhanceBrandingWithJev, isJevBreakerOpen } from "./jev";
 import { mergeBrandingResults } from "./merge";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
@@ -29,6 +29,8 @@ export function shouldShadowJev(input: BrandingLLMInput): boolean {
   const percent = config.BRANDING_JEV_SHADOW_PERCENT;
   if (percent <= 0) return false;
   if (inFlight >= MAX_IN_FLIGHT) return false;
+  // No extra load on TypeSafe while branding has stopped calling it.
+  if (isJevBreakerOpen()) return false;
   return Math.random() * 100 < percent;
 }
 

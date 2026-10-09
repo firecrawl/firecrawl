@@ -25,6 +25,35 @@ const JEV_MODEL = "jev-latest";
 const JEV_INPUT_USD_PER_MTOK = 0.042;
 const DEFAULT_TIMEOUT_MS = 5000;
 
+// Circuit breaker: after this many calls in a row fail (timeouts, 5xx), skip
+// Jev for the cooldown and answer with the LLM, so an outage doesn't add the
+// timeout to every branding request. After the cooldown calls go through
+// again; one more failure reopens it.
+const BREAKER_FAILURES = 5;
+const BREAKER_COOLDOWN_MS = 60_000;
+let consecutiveFailures = 0;
+let breakerOpenUntil = 0;
+
+export function isJevBreakerOpen(now = Date.now()): boolean {
+  return now < breakerOpenUntil;
+}
+
+function recordJevFailure(input: BrandingLLMInput): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= BREAKER_FAILURES && !isJevBreakerOpen()) {
+    breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    input.logger.warn("Jev branding calls failing, using the LLM for a while", {
+      consecutiveFailures,
+      cooldownMs: BREAKER_COOLDOWN_MS,
+    });
+  }
+}
+
+export function resetJevBreaker(): void {
+  consecutiveFailures = 0;
+  breakerOpenUntil = 0;
+}
+
 const MAX_LOGOS = 20;
 const MAX_BUTTONS = 12;
 const MAX_COLORS = 24;
@@ -781,15 +810,17 @@ export async function enhanceBrandingWithJev(
   options: { shadow?: boolean } = {},
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
-  if (!typesafe) return null;
+  if (!typesafe || isJevBreakerOpen()) return null;
   const started = Date.now();
   let request: JevRequest;
   let response: JevResponse;
+  let called = false;
   try {
     request = buildJevRequest(input);
     response = await withSpan(
       "typesafe.systemone",
       async span => {
+        called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
@@ -823,6 +854,8 @@ export async function enhanceBrandingWithJev(
       },
     );
   } catch (error) {
+    // Only TypeSafe's own failures say anything about its health.
+    if (called) recordJevFailure(input);
     input.logger.warn(
       options.shadow
         ? "Jev branding shadow call failed"
@@ -834,6 +867,9 @@ export async function enhanceBrandingWithJev(
     );
     return null;
   }
+  // A call that started before the breaker opened and succeeds late doesn't
+  // close it: the next failure after the cooldown should reopen it at once.
+  if (!isJevBreakerOpen()) consecutiveFailures = 0;
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;
