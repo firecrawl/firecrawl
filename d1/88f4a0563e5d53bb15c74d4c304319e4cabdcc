@@ -1,0 +1,24 @@
+apps/api/src/__tests__/lib/branding/element-text.test.ts
+  s_fc7dd4e610a741::t_a1254d0e017a09 1-28,30-37
+  s_fc7dd4e610a741::t_a3d5e49fd92f67 29
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_fc7dd4e610a741::t_738bc90b36496b 7,228,230,253,260
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/helpers.ts
+  s_fc7dd4e610a741::t_738bc90b36496b 128-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d188f4a0563e5d53bb15c74d4c304319e4cabdcc",
+  "prompts": {},
+  "sessions": {
+    "s_fc7dd4e610a741": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c890539-a438-4a60-92f9-1b13ab2630c3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
