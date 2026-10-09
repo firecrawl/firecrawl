@@ -164,6 +164,30 @@ it("passes retryable and the retry delay through on a failed single legacy call"
   });
 });
 
+it("drops a retry delay that is not a non-negative whole number of seconds", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: {
+          code: "provider_unavailable",
+          message: "Try later.",
+          status: 503,
+          retryAfterSeconds: 1.5,
+        },
+      },
+    ]),
+  );
+  const response = await request(app).post("/exchange/retrieve").send(call);
+  expect(response.headers["retry-after"]).toBeUndefined();
+  expect(response.body).toEqual({
+    success: false,
+    code: "provider_unavailable",
+    error: "Try later.",
+  });
+});
+
 it("only lets trusted agent interop bypass billing, and prefers its request id", async () => {
   const untrusted = await request(app)
     .post("/v2/scrape")
