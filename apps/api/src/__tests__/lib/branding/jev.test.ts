@@ -472,6 +472,64 @@ describe("branding with Jev", () => {
     ]);
   });
 
+  it("drops fallback fonts and unplaced extras once headings and body are covered", async () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Inter", heading: "Inter" },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Inter", count: 40 },
+      { family: "Segoe UI", count: 20 },
+      { family: "Roboto", count: 10 },
+      { family: "Canela", count: 5 },
+    ];
+    respondWith(
+      jevResponse({
+        font_0_is_brand: { type: "noul", noul: 0.95 },
+        font_1_is_brand: { type: "noul", noul: 0.9 },
+        font_2_is_brand: { type: "noul", noul: 0.9 },
+        font_3_is_brand: { type: "noul", noul: 0.9 },
+        font_3_role: {
+          type: "choice",
+          choice: "unknown",
+          probabilities: { unknown: 1 },
+          confidence: 0.9,
+        },
+      }),
+    );
+
+    const result = await enhanceBrandingWithLLM(input);
+
+    expect(result.cleanedFonts).toEqual([{ family: "Inter", role: "body" }]);
+  });
+
+  it("keeps a fallback font the page uses for text, or when it is all there is", async () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = { fontFamilies: { primary: "Arial" } };
+    input.jsAnalysis.fonts = [{ family: "Arial", count: 40 }];
+    respondWith(jevResponse({ font_0_is_brand: { type: "noul", noul: 0.9 } }));
+    expect((await enhanceBrandingWithLLM(input)).cleanedFonts).toEqual([
+      { family: "Arial", role: "body" },
+    ]);
+
+    const only = baseInput(new CostTracking());
+    only.jsAnalysis.fonts = [{ family: "Helvetica", count: 40 }];
+    respondWith(
+      jevResponse({
+        font_0_is_brand: { type: "noul", noul: 0.9 },
+        font_0_role: {
+          type: "choice",
+          choice: "unknown",
+          probabilities: { unknown: 1 },
+          confidence: 0.9,
+        },
+      }),
+    );
+    expect((await enhanceBrandingWithLLM(only)).cleanedFonts).toEqual([
+      { family: "Helvetica", role: "unknown" },
+    ]);
+  });
+
   it("takes font roles from the page's typography when it has them", async () => {
     const input = baseInput(new CostTracking());
     input.jsAnalysis.typography = {
@@ -770,5 +828,19 @@ describe("Jev request building", () => {
     expect(cleanFontFamily("var(--font-sans)")).toBeUndefined();
     expect(cleanFontFamily("'Söhne'")).toBe("Söhne");
     expect(cleanFontFamily("ui-sans-serif")).toBeUndefined();
+    expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
+    expect(cleanFontFamily("Inter, sans-serif")).toBe("Inter");
+    expect(cleanFontFamily("Newsreader Variable")).toBe("Newsreader");
+  });
+
+  it("merges a family listed with and without spaces", () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.fonts = [
+      { family: "CormorantGaramond", count: 10 },
+      { family: "Cormorant Garamond", count: 5 },
+    ];
+    expect(buildJevRequest(input).fonts).toEqual([
+      { family: "Cormorant Garamond", count: 15, role: undefined },
+    ]);
   });
 });

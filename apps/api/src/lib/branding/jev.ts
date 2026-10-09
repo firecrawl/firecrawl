@@ -210,13 +210,48 @@ const GENERIC_FONTS = new Set([
   "math",
 ]);
 
+// Fonts pages list as fallbacks in their stacks. They are only reported when
+// the page's typography uses them, or when nothing else is left.
+const FALLBACK_FONTS = new Set([
+  "arial",
+  "helvetica",
+  "helvetica neue",
+  "segoe ui",
+  "roboto",
+  "oxygen",
+  "ubuntu",
+  "cantarell",
+  "noto sans",
+  "droid sans",
+  "lucida",
+  "lucida grande",
+  "lucida sans unicode",
+  "tahoma",
+  "verdana",
+  "times",
+  "times new roman",
+  "georgia",
+  "courier",
+  "courier new",
+  "apple color emoji",
+  "segoe ui emoji",
+  "segoe ui symbol",
+  "noto color emoji",
+]);
+
 export function cleanFontFamily(raw: string): string | undefined {
-  let name = raw.trim().replace(/^["']|["']$/g, "");
+  // A whole stack ("system-ui, sans-serif") reports its first family.
+  let name = raw
+    .split(",")[0]
+    .trim()
+    .replace(/^["']|["']$/g, "");
   if (!name || /^var\(/i.test(name)) return undefined;
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
   name = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  // Variable-font builds name the same family: "Newsreader Variable".
+  name = name.replace(/\s+(variable|vf)$/i, "");
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
   if (name === name.toLowerCase()) {
     name = name.replace(/\b\w/g, ch => ch.toUpperCase());
@@ -264,9 +299,16 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
       typeof font === "object" && typeof font.count === "number"
         ? font.count
         : 1;
-    const existing = byFamily.get(family.toLowerCase());
-    if (existing) existing.count += count;
-    else byFamily.set(family.toLowerCase(), { family, count });
+    // "CormorantGaramond" and "Cormorant Garamond" are one family; keep the
+    // spaced name.
+    const key = family.toLowerCase().replace(/[\s-]/g, "");
+    const existing = byFamily.get(key);
+    if (existing) {
+      existing.count += count;
+      if (!existing.family.includes(" ") && family.includes(" ")) {
+        existing.family = family;
+      }
+    } else byFamily.set(key, { family, count });
   }
   return [...byFamily.values()]
     .sort((a, b) => b.count - a.count)
@@ -731,17 +773,31 @@ function mapJevAnswers(
     .map(a => a.confidence);
 
   // Fonts: keep the ones Jev calls real typefaces, most used first.
-  const cleanedFonts = request.fonts
+  const realFonts = request.fonts
     .map((font, i) => {
       const isBrand = answers[`font_${i}_is_brand`];
       const role = choiceOf(answers, `font_${i}_role`);
       return {
         family: font.family,
         role: font.role ?? ((role?.choice ?? "unknown") as FontRole),
+        // the page's own typography uses it for headings or body
+        measured: font.role !== undefined,
         keep: isBrand?.type === "noul" ? isBrand.noul >= 0.5 : true,
       };
     })
-    .filter(f => f.keep)
+    .filter(f => f.keep);
+  // Drop fallback faces the page doesn't use for text, and once headings or
+  // body are covered, fonts nobody could place.
+  const isFallback = (f: (typeof realFonts)[number]) =>
+    FALLBACK_FONTS.has(f.family.toLowerCase()) && !f.measured;
+  const withoutFallbacks = realFonts.some(f => !isFallback(f))
+    ? realFonts.filter(f => !isFallback(f))
+    : realFonts;
+  const placed = withoutFallbacks.some(
+    f => f.role === "heading" || f.role === "body",
+  );
+  const cleanedFonts = withoutFallbacks
+    .filter(f => !placed || f.role !== "unknown")
     .slice(0, 5)
     .map(({ family, role }) => ({ family, role }));
 
