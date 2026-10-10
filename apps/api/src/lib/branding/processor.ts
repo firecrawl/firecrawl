@@ -183,10 +183,25 @@ function inferPalette(
     background,
     colorScheme,
   });
+  // Text color from what text is written in: the most common text color of
+  // non-button elements that stands out from the background. Voting over every
+  // sampled color let button fills outvote the paragraphs.
+  const textVotes = new Map<string, number>();
+  for (const s of snapshots) {
+    if (s.isButton || !s.text || !s.text.trim()) continue;
+    const hex = hexify(s.colors.text, pageBackground);
+    if (hex) textVotes.set(hex, (textVotes.get(hex) || 0) + 1);
+  }
+  const readableText = Array.from(textVotes.entries())
+    .sort((x, y) => y[1] - x[1])
+    .map(([h]) => h)
+    .find(h => Math.abs(contrastYIQ(h) - contrastYIQ(background)) > 100);
   const textPrimary =
+    readableText ||
     ranked.find(
       h => h !== primary && !/^#FFFFFF$/i.test(h) && contrastYIQ(h) < 160,
-    ) || (colorScheme === "dark" ? "#FFFFFF" : "#111111");
+    ) ||
+    (colorScheme === "dark" ? "#FFFFFF" : "#111111");
   const accent =
     ranked.find(
       h =>
