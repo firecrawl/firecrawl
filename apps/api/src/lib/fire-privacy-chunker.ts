@@ -57,6 +57,15 @@ function findSafeSplit(text: string, lo: number, hi: number): number {
   return hi;
 }
 
+// Keep split offsets in UTF-16 code units for span coordinates, while
+// ensuring each chunk can independently round-trip through UTF-8.
+function codePointBoundary(text: string, index: number): number {
+  const previous = text.charCodeAt(index - 1);
+  const next = text.charCodeAt(index);
+  return previous >= 0xd800 && previous <= 0xdbff &&
+    next >= 0xdc00 && next <= 0xdfff ? index - 1 : index;
+}
+
 function utf8ByteLength(s: string): number {
   // TextEncoder is faster than Buffer.byteLength for large strings in V8
   // and avoids a Buffer allocation per call.
@@ -105,16 +114,19 @@ export function chunkMarkdown(text: string, opts?: ChunkOptions): Chunk[] {
       if (safeEnd <= cursor) safeEnd = tentativeEnd;
     }
 
+    safeEnd = codePointBoundary(text, safeEnd);
     let chunkText = text.slice(cursor, safeEnd);
 
     // Byte-budget enforcement for non-ASCII text. Rare on web markdown
-    // but cheap to handle: shrink one char at a time. Done as a `while`
-    // because each removed char may straddle a multibyte boundary.
+    // but cheap to handle: shrink one code point at a time, keeping surrogate pairs together.
     if (utf8ByteLength(chunkText) > maxBytes) {
-      while (utf8ByteLength(chunkText) > maxBytes && chunkText.length > 1) {
-        chunkText = chunkText.slice(0, -1);
+      while (utf8ByteLength(chunkText) > maxBytes && chunkText.length > 0) {
+        safeEnd = codePointBoundary(text, safeEnd - 1);
+        chunkText = text.slice(cursor, safeEnd);
       }
-      safeEnd = cursor + chunkText.length;
+    }
+    if (safeEnd <= cursor) {
+      throw new RangeError("chunkMarkdown: budgets cannot fit the next code point");
     }
 
     chunks.push({ text: chunkText, start: cursor });
