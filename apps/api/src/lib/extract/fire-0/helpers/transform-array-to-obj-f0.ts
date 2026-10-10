@@ -114,6 +114,7 @@ export function transformArrayToObject_F0(
         if (
           typeof subItem === "object" &&
           subItem !== null &&
+          !Array.isArray(subItem) &&
           isValidObject(subItem, itemSchema)
         ) {
           // For arrays of objects, add only unique objects

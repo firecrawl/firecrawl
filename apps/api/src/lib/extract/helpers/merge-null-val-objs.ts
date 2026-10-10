@@ -113,7 +113,7 @@ export function mergeNullValObjs(objArray: { [key: string]: any[] }): {
     if (Array.isArray(objArray[key])) {
       // If array contains only primitive values, return as is
       if (
-        objArray[key].every(item => typeof item !== "object" || item === null)
+        objArray[key].every(item => typeof item !== "object" || item === null || Array.isArray(item))
       ) {
         result[key] = [...objArray[key]];
         continue;
