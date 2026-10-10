@@ -98,10 +98,6 @@ def _consume_task_outcome(task: "asyncio.Future[Any]") -> None:
 
 
 class AsyncFirecrawlClient:
-    @staticmethod
-    def _is_cloud_service(url: str) -> bool:
-        return "api.firecrawl.dev" in url.lower()
-
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -113,8 +109,6 @@ class AsyncFirecrawlClient:
     ):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        if self._is_cloud_service(api_url) and not api_key:
-            raise ValueError("API key is required for the cloud API. Set FIRECRAWL_API_KEY or pass api_key.")
         self.http_client = HttpClient(
             api_key,
             api_url,
