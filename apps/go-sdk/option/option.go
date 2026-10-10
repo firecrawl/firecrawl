@@ -14,6 +14,7 @@ type RequestConfig struct {
 	APIKey        string
 	APIURL        string
 	HTTPClient    *http.Client
+	Timeout       *time.Duration
 	MaxRetries    int
 	BackoffFactor float64
 	ExtraHeaders  map[string]string
@@ -58,10 +59,7 @@ func WithBackoffFactor(f float64) RequestOption {
 // WithTimeout sets the HTTP client timeout. Default: 5 minutes.
 func WithTimeout(d time.Duration) RequestOption {
 	return func(c *RequestConfig) {
-		if c.HTTPClient == nil {
-			c.HTTPClient = &http.Client{}
-		}
-		c.HTTPClient.Timeout = d
+		c.Timeout = &d
 	}
 }
 

@@ -74,6 +74,12 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 	if httpCl == nil {
 		httpCl = &http.Client{Timeout: defaultTimeout}
 	}
+	if cfg.Timeout != nil {
+		// A timeout override belongs to this SDK client, not a shared caller client.
+		configuredClient := *httpCl
+		configuredClient.Timeout = *cfg.Timeout
+		httpCl = &configuredClient
+	}
 
 	hc := newHTTPClient(apiKey, apiURL, httpCl, cfg.MaxRetries, cfg.BackoffFactor, cfg.ExtraHeaders)
 	return &Client{http: hc}, nil
