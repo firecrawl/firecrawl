@@ -3,6 +3,7 @@ import { config } from "../../config";
 import {
   checkKeylessEligibility,
   keylessSignupUrlForIp,
+  keylessWorldIdIdentity,
   reportKeylessPromptShown,
 } from "../../lib/keyless";
 import {
@@ -10,6 +11,7 @@ import {
   keylessFallbackSignupUrl,
   keylessSignupSurface,
 } from "../../lib/keyless-signup-link";
+import { verifyWorldIdCredential } from "../../lib/world-id";
 
 /**
  * Internal endpoint for trusted proxies (the hosted MCP) to check, before a
@@ -22,6 +24,9 @@ import {
  * the MCP relays in its recovery message. `?signup_link=1` asks for the link on
  * any result, for the account-only tool prompt (a tool keyless sessions cannot
  * use), and tags it with that reason whatever the eligibility.
+ *
+ * A forwarded `x-firecrawl-world-id` credential is checked against the
+ * verified human's own bucket instead of the IP, as auth does.
  */
 export async function keylessEligibilityController(
   req: Request,
@@ -37,7 +42,13 @@ export async function keylessEligibilityController(
   const ip =
     (typeof ipHeader === "string" ? ipHeader.trim() : "") || req.ip || "";
 
-  const result = await checkKeylessEligibility(ip);
+  const worldIdSubject = verifyWorldIdCredential(
+    req.headers["x-firecrawl-world-id"],
+  );
+  const result = await checkKeylessEligibility(
+    ip,
+    worldIdSubject ? keylessWorldIdIdentity(worldIdSubject) : undefined,
+  );
   const accountOnlyTool = req.query?.signup_link === "1";
   if (result.eligible && !accountOnlyTool) {
     res.status(200).json(result);
@@ -55,10 +66,13 @@ export async function keylessEligibilityController(
   // identity, so it gets the regular signup link.
   let signupUrl = keylessFallbackSignupUrl(surface);
   if (reason) {
-    const link = keylessSignupUrlForIp(ip, surface, reason);
+    // A World ID caller isn't keyed on the IP, so it gets no IP-bound link
+    // or funnel report, as in auth.
+    const promptIp = worldIdSubject ? null : ip;
+    const link = keylessSignupUrlForIp(promptIp, surface, reason);
     signupUrl = link.url;
     // The hosted MCP relays this link as the prompt; this check answers 200.
-    reportKeylessPromptShown(ip, surface, reason, 200, link.signupRef);
+    reportKeylessPromptShown(promptIp, surface, reason, 200, link.signupRef);
   }
   res.status(200).json({ ...result, signupUrl });
 }

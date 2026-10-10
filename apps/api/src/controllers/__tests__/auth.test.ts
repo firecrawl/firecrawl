@@ -23,6 +23,7 @@ import { decryptKeylessSignupToken } from "../../lib/keyless-signup-link";
 import { logger } from "../../lib/logger";
 import { isKeylessIpSuspicious } from "../../lib/spur";
 import { trackKeylessPromptShown } from "../../lib/keyless-prompt-analytics";
+import { mintWorldIdCredential, worldIdSubjectHash } from "../../lib/world-id";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
 
@@ -130,6 +131,12 @@ describe("authenticateUser", () => {
   const originalPreviewToken = config.PREVIEW_TOKEN;
   const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
   const originalKeylessSignupLinkKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
+  const originalWorldId = {
+    WORLD_ID_ISSUER: config.WORLD_ID_ISSUER,
+    WORLD_ID_CLIENT_ID: config.WORLD_ID_CLIENT_ID,
+    WORLD_ID_CLIENT_SECRET: config.WORLD_ID_CLIENT_SECRET,
+    WORLD_ID_CREDENTIAL_SECRET: config.WORLD_ID_CREDENTIAL_SECRET,
+  };
 
   beforeEach(() => {
     vi.mocked(isKeylessConfigured).mockReturnValue(false);
@@ -150,6 +157,7 @@ describe("authenticateUser", () => {
     config.PREVIEW_TOKEN = originalPreviewToken;
     config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
     config.KEYLESS_SIGNUP_LINK_KEYS = originalKeylessSignupLinkKeys;
+    Object.assign(config, originalWorldId);
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -393,6 +401,90 @@ describe("authenticateUser", () => {
       ipv4: "198.51.100.7",
       surface: "mcp",
       reason: "limit",
+    });
+  });
+
+  describe("World ID keyless credential", () => {
+    const allowed = {
+      ok: true,
+      requestsUsed: 1,
+      creditsUsed: 0,
+    } as const;
+    const enableWorldId = () => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.WORLD_ID_ISSUER = "https://issuer.test";
+      config.WORLD_ID_CLIENT_ID = "app_test";
+      config.WORLD_ID_CLIENT_SECRET = "client-secret";
+      config.WORLD_ID_CREDENTIAL_SECRET = "c".repeat(32);
+      vi.mocked(isKeylessConfigured).mockReturnValue(true);
+      vi.mocked(consumeKeylessRequest).mockResolvedValue(allowed);
+    };
+
+    it("gets its own bucket and skips the IP checks", async () => {
+      enableWorldId();
+      const hash = worldIdSubjectHash("https://issuer.test", "human-1");
+      const { credential } = mintWorldIdCredential(hash);
+
+      const auth = await authenticateUser(
+        {
+          body: { origin: "cli" },
+          headers: { "x-firecrawl-world-id": credential },
+          // IPv6 is refused on the IP path; a verified human isn't keyed on it.
+          socket: { remoteAddress: "2001:db8::1" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+
+      expect(auth).toMatchObject({
+        success: true,
+        team_id: `preview_keyless_wid_${hash}`,
+      });
+      expect(consumeKeylessRequest).toHaveBeenCalledWith(`wid_${hash}`);
+      expect(isKeylessIpSuspicious).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the IP bucket when the credential is invalid", async () => {
+      enableWorldId();
+
+      const auth = await authenticateUser(
+        {
+          body: { origin: "cli" },
+          headers: { "x-firecrawl-world-id": "fcwid_forged.credential" },
+          socket: { remoteAddress: "203.0.113.8" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+
+      expect(auth).toMatchObject({
+        success: true,
+        team_id: "preview_keyless_203.0.113.8",
+      });
+      expect(consumeKeylessRequest).toHaveBeenCalledWith("203.0.113.8");
+      expect(isKeylessIpSuspicious).toHaveBeenCalledWith("203.0.113.8");
+    });
+
+    it("is ignored while World ID is not configured", async () => {
+      enableWorldId();
+      const { credential } = mintWorldIdCredential("h".repeat(43));
+      config.WORLD_ID_CLIENT_SECRET = undefined;
+
+      const auth = await authenticateUser(
+        {
+          body: { origin: "cli" },
+          headers: { "x-firecrawl-world-id": credential },
+          socket: { remoteAddress: "2001:db8::1" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+
+      expect(auth).toMatchObject({ success: false, status: 401 });
+      expect(consumeKeylessRequest).not.toHaveBeenCalled();
     });
   });
 

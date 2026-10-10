@@ -20,11 +20,13 @@ import {
   keylessLimitPrompt,
   keylessSignupUrlForIp,
   keylessTeamId,
+  keylessWorldIdIdentity,
   normalizeKeylessIpv4,
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
+import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
@@ -561,7 +563,7 @@ function keylessSuspiciousIpMessage(signupUrl: string): string {
  * shared secret — without the secret the header is ignored, so direct callers
  * can't spoof their IP to dodge the per-IP cap.
  */
-function keylessClientIp(req): string {
+export function keylessClientIp(req): string {
   let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
   if (
     config.KEYLESS_PROXY_SECRET &&
@@ -635,10 +637,20 @@ async function handleKeylessAuth(
 
   let ip = keylessClientIp(req);
 
+  // A World ID verified human (a valid `fcwid_` credential) gets their own
+  // bucket keyed on their World ID instead of the IP, so the IP checks below
+  // don't apply. A missing or invalid credential falls back to the IP bucket.
+  const worldIdSubject = verifyWorldIdCredential(
+    req.headers["x-firecrawl-world-id"],
+  );
+  const worldIdIdentity = worldIdSubject
+    ? keylessWorldIdIdentity(worldIdSubject)
+    : null;
+
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
   // per-IP cap to mean anything, and malformed/forwarded values must not be
   // usable as arbitrary limiter buckets. Anything else falls through to 401.
-  if (!isKeylessIpEligible(ip)) {
+  if (!worldIdIdentity && !isKeylessIpEligible(ip)) {
     return denied(req, "keyless_ip_ineligible", unauthorized);
   }
 
@@ -650,7 +662,7 @@ async function handleKeylessAuth(
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
-  if (await isKeylessIpSuspicious(ip)) {
+  if (!worldIdIdentity && (await isKeylessIpSuspicious(ip))) {
     keylessAuthTotal.inc({ mode, outcome: "suspicious" });
     const { url, signupRef } = keylessSignupUrlForIp(
       ip,
@@ -683,7 +695,9 @@ async function handleKeylessAuth(
     });
   }
 
-  const teamId = keylessTeamId(ip);
+  // The quota bucket and team id. Logs keep the client IP either way.
+  const identity = worldIdIdentity ?? ip;
+  const teamId = keylessTeamId(identity);
   const modeLabel =
     mode === RateLimiterMode.Search
       ? "search"
@@ -699,7 +713,7 @@ async function handleKeylessAuth(
 
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
-    result = await consumeKeylessRequest(ip);
+    result = await consumeKeylessRequest(identity);
   } catch (error) {
     keylessAuthTotal.inc({ mode, outcome: "error" });
     // Limiter store (Redis) unavailable — fail closed with a controlled auth
@@ -721,13 +735,17 @@ async function handleKeylessAuth(
     integration,
     mode: modeLabel,
     teamId,
+    worldId: worldIdIdentity !== null,
     requestsUsed: result.requestsUsed,
     creditsUsed: result.creditsUsed,
   };
 
   if (!result.ok) {
     keylessAuthTotal.inc({ mode, outcome: result.reason ?? "error" });
-    const prompt = keylessLimitPrompt(ip, signupSurface);
+    const prompt = keylessLimitPrompt(
+      worldIdIdentity ? null : ip,
+      signupSurface,
+    );
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
@@ -735,7 +753,7 @@ async function handleKeylessAuth(
       reason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
       ...(prompt.signupRef ? { signupRef: prompt.signupRef } : {}),
-      ...keylessExhaustionTelemetry(ip),
+      ...keylessExhaustionTelemetry(identity),
     });
     return {
       success: false,
