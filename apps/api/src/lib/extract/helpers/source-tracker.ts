@@ -2,6 +2,14 @@ import { logger } from "../../../lib/logger";
 import { areMergeable } from "./merge-null-val-objs";
 import { transformArrayToObject } from "./transform-array-to-obj";
 
+// Primitive array entries match by value; object entries may merge null fields.
+function matchesSourceItem(item: any, originalItem: any): boolean {
+  if (item === null || originalItem === null || typeof item !== "object" || typeof originalItem !== "object") {
+    return item === originalItem;
+  }
+  return areMergeable(item, originalItem);
+}
+
 interface TransformedResult {
   transformed: { [key: string]: any[] } | any[];
   url: string;
@@ -118,7 +126,7 @@ export class SourceTracker {
           this.transformedResults.forEach(result => {
             if (Array.isArray(result.transformed)) {
               result.transformed.forEach((originalItem: any) => {
-                if (areMergeable(item, originalItem)) {
+                if (matchesSourceItem(item, originalItem)) {
                   itemSources.add(result.url);
                 }
               });
@@ -137,7 +145,7 @@ export class SourceTracker {
 
               this.transformedResults.forEach(result => {
                 result.transformed[key]?.forEach((originalItem: any) => {
-                  if (areMergeable(item, originalItem)) {
+                  if (matchesSourceItem(item, originalItem)) {
                     itemSources.add(result.url);
                   }
                 });
