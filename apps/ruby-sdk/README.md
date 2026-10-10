@@ -191,6 +191,12 @@ results.web&.each { |r| puts r["url"] }
 # With options
 results = client.search("latest news",
   Firecrawl::Models::SearchOptions.new(limit: 5, location: "US"))
+
+# Discover Alexandria tools and retain the returned descriptors
+results = client.search("example.com",
+  Firecrawl::Models::SearchOptions.new(sources: ["alexandria"],
+    domain_tools: true, tool_detail: "full"))
+puts results.tools
 ```
 
 ### Agent
