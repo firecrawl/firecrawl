@@ -61,6 +61,32 @@ class AsyncWatcher:
         return f"{ws_base}/v2/batch/scrape/{self._job_id}"
 
     async def _iterate(self) -> AsyncIterator[object]:
+        # Bound the whole operation, including connection setup, status requests,
+        # receive waits and fallback sleeps, with one monotonic deadline.
+        deadline = (asyncio.get_running_loop().time() + self._timeout
+                    if self._timeout is not None else None)
+        events = self._iterate_events()
+        try:
+            while True:
+                if deadline is None:
+                    snapshot = await events.__anext__()
+                else:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        return
+                    try:
+                        snapshot = await asyncio.wait_for(events.__anext__(), remaining)
+                    except asyncio.TimeoutError:
+                        if asyncio.get_running_loop().time() < deadline:
+                            raise
+                        return
+                yield snapshot
+        except StopAsyncIteration:
+            return
+        finally:
+            await events.aclose()
+
+    async def _iterate_events(self) -> AsyncIterator[object]:
         uri = self._build_ws_url()
         headers_list = []
         if self._api_key:
