@@ -39,6 +39,7 @@ pub struct Client {
     pub(crate) api_key: Option<String>,
     pub(crate) api_url: String,
     pub(crate) client: reqwest::Client,
+    pub(crate) timeout: Duration,
 }
 
 impl Client {
@@ -106,13 +107,14 @@ impl Client {
             api_key,
             api_url: url,
             client,
+            timeout: DEFAULT_TIMEOUT,
         })
     }
 
     /// Overrides the per-request HTTP timeout (default: 5 minutes, matching the JS and Go SDKs).
     ///
-    /// This bounds how long the underlying HTTP request may run; it's independent of the
-    /// server-side `timeout` scrape option, which bounds how long the server spends scraping.
+    /// Covers the entire HTTP request, including reading the response.
+    /// An explicit scrape timeout extends this to at least the server timeout plus 5 seconds.
     ///
     /// # Example
     ///
@@ -130,7 +132,15 @@ impl Client {
             .timeout(timeout)
             .build()
             .map_err(|e| FirecrawlError::Misuse(format!("failed to build HTTP client: {e}")))?;
+        self.timeout = timeout;
         Ok(self)
+    }
+
+    pub(crate) fn scrape_http_timeout(&self, server_timeout_ms: Option<u32>) -> Duration {
+        server_timeout_ms.map_or(self.timeout, |ms| {
+            self.timeout
+                .max(Duration::from_millis(u64::from(ms) + 5_000))
+        })
     }
 
     /// Prepares headers for API requests.
@@ -322,41 +332,65 @@ mod tests {
         assert_eq!(client.api_url, "http://localhost:3000");
     }
 
-    #[tokio::test]
-    async fn test_with_timeout_cuts_off_a_hung_connection() {
-        // A listener that accepts the connection but never writes a response, simulating
-        // a stalled server. Without a timeout this would hang the test (and the caller)
-        // forever.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let (_socket, _) = listener.accept().await.unwrap();
-            std::future::pending::<()>().await; // never respond
-        });
-
-        let client = Client::new_selfhosted(format!("http://{addr}"), None::<&str>)
-            .unwrap()
-            .with_timeout(Duration::from_millis(200))
-            .unwrap();
-
-        let elapsed = std::time::Instant::now();
-        let err = client
-            .scrape("https://example.com", None)
-            .await
-            .unwrap_err();
-        assert!(
-            elapsed.elapsed() < Duration::from_secs(5),
-            "did not time out promptly"
-        );
-
-        match err {
-            FirecrawlError::HttpError(_, e) => assert!(e.is_timeout(), "{e:?}"),
-            other => panic!("expected a timeout HttpError, got: {other:?}"),
+    #[test]
+    fn test_scrape_timeout_buffer() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::new("test-key")?;
+        for (server_ms, expected_secs) in [(None, 300), (Some(60_000), 300), (Some(300_000), 305)] {
+            if client.scrape_http_timeout(server_ms) != Duration::from_secs(expected_secs) {
+                Err(format!("unexpected HTTP timeout for {server_ms:?}"))?
+            }
         }
+        let client = client.with_timeout(Duration::from_secs(600))?;
+        if client.scrape_http_timeout(Some(300_000)) != Duration::from_secs(600) {
+            Err("longer configured client timeout was not preserved")?
+        }
+        let client = client.with_timeout(Duration::from_secs(15))?;
+        if client.scrape_http_timeout(Some(60_000)) != Duration::from_secs(65) {
+            Err("explicit server timeout did not extend the client timeout")?
+        }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_with_timeout_still_allows_normal_requests() {
+    async fn test_with_timeout_cuts_off_a_hung_connection() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Accept the connection without responding to simulate a stalled server.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await?;
+            std::future::pending::<()>().await;
+            Ok::<(), std::io::Error>(())
+        });
+
+        let result = async {
+            let client = Client::new_selfhosted(format!("http://{addr}"), None::<&str>)?
+                .with_timeout(Duration::from_millis(200))?;
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.scrape("https://example.com", None),
+            )
+            .await?;
+
+            match response {
+                Err(FirecrawlError::HttpError(_, e)) if e.is_timeout() => Ok(()),
+                other => Err(format!("expected a timeout HttpError, got: {other:?}").into()),
+            }
+        }
+        .await;
+
+        server.abort();
+        match server.await {
+            Ok(result) => result?,
+            Err(e) if e.is_cancelled() => (),
+            Err(e) => Err(e)?,
+        }
+        result
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout_still_allows_normal_requests(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("POST", "/v2/scrape")
@@ -366,14 +400,16 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new_selfhosted(server.url(), None::<&str>)
-            .unwrap()
-            .with_timeout(Duration::from_secs(10))
-            .unwrap();
-
-        let doc = client.scrape("https://example.com", None).await.unwrap();
-        assert_eq!(doc.markdown.as_deref(), Some("hi"));
-        mock.assert();
+        let client = Client::new_selfhosted(server.url(), None::<&str>)?
+            .with_timeout(Duration::from_secs(10))?;
+        let doc = client.scrape("https://example.com", None).await?;
+        if doc.markdown.as_deref() != Some("hi") {
+            Err(format!("unexpected markdown: {:?}", doc.markdown))?
+        }
+        if !mock.matched_async().await {
+            Err("expected scrape request was not received")?
+        }
+        Ok(())
     }
 
     #[test]
