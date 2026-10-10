@@ -28,7 +28,9 @@ export async function mixSchemaObjects_F0(
         Array.isArray(multiResult[key])
       ) {
         // If the property is an array, flatten the arrays from multiResult
-        result[key] = multiResult[key].flat();
+        result[key] = schema.properties[key].items?.type === "array"
+          ? [...multiResult[key]]
+          : multiResult[key].flat();
       } else if (singleResult.hasOwnProperty(key)) {
         result[key] = singleResult[key];
       } else if (multiResult.hasOwnProperty(key)) {
