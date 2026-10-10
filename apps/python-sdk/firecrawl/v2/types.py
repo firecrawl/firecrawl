@@ -1041,6 +1041,10 @@ class CrawlJob(BaseModel):
     completed: int = 0
     credits_used: int = 0
     expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration: Optional[float] = None
+    warning: Optional[str] = None
     next: Optional[str] = None
     warning: Optional[str] = None
     data: List[Document] = []
