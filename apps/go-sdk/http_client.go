@@ -233,12 +233,14 @@ func (h *httpClient) postMultipart(
 
 func (h *httpClient) doJSON(ctx context.Context, method, url string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
 	var bodyReader io.Reader
+	var encodedBody []byte
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to serialize request body: %v", err)}
 		}
-		bodyReader = bytes.NewReader(data)
+		encodedBody = data
+		bodyReader = bytes.NewReader(encodedBody)
 	}
 
 	var lastErr error
@@ -250,8 +252,7 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 
 			// Reset the body reader for retries.
 			if body != nil {
-				data, _ := json.Marshal(body)
-				bodyReader = bytes.NewReader(data)
+				bodyReader = bytes.NewReader(encodedBody)
 			}
 		}
 
