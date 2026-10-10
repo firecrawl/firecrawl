@@ -1,6 +1,6 @@
 import asyncio
 import time
-import httpx
+import httpx2
 import pytest
 
 from firecrawl.v2.client_async import AsyncFirecrawlClient
@@ -13,7 +13,7 @@ from firecrawl.v2.methods.aio import batch as aio_batch
 async def test_scrape_concurrency(monkeypatch):
     async def fake_post(self, endpoint, data, headers=None, timeout=None):
         await asyncio.sleep(0.1)
-        return httpx.Response(200, json={"success": True, "data": {}})
+        return httpx2.Response(200, json={"success": True, "data": {}})
 
     monkeypatch.setattr(AsyncHttpClient, "post", fake_post)
 
@@ -43,7 +43,7 @@ async def test_event_loop_not_blocked(monkeypatch):
 
     async def fake_post(self, endpoint, data, headers=None, timeout=None):
         await asyncio.sleep(0.2)
-        return httpx.Response(200, json={"success": True, "data": {}})
+        return httpx2.Response(200, json={"success": True, "data": {}})
 
     monkeypatch.setattr(AsyncHttpClient, "post", fake_post)
 
@@ -99,7 +99,7 @@ async def test_async_transport_used_no_threads(monkeypatch):
         max_active = max(max_active, active)
         try:
             await asyncio.sleep(0.1)
-            return httpx.Response(200, json={"success": True, "data": {}})
+            return httpx2.Response(200, json={"success": True, "data": {}})
         finally:
             active -= 1
 
