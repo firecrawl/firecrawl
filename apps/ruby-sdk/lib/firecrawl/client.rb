@@ -361,7 +361,7 @@ module Firecrawl
       body = {
         "name" => name,
         "schedule" => schedule,
-        "targets" => targets,
+        "targets" => serialize_monitor_targets(targets),
         "webhook" => webhook,
         "notification" => notification,
         "retentionDays" => retention_days,
@@ -393,7 +393,7 @@ module Firecrawl
         "schedule" => attrs[:schedule],
         "webhook" => attrs[:webhook],
         "notification" => attrs[:notification],
-        "targets" => attrs[:targets],
+        "targets" => serialize_monitor_targets(attrs[:targets]),
         "retentionDays" => attrs[:retention_days],
         "goal" => attrs[:goal],
         "judgeEnabled" => attrs[:judge_enabled],
@@ -571,6 +571,10 @@ module Firecrawl
     end
 
     private
+
+    def serialize_monitor_targets(targets)
+      targets&.map { |target| target.is_a?(Models::MonitorTarget) ? target.to_h : target }
+    end
 
     def query(params = nil, **kwargs)
       params = (params || {}).merge(kwargs)
