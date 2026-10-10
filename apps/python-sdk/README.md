@@ -7,7 +7,7 @@ The Firecrawl Python SDK is a library that lets you easily search, scrape, and i
 To install the Firecrawl Python SDK, you can use pip:
 
 ```bash 
-pip install firecrawl-py
+pip install firecrawl
 ```
 
 ## Usage

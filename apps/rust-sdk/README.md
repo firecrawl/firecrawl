@@ -131,9 +131,9 @@ for f in formats.iter().filter(|f| f.available) {
 }
 ```
 
-### Scraping with Extract
+### Scraping with JSON extraction
 
-With Extract, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
+With the JSON format, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
 
 ```rust
 let json_schema = json!({
@@ -160,20 +160,23 @@ let json_schema = json!({
 });
 
 let llm_extraction_options = ScrapeOptions {
-    formats: vec![ ScrapeFormats::Extract ].into(),
-    extract: ExtractOptions {
+    formats: vec![ Format::Json ].into(),
+    json_options: JsonOptions {
         schema: json_schema.into(),
         ..Default::default()
     }.into(),
     ..Default::default()
 };
 
-let llm_extraction_result = app
-    .scrape_url("https://news.ycombinator.com", llm_extraction_options)
+let llm_extraction_result = client
+    .scrape("https://news.ycombinator.com", llm_extraction_options)
     .await;
 
 match llm_extraction_result {
-    Ok(data) => println!("LLM Extraction Result:\n{:#?}", data.extract.unwrap()),
+    Ok(data) => match data.json {
+        Some(json) => println!("LLM Extraction Result:\n{:#?}", json),
+        None => eprintln!("LLM Extraction returned no JSON"),
+    },
     Err(e) => eprintln!("LLM Extraction failed: {}", e),
 }
 ```
@@ -189,7 +192,7 @@ let crawl_options = CrawlOptions {
 };
 
 let crawl_result = app
-    .crawl_url("https://mendable.ai", crawl_options)
+    .crawl_url("https://firecrawl.dev", crawl_options)
     .await;
 
 match crawl_result {
@@ -203,7 +206,7 @@ match crawl_result {
 To crawl without waiting for the result, use the `crawl_url_async` method. It takes the same parameters, but it returns a `CrawlAsyncRespone` struct, containing the crawl's ID. You can use that ID with the `check_crawl_status` method to check the status at any time. Do note that completed crawls are deleted after 24 hours.
 
 ```rust
-let crawl_id = app.crawl_url_async("https://mendable.ai", None).await?.id;
+let crawl_id = app.crawl_url_async("https://firecrawl.dev", None).await?.id;
 
 // ... later ...
 

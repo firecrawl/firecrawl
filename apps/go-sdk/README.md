@@ -1,6 +1,6 @@
 # Firecrawl Go SDK
 
-Go SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
+Go SDK for the [Firecrawl](https://firecrawl.dev) v2 API to search, scrape, and interact with the web for AI agents.
 
 ## Requirements
 
