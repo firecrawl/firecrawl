@@ -151,7 +151,11 @@ class AsyncWatcher:
                     # Generic snapshot emit for status messages and periodic progress
                     payload = body.get("data", body)
                     status_str = payload.get("status", body.get("status", self._status))
-                    snapshot = self._make_snapshot(status=status_str, payload=payload)
+                    snapshot = self._make_snapshot(
+                        status=status_str,
+                        payload=payload,
+                        docs_override=self._data if msg_type in ("catchup", "document") else None,
+                    )
                     yield snapshot
                     if status_str in ("completed", "failed", "cancelled"):
                         return
