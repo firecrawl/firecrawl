@@ -209,6 +209,32 @@ export const htmlTransform = async (
     } catch (_) {}
   });
 
+  // Deduplicate images by src URL
+  // This handles infinite scroll carousels that duplicate images in the DOM
+  // for seamless looping effects
+  deduplicateImages(soup);
+
   const cleanedHtml = soup.html();
   return cleanedHtml;
 };
+
+/**
+ * Removes duplicate images from the DOM, keeping only the first occurrence of each src URL.
+ * This addresses the issue where infinite scroll carousels duplicate images in the DOM
+ * for seamless looping effects, resulting in massive output with repeated images.
+ */
+function deduplicateImages(soup: ReturnType<typeof load>): void {
+  const seenSrcs = new Set<string>();
+  
+  soup("img[src]").each((_, el) => {
+    const src = el.attribs.src;
+    if (src) {
+      if (seenSrcs.has(src)) {
+        // Remove duplicate image
+        soup(el).remove();
+      } else {
+        seenSrcs.add(src);
+      }
+    }
+  });
+}
