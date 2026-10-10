@@ -267,9 +267,8 @@ async function redactOnce(
     });
     return { ok: false, reason };
   }
-  clearTimeout(timer);
-
   if (!response.ok) {
+    clearTimeout(timer);
     const reason: RedactionReason =
       response.status === 503 ? "service_unavailable" : "error";
     logger?.warn("fire-privacy returned non-2xx", {
@@ -286,12 +285,15 @@ async function redactOnce(
   try {
     body = (await response.json()) as FirePrivacyResponse;
   } catch (err) {
-    logger?.warn("fire-privacy returned invalid JSON", {
+    logger?.warn("fire-privacy response body failed", {
+      reason: timedOut ? "timeout" : "error",
       url,
       chunkStart: chunk.start,
       error: err instanceof Error ? err.message : String(err),
     });
-    return { ok: false, reason: "error" };
+    return { ok: false, reason: timedOut ? "timeout" : "error" };
+  } finally {
+    clearTimeout(timer);
   }
 
   const upstreamRedacted =
