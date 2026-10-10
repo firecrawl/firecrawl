@@ -47,6 +47,9 @@ def _prepare_payload(request: Any) -> Dict[str, Any]:
     payload = _dump(request)
     if not isinstance(payload, dict):
         raise ValueError("Monitor request must be an object")
+    # Keep typed nested options available to target-specific normalization.
+    if isinstance(request, (MonitorCreateRequest, MonitorUpdateRequest)) and request.targets is not None:
+        payload["targets"] = request.targets
     if "targets" in payload:
         payload["targets"] = [
             _prepare_target(_dump(target))
