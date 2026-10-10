@@ -1,5 +1,13 @@
 import { vi } from "vitest";
 
+vi.mock("../../../config", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../config")>();
+  return {
+    ...actual,
+    config: { ...actual.config, MODEL_MAX_INPUT_TOKENS: undefined },
+  };
+});
+
 vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
@@ -20,6 +28,7 @@ import {
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { config } from "../../../config";
 
 const noopLogger = {
   warn: () => {},
@@ -68,6 +77,10 @@ describe("generateCompletions content trimming", () => {
       15_000,
     );
 
+  afterEach(() => {
+    config.MODEL_MAX_INPUT_TOKENS = undefined;
+  });
+
   it("trims content that would overflow the model's context window", async () => {
     const result = await run(hugeMarkdown, "gpt-4o-mini");
 
@@ -92,11 +105,58 @@ describe("generateCompletions content trimming", () => {
     expect(lastCall().prompt).toContain(markdown);
   });
 
-  it("does not trim for models without known limits", async () => {
-    const result = await run(hugeMarkdown, "some-unlisted-model");
+  // gradient_ai/llama3-8b-instruct is listed in modelPrices with max_tokens:
+  // 512 (its output cap) and no max_input_tokens. getModelLimits' fallback
+  // would treat that 512 as an input budget and over-trim; a listed model
+  // missing max_input_tokens must keep the old no-trim behavior instead.
+  it("does not trim a listed model whose only known limit is an output cap", async () => {
+    const result = await run(hugeMarkdown, "gradient_ai/llama3-8b-instruct");
 
     expect(result.warning).toBeUndefined();
     expect(lastCall().prompt).toContain(hugeMarkdown);
+  });
+
+  // Neither model name is a real Tiktoken model, so encoding_for_model()
+  // throws and trimToTokenLimit falls into its character-based fallback
+  // (2.8 chars/token) instead of the precise BPE path above -- the actual
+  // self-hosted Ollama case this fix targets.
+  it("trims to the conservative default for models without known limits", async () => {
+    const result = await run(hugeMarkdown, "some-unlisted-model");
+
+    expect(result.warning).toContain(
+      "Failed to derive number of LLM tokens",
+    );
+    const budget = Math.floor(8192 * 0.8);
+    const expectedChars = Math.floor(budget * 2.8);
+    expect(lastCall().prompt.length).toBeLessThanOrEqual(expectedChars + 200);
+    expect(lastCall().prompt.length).toBeGreaterThan(expectedChars - 200);
+  });
+
+  it("uses MODEL_MAX_INPUT_TOKENS to size the budget for a self-hosted model", async () => {
+    config.MODEL_MAX_INPUT_TOKENS = 16384;
+
+    const result = await run(hugeMarkdown, "qwen2.5:7b");
+
+    expect(result.warning).toContain(
+      "Failed to derive number of LLM tokens",
+    );
+    const budget = Math.floor(16384 * 0.8);
+    const expectedChars = Math.floor(budget * 2.8);
+    expect(lastCall().prompt.length).toBeLessThanOrEqual(expectedChars + 200);
+    expect(lastCall().prompt.length).toBeGreaterThan(expectedChars - 200);
+  });
+
+  it("MODEL_MAX_INPUT_TOKENS overrides a known hosted model's own limit too", async () => {
+    config.MODEL_MAX_INPUT_TOKENS = 1000;
+
+    const result = await run(hugeMarkdown, "gpt-4o-mini");
+
+    const budget = Math.floor(1000 * 0.8);
+    const promptTokens = countTokens(lastCall().prompt);
+    expect(result.warning).toContain(
+      "the input has been automatically trimmed",
+    );
+    expect(promptTokens).toBeLessThanOrEqual(budget + 100);
   });
 });
 
