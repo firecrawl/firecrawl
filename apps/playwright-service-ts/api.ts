@@ -13,6 +13,7 @@ import { getError } from './helpers/get_error';
 import { lookup } from 'dns/promises';
 import IPAddr from 'ipaddr.js';
 import { Server, RequestError } from 'proxy-chain';
+import { allowPrivateScraping } from './security-config';
 
 dotenv.config();
 
@@ -27,8 +28,7 @@ const MAX_CONCURRENT_PAGES = Math.max(
   1,
   Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10,
 );
-const ALLOW_LOCAL_WEBHOOKS =
-  (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
+const ALLOW_PRIVATE_TARGETS = allowPrivateScraping();
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
@@ -77,10 +77,10 @@ const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
       `unsupported protocol "${parsedUrl.protocol}"`,
     );
   }
-  if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(parsedUrl.hostname))) {
+  if (!ALLOW_PRIVATE_TARGETS && (await isInternalHost(parsedUrl.hostname))) {
     throw new InsecureConnectionError(
       urlString,
-      'resolves to a private/internal address',
+      'resolves to a private/internal address (ALLOW_PRIVATE_IP_SCRAPING=true permits this only on trusted self-hosted instances)',
     );
   }
 };
@@ -101,9 +101,9 @@ const startSSRFProxy = async (): Promise<number> => {
     port: 0,
     host: '127.0.0.1',
     prepareRequestFunction: async ({ hostname }) => {
-      if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(hostname))) {
+      if (!ALLOW_PRIVATE_TARGETS && (await isInternalHost(hostname))) {
         throw new RequestError(
-          'Blocked: target resolves to a private/internal address',
+          'Blocked: target resolves to a private/internal address (set ALLOW_PRIVATE_IP_SCRAPING=true only on trusted self-hosted instances)',
           403,
         );
       }

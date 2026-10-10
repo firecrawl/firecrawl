@@ -3,6 +3,7 @@ import { config } from "../../config";
 configDotenv();
 
 import { TeamFlags } from "../../controllers/v1/types";
+import { isKnownLocalUrl } from "../../lib/private-host-url";
 
 // =========================================
 // Configuration
@@ -32,14 +33,9 @@ export const HAS_MENU_SERVICE = !!config.MENU_EXTRACTION_SERVICE_URL;
 
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 
-const isLocalUrl = (x: string) =>
-  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-    x as string,
-  );
-
 // due to playwright / api using proxy, we don't want to run local tests while proxy is enabled or in production testing
 export const ALLOW_TEST_SUITE_WEBSITE =
-  !TEST_SELF_HOST || (isLocalUrl(TEST_SUITE_WEBSITE) && !HAS_PROXY);
+  !TEST_SELF_HOST || (isKnownLocalUrl(TEST_SUITE_WEBSITE) && !HAS_PROXY);
 
 // TODO: print the config that determines tests run
 
@@ -51,7 +47,7 @@ export const itIf = (cond: boolean) => (cond ? it : it.skip);
 export const createTestIdUrl = () =>
   `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
 
-if (isLocalUrl(TEST_SUITE_WEBSITE)) {
+if (isKnownLocalUrl(TEST_SUITE_WEBSITE)) {
   if (TEST_SELF_HOST) {
     config.ALLOW_LOCAL_WEBHOOKS = true;
   } else {
