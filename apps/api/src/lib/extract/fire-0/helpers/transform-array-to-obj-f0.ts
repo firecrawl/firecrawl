@@ -82,7 +82,7 @@ export function transformArrayToObject_F0(
   function isValidObject(obj: any, schema: any): boolean {
     return Object.keys(schema.properties).every(key => {
       return (
-        obj.hasOwnProperty(key) &&
+        Object.prototype.hasOwnProperty.call(obj, key) &&
         typeof obj[key] === schema.properties[key].type
       );
     });
@@ -101,8 +101,8 @@ export function transformArrayToObject_F0(
     for (const key in parentSchema.properties) {
       if (
         key !== arrayKey &&
-        currentItem.hasOwnProperty(key) &&
-        !currentLevel.hasOwnProperty(key)
+        Object.prototype.hasOwnProperty.call(currentItem, key) &&
+        !Object.prototype.hasOwnProperty.call(currentLevel, key)
       ) {
         currentLevel[key] = currentItem[key];
       }
@@ -121,7 +121,7 @@ export function transformArrayToObject_F0(
           let hasValidData = false;
 
           for (const key in itemSchema.properties) {
-            if (subItem.hasOwnProperty(key) && subItem[key] !== undefined) {
+            if (Object.prototype.hasOwnProperty.call(subItem, key) && subItem[key] !== undefined) {
               transformedItem[key] = subItem[key];
               hasValidData = true;
             }
