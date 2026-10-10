@@ -44,6 +44,11 @@ export class AbortManager {
       this.mappedController.abort(reason);
     };
 
+    if (abort.signal.aborted) {
+      handler();
+      return;
+    }
+
     abort.signal.addEventListener("abort", handler);
     this.listeners.push({ signal: abort.signal, handler });
   }
