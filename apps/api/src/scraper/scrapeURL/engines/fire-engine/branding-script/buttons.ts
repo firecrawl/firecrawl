@@ -2,8 +2,84 @@ import { CONSTANTS } from "./constants";
 import {
   getClassNameString,
   getComputedStyleCached,
+  getPseudoStyle,
   recordError,
 } from "./helpers";
+
+const isOpaque = (color: string | null | undefined): boolean => {
+  if (!color || color === "transparent") return false;
+  const m = color.match(/rgba?\(([^)]+)\)/);
+  if (!m) return true;
+  const parts = m[1].split(/[\s,/]+/).filter(Boolean);
+  const alpha = parts.length >= 4 ? parseFloat(parts[3]) : 1;
+  return alpha > CONSTANTS.MIN_ALPHA_THRESHOLD;
+};
+
+/** Rendered, with a size, and not hidden or fully transparent. */
+export const isVisibleElement = (el: Element, rect: DOMRect): boolean => {
+  if (!(rect.width > 0 && rect.height > 0)) return false;
+  const cs = getComputedStyleCached(el);
+  if (cs.display === "none" || cs.visibility === "hidden") return false;
+  return !(parseFloat(cs.opacity) < 0.05);
+};
+
+/** The first opaque background behind an element (its ancestors'), white if none. */
+const getBackgroundBehind = (el: Element): string => {
+  let parent = el.parentElement;
+  for (let depth = 0; parent && depth < 10; depth++) {
+    const bg = getComputedStyleCached(parent).backgroundColor;
+    if (isOpaque(bg)) return bg;
+    parent = parent.parentElement;
+  }
+  return "rgb(255, 255, 255)";
+};
+
+/**
+ * The color filling a button-like element as a visitor sees it: its own
+ * background, else a ::before/::after layer, else a child covering most of it.
+ * Many buttons are a transparent <a> or <button> with the fill on an inner
+ * span or a pseudo-element. Null when nothing fills it.
+ */
+export const getEffectiveFill = (el: Element): string | null => {
+  try {
+    const own = getComputedStyleCached(el).backgroundColor;
+    if (isOpaque(own)) return own;
+    for (const pseudo of ["::before", "::after"]) {
+      const ps = getPseudoStyle(el, pseudo);
+      if (
+        ps &&
+        ps.content &&
+        ps.content !== "none" &&
+        isOpaque(ps.backgroundColor)
+      ) {
+        return ps.backgroundColor;
+      }
+    }
+    const rect = el.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area > 0) {
+      for (let i = 0; i < el.children.length && i < 5; i++) {
+        const child = el.children[i];
+        const r = child.getBoundingClientRect();
+        if (r.width * r.height >= area * 0.8) {
+          const bg = getComputedStyleCached(child).backgroundColor;
+          if (isOpaque(bg)) return bg;
+        }
+      }
+    }
+  } catch (e) {
+    recordError("getEffectiveFill", e);
+  }
+  return null;
+};
+
+/** Filled with a color that stands out from what is behind it, or outlined. */
+export const looksFilledOrOutlined = (el: Element): boolean => {
+  const fill = getEffectiveFill(el);
+  if (fill && fill !== getBackgroundBehind(el)) return true;
+  const cs = getComputedStyleCached(el);
+  return parseFloat(cs.borderTopWidth) > 0 && isOpaque(cs.borderTopColor);
+};
 
 export const checkButtonLikeElement = (
   el: Element,
@@ -40,7 +116,11 @@ export const checkButtonLikeElement = (
     parseFloat(cs.borderLeftWidth) > 0 ||
     parseFloat(cs.borderRightWidth) > 0;
 
-  return hasPadding && hasMinSize && (hasRounded || hasBorder);
+  if (hasPadding && hasMinSize && (hasRounded || hasBorder)) return true;
+
+  // Links styled through an inner span or a pseudo-element have no padding or
+  // border of their own; what makes them a button is a fill that stands out.
+  return hasMinSize && looksFilledOrOutlined(el);
 };
 
 export const isButtonElement = (el: Element | null): boolean => {

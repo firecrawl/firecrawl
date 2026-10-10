@@ -18,6 +18,8 @@ export interface ButtonSnapshot {
     bottomLeft?: string;
   };
   shadow?: string | null;
+  /** Distance from the top of the page in px, when the scan measured it. */
+  top?: number;
   // Debug: original color values before conversion to hex
   originalBackgroundColor?: string;
   originalTextColor?: string;
@@ -116,6 +118,9 @@ export interface BrandingScriptReturn {
     classes: string;
     text: string;
     rect: { w: number; h: number };
+    // Scripts older than the position fields don't send them.
+    position?: { top: number; left: number };
+    visible?: boolean;
     colors: {
       text: string;
       background: string;

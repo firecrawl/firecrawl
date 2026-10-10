@@ -275,6 +275,9 @@ function pickLogo(images: Array<{ type: string; src: string }>): string | null {
 }
 
 // Process raw branding data into BrandingProfile
+// Roughly one desktop screen; buttons above it count as more prominent.
+const FIRST_SCREEN_PX = 1000;
+
 export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const palette = inferPalette(
     raw.snapshots,
@@ -327,7 +330,9 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const candidateButtons = raw.snapshots
     .filter(s => {
       if (!s.isButton) return false;
-      if (s.rect.w < 30 || s.rect.h < 30) return false;
+      // Hidden copies (mobile menus, closed dialogs) aren't what visitors see.
+      if (s.visible === false) return false;
+      if (s.rect.w < 30 || s.rect.h < 24) return false;
       if (!s.text || s.text.trim().length === 0) return false;
 
       // Include buttons with valid background OR buttons with borders (transparent bg + border is valid)
@@ -395,6 +400,9 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 
       const area = (s.rect.w || 0) * (s.rect.h || 0);
       score += Math.log10(area + 1) * 10;
+
+      // On the first screen, where a page puts the action it wants taken.
+      if (s.position && s.position.top < FIRST_SCREEN_PX) score += 150;
 
       return { ...s, _score: score };
     })
@@ -484,6 +492,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       borderRadius: representativeBorderRadius,
       borderRadiusCorners: corners,
       shadow: s.shadow || null,
+      ...(s.position ? { top: Math.round(s.position.top) } : {}),
       // Debug: original color values before hex conversion
       originalBackgroundColor: s.colors.background || undefined,
       originalTextColor: s.colors.text || undefined,

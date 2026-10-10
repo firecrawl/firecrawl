@@ -158,6 +158,9 @@ export async function brandingTransformer(
             score += 30;
           }
 
+          // On the first screen of the page
+          if (typeof btn.top === "number" && btn.top < 1000) score += 40;
+
           return { btn, originalIdx: idx, score };
         })
         .sort((a, b) => b.score - a.score)
