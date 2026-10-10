@@ -43,7 +43,7 @@ export async function spreadSchemas(
       // Move required field if it exists
       if (schema.required?.includes(rootProperty)) {
         multiEntitySchema.required.push(rootProperty);
-        singleAnswerSchema.required = schema.required.filter(
+        singleAnswerSchema.required = singleAnswerSchema.required.filter(
           (k: string) => k !== rootProperty,
         );
       }
