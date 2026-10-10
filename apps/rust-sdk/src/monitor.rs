@@ -437,10 +437,17 @@ impl Client {
             self.handle_response(response, "get monitor check").await?;
         let mut check = response.data;
 
+        let mut visited = std::collections::HashSet::new();
         while let Some(next) = check.next.clone() {
+            let url = self.pin_to_api_origin(&next)?;
+            if !visited.insert(url.to_string()) {
+                return Err(FirecrawlError::Misuse(
+                    "repeated pagination cursor".to_string(),
+                ));
+            }
             let response = self
                 .client
-                .get(self.pin_to_api_origin(&next)?)
+                .get(url)
                 .headers(self.prepare_headers(None))
                 .send()
                 .await
