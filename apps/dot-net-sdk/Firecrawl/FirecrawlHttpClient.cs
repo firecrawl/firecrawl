@@ -9,7 +9,9 @@ namespace Firecrawl;
 
 /// <summary>
 /// Internal HTTP client for making authenticated requests to the Firecrawl API.
-/// Handles retry logic with exponential backoff.
+/// Retries transient GET failures with exponential backoff. Mutating requests
+/// are sent once because a failed response may arrive after the API accepted
+/// the work.
 /// </summary>
 internal class FirecrawlHttpClient
 {
@@ -216,6 +218,7 @@ internal class FirecrawlHttpClient
             // Build a fresh request for each attempt (HttpRequestMessage can only be sent once,
             // and multipart content is not cheaply cloneable).
             using var request = requestBuilder();
+            var canRetry = request.Method == HttpMethod.Get;
 
             HttpResponseMessage? response = null;
             try
@@ -241,8 +244,8 @@ internal class FirecrawlHttpClient
                 if (code >= 400 && code < 500 && code != 408 && code != 409)
                     throw new FirecrawlException(errorMessage, code, errorCode, null);
 
-                // Retryable errors: 408, 409, 502, 5xx
-                if (attempt < _maxRetries)
+                // Only reads are safe to replay after an ambiguous failure.
+                if (canRetry && attempt < _maxRetries)
                 {
                     attempt++;
                     await SleepWithBackoffAsync(attempt, cancellationToken);
@@ -261,7 +264,7 @@ internal class FirecrawlHttpClient
             }
             catch (HttpRequestException ex)
             {
-                if (attempt < _maxRetries)
+                if (canRetry && attempt < _maxRetries)
                 {
                     attempt++;
                     await SleepWithBackoffAsync(attempt, cancellationToken);
