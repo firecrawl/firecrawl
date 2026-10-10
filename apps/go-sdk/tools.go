@@ -65,7 +65,9 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 	defer cancel()
 
 	body := map[string]interface{}{"alexandria": calls}
-	mergeOptions(body, opts)
+	if err := mergeOptions(body, opts); err != nil {
+		return nil, err
+	}
 
 	if _, ok := body["origin"]; !ok {
 		body["origin"] = "go-sdk@" + Version
@@ -113,7 +115,9 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 // FindTools explores the catalogue without executing the tools it returns.
 func (c *Client) FindTools(ctx context.Context, opts *FindToolsOptions) (*FindToolsData, error) {
 	options := map[string]interface{}{}
-	mergeOptions(options, opts)
+	if err := mergeOptions(options, opts); err != nil {
+		return nil, err
+	}
 	result, err := c.ScrapeAlexandria(ctx, []AlexandriaCall{{Provider: "firecrawl", Capability: "find-tools", Options: options}}, nil)
 	if err != nil {
 		return nil, err

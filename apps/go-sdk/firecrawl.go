@@ -90,7 +90,9 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 	}
 
 	body := map[string]interface{}{"url": url}
-	mergeOptions(body, opts)
+	if err := mergeOptions(body, opts); err != nil {
+		return nil, err
+	}
 
 	if _, ok := body["origin"]; !ok {
 		body["origin"] = "go-sdk@" + Version
@@ -188,7 +190,9 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	}
 
 	body := map[string]interface{}{"url": url}
-	mergeOptions(body, opts)
+	if err := mergeOptions(body, opts); err != nil {
+		return nil, err
+	}
 
 	raw, err := c.http.post(ctx, "/v2/crawl", body, nil)
 	if err != nil {
@@ -287,7 +291,9 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 		if opts.IdempotencyKey != nil && *opts.IdempotencyKey != "" {
 			extraHeaders = map[string]string{"x-idempotency-key": *opts.IdempotencyKey}
 		}
-		mergeOptions(body, opts)
+		if err := mergeOptions(body, opts); err != nil {
+			return nil, err
+		}
 		// Flatten nested scrape options to top level as the API expects.
 		if nested, ok := body["options"]; ok {
 			delete(body, "options")
@@ -382,7 +388,9 @@ func (c *Client) Map(ctx context.Context, url string, opts *MapOptions) (*MapDat
 	}
 
 	body := map[string]interface{}{"url": url}
-	mergeOptions(body, opts)
+	if err := mergeOptions(body, opts); err != nil {
+		return nil, err
+	}
 
 	raw, err := c.http.post(ctx, "/v2/map", body, nil)
 	if err != nil {
@@ -549,7 +557,9 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	}
 
 	body := map[string]interface{}{"query": query}
-	mergeOptions(body, opts)
+	if err := mergeOptions(body, opts); err != nil {
+		return nil, err
+	}
 
 	if _, ok := body["origin"]; !ok {
 		body["origin"] = "go-sdk@" + Version
@@ -1162,21 +1172,24 @@ type BrowserExecuteParams struct {
 }
 
 // mergeOptions serializes the options struct and merges its fields into the body map.
-func mergeOptions(body map[string]interface{}, opts interface{}) {
+func mergeOptions(body map[string]interface{}, opts interface{}) error {
 	if opts == nil {
-		return
+		return nil
 	}
 	data, err := json.Marshal(opts)
 	if err != nil {
-		return
+		return &FirecrawlError{Message: fmt.Sprintf("failed to serialize options: %v", err)}
 	}
 	var optsMap map[string]interface{}
-	if err := json.Unmarshal(data, &optsMap); err != nil {
-		return
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&optsMap); err != nil {
+		return &FirecrawlError{Message: fmt.Sprintf("failed to decode options: %v", err)}
 	}
 	for k, v := range optsMap {
 		body[k] = v
 	}
+	return nil
 }
 
 func listQuery(opts *ListMonitorsOptions) string {
