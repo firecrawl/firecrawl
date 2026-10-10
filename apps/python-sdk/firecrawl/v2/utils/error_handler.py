@@ -140,10 +140,14 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     try:
         response_json = response.json()
         hints = agent_hint_metadata(response_json)
-        error_message = response_json.get('error', 'No error message provided.')
+        error_message = (response_json.get('error') or response_json.get('message')
+                         or response_json.get('detail') or response_json.get('title')
+                         or 'No error message provided.')
         error_details = response_json.get('details', 'No additional error details provided.')
         # Exchange-mediated scrape errors: { success: false, error, code?, chargeId?, requiresAction? }
         code = response_json.get('code')
+        if code is None and isinstance(response_json.get('type'), str):
+            code = response_json['type']
         charge_id = response_json.get('chargeId')
         requires_action = RequiresAction.from_payload(response_json.get('requiresAction'))
     except:
