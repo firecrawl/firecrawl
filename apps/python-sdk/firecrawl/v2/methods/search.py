@@ -49,7 +49,7 @@ def search(
     except Exception as err:
         # If the error is an HTTP error from requests, handle it
         # (simulate isAxiosError by checking for requests' HTTPError or Response)
-        if hasattr(err, "response"):
+        if getattr(err, "response", None) is not None:
             handle_response_error(getattr(err, "response"), "search")
         raise err
 

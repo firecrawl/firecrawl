@@ -53,7 +53,7 @@ async def search(
             out.tools = [DiscoveredTool(**item) for item in data["tools"]]
         return out
     except Exception as err:
-        if hasattr(err, "response"):
+        if getattr(err, "response", None) is not None:
             handle_response_error(getattr(err, "response"), "search")
         raise err
 
