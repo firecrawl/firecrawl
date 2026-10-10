@@ -330,3 +330,55 @@ def test_ws_watcher_uses_correct_ws_uri(monkeypatch, kind):
     assert captured_uri["uri"] is not None
     expected = "ws://localhost/v2/crawl/jid" if kind == "crawl" else "ws://localhost/v2/batch/scrape/jid"
     assert captured_uri["uri"] == expected
+
+
+@pytest.mark.parametrize("kind", ["crawl", "batch"])
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_document_progress_snapshots_keep_accumulated_documents(monkeypatch, kind, async_mode):
+    from firecrawl.v2.watcher_async import AsyncWatcher
+
+    messages = [
+        {"type": "catchup", "data": {"status": "scraping", "completed": 1,
+         "total": 3, "creditsUsed": 3, "data": [{"markdown": "existing"}]}},
+        {"type": "document", "data": {"markdown": "new first"}},
+        {"type": "document", "data": {"markdown": "new second"}},
+        {"type": "done"},
+    ]
+    import websockets
+    monkeypatch.setattr(websockets, "connect", lambda *args, **kwargs: FakeConnect(FakeWebSocket(messages)))
+
+    snapshots = []
+    if async_mode:
+        async def consume():
+            async for snapshot in AsyncWatcher(DummyClient(), "jid", kind=kind):
+                snapshots.append(snapshot)
+        asyncio.run(consume())
+    else:
+        watcher = Watcher(DummyClient(), "jid", kind=kind)
+        watcher.add_listener(snapshots.append)
+        asyncio.run(watcher._run_ws())
+
+    assert [doc.markdown for doc in snapshots[0].data] == ["existing"]
+    if async_mode:
+        assert [doc.markdown for doc in snapshots[1].data] == ["existing", "new first"]
+        assert [doc.markdown for doc in snapshots[2].data] == ["existing", "new first", "new second"]
+    else:
+        assert len(snapshots) == 2  # Sync document delivery uses event listeners.
+    assert [doc.markdown for doc in snapshots[-1].data] == ["existing", "new first", "new second"]
+    # Previously yielded snapshots are stable as new events arrive.
+    assert len(snapshots[0].data) == 1
+
+
+def test_async_status_frame_preserves_its_document_payload(monkeypatch):
+    from firecrawl.v2.watcher_async import AsyncWatcher
+    import websockets
+
+    message = {"status": "completed", "completed": 1, "total": 1,
+               "creditsUsed": 1, "data": [{"markdown": "status result"}]}
+    monkeypatch.setattr(websockets, "connect", lambda *args, **kwargs: FakeConnect(FakeWebSocket([{"type": "status", "data": message}])))
+
+    async def consume():
+        return [snapshot async for snapshot in AsyncWatcher(DummyClient(), "jid")]
+
+    snapshots = asyncio.run(consume())
+    assert [doc.markdown for doc in snapshots[0].data] == ["status result"]
