@@ -6,9 +6,8 @@ vi.mock("../../lib/logger", () => {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
-    child: vi.fn(),
+    child: (): any => logger,
   };
-  logger.child.mockReturnValue(logger);
   return { logger };
 });
 vi.mock("../logging/log_job", () => ({}));
@@ -300,7 +299,9 @@ describe("monitor check finalization ownership", () => {
     const first = reconcileRunningMonitorChecks();
     await entered.promise;
     locks.delete(lockKey); // The second worker can acquire an expired lease.
-    await reconcileRunningMonitorChecks();
+    vi.resetModules();
+    const otherProcess = await import("./runner.js");
+    await otherProcess.reconcileRunningMonitorChecks();
     resume.resolve();
     await first;
     expect(autumnService.finalizeCreditsLock).toHaveBeenCalledTimes(1);

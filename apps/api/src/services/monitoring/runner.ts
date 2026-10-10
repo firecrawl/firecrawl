@@ -1554,205 +1554,338 @@ async function failStaleMonitorCheck(params: {
   return true;
 }
 
+let runningCheckScan: Parameters<typeof listRunningMonitorChecks>[1];
+let reconcilingRunningChecks = false;
+
 export async function reconcileRunningMonitorChecks(
   limit: number = 50,
 ): Promise<void> {
-  const checks = await listRunningMonitorChecks(limit);
-  for (const candidate of checks) {
-    const lockKey = `monitor-check-finalize:${candidate.id}`;
-    const lockToken = uuidv7();
-    const lock = await redisEvictConnection.set(
-      lockKey,
-      lockToken,
-      "EX",
-      60,
-      "NX",
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new RangeError(
+      "Monitor reconciliation limit must be between 1 and 50.",
     );
-    if (lock !== "OK") continue;
+  }
+  if (reconcilingRunningChecks) return;
+  reconcilingRunningChecks = true;
+  try {
+    await reconcileRunningMonitorCheckPage(limit);
+  } finally {
+    reconcilingRunningChecks = false;
+  }
+}
 
-    try {
-      // The batch can outlive another finalizer. Read from the primary after
-      // acquiring the lease rather than acting on that old running snapshot.
-      const check = await getMonitorCheckForUpdate(
-        candidate.team_id,
-        candidate.monitor_id,
-        candidate.id,
-      );
-      if (!check || check.status !== "running") continue;
+async function reconcileRunningMonitorCheckPage(limit: number): Promise<void> {
+  const [oldestResult, newestResult] = await Promise.allSettled([
+    listRunningMonitorChecks(limit),
+    listRunningMonitorChecks(limit, { newest: true }),
+  ]);
+  if (oldestResult.status === "rejected") throw oldestResult.reason;
+  if (newestResult.status === "rejected") throw newestResult.reason;
+  const oldest = oldestResult.value;
+  const newest = newestResult.value;
+  runningCheckScan ??= newest[0]
+    ? { through: { created_at: newest[0].created_at, id: newest[0].id } }
+    : undefined;
+  const scan = runningCheckScan;
+  if (!scan) return;
+  const deep = await listRunningMonitorChecks(limit, scan);
+  const checks = Array.from({ length: limit }, (_, i) => [
+    newest[i],
+    oldest[i],
+    deep[i],
+  ])
+    .flat()
+    .filter((check): check is (typeof deep)[number] => check !== undefined);
+  const inspected = new Set<string>();
+  let terminalAttempts = 0;
+  try {
+    for (const candidate of checks) {
+      if (terminalAttempts >= limit) break;
+      if (inspected.has(candidate.id)) continue;
+      inspected.add(candidate.id);
+      await reconcileMonitorCheckCandidate(candidate, () => {
+        terminalAttempts++;
+      });
+    }
+  } finally {
+    let advanced = 0;
+    for (const check of deep) {
+      if (!inspected.has(check.id)) break;
+      advanced++;
+    }
+    if (advanced === deep.length && deep.length < limit) {
+      runningCheckScan = undefined;
+    } else if (advanced > 0) {
+      const last = deep[advanced - 1];
+      runningCheckScan = {
+        through: scan.through,
+        after: { created_at: last.created_at, id: last.id },
+      };
+    }
+  }
+}
 
-      // One org lookup per check — the billing service no longer makes it, so
-      // the release, the stale-fail and the settle below all share this one.
-      const orgId = await orgIdForTeam(check.team_id);
+async function reconcileMonitorCheckCandidate(
+  candidate: Awaited<ReturnType<typeof listRunningMonitorChecks>>[number],
+  attempt: () => void,
+): Promise<void> {
+  const lockKey = `monitor-check-finalize:${candidate.id}`;
+  const lockToken = uuidv7();
+  const lock = await redisEvictConnection.set(
+    lockKey,
+    lockToken,
+    "EX",
+    60,
+    "NX",
+  );
+  if (lock !== "OK") return;
 
-      const monitor = await getMonitorForUpdate(
-        check.team_id,
-        check.monitor_id,
-      );
-      if (!monitor) {
-        const failed = await updateMonitorCheckIfRunning(check.id, {
-          status: "failed",
-          finished_at: new Date().toISOString(),
-          actual_credits: 0,
-          error: "Monitor no longer exists.",
-        });
-        if (!failed) continue;
+  try {
+    // The batch can outlive another finalizer. Read from the primary after
+    // acquiring the lease rather than acting on that old running snapshot.
+    const check = await getMonitorCheckForUpdate(
+      candidate.team_id,
+      candidate.monitor_id,
+      candidate.id,
+    );
+    if (!check || check.status !== "running") return;
 
-        let released = true;
-        if (failed.autumn_lock_id) {
-          released = await autumnService
-            .finalizeCreditsLock({
-              lockId: failed.autumn_lock_id,
-              action: "release",
-              properties: {
-                source: "monitorCheck",
-                endpoint: "monitor",
-                jobId: check.id,
+    // One org lookup per check — the billing service no longer makes it, so
+    // the release, the stale-fail and the settle below all share this one.
+    const orgId = await orgIdForTeam(check.team_id);
+
+    const monitor = await getMonitorForUpdate(check.team_id, check.monitor_id);
+    if (!monitor) {
+      attempt();
+      const failed = await updateMonitorCheckIfRunning(check.id, {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        actual_credits: 0,
+        error: "Monitor no longer exists.",
+      });
+      if (!failed) return;
+
+      let released = true;
+      if (failed.autumn_lock_id) {
+        released = await autumnService
+          .finalizeCreditsLock({
+            lockId: failed.autumn_lock_id,
+            action: "release",
+            properties: {
+              source: "monitorCheck",
+              endpoint: "monitor",
+              jobId: check.id,
+            },
+            team: orgId ? { teamId: check.team_id, orgId } : undefined,
+          })
+          .catch(error => {
+            logger.warn(
+              "Failed to release orphaned monitor check credit lock",
+              {
+                error,
+                monitorId: check.monitor_id,
+                checkId: check.id,
+                lockId: failed.autumn_lock_id,
               },
-              team: orgId ? { teamId: check.team_id, orgId } : undefined,
-            })
-            .catch(error => {
-              logger.warn(
-                "Failed to release orphaned monitor check credit lock",
-                {
-                  error,
-                  monitorId: check.monitor_id,
-                  checkId: check.id,
-                  lockId: failed.autumn_lock_id,
-                },
-              );
-              return false;
-            });
-        }
-
-        await updateMonitorCheck(failed.id, {
-          billing_status: !failed.autumn_lock_id
-            ? "not_applicable"
-            : released
-              ? "released"
-              : "failed",
-        });
-        logger.warn("Failed orphaned monitor check", {
-          monitorId: check.monitor_id,
-          checkId: check.id,
-        });
-        continue;
+            );
+            return false;
+          });
       }
 
-      if (await failStaleMonitorCheck({ monitor, check, orgId })) continue;
+      await updateMonitorCheck(failed.id, {
+        billing_status: !failed.autumn_lock_id
+          ? "not_applicable"
+          : released
+            ? "released"
+            : "failed",
+      });
+      logger.warn("Failed orphaned monitor check", {
+        monitorId: check.monitor_id,
+        checkId: check.id,
+      });
+      return;
+    }
 
-      // The inline handler may still write target results after our primary read.
-      let targetResults = Array.isArray(check.target_results)
-        ? ([...check.target_results] as any[])
-        : [];
-      // True only when the persisted snapshot was empty and we rebuild the target
-      // runs from recorded pages. That is the only case it is safe to write back
-      // below: there is no live target_results to overwrite.
-      const recoveredFromEmpty = targetResults.length === 0;
-      if (recoveredFromEmpty) {
-        targetResults = await recoverTargetRunsFromRecordedPages({
-          monitor,
-          check,
-        });
-      }
+    if (isMonitorCheckStale(check, new Date(), monitor.targets)) {
+      attempt();
+      await failStaleMonitorCheck({ monitor, check, orgId });
+      return;
+    }
 
-      await processRemovedPagesForCompletedCrawls({
+    // The inline handler may still write target results after our primary read.
+    let targetResults = Array.isArray(check.target_results)
+      ? ([...check.target_results] as any[])
+      : [];
+    // True only when the persisted snapshot was empty and we rebuild the target
+    // runs from recorded pages. That is the only case it is safe to write back
+    // below: there is no live target_results to overwrite.
+    const recoveredFromEmpty = targetResults.length === 0;
+    if (recoveredFromEmpty) {
+      targetResults = await recoverTargetRunsFromRecordedPages({
         monitor,
         check,
-        targetResults,
       });
+    }
 
-      if (
-        !(await isMonitorCheckComplete(
-          {
-            ...check,
-            target_results: targetResults,
-          },
-          monitor,
-        ))
-      ) {
-        // Only persist target_results we recovered from an empty snapshot. Writing
-        // back a non-empty stale snapshot here can DOWNGRADE a searchCompleted=true
-        // that the inline handler persisted after this reconciler loaded its
-        // snapshot, reverting the marker and stranding the check until the stale
-        // reaper. The complete-path write below is safe: a search target can only
-        // be complete once its snapshot already carries searchCompleted=true.
-        if (recoveredFromEmpty && targetResults.length > 0) {
-          await updateMonitorCheckIfRunning(check.id, {
-            target_results: targetResults,
-          });
-        }
-        continue;
+    await processRemovedPagesForCompletedCrawls({
+      monitor,
+      check,
+      targetResults,
+    });
+
+    if (
+      !(await isMonitorCheckComplete(
+        {
+          ...check,
+          target_results: targetResults,
+        },
+        monitor,
+      ))
+    ) {
+      // Only persist target_results we recovered from an empty snapshot. Writing
+      // back a non-empty stale snapshot here can DOWNGRADE a searchCompleted=true
+      // that the inline handler persisted after this reconciler loaded its
+      // snapshot, reverting the marker and stranding the check until the stale
+      // reaper. The complete-path write below is safe: a search target can only
+      // be complete once its snapshot already carries searchCompleted=true.
+      if (recoveredFromEmpty && targetResults.length > 0) {
+        await updateMonitorCheckIfRunning(check.id, {
+          target_results: targetResults,
+        });
       }
+      return;
+    }
 
-      const [same, changed, newCount, removed, errorCount] = await Promise.all([
-        countMonitorCheckPages({ checkId: check.id, status: "same" }),
-        countMonitorCheckPages({ checkId: check.id, status: "changed" }),
-        countMonitorCheckPages({ checkId: check.id, status: "new" }),
-        countMonitorCheckPages({ checkId: check.id, status: "removed" }),
-        countMonitorCheckPages({ checkId: check.id, status: "error" }),
-      ]);
-      const totalPages = same + changed + newCount + removed + errorCount;
-      const actualCredits = await calculateMonitorCheckActualCredits({
-        checkId: check.id,
-        targets: monitor.targets,
-        // Flat search credits come from target_results, not page metadata.
-        targetResults,
+    const [same, changed, newCount, removed, errorCount] = await Promise.all([
+      countMonitorCheckPages({ checkId: check.id, status: "same" }),
+      countMonitorCheckPages({ checkId: check.id, status: "changed" }),
+      countMonitorCheckPages({ checkId: check.id, status: "new" }),
+      countMonitorCheckPages({ checkId: check.id, status: "removed" }),
+      countMonitorCheckPages({ checkId: check.id, status: "error" }),
+    ]);
+    const totalPages = same + changed + newCount + removed + errorCount;
+    const actualCredits = await calculateMonitorCheckActualCredits({
+      checkId: check.id,
+      targets: monitor.targets,
+      // Flat search credits come from target_results, not page metadata.
+      targetResults,
+    });
+
+    // This conditional write is the durable claim. Even if the Redis lease
+    // expires during preparation, only one worker may settle this check.
+    attempt();
+    const claimed = await updateMonitorCheckIfRunning(check.id, {
+      status: errorCount > 0 ? "partial" : "completed",
+      finished_at: new Date().toISOString(),
+      actual_credits: actualCredits,
+      total_pages: totalPages,
+      same_count: same,
+      changed_count: changed,
+      new_count: newCount,
+      removed_count: removed,
+      error_count: errorCount,
+      target_results: targetResults,
+    });
+
+    if (!claimed) return;
+    let finalized = claimed;
+
+    let settled = false;
+    try {
+      settled = await billMonitorCheck({
+        monitor,
+        check: finalized,
+        actualCredits,
+        lockId: claimed.autumn_lock_id,
+        orgId,
       });
-
-      // This conditional write is the durable claim. Even if the Redis lease
-      // expires during preparation, only one worker may settle this check.
-      const claimed = await updateMonitorCheckIfRunning(check.id, {
-        status: errorCount > 0 ? "partial" : "completed",
-        finished_at: new Date().toISOString(),
-        actual_credits: actualCredits,
-        total_pages: totalPages,
-        same_count: same,
-        changed_count: changed,
-        new_count: newCount,
-        removed_count: removed,
-        error_count: errorCount,
-        target_results: targetResults,
+    } catch (error) {
+      logger.warn("Failed to bill monitor check during reconciliation", {
+        monitorId: monitor.id,
+        checkId: finalized.id,
+        error,
       });
+    }
 
-      if (!claimed) continue;
-      let finalized = claimed;
+    // A refusal and a throw are the same fact — the settle did not land — and
+    // both must be recorded as such. `firebillFinalize` answers `false`
+    // without throwing, so the catch alone never saw them.
+    if (claimed.autumn_lock_id) {
+      if (!settled) {
+        logger.error(
+          "Monitor check settle did not land; the hold is unsettled and this run is unbilled",
+          {
+            monitorId: monitor.id,
+            checkId: finalized.id,
+            lockId: claimed.autumn_lock_id,
+            actualCredits,
+          },
+        );
+      }
+      finalized = await updateMonitorCheck(check.id, {
+        billing_status: settled ? "confirmed" : "failed",
+      }).catch(updateError => {
+        logger.warn("Failed to record monitor check billing outcome", {
+          monitorId: monitor.id,
+          checkId: finalized.id,
+          error: updateError,
+        });
+        return finalized;
+      });
+    }
 
-      let settled = false;
+    if (await claimMonitorNotification(check.id)) {
+      let notificationStatus: {
+        webhook?: unknown;
+        email?: unknown;
+        slack?: unknown;
+      } | null = null;
       try {
-        settled = await billMonitorCheck({
+        const pages = (await listMonitorCheckPages({
+          teamId: monitor.team_id,
+          monitorId: monitor.id,
+          checkId: check.id,
+          limit: 100,
+          skip: 0,
+        })) as PageResult[];
+
+        notificationStatus = await sendNotifications({
           monitor,
           check: finalized,
-          actualCredits,
-          lockId: claimed.autumn_lock_id,
-          orgId,
+          pages,
+        });
+
+        finalized = await updateMonitorCheck(check.id, {
+          notification_status: notificationStatus,
+          webhook_payload: notificationStatus.webhook
+            ? { summary: toSummaryObject(finalized) }
+            : null,
+          email_payload: notificationStatus.email
+            ? { summary: toSummaryObject(finalized) }
+            : null,
         });
       } catch (error) {
-        logger.warn("Failed to bill monitor check during reconciliation", {
+        logger.warn("Failed to send monitor check notifications", {
           monitorId: monitor.id,
           checkId: finalized.id,
           error,
         });
-      }
-
-      // A refusal and a throw are the same fact — the settle did not land — and
-      // both must be recorded as such. `firebillFinalize` answers `false`
-      // without throwing, so the catch alone never saw them.
-      if (claimed.autumn_lock_id) {
-        if (!settled) {
-          logger.error(
-            "Monitor check settle did not land; the hold is unsettled and this run is unbilled",
-            {
-              monitorId: monitor.id,
-              checkId: finalized.id,
-              lockId: claimed.autumn_lock_id,
-              actualCredits,
-            },
-          );
-        }
+        notificationStatus = {
+          webhook: {
+            attempted: !!monitor.webhook,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          email: {
+            attempted: !!monitor.notification?.email?.enabled,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        };
         finalized = await updateMonitorCheck(check.id, {
-          billing_status: settled ? "confirmed" : "failed",
+          notification_status: notificationStatus,
         }).catch(updateError => {
-          logger.warn("Failed to record monitor check billing outcome", {
+          logger.warn("Failed to record monitor check notification failure", {
             monitorId: monitor.id,
             checkId: finalized.id,
             error: updateError,
@@ -1760,102 +1893,41 @@ export async function reconcileRunningMonitorChecks(
           return finalized;
         });
       }
-
-      if (await claimMonitorNotification(check.id)) {
-        let notificationStatus: {
-          webhook?: unknown;
-          email?: unknown;
-          slack?: unknown;
-        } | null = null;
-        try {
-          const pages = (await listMonitorCheckPages({
-            teamId: monitor.team_id,
-            monitorId: monitor.id,
-            checkId: check.id,
-            limit: 100,
-            skip: 0,
-          })) as PageResult[];
-
-          notificationStatus = await sendNotifications({
-            monitor,
-            check: finalized,
-            pages,
-          });
-
-          finalized = await updateMonitorCheck(check.id, {
-            notification_status: notificationStatus,
-            webhook_payload: notificationStatus.webhook
-              ? { summary: toSummaryObject(finalized) }
-              : null,
-            email_payload: notificationStatus.email
-              ? { summary: toSummaryObject(finalized) }
-              : null,
-          });
-        } catch (error) {
-          logger.warn("Failed to send monitor check notifications", {
-            monitorId: monitor.id,
-            checkId: finalized.id,
-            error,
-          });
-          notificationStatus = {
-            webhook: {
-              attempted: !!monitor.webhook,
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            email: {
-              attempted: !!monitor.notification?.email?.enabled,
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-          };
-          finalized = await updateMonitorCheck(check.id, {
-            notification_status: notificationStatus,
-          }).catch(updateError => {
-            logger.warn("Failed to record monitor check notification failure", {
-              monitorId: monitor.id,
-              checkId: finalized.id,
-              error: updateError,
-            });
-            return finalized;
-          });
-        }
-      }
-
-      await updateMonitorScheduleAfterRun({
-        monitor,
-        check: finalized,
-        summary: toSummaryObject(finalized),
-      });
-
-      logger.info("Reconciled monitor check", {
-        monitorId: monitor.id,
-        checkId: finalized.id,
-        status: finalized.status,
-        totalPages,
-        same,
-        changed,
-        new: newCount,
-        removed,
-        errors: errorCount,
-      });
-    } catch (error) {
-      logger.warn("Failed to reconcile monitor check", {
-        error,
-        checkId: candidate.id,
-      });
-    } finally {
-      // An expired lease may already belong to another worker.
-      await redisEvictConnection.eval(
-        `if redis.call("get", KEYS[1]) == ARGV[1] then
-          return redis.call("del", KEYS[1])
-        end
-        return 0`,
-        1,
-        lockKey,
-        lockToken,
-      );
     }
+
+    await updateMonitorScheduleAfterRun({
+      monitor,
+      check: finalized,
+      summary: toSummaryObject(finalized),
+    });
+
+    logger.info("Reconciled monitor check", {
+      monitorId: monitor.id,
+      checkId: finalized.id,
+      status: finalized.status,
+      totalPages,
+      same,
+      changed,
+      new: newCount,
+      removed,
+      errors: errorCount,
+    });
+  } catch (error) {
+    logger.warn("Failed to reconcile monitor check", {
+      error,
+      checkId: candidate.id,
+    });
+  } finally {
+    // An expired lease may already belong to another worker.
+    await redisEvictConnection.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    end
+    return 0`,
+      1,
+      lockKey,
+      lockToken,
+    );
   }
 }
 

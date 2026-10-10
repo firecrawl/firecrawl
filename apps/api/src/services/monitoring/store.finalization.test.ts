@@ -8,15 +8,18 @@ const {
   set,
   limit,
   returning,
+  orderBy,
 } = vi.hoisted(() => {
   const where = vi.fn();
   const set = vi.fn();
   const limit = vi.fn();
   const returning = vi.fn();
+  const orderBy = vi.fn();
   const chain = {
     from: vi.fn(() => chain),
     set: set.mockImplementation(() => chain),
     where: where.mockImplementation(() => chain),
+    orderBy: orderBy.mockImplementation(() => chain),
     limit,
     returning,
   };
@@ -28,6 +31,7 @@ const {
     set,
     limit,
     returning,
+    orderBy,
   };
 });
 
@@ -39,6 +43,7 @@ vi.mock("../../db/rpc", () => ({ monitoringClaimDueMonitors: vi.fn() }));
 
 import {
   getMonitorCheckForUpdate,
+  listRunningMonitorChecks,
   updateMonitorCheckIfRunning,
   updateMonitorCheckIfStatus,
 } from "./store";
@@ -59,6 +64,36 @@ function queryPredicate() {
 }
 
 describe("monitor check finalization storage", () => {
+  it("selects a bounded keyset page using the indexed timestamp range and unique tie breaker", async () => {
+    const through = { created_at: "2026-01-01T01:00:00.000001Z", id: checkId };
+    const after = { created_at: "2026-01-01T00:00:00.000Z", id: checkId };
+    expect(await listRunningMonitorChecks(50, { through, after })).toEqual([]);
+    expect(replicaSelect).toHaveBeenCalledTimes(1);
+    expect(primarySelect).not.toHaveBeenCalled();
+    expect(primaryUpdate).not.toHaveBeenCalled();
+    expect(limit).toHaveBeenCalledWith(50);
+    const predicate = queryPredicate();
+    expect(predicate.sql).toBe(
+      '(("monitor_checks"."status" = $1) and ("monitor_checks"."created_at" <= $2) and (("monitor_checks"."created_at", "monitor_checks"."id") <= ($3::timestamptz, $4::uuid)) and ("monitor_checks"."created_at" >= $5) and (("monitor_checks"."created_at", "monitor_checks"."id") > ($6::timestamptz, $7::uuid)))',
+    );
+    expect(predicate.params).toEqual([
+      "running",
+      through.created_at,
+      through.created_at,
+      through.id,
+      after.created_at,
+      after.created_at,
+      checkId,
+    ]);
+    const dialect = new PgDialect();
+    expect(
+      orderBy.mock.calls[0].map(column => dialect.sqlToQuery(column).sql),
+    ).toEqual([
+      '"monitor_checks"."created_at" asc',
+      '"monitor_checks"."id" asc',
+    ]);
+  });
+
   it("reads the current check from primary scoped to its team and monitor", async () => {
     const confirmed = {
       id: checkId,
