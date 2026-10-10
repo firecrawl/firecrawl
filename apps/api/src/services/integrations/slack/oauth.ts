@@ -16,6 +16,9 @@ const STATE_PREFIX = "slack-oauth-state:";
 
 const AUTHORIZE_ENDPOINT = "https://slack.com/oauth/v2/authorize";
 
+// Extra bot scopes for answering @-mentions and DMs with the agent.
+const AGENT_SCOPES = ["app_mentions:read", "im:history"];
+
 type SlackOAuthStatePayload = {
   teamId: string;
   redirectPath: string;
@@ -23,6 +26,16 @@ type SlackOAuthStatePayload = {
   // up to the channel the user picked during install so it can post right away.
   monitorId?: string;
 };
+
+// Bot scopes to request at install. The agent scopes are only added when the
+// feature is on, because Slack rejects scopes the app does not declare.
+export function slackOAuthScopes(): string {
+  const scopes = config.SLACK_OAUTH_SCOPES.split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (config.SLACK_AGENT_ENABLED) scopes.push(...AGENT_SCOPES);
+  return [...new Set(scopes)].join(",");
+}
 
 export function isSlackConfigured(): boolean {
   return Boolean(
@@ -60,7 +73,7 @@ export async function createAuthorizeUrl(params: {
 
   const url = new URL(AUTHORIZE_ENDPOINT);
   url.searchParams.set("client_id", config.SLACK_CLIENT_ID!);
-  url.searchParams.set("scope", config.SLACK_OAUTH_SCOPES);
+  url.searchParams.set("scope", slackOAuthScopes());
   url.searchParams.set("redirect_uri", config.SLACK_OAUTH_REDIRECT_URL!);
   url.searchParams.set("state", state);
 
@@ -139,7 +152,11 @@ export async function handleOAuthCallback(params: {
   const statePayload = await consumeState(params.state);
   if (!statePayload) {
     logger.warn("Slack OAuth callback with invalid/expired state");
-    return { ok: false, error: "invalid_state", redirectPath: "/app/monitoring" };
+    return {
+      ok: false,
+      error: "invalid_state",
+      redirectPath: "/app/monitoring",
+    };
   }
 
   const result = await exchangeOAuthCode({
