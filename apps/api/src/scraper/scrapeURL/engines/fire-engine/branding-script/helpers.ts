@@ -143,3 +143,10 @@ export const getClassNameString = (el: Element): string => {
     return "";
   }
 };
+
+// substring() counts UTF-16 code units, so a plain cut can leave the first
+// half of a surrogate pair (emoji, styled letters) alone at the end.
+export const truncateText = (text: string, max: number): string => {
+  const code = text.charCodeAt(max - 1);
+  return text.substring(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+};
