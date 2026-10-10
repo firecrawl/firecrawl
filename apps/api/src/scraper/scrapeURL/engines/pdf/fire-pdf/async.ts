@@ -405,7 +405,9 @@ export async function scrapePDFWithFirePDFAsync(
     });
   }
   const durationMs = now() - overallStartedAt;
-  firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
+  firePdfAsyncTotalDurationSeconds
+    .labels(meta.internalOptions.crawlId ? "bulk" : "interactive")
+    .observe(durationMs / 1000);
 
   const cacheKey = resolvePdfCacheKey(cacheInput);
   const provenance = provenanceFromResponse(fetched.provenance, meta.logger, {
