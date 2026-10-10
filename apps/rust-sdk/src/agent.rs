@@ -37,6 +37,7 @@ pub struct AgentOptions {
     pub max_credits: Option<u32>,
 
     /// Strictly constrain the agent to the provided URLs.
+    #[serde(rename = "strictConstrainToURLs")]
     pub strict_constrain_to_urls: Option<bool>,
 
     /// Agent model to use. Defaults to `spark-2` server-side when unset.
@@ -1931,5 +1932,56 @@ mod tests {
         assert_eq!(action.providers[0].accept["capability"], "terms/accept");
         mock.assert();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod url_constraint_contract_regression {
+    use super::*;
+    #[tokio::test]
+    async fn start_agent_sends_the_constraint_key_to_http() {
+        for constraint in [false, true] {
+            let mut server = mockito::Server::new_async().await;
+            let mock = server
+                .mock("POST", "/v2/agent")
+                .match_body(mockito::Matcher::PartialJson(
+                    serde_json::json!({"strictConstrainToURLs": constraint}),
+                ))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"success":true,"id":"owned-agent"}"#)
+                .create_async()
+                .await;
+            let client = Client::new_selfhosted(server.url(), Some("owned-key")).unwrap();
+            let response = client
+                .start_agent(AgentOptions {
+                    prompt: "owned fixture".into(),
+                    strict_constrain_to_urls: Some(constraint),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(response.id, "owned-agent");
+            mock.assert_async().await;
+        }
+    }
+
+    #[test]
+    fn constraint_uses_api_acronym_key_for_both_boolean_values() {
+        for constraint in [false, true] {
+            let options = AgentOptions {
+                prompt: "owned fixture".into(),
+                strict_constrain_to_urls: Some(constraint),
+                ..Default::default()
+            };
+            let body = serde_json::to_value(options).unwrap();
+            assert_eq!(
+                body.get("strictConstrainToURLs"),
+                Some(&serde_json::json!(constraint))
+            );
+            assert!(body.get("strictConstrainToUrls").is_none());
+        }
+        let body = serde_json::to_value(AgentOptions::default()).unwrap();
+        assert!(body.get("strictConstrainToURLs").is_none());
     }
 }
