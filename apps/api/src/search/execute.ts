@@ -27,6 +27,10 @@ import type { BillingMetadata } from "../services/billing/types";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
+import {
+  resolveSearchCostPerTenResults,
+  searchCreditsForResults,
+} from "../lib/search-credits";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 
@@ -281,7 +285,7 @@ export async function executeSearch(
   }
 
   const isZDR = options.enterprise?.includes("zdr");
-  const creditsPerTenResults = isZDR ? 10 : 2;
+  const costPerTenResults = resolveSearchCostPerTenResults(flags, !!isZDR);
   // Gov index results are free; developer index results bill like web results.
   const billableResultsCount =
     indexCategorySearch === searchGovCategory
@@ -290,9 +294,10 @@ export async function executeSearch(
   // Threat protection scan fees ride on the search credits: they are part of
   // serving the search itself (every result domain is scanned before
   // filtering), so they bill against the same feature and show up in the
-  // request's creditsUsed.
+  // request's creditsUsed. The search charge keeps its exact decimal; the
+  // scan fee is a whole number and is added as is.
   const searchCredits =
-    Math.ceil(billableResultsCount / 10) * creditsPerTenResults +
+    searchCreditsForResults(billableResultsCount, costPerTenResults) +
     threatScanCredits;
   let scrapeCredits = 0;
 

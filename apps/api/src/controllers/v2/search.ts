@@ -480,6 +480,12 @@ async function searchControllerInner(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
+    // The charge in Autumn and creditsUsed keep the exact decimal. The
+    // credits_cost columns and the request credits rollup hold only whole
+    // numbers, so they get a rounded record of the charge.
+    const searchCreditsRecord =
+      !isSearchPreview && shouldBill ? Math.round(result.searchCredits) : 0;
+
     logSearch({
       id: jobId,
       request_id: agentRequestId ?? jobId,
@@ -493,7 +499,7 @@ async function searchControllerInner(
       options: req.body,
       // Don't record preview tokens as billed in the ledger — only record
       // credits when billing is actually applied.
-      credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+      credits_cost: searchCreditsRecord,
       zeroDataRetention,
     }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
@@ -518,7 +524,7 @@ async function searchControllerInner(
         time_taken: timeTakenInSeconds,
         // Ensure preview-mode searches don't get a non-zero credits_cost
         // in the research ledger when preview tokens are used.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+        credits_cost: searchCreditsRecord,
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {

@@ -529,7 +529,10 @@ async function supaBillTeam(
     data = await billTeam7({
       team_id,
       subscription_id: null,
-      credits,
+      // The ledger column is integer. The charge in Autumn stays exact, and
+      // the ledger is a whole-number record of it. The caller passes the
+      // group total, so fractions sum before this one rounding.
+      credits: Math.round(credits),
       api_key_id: api_key_id ?? null,
       is_extract,
     });
