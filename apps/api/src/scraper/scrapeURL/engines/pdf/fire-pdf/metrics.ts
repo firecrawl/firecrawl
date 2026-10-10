@@ -63,7 +63,8 @@ export const firePdfAsyncLongPollTotal = new Counter({
 
 export const firePdfAsyncTotalDurationSeconds = new Histogram({
   name: "firecrawl_fire_pdf_async_total_duration_seconds",
-  help: "End-to-end duration from 'decide to use async' to 'result available'",
+  help: "End-to-end duration from 'decide to use async' to 'result available', by origin: interactive (a caller waits on this document) or bulk (a crawl or batch scrape child)",
+  labelNames: ["origin"],
   buckets: [0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800],
 });
 
