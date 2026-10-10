@@ -4,12 +4,13 @@ module Firecrawl
   module Models
     # Search results from the v2 search API.
     class SearchData
-      attr_reader :web, :news, :images
+      attr_reader :web, :news, :images, :tools
 
       def initialize(data)
         @web = data["web"]
         @news = data["news"]
         @images = data["images"]
+        @tools = data["tools"]
       end
 
       def to_s
