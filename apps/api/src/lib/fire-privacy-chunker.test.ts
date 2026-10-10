@@ -100,3 +100,27 @@ describe("chunkMarkdown", () => {
     expect(() => chunkMarkdown("abc", { maxBytes: -10 })).toThrow(RangeError);
   });
 });
+
+describe("UTF-8 consumer boundaries", () => {
+  it("keeps non-BMP text intact at the production hard-cut boundary", () => {
+    const text = "a".repeat(DEFAULT_MAX_CHARS - 1) + "🔒tail";
+    const chunks = chunkMarkdown(text);
+    const consumed = chunks.map(chunk => new TextDecoder().decode(new TextEncoder().encode(chunk.text))).join("");
+    expect(consumed).toBe(text);
+    expect(chunks.map(chunk => text.slice(chunk.start, chunk.start + chunk.text.length))).toEqual(chunks.map(chunk => chunk.text));
+  });
+
+  it("shrinks byte-limited chunks by complete code points", () => {
+    const text = "aa🔒bb🔒";
+    const chunks = chunkMarkdown(text, { maxChars: 100, maxBytes: 11 });
+    expect(chunks.map(chunk => new TextDecoder().decode(new TextEncoder().encode(chunk.text))).join("")).toBe(text);
+    for (const chunk of chunks) expect(new TextEncoder().encode(chunk.text).length).toBeLessThanOrEqual(11);
+  });
+});
+
+
+it("rejects budgets too small for a complete next code point", () => {
+  expect(() => chunkMarkdown("🔒", { maxChars: 1 })).toThrow(RangeError);
+  expect(() => chunkMarkdown("🔒", { maxBytes: 3 })).toThrow(RangeError);
+  expect(chunkMarkdown("a", { maxChars: 1, maxBytes: 1 })).toEqual([{ text: "a", start: 0 }]);
+});
