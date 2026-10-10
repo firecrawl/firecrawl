@@ -5,6 +5,8 @@ import { config } from "../../../config";
 import {
   insertBrowserSession,
   getBrowserSession,
+  getBrowserSessionFromScrape,
+  didBrowserSessionUsePrompt,
   listUnsettledHangarSessions,
   settleBrowserSessionOnce,
   withLockedBrowserSession,
@@ -22,7 +24,10 @@ import {
   browserReplayController,
   browserReplayPageController,
 } from "../browser";
-import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/browser-agent";
+import {
+  executeCodeViaBrowserSession,
+  executePromptViaBrowserAgent,
+} from "../../../lib/scrape-interact/browser-agent";
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 import { browserCreateController } from "../browser";
@@ -451,6 +456,38 @@ describe("scrapeInteractController", () => {
       expect(result.output).toBe("done");
     }
 
+    it("selects the replay tab before the first snapshot by default", async () => {
+      await runPrompt();
+      // Tab selection (2), then the initial snapshot and URL reads (2).
+      expect(executeHangarBrowser).toHaveBeenCalledTimes(4);
+      expect(vi.mocked(executeHangarBrowser).mock.calls[0][1].code).toContain(
+        "Target.getTargetInfo",
+      );
+    });
+
+    it("skips the repeat tab selection when the caller already selected it", async () => {
+      const agent = await vi.importActual<
+        typeof import("../../../lib/scrape-interact/browser-agent")
+      >("../../../lib/scrape-interact/browser-agent");
+      vi.mocked(executeHangarBrowser).mockResolvedValue(output);
+      await agent.executePromptViaBrowserAgent(
+        "claim-private",
+        session.browser_id,
+        30,
+        logger,
+        undefined,
+        { tabSelected: true },
+      );
+      expect(executeHangarBrowser).toHaveBeenCalledTimes(2);
+      const codes = vi
+        .mocked(executeHangarBrowser)
+        .mock.calls.map(([, params]) => params.code);
+      expect(codes).toEqual([
+        "agent-browser snapshot -i",
+        "agent-browser get url",
+      ]);
+    });
+
     it("uses Luna medium without response storage or AI telemetry for ZDR prompts", async () => {
       await runPrompt();
       expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
@@ -611,6 +648,77 @@ describe("scrapeInteractController", () => {
       }),
     );
   });
+
+  it.each([
+    ["a session created in this request", null, true],
+    ["a stored session", "stored", false],
+  ] as const)(
+    "tells the prompt agent whether %s already has the replay tab selected",
+    async (_, stored, tabSelected) => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+      } as any);
+      const executed = {
+        stdout: "a".repeat(32),
+        result: "",
+        stderr: "",
+        exitCode: 0,
+        killed: false,
+      };
+      vi.mocked(getBrowserSessionFromScrape).mockResolvedValueOnce(
+        stored
+          ? ({
+              id: "session-stored",
+              team_id: "team-123",
+              browser_id: "br_stored",
+              status: "active",
+              credits_used: null,
+              zero_data_retention: false,
+            } as any)
+          : null,
+      );
+      vi.mocked(createHangarBrowser).mockResolvedValue({
+        id: "br_session",
+        status: "running",
+        max_expires_at: 700,
+        cdp_url: "wss://hangar.example/cdp",
+      } as any);
+      vi.mocked(executeHangarBrowser).mockResolvedValue(executed);
+      vi.mocked(insertBrowserSession).mockImplementation(
+        async row => ({ ...row, credits_used: null }) as any,
+      );
+      vi.mocked(didBrowserSessionUsePrompt).mockResolvedValue(true);
+      vi.mocked(executePromptViaBrowserAgent).mockResolvedValue({
+        ...executed,
+        output: "done",
+      });
+      const res = buildRes();
+      await scrapeInteractController(
+        {
+          params: { jobId: "scrape-123" },
+          body: { prompt: "click the first result" },
+          headers: {},
+          auth: { team_id: "team-123" },
+          acuc: {},
+        } as any,
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(executePromptViaBrowserAgent).toHaveBeenCalledWith(
+        "click the first result",
+        stored ? "br_stored" : "br_session",
+        30,
+        expect.anything(),
+        expect.anything(),
+        { tabSelected },
+      );
+    },
+  );
 
   it.each([
     browserExecuteController,
