@@ -70,7 +70,7 @@ function mergeObjects(obj1: any, obj2: any): any {
   const result = { ...obj1 };
 
   for (const key in obj2) {
-    if (obj2.hasOwnProperty(key)) {
+    if (Object.prototype.hasOwnProperty.call(obj2, key)) {
       // If obj2's value is non-null, it should override obj1's value
       if (obj2[key] !== null) {
         if (Array.isArray(obj2[key])) {
