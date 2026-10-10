@@ -593,7 +593,16 @@ module Firecrawl
       deadline = Time.now + timeout
       while Time.now < deadline
         job = get_crawl_status(job_id)
-        return paginate_crawl(job) if job.done?
+        if job.done?
+          begin
+            paginate_crawl(job)
+          rescue StandardError => e
+            raise JobFailedError.new(job, "Crawl", pagination_error: e) unless job.status == "completed"
+            raise
+          end
+          raise JobFailedError.new(job, "Crawl") unless job.status == "completed"
+          return job
+        end
 
         sleep(poll_interval)
       end
@@ -604,7 +613,16 @@ module Firecrawl
       deadline = Time.now + timeout
       while Time.now < deadline
         job = get_batch_scrape_status(job_id)
-        return paginate_batch_scrape(job) if job.done?
+        if job.done?
+          begin
+            paginate_batch_scrape(job)
+          rescue StandardError => e
+            raise JobFailedError.new(job, "Batch scrape", pagination_error: e) unless job.status == "completed"
+            raise
+          end
+          raise JobFailedError.new(job, "Batch scrape") unless job.status == "completed"
+          return job
+        end
 
         sleep(poll_interval)
       end
