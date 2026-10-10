@@ -606,6 +606,62 @@ describe("Scrape tests", () => {
     );
   });
 
+  describeIf(ALLOW_TEST_SUITE_WEBSITE)("removeBase64Images", () => {
+    it.concurrent(
+      "replaces only base64 image URLs and keeps the text between images",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${base}/base64-images.html?testId=${crypto.randomUUID()}`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).not.toContain(";base64,");
+
+        const ssoRow = response.markdown
+          ?.split("\n")
+          .find(line => line.startsWith("| SSO |"));
+        expect(ssoRow).toContain("![no](data:image/svg+xml,");
+        expect(ssoRow).toContain("No");
+        expect(ssoRow).toContain("![yes](<Base64-Image-Removed>)");
+
+        expect(response.markdown).toContain("Price: 42 dollars, in stock.");
+        expect(response.markdown).toContain("![logo](<Base64-Image-Removed>)");
+
+        expect(response.markdown).toContain(
+          "![badge](data:image/svg+xml,%3Csvg%2F%3E",
+        );
+        expect(response.markdown).toContain("This line must survive.");
+        expect(response.markdown).toContain(
+          "![banner](<Base64-Image-Removed>)",
+        );
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "keeps base64 images when removeBase64Images is false",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${base}/base64-images.html?testId=${crypto.randomUUID()}`,
+            formats: ["markdown"],
+            removeBase64Images: false,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain(
+          "![yes](data:image/png;base64,iVBORw0KGgo=)",
+        );
+        expect(response.markdown).toContain("Price: 42 dollars, in stock.");
+      },
+      scrapeTimeout,
+    );
+  });
+
   describeIf(TEST_PRODUCTION)("Fire-Engine scraping", () => {
     it.concurrent(
       "scrape status works",
