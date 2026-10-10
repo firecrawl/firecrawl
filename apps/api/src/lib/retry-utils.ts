@@ -60,16 +60,14 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
       return;
     }
 
-    const timeoutId = setTimeout(() => {
-      resolve();
-    }, ms);
-
-    const abortHandler = () => {
+    const finish = () => {
       clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", finish);
       resolve();
     };
+    const timeoutId = setTimeout(finish, ms);
 
-    signal?.addEventListener("abort", abortHandler, { once: true });
+    signal?.addEventListener("abort", finish, { once: true });
   });
 }
 
