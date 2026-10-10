@@ -188,7 +188,9 @@ function inferPalette(
   // sampled color let button fills outvote the paragraphs.
   const textVotes = new Map<string, number>();
   for (const s of snapshots) {
-    if (s.isButton || !s.text || !s.text.trim()) continue;
+    if (s.isButton || s.visible === false || !s.text || !s.text.trim()) {
+      continue;
+    }
     const hex = hexify(s.colors.text, pageBackground);
     if (hex) textVotes.set(hex, (textVotes.get(hex) || 0) + 1);
   }

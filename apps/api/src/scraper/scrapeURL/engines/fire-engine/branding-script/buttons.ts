@@ -15,13 +15,36 @@ const isOpaque = (color: string | null | undefined): boolean => {
   return alpha > CONSTANTS.MIN_ALPHA_THRESHOLD;
 };
 
-/** Rendered, with a size, and not hidden or fully transparent. */
+/**
+ * Rendered, with a size, and not hidden or fully transparent. Opacity doesn't
+ * inherit, so a faded-out ancestor (a closed menu) is checked too.
+ */
 export const isVisibleElement = (el: Element, rect: DOMRect): boolean => {
   if (!(rect.width > 0 && rect.height > 0)) return false;
   const cs = getComputedStyleCached(el);
   if (cs.display === "none" || cs.visibility === "hidden") return false;
-  return !(parseFloat(cs.opacity) < 0.05);
+  let node: Element | null = el;
+  for (let depth = 0; node && depth < 15; depth++) {
+    if (parseFloat(getComputedStyleCached(node).opacity) < 0.05) return false;
+    node = node.parentElement;
+  }
+  return true;
 };
+
+/** Fixed or sticky (itself or an ancestor): its on-screen position doesn't scroll. */
+export const isViewportAnchored = (el: Element): boolean => {
+  let node: Element | null = el;
+  for (let depth = 0; node && depth < 10; depth++) {
+    const position = getComputedStyleCached(node).position;
+    if (position === "fixed" || position === "sticky") return true;
+    node = node.parentElement;
+  }
+  return false;
+};
+
+/** Distance from the top of the page, or of the screen for fixed/sticky elements. */
+export const pageTop = (el: Element, rect: DOMRect): number =>
+  isViewportAnchored(el) ? rect.top : rect.top + (window.scrollY || 0);
 
 /** The first opaque background behind an element (its ancestors'), white if none. */
 const getBackgroundBehind = (el: Element): string => {
@@ -46,10 +69,13 @@ export const getEffectiveFill = (el: Element): string | null => {
     if (isOpaque(own)) return own;
     for (const pseudo of ["::before", "::after"]) {
       const ps = getPseudoStyle(el, pseudo);
+      // Hover-only layers sit at opacity 0 until hovered: not a fill.
       if (
         ps &&
         ps.content &&
         ps.content !== "none" &&
+        ps.visibility !== "hidden" &&
+        !(parseFloat(ps.opacity) < 0.05) &&
         isOpaque(ps.backgroundColor)
       ) {
         return ps.backgroundColor;

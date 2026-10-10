@@ -101,4 +101,23 @@ describe("text color heuristic", () => {
 
     expect(profile.colors?.textPrimary).toBe("#FFFFFF");
   });
+
+  it("ignores text the visitor can't see", () => {
+    const hidden = Array.from({ length: 10 }, (_, i) => ({
+      ...snap({ text: `Menu item ${i}`, textColor: "rgb(120, 0, 0)" }),
+      visible: false,
+    }));
+    const paragraphs = Array.from({ length: 3 }, (_, i) =>
+      snap({ text: `Paragraph ${i}`, textColor: "rgb(33, 33, 33)" }),
+    );
+
+    const profile = processRawBranding(
+      raw([...hidden, ...paragraphs], {
+        background: "rgb(255, 255, 255)",
+        scheme: "light",
+      }),
+    );
+
+    expect(profile.colors?.textPrimary).toBe("#212121");
+  });
 });

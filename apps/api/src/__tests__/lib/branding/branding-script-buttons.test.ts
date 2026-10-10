@@ -5,7 +5,7 @@ import { getBrandingScript } from "../../../scraper/scrapeURL/engines/fire-engin
 
 // jsdom has no layout: elements get a box from data-top / data-w / data-h, and
 // anything without data-top has an empty box (not visible).
-function scan(body: string) {
+function scan(body: string, scrollY = 0) {
   const dom = new JSDOM(
     `<html><head><title>Acme</title></head><body>${body}</body></html>`,
     { runScripts: "outside-only", url: "https://acme.test/" },
@@ -38,6 +38,7 @@ function scan(body: string) {
       bottom: top + height,
     };
   };
+  Object.defineProperty(window, "scrollY", { value: scrollY });
   const result = window.eval(getBrandingScript());
   return result.branding.snapshots as Array<{
     text: string;
@@ -93,10 +94,22 @@ describe("branding script button detection", () => {
 
   it("leaves out hidden copies of buttons", () => {
     const snaps = scan(
-      `<button style="display: none">Hidden menu CTA</button><button data-top="300">Shown CTA</button>`,
+      `<button data-top="300" style="display: none">Hidden menu CTA</button><div data-top="300" style="opacity: 0"><button data-top="300">Faded menu CTA</button></div><button data-top="300">Shown CTA</button>`,
     );
 
     expect(byText(snaps, "Hidden menu CTA")).toBeUndefined();
+    expect(byText(snaps, "Faded menu CTA")).toBeUndefined();
     expect(byText(snaps, "Shown CTA")?.visible).toBe(true);
+  });
+
+  it("keeps a fixed header button at its on-screen position after scrolling", () => {
+    const snaps = scan(
+      `<header style="position: fixed" data-top="0" data-w="1200" data-h="64"><button data-top="10">Sign up</button></header>
+       <button data-top="100">Read more</button>`,
+      800,
+    );
+
+    expect(byText(snaps, "Sign up")?.position.top).toBe(10);
+    expect(byText(snaps, "Read more")?.position.top).toBe(900);
   });
 });

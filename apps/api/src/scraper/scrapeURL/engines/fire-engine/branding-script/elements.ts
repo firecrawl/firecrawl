@@ -10,6 +10,7 @@ import {
   isButtonElement,
   isVisibleElement,
   looksFilledOrOutlined,
+  pageTop,
 } from "./buttons";
 
 export const sampleElements = (): Element[] => {
@@ -32,13 +33,12 @@ export const sampleElements = (): Element[] => {
   // budget before the hero's call to action was reached.
   const pool: Array<{ el: Element; top: number; order: number }> = [];
   const scanned = document.querySelectorAll(`${CONSTANTS.BUTTON_SELECTOR}, a`);
-  const scrollY = window.scrollY || 0;
   for (let i = 0; i < scanned.length && i < CONSTANTS.BUTTON_SCAN_LIMIT; i++) {
     const el = scanned[i];
     try {
       const rect = el.getBoundingClientRect();
       if (!isVisibleElement(el, rect) || !isButtonElement(el)) continue;
-      pool.push({ el, top: rect.top + scrollY, order: i });
+      pool.push({ el, top: pageTop(el, rect), order: i });
     } catch (e) {
       recordError("sampleElements-buttons", e);
     }
@@ -293,7 +293,7 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     text: text,
     rect: { w: rect.width, h: rect.height },
     position: {
-      top: rect.top + (window.scrollY || 0),
+      top: pageTop(el, rect),
       left: rect.left + (window.scrollX || 0),
     },
     visible: isVisibleElement(el, rect),
