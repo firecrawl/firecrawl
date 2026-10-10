@@ -486,7 +486,7 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
   }
 
   prompt += `${buttons && buttons.length > 0 ? "3" : "1"}. **Color Roles**: Based on ${buttons && buttons.length > 0 ? "button colors and " : ""}page context:\n`;
-  prompt += `   - PRIMARY brand color: the saturated brand/CTA color (logo fill, primary button). NOT the header/nav chrome, NOT near-black navy on a light page, NOT the page background.\n`;
+  prompt += `   - PRIMARY brand color: the identity / CTA color (logo fill, primary button) — including black when the primary button or wordmark is black. NOT header/nav chrome, NOT a navy bar on a light page when a different CTA exists, NOT a hero wash or default link blue, NOT the page background.\n`;
   prompt += `   - SECONDARY brand color (a complementary color distinct from primary, often used for secondary headings, supporting UI elements, or alternate brand visuals. Return "" if no clear secondary color exists)\n`;
   prompt += `   - ACCENT color (${buttons && buttons.length > 0 ? "usually the vibrant CTA button background - green, blue, etc." : "vibrant accent color from the page"})\n`;
   prompt += `   - Background and text colors\n`;
