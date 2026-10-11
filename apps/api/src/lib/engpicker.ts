@@ -25,58 +25,75 @@ type EngpickerJob = {
   created_at: string;
 };
 
-async function evaluateURL(
+/**
+ * `evaluated` distinguishes "the model judged this scrape unsuccessful" from
+ * "the evaluation never produced a verdict". A provider or transport failure
+ * is not evidence about the scrape, and recording it as `result: false` would
+ * let an outage masquerade as an engine-quality verdict in the index.
+ */
+export type EngpickerEvaluation = {
+  engine: Engine;
+  stealth: boolean;
+  markdown: string | null;
+  result: boolean;
+  evaluated: boolean;
+};
+
+export async function evaluateURL(
   id: string,
   url: string,
   engine: Engine,
   stealth: boolean,
   logger: Logger,
-): Promise<{
-  engine: Engine;
-  stealth: boolean;
-  markdown: string | null;
-  result: boolean;
-}> {
-  const scrapeResult = await scrapeURL(
-    id,
-    url,
-    scrapeOptions.parse({
-      proxy: stealth ? "stealth" : "basic",
-      maxAge: 0,
-      storeInCache: false,
-    }),
-    {
-      forceEngine: engine,
-      teamId: "engpicker",
-      orgId: null,
-    },
-    new CostTracking(),
-  );
-
-  if (!scrapeResult.success) {
-    logger.warn("Scrape failed", { scrapeResult });
-    return {
-      engine,
-      stealth,
-      markdown: null,
-      result: false,
-    };
-  }
-
-  const markdown = scrapeResult.document.markdown ?? "";
-
-  logger.info("Scrape completed, waiting for AI evaluation");
-
-  // Use GPT-4o-mini to evaluate if the scrape was actually successful
-  const evaluationResult = await generateObject({
-    model: getModel("gpt-4o-mini", "openai"),
-    schema: z.object({
-      is_successful: z.boolean(),
-    }),
-    messages: [
+): Promise<EngpickerEvaluation> {
+  // The whole per-engine operation is isolated. `processEngpickerJob` awaits
+  // every engine inside a single Promise.all, so any rejection here would skip
+  // the verdict insert and the `done: true` update and leave the queue row
+  // permanently picked up. Both a thrown scrape and a failed evaluation are
+  // therefore unavailable observations rather than negative verdicts.
+  try {
+    const scrapeResult = await scrapeURL(
+      id,
+      url,
+      scrapeOptions.parse({
+        proxy: stealth ? "stealth" : "basic",
+        maxAge: 0,
+        storeInCache: false,
+      }),
       {
-        role: "system",
-        content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
+        forceEngine: engine,
+        teamId: "engpicker",
+        orgId: null,
+      },
+      new CostTracking(),
+    );
+
+    if (!scrapeResult.success) {
+      // A reported scrape failure is real evidence about the engine.
+      logger.warn("Scrape failed", { scrapeResult });
+      return {
+        engine,
+        stealth,
+        markdown: null,
+        result: false,
+        evaluated: true,
+      };
+    }
+
+    const markdown = scrapeResult.document.markdown ?? "";
+
+    logger.info("Scrape completed, waiting for AI evaluation");
+
+    // Use GPT-4o-mini to evaluate if the scrape was actually successful
+    const evaluationResult = await generateObject({
+      model: getModel("gpt-4o-mini", "openai"),
+      schema: z.object({
+        is_successful: z.boolean(),
+      }),
+      messages: [
+        {
+          role: "system",
+          content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
 
 A scrape should be considered UNSUCCESSFUL if the content indicates any of the following:
 - Antibot/captcha challenges (e.g., Cloudflare, reCAPTCHA, hCaptcha, bot detection messages)
@@ -93,24 +110,95 @@ A scrape should be considered SUCCESSFUL if:
 A scrape may still be successful if:
 - Cookie consent walls block the actual content
 - Paywalls block the actual content`,
-      },
-      {
-        role: "user",
-        content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
-      },
-    ],
-  });
+        },
+        {
+          role: "user",
+          content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
+        },
+      ],
+    });
 
-  const isSuccess = evaluationResult.object.is_successful;
+    const isSuccess = evaluationResult.object.is_successful;
 
-  logger.info("AI evaluation completed", { isSuccess });
+    logger.info("AI evaluation completed", { isSuccess });
 
-  return {
-    engine,
-    stealth,
-    markdown,
-    result: isSuccess,
-  };
+    return {
+      engine,
+      stealth,
+      markdown,
+      result: isSuccess,
+      evaluated: true,
+    };
+  } catch (error) {
+    logger.warn("Engpicker evaluation unavailable for this engine", {
+      error,
+      stage: "scrape-or-evaluation",
+      url,
+      engine,
+    });
+    return {
+      engine,
+      stealth,
+      markdown: null,
+      result: false,
+      evaluated: false,
+    };
+  }
+}
+
+/**
+ * Map evaluation results onto the fixed-shape native input.
+ *
+ * `EngpickerUrlResult` can only encode booleans, so a URL is eligible for
+ * native scoring only when every engine result needed for its comparison was
+ * actually evaluated. Converting an unavailable evaluation into
+ * `success: false` would fabricate engine-quality evidence: with CDP
+ * evaluations succeeding and TLS evaluations unavailable, the native scorer
+ * would read that as "TLS insufficient" and could conclude ChromeCdpRequired.
+ * A URL with missing evidence is therefore excluded from the sample entirely.
+ *
+ * Genuine negative evaluations (`evaluated: true`, `result: false`) are real
+ * evidence and are kept.
+ */
+export function buildEngpickerNativeInput(
+  results: { url: string; results: EngpickerEvaluation[] }[],
+): EngpickerUrlResult[] {
+  const nativeInput: EngpickerUrlResult[] = [];
+  for (const result of results) {
+    const cdpBasic = result.results.find(
+      r => r.engine === "fire-engine;chrome-cdp",
+    );
+    const cdpStealth = result.results.find(
+      r => r.engine === "fire-engine;chrome-cdp;stealth",
+    );
+    const tlsBasic = result.results.find(
+      r => r.engine === "fire-engine;tlsclient",
+    );
+    const tlsStealth = result.results.find(
+      r => r.engine === "fire-engine;tlsclient;stealth",
+    );
+
+    // Missing evidence in any of the four observations makes this URL
+    // unusable for a per-engine comparison, so it is not scored at all.
+    if (
+      ![cdpBasic, cdpStealth, tlsBasic, tlsStealth].every(r => r?.evaluated)
+    ) {
+      continue;
+    }
+
+    nativeInput.push({
+      url: result.url,
+      cdpBasicMarkdown: cdpBasic!.markdown ?? undefined,
+      cdpBasicSuccess: cdpBasic!.result,
+      cdpStealthMarkdown: cdpStealth!.markdown ?? undefined,
+      cdpStealthSuccess: cdpStealth!.result,
+      tlsBasicMarkdown: tlsBasic!.markdown ?? undefined,
+      tlsBasicSuccess: tlsBasic!.result,
+      tlsStealthMarkdown: tlsStealth!.markdown ?? undefined,
+      tlsStealthSuccess: tlsStealth!.result,
+    });
+  }
+  return nativeInput;
 }
 
 export async function processEngpickerJob() {
@@ -257,33 +345,30 @@ export async function processEngpickerJob() {
     })),
   );
 
-  // Transform results into format for native Levenshtein comparison
-  const nativeInput: EngpickerUrlResult[] = results.map(result => {
-    const cdpBasic = result.results.find(
-      r => r.engine === "fire-engine;chrome-cdp",
-    );
-    const cdpStealth = result.results.find(
-      r => r.engine === "fire-engine;chrome-cdp;stealth",
-    );
-    const tlsBasic = result.results.find(
-      r => r.engine === "fire-engine;tlsclient",
-    );
-    const tlsStealth = result.results.find(
-      r => r.engine === "fire-engine;tlsclient;stealth",
-    );
-
-    return {
-      url: result.url,
-      cdpBasicMarkdown: cdpBasic?.markdown ?? undefined,
-      cdpBasicSuccess: cdpBasic?.result ?? false,
-      cdpStealthMarkdown: cdpStealth?.markdown ?? undefined,
-      cdpStealthSuccess: cdpStealth?.result ?? false,
-      tlsBasicMarkdown: tlsBasic?.markdown ?? undefined,
-      tlsBasicSuccess: tlsBasic?.result ?? false,
-      tlsStealthMarkdown: tlsStealth?.markdown ?? undefined,
-      tlsStealthSuccess: tlsStealth?.result ?? false,
-    };
-  });
+  const nativeInput = buildEngpickerNativeInput(results);
+  if (nativeInput.length === 0) {
+    // No URL had complete evidence, so there is nothing to compare. Recording
+    // Uncertain is correct and avoids asking the scorer to infer engine
+    // quality from an empty sample.
+    logger.warn("No engpicker sample had complete evaluation evidence", {
+      verdict: "Uncertain",
+    });
+    try {
+      await dbIndex.insert(schema.engpicker_verdicts).values({
+        domain_hash: job.domain_hash,
+        verdict: "Uncertain",
+      });
+      await dbIndex
+        .update(schema.engpicker_queue)
+        .set({ done: true })
+        .where(eq(schema.engpicker_queue.id, job.id));
+    } catch (persistError) {
+      logger.error("Error persisting uncertain engpicker verdict", {
+        persistError,
+      });
+    }
+    return;
+  }
 
   // Use native Rust implementation for fast Levenshtein comparison
   const SIMILARITY_THRESHOLD = 0.85; // 85% similarity means tlsclient is good enough
