@@ -127,10 +127,10 @@ export async function deriveDiff(
       const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
 
+      // Preserve content order: sorting characters hides real changes such
+      // as a price changing from $12 to $21 or two fields swapping values.
       const transformer = (x: string) =>
-        [...x.replace(/\s+/g, "").replace(/\[iframe\]\(.+?\)/g, "")]
-          .sort()
-          .join("");
+        x.replace(/\s+/g, "").replace(/\[iframe\]\(.+?\)/g, "");
       const isChanged =
         transformer(previousMarkdown) !== transformer(currentMarkdown);
       const changeStatus =
