@@ -314,6 +314,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     },
     fontStacks: raw.typography.stacks,
     fontSizes: raw.typography.sizes,
+    fontWeights: raw.typography.weights,
   };
 
   // Spacing
