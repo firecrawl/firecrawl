@@ -1,5 +1,5 @@
 requests
-httpx
+httpx2
 pytest
 pytest-asyncio
 python-dotenv
