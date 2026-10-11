@@ -13,6 +13,7 @@ import { getError } from './helpers/get_error';
 import { lookup } from 'dns/promises';
 import IPAddr from 'ipaddr.js';
 import { Server, RequestError } from 'proxy-chain';
+import { createBrowserManager } from './helpers/browser_manager';
 
 dotenv.config();
 
@@ -184,10 +185,8 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser;
-
-const initializeBrowser = async () => {
-  browser = await chromium.launch({
+const launchBrowserInstance = async (): Promise<Browser> => {
+  return await chromium.launch({
     headless: true,
     args: [
       '--no-sandbox',
@@ -201,6 +200,14 @@ const initializeBrowser = async () => {
   });
 };
 
+export const browserManager = createBrowserManager({
+  launcher: launchBrowserInstance,
+});
+
+const initializeBrowser = async (): Promise<Browser> => {
+  return await browserManager.ensureBrowser();
+};
+
 const createContext = async (
   skipTlsVerification: boolean = false,
   userAgentOverride?: string,
@@ -208,6 +215,7 @@ const createContext = async (
   context: BrowserContext;
   securityState: ContextSecurityState;
 }> => {
+  const browser = await browserManager.ensureBrowser();
   const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
   const securityState: ContextSecurityState = {
@@ -268,9 +276,11 @@ const createContext = async (
 };
 
 const shutdownBrowser = async () => {
+  const browser = browserManager.getBrowser();
   if (browser) {
     await browser.close();
   }
+  browserManager.reset();
 };
 
 const isValidUrl = (urlString: string): boolean => {
@@ -352,8 +362,8 @@ const scrapePage = async (
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser) {
-      await initializeBrowser();
+    if (!browserManager.isReady()) {
+      await browserManager.ensureBrowser();
     }
 
     const { context: testContext } = await createContext();
@@ -421,8 +431,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
     );
   }
 
-  if (!browser) {
-    await initializeBrowser();
+  if (!browserManager.isReady()) {
+    await browserManager.ensureBrowser();
   }
 
   await pageSemaphore.acquire();
@@ -555,6 +565,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       });
     }
     console.error('Scrape error:', error);
+    browserManager.handleError(error);
     res
       .status(500)
       .json({ error: 'An error occurred while fetching the page.' });
