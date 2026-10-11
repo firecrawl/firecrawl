@@ -88,6 +88,7 @@ export class Watcher extends EventEmitter {
   private readonly pollInterval: number;
   private readonly timeout?: number;
   private ws?: WebSocket;
+  private timeoutId?: ReturnType<typeof setTimeout>;
   private closed = false;
   private readonly emittedDocumentKeys = new Set<string>();
 
@@ -115,14 +116,34 @@ export class Watcher extends EventEmitter {
       const cleanup = () => {
         this.removeListener("done", onDone);
         this.removeListener("error", onError);
+        clearTimeout(this.timeoutId);
       };
       this.on("done", onDone);
       this.on("error", onError);
+
+      // One deadline covers connection setup, WebSocket traffic, and polling fallback.
+      if (this.timeout && this.timeout !== Infinity) {
+        const startedAt = Date.now();
+        const timeoutMs = this.timeout * 1000;
+        // Larger delays overflow the signed 32-bit timer limit in Node and browsers.
+        const maxDelay = 2 ** 31 - 1;
+        const onTimeout = () => {
+          const remaining = timeoutMs - (Date.now() - startedAt);
+          if (remaining > 0) {
+            this.timeoutId = setTimeout(onTimeout, Math.min(remaining, maxDelay));
+            return;
+          }
+          this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
+          this.close();
+        };
+        this.timeoutId = setTimeout(onTimeout, Math.min(timeoutMs, maxDelay));
+      }
 
       (async () => {
         try {
           const url = this.buildWsUrl();
           const wsCtor = await getWebSocketCtor();
+          if (this.closed) return;
           if (!wsCtor) {
             this.pollLoop();
             return;
@@ -143,9 +164,8 @@ export class Watcher extends EventEmitter {
   }
 
   private attachWsHandlers(ws: WebSocket) {
-    let startTs = Date.now();
-    const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
     ws.onmessage = (ev: MessageEvent) => {
+      if (this.closed) return;
       try {
         const raw = ensureUtf8String(ev.data);
         if (!raw) return;
@@ -179,12 +199,9 @@ export class Watcher extends EventEmitter {
       } catch {
         // ignore
       }
-      if (timeoutMs && Date.now() - startTs > timeoutMs) {
-        this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
-        this.close();
-      }
     };
     ws.onerror = () => {
+      if (this.closed) return;
       this.emit("error", { status: "failed", data: [], error: "WebSocket error", id: this.jobId });
       this.close();
     };
@@ -249,13 +266,12 @@ export class Watcher extends EventEmitter {
   }
 
   private async pollLoop() {
-    const startTs = Date.now();
-    const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
     while (!this.closed) {
       try {
         const snap = this.kind === "crawl"
           ? await getCrawlStatus(this.http as any, this.jobId)
           : await getBatchScrapeStatus(this.http as any, this.jobId);
+        if (this.closed) return;
         this.emitDocuments((snap.data || []) as Document[]);
         this.emit("snapshot", snap);
         if (["completed", "failed", "cancelled"].includes(snap.status)) {
@@ -266,18 +282,14 @@ export class Watcher extends EventEmitter {
       } catch {
         // ignore polling errors
       }
-      if (timeoutMs && Date.now() - startTs > timeoutMs) {
-        this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
-        this.close();
-        break;
-      }
+      if (this.closed) return;
       await new Promise((r) => setTimeout(r, Math.max(1000, this.pollInterval * 1000)));
     }
   }
 
   close() {
     this.closed = true;
+    clearTimeout(this.timeoutId);
     if (this.ws && (this.ws as any).close) (this.ws as any).close();
   }
 }
-
