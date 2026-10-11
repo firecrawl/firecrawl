@@ -1,5 +1,7 @@
 //! Firecrawl API v2 client.
 
+use std::time::Duration;
+
 use reqwest::Response;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -8,6 +10,8 @@ use crate::error::FirecrawlError;
 
 pub(crate) const API_VERSION: &str = "/v2";
 const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
+/// Default per-request HTTP timeout: 300000ms, matching the JS SDK's `timeoutMs` default.
+const DEFAULT_TIMEOUT: Duration = Duration::from_millis(300_000);
 
 /// Firecrawl API v2 client.
 ///
@@ -35,6 +39,7 @@ pub struct Client {
     pub(crate) api_key: Option<String>,
     pub(crate) api_url: String,
     pub(crate) client: reqwest::Client,
+    pub(crate) timeout: Duration,
 }
 
 impl Client {
@@ -93,10 +98,48 @@ impl Client {
         // back to the keyless free tier (rate-limited per IP). Other methods
         // return 401 from the API until a key is provided.
 
+        let client = reqwest::Client::builder()
+            .timeout(DEFAULT_TIMEOUT)
+            .build()
+            .map_err(|e| FirecrawlError::Misuse(format!("failed to build HTTP client: {e}")))?;
+
         Ok(Client {
             api_key,
             api_url: url,
-            client: reqwest::Client::new(),
+            client,
+            timeout: DEFAULT_TIMEOUT,
+        })
+    }
+
+    /// Overrides the per-request HTTP timeout (default: 5 minutes, matching the JS and Go SDKs).
+    ///
+    /// Covers the entire HTTP request, including reading the response.
+    /// An explicit scrape timeout extends this to at least the server timeout plus 5 seconds.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    /// use std::time::Duration;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = Client::new("your-api-key")?.with_timeout(Duration::from_secs(60))?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_timeout(mut self, timeout: Duration) -> Result<Self, FirecrawlError> {
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|e| FirecrawlError::Misuse(format!("failed to build HTTP client: {e}")))?;
+        self.timeout = timeout;
+        Ok(self)
+    }
+
+    pub(crate) fn scrape_http_timeout(&self, server_timeout_ms: Option<u32>) -> Duration {
+        server_timeout_ms.map_or(self.timeout, |ms| {
+            self.timeout
+                .max(Duration::from_millis(u64::from(ms) + 5_000))
         })
     }
 
@@ -287,6 +330,86 @@ mod tests {
         // Self-hosted URL normalization
         let client = Client::new_selfhosted("http://localhost:3000/", None::<&str>).unwrap();
         assert_eq!(client.api_url, "http://localhost:3000");
+    }
+
+    #[test]
+    fn test_scrape_timeout_buffer() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::new("test-key")?;
+        for (server_ms, expected_secs) in [(None, 300), (Some(60_000), 300), (Some(300_000), 305)] {
+            if client.scrape_http_timeout(server_ms) != Duration::from_secs(expected_secs) {
+                Err(format!("unexpected HTTP timeout for {server_ms:?}"))?
+            }
+        }
+        let client = client.with_timeout(Duration::from_secs(600))?;
+        if client.scrape_http_timeout(Some(300_000)) != Duration::from_secs(600) {
+            Err("longer configured client timeout was not preserved")?
+        }
+        let client = client.with_timeout(Duration::from_secs(15))?;
+        if client.scrape_http_timeout(Some(60_000)) != Duration::from_secs(65) {
+            Err("explicit server timeout did not extend the client timeout")?
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout_cuts_off_a_hung_connection() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Accept the connection without responding to simulate a stalled server.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await?;
+            std::future::pending::<()>().await;
+            Ok::<(), std::io::Error>(())
+        });
+
+        let result = async {
+            let client = Client::new_selfhosted(format!("http://{addr}"), None::<&str>)?
+                .with_timeout(Duration::from_millis(200))?;
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.scrape("https://example.com", None),
+            )
+            .await?;
+
+            match response {
+                Err(FirecrawlError::HttpError(_, e)) if e.is_timeout() => Ok(()),
+                other => Err(format!("expected a timeout HttpError, got: {other:?}").into()),
+            }
+        }
+        .await;
+
+        server.abort();
+        match server.await {
+            Ok(result) => result?,
+            Err(e) if e.is_cancelled() => (),
+            Err(e) => Err(e)?,
+        }
+        result
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout_still_allows_normal_requests(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v2/scrape")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"success":true,"data":{"markdown":"hi"}}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>)?
+            .with_timeout(Duration::from_secs(10))?;
+        let doc = client.scrape("https://example.com", None).await?;
+        if doc.markdown.as_deref() != Some("hi") {
+            Err(format!("unexpected markdown: {:?}", doc.markdown))?
+        }
+        if !mock.matched_async().await {
+            Err("expected scrape request was not received")?
+        }
+        Ok(())
     }
 
     #[test]
