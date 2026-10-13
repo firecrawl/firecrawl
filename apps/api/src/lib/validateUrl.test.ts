@@ -1,4 +1,8 @@
-import { isSameDomain, removeDuplicateUrls } from "./validateUrl";
+import {
+  checkAndUpdateURLForMap,
+  isSameDomain,
+  removeDuplicateUrls,
+} from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
 
 describe("isSameDomain", () => {
@@ -167,5 +171,46 @@ describe("removeDuplicateUrls", () => {
     const urls = ["https://example.com", "https://example.com/"];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual(["https://example.com"]);
+  });
+});
+
+describe("checkAndUpdateURLForMap", () => {
+  it("strips trailing slash on root URLs", () => {
+    expect(checkAndUpdateURLForMap("https://example.com/").url).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("leaves bare-domain URLs unchanged", () => {
+    expect(checkAndUpdateURLForMap("https://example.com").url).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("preserves trailing slash on non-root paths", () => {
+    expect(checkAndUpdateURLForMap("https://example.com/about/").url).toBe(
+      "https://example.com/about/",
+    );
+    expect(checkAndUpdateURLForMap("https://example.com/a/b/").url).toBe(
+      "https://example.com/a/b/",
+    );
+  });
+
+  it("does not add or remove a trailing slash from non-slashed paths", () => {
+    expect(checkAndUpdateURLForMap("https://example.com/about").url).toBe(
+      "https://example.com/about",
+    );
+  });
+
+  it("preserves query parameters by default and keeps trailing slash before '?'", () => {
+    expect(
+      checkAndUpdateURLForMap("https://example.com/about/?ref=foo").url,
+    ).toBe("https://example.com/about/?ref=foo");
+  });
+
+  it("strips query parameters when ignoreQueryParameters=true but keeps trailing slash on path", () => {
+    expect(
+      checkAndUpdateURLForMap("https://example.com/about/?ref=foo", true).url,
+    ).toBe("https://example.com/about/");
   });
 });

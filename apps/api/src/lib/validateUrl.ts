@@ -136,10 +136,6 @@ export const checkAndUpdateURLForMap = (
   if (!protocolIncluded(url)) {
     url = `http://${url}`;
   }
-  // remove last slash if present
-  if (url.endsWith("/")) {
-    url = url.slice(0, -1);
-  }
 
   const { error, urlObj } = getURLobj(url);
   if (error) {
@@ -150,6 +146,13 @@ export const checkAndUpdateURLForMap = (
 
   if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
     throw new Error("Invalid URL");
+  }
+
+  // Only strip the trailing slash on root URLs (e.g. "https://example.com/" -> "https://example.com").
+  // Preserve it on non-root paths because many sites' canonical URLs end with "/" and stripping
+  // it makes returned URLs 301-redirect to the slashed form.
+  if (typedUrlObj.pathname === "/" && url.endsWith("/")) {
+    url = url.slice(0, -1);
   }
 
   // remove any query params
