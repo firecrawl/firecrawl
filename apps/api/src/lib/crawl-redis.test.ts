@@ -1,4 +1,4 @@
-import { generateURLPermutations } from "./crawl-redis";
+import { generateURLPermutations, normalizeURL } from "./crawl-redis";
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {
@@ -79,5 +79,20 @@ describe("generateURLPermutations", () => {
     expect(wwwHttp.includes("http://www.firecrawl.dev/")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.html")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.php")).toBe(true);
+  });
+
+  it("strips credentials before normalizing and deduplicating crawl URLs", () => {
+    const normalized = normalizeURL("https://user:pass@firecrawl.dev/docs", {
+      crawlerOptions: {},
+    } as any);
+
+    expect(normalized).toBe("https://firecrawl.dev/docs");
+    expect(
+      generateURLPermutations("https://email@firecrawl.dev/docs").every(
+        permutation =>
+          !permutation.href.includes("email@") &&
+          !permutation.href.includes("user:pass@"),
+      ),
+    ).toBe(true);
   });
 });
