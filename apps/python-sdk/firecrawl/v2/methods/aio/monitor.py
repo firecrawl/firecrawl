@@ -82,9 +82,11 @@ async def _fetch_all_monitor_check_pages(
     next_url: str,
     initial_pages: List[MonitorCheckPage],
     pagination_config: Optional[PaginationConfig] = None,
+    initial_url: Optional[str] = None,
 ) -> List[MonitorCheckPage]:
     pages = initial_pages.copy()
     current_url = next_url
+    visited_urls = {str(client._client.build_request("GET", client._build_url(initial_url)).url)} if initial_url else set()
     page_count = 0
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
@@ -96,6 +98,11 @@ async def _fetch_all_monitor_check_pages(
             break
         if max_wait_time is not None and (time.monotonic() - start_time) > max_wait_time:
             break
+
+        resolved_url = str(client._client.build_request("GET", client._build_url(current_url)).url)
+        if resolved_url in visited_urls:
+            raise RuntimeError("Repeated pagination cursor while fetching monitor check pages")
+        visited_urls.add(resolved_url)
 
         response = await client.get(current_url)
         if response.status_code >= 400:
@@ -195,7 +202,8 @@ async def get_monitor_check(
     if status is not None:
         params.append(f"status={status}")
     suffix = f"?{'&'.join(params)}" if params else ""
-    data = await _monitor_check_data_or_error(await client.get(f"/v2/monitor/{monitor_id}/checks/{check_id}{suffix}"), "get monitor check")
+    initial_url = f"/v2/monitor/{monitor_id}/checks/{check_id}{suffix}"
+    data = await _monitor_check_data_or_error(await client.get(initial_url), "get monitor check")
     detail = MonitorCheckDetail(**data)
 
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
@@ -209,6 +217,7 @@ async def get_monitor_check(
             detail.next,
             detail.pages,
             pagination_config,
+            initial_url=initial_url,
         )
         detail.next = None
 
