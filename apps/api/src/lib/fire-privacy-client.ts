@@ -79,9 +79,9 @@ const DEFAULTS = {
 // PDF pages, ~10 chunks, ~60s wall at c=3 with the model on. Anything
 // larger pushes past the typical scrape budget and starves the fleet.
 const MAX_REDACT_BYTES = 250_000;
-// Chunks fan out at this concurrency to fire-privacy. The fleet has 6
-// pods at saturation; c=3 keeps a single call under 50% of capacity so
-// other tenants aren't starved.
+// Chunks fan out at this concurrency to fire-privacy. The fleet has a
+// four-pod baseline; c=3 leaves capacity for other calls while bounding
+// the pressure a single scrape can place on the service.
 const CHUNK_CONCURRENCY = 3;
 
 // Maps a span's `kind` (as returned by either OPF or Presidio) onto the

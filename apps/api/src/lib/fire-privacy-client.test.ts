@@ -55,6 +55,10 @@ function withBody(body: unknown, status = 200): Handler {
 }
 
 describe("redactText", () => {
+  it("uses a caller timeout longer than fire-privacy's model budget", () => {
+    expect(config.FIRE_PRIVACY_TIMEOUT_MS).toBe(32_000);
+  });
+
   it("returns status=ok with redacted_text and spans on 200", async () => {
     handler = withBody({
       redacted_text: "Hi, my name is <PERSON>.",
