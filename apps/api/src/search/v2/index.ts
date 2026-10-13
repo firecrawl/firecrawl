@@ -14,7 +14,7 @@ export async function search({
   tbs = undefined,
   filter = undefined,
   lang = "en",
-  country = "us",
+  country,
   location = undefined,
   safe = undefined,
   proxy = undefined,
