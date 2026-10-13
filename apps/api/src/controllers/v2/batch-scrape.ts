@@ -66,7 +66,9 @@ export async function batchScrapeController(
   res: Response<BatchScrapeResponse>,
 ) {
   const preNormalizedBody = { ...req.body };
-  if (req.body?.ignoreInvalidURLs === true) {
+  // ignoreInvalidURLs defaults to true, so only an explicit false validates
+  // every URL up front and rejects the whole request for one bad URL.
+  if (req.body?.ignoreInvalidURLs !== false) {
     req.body = batchScrapeRequestSchemaNoURLValidation.parse(req.body);
   } else {
     req.body = batchScrapeRequestSchema.parse(req.body);
