@@ -1,6 +1,5 @@
 import undici from "undici";
 import { config } from "../../config";
-import { createHmac } from "crypto";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
   getSecureDispatcherNoCookies,
@@ -17,6 +16,7 @@ import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { webhookQueue } from "./queue";
 import { randomUUID } from "crypto";
+import { buildWebhookDeliveryHeaders } from "./headers";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
@@ -127,11 +127,21 @@ export class WebhookSender {
       return { delivered: false, skipped: true };
     }
 
+    const payloadString = JSON.stringify(payload);
+
     if (this.usesWebhookQueue()) {
       const queueMessage: WebhookQueueMessage = {
         webhook_url: this.config.url,
         payload,
-        headers: this.config.headers,
+        headers: buildWebhookDeliveryHeaders({
+          configHeaders: this.config.headers,
+          deliveryMode: "queued",
+          jobId: this.context.jobId,
+          payload,
+          payloadString,
+          scrapeId,
+          secret: this.secret,
+        }),
         team_id: this.context.teamId,
         job_id: this.context.jobId,
         scrape_id: scrapeId ?? null,
@@ -156,17 +166,15 @@ export class WebhookSender {
       return { delivered: false, queued: true };
     }
 
-    const payloadString = JSON.stringify(payload);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.config.headers,
-    };
-
-    if (this.secret) {
-      const hmac = createHmac("sha256", this.secret);
-      hmac.update(payloadString);
-      headers["X-Firecrawl-Signature"] = `sha256=${hmac.digest("hex")}`;
-    }
+    const headers = buildWebhookDeliveryHeaders({
+      configHeaders: this.config.headers,
+      deliveryMode: "direct",
+      jobId: this.context.jobId,
+      payload,
+      payloadString,
+      scrapeId,
+      secret: this.secret,
+    });
 
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(
