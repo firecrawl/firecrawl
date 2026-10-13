@@ -1,0 +1,181 @@
+---
+title: "Node.js Agent Quickstart"
+description: "Canonical Firecrawl Node.js quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Node.js Agent Quickstart
+
+This file is the canonical quickstart for external agents integrating with Firecrawl via the JavaScript/TypeScript SDK. It is generated from SDK source and OpenAPI spec.
+
+## Install
+
+```bash
+npm install @mendable/firecrawl-js
+```
+
+## Authenticate
+
+```typescript
+import Firecrawl from "@mendable/firecrawl-js";
+
+const client = new Firecrawl({ apiKey: "fc-YOUR-API-KEY" });
+```
+
+The API key can also be set via the `FIRECRAWL_API_KEY` environment variable. If omitted, the client falls back to keyless free-tier mode (rate-limited per IP).
+
+## When To Use What
+
+- **search** — Use when you start with a query and need to discover relevant URLs and content across the web.
+- **scrape** — Use when you already have a URL and want to extract page content in structured formats.
+- **interact** — Use when the page needs clicks, form fills, or post-scrape browser actions via code or natural language.
+
+## Search
+
+### Why use it
+
+Search lets you find web pages, news articles, or images matching a query without knowing any URLs upfront. Results can optionally be scraped inline by passing `scrapeOptions`.
+
+### Preferred SDK method
+
+```typescript
+client.search(query, options?)
+```
+
+### Example
+
+```typescript
+const results = await client.search("firecrawl web scraping", {
+  limit: 5,
+  scrapeOptions: { formats: ["markdown"] },
+});
+
+for (const item of results.web ?? []) {
+  console.log(item.title, item.url);
+}
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | `string` (required) | The search query string. |
+| `sources` | `("web" \| "news" \| "images")[]` | Search sources to query. Determines which result arrays are populated. |
+| `categories` | `("github" \| "research" \| "pdf")[]` | Filter results by category. |
+| `includeDomains` | `string[]` | Only include results from these domains. Cannot be combined with `excludeDomains`. |
+| `excludeDomains` | `string[]` | Exclude results from these domains. Cannot be combined with `includeDomains`. |
+| `limit` | `number` | Maximum number of results to return. Must be positive. |
+| `tbs` | `string` | Time-based search filter (e.g. `"qdr:d"` for past day, `"qdr:w"` for past week). |
+| `location` | `string` | Geographic location for search results. |
+| `ignoreInvalidURLs` | `boolean` | Skip invalid URLs instead of failing. Useful when piping results into scrape. |
+| `timeout` | `number` | Request timeout in milliseconds. Must be positive. |
+| `scrapeOptions` | `ScrapeOptions` | Options to scrape each search result page inline. Accepts the same parameters as `scrape`. |
+| `enterprise` | `("default" \| "anon" \| "zdr")[]` | Enterprise search modes. Use `"zdr"` for Zero Data Retention or `"anon"` for anonymized search. |
+| `integration` | `string` | Integration identifier for tracking. |
+
+## Scrape
+
+### Why use it
+
+Scrape extracts content from a single URL in one or more formats (markdown, HTML, screenshot, JSON extraction, etc.). Use it when you know exactly which page you need.
+
+### Preferred SDK method
+
+```typescript
+client.scrape(url, options?)
+```
+
+### Example
+
+```typescript
+const doc = await client.scrape("https://example.com", {
+  formats: ["markdown", "links"],
+});
+
+console.log(doc.markdown);
+console.log(doc.links);
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | `string` (required) | The URL to scrape. |
+| `formats` | `FormatOption[]` | Output formats: `"markdown"`, `"html"`, `"rawHtml"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"changeTracking"`, `"json"`, `"attributes"`, `"branding"`, `"product"`, `"menu"`, `"audio"`, `"video"`. Can also pass objects for structured formats like `{ type: "json", schema: {...} }`. |
+| `headers` | `Record<string, string>` | Custom HTTP headers to send with the request. |
+| `includeTags` | `string[]` | Only include content from these HTML tags. |
+| `excludeTags` | `string[]` | Exclude content from these HTML tags. |
+| `onlyMainContent` | `boolean` | Extract only main content, excluding headers, navs, footers. |
+| `timeout` | `number` | Request timeout in milliseconds. |
+| `waitFor` | `number` | Wait this many milliseconds after page load before scraping. |
+| `mobile` | `boolean` | Emulate a mobile device viewport. |
+| `parsers` | `(string \| { type: "pdf"; mode?: "fast" \| "auto" \| "ocr"; maxPages?: number })[]` | Parser configuration. Include `"pdf"` to extract PDF content as markdown. |
+| `actions` | `ActionOption[]` | Browser actions to execute before scraping: `wait`, `screenshot`, `click`, `write`, `press`, `scroll`, `scrape`, `executeJavascript`, `pdf`. |
+| `location` | `{ country?: string; languages?: string[] }` | Geographic location for proxy routing and locale emulation. |
+| `skipTlsVerification` | `boolean` | Skip TLS certificate verification. |
+| `removeBase64Images` | `boolean` | Remove base64-encoded images from markdown output. |
+| `fastMode` | `boolean` | Enable fast scraping mode. |
+| `blockAds` | `boolean` | Block ads and cookie popups. |
+| `proxy` | `"basic" \| "stealth" \| "enhanced" \| "auto"` | Proxy type. `"auto"` retries with enhanced if basic fails. |
+| `maxAge` | `number` | Return cached result if younger than this many milliseconds. |
+| `minAge` | `number` | Only check cache, never trigger a fresh scrape. Value in milliseconds specifies minimum cache age. |
+| `storeInCache` | `boolean` | Cache the scrape result. |
+| `lockdown` | `boolean` | Serve only cached results. Returns 404 on cache miss. |
+| `redactPII` | `boolean \| RedactPIIOptions` | Redact personally identifiable information from output. |
+| `profile` | `{ name: string; saveChanges?: boolean }` | Persistent browser profile for shared cookies and session state. |
+| `integration` | `string` | Integration identifier for tracking. |
+
+## Interact
+
+### Why use it
+
+Interact lets you run code or natural language prompts inside a live browser session bound to a previous scrape job. Use it for clicking buttons, filling forms, navigating, or any post-scrape automation.
+
+### Preferred SDK method
+
+```typescript
+client.interact(jobId, args)
+```
+
+### Example
+
+```typescript
+const doc = await client.scrape("https://example.com", {
+  formats: ["markdown"],
+});
+
+const jobId = doc.metadata?.scrapeId;
+
+const result = await client.interact(jobId, {
+  code: "document.querySelector('button#load-more').click();",
+  language: "node",
+});
+
+console.log(result.output);
+
+// When done, stop the browser session
+await client.stopInteraction(jobId);
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `jobId` | `string` (required) | The scrape job ID from a previous scrape operation (`metadata.scrapeId`). |
+| `code` | `string` | Code to execute in the browser sandbox. Required if `prompt` is not provided. |
+| `prompt` | `string` | Natural language instruction for the browser agent. Required if `code` is not provided. |
+| `language` | `"python" \| "node" \| "bash"` | Execution language. Default: `"node"`. |
+| `timeout` | `number` | Execution timeout in milliseconds. |
+
+## Notes
+
+- **Naming style**: All parameters use camelCase.
+- **Deprecated aliases**: `scrapeUrl()` is deprecated in favor of `scrape()`. `scrapeExecute()` is deprecated in favor of `interact()`. `stopInteractiveBrowser()` and `deleteScrapeBrowser()` are deprecated in favor of `stopInteraction()`.
+- **Async by default**: All methods return Promises.
+- **Client initialization**: You can also pass just an API key string: `new Firecrawl("fc-YOUR-API-KEY")`.
+- **Retry logic**: The client supports `maxRetries` and `backoffFactor` options for automatic retry on transient failures.
+
+## Source Of Truth
+
+- `firecrawl/apps/js-sdk/firecrawl/src/v2/client.ts`
+- `firecrawl/apps/js-sdk/firecrawl/src/v2/types.ts`
+- `firecrawl-docs/api-reference/v2-openapi.json`

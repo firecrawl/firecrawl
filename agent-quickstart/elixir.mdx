@@ -1,0 +1,206 @@
+---
+title: "Elixir Agent Quickstart"
+description: "Canonical Firecrawl Elixir quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Elixir Agent Quickstart
+
+This file is the canonical quickstart for external agents integrating with Firecrawl via the Elixir SDK. It is generated from SDK source and OpenAPI spec.
+
+## Install
+
+Add to your `mix.exs`:
+
+```elixir
+defp deps do
+  [
+    {:firecrawl, "~> 1.8"}
+  ]
+end
+```
+
+## Authenticate
+
+Configure the API key in your application config:
+
+```elixir
+config :firecrawl, api_key: "fc-YOUR-API-KEY"
+```
+
+Or pass it per-request via the options argument:
+
+```elixir
+Firecrawl.search_and_scrape([query: "test"], api_key: "fc-YOUR-API-KEY")
+```
+
+For self-hosted instances, set `base_url`:
+
+```elixir
+config :firecrawl, base_url: "https://your-instance.com/v2"
+```
+
+## When To Use What
+
+- **search** — Use when you start with a query and need to discover relevant URLs and content across the web.
+- **scrape** — Use when you already have a URL and want to extract page content in structured formats.
+- **interact** — Use when the page needs clicks, form fills, or post-scrape browser actions via code execution.
+
+## Search
+
+### Why use it
+
+Search lets you find web pages, news articles, or images matching a query without knowing any URLs upfront. Results can optionally be scraped inline by passing `scrape_options`.
+
+### Preferred SDK method
+
+```elixir
+Firecrawl.search_and_scrape(params, opts \\ [])
+```
+
+A bang variant `search_and_scrape!/2` raises on error instead of returning `{:error, ...}`.
+
+### Example
+
+```elixir
+{:ok, response} = Firecrawl.search_and_scrape(
+  query: "firecrawl web scraping",
+  limit: 5
+)
+
+IO.inspect(response.body)
+```
+
+### Parameters
+
+All passed as a keyword list (first argument):
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | `:string` (required) | The search query string. |
+| `sources` | `list` | Search sources: `"web"`, `"news"`, `"images"`. |
+| `categories` | `list` | Filter by category: `"github"`, `"research"`, `"pdf"`. |
+| `include_domains` | `list(string)` | Only include results from these domains. |
+| `exclude_domains` | `list(string)` | Exclude results from these domains. |
+| `limit` | `integer` | Maximum number of results. |
+| `tbs` | `string` | Time-based search filter (e.g. `"qdr:d"` for past day, `"cdr:1,cd_min:MM/DD/YYYY,cd_max:MM/DD/YYYY"` for date range). |
+| `location` | `string` | Geographic location (e.g. `"San Francisco,California,United States"`). |
+| `country` | `string` | ISO country code for geo-targeting (e.g. `"US"`). |
+| `ignore_invalid_urls` | `boolean` | Skip invalid URLs instead of failing. |
+| `timeout` | `integer` | Request timeout in milliseconds. |
+| `scrape_options` | `keyword_list` | Options to scrape each result page inline. |
+| `enterprise` | `list(string)` | Enterprise options: `"zdr"` for Zero Data Retention, `"anon"` for anonymized search. |
+
+## Scrape
+
+### Why use it
+
+Scrape extracts content from a single URL in one or more formats (markdown, HTML, screenshot, JSON extraction, etc.). Use it when you know exactly which page you need.
+
+### Preferred SDK method
+
+```elixir
+Firecrawl.scrape_and_extract_from_url(params, opts \\ [])
+```
+
+A bang variant `scrape_and_extract_from_url!/2` raises on error. For batch scraping, use `scrape_and_extract_from_urls/2`.
+
+### Example
+
+```elixir
+{:ok, response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://example.com",
+  formats: ["markdown", "links"]
+)
+
+IO.inspect(response.body["data"]["markdown"])
+```
+
+### Parameters
+
+All passed as a keyword list (first argument):
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | `:string` (required) | The URL to scrape. |
+| `formats` | `list` | Output formats: `"markdown"`, `"html"`, `"rawHtml"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"json"`, `"audio"`, `"video"`, etc. Can also pass objects for structured formats. |
+| `headers` | `any` | Custom HTTP headers. |
+| `include_tags` | `list(string)` | Only include content from these HTML tags. |
+| `exclude_tags` | `list(string)` | Exclude content from these HTML tags. |
+| `only_main_content` | `boolean` | Extract only main content. |
+| `timeout` | `integer` | Request timeout in milliseconds. Min: `1000`, max: `300000`. |
+| `wait_for` | `integer` | Wait this many milliseconds after page load. |
+| `mobile` | `boolean` | Emulate a mobile device viewport. |
+| `parsers` | `list` | Parser configuration (e.g. `["pdf"]`). |
+| `actions` | `list` | Browser actions before scraping: wait, screenshot, click, write, press, scroll, scrape, executeJavascript, pdf. |
+| `location` | `keyword_list` | Geographic location with country and languages. |
+| `skip_tls_verification` | `boolean` | Skip TLS certificate verification. |
+| `remove_base64_images` | `boolean` | Remove base64-encoded images from markdown output. |
+| `block_ads` | `boolean` | Block ads and cookie popups. |
+| `proxy` | `:basic \| :enhanced \| :auto` | Proxy type. |
+| `max_age` | `integer` | Return cached result if younger than this many milliseconds. |
+| `min_age` | `integer` | Only check cache, never trigger a fresh scrape. |
+| `store_in_cache` | `boolean` | Cache the scrape result. |
+| `lockdown` | `boolean` | Serve only cached results. Returns 404 on cache miss. |
+| `redact_pii` | `boolean` | Redact personally identifiable information. |
+| `profile` | `keyword_list` | Persistent browser profile: `[name: "my-profile", save_changes: true]`. |
+| `zero_data_retention` | `boolean` | Enable zero data retention for this scrape. |
+
+## Interact
+
+### Why use it
+
+Interact lets you run code inside a live browser session bound to a previous scrape job. Use it for clicking buttons, filling forms, navigating, or any post-scrape automation.
+
+### Preferred SDK method
+
+```elixir
+Firecrawl.interact_with_scrape_browser_session(job_id, params \\ [], opts \\ [])
+```
+
+A bang variant `interact_with_scrape_browser_session!/3` raises on error.
+
+### Example
+
+```elixir
+{:ok, scrape_response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://example.com",
+  formats: ["markdown"]
+)
+
+job_id = scrape_response.body["data"]["metadata"]["scrapeId"]
+
+{:ok, result} = Firecrawl.interact_with_scrape_browser_session(job_id,
+  code: "document.querySelector('button#load-more').click();",
+  language: :node
+)
+
+IO.inspect(result.body)
+
+# When done, stop the browser session
+Firecrawl.stop_interactive_scrape_browser_session(job_id)
+```
+
+### Parameters
+
+The `job_id` is the first positional argument. Remaining parameters are passed as a keyword list:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `job_id` | `String.t()` (required, positional) | The scrape job ID from a previous scrape operation. |
+| `code` | `:string` (required) | Code to execute in the browser sandbox. |
+| `language` | `:python \| :node \| :bash` | Execution language. Use `:node` for JavaScript, `:bash` for agent-browser CLI. |
+| `timeout` | `integer` | Execution timeout in seconds. |
+
+## Notes
+
+- **Naming style**: All parameters use snake_case keyword lists, matching Elixir conventions.
+- **OpenAPI-generated client**: The Elixir SDK is auto-generated from the OpenAPI spec, so function names reflect the API operation IDs (`scrape_and_extract_from_url`, `search_and_scrape`, `interact_with_scrape_browser_session`).
+- **Return type**: All functions return `{:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}`. Bang variants raise on error.
+- **No deprecated aliases**: The Elixir SDK does not have deprecated aliases — use the canonical function names listed above.
+- **Batch scraping**: Use `scrape_and_extract_from_urls/2` for scraping multiple URLs, which takes a `urls` list instead of a single `url`.
+- **Response format**: Responses are raw `Req.Response` structs. Access data via `response.body["data"]`.
+
+## Source Of Truth
+
+- `firecrawl/apps/elixir-sdk/lib/firecrawl.ex`
+- `firecrawl-docs/api-reference/v2-openapi.json`
