@@ -5,10 +5,10 @@ import {
   integer,
   boolean,
   timestamp,
-  bytea,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { bytea } from "./columns";
 
 // Tables in the separate index Postgres project (INDEX_DATABASE_URL).
 
