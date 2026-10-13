@@ -630,6 +630,41 @@ describe("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
+  // External links are followed one hop: the external page is scraped, but the
+  // links on it are not crawled. example.org links only to iana.org, and the
+  // iana.org page links to many more iana.org pages, so without the one-hop rule
+  // the crawl fills its limit with iana.org pages.
+  concurrentIf(!process.env.TEST_SUITE_SELF_HOSTED)(
+    "allowExternalLinks does not crawl the links on an external page",
+    async () => {
+      const res = await crawl(
+        {
+          url: "https://example.org/",
+          limit: 5,
+          allowExternalLinks: true,
+          sitemap: "skip",
+        },
+        identity,
+      );
+
+      expect(res.success).toBe(true);
+      if (res.success) {
+        const sourceUrls = res.data.map(page =>
+          normalizeUrlForCompare(page.metadata.sourceURL!),
+        );
+        // The start page and the one external page it links to, nothing more.
+        expect(sourceUrls).toHaveLength(2);
+        expect(sourceUrls).toContain("https://example.org");
+        expect(
+          sourceUrls.some(
+            url => new URL(url).hostname.replace(/^www\./, "") === "iana.org",
+          ),
+        ).toBe(true);
+      }
+    },
+    5 * scrapeTimeout,
+  );
+
   describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
     "Crawl API with Prompt",
     () => {
