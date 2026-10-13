@@ -928,7 +928,7 @@ defmodule Firecrawl do
   @create_browser_session_schema NimbleOptions.new!([
     activity_ttl: [type: :integer, doc: "Time in seconds before the session is destroyed due to inactivity"],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking, as in scrape. Sessions started from a scrape with interact use the scrape's blockAds."],
-    location: [type: :keyword_list, keys: [country: [type: :string, required: true]], doc: "Country the session browses from (default US). Sessions started from a scrape with interact use the scrape's location."],
+    location: [type: :keyword_list, keys: [country: [type: :string, required: true]], doc: "Country the session browses from. Defaults to the US. Sessions started from a scrape with interact use the scrape's location."],
     profile: [type: :keyword_list, doc: "Enable persistent storage across interact sessions. Data saved in one session can be loaded in a later session using the same name."],
     stream_web_view: [type: :boolean, doc: "Whether to stream a live view of the browser"],
     ttl: [type: :integer, doc: "Total time-to-live in seconds for the interact session"]

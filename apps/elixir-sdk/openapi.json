@@ -5132,11 +5132,12 @@
                   },
                   "location": {
                     "type": "object",
-                    "description": "Country the session browses from (default US). Sessions started from a scrape with interact use the scrape's location.",
+                    "description": "Country the session browses from. Defaults to the US. Sessions started from a scrape with interact use the scrape's location.",
                     "properties": {
                       "country": {
                         "type": "string",
-                        "description": "ISO 3166-1 alpha-2 country code, such as GB."
+                        "description": "ISO 3166-1 alpha-2 country code, such as `GB` or `DE`. Case-insensitive.",
+                        "example": "GB"
                       }
                     },
                     "required": [
@@ -10240,6 +10241,43 @@
                   "concurrencyQueueDurationMs": {
                     "type": "number",
                     "description": "Time in milliseconds the request waited in the concurrency queue. Only present when concurrencyLimited is true."
+                  },
+                  "provider": {
+                    "type": "object",
+                    "description": "Set when a third-party data provider served the URL.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "The provider that returned the data."
+                      },
+                      "creditsCost": {
+                        "type": "integer",
+                        "description": "What that access cost, in credits."
+                      },
+                      "steps": {
+                        "type": "array",
+                        "description": "Each provider tried, in order.",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                              "matched",
+                              "not_found",
+                              "error"
+                            ]
+                            },
+                            "creditsCost": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               },
