@@ -41,7 +41,7 @@ def select_urls_with_r1(company, objective, serp_results):
                      for r in serp_results if r.get("link")]
 
         response = client.chat.completions.create(
-            model="o3-mini",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
