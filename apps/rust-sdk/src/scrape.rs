@@ -34,7 +34,7 @@ pub struct ScrapeOptions {
     /// Only extract the main content of the page.
     pub only_main_content: Option<bool>,
 
-    /// Timeout in milliseconds before returning an error.
+    /// Server-side scrape timeout in milliseconds; the HTTP timeout allows at least 5 extra seconds.
     pub timeout: Option<u32>,
 
     /// Time to wait after page load before scraping (milliseconds).
@@ -370,6 +370,7 @@ impl Client {
         if options.origin.is_none() {
             options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
         }
+        let http_timeout = self.scrape_http_timeout(options.timeout);
         let body = ScrapeRequest {
             url: url.as_ref().to_string(),
             options,
@@ -382,6 +383,7 @@ impl Client {
             .post(self.url("/scrape"))
             .headers(headers)
             .json(&body)
+            .timeout(http_timeout)
             .send()
             .await
             .map_err(|e| FirecrawlError::HttpError(format!("Scraping {:?}", url.as_ref()), e))?;
