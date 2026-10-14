@@ -1,5 +1,21 @@
 [
   {
+    "time": 1782145898999,
+    "options": {
+      "url": "http://firecrawl.com/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.firecrawl.dev/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  },
+  {
     "time": 1782145899000,
     "options": {
       "url": "http://www.firecrawl.dev/sitemap.xml",
