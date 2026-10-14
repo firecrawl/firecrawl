@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from firecrawl import Firecrawl
 from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.client_async import AsyncFirecrawlClient
 from firecrawl.v2.utils.error_handler import FirecrawlError
@@ -85,3 +86,43 @@ def test_gov_search_raises_on_unsuccessful_body():
 
     with pytest.raises(FirecrawlError, match="Search failed"):
         client.gov_search("zoning variance")
+
+
+def test_unified_keyless_gov_search_omits_authorization(monkeypatch):
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    post = Mock(return_value=_response())
+    monkeypatch.setattr("requests.post", post)
+    client = Firecrawl()
+
+    result = client.gov_search("food labeling requirements", k=5)
+
+    assert client.v1 is None
+    assert result.success is True
+    args, kwargs = post.call_args
+    assert args == ("https://api.firecrawl.dev/v2/search/gov",)
+    assert "Authorization" not in kwargs["headers"]
+    assert kwargs["json"]["query"] == "food labeling requirements"
+    assert kwargs["json"]["k"] == 5
+
+
+def test_unified_keyless_null_api_url_uses_configuration_validation(monkeypatch):
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="api_url"):
+        Firecrawl(api_url=None)
+
+
+@pytest.mark.parametrize("key_source", ["explicit", "environment", "self_hosted"])
+def test_unified_gov_client_preserves_legacy_access(monkeypatch, key_source):
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    if key_source == "environment":
+        monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+        client = Firecrawl()
+    elif key_source == "self_hosted":
+        client = Firecrawl(api_url="http://localhost:3000")
+    else:
+        client = Firecrawl(api_key="fc-test")
+
+    assert client.v1 is not None
+    assert callable(client.v1.scrape_url)
+    assert callable(client.gov_search)
