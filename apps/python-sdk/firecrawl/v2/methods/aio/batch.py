@@ -81,7 +81,9 @@ async def get_batch_scrape_status(
     Args:
         client: Async HTTP client instance
         job_id: ID of the batch scrape job
-        pagination_config: Optional configuration for pagination behavior
+        pagination_config: Optional configuration for pagination behavior. When
+            pagination_config is provided and auto_paginate is enabled (defaults to
+            False when no config is given), the SDK fetches all pages automatically.
         
     Returns:
         BatchScrapeJob containing job status and data
@@ -97,7 +99,7 @@ async def get_batch_scrape_status(
     docs = payload["data"]
     
     # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = pagination_config.auto_paginate if pagination_config else False
     if auto_paginate and payload["next"]:
         docs = await _fetch_all_batch_pages_async(
             client, 
