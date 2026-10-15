@@ -57,7 +57,7 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
 }
 
 /** The team's daily calls per index for its rate-limit multiplier; null is unlimited. */
-export function indexCallsPerDay(rateLimitMultiplier: number): number | null {
+function indexCallsPerDay(rateLimitMultiplier: number): number | null {
   const tier = PLAN_TIERS.find(t => rateLimitMultiplier >= t.minMultiplier);
   return tier ? tier.callsPerDay : BASE_CALLS_PER_DAY;
 }
@@ -170,11 +170,12 @@ export function indexDailyLimitRefusal(
   reservation: Extract<IndexDailyReservation, { ok: false }>,
 ) {
   const name = DISPLAY_NAMES[index];
-  const hours = Math.floor(reservation.retryAfterSeconds / 3600);
-  const minutes = Math.max(
+  const totalMinutes = Math.max(
     1,
-    Math.ceil((reservation.retryAfterSeconds % 3600) / 60),
+    Math.ceil(reservation.retryAfterSeconds / 60),
   );
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   const resetsIn = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   const limit = reservation.limit.toLocaleString("en-US");
   const needs =
