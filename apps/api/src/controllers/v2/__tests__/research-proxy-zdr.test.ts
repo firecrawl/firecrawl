@@ -23,6 +23,13 @@ vi.mock("../../../lib/keyless", () => ({
   chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
 }));
 
+// These tests cover routing, billing and retention, not the daily index limit.
+// The limiter needs Redis, so here it admits every call.
+vi.mock("../../../lib/index-daily-limit", () => ({
+  reserveIndexCalls: vi.fn(async () => ({ ok: true, release: async () => {} })),
+  indexDailyLimitRefusal: vi.fn(),
+}));
+
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
