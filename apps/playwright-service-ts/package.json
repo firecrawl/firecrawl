@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/api.js",
     "build": "tsc",
-    "dev": "tsx api.ts"
+    "dev": "tsx api.ts",
+    "test": "tsx --test"
   },
   "keywords": [],
   "author": "Jeff Pereira",

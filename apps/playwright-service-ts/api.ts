@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
 import {
   chromium,
-  Browser,
   BrowserContext,
   Route,
   Request as PlaywrightRequest,
@@ -13,6 +12,7 @@ import { getError } from './helpers/get_error';
 import { lookup } from 'dns/promises';
 import IPAddr from 'ipaddr.js';
 import { Server, RequestError } from 'proxy-chain';
+import { createBrowserManager } from './browser-manager';
 
 dotenv.config();
 
@@ -184,10 +184,8 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser;
-
-const initializeBrowser = async () => {
-  browser = await chromium.launch({
+const browserManager = createBrowserManager(() =>
+  chromium.launch({
     headless: true,
     args: [
       '--no-sandbox',
@@ -198,8 +196,9 @@ const initializeBrowser = async () => {
       '--no-zygote',
       '--disable-gpu',
     ],
-  });
-};
+  }),
+);
+const initializeBrowser = () => browserManager.getBrowser();
 
 const createContext = async (
   skipTlsVerification: boolean = false,
@@ -225,6 +224,7 @@ const createContext = async (
     server: `http://127.0.0.1:${ssrfProxyPort}`,
   };
 
+  const browser = await initializeBrowser();
   const newContext = await browser.newContext(contextOptions);
 
   if (BLOCK_MEDIA) {
@@ -268,9 +268,7 @@ const createContext = async (
 };
 
 const shutdownBrowser = async () => {
-  if (browser) {
-    await browser.close();
-  }
+  await browserManager.closeBrowser();
 };
 
 const isValidUrl = (urlString: string): boolean => {
@@ -352,10 +350,6 @@ const scrapePage = async (
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser) {
-      await initializeBrowser();
-    }
-
     const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
     await testPage.close();
@@ -421,9 +415,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     );
   }
 
-  if (!browser) {
-    await initializeBrowser();
-  }
+  await initializeBrowser();
 
   await pageSemaphore.acquire();
 
