@@ -116,4 +116,72 @@ describe("WebCrawler.filterLinks JS fallback host scoping", () => {
     );
     expect(crawler.isFile("https://example.com/page#section")).toBe(false);
   });
+
+  it("denies an external homepage even when allowExternalContentLinks is true", async () => {
+    const crawler = makeCrawler({ allowExternalContentLinks: true });
+    const { links, denialReasons } = await crawler.filterLinks(
+      ["https://other.com/", "https://other.com/article"],
+      100,
+      10,
+    );
+    expect(links).not.toContain("https://other.com/");
+    expect(denialReasons.has("https://other.com/")).toBe(true);
+    expect(links).toContain("https://other.com/article");
+  });
+
+  it("classifies sibling subdomains and the apex by registrable domain", async () => {
+    const crawler = makeCrawler({ initialUrl: "https://docs.example.com" });
+    const denied = await crawler.filterLinks(
+      ["https://blog.example.com/page", "https://example.com/page"],
+      100,
+      10,
+    );
+    expect(denied.links).not.toContain("https://blog.example.com/page");
+    expect(denied.links).not.toContain("https://example.com/page");
+
+    const allowed = await makeCrawler({
+      initialUrl: "https://docs.example.com",
+      allowSubdomains: true,
+    }).filterLinks(
+      ["https://blog.example.com/page", "https://example.com/page"],
+      100,
+      10,
+    );
+    expect(allowed.links).toContain("https://blog.example.com/page");
+    expect(allowed.links).toContain("https://example.com/page");
+  });
+
+  it("does not apply the initial path scope to admitted off-host links", async () => {
+    const external = await makeCrawler({
+      initialUrl: "https://example.com/docs/guide",
+      allowExternalContentLinks: true,
+    }).filterLinks(["https://other.com/elsewhere/deep"], 100, 10);
+    expect(external.links).toContain("https://other.com/elsewhere/deep");
+
+    const subdomain = await makeCrawler({
+      initialUrl: "https://example.com/docs/guide",
+      allowSubdomains: true,
+    }).filterLinks(["https://blog.example.com/elsewhere"], 100, 10);
+    expect(subdomain.links).toContain("https://blog.example.com/elsewhere");
+
+    const sameHost = await makeCrawler({
+      initialUrl: "https://example.com/docs/guide",
+    }).filterLinks(["https://example.com/other"], 100, 10);
+    expect(sameHost.links).not.toContain("https://example.com/other");
+  });
+
+  it("reports the bare extension for a file link carrying a fragment", async () => {
+    const crawler = makeCrawler();
+    const { links, denialReasons } = await crawler.filterLinks(
+      ["https://example.com/download.zip#section"],
+      100,
+      10,
+    );
+    expect(links).not.toContain("https://example.com/download.zip#section");
+    const reason = denialReasons.get(
+      "https://example.com/download.zip#section",
+    );
+    expect(reason).toContain('extension ".zip"');
+    expect(reason).not.toContain("#section");
+  });
 });

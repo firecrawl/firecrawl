@@ -1,5 +1,6 @@
 import { AxiosError } from "axios";
 import { config } from "../../config";
+import { extractBaseDomain } from "../../lib/url-utils";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
@@ -417,28 +418,51 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Enforce the same host scoping as the native filter: a different
-        // host is external and requires allowExternalContentLinks, and a
-        // subdomain of the initial host requires allowSubdomains.
-        if (
-          !this.allowExternalContentLinks &&
-          linkHostname !== initialHostname
-        ) {
-          const isSubdomain = linkHostname.endsWith(`.${initialHostname}`);
-          if (!isSubdomain) {
-            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
-            return false;
-          }
-          if (!this.allowSubdomains) {
-            denialReasons.set(
-              link,
-              `This URL is on a subdomain (${linkHostname}) of the initial URL's domain (${initialHostname}), and subdomain crawling is disabled. To crawl subdomains of the initial domain, set allowSubdomains: true in your crawl request.`,
-            );
-            return false;
+        // Enforce the same host scoping as the native filter. Hosts are
+        // classified by registrable domain (extractBaseDomain), not by
+        // suffix match, so the apex and sibling subdomains of the initial
+        // host fall in the same class as its subdomains: another host under
+        // the same registrable domain requires allowSubdomains, and a
+        // different registrable domain is external and requires
+        // allowExternalContentLinks. Even with external links allowed, an
+        // external homepage (no path) is rejected, as the native filter
+        // rejects it. Links admitted through either off-host branch are
+        // exempt from the initial-path scope check below: their paths are
+        // not part of the initial URL's hierarchy.
+        const initialBaseDomain = extractBaseDomain(this.initialUrl);
+        const linkBaseDomain = extractBaseDomain(link);
+        const sameDomain =
+          initialBaseDomain !== null &&
+          linkBaseDomain !== null &&
+          initialBaseDomain === linkBaseDomain;
+        let admittedOffHost = false;
+        if (linkHostname !== initialHostname) {
+          if (sameDomain) {
+            if (!this.allowSubdomains) {
+              denialReasons.set(
+                link,
+                `This URL is on another host (${linkHostname}) under the same domain (${initialBaseDomain}) as the initial URL, and subdomain crawling is disabled. To crawl subdomains of the initial domain, set allowSubdomains: true in your crawl request.`,
+              );
+              return false;
+            }
+            admittedOffHost = true;
+          } else {
+            if (!this.allowExternalContentLinks) {
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+            if (
+              normalizedLink.pathname === "" ||
+              normalizedLink.pathname === "/"
+            ) {
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+            admittedOffHost = true;
           }
         }
 
-        if (!this.allowBackwardCrawling) {
+        if (!this.allowBackwardCrawling && !admittedOffHost) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
             if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(
