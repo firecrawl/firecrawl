@@ -417,11 +417,26 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        // Enforce the same host scoping as the native filter: a different
+        // host is external and requires allowExternalContentLinks, and a
+        // subdomain of the initial host requires allowSubdomains.
+        if (
+          !this.allowExternalContentLinks &&
+          linkHostname !== initialHostname
+        ) {
+          const isSubdomain = linkHostname.endsWith(`.${initialHostname}`);
+          if (!isSubdomain) {
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
+          }
+          if (!this.allowSubdomains) {
+            denialReasons.set(
+              link,
+              `This URL is on a subdomain (${linkHostname}) of the initial URL's domain (${initialHostname}), and subdomain crawling is disabled. To crawl subdomains of the initial domain, set allowSubdomains: true in your crawl request.`,
+            );
+            return false;
+          }
+        }
 
         if (!this.allowBackwardCrawling) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
@@ -455,7 +470,11 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} FILE FAIL`);
           }
-          const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
+          const extension = link
+            .split(/[?#]/)[0]
+            .split(".")
+            .pop()
+            ?.toLowerCase();
           denialReasons.set(
             link,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
@@ -895,7 +914,7 @@ export class WebCrawler {
     ];
 
     try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
+      const urlWithoutQuery = url.split(/[?#]/)[0].toLowerCase();
       return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
