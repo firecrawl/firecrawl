@@ -53,8 +53,8 @@ import {
 import { wantsDeveloperCategory } from "../../search/developer";
 import { wantsGovCategory } from "../../search/gov";
 import {
-  govIndexDailyLimitMessage,
-  reserveGovIndexCalls,
+  indexDailyLimitRefusal,
+  reserveIndexCalls,
 } from "../../lib/index-daily-limit";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
@@ -414,13 +414,18 @@ async function searchControllerInner(
     }
 
     if (wantsGovCategory(categories)) {
-      const indexBudget = await reserveGovIndexCalls(req.auth.team_id, 1);
+      const indexBudget = await reserveIndexCalls(
+        "gov",
+        req.auth.team_id,
+        req.acuc?.rate_limit_multiplier ?? 1,
+        1,
+      );
       if (!indexBudget.ok) {
         res.setHeader("Retry-After", String(indexBudget.retryAfterSeconds));
         return res.status(429).json({
           success: false,
           code: "INDEX_DAILY_LIMIT",
-          error: govIndexDailyLimitMessage(indexBudget),
+          ...indexDailyLimitRefusal("gov", req.auth.team_id, indexBudget),
         });
       }
     }
