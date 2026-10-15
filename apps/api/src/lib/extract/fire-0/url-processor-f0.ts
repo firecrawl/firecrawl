@@ -5,6 +5,7 @@ import {
 } from "../../../controllers/v1/types";
 import { getMapResults } from "../../../controllers/v1/map";
 import { removeDuplicateUrls } from "../../validateUrl";
+import { stripWwwFromUrl } from "../../url-utils";
 import { isUrlBlocked } from "../../../scraper/WebScraper/utils/blocklist";
 import { buildPreRerankPrompt, buildRefrasedPrompt } from "../build-prompts";
 import { rerankLinksWithLLM_F0 } from "./reranker-f0";
@@ -96,7 +97,7 @@ export async function processUrl_F0(
   }
 
   const baseUrl = options.url.replace("/*", "");
-  let urlWithoutWww = baseUrl.replace("www.", "");
+  let urlWithoutWww = stripWwwFromUrl(baseUrl);
 
   let searchQuery = options.prompt;
   if (options.prompt) {

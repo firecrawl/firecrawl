@@ -124,3 +124,22 @@ export function extractBaseDomain(url: string): string | null {
     return null;
   }
 }
+
+/**
+ * Removes a leading `www.` label from a URL's hostname, leaving the rest of
+ * the URL byte-identical.
+ *
+ * The map and extract search builders previously used
+ * `url.replace("www.", "")`, which rewrites the first `www.` anywhere in the
+ * string: a path or query containing `www.` was corrupted, and a host like
+ * `mywww.example.com` lost characters mid-label. Anchoring the match to the
+ * start of the host (after an optional scheme) strips only the real label,
+ * so search queries and cache keys built from the result keep targeting the
+ * URL the user actually requested.
+ *
+ * @param url - A full URL, or a bare host with an optional path
+ * @returns The URL with a leading `www.` hostname label removed, if present
+ */
+export function stripWwwFromUrl(url: string): string {
+  return url.replace(/^(https?:\/\/)?www\./i, "$1");
+}
