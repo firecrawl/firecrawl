@@ -32,6 +32,10 @@ import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
+import {
+  WEB_BOT_AUTH_DIRECTORY_PATH,
+  webBotAuthDirectory,
+} from "./lib/web-bot-auth";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
@@ -126,6 +130,17 @@ app.get("/", (_, res) => {
 
 app.get("/e2e-test", (_, res) => {
   res.status(200).send("OK");
+});
+
+app.get(WEB_BOT_AUTH_DIRECTORY_PATH, (req, res) => {
+  const directory = req.headers.host
+    ? webBotAuthDirectory(req.headers.host.toLowerCase())
+    : null;
+  if (!directory) {
+    res.status(404).end();
+    return;
+  }
+  res.set(directory.headers).send(directory.body);
 });
 
 // register router

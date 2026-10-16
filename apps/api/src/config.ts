@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createPrivateKey } from "node:crypto";
 import { z } from "zod";
 import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
 
@@ -8,6 +9,14 @@ const delimitedList = (separator = ",") => {
     decode: str => (str ? str.split(separator).map(s => s.trim()) : []),
     encode: arr => arr.join(separator),
   });
+};
+
+const isEd25519PrivateKey = (pem: string) => {
+  try {
+    return createPrivateKey(pem).asymmetricKeyType === "ed25519";
+  } catch {
+    return false;
+  }
 };
 
 const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
@@ -341,6 +350,28 @@ const configSchema = z.object({
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+
+  // Cloudflare Web Bot Auth (lib/web-bot-auth.ts): scrapes from
+  // WEB_BOT_AUTH_TEAM_IDS (the Exchange's crawler team) are signed with this
+  // Ed25519 PEM key, and the API serves its key directory at
+  // /.well-known/http-message-signatures-directory. The agent is the https
+  // origin that directory is served from.
+  WEB_BOT_AUTH_PRIVATE_KEY: emptyStringAsUndefined(
+    z
+      .string()
+      .trim()
+      .transform(value => value.replace(/\\n/g, "\n"))
+      .refine(isEd25519PrivateKey, "must be an Ed25519 private key in PEM"),
+  ),
+  WEB_BOT_AUTH_SIGNATURE_AGENT: emptyStringAsUndefined(
+    z
+      .url({ protocol: /^https$/ })
+      .refine(
+        value => new URL(value).origin === value,
+        "must be a bare https origin",
+      ),
+  ),
+  WEB_BOT_AUTH_TEAM_IDS: delimitedList(",").optional(),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
