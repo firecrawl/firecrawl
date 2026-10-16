@@ -1,6 +1,12 @@
 import { config } from "../../../config";
-import { describeIf, TEST_PRODUCTION } from "../lib";
-import { creditUsage, idmux, researchPostRaw, researchRaw } from "./lib";
+import { describeIf, scrapeTimeout, TEST_PRODUCTION } from "../lib";
+import {
+  creditUsage,
+  idmux,
+  researchPostRaw,
+  researchRaw,
+  searchRaw,
+} from "./lib";
 import { HAS_JOB_LOG, jobLogJson, waitForJobLogRow } from "../job-log";
 
 const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
@@ -256,5 +262,72 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       const after = (await creditUsage(identity)).remainingCredits;
       expect(before - after).toBe(expectedCredits);
     }, 180000);
+  });
+
+  describe("developer category on /v2/search", () => {
+    it(
+      "scrapes developer results when scrape formats are requested",
+      async () => {
+        const identity = await idmux({
+          name: "developer/category scrape",
+          credits: 100,
+        });
+
+        const res = await searchRaw(
+          {
+            query: "how do I configure retries",
+            limit: 2,
+            categories: ["developer"],
+            scrapeOptions: { formats: ["markdown"] },
+            timeout: scrapeTimeout,
+          },
+          identity,
+        );
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        const web: any[] = res.body.data.web ?? [];
+        expect(web.length).toBeGreaterThan(0);
+
+        let markdownCount = 0;
+        for (const doc of web) {
+          expect(doc.category).toBe("developer");
+          if (doc.markdown) {
+            markdownCount += 1;
+          } else {
+            expect(doc.metadata?.error).toBeDefined();
+          }
+        }
+        expect(markdownCount).toBeGreaterThan(0);
+        // Scrapes bill on top of the search credits for up to 10 results.
+        expect(res.body.creditsUsed).toBeGreaterThan(2);
+      },
+      scrapeTimeout + 30000,
+    );
+
+    it("leaves developer results unscraped without scrape formats", async () => {
+      const identity = await idmux({
+        name: "developer/category no scrape",
+        credits: 100,
+      });
+
+      const res = await searchRaw(
+        {
+          query: "how do I configure retries",
+          limit: 2,
+          categories: ["developer"],
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      const web: any[] = res.body.data.web ?? [];
+      expect(web.length).toBeGreaterThan(0);
+      for (const doc of web) {
+        expect(doc.markdown).toBeUndefined();
+      }
+      expect(res.body.creditsUsed).toBe(2);
+    }, 120000);
   });
 });

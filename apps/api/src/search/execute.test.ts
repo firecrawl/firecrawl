@@ -58,6 +58,11 @@ vi.mock("./safe-search", () => ({
 }));
 
 import { executeSearch } from "./execute";
+import {
+  getItemsToScrape,
+  mergeScrapedContent,
+  scrapeSearchResults,
+} from "./scrape";
 import { searchRequestSchema } from "../controllers/v2/types";
 
 const logger = {
@@ -204,6 +209,50 @@ describe("executeSearch developer category", () => {
     expect(result.response).toEqual({ web: [developerResult] });
     expect(result.response).not.toHaveProperty("developer");
     expect(result.indexResultsCount).toBe(1);
+  });
+
+  it("scrapes developer results when scrape formats are requested", async () => {
+    const summarized = { ...developerResult, summary: "Retry with backoff." };
+    vi.mocked(getItemsToScrape).mockImplementationOnce(response =>
+      (response.web ?? []).map(item => ({
+        item,
+        type: "web" as const,
+        scrapeInput: {
+          url: item.url,
+          title: item.title,
+          description: item.description,
+        },
+      })),
+    );
+    vi.mocked(scrapeSearchResults).mockResolvedValueOnce([
+      { document: summarized, costTracking: {} } as any,
+    ]);
+    vi.mocked(mergeScrapedContent).mockImplementationOnce(response => {
+      response.web = [summarized];
+    });
+
+    const result = await executeSearch(
+      {
+        ...options([{ type: "developer" }]),
+        scrapeOptions: { formats: [{ type: "summary" }] },
+      },
+      context,
+      logger,
+    );
+
+    expect(scrapeSearchResults).toHaveBeenCalledWith(
+      [
+        {
+          url: developerResult.url,
+          title: developerResult.title,
+          description: developerResult.description,
+        },
+      ],
+      expect.anything(),
+      logger,
+      {},
+    );
+    expect(result.response.web).toEqual([summarized]);
   });
 
   it("filters blocked developer results via threat protection and renumbers", async () => {

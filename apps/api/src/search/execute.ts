@@ -301,7 +301,15 @@ export async function executeSearch(
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
   if (shouldScrape && scrapeOptions) {
-    const itemsToScrape = getItemsToScrape(searchResponse, flags, {
+    // Developer index results only become the web group at the end, so they
+    // are scraped from a response of their own. Gov index results stay
+    // unscraped: they are free and keyless projection reserves no scrape
+    // credits for them.
+    const scrapeTarget: SearchV2Response =
+      indexCategorySearch === searchDeveloperCategory
+        ? { web: indexResults }
+        : searchResponse;
+    const itemsToScrape = getItemsToScrape(scrapeTarget, flags, {
       team_id: teamId,
       org_id: orgId ?? null,
       origin,
@@ -332,11 +340,10 @@ export async function executeSearch(
         flags,
       );
 
-      mergeScrapedContent(
-        searchResponse,
-        itemsToScrape,
-        allDocsWithCostTracking,
-      );
+      mergeScrapedContent(scrapeTarget, itemsToScrape, allDocsWithCostTracking);
+      if (scrapeTarget !== searchResponse) {
+        indexResults = scrapeTarget.web ?? [];
+      }
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
     }
   }
