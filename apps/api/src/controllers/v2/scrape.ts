@@ -18,6 +18,7 @@ import {
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import { scrapeErrorWithSuggestions } from "../../services/alexandria/suggestions";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -652,11 +653,22 @@ export async function scrapeController(
           if (processing) {
             res.setHeader("Retry-After", String(processing.retryAfterSeconds));
           }
+          const failure = await scrapeErrorWithSuggestions({
+            teamId: req.auth.team_id,
+            url: req.body.url,
+            code: e.code,
+            message: e.message,
+            zeroDataRetention,
+            logger,
+          });
           return res.status(statusCode).json({
             success: false,
             code: e.code,
-            error: e.message,
+            error: failure.error,
             ...(processing && { details: processing }),
+            ...(failure.alexandriaSuggestions && {
+              alexandriaSuggestions: failure.alexandriaSuggestions,
+            }),
           });
         } else {
           const id = uuidv7();

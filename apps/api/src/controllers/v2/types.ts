@@ -1636,6 +1636,7 @@ export type ErrorResponse = {
   details?: any;
   sponsor_status?: string;
   login_url?: string;
+  alexandriaSuggestions?: import("../../services/alexandria/suggestions").ExchangeUrlSuggestion[];
 };
 
 export type ScrapeResponse =
