@@ -21,6 +21,7 @@ function prepareAgentPayload(args: {
   threadId?: string;
   mode?: AgentMode;
   exchange?: AgentExchangeOptions;
+  zeroDataRetention?: boolean;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -42,6 +43,7 @@ function prepareAgentPayload(args: {
   if (args.threadId != null) body.threadId = args.threadId;
   if (args.mode != null) body.mode = args.mode;
   if (args.exchange != null) body.exchange = args.exchange;
+  if (args.zeroDataRetention != null) body.zeroDataRetention = args.zeroDataRetention;
   return body;
 }
 

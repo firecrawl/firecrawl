@@ -46,6 +46,19 @@ function threadTurnOf(value: unknown): number | undefined {
   return Number.isSafeInteger(turn) ? turn : undefined;
 }
 
+const ZDR_TARGET_HINT = "<redacted due to zero data retention>";
+
+// A zero data retention run keeps only its model, effort and the flag; the
+// agent service may still hold its prompt in memory while it is recent, so
+// the content fields are dropped here too.
+function isZdrOptions(options: any): boolean {
+  return options?.zeroDataRetention === true;
+}
+
+function zdrOptions(options: any): { zeroDataRetention?: true } {
+  return isZdrOptions(options) ? { zeroDataRetention: true } : {};
+}
+
 // Each turn of a thread is its own run, so clients need the thread to list
 // a conversation once.
 function threadOptions(options: any): {
@@ -277,15 +290,24 @@ export async function agentListController(
     const recent = recentAgents.get(id);
     const db = dbAgents.get(id);
     const settings = sessionSettingsMap.get(id);
+    const recentOptions = isZdrOptions(recent?.options)
+      ? {
+          modelPreset: recent!.options.modelPreset,
+          effort: recent!.options.effort,
+          zeroDataRetention: true,
+        }
+      : recent?.options;
 
     agents.push({
       id: db?.id ?? recent!.id,
       createdAt: db?.createdAt.toISOString() ?? recent!.createdAt,
       targetHint:
         db?.targetHint ??
-        (recent?.options
-          ? (recent.options.urls?.[0] ?? recent.options.prompt ?? "")
-          : ""),
+        (isZdrOptions(recentOptions)
+          ? ZDR_TARGET_HINT
+          : recentOptions
+            ? (recentOptions.urls?.[0] ?? recentOptions.prompt ?? "")
+            : ""),
       origin: db?.origin ?? "api", // recent cannot know origin so we lie
       integration: db?.integration ?? undefined, // recent cannot know integration so we omit
       settings: {
@@ -314,19 +336,21 @@ export async function agentListController(
               db.agent.options.effort ??
               (db.agent.options.model === "spark-2" ? "medium" : undefined),
             ...threadOptions(db.agent.options),
+            ...zdrOptions(db.agent.options),
           }
-        : recent?.options
+        : recentOptions
           ? {
-              urls: recent.options.urls ?? undefined,
-              prompt: recent.options.prompt ?? "",
-              schema: recent.options.schema ?? undefined,
-              model: recent.options.modelPreset ?? "spark-1-pro",
+              urls: recentOptions.urls ?? undefined,
+              prompt: recentOptions.prompt ?? "",
+              schema: recentOptions.schema ?? undefined,
+              model: recentOptions.modelPreset ?? "spark-1-pro",
               effort:
-                recent.options.effort ??
-                (recent.options.modelPreset === "spark-2"
+                recentOptions.effort ??
+                (recentOptions.modelPreset === "spark-2"
                   ? "medium"
                   : undefined),
-              ...threadOptions(recent.options),
+              ...threadOptions(recentOptions),
+              ...zdrOptions(recentOptions),
             }
           : undefined,
     });
