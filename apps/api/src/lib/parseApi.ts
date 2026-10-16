@@ -1,7 +1,7 @@
 export function parseApi(api: string) {
   // Handle older versions of the API that don't have the fc- prefix
   if (!api.startsWith("fc-")) {
-    return api;
+    return api.toLowerCase();
   }
 
   // remove the fc- prefix
@@ -10,10 +10,10 @@ export function parseApi(api: string) {
   const uuid = api
     .replace(/^fc-/, "")
     .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
-  return uuid;
+  return uuid.toLowerCase();
 }
 
-function apiKeyToFcApiKey(apiKey: string | null | undefined) {
+export function apiKeyToFcApiKey(apiKey: string | null) {
   if (!apiKey) {
     return null;
   }

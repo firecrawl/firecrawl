@@ -222,7 +222,7 @@ export async function agentController(
         urls: req.body.urls,
         schema: req.body.schema,
         prompt: req.body.prompt,
-        apiKey: req.acuc!.api_key,
+        apiKey: req.acuc!.api_key ?? undefined,
         apiKeyId: req.acuc!.api_key_id ?? undefined,
         teamId: req.auth.team_id,
         isFreeRequest,

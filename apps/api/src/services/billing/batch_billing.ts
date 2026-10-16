@@ -1,6 +1,6 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import { billTeam7 } from "../../db/rpc";
+import { billTeam8 } from "../../db/rpc";
 import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
@@ -200,7 +200,7 @@ async function refundRequestTrackedCredits(
 
 /**
  * Dequeues pending billing operations from Redis, groups them by team, and
- * commits each group to Supabase via the `bill_team_7` RPC.
+ * commits each group to Supabase via the `bill_team_8` RPC.
  */
 export async function processBillingBatch() {
   const redis = getRedisConnection();
@@ -524,9 +524,8 @@ async function supaBillTeam(
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
 
   // Perform the actual database operation
-  let data: { api_key: string }[];
   try {
-    data = await billTeam7({
+    await billTeam8({
       team_id,
       subscription_id: null,
       credits,
@@ -538,7 +537,7 @@ async function supaBillTeam(
     return { success: false, error };
   }
 
-  return { success: true, data };
+  return { success: true };
 }
 
 // Cleanup on exit

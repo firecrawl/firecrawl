@@ -300,11 +300,11 @@ export function areFormatsAllowed(
 
 function keyRestrictionApplies(
   flags: TeamFlags,
-  apiKeyId: number | undefined,
+  apiKeyId: number | null | undefined,
 ): apiKeyId is number {
   // Org-level keyRestriction flag gates everything so unflagged teams pay
-  // zero cost. Preview/keyless tokens have no api_key_id and are never
-  // restricted (they can't be configured in the dashboard).
+  // zero cost. Preview/keyless and team-only tokens have no api_key_id and
+  // are never restricted (they can't be configured in the dashboard).
   return Boolean(flags?.keyRestriction) && Boolean(apiKeyId);
 }
 
@@ -328,7 +328,7 @@ function failClosed(apiKeyId: number, error: unknown): KeyRestrictionResult {
  */
 export async function checkKeyEndpointRestriction(
   rawUrl: string,
-  apiKeyId: number | undefined,
+  apiKeyId: number | null | undefined,
   flags: TeamFlags,
 ): Promise<KeyRestrictionResult> {
   if (!keyRestrictionApplies(flags, apiKeyId)) {
@@ -354,7 +354,7 @@ export async function checkKeyEndpointRestriction(
 export async function checkKeyFormatRestriction(
   formats: string[],
   actionTypes: string[],
-  apiKeyId: number | undefined,
+  apiKeyId: number | null | undefined,
   flags: TeamFlags,
 ): Promise<KeyRestrictionResult> {
   if (!keyRestrictionApplies(flags, apiKeyId)) {

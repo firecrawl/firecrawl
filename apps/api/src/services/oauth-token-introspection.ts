@@ -16,7 +16,9 @@ export class OAuthIntrospectionUnavailableError extends Error {
 
 export interface OAuthIntrospectionResponse {
   active: boolean;
-  api_key: string;
+  // Canonical positive integer string.
+  api_key_id: string;
+  api_key?: string | null;
   scope: string;
   client_id: string;
   team_id: string;
@@ -84,8 +86,12 @@ function isUsable(
 function isValidActiveResponse(data: OAuthIntrospectionResponse): boolean {
   return (
     data.active === true &&
-    typeof data.api_key === "string" &&
-    /^fc-[0-9a-f]{32}$/i.test(data.api_key) &&
+    typeof data.api_key_id === "string" &&
+    /^[1-9][0-9]*$/.test(data.api_key_id) &&
+    Number.isSafeInteger(Number(data.api_key_id)) &&
+    (data.api_key == null ||
+      (typeof data.api_key === "string" &&
+        /^fc-[0-9a-f]{32}$/i.test(data.api_key))) &&
     typeof data.scope === "string" &&
     typeof data.client_id === "string" &&
     data.client_id.length > 0 &&

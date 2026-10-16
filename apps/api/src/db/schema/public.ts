@@ -70,6 +70,8 @@ export const api_keys = pgTable(
     id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
     created_at: ts("created_at").defaultNow(),
     key: uuid("key").defaultRandom(),
+    key_hash: text("key_hash").unique(),
+    key_hint: text("key_hint"),
     name: text("name"),
     team_id: uuid("team_id"),
     owner_id: uuid("owner_id"),

@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { authenticateUser, clearACUC, getACUCTeam } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
@@ -110,6 +110,9 @@ vi.mock("../../services/agent-sponsor", () => ({
   getAgentSponsorStatus: vi.fn(),
 }));
 
+const sha256 = (value: string) =>
+  createHash("sha256").update(value).digest("hex");
+
 function mockMultiplier(rate_limit_multiplier: number) {
   vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
     concurrency_limit: 2,
@@ -125,6 +128,7 @@ describe("authenticateUser", () => {
     config.KEYLESS_CONVERSION_HMAC_SECRET;
   const originalMcpDelegatedCredentialSecret =
     config.MCP_DELEGATED_CREDENTIAL_SECRET;
+  const originalTeamTokenSecret = config.TEAM_TOKEN_SECRET;
   const originalIntrospectUrl = config.OAUTH_INTROSPECT_URL;
   const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
   const originalPreviewToken = config.PREVIEW_TOKEN;
@@ -145,6 +149,7 @@ describe("authenticateUser", () => {
     config.KEYLESS_CONVERSION_HMAC_SECRET = originalKeylessConversionHmacSecret;
     config.MCP_DELEGATED_CREDENTIAL_SECRET =
       originalMcpDelegatedCredentialSecret;
+    config.TEAM_TOKEN_SECRET = originalTeamTokenSecret;
     config.OAUTH_INTROSPECT_URL = originalIntrospectUrl;
     config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
     config.PREVIEW_TOKEN = originalPreviewToken;
@@ -154,25 +159,32 @@ describe("authenticateUser", () => {
     vi.clearAllMocks();
   });
 
+  const signCredential = (prefix: string, payload: unknown, secret: string) => {
+    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(encoded)
+      .digest("base64url");
+    return `${prefix}${encoded}.${signature}`;
+  };
+
   const signDelegation = (
     overrides: Record<string, unknown> = {},
     secret = "mcp-delegation-secret",
   ) => {
     const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      v: 1,
-      aud: "firecrawl-core",
-      purpose: "hosted_mcp_oauth",
-      api_key: "fc-11111111111111118111111111111111",
-      iat: now,
-      exp: now + 60,
-      ...overrides,
-    };
-    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const signature = createHmac("sha256", secret)
-      .update(encoded)
-      .digest("base64url");
-    return `fcmcp_${encoded}.${signature}`;
+    return signCredential(
+      "fcmcp_",
+      {
+        v: 1,
+        aud: "firecrawl-core",
+        purpose: "hosted_mcp_oauth",
+        api_key: "fc-11111111111111118111111111111111",
+        iat: now,
+        exp: now + 60,
+        ...overrides,
+      },
+      secret,
+    );
   };
 
   it("keeps a mock ACUC chunk in no-auth mode", async () => {
@@ -481,11 +493,59 @@ describe("authenticateUser", () => {
     expect(auth.success).toBe(true);
     await vi.waitFor(() =>
       expect(setValue).toHaveBeenCalledWith(
-        "acuc_general_00000000-0000-4000-8000-000000000000_scrape",
+        `acuc_general_${sha256("00000000-0000-4000-8000-000000000000")}_scrape`,
         expect.any(String),
         600,
         true,
       ),
+    );
+  });
+
+  it("keys the ACUC cache by the hash of the canonical key and never caches the key", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "3d478a29-6e59-403e-85c7-94aba81ffd2a",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer fc-3D478A296E59403E85C794ABA81FFD2A",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual(expect.objectContaining({ success: true }));
+    if (!auth.success) throw new Error("expected auth to succeed");
+    // The request's own key rides on the chunk, in fc- form, for this request.
+    expect(auth.chunk?.api_key).toBe("fc-3d478a296e59403e85c794aba81ffd2a");
+    expect(authCreditUsageChunk).toHaveBeenCalledWith(
+      expect.anything(),
+      { key: "3d478a29-6e59-403e-85c7-94aba81ffd2a" },
+      "general",
+    );
+    await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+    const [key, value] = vi.mocked(setValue).mock.calls[0];
+    expect(key).toBe(
+      `acuc_general_${sha256("3d478a29-6e59-403e-85c7-94aba81ffd2a")}_scrape`,
+    );
+    expect(JSON.parse(value)).not.toHaveProperty("api_key");
+    expect(value).not.toContain("3d478a29");
+    expect(getValue).not.toHaveBeenCalledWith(
+      expect.stringContaining("3d478a29"),
     );
   });
 
@@ -605,7 +665,7 @@ describe("authenticateUser", () => {
     );
     expect(authCreditUsageChunk).toHaveBeenCalledWith(
       db,
-      "11111111-1111-1111-8111-111111111111",
+      { key: "11111111-1111-1111-8111-111111111111" },
       "hosted_mcp_oauth",
     );
     // The team's limits may come from the team ACUC, but the credential's
@@ -701,12 +761,12 @@ describe("authenticateUser", () => {
     });
     expect(authCreditUsageChunk).toHaveBeenCalledWith(
       expect.anything(),
-      "00000000-0000-4000-8000-000000000000",
+      { key: "00000000-0000-4000-8000-000000000000" },
       "general",
     );
     await vi.waitFor(() =>
       expect(deleteKey).toHaveBeenCalledWith(
-        "acuc_general_00000000-0000-4000-8000-000000000000_scrape",
+        `acuc_general_${sha256("00000000-0000-4000-8000-000000000000")}_scrape`,
       ),
     );
   });
@@ -722,6 +782,7 @@ describe("authenticateUser", () => {
         new Response(
           JSON.stringify({
             active: true,
+            api_key_id: "1",
             api_key: "fc-11111111111111118111111111111111",
             scope: "firecrawl:global",
             client_id: "client-1",
@@ -772,6 +833,7 @@ describe("authenticateUser", () => {
         new Response(
           JSON.stringify({
             active: true,
+            api_key_id: "1",
             api_key: "fc-11111111111111118111111111111111",
             scope: "firecrawl:global",
             client_id: "client-1",
@@ -1040,10 +1102,12 @@ describe("authenticateUser", () => {
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
-      // Mirrors auth_chunk_2: a row only when the key's purpose matches.
+      // Mirrors auth_chunk_3: a row only when the key's purpose matches.
       vi.mocked(authCreditUsageChunk).mockImplementation(
-        async (_db, key, purpose = "general") =>
-          key === managedKey && purpose === "hosted_mcp_oauth"
+        async (_db, apiKey, purpose = "general") =>
+          "key" in apiKey &&
+          apiKey.key === managedKey &&
+          purpose === "hosted_mcp_oauth"
             ? [{ ...managedRow }]
             : [],
       );
@@ -1081,11 +1145,11 @@ describe("authenticateUser", () => {
         }),
       );
       if (!auth.success) throw new Error("expected fallback auth to succeed");
-      expect(auth.chunk?.api_key).toBe(managedKey);
+      expect(auth.chunk?.api_key).toBe(`fc-${managedKey.replaceAll("-", "")}`);
       // The managed lookup reads the primary and never touches the cache.
       expect(authCreditUsageChunk).toHaveBeenLastCalledWith(
         db,
-        managedKey,
+        { key: managedKey },
         "hosted_mcp_oauth",
       );
       expect(setValue).not.toHaveBeenCalledWith(
@@ -1196,8 +1260,10 @@ describe("authenticateUser", () => {
 
     it("still rejects a banned team reached through the fallback", async () => {
       vi.mocked(authCreditUsageChunk).mockImplementation(
-        async (_db, key, purpose = "general") =>
-          key === managedKey && purpose === "hosted_mcp_oauth"
+        async (_db, apiKey, purpose = "general") =>
+          "key" in apiKey &&
+          apiKey.key === managedKey &&
+          purpose === "hosted_mcp_oauth"
             ? [{ ...managedRow, is_banned: true }]
             : [],
       );
@@ -1215,8 +1281,8 @@ describe("authenticateUser", () => {
     it("resolves a general key through the general lookup only", async () => {
       const generalKey = "00000000-0000-4000-8000-000000000000";
       vi.mocked(authCreditUsageChunk).mockImplementation(
-        async (_db, key, purpose = "general") =>
-          key === generalKey && purpose === "general"
+        async (_db, apiKey, purpose = "general") =>
+          "key" in apiKey && apiKey.key === generalKey && purpose === "general"
             ? [{ ...managedRow, api_key: generalKey, team_id: "team-1" }]
             : [],
       );
@@ -1312,8 +1378,8 @@ describe("authenticateUser", () => {
     it("treats shouldBill: false on a general key exactly as before", async () => {
       const generalKey = "00000000-0000-4000-8000-000000000000";
       vi.mocked(authCreditUsageChunk).mockImplementation(
-        async (_db, key, purpose = "general") =>
-          key === generalKey && purpose === "general"
+        async (_db, apiKey, purpose = "general") =>
+          "key" in apiKey && apiKey.key === generalKey && purpose === "general"
             ? [{ ...managedRow, api_key: generalKey, team_id: "team-1" }]
             : [],
       );
@@ -1463,7 +1529,7 @@ describe("authenticateUser", () => {
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
-      expect(key).toBe(`acuc_general_${apiKey}_scrape`);
+      expect(key).toBe(`acuc_general_${sha256(apiKey)}_scrape`);
       expect(JSON.parse(value)).toMatchObject(known);
       expect(ttl).toBe(600);
     });
@@ -1780,19 +1846,485 @@ describe("authenticateUser", () => {
     });
   });
 
-  it("clears purpose-qualified and legacy ACUC cache entries", async () => {
-    await clearACUC("api-key");
+  describe("key-id credentials", () => {
+    const teamId = "3c9a0d5e-7b1f-4a2c-8d6e-9f0a1b2c3d4e";
+    const grantId = "5f0c1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b";
+    const keyRow = (overrides: Record<string, unknown> = {}) => ({
+      api_key_id: 42,
+      api_key_id_text: "42",
+      team_id: teamId,
+      org_id: "org-1",
+      is_banned: false,
+      flags: null,
+      credential_purpose: "general",
+      oauth_grant_id: null,
+      ...overrides,
+    });
+    const request = (token: string, headers: Record<string, string> = {}) => ({
+      headers: { authorization: `Bearer ${token}`, ...headers },
+      socket: { remoteAddress: "127.0.0.1" },
+    });
+    const deniedReasons = () =>
+      (vi.mocked(logger.warn).mock.calls as unknown as [string, any][])
+        .filter(([, meta]) => meta?.canonicalLog === "auth/denied")
+        .map(([, meta]) => meta.reason);
+    // Mirrors auth_chunk_3_from_key_id: a row only for the key's own purpose.
+    const keyResolvesAs = (
+      purpose: "general" | "hosted_mcp_oauth",
+      row = keyRow({ credential_purpose: purpose }),
+    ) =>
+      vi
+        .mocked(authCreditUsageChunk)
+        .mockImplementation(async (_db, apiKey, lookup = "general") =>
+          "id" in apiKey && apiKey.id === row.api_key_id && lookup === purpose
+            ? [{ ...row }]
+            : [],
+        );
+    const lookupsFor = (purpose: string) =>
+      vi
+        .mocked(authCreditUsageChunk)
+        .mock.calls.filter(([, , p]) => (p ?? "general") === purpose);
+    const invalidToken = {
+      success: false,
+      error: "Unauthorized: Invalid token",
+      status: 401,
+    };
 
-    expect(vi.mocked(deleteKey).mock.calls.map(([key]) => key)).toEqual(
-      expect.arrayContaining([
-        "acuc_api-key_extract",
-        "acuc_api-key_scrape",
-        "acuc_general_api-key_extract",
-        "acuc_general_api-key_scrape",
-        "acuc_hosted_mcp_oauth_api-key_extract",
-        "acuc_hosted_mcp_oauth_api-key_scrape",
-        "acuc_api-key",
-      ]),
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.TEAM_TOKEN_SECRET = "t".repeat(32);
+      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
+      config.AGENT_INTEROP_SECRET = "agent-secret";
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([]);
+      vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    });
+
+    describe("team token (fct_)", () => {
+      const signTeamToken = (
+        overrides: Record<string, unknown> = {},
+        secret = "t".repeat(32),
+      ) => {
+        const now = Math.floor(Date.now() / 1000);
+        return signCredential(
+          "fct_",
+          {
+            v: 1,
+            aud: "firecrawl-core",
+            team_id: teamId,
+            api_key_id: 42,
+            iat: now,
+            exp: now + 120,
+            ...overrides,
+          },
+          secret,
+        );
+      };
+
+      it("authenticates a team-only token against the team ACUC with no key", async () => {
+        vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([
+          { team_id: teamId, org_id: "org-1", is_banned: false, flags: null },
+        ] as never);
+        const consume = vi.fn().mockResolvedValue(undefined);
+        vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
+
+        const auth = await authenticateUser(
+          request(signTeamToken({ api_key_id: null })),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: teamId }),
+        );
+        if (!auth.success) throw new Error("expected auth to succeed");
+        expect(auth.chunk).toEqual(
+          expect.objectContaining({ api_key: null, api_key_id: null }),
+        );
+        expect(authCreditUsageChunk).not.toHaveBeenCalled();
+        expect(consume).toHaveBeenCalledWith(teamId);
+      });
+
+      it("authenticates a token naming a key through the cached by-id lookup", async () => {
+        keyResolvesAs("general");
+
+        const auth = await authenticateUser(
+          request(signTeamToken()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: teamId }),
+        );
+        if (!auth.success) throw new Error("expected auth to succeed");
+        expect(auth.chunk).toEqual(
+          expect.objectContaining({ api_key: null, api_key_id: 42 }),
+        );
+        expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+        await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+        const [key, value] = vi.mocked(setValue).mock.calls[0];
+        expect(key).toBe("acuc_general_id_42_scrape");
+        expect(JSON.parse(value)).not.toHaveProperty("api_key");
+      });
+
+      it("rejects a token whose key belongs to another team", async () => {
+        keyResolvesAs(
+          "general",
+          keyRow({ team_id: "8b1f0c2d-3e4f-4a5b-9c6d-7e8f9a0b1c2d" }),
+        );
+
+        const auth = await authenticateUser(
+          request(signTeamToken()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["team_token_mismatch"]);
+      });
+
+      it("rejects a team-only token for a banned team", async () => {
+        vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([
+          { team_id: teamId, org_id: "org-1", is_banned: true, flags: null },
+        ] as never);
+
+        const auth = await authenticateUser(
+          request(signTeamToken({ api_key_id: null })),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(expect.objectContaining({ status: 403 }));
+        expect(deniedReasons()).toEqual(["team_banned"]);
+      });
+
+      it("rejects a team-only token for an unknown team", async () => {
+        vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([]);
+
+        const auth = await authenticateUser(
+          request(signTeamToken({ api_key_id: null })),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["unknown_key"]);
+      });
+
+      it.each([
+        [
+          "an expired token",
+          () =>
+            signTeamToken({
+              iat: Math.floor(Date.now() / 1000) - 200,
+              exp: Math.floor(Date.now() / 1000) - 80,
+            }),
+        ],
+        [
+          "a token living longer than 300 seconds",
+          () => signTeamToken({ exp: Math.floor(Date.now() / 1000) + 301 }),
+        ],
+        [
+          "a token issued in the future",
+          () =>
+            signTeamToken({
+              iat: Math.floor(Date.now() / 1000) + 60,
+              exp: Math.floor(Date.now() / 1000) + 180,
+            }),
+        ],
+        [
+          "a token signed with another secret",
+          () => signTeamToken({}, "o".repeat(32)),
+        ],
+        [
+          "a token with an extra payload key",
+          () => signTeamToken({ scope: "all" }),
+        ],
+        [
+          "a token missing a payload key",
+          () => {
+            const now = Math.floor(Date.now() / 1000);
+            return signCredential(
+              "fct_",
+              {
+                v: 1,
+                aud: "firecrawl-core",
+                team_id: teamId,
+                iat: now,
+                exp: now + 120,
+              },
+              "t".repeat(32),
+            );
+          },
+        ],
+      ])("rejects %s", async (_label, token) => {
+        keyResolvesAs("general");
+
+        const auth = await authenticateUser(
+          request(token()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["invalid_team_token"]);
+        expect(authCreditUsageChunk).not.toHaveBeenCalled();
+      });
+
+      it("rejects every team token when no secret is configured", async () => {
+        config.TEAM_TOKEN_SECRET = undefined;
+        keyResolvesAs("general");
+
+        const auth = await authenticateUser(
+          request(signTeamToken()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["invalid_team_token"]);
+      });
+
+      it("rejects a hosted MCP key id without trusted agent interop", async () => {
+        keyResolvesAs("hosted_mcp_oauth");
+
+        const auth = await authenticateUser(
+          request(signTeamToken()),
+          {},
+          RateLimiterMode.Browser,
+          { allowAgentManagedKey: true },
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+      });
+
+      it("accepts a hosted MCP key id from trusted agent interop, uncached", async () => {
+        keyResolvesAs("hosted_mcp_oauth");
+
+        const auth = await authenticateUser(
+          request(signTeamToken(), {
+            "x-firecrawl-agent-interop": "agent-secret",
+          }),
+          {},
+          RateLimiterMode.Browser,
+          { allowAgentManagedKey: true },
+        );
+
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: teamId }),
+        );
+        expect(authCreditUsageChunk).toHaveBeenLastCalledWith(
+          db,
+          { id: 42 },
+          "hosted_mcp_oauth",
+        );
+        expect(setValue).not.toHaveBeenCalledWith(
+          expect.stringContaining("hosted_mcp_oauth"),
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+    });
+
+    describe("MCP delegation v2 (fcmcp_)", () => {
+      const signDelegationV2 = (overrides: Record<string, unknown> = {}) => {
+        const now = Math.floor(Date.now() / 1000);
+        return signCredential(
+          "fcmcp_",
+          {
+            v: 2,
+            aud: "firecrawl-core",
+            purpose: "hosted_mcp_oauth",
+            api_key_id: 42,
+            grant_id: grantId,
+            iat: now,
+            exp: now + 60,
+            ...overrides,
+          },
+          "mcp-delegation-secret",
+        );
+      };
+
+      it("authenticates the grant's key by id on the primary, uncached", async () => {
+        keyResolvesAs(
+          "hosted_mcp_oauth",
+          keyRow({
+            credential_purpose: "hosted_mcp_oauth",
+            oauth_grant_id: grantId,
+          }),
+        );
+
+        const auth = await authenticateUser(
+          request(signDelegationV2()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: teamId }),
+        );
+        if (!auth.success) throw new Error("expected auth to succeed");
+        expect(auth.chunk?.api_key).toBeNull();
+        expect(authCreditUsageChunk).toHaveBeenCalledWith(
+          db,
+          { id: 42 },
+          "hosted_mcp_oauth",
+        );
+        expect(getValue).not.toHaveBeenCalledWith(
+          expect.stringMatching(/^acuc_(general|hosted_mcp_oauth)_/),
+        );
+        expect(setValue).not.toHaveBeenCalledWith(
+          expect.stringMatching(/^acuc_(general|hosted_mcp_oauth)_/),
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it("rejects a delegation whose key belongs to another grant", async () => {
+        keyResolvesAs(
+          "hosted_mcp_oauth",
+          keyRow({
+            credential_purpose: "hosted_mcp_oauth",
+            oauth_grant_id: "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
+          }),
+        );
+
+        const auth = await authenticateUser(
+          request(signDelegationV2()),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["mcp_grant_mismatch"]);
+      });
+    });
+
+    describe("OAuth access token (fco_)", () => {
+      const introspect = (overrides: Record<string, unknown> = {}) =>
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue(
+            new Response(
+              JSON.stringify({
+                active: true,
+                api_key_id: "42",
+                scope: "firecrawl:global",
+                client_id: "client-1",
+                team_id: teamId,
+                exp: Math.floor(Date.now() / 1000) + 60,
+                aud: "https://api.firecrawl.dev/",
+                credential_purpose: "general",
+                ...overrides,
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          ),
+        );
+
+      beforeEach(() => {
+        config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+        config.OAUTH_INTROSPECT_SECRET = "secret";
+      });
+
+      it("loads the ACUC by the introspected key id", async () => {
+        keyResolvesAs("general");
+        introspect();
+
+        const auth = await authenticateUser(
+          request("fco_access_token"),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: teamId }),
+        );
+        if (!auth.success) throw new Error("expected auth to succeed");
+        expect(auth.chunk).toEqual(
+          expect.objectContaining({ api_key: null, api_key_id: 42 }),
+        );
+        expect(authCreditUsageChunk).toHaveBeenCalledWith(
+          expect.anything(),
+          { id: 42 },
+          "general",
+        );
+        await vi.waitFor(() =>
+          expect(setValue).toHaveBeenCalledWith(
+            "acuc_general_id_42_scrape",
+            expect.any(String),
+            600,
+            true,
+          ),
+        );
+      });
+
+      it("carries an introspected raw key on the request's chunk only", async () => {
+        keyResolvesAs("general");
+        introspect({ api_key: "fc-3D478A296E59403E85C794ABA81FFD2A" });
+
+        const auth = await authenticateUser(
+          request("fco_access_token"),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        if (!auth.success) throw new Error("expected auth to succeed");
+        expect(auth.chunk?.api_key).toBe("fc-3d478a296e59403e85c794aba81ffd2a");
+        await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+        expect(vi.mocked(setValue).mock.calls[0][1]).not.toContain("3d478a29");
+      });
+
+      it("rejects a key id that resolves to another team", async () => {
+        keyResolvesAs(
+          "general",
+          keyRow({ team_id: "8b1f0c2d-3e4f-4a5b-9c6d-7e8f9a0b1c2d" }),
+        );
+        introspect();
+
+        const auth = await authenticateUser(
+          request("fco_access_token"),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual(invalidToken);
+        expect(deniedReasons()).toEqual(["oauth_team_mismatch"]);
+      });
+    });
+  });
+
+  it("clears the hash and id forms of every key's ACUC entries", async () => {
+    const keyHash = sha256("3d478a29-6e59-403e-85c7-94aba81ffd2a");
+
+    await clearACUC([
+      { id: 7, key_hash: keyHash },
+      { id: 8, key_hash: null },
+    ]);
+
+    const cleared = vi.mocked(deleteKey).mock.calls.map(([key]) => key);
+    expect(cleared.sort()).toEqual(
+      [
+        `acuc_general_${keyHash}_extract`,
+        `acuc_general_${keyHash}_scrape`,
+        `acuc_hosted_mcp_oauth_${keyHash}_extract`,
+        `acuc_hosted_mcp_oauth_${keyHash}_scrape`,
+        "acuc_general_id_7_extract",
+        "acuc_general_id_7_scrape",
+        "acuc_hosted_mcp_oauth_id_7_extract",
+        "acuc_hosted_mcp_oauth_id_7_scrape",
+        "acuc_general_id_8_extract",
+        "acuc_general_id_8_scrape",
+        "acuc_hosted_mcp_oauth_id_8_extract",
+        "acuc_hosted_mcp_oauth_id_8_scrape",
+      ].sort(),
     );
   });
 });

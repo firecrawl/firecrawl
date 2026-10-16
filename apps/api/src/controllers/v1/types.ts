@@ -1324,14 +1324,20 @@ type Account = {
 };
 
 export type AuthCreditUsageChunk = {
-  api_key: string;
-  api_key_id: number;
+  // The raw key this request presented (fc- form), else null. Set per request
+  // and never cached.
+  api_key: string | null;
+  // null when the request carries no key (a team-only token): no per-key
+  // restriction, limit, or attribution applies.
+  api_key_id: number | null;
   api_key_id_text?: string;
   team_id: string;
   org_id: string;
   flags: TeamFlags;
+  // The hosted MCP grant a hosted_mcp_oauth key was issued for.
+  oauth_grant_id?: string | null;
 
-  // teams.banned surfaced from auth_chunk_2 — banned teams are rejected (403)
+  // teams.banned surfaced from auth_chunk_3 — banned teams are rejected (403)
   // in supaAuthenticateUser. Optional because pre-rollout cached ACUC entries
   // and the bypass/preview mocks omit it (treated as not banned).
   is_banned?: boolean;

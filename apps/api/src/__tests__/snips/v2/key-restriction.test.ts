@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { idmux, map, scrape, scrapeRaw, scrapeTimeout, searchRaw } from "./lib";
 import { createTestIdUrl, describeIf, Identity, TEST_PRODUCTION } from "../lib";
@@ -19,7 +20,14 @@ describeIf(TEST_PRODUCTION)(
       const [keyRow] = await db
         .select({ id: schema.api_keys.id })
         .from(schema.api_keys)
-        .where(eq(schema.api_keys.key, parseApi(identity.apiKey)))
+        .where(
+          eq(
+            schema.api_keys.key_hash,
+            createHash("sha256")
+              .update(parseApi(identity.apiKey))
+              .digest("hex"),
+          ),
+        )
         .limit(1);
       expect(keyRow).toBeDefined();
 

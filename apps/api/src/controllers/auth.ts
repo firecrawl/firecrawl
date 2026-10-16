@@ -1,8 +1,9 @@
+import { createHash } from "crypto";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import { parseApi } from "../lib/parseApi";
+import { apiKeyToFcApiKey, parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
@@ -33,6 +34,7 @@ import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
 import {
+  ApiKeyRef,
   authCreditUsageChunk,
   authCreditUsageChunkFromTeam,
   AuthCreditUsageChunkRow,
@@ -45,7 +47,11 @@ import {
   resolveOAuthToken as resolveOAuthTokenWithIntrospection,
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
-import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
+import {
+  MCP_DELEGATION,
+  TEAM_TOKEN,
+  verifySignedCredential,
+} from "../lib/signed-credential";
 import {
   autumnService,
   DEFAULT_TEAM_LIMITS,
@@ -105,16 +111,15 @@ function normalizedApiIsUuid(potentialUuid: string): boolean {
 }
 
 async function setCachedACUC(
-  api_key: string,
-  is_extract: boolean,
+  cacheKeyACUC: string,
   acuc:
-    | AuthCreditUsageChunk
+    | AuthCreditUsageChunkFromTeam
     | null
-    | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
-  credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
+    | ((
+        acuc: AuthCreditUsageChunkFromTeam,
+      ) => AuthCreditUsageChunkFromTeam | null),
   ttl = ACUC_TTL_SECONDS,
 ) {
-  const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
 
   try {
@@ -170,7 +175,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
 });
 
 /**
- * Resolve an OAuth access token (fco_…) to the underlying API key via
+ * Resolve an OAuth access token (fco_…) to its team and API key id via
  * the introspection endpoint. Results are cached in Redis for the
  * remaining token TTL (up to 5 minutes).
  */
@@ -197,12 +202,12 @@ async function resolveOAuthToken(
 }
 
 async function getACUC(
-  api_key: string,
+  apiKey: ApiKeyRef,
   cacheOnly = false,
   useCache = true,
   mode?: RateLimiterMode,
   credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
-): Promise<AuthCreditUsageChunk | null> {
+): Promise<AuthCreditUsageChunkFromTeam | null> {
   // Managed OAuth credentials are connection-scoped and can be created or
   // revoked immediately before this request. Never serve them from Redis or a
   // lagging read replica: both authorization and revocation must observe the
@@ -215,8 +220,8 @@ async function getACUC(
     mode === RateLimiterMode.ExtractStatus ||
     mode === RateLimiterMode.ExtractAgentPreview;
 
-  if (api_key === config.PREVIEW_TOKEN) {
-    const acuc = mockPreviewACUC(api_key, isExtract);
+  if ("key" in apiKey && apiKey.key === config.PREVIEW_TOKEN) {
+    const acuc = mockPreviewACUC(apiKey.key, isExtract);
     acuc.is_extract = isExtract;
     return acuc;
   }
@@ -227,7 +232,13 @@ async function getACUC(
     return acuc;
   }
 
-  const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${isExtract ? "extract" : "scrape"}`;
+  // The hash equals api_keys.key_hash, so clearACUC can evict the entry
+  // without ever seeing the raw key.
+  const cacheId =
+    "key" in apiKey
+      ? createHash("sha256").update(apiKey.key).digest("hex")
+      : `id_${apiKey.id}`;
+  const cacheKeyACUC = `acuc_${credentialPurpose}_${cacheId}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
     let cachedACUC: string | null;
@@ -280,7 +291,7 @@ async function getACUC(
       // primary — revocation has to observe fresh state.
       const database = requiresPrimaryRead ? db : retries === 0 ? dbRr : db;
       try {
-        data = await authCreditUsageChunk(database, api_key, credentialPurpose);
+        data = await authCreditUsageChunk(database, apiKey, credentialPurpose);
         break;
       } catch (error) {
         logger.warn(
@@ -300,20 +311,15 @@ async function getACUC(
       }
     }
 
-    const chunk: AuthCreditUsageChunk | null =
-      data.length === 0
-        ? null
-        : data[0].team_id === null
-          ? null
-          : (data[0] as any);
-
-    if (chunk === null) return null;
+    if (data.length === 0 || data[0].team_id === null) return null;
+    // auth_chunk_3 echoes the raw key back; it must never reach the cache.
+    const { api_key: _rawKey, ...chunk } = data[0] as AuthCreditUsageChunk;
 
     // NOTE: Should we cache null chunks? - mogery
     if (useCache) {
       const { limits, ttl } = await readTeamLimits(chunk.team_id, chunk.org_id);
       const built = { ...chunk, is_extract: isExtract, ...limits };
-      setCachedACUC(api_key, isExtract, built, credentialPurpose, ttl);
+      setCachedACUC(cacheKeyACUC, built, ttl);
       return built;
     }
 
@@ -498,24 +504,21 @@ export async function getACUCTeam(
   }
 }
 
-export async function clearACUC(api_key: string): Promise<void> {
-  // Clear both purpose-qualified keys and the legacy unqualified keys during
-  // rollout so credential-purpose isolation cannot leave stale auth entries.
-  const modes = [true, false];
-  const credentialPurposes = ["general", "hosted_mcp_oauth"] as const;
+export async function clearACUC(
+  apiKeys: { id: number; key_hash: string | null }[],
+): Promise<void> {
+  const cacheIds = apiKeys.flatMap(({ id, key_hash }) =>
+    key_hash === null ? [`id_${id}`] : [`id_${id}`, key_hash],
+  );
   await Promise.all(
-    modes.flatMap(mode => [
-      deleteKey(`acuc_${api_key}_${mode ? "extract" : "scrape"}`),
-      ...credentialPurposes.map(credentialPurpose =>
-        deleteKey(
-          `acuc_${credentialPurpose}_${api_key}_${mode ? "extract" : "scrape"}`,
+    cacheIds.flatMap(cacheId =>
+      ["general", "hosted_mcp_oauth"].flatMap(credentialPurpose =>
+        ["extract", "scrape"].map(mode =>
+          deleteKey(`acuc_${credentialPurpose}_${cacheId}_${mode}`),
         ),
       ),
-    ]),
+    ),
   );
-
-  // Also clear the base cache key
-  await deleteKey(`acuc_${api_key}`);
 }
 
 export async function clearACUCTeam(team_id: string): Promise<void> {
@@ -532,11 +535,17 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
   await deleteKey(`acuc_team_${team_id}`);
 }
 
+const invalidToken = {
+  success: false,
+  error: "Unauthorized: Invalid token",
+  status: 401,
+} as const;
+
 function denied(
   req,
   reason: AuthDenialReason,
   response: Extract<AuthResponse, { success: false }>,
-  key?: AuthCreditUsageChunk,
+  key?: AuthCreditUsageChunkFromTeam,
 ): AuthResponse {
   logAuthDenied(req, response.status, reason, key);
   return response;
@@ -861,9 +870,6 @@ async function supaAuthenticateUser(
     : undefined;
 
   let rateLimiter: RateLimiterRedis;
-  let subscriptionData: { team_id: string } | null = null;
-  let normalizedApi: string;
-
   let teamId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
   if (token == "this_is_just_a_preview_token") {
@@ -880,157 +886,132 @@ async function supaAuthenticateUser(
       rateLimiter = getRateLimiter(RateLimiterMode.Preview);
     }
     teamId = `preview_${iptoken}`;
-  } else if (token.startsWith("fcmcp_")) {
-    const delegation = verifyMcpDelegatedCredential(
-      token,
-      config.MCP_DELEGATED_CREDENTIAL_SECRET,
-    );
-    if (!delegation) {
-      return denied(req, "invalid_mcp_credential", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
-    }
-
-    const resolvedApi = parseApi(delegation.api_key);
-    chunk = await getACUC(
-      resolvedApi,
-      false,
-      false,
-      RateLimiterMode.Scrape,
-      "hosted_mcp_oauth",
-    );
-    if (chunk === null) {
-      return denied(req, "unknown_key", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
-    }
-
-    teamId = chunk.team_id;
-    subscriptionData = { team_id: teamId };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      chunk,
-      mode,
-      minRateMultiplier,
-    );
-  } else if (token.startsWith("fco_")) {
-    // OAuth access token — resolve via introspection endpoint
-    let introspection: OAuthIntrospectionResponse | null;
-    try {
-      introspection = await resolveOAuthToken(token);
-    } catch (error) {
-      if (error instanceof OAuthIntrospectionUnavailableError) {
-        return {
-          success: false,
-          error: "OAuth authentication is temporarily unavailable",
-          status: 503,
-        };
-      }
-      throw error;
-    }
-    if (!introspection) {
-      return denied(req, "invalid_oauth_token", {
-        success: false,
-        error: "Unauthorized: Invalid or expired OAuth token",
-        status: 401,
-      });
-    }
-    if (
-      introspection.credential_purpose !== undefined &&
-      introspection.credential_purpose !== "general"
-    ) {
-      return denied(req, "oauth_purpose_mismatch", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
-    }
-
-    // Use the resolved fc- API key to get the normal ACUC chunk
-    const resolvedApi = parseApi(introspection.api_key);
-    chunk = await getACUC(
-      resolvedApi,
-      false,
-      true,
-      RateLimiterMode.Scrape,
-      "general",
-    );
-
-    if (chunk === null) {
-      return denied(req, "unknown_key", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
-    }
-    if (chunk.team_id !== introspection.team_id) {
-      return denied(
-        req,
-        "oauth_team_mismatch",
-        {
-          success: false,
-          error: "Unauthorized: Invalid token",
-          status: 401,
-        },
-        chunk,
-      );
-    }
-
-    teamId = chunk.team_id;
-
-    subscriptionData = {
-      team_id: teamId,
-    };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      chunk,
-      mode,
-      minRateMultiplier,
-    );
   } else {
-    normalizedApi = parseApi(token);
-    if (!normalizedApiIsUuid(normalizedApi)) {
-      return denied(req, "malformed_key", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
-    }
-
-    chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
-
     // Agent runs from the hosted MCP hold the grant's hosted_mcp_oauth key,
     // not a general one. Accept it only from the trusted agent service, only
     // on opted-in routes, and only via the uncached primary-read lookup.
-    if (
-      chunk === null &&
-      options?.allowAgentManagedKey === true &&
-      trustedAgentInterop
-    ) {
-      chunk = await getACUC(
-        normalizedApi,
-        false,
-        false,
-        RateLimiterMode.Scrape,
-        "hosted_mcp_oauth",
+    const getKeyACUC = async (apiKey: ApiKeyRef) =>
+      (await getACUC(apiKey, false, true, RateLimiterMode.Scrape)) ??
+      (options?.allowAgentManagedKey === true && trustedAgentInterop
+        ? await getACUC(
+            apiKey,
+            false,
+            false,
+            RateLimiterMode.Scrape,
+            "hosted_mcp_oauth",
+          )
+        : null);
+
+    let keyChunk: AuthCreditUsageChunkFromTeam | null;
+    let presentedKey: string | null = null;
+    if (token.startsWith("fcmcp_")) {
+      const delegation = verifySignedCredential(
+        token,
+        MCP_DELEGATION,
+        config.MCP_DELEGATED_CREDENTIAL_SECRET,
       );
+      if (!delegation) {
+        return denied(req, "invalid_mcp_credential", invalidToken);
+      }
+
+      if (delegation.v === 1) {
+        presentedKey = parseApi(delegation.api_key);
+        keyChunk = await getACUC(
+          { key: presentedKey },
+          false,
+          false,
+          RateLimiterMode.Scrape,
+          "hosted_mcp_oauth",
+        );
+      } else {
+        keyChunk = await getACUC(
+          { id: delegation.api_key_id },
+          false,
+          false,
+          RateLimiterMode.Scrape,
+          "hosted_mcp_oauth",
+        );
+        if (keyChunk && keyChunk.oauth_grant_id !== delegation.grant_id) {
+          return denied(req, "mcp_grant_mismatch", invalidToken, keyChunk);
+        }
+      }
+    } else if (token.startsWith("fct_")) {
+      const teamToken = verifySignedCredential(
+        token,
+        TEAM_TOKEN,
+        config.TEAM_TOKEN_SECRET,
+      );
+      if (!teamToken) {
+        return denied(req, "invalid_team_token", invalidToken);
+      }
+
+      if (teamToken.api_key_id === null) {
+        // A team-only token runs under the team's limits alone: no key, so no
+        // per-key restriction, limit, or usage attribution applies.
+        const team = await getACUCTeam(teamToken.team_id);
+        keyChunk = team && { ...team, api_key_id: null };
+      } else {
+        keyChunk = await getKeyACUC({ id: teamToken.api_key_id });
+      }
+      if (keyChunk && keyChunk.team_id !== teamToken.team_id) {
+        return denied(req, "team_token_mismatch", invalidToken, keyChunk);
+      }
+    } else if (token.startsWith("fco_")) {
+      // OAuth access token — resolve via introspection endpoint
+      let introspection: OAuthIntrospectionResponse | null;
+      try {
+        introspection = await resolveOAuthToken(token);
+      } catch (error) {
+        if (error instanceof OAuthIntrospectionUnavailableError) {
+          return {
+            success: false,
+            error: "OAuth authentication is temporarily unavailable",
+            status: 503,
+          };
+        }
+        throw error;
+      }
+      if (!introspection) {
+        return denied(req, "invalid_oauth_token", {
+          success: false,
+          error: "Unauthorized: Invalid or expired OAuth token",
+          status: 401,
+        });
+      }
+      if (
+        introspection.credential_purpose !== undefined &&
+        introspection.credential_purpose !== "general"
+      ) {
+        return denied(req, "oauth_purpose_mismatch", invalidToken);
+      }
+
+      presentedKey = introspection.api_key
+        ? parseApi(introspection.api_key)
+        : null;
+      keyChunk = await getACUC(
+        { id: Number(introspection.api_key_id) },
+        false,
+        true,
+        RateLimiterMode.Scrape,
+        "general",
+      );
+      if (keyChunk && keyChunk.team_id !== introspection.team_id) {
+        return denied(req, "oauth_team_mismatch", invalidToken, keyChunk);
+      }
+    } else {
+      presentedKey = parseApi(token);
+      if (!normalizedApiIsUuid(presentedKey)) {
+        return denied(req, "malformed_key", invalidToken);
+      }
+      keyChunk = await getKeyACUC({ key: presentedKey });
     }
 
-    if (chunk === null) {
-      return denied(req, "unknown_key", {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      });
+    if (keyChunk === null) {
+      return denied(req, "unknown_key", invalidToken);
     }
 
+    chunk = { ...keyChunk, api_key: apiKeyToFcApiKey(presentedKey) };
     teamId = chunk.team_id;
-
-    subscriptionData = {
-      team_id: teamId,
-    };
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,
@@ -1041,7 +1022,7 @@ async function supaAuthenticateUser(
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
   // converge. Ban enforcement used to rely on auth_credit_usage_chunk zeroing
   // the rate_limits payload, but authenticated limiting now derives from Autumn
-  // and never reads that field, so bans went unenforced. auth_chunk_2 surfaces
+  // and never reads that field, so bans went unenforced. auth_chunk_3 surfaces
   // teams.banned as is_banned and we deny it explicitly.
   if (chunk?.is_banned) {
     return denied(

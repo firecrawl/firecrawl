@@ -15,6 +15,7 @@ import {
 
 const ACTIVE = {
   active: true,
+  api_key_id: "42",
   api_key: "fc-11111111111111118111111111111111",
   scope: "firecrawl:global",
   client_id: "client-1",
@@ -276,6 +277,40 @@ describe("OAuth token introspection", () => {
         fetchFn: inactiveFetch,
       }),
     ).resolves.toBeNull();
+  });
+
+  it("accepts an active response without a raw key", async () => {
+    const { api_key: _omitted, ...byId } = ACTIVE;
+    const fetchFn = vi.fn().mockResolvedValue(response(byId));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toEqual(byId);
+  });
+
+  it.each([
+    ["a missing key id", { api_key_id: undefined }],
+    ["a numeric key id", { api_key_id: 42 }],
+    ["a zero-padded key id", { api_key_id: "042" }],
+    ["a zero key id", { api_key_id: "0" }],
+    ["an unsafe key id", { api_key_id: "9007199254740993" }],
+    ["a malformed raw key", { api_key: "fc-not-a-key" }],
+  ])("treats a response with %s as unavailable", async (_label, overrides) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(response({ ...ACTIVE, ...overrides }));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).rejects.toBeInstanceOf(OAuthIntrospectionUnavailableError);
   });
 
   it("treats malformed introspection responses as unavailable", async () => {

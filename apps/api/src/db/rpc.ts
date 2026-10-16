@@ -25,17 +25,21 @@ function toNum(v: unknown): number | null {
 
 export type AuthCreditUsageChunkRow = Record<string, any> & {
   team_id: string | null;
-  api_key: string;
 };
+
+/** An API key named by its raw (canonical uuid) value or by its row id. */
+export type ApiKeyRef = { key: string } | { id: number };
 
 export async function authCreditUsageChunk(
   database: DB,
-  input_key: string,
+  apiKey: ApiKeyRef,
   input_credential_purpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunkRow[]> {
   const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
-    sql`select * from auth_chunk_2(input_key => ${input_key}, input_credential_purpose => ${input_credential_purpose})`,
+    "key" in apiKey
+      ? sql`select * from auth_chunk_3(input_key => ${apiKey.key}, input_credential_purpose => ${input_credential_purpose})`
+      : sql`select * from auth_chunk_3_from_key_id(input_key_id => ${apiKey.id}, input_credential_purpose => ${input_credential_purpose})`,
   );
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
@@ -75,16 +79,15 @@ export function agentConsumeFreeRequestIfLeft(
   );
 }
 
-export function billTeam7(params: {
+export async function billTeam8(params: {
   team_id: string;
   subscription_id: string | null;
   credits: number;
   api_key_id: number | null;
   is_extract: boolean;
-}): Promise<{ api_key: string }[]> {
-  return execRows(
-    db,
-    sql`select * from bill_team_7(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
+}): Promise<void> {
+  await db.execute(
+    sql`select bill_team_8(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
   );
 }
 
