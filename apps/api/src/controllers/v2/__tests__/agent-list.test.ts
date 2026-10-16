@@ -151,7 +151,7 @@ describe("agentListController zero data retention rows", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lists a ZDR row with reduced options and a redacted target hint", async () => {
+  it("lists a ZDR row with only model, effort and the flag", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => [] }),
@@ -172,6 +172,9 @@ describe("agentListController zero data retention rows", () => {
               {
                 id: AGENT_ID,
                 options: JSON.stringify({
+                  prompt: "secret prompt",
+                  urls: ["https://example.com"],
+                  threadId: "thread-1",
                   model: "spark-2",
                   effort: "high",
                   zeroDataRetention: true,

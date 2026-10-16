@@ -48,11 +48,21 @@ function threadTurnOf(value: unknown): number | undefined {
 
 const ZDR_TARGET_HINT = "<redacted due to zero data retention>";
 
-// A zero data retention run keeps only its model, effort and the flag; the
-// agent service may still hold its prompt in memory while it is recent, so
-// the content fields are dropped here too.
 function isZdrOptions(options: any): boolean {
   return options?.zeroDataRetention === true;
+}
+
+// A zero data retention run is listed with its model, effort and the flag
+// only, whichever source the row comes from.
+function withoutZdrContent(options: any): any {
+  return isZdrOptions(options)
+    ? {
+        model: options.model,
+        modelPreset: options.modelPreset,
+        effort: options.effort,
+        zeroDataRetention: true,
+      }
+    : options;
 }
 
 function zdrOptions(options: any): { zeroDataRetention?: true } {
@@ -290,13 +300,8 @@ export async function agentListController(
     const recent = recentAgents.get(id);
     const db = dbAgents.get(id);
     const settings = sessionSettingsMap.get(id);
-    const recentOptions = isZdrOptions(recent?.options)
-      ? {
-          modelPreset: recent!.options.modelPreset,
-          effort: recent!.options.effort,
-          zeroDataRetention: true,
-        }
-      : recent?.options;
+    const recentOptions = withoutZdrContent(recent?.options);
+    const dbOptions = db?.agent ? withoutZdrContent(db.agent.options) : null;
 
     agents.push({
       id: db?.id ?? recent!.id,
@@ -326,17 +331,17 @@ export async function agentListController(
           : recent!.status === "succeeded"
             ? "completed"
             : "failed",
-      options: db?.agent
+      options: dbOptions
         ? {
-            urls: db.agent.options.urls ?? undefined,
-            prompt: db.agent.options.prompt ?? "",
-            schema: db.agent.options.schema ?? undefined,
-            model: db.agent.options.model ?? "spark-1-pro",
+            urls: dbOptions.urls ?? undefined,
+            prompt: dbOptions.prompt ?? "",
+            schema: dbOptions.schema ?? undefined,
+            model: dbOptions.model ?? "spark-1-pro",
             effort:
-              db.agent.options.effort ??
-              (db.agent.options.model === "spark-2" ? "medium" : undefined),
-            ...threadOptions(db.agent.options),
-            ...zdrOptions(db.agent.options),
+              dbOptions.effort ??
+              (dbOptions.model === "spark-2" ? "medium" : undefined),
+            ...threadOptions(dbOptions),
+            ...zdrOptions(dbOptions),
           }
         : recentOptions
           ? {
