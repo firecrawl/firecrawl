@@ -35,6 +35,7 @@ const providerScrapeSchema = z.strictObject({
     .transform(value => Math.min(value, 120_000)),
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
+  zeroDataRetention: z.boolean().optional(),
   __agentInterop: z
     .strictObject({
       auth: z.string(),
@@ -91,11 +92,10 @@ export async function providerScrapeController(
       success: false,
       error: "This endpoint is not enabled for this team.",
     });
-  if (getScrapeZDR(req.acuc.flags) === "forced")
-    return res.status(403).json({
-      success: false,
-      error: "Provider tools do not support zero data retention.",
-    });
+  // Exchange refuses capabilities that cannot honour ZDR, per call.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc.flags) === "forced" ||
+    body.zeroDataRetention === true;
   if (
     (req as any).agentIndexOnly ||
     ["pending", "blocked"].includes(req.acuc._agentSponsor?.status ?? "")
@@ -136,6 +136,7 @@ export async function providerScrapeController(
       scrapeId: uuidv7(),
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
+      zeroDataRetention,
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -180,7 +181,7 @@ export async function providerScrapeController(
         origin: body.origin,
         integration: body.integration ?? null,
         target_hint: target,
-        zeroDataRetention: false,
+        zeroDataRetention,
         jobAccess: false,
       });
       await logProviderScrape({

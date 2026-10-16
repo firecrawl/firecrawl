@@ -643,3 +643,53 @@ it("sends no credentials when the caller supplied none", async () => {
   });
   expect(executions()[0][0].resultAuthorization).toBeUndefined();
 });
+
+it("forwards zero data retention to quote and execution and keeps no response", async () => {
+  expect(await run({ zeroDataRetention: true })).toEqual({
+    status: 200,
+    body: answer,
+    executed: true,
+    scrapeId: "scrape-1",
+  });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded)
+    expect(request.zeroDataRetention).toBe(true);
+  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  expect(stored).toMatchObject({ phase: "done", responseWithheld: true });
+  expect(stored).not.toHaveProperty("response");
+
+  const replay = await run({ zeroDataRetention: true, scrapeId: "scrape-2" });
+  expect(replay).toMatchObject({ status: 409, executed: false });
+  expect(replay.body).toEqual(
+    expect.objectContaining({ code: "response_not_retained" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it("keeps and replays the response without zero data retention", async () => {
+  await run();
+  expect(
+    mocks.request.mock.calls.every(([r]) => r.zeroDataRetention === undefined),
+  ).toBe(true);
+  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  expect(stored.response).toEqual({ status: 200, body: answer });
+  expect(stored).not.toHaveProperty("responseWithheld");
+  expect(await run()).toMatchObject({
+    status: 200,
+    body: answer,
+    executed: false,
+  });
+});
+
+it("refuses the same x-request-id with a different zero data retention setting", async () => {
+  await run();
+  const other = await run({ zeroDataRetention: true });
+  expect(other.status).toBe(409);
+  expect(other.body).toEqual(
+    expect.objectContaining({ code: "duplicate_request" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
