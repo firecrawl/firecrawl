@@ -30,6 +30,18 @@ describe("JS SDK v2 pagination", () => {
     expect(res.next).toBeNull();
   });
 
+  test("crawl: default autoPaginate does not block while status is non-terminal", async () => {
+    let calls = 0;
+    const http = makeHttp(() => {
+      calls += 1;
+      return { status: 200, data: { success: true, status: "scraping", completed: 1, total: 3, next: calls < 5 ? `https://api/n${calls}` : null, data: [{ markdown: `p${calls}` }] } };
+    });
+    const res = await getCrawlStatus(http, "job1");
+    expect(res.data.length).toBe(1);
+    expect(res.next).toBe("https://api/n1");
+    expect(calls).toBe(1);
+  });
+
   test("crawl: respects maxPages and maxResults", async () => {
     const first = { status: 200, data: { success: true, status: "completed", completed: 1, total: 10, next: "https://api/n1", data: [{ markdown: "a" }] } };
     const page = (n: number) => ({ status: 200, data: { success: true, next: n < 3 ? `https://api/n${n + 1}` : null, data: [{ markdown: `p${n}` }] } });
@@ -55,6 +67,18 @@ describe("JS SDK v2 pagination", () => {
     const res = await getBatchScrapeStatus(http, "jobB");
     expect(res.data.length).toBe(3);
     expect(res.next).toBeNull();
+  });
+
+  test("batch: default autoPaginate does not block while status is non-terminal", async () => {
+    let calls = 0;
+    const http = makeHttp(() => {
+      calls += 1;
+      return { status: 200, data: { success: true, status: "scraping", completed: 1, total: 3, next: calls < 5 ? `https://api/b${calls}` : null, data: [{ markdown: `p${calls}` }] } };
+    });
+    const res = await getBatchScrapeStatus(http, "jobB");
+    expect(res.data.length).toBe(1);
+    expect(res.next).toBe("https://api/b1");
+    expect(calls).toBe(1);
   });
 
   test("batch: autoPaginate=false returns next", async () => {

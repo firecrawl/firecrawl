@@ -75,7 +75,8 @@ export async function getCrawlStatus(
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
 
-    const auto = pagination?.autoPaginate ?? true;
+    const isTerminal = ["completed", "failed", "cancelled"].includes(body.status);
+    const auto = pagination?.autoPaginate ?? isTerminal;
     if (!auto || !body.next) {
       return {
         id: jobId,
