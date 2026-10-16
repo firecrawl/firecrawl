@@ -250,6 +250,32 @@ export async function retrieveProviders(input: {
   let lockId: string | undefined;
   let maximumCredits: number;
   let refundable = false;
+  const finalize = async (credits: number) => {
+    if (!lockId) return true;
+    const settled = await autumnService.finalizeCreditsLock({
+      // Omitted without an org: the settle goes straight to Autumn, the route
+      // an unnameable org already took.
+      team:
+        input.orgId !== null
+          ? { teamId: input.teamId, orgId: input.orgId }
+          : undefined,
+      lockId,
+      action: credits > 0 ? "confirm" : "release",
+      ...(credits > 0 ? { overrideValue: credits } : {}),
+      heldValue: maximumCredits,
+      featureId,
+      properties,
+    });
+    if (!settled)
+      logger.error("Provider credits were not settled; hold expires unbilled", {
+        chargeId: id,
+        teamId: input.teamId,
+        lockId,
+        credits,
+      });
+    return settled;
+  };
+
   try {
     const denied = await authorizeProviders(
       input.teamId,
@@ -359,13 +385,18 @@ export async function retrieveProviders(input: {
         );
       lockId = hold.lockId;
     }
+
+    // The record is written before the provider runs, so a failed write means
+    // nothing ran: the catch below hands back the index calls and the hold.
+    record.lockId = lockId;
+    record.maximumCredits = maximumCredits;
+    await write(record);
   } catch (error) {
+    if (lockId) await finalize(0).catch(() => false);
     await releaseIndexCalls();
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
   }
-  record.lockId = lockId;
-  record.maximumCredits = maximumCredits;
   const fail = async (reason: string): Promise<ProviderRetrieval> => {
     logger.error(
       "Provider request outcome is uncertain; needs reconciliation",
@@ -380,34 +411,8 @@ export async function retrieveProviders(input: {
     await write({ ...record, failure: reason }).catch(() => {});
     return { ...unresolved(id), executed: true, scrapeId: input.scrapeId };
   };
-  const finalize = async (credits: number) => {
-    if (!lockId) return true;
-    const settled = await autumnService.finalizeCreditsLock({
-      // Omitted without an org: the settle goes straight to Autumn, the route
-      // an unnameable org already took.
-      team:
-        input.orgId !== null
-          ? { teamId: input.teamId, orgId: input.orgId }
-          : undefined,
-      lockId,
-      action: credits > 0 ? "confirm" : "release",
-      ...(credits > 0 ? { overrideValue: credits } : {}),
-      heldValue: maximumCredits,
-      featureId,
-      properties,
-    });
-    if (!settled)
-      logger.error("Provider credits were not settled; hold expires unbilled", {
-        chargeId: id,
-        teamId: input.teamId,
-        lockId,
-        credits,
-      });
-    return settled;
-  };
 
   try {
-    await write(record);
     const response = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
