@@ -207,7 +207,17 @@ export async function executeSearch(
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
   ) {
-    await removeExplicitResults(searchResponse, limit, logger, teamId);
+    // Developer index results skip the SERP and its provider-side safe
+    // search, so they are filtered from a response of their own before they
+    // are counted, scraped or returned.
+    const safeTarget: SearchV2Response =
+      indexCategorySearch === searchDeveloperCategory
+        ? { web: indexResults }
+        : searchResponse;
+    await removeExplicitResults(safeTarget, limit, logger, teamId);
+    if (safeTarget !== searchResponse) {
+      indexResults = safeTarget.web ?? [];
+    }
   }
 
   if (searchResponse.web && searchResponse.web.length > 0) {

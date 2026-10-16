@@ -59,6 +59,7 @@ vi.mock("./safe-search", () => ({
 
 import { executeSearch } from "./execute";
 import {
+  calculateScrapeCredits,
   getItemsToScrape,
   mergeScrapedContent,
   scrapeSearchResults,
@@ -211,6 +212,29 @@ describe("executeSearch developer category", () => {
     expect(result.indexResultsCount).toBe(1);
   });
 
+  it("runs the Jev filter on developer results when safe is on", async () => {
+    const explicit = { ...developerResult, url: "https://nsfw.example/" };
+    mocks.searchDeveloperCategory.mockResolvedValueOnce([
+      developerResult,
+      explicit,
+    ]);
+    mocks.removeExplicitResults.mockImplementationOnce(async response => {
+      response.web = response.web.filter(
+        (result: { url: string }) => result.url !== explicit.url,
+      );
+    });
+
+    const result = await executeSearch(
+      { ...options([{ type: "developer" }]), safe: true },
+      context,
+      logger,
+    );
+
+    expect(mocks.removeExplicitResults).toHaveBeenCalledTimes(1);
+    expect(result.response.web).toEqual([developerResult]);
+    expect(result.indexResultsCount).toBe(1);
+  });
+
   it("scrapes developer results when scrape formats are requested", async () => {
     const summarized = { ...developerResult, summary: "Retry with backoff." };
     vi.mocked(getItemsToScrape).mockImplementationOnce(response =>
@@ -230,6 +254,7 @@ describe("executeSearch developer category", () => {
     vi.mocked(mergeScrapedContent).mockImplementationOnce(response => {
       response.web = [summarized];
     });
+    vi.mocked(calculateScrapeCredits).mockReturnValueOnce(5);
 
     const result = await executeSearch(
       {
@@ -240,6 +265,11 @@ describe("executeSearch developer category", () => {
       logger,
     );
 
+    expect(calculateScrapeCredits).toHaveBeenCalledWith([
+      { document: summarized, costTracking: {} },
+    ]);
+    expect(result.scrapeCredits).toBe(5);
+    expect(result.totalCredits).toBe(result.searchCredits + 5);
     expect(scrapeSearchResults).toHaveBeenCalledWith(
       [
         {
