@@ -4,6 +4,7 @@ from ...types import (
     SearchRequest,
     SearchData,
     Document,
+    SearchDocument,
     SearchResultWeb,
     SearchResultNews,
     SearchResultImages,
@@ -11,10 +12,36 @@ from ...types import (
 from ...utils.agent_hints import agent_hint_metadata
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
-from ...utils.normalize import normalize_document_input
+from ...utils.normalize import normalize_document_input, _map_search_result_keys
 from ...utils.validation import validate_scrape_options, prepare_scrape_options
 
 T = TypeVar("T")
+
+SCRAPE_DOCUMENT_KEYS = {
+    "metadata",
+    "markdown",
+    "html",
+    "rawHtml",
+    "raw_html",
+    "links",
+    "screenshot",
+    "changeTracking",
+    "change_tracking",
+    "summary",
+    "json",
+    "answer",
+    "images",
+    "audio",
+    "video",
+    "branding",
+    "product",
+    "menu",
+    "actions",
+    "pages",
+    "warning",
+    "highlights",
+    "blocks",
+}
 
 async def search(
     client: AsyncHttpClient,
@@ -57,29 +84,32 @@ async def search(
             handle_response_error(getattr(err, "response"), "search")
         raise err
 
-def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, Document]]:
+def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, SearchDocument]]:
     """
     Transforms an array of items into a list of result_type or Document.
     If the item dict contains any of the special keys, it is treated as a Document.
     Otherwise, it is treated as result_type.
     If the item is not a dict, it is wrapped as result_type with url=item.
     """
-    results: List[Union[T, Document]] = []
+    results: List[Union[T, SearchDocument]] = []
     for item in arr:
         if item and isinstance(item, dict):
-            if (
-                "markdown" in item or
-                "html" in item or
-                "rawHtml" in item or
-                "links" in item or
-                "screenshot" in item or
-                "changeTracking" in item or
-                "summary" in item or
-                "json" in item
-            ):
-                results.append(Document(**normalize_document_input(item)))
+            if any(key in item for key in SCRAPE_DOCUMENT_KEYS):
+                results.append(SearchDocument(**normalize_document_input(item)))
             else:
-                results.append(result_type(**item))
+                result_type_name = None
+                if result_type == SearchResultImages:
+                    result_type_name = "images"
+                elif result_type == SearchResultNews:
+                    result_type_name = "news"
+                elif result_type == SearchResultWeb:
+                    result_type_name = "web"
+
+                if result_type_name:
+                    normalized_item = _map_search_result_keys(item, result_type_name)
+                    results.append(result_type(**normalized_item))
+                else:
+                    results.append(result_type(**item))
         else:
             results.append(result_type(url=item))
     return results
