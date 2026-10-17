@@ -33,6 +33,9 @@ const ALLOW_LOCAL_WEBHOOKS =
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+// 0 picks a free port; some sandboxes can't connect to a port-0 listener
+const SSRF_PROXY_PORT =
+  Number.parseInt(process.env.SSRF_PROXY_PORT ?? '0', 10) || 0;
 
 class InsecureConnectionError extends Error {
   constructor(
@@ -98,7 +101,7 @@ const buildUpstreamProxyUrl = (): string | undefined => {
 
 const startSSRFProxy = async (): Promise<number> => {
   const server = new Server({
-    port: 0,
+    port: SSRF_PROXY_PORT,
     host: '127.0.0.1',
     prepareRequestFunction: async ({ hostname }) => {
       if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(hostname))) {
