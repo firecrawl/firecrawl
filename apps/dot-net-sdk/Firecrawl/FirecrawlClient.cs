@@ -39,7 +39,7 @@ public class FirecrawlClient
     /// <param name="apiKey">The Firecrawl API key.</param>
     /// <param name="apiUrl">Optional API base URL (defaults to https://api.firecrawl.dev).</param>
     /// <param name="timeout">Optional HTTP request timeout.</param>
-    /// <param name="maxRetries">Optional maximum number of retries for transient failures.</param>
+    /// <param name="maxRetries">Optional maximum number of retries for transient GET failures. Mutating requests are sent once.</param>
     /// <param name="backoffFactor">Optional exponential backoff factor in seconds.</param>
     /// <param name="httpClient">Optional pre-configured HttpClient instance.</param>
     public FirecrawlClient(
