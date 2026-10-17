@@ -3,6 +3,7 @@ import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
+import { isRequestedModelSupported } from "../../lib/extraction-provider";
 import { z } from "zod";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -365,6 +366,14 @@ const jsonFormatWithOptions = z.strictObject({
     })
     .superRefine(addStrictSchemaIssue),
   prompt: z.string().max(10000).optional(),
+  // Optional: name a configured extraction model for this request.
+  model: z
+    .string()
+    .max(100)
+    .optional()
+    .refine(val => val === undefined || isRequestedModelSupported(val), {
+      message: "Unsupported extraction model.",
+    }),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });

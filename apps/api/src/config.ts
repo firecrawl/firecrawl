@@ -16,6 +16,18 @@ const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
+// Trim strings and treat blank ones as unset (optional or default schemas).
+const blankStringAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    value =>
+      typeof value === "string"
+        ? value.trim() === ""
+          ? undefined
+          : value.trim()
+        : value,
+    schema,
+  );
+
 const RESEARCH_PAPER_OPERATIONS = [
   "search",
   "inspect",
@@ -591,6 +603,44 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
+  // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
+  // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
+  // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
+  // back to the default model for that request.
+  EXTRACTION_PROVIDER_BASE_URL: blankStringAsUnset(z.string().url().optional()),
+  EXTRACTION_PROVIDER_API_KEY: blankStringAsUnset(z.string().optional()),
+  EXTRACTION_PROVIDER_MODEL: blankStringAsUnset(
+    z.string().min(1).default("extraction-v1"),
+  ),
+  EXTRACTION_PROVIDER_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(0),
+  EXTRACTION_PROVIDER_SHADOW_PERCENT: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(0),
+  EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
+  // Let any team pick the provider per request (json format `model`); off =
+  // only teams in TEAM_IDS may.
+  EXTRACTION_PROVIDER_REQUEST_OPT_IN: z.stringbool().optional(),
+  EXTRACTION_PROVIDER_MAX_INPUT_BYTES: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(400_000),
+  EXTRACTION_PROVIDER_INPUT_COST_PER_MTOK: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.07),
+  EXTRACTION_PROVIDER_OUTPUT_COST_PER_MTOK: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.2),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
@@ -718,6 +768,18 @@ const configSchema = z.object({
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
+  if (
+    value.EXTRACTION_PROVIDER_ROLLOUT_PERCENT +
+      value.EXTRACTION_PROVIDER_SHADOW_PERCENT >
+    100
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
+      message:
+        "EXTRACTION_PROVIDER_ROLLOUT_PERCENT + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100",
+    });
+  }
   for (const error of getMcpActionLogConfigErrors(value)) {
     context.addIssue({
       code: "custom",
