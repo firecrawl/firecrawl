@@ -1671,20 +1671,25 @@ class FirecrawlClient:
         """
         return agent_module.cancel_agent(self.http_client, job_id)
 
-    def list_agents(self, *, before: Optional[int] = None):
+    def list_agents(
+        self, *, before: Optional[int] = None, before_id: Optional[str] = None
+    ):
         """List agent runs, most recent first.
 
-        Pages are fixed at 20 runs. To fetch the next page, pass the `before`
-        value from the previous page's `next` URL. This method does not
-        auto-paginate.
+        Pages are fixed at 20 runs. To fetch the next page, pass both `before`
+        and `beforeId` from the previous page's `next` URL as `before` and
+        `before_id`. This method does not auto-paginate.
 
         Args:
-            before: Only return agent runs created before this unix ms timestamp
+            before: Unix millisecond timestamp from the previous page's next URL
+            before_id: Agent ID tie-breaker from that URL, passed together with before
 
         Returns:
             AgentListResponse with the list of agent runs and optional next URL
         """
-        return agent_module.list_agents(self.http_client, before=before)
+        return agent_module.list_agents(
+            self.http_client, before=before, before_id=before_id
+        )
 
     def get_agent_thread(self, thread_id: str, *, include_data: bool = False):
         """Get a thread and its runs, oldest turn first.

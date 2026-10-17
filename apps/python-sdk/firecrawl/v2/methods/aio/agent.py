@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 import asyncio
+from urllib.parse import urlencode
 
 from ...types import (
     AgentExchangeOptions,
@@ -143,23 +144,30 @@ async def list_agents(
     client: AsyncHttpClient,
     *,
     before: Optional[int] = None,
+    before_id: Optional[str] = None,
 ) -> AgentListResponse:
     """List agent runs, most recent first.
 
-    Pages are fixed at 20 runs. To fetch the next page, pass the `before`
-    value from the previous page's `next` URL. This method does not
-    auto-paginate.
+    Pages are fixed at 20 runs. To fetch the next page, pass both `before`
+    and `beforeId` from the previous page's `next` URL as `before` and
+    `before_id`. This method does not auto-paginate.
 
     Args:
         client: Async HTTP client instance
-        before: Only return agent runs created before this unix ms timestamp
+        before: Unix millisecond timestamp from the previous page's next URL
+        before_id: Agent ID tie-breaker from that URL, passed together with before
 
     Returns:
         AgentListResponse with the list of agent runs and optional next URL
     """
-    endpoint = "/v2/agent"
+    params: Dict[str, Any] = {}
     if before is not None:
-        endpoint = f"{endpoint}?before={before}"
+        params["before"] = before
+    if before_id is not None:
+        params["beforeId"] = before_id
+    endpoint = "/v2/agent"
+    if params:
+        endpoint += "?" + urlencode(params)
     resp = await client.get(endpoint)
     if not resp.ok:
         handle_response_error(resp, "list agents")
