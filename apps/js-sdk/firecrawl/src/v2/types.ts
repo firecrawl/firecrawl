@@ -1014,7 +1014,10 @@ export interface SearchRequest {
   /** Compact by default; summary adds metadata, full includes contracts. */
   toolDetail?: "compact" | "summary" | "full";
   sources?: Array<
-    "web" | "news" | "images" | "alexandria"
+    | "web"
+    | "news"
+    | "images"
+    | "alexandria"
     | { type: "web" | "news" | "images" | "alexandria" }
   >;
   /**
@@ -2028,7 +2031,9 @@ export interface RequiresAction {
   url?: string;
 }
 
-export function parseRequiresAction(value: unknown): RequiresAction | undefined {
+export function parseRequiresAction(
+  value: unknown,
+): RequiresAction | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   if (typeof record.type !== "string") return undefined;
@@ -2367,3 +2372,5 @@ export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;
 }
+
+export type { ScrapeCallOptions } from "./methods/scrape";

@@ -34,7 +34,10 @@ export function processingContinuesDelayMs(err: unknown): number | undefined {
     : undefined;
   if (!response || response.status !== 408) return undefined;
   const body = response.data as
-    | { code?: string; details?: { state?: string; retryAfterSeconds?: number } }
+    | {
+        code?: string;
+        details?: { state?: string; retryAfterSeconds?: number };
+      }
     | undefined;
   if (
     body?.code !== "SCRAPE_TIMEOUT" ||
@@ -50,7 +53,10 @@ export function processingContinuesDelayMs(err: unknown): number | undefined {
       : Number.isFinite(headerSeconds)
         ? headerSeconds
         : 60;
-  return Math.min(RESUME_MAX_DELAY_MS, Math.max(RESUME_MIN_DELAY_MS, seconds * 1000));
+  return Math.min(
+    RESUME_MAX_DELAY_MS,
+    Math.max(RESUME_MIN_DELAY_MS, seconds * 1000),
+  );
 }
 
 /**
@@ -72,6 +78,10 @@ export type ScrapeCallOptions = ScrapeOptions & {
    * immediately instead.
    */
   autoResume?: boolean;
+  /**
+   * Whether to disable data retention on Firecrawl servers for this scrape.
+   */
+  zeroDataRetention?: boolean;
 };
 
 export async function scrape(
@@ -82,7 +92,7 @@ export async function scrape(
 ): Promise<Document> {
   const sleep =
     deps.sleepImpl ??
-    ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   if (!url || !url.trim()) {
     throw new Error("URL cannot be empty");
   }
@@ -124,17 +134,14 @@ export async function scrape(
         success: boolean;
         data?: Document;
         error?: string;
-      }>(
-        "/v2/scrape",
-        payload,
-        requestTimeout,
-      );
+      }>("/v2/scrape", payload, requestTimeout);
       if (res.status !== 200 || !res.data?.success) {
         throwForBadResponse(res, "scrape");
       }
       return { ...res.data.data, ...agentHintMetadata(res.data) };
     } catch (err: any) {
-      const delayMs = autoResume !== false ? processingContinuesDelayMs(err) : undefined;
+      const delayMs =
+        autoResume !== false ? processingContinuesDelayMs(err) : undefined;
       if (
         delayMs !== undefined &&
         resumes < RESUME_MAX_ATTEMPTS &&
