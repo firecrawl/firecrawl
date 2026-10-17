@@ -46,7 +46,7 @@ logger = logging.getLogger("firecrawl")
 class V1Proxy:
     """Type-annotated proxy for v1 client methods."""
     _client: Optional[V1FirecrawlApp]
-    
+
     def __init__(self, client_instance: Optional[V1FirecrawlApp]):
         self._client = client_instance
 
@@ -61,6 +61,23 @@ class V1Proxy:
             self.extract = client_instance.extract
             self.deep_research = client_instance.deep_research
             self.generate_llms_text = client_instance.generate_llms_text
+        else:
+            def _raise_missing_key(*args, **kwargs):
+                raise ValueError("No API key provided")
+
+            self.scrape_url = _raise_missing_key
+            self.crawl_url = _raise_missing_key
+            self.batch_scrape_urls = _raise_missing_key
+            self.async_batch_scrape_urls = _raise_missing_key
+            self.async_crawl_url = _raise_missing_key
+            self.check_crawl_status = _raise_missing_key
+            self.map_url = _raise_missing_key
+            self.extract = _raise_missing_key
+            self.deep_research = _raise_missing_key
+            self.generate_llms_text = _raise_missing_key
+
+    def __bool__(self) -> bool:
+        return self._client is not None
 
 class V2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
@@ -140,7 +157,7 @@ class V2Proxy:
 class AsyncV1Proxy:
     """Type-annotated proxy for v1 client methods."""
     _client: Optional[AsyncV1FirecrawlApp]
-    
+
     def __init__(self, client_instance: Optional[AsyncV1FirecrawlApp]):
         self._client = client_instance
 
@@ -155,6 +172,23 @@ class AsyncV1Proxy:
             self.extract = client_instance.extract
             self.deep_research = client_instance.deep_research
             self.generate_llms_text = client_instance.generate_llms_text
+        else:
+            async def _async_raise_missing_key(*args, **kwargs):
+                raise ValueError("No API key provided")
+
+            self.scrape_url = _async_raise_missing_key
+            self.crawl_url = _async_raise_missing_key
+            self.batch_scrape_urls = _async_raise_missing_key
+            self.async_batch_scrape_urls = _async_raise_missing_key
+            self.async_crawl_url = _async_raise_missing_key
+            self.check_crawl_status = _async_raise_missing_key
+            self.map_url = _async_raise_missing_key
+            self.extract = _async_raise_missing_key
+            self.deep_research = _async_raise_missing_key
+            self.generate_llms_text = _async_raise_missing_key
+
+    def __bool__(self) -> bool:
+        return self._client is not None
 
 class AsyncV2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
@@ -268,7 +302,18 @@ class Firecrawl:
         self.api_url = api_url
 
         # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
+        self._v1_client = None
+        if V1FirecrawlApp:
+            try:
+                self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url)
+            except ValueError as e:
+                # V1 requires an API key for cloud service. Allow keyless v2 client
+                # to initialize; v1 methods raise ValueError when accessed.
+                if str(e) == "No API key provided":
+                    self._v1_client = None
+                else:
+                    raise
+
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -277,9 +322,9 @@ class Firecrawl:
             backoff_factor=backoff_factor,
             origin=origin,
         ) if V2FirecrawlClient else None
-        
+
         # Create version-specific proxies
-        self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
+        self.v1 = V1Proxy(self._v1_client)
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
@@ -413,7 +458,18 @@ class AsyncFirecrawl:
         self.api_url = api_url
 
         # Initialize version-specific clients
-        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
+        self._v1_client = None
+        if AsyncV1FirecrawlApp:
+            try:
+                self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url)
+            except ValueError as e:
+                # V1 requires an API key for cloud service. Allow keyless v2 client
+                # to initialize; v1 methods raise ValueError when accessed.
+                if str(e) == "No API key provided":
+                    self._v1_client = None
+                else:
+                    raise
+
         self._v2_client = AsyncFirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -422,9 +478,9 @@ class AsyncFirecrawl:
             backoff_factor=backoff_factor,
             origin=origin,
         ) if AsyncFirecrawlClient else None
-        
+
         # Create version-specific proxies
-        self.v1 = AsyncV1Proxy(self._v1_client) if self._v1_client else None
+        self.v1 = AsyncV1Proxy(self._v1_client)
         self.v2 = AsyncV2Proxy(self._v2_client)
 
         # Expose v2 async surface directly on the top-level client for ergonomic access
