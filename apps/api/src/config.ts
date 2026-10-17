@@ -202,6 +202,11 @@ const configSchema = z.object({
     .int()
     .nonnegative()
     .default(100),
+  // Enable on the API once the feedback docs are published, the job_feedback
+  // tables exist, and BIGTABLE_FEEDBACK_JOBS_TABLE is configured; feedback
+  // stays unavailable without that table. Job writers record keyless context
+  // regardless.
+  KEYLESS_FEEDBACK_ENABLED: z.stringbool().default(false),
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),

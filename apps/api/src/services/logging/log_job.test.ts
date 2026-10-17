@@ -154,6 +154,7 @@ import {
   type LoggedSearch,
 } from "./log_job";
 import { config } from "../../config";
+import { saveSearchToGCS } from "../../lib/gcs-jobs";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -191,6 +192,57 @@ describe("logSearch", () => {
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
     spans.length = 0;
+    vi.mocked(saveSearchToGCS).mockReset().mockResolvedValue(undefined);
+  });
+
+  it.each([false, true])(
+    "waits for the feedback record and saves results with background=%s",
+    async background => {
+      const jobRow = deferred<boolean>();
+      const artifact = deferred<void>();
+      writeFeedbackJob.mockReturnValueOnce(jobRow.promise);
+      vi.mocked(saveSearchToGCS).mockReturnValueOnce(artifact.promise);
+      const search = makeSearch({ results: { web: [] } });
+      let completed = false;
+      const pending = (
+        background
+          ? logSearch(search, { saveResultsInBackground: true })
+          : logSearch(search)
+      ).then(() => {
+        completed = true;
+      });
+      try {
+        await vi.waitFor(() => expect(writeFeedbackJob).toHaveBeenCalledOnce());
+        expect(completed).toBe(false);
+        expect(saveSearchToGCS).not.toHaveBeenCalled();
+        jobRow.resolve(true);
+        await vi.waitFor(() => expect(saveSearchToGCS).toHaveBeenCalledOnce());
+        if (background) await pending;
+        expect(completed).toBe(background);
+      } finally {
+        jobRow.resolve(true);
+        artifact.resolve();
+        await pending;
+      }
+    },
+  );
+
+  it("reports a background artifact failure after recording the job", async () => {
+    const artifact = deferred<void>();
+    vi.mocked(saveSearchToGCS).mockReturnValueOnce(artifact.promise);
+    const search = makeSearch({ results: { web: [] } });
+    await logSearch(search, { saveResultsInBackground: true });
+    expect(JSON.parse(publishMessage.mock.calls[0][0].data.toString()).id).toBe(
+      search.id,
+    );
+    const error = new Error("Artifact storage unavailable");
+    artifact.reject(error);
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Background search result save failed",
+        { error, searchId: search.id },
+      ),
+    );
   });
 
   it("removes null bytes from search query log fields", async () => {

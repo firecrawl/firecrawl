@@ -73,6 +73,7 @@ const suite = databaseUrl ? describe : describe.skip;
 suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   const schemaName = `alexandria_feedback_${randomUUID().replaceAll("-", "")}`;
   const teamId = randomUUID();
+  const orgId = randomUUID();
   let pool: Pool;
   let admin: Pool;
   let app: express.Express;
@@ -115,7 +116,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     app.use((req, _res, next) => {
       Object.assign(req, {
         auth: { team_id: teamId },
-        acuc: { flags: {}, api_key_id: 42 },
+        acuc: { flags: {}, api_key_id: 42, org_id: orgId },
       });
       next();
     });

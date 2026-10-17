@@ -1,3 +1,5 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-invitation";
+import { keylessFeedbackAvailable } from "./feedback/keyless-limits";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -11,6 +13,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessTeamUuid,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -146,6 +149,8 @@ async function searchControllerInner(
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
+  let logRequestPromise: Promise<void> | undefined;
+  let searchInProgress = false;
 
   try {
     const rawOrigin =
@@ -353,7 +358,6 @@ async function searchControllerInner(
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
     // the request_id FK ordering — same pattern as the scrape controllers.
-    let logRequestPromise: Promise<void> | undefined;
     if (!agentRequestId) {
       logRequestPromise = logRequest({
         id: jobId,
@@ -425,6 +429,7 @@ async function searchControllerInner(
       }
     }
 
+    searchInProgress = true;
     const result = await executeSearch(
       {
         query: req.body.query,
@@ -467,6 +472,8 @@ async function searchControllerInner(
       logger,
     );
 
+    searchInProgress = false;
+
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {
       billTeam(
@@ -498,7 +505,9 @@ async function searchControllerInner(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logSearch({
+    const keylessFeedback =
+      keylessFeedbackAvailable() && !!keylessTeamUuid(req.auth.team_id);
+    const searchLog = {
       id: jobId,
       request_id: agentRequestId ?? jobId,
       query: req.body.query,
@@ -509,11 +518,16 @@ async function searchControllerInner(
       time_taken: timeTakenInSeconds,
       team_id: req.auth.team_id,
       options: req.body,
-      // Don't record preview tokens as billed in the ledger — only record
+      // Don't record preview tokens as billed in the ledger; only record
       // credits when billing is actually applied.
       credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
       zeroDataRetention,
-    }).catch(error => {
+    };
+    const logSearchPromise = (
+      keylessFeedback
+        ? logSearch(searchLog, { saveResultsInBackground: true })
+        : logSearch(searchLog)
+    ).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
 
@@ -546,6 +560,9 @@ async function searchControllerInner(
       });
     }
 
+    // The invitation needs the job row, not the saved response artifact.
+    if (keylessFeedback) await logSearchPromise;
+
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
 
@@ -564,6 +581,11 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    const feedbackMetadata = await keylessFeedbackMetadata(
+      req,
+      "search",
+      jobId,
+    );
     if (result.response.tools) markAlexandriaActivity(req.auth.team_id);
     return res.status(200).json({
       success: true,
@@ -571,6 +593,9 @@ async function searchControllerInner(
       creditsUsed: result.totalCredits,
       id: jobId,
       ...(result.toolsWarning ? { warning: result.toolsWarning } : {}),
+      ...(Object.keys(feedbackMetadata).length
+        ? { metadata: feedbackMetadata }
+        : {}),
     });
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
@@ -589,11 +614,42 @@ async function searchControllerInner(
       });
     }
 
+    let feedbackMetadata: Record<string, unknown> = {};
+    if (searchInProgress && keylessTeamUuid(req.auth.team_id)) {
+      try {
+        await logRequestPromise;
+        await logSearch({
+          id: jobId,
+          request_id: req.body.__agentInterop?.requestId ?? jobId,
+          query: req.body.query,
+          is_successful: false,
+          error: error instanceof Error ? error.message : String(error),
+          results: null,
+          num_results: 0,
+          time_taken: (Date.now() - middlewareStartTime) / 1000,
+          team_id: req.auth.team_id,
+          options: req.body,
+          credits_cost: 0,
+          zeroDataRetention,
+        });
+        feedbackMetadata = await keylessFeedbackMetadata(req, "search", jobId);
+      } catch (logError) {
+        logger.warn("Failed to log keyless search failure", {
+          error: logError,
+          jobId,
+        });
+      }
+    }
+    const feedbackReference = Object.keys(feedbackMetadata).length
+      ? { metadata: feedbackMetadata }
+      : {};
+
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
         success: false,
         code: error.code,
         error: error.message,
+        ...feedbackReference,
       });
     }
 
@@ -606,6 +662,7 @@ async function searchControllerInner(
     return res.status(500).json({
       success: false,
       error: error.message,
+      ...feedbackReference,
     });
   }
 }

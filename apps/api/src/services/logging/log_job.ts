@@ -682,6 +682,9 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
   }
 
   const feedbackJob = {
+    ...(keylessTeamUuid(scrape.team_id)
+      ? { keylessOptions: scrape.options }
+      : {}),
     jobId: scrape.id,
     requestId: scrape.request_id,
     teamId: storedTeamId,
@@ -987,7 +990,12 @@ export type LoggedSearch = {
   zeroDataRetention: boolean;
 };
 
-export async function logSearch(search: LoggedSearch) {
+export async function logSearch(
+  search: LoggedSearch,
+  {
+    saveResultsInBackground = false,
+  }: { saveResultsInBackground?: boolean } = {},
+) {
   return withLogSpan(
     {
       operation: "search",
@@ -996,11 +1004,14 @@ export async function logSearch(search: LoggedSearch) {
       requestId: search.request_id,
       zeroDataRetention: search.zeroDataRetention,
     },
-    () => logSearchInternal(search),
+    () => logSearchInternal(search, saveResultsInBackground),
   );
 }
 
-async function logSearchInternal(search: LoggedSearch) {
+async function logSearchInternal(
+  search: LoggedSearch,
+  saveResultsInBackground: boolean = false,
+) {
   const logger = _logger.child({
     module: "log_job",
     method: "logSearch",
@@ -1015,12 +1026,16 @@ async function logSearchInternal(search: LoggedSearch) {
       ? search.options
       : { ...search.options, query: sanitizeString(search.options.query) };
   const storedTeamId =
-    search.team_id === "preview" || search.team_id?.startsWith("preview_")
+    keylessTeamUuid(search.team_id) ??
+    (search.team_id === "preview" || search.team_id?.startsWith("preview_")
       ? previewTeamId
-      : search.team_id;
+      : search.team_id);
 
   await writeFeedbackJobSafely(
     {
+      ...(keylessTeamUuid(search.team_id)
+        ? { keylessOptions: search.options }
+        : {}),
       jobId: search.id,
       requestId: search.request_id,
       teamId: storedTeamId,
@@ -1065,7 +1080,17 @@ async function logSearchInternal(search: LoggedSearch) {
   }
 
   if (search.results && !search.zeroDataRetention) {
-    await saveSearchToGCS(search, logger);
+    const savedResults = saveSearchToGCS(search, logger);
+    if (saveResultsInBackground) {
+      savedResults.catch(error => {
+        logger.warn("Background search result save failed", {
+          error,
+          searchId: search.id,
+        });
+      });
+    } else {
+      await savedResults;
+    }
   }
 }
 

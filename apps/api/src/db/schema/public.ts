@@ -568,6 +568,116 @@ export const alexandria_feedback_capabilities = pgTable(
   ],
 );
 
+// Structured job feedback (task, assessment, observations). Keyless callers
+// only for now; authenticated job feedback stays in search_feedback.
+export const job_feedback = pgTable(
+  "job_feedback",
+  {
+    id: uuid("id").notNull().defaultRandom().primaryKey(),
+    team_id: uuid("team_id").notNull(),
+    auth_type: text("auth_type").notNull(),
+    api_key_id: bigintNum("api_key_id"),
+    api_version: text("api_version").notNull().default("v2"),
+    endpoint: text("endpoint").notNull(),
+    job_id: uuid("job_id").notNull(),
+    request_id: uuid("request_id"),
+    job_status: text("job_status").notNull(),
+    rating: text("rating").notNull(),
+    task: text("task").notNull(),
+    assessment: text("assessment").notNull(),
+    doc_class: text("doc_class"),
+    origin: text("origin"),
+    integration: text("integration"),
+    unverified: boolean("unverified").notNull().default(false),
+    schema_version: integer("schema_version").notNull().default(1),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    unique("job_feedback_once_per_job_key").on(
+      table.team_id,
+      table.endpoint,
+      table.job_id,
+    ),
+    unique("job_feedback_observation_parent_key").on(
+      table.id,
+      table.team_id,
+      table.endpoint,
+      table.job_status,
+    ),
+    check(
+      "job_feedback_auth_type_check",
+      sql`${table.auth_type} IN ('keyless', 'api_key')`,
+    ),
+    check(
+      "job_feedback_endpoint_check",
+      sql`${table.endpoint} IN ('search', 'scrape', 'parse')`,
+    ),
+    check(
+      "job_feedback_job_status_check",
+      sql`${table.job_status} IN ('completed', 'failed')`,
+    ),
+    check(
+      "job_feedback_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
+    ),
+  ],
+);
+
+// Allowed kind and reason values are enforced by CHECK constraints in the
+// firecrawl-db migration and mirror the keyless feedback schema.
+export const job_feedback_observations = pgTable(
+  "job_feedback_observations",
+  {
+    id: uuid("id").notNull().defaultRandom().primaryKey(),
+    feedback_id: uuid("feedback_id").notNull(),
+    // Copied from the submission and enforced by the composite foreign key.
+    team_id: uuid("team_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    job_status: text("job_status").notNull(),
+    position: smallint("position").notNull(),
+    kind: text("kind").notNull(),
+    reason: text("reason"),
+    basis: text("basis").notNull(),
+    detail: text("detail").notNull(),
+    comparison_reference: text("comparison_reference"),
+    comparison_detail: text("comparison_detail"),
+    source: text("source"),
+    result_position: integer("result_position"),
+    vertical: text("vertical"),
+    topic: text("topic"),
+    known_sources: text("known_sources").array().notNull().default([]),
+    format: text("format"),
+    location: text("location"),
+    page: integer("page"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    foreignKey({
+      name: "job_feedback_observations_feedback_fkey",
+      columns: [
+        table.feedback_id,
+        table.team_id,
+        table.endpoint,
+        table.job_status,
+      ],
+      foreignColumns: [
+        job_feedback.id,
+        job_feedback.team_id,
+        job_feedback.endpoint,
+        job_feedback.job_status,
+      ],
+    }).onDelete("cascade"),
+    unique("job_feedback_observations_feedback_position_key").on(
+      table.feedback_id,
+      table.position,
+    ),
+    check(
+      "job_feedback_observations_job_status_check",
+      sql`(${table.job_status} = 'failed') = (${table.kind} = 'failure')`,
+    ),
+  ],
+);
+
 export const subscriptions = pgTable("subscriptions", {
   id: text("id").notNull(),
   user_id: uuid("user_id").notNull(),

@@ -1630,6 +1630,7 @@ export type VideoItem = {
 };
 
 export type ErrorResponse = {
+  metadata?: Record<string, unknown>;
   success: false;
   code?: ErrorCodes;
   error: string;
@@ -2771,6 +2772,7 @@ export type SearchResponse =
       data: Document[];
       creditsUsed: number;
       id: string;
+      metadata?: Record<string, unknown>;
     }
   | {
       success: true;
@@ -2778,6 +2780,7 @@ export type SearchResponse =
       data: import("../../lib/entities").SearchV2Response;
       creditsUsed: number;
       id: string;
+      metadata?: Record<string, unknown>;
     }
   | {
       success: true;
@@ -2790,6 +2793,7 @@ export type SearchResponse =
       };
       creditsUsed: number;
       id: string;
+      metadata?: Record<string, unknown>;
     };
 
 // =============================================
@@ -2916,7 +2920,7 @@ const feedbackIssueSchema = z
   );
 
 const MAX_FEEDBACK_METADATA_BYTES = 8 * 1024;
-const feedbackMetadataSchema = z
+export const feedbackMetadataSchema = z
   .record(z.string(), z.unknown())
   .refine(
     value =>
