@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node dist/api.js",
     "build": "tsc",
+    "test": "tsx test/browser_lifecycle.test.ts",
     "dev": "tsx api.ts"
   },
   "keywords": [],

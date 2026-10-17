@@ -184,21 +184,57 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser;
+let browser: Browser | null = null;
+let browserInitPromise: Promise<Browser> | null = null;
+
+const ensureBrowser = async (): Promise<Browser> => {
+  if (browser && browser.isConnected()) {
+    return browser;
+  }
+
+  if (!browserInitPromise) {
+    browserInitPromise = (async () => {
+      try {
+        if (browser) {
+          try {
+            await browser.close().catch(() => {});
+          } catch (_) {}
+          browser = null;
+        }
+
+        const newBrowser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+          ],
+        });
+
+        newBrowser.on('disconnected', () => {
+          console.warn('Browser disconnected, invalidating active instance');
+          if (browser === newBrowser) {
+            browser = null;
+          }
+        });
+
+        browser = newBrowser;
+        return newBrowser;
+      } finally {
+        browserInitPromise = null;
+      }
+    })();
+  }
+
+  return browserInitPromise;
+};
 
 const initializeBrowser = async () => {
-  browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-    ],
-  });
+  await ensureBrowser();
 };
 
 const createContext = async (
@@ -225,7 +261,28 @@ const createContext = async (
     server: `http://127.0.0.1:${ssrfProxyPort}`,
   };
 
-  const newContext = await browser.newContext(contextOptions);
+  const currentBrowser = await ensureBrowser();
+  let newContext: BrowserContext;
+  try {
+    newContext = await currentBrowser.newContext(contextOptions);
+  } catch (error: any) {
+    if (
+      !currentBrowser.isConnected() ||
+      error?.name === 'TargetClosedError' ||
+      error?.message?.includes('Target page, context or browser has been closed')
+    ) {
+      console.warn(
+        'Browser disconnected during context creation, retrying with fresh instance...',
+      );
+      if (browser === currentBrowser) {
+        browser = null;
+      }
+      const freshBrowser = await ensureBrowser();
+      newContext = await freshBrowser.newContext(contextOptions);
+    } else {
+      throw error;
+    }
+  }
 
   if (BLOCK_MEDIA) {
     await newContext.route(
@@ -269,7 +326,9 @@ const createContext = async (
 
 const shutdownBrowser = async () => {
   if (browser) {
-    await browser.close();
+    const current = browser;
+    browser = null;
+    await current.close().catch(() => {});
   }
 };
 
@@ -352,9 +411,7 @@ const scrapePage = async (
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser) {
-      await initializeBrowser();
-    }
+    await ensureBrowser();
 
     const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
@@ -421,9 +478,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     );
   }
 
-  if (!browser) {
-    await initializeBrowser();
-  }
+  await ensureBrowser();
 
   await pageSemaphore.acquire();
 
