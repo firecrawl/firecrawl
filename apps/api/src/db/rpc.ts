@@ -75,19 +75,6 @@ export function agentConsumeFreeRequestIfLeft(
   );
 }
 
-export function billTeam7(params: {
-  team_id: string;
-  subscription_id: string | null;
-  credits: number;
-  api_key_id: number | null;
-  is_extract: boolean;
-}): Promise<{ api_key: string }[]> {
-  return execRows(
-    db,
-    sql`select * from bill_team_7(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
-  );
-}
-
 export function diffGetLastScrape(
   i_team_id: string,
   i_url: string,
