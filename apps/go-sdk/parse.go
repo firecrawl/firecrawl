@@ -132,7 +132,9 @@ func (c *Client) Parse(ctx context.Context, file *ParseFile, opts *ParseOptions)
 	}
 
 	optionsMap := map[string]interface{}{}
-	mergeOptions(optionsMap, opts)
+	if err := mergeOptions(optionsMap, opts); err != nil {
+		return nil, err
+	}
 
 	optionsJSON, err := json.Marshal(optionsMap)
 	if err != nil {
