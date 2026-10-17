@@ -1,4 +1,5 @@
 import { configDotenv } from "dotenv";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
 import { parse } from "tldts";
@@ -46,9 +47,16 @@ async function flushHits(): Promise<void> {
   try {
     await db.insert(schema.blocklist_hits).values(batch);
   } catch (error) {
+    // Database errors can include the inserted URLs; log only the SQLSTATE.
+    const cause = error instanceof DrizzleQueryError ? error.cause : error;
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? cause.code
+        : undefined;
     logger.warn("Failed to record blocklist hits", {
-      error,
       hits: batch.length,
+      errorCode:
+        typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null,
     });
   }
 }

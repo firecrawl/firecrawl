@@ -68,14 +68,16 @@ it("stores every hit in a batch under a UUID team id or null", async () => {
   ]);
 });
 
-it("logs a batch that fails to insert", async () => {
+it("logs a failed batch with only its SQLSTATE", async () => {
   const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
-  insertedHits.mockRejectedValueOnce(new Error("insert failed"));
+  insertedHits.mockRejectedValueOnce(
+    Object.assign(new Error("https://facebook.com/page"), { code: "22P02" }),
+  );
 
   await recordHits([null, null]);
 
   expect(warn).toHaveBeenCalledWith("Failed to record blocklist hits", {
-    error: expect.any(Error),
     hits: 2,
+    errorCode: "22P02",
   });
 });
