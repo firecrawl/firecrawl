@@ -7,6 +7,7 @@ import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 import { downloadFireEngineGcsFile } from "./downloadGcsFile";
+import { declaredContentLength } from "../pdf/truncatedHandoff";
 import {
   imageExtensionFromContentType,
   sniffImageContentTypeFromBase64,
@@ -36,8 +37,12 @@ async function feResToFilePrefetch(
   );
 
   let gcsReference: NonNullable<Meta["pdfPrefetch"]>["gcsReference"];
+  let handoff: NonNullable<Meta["pdfPrefetch"]>["handoff"];
   if (file.content !== undefined) {
     await writeFile(filePath, Buffer.from(file.content, "base64"));
+    handoff = {
+      contentLength: declaredContentLength(feRes.responseHeaders),
+    };
   } else {
     // Large-file handoff: fire-engine uploaded the bytes to GCS instead of
     // inlining hundreds of MB of base64 through its response and job store.
@@ -71,6 +76,7 @@ async function feResToFilePrefetch(
     // References are only produced for PDFs; the document prefetch shape
     // does not carry one.
     ...(fileType === "pdf" && gcsReference ? { gcsReference } : {}),
+    ...(fileType === "pdf" && handoff ? { handoff } : {}),
   };
 }
 

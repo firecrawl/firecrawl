@@ -186,6 +186,10 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Set when the file came from a browser handoff (inline bytes), with
+         * the body length the response declared, so the pdf engine can tell
+         * a capture that stopped short and download the file again. */
+        handoff?: { contentLength?: number };
         /** Set when fire-engine handed the file off by GCS reference (large
          * PDFs): the object it uploaded, so the FirePDF by-reference path
          * can server-side copy it instead of re-uploading the bytes. The
