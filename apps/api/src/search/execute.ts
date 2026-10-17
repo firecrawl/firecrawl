@@ -1,7 +1,14 @@
 import type { Logger } from "winston";
 import { discoverTools, isAlexandriaSource } from "./alexandria";
 import { search } from "./v2";
-import { SearchV2Response, SearchResultType } from "../lib/entities";
+import {
+  SearchV2Response,
+  SearchResultType,
+  SearchResultCountsBySource,
+  SearchResultCategoriesBySource,
+  countSearchResultsBySource,
+  collectSearchResultCategories,
+} from "../lib/entities";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -76,6 +83,8 @@ interface SearchExecuteResult {
   toolsWarning?: string;
   response: SearchV2Response;
   totalResultsCount: number;
+  resultCountsBySource: SearchResultCountsBySource;
+  resultCategories: SearchResultCategoriesBySource;
   indexResultsCount: number;
   searchCredits: number;
   scrapeCredits: number;
@@ -436,6 +445,13 @@ export async function executeSearch(
     response: searchResponse,
     toolsWarning,
     totalResultsCount,
+    // Counted from the final response — after scraping and highlights — so it
+    // matches exactly what the client can address by position.
+    resultCountsBySource: countSearchResultsBySource(searchResponse),
+    // Read from the same final response, so a category is keyed by the position
+    // the client sees. Index hits replace the web group above and are
+    // renumbered there, so their positions here are the renumbered ones.
+    resultCategories: collectSearchResultCategories(searchResponse),
     indexResultsCount,
     searchCredits,
     scrapeCredits,

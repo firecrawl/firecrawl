@@ -39,6 +39,23 @@ type FeedbackJob = {
   succeeded: boolean;
   creditsBilled: number;
   zeroDataRetention: boolean;
+  /**
+   * Search only. How many results each group returned, e.g.
+   * `{"web":3,"images":0,"news":10}`, and which vertical served each position,
+   * e.g. `{"web":{"1":"developer"}}`.
+   *
+   * Position feedback addresses a result as `{source, position}`, 1-indexed
+   * within its group, so bounding a position needs the length of that group
+   * and nothing else. They live here rather than beside the search row
+   * because this is the record the feedback window is enforced from, and it
+   * is the only one feedback reads.
+   *
+   * Absent on records written before these fields existed, on non-search
+   * jobs, and under zero data retention. Absent is not empty: `{}` means the
+   * search ran and every group was empty, which rejects every position.
+   */
+  numResultsBySource?: Record<string, number>;
+  resultCategories?: Record<string, Record<string, string>>;
 };
 
 function parseFeedbackJob(value: Buffer | string): FeedbackJob {
@@ -132,6 +149,8 @@ type FeedbackJobBase = {
   creditsBilled: number;
   zeroDataRetention: boolean;
   completedAt?: Date;
+  numResultsBySource?: Record<string, number>;
+  resultCategories?: Record<string, Record<string, string>>;
 };
 
 type FeedbackJobWrite = FeedbackJobBase &
@@ -187,6 +206,19 @@ export async function writeFeedbackJob(
           succeeded: params.succeeded,
           creditsBilled: params.creditsBilled,
           zeroDataRetention: params.zeroDataRetention,
+          // Both describe the response, so zero data retention redacts them
+          // with everything else. Feedback on a ZDR job is dropped before the
+          // bounds are read, so nothing needs them for those rows.
+          ...(params.zeroDataRetention
+            ? {}
+            : {
+                ...(params.numResultsBySource
+                  ? { numResultsBySource: params.numResultsBySource }
+                  : {}),
+                ...(params.resultCategories
+                  ? { resultCategories: params.resultCategories }
+                  : {}),
+              }),
         }),
       );
       const table = await getBigtableTable(tableId);

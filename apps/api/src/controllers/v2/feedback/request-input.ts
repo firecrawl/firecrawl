@@ -7,6 +7,7 @@ export function toFeedbackInput(
   return {
     rating: body.rating,
     valuableSources: body.valuableSources,
+    valuableResults: body.valuableResults,
     missingContent: body.missingContent,
     querySuggestions: body.querySuggestions,
     origin: body.origin,

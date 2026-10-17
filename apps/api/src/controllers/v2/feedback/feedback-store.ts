@@ -8,10 +8,12 @@ import {
 } from "../../../lib/feedback-job-store";
 import { logger } from "../../../lib/logger";
 import { EndpointFeedbackEndpoint } from "../types";
+import type { SearchResultType } from "../../../lib/entities";
 import {
   FeedbackJobRow,
   FeedbackRecordOptions,
   RefundPolicySnapshot,
+  ValuableResultInput,
 } from "./internal-types";
 
 type DbError = { code?: string } & Record<string, unknown>;
@@ -21,14 +23,212 @@ type ExistingFeedback = {
   credits_refunded: number | null;
 };
 
+type ValuableResultDocument = {
+  documentId: string;
+  searchId: string;
+  /** The `data` group the client addressed, as sent: web | images | news. */
+  requestedSource: SearchResultType;
+  /** Analytics spelling, as used in `documentId`. */
+  resultType: SearchResultDocumentType;
+  resultIndex: number;
+  position: number;
+  /**
+   * Which vertical served this result, as the response tagged it — `developer`
+   * for an index-served hit, `github` / `research` / `pdf` for a URL-derived
+   * one. Absent when the result carried no category, or when the feedback job
+   * predates `resultCategories`. This is the attribution half of the label:
+   * `requestedSource` says where in `data` the result sat, `category` says who
+   * answered.
+   */
+  category?: string;
+  reason?: string;
+  source: "position";
+};
+
+/**
+ * Result type as recorded in analytics. The API groups image results under
+ * `images` (matching `data.images`), but the ClickHouse `search_results` table
+ * writes the singular `image`; document IDs use the analytics spelling so they
+ * join directly on (search_id, result_type, result_index).
+ */
+type SearchResultDocumentType = "web" | "news" | "image";
+
+const RESULT_DOCUMENT_TYPES: Record<
+  SearchResultType,
+  SearchResultDocumentType
+> = {
+  web: "web",
+  news: "news",
+  images: "image",
+};
+
+function searchFeedbackResultDocumentId(
+  searchId: string,
+  resultType: SearchResultDocumentType,
+  resultIndex: number,
+): string {
+  return `search:${searchId}:${resultType}:${resultIndex}`;
+}
+
+/**
+ * Number of results each `data` group returned, as the feedback job recorded
+ * it. Returns null when the job predates the field or carries an unrecognised
+ * shape — which is not the same as an empty object, meaning the search ran and
+ * every group was empty.
+ */
+function resultCountsBySource(
+  job: FeedbackJobRow,
+): Partial<Record<SearchResultType, number>> | null {
+  const counts = job.num_results_by_source;
+  if (counts === null || counts === undefined || typeof counts !== "object") {
+    return null;
+  }
+
+  // An object with no usable entries still counts as known: the search ran
+  // and no group this API can address returned anything, which rejects every
+  // position. Only a missing or non-object value is unknown.
+  const entries = Object.entries(counts as Record<string, unknown>).filter(
+    (entry): entry is [SearchResultType, number] =>
+      entry[0] in RESULT_DOCUMENT_TYPES &&
+      typeof entry[1] === "number" &&
+      Number.isInteger(entry[1]) &&
+      entry[1] >= 0,
+  );
+  return Object.fromEntries(entries);
+}
+
+/**
+ * Vertical that served each position, as the feedback job recorded it. Returns
+ * null when the job predates the field or carries an unrecognised shape, which
+ * again is not the same as an empty object.
+ */
+function resultCategoriesBySource(
+  job: FeedbackJobRow,
+): Partial<Record<SearchResultType, Record<string, string>>> | null {
+  const categories = job.result_categories;
+  if (
+    categories === null ||
+    categories === undefined ||
+    typeof categories !== "object"
+  ) {
+    return null;
+  }
+
+  const bySource: Partial<Record<SearchResultType, Record<string, string>>> =
+    {};
+  for (const [source, positions] of Object.entries(
+    categories as Record<string, unknown>,
+  )) {
+    if (!(source in RESULT_DOCUMENT_TYPES)) continue;
+    if (!positions || typeof positions !== "object") continue;
+
+    const byPosition: Record<string, string> = {};
+    for (const [position, category] of Object.entries(
+      positions as Record<string, unknown>,
+    )) {
+      if (typeof category === "string" && category.length > 0) {
+        byPosition[position] = category;
+      }
+    }
+    bySource[source as SearchResultType] = byPosition;
+  }
+
+  return bySource;
+}
+
+/**
+ * Highest 1-indexed position addressable in `data[source]`, or null when the
+ * job carries no usable bound.
+ *
+ * The per-source counts bound every group exactly, so there is no looser
+ * fallback to reach for: a group the counts do not mention returned nothing
+ * and has no valid position. Null means the job predates the field — feedback
+ * is only accepted within SEARCH_FEEDBACK_MAX_AGE_SEC of the search, so that
+ * only covers searches run in the couple of minutes spanning the deploy, and
+ * closes on its own.
+ */
+function maxResultPosition(
+  job: FeedbackJobRow,
+  source: SearchResultType,
+): number | null {
+  const counts = resultCountsBySource(job);
+  if (counts === null) return null;
+  return counts[source] ?? 0;
+}
+
+function valuableResultDocuments(
+  job: FeedbackJobRow,
+  results: ValuableResultInput[] | undefined,
+): ValuableResultDocument[] {
+  if (job.endpoint !== "search" || !results?.length) return [];
+
+  // Rejects hallucinated positions, which would otherwise be stored as
+  // false-positive relevance labels. Zero is a real bound: a group that
+  // returned nothing has no valuable positions.
+  const maxPositions = new Map<SearchResultType, number | null>();
+  const seen = new Set<string>();
+  const categories = resultCategoriesBySource(job);
+
+  return results.flatMap(({ source, position, reason }) => {
+    if (!(source in RESULT_DOCUMENT_TYPES)) return [];
+    if (!Number.isInteger(position) || position <= 0) return [];
+
+    if (!maxPositions.has(source)) {
+      maxPositions.set(source, maxResultPosition(job, source));
+    }
+    const maxPosition = maxPositions.get(source) ?? null;
+    if (maxPosition !== null && position > maxPosition) return [];
+
+    const key = `${source}:${position}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+
+    const resultType = RESULT_DOCUMENT_TYPES[source];
+    const resultIndex = position - 1;
+    const category = categories?.[source]?.[String(position)];
+    return [
+      {
+        documentId: searchFeedbackResultDocumentId(
+          job.id,
+          resultType,
+          resultIndex,
+        ),
+        searchId: job.id,
+        requestedSource: source,
+        resultType,
+        resultIndex,
+        position,
+        ...(category ? { category } : {}),
+        ...(reason ? { reason } : {}),
+        source: "position" as const,
+      },
+    ];
+  });
+}
+
 function feedbackMetadata(
   options: FeedbackRecordOptions,
+  valuableResultDocs: ValuableResultDocument[],
 ): Record<string, unknown> {
   return {
     ...(options.feedback.metadata ?? {}),
     ...(options.feedback.url ? { url: options.feedback.url } : {}),
     ...(options.feedback.pageNumbers
       ? { pageNumbers: options.feedback.pageNumbers }
+      : {}),
+    ...(valuableResultDocs.length > 0
+      ? {
+          // Echoed back in the vocabulary the client sent, not the analytics
+          // spelling used in the document IDs.
+          valuableResults: valuableResultDocs.map(doc => ({
+            source: doc.requestedSource,
+            position: doc.position,
+            ...(doc.category ? { category: doc.category } : {}),
+          })),
+          valuableResultDocumentIds: valuableResultDocs.map(
+            doc => doc.documentId,
+          ),
+        }
       : {}),
   };
 }
@@ -72,6 +272,10 @@ export async function lookupFeedbackJob(
     feedback_deadline_ms: job.feedbackDeadlineMs,
     refund_class: job.refundClass,
     zero_data_retention: job.zeroDataRetention,
+    num_results_by_source:
+      endpoint === "search" ? (job.numResultsBySource ?? null) : null,
+    result_categories:
+      endpoint === "search" ? (job.resultCategories ?? null) : null,
   };
 }
 
@@ -96,6 +300,10 @@ export async function insertFeedback(params: {
   apiKeyId?: number | null;
 }): Promise<DbError | null> {
   const { feedbackId, options, job, dbTeamId, apiKeyId } = params;
+  const valuableResultDocs = valuableResultDocuments(
+    job,
+    options.feedback.valuableResults,
+  );
   try {
     await db.insert(schema.search_feedback).values({
       id: feedbackId,
@@ -110,10 +318,13 @@ export async function insertFeedback(params: {
       issue_types: options.feedback.issues ?? [],
       tags: options.feedback.tags ?? [],
       comment: options.feedback.note ?? null,
-      valuable_sources: options.feedback.valuableSources ?? [],
+      valuable_sources: [
+        ...(options.feedback.valuableSources ?? []),
+        ...valuableResultDocs,
+      ],
       missing_content: options.feedback.missingContent ?? [],
       query_suggestions: options.feedback.querySuggestions ?? null,
-      metadata: feedbackMetadata(options),
+      metadata: feedbackMetadata(options, valuableResultDocs),
       job_status: job.is_successful === false ? "failed" : "completed",
       credits_billed: job.credits_cost ?? 0,
       credits_refunded: 0,
