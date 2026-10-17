@@ -1085,6 +1085,21 @@ class SearchResultImages(BaseModel):
     position: Optional[int] = None
 
 
+class SearchDocument(Document):
+    """Scraped content together with the original search result fields."""
+
+    url: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    snippet: Optional[str] = None
+    date: Optional[str] = None
+    image_url: Optional[str] = None
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    position: Optional[int] = None
+    category: Optional[str] = None
+
+
 class ExchangeSearchResult(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
 
@@ -2532,10 +2547,27 @@ class SearchData(BaseModel):
 
     agent_hints: Optional[List[str]] = None
     warning: Optional[str] = None
-    web: Optional[List[Union[SearchResultWeb, Document]]] = None
-    news: Optional[List[Union[SearchResultNews, Document]]] = None
-    images: Optional[List[Union[SearchResultImages, Document]]] = None
+    web: Optional[List[Union[SearchResultWeb, SearchDocument, Document]]] = None
+    news: Optional[List[Union[SearchResultNews, SearchDocument, Document]]] = None
+    images: Optional[List[Union[SearchResultImages, SearchDocument, Document]]] = None
     tools: Optional[List[DiscoveredTool]] = None
+
+    @field_validator("web", "news", "images", mode="before")
+    @classmethod
+    def preserve_scraped_results(cls, results):
+        # Restore the concrete type when loading serialized search results.
+        # Older Pydantic versions otherwise pick the first matching union
+        # member and discard document fields from the dictionary.
+        from .utils.normalize import is_scraped_search_result, normalize_search_document_input
+
+        if isinstance(results, list):
+            return [
+                SearchDocument(**normalize_search_document_input(item))
+                if isinstance(item, dict) and is_scraped_search_result(item)
+                else item
+                for item in results
+            ]
+        return results
 
     @property
     def data(self):

@@ -124,3 +124,17 @@ def _map_search_result_keys(result: Dict[str, Any], result_type: str) -> Dict[st
         out[snake] = v
 
     return out
+
+
+def is_scraped_search_result(item: Dict[str, Any]) -> bool:
+    # The API includes metadata for every scraped result, including empty
+    # output and failures. Keep recognizing older content-only payloads too.
+    return any(key in item for key in (
+        "metadata", "markdown", "html", "rawHtml", "raw_html", "links",
+        "screenshot", "changeTracking", "change_tracking", "summary", "json",
+    ))
+
+
+def normalize_search_document_input(item: Dict[str, Any]) -> Dict[str, Any]:
+    # Image/news fields coexist with scraped content in search responses.
+    return normalize_document_input(_map_search_result_keys(item, "images"))
