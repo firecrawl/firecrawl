@@ -13,6 +13,7 @@ from ...types import (
     BrowserListResponse,
 )
 from ...utils.http_client_async import AsyncHttpClient
+from ...utils.error_handler import handle_response_error
 
 
 def _normalize_browser_create_response(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -95,6 +96,8 @@ async def browser(
         body["location"] = {"country": location["country"]}
 
     resp = await client.post("/v2/browser", body)
+    if not resp.is_success:
+        handle_response_error(resp, "create browser session")
     payload = _normalize_browser_create_response(resp.json())
     return BrowserCreateResponse(**payload)
 
@@ -143,6 +146,8 @@ async def browser_execute(
         body["timeout"] = timeout
 
     resp = await client.post(f"/v2/browser/{session_id}/execute", body)
+    if not resp.is_success:
+        handle_response_error(resp, "execute browser code")
     payload = _normalize_browser_execute_response(resp.json())
     return BrowserExecuteResponse(**payload)
 
@@ -161,6 +166,8 @@ async def delete_browser(
         BrowserDeleteResponse
     """
     resp = await client.delete(f"/v2/browser/{session_id}")
+    if not resp.is_success:
+        handle_response_error(resp, "delete browser session")
     payload = _normalize_browser_delete_response(resp.json())
     return BrowserDeleteResponse(**payload)
 
@@ -184,5 +191,7 @@ async def list_browsers(
         endpoint = f"{endpoint}?status={status}"
 
     resp = await client.get(endpoint)
+    if not resp.is_success:
+        handle_response_error(resp, "list browser sessions")
     payload = _normalize_browser_list_response(resp.json())
     return BrowserListResponse(**payload)
