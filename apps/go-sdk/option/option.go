@@ -40,7 +40,7 @@ func WithHTTPClient(client *http.Client) RequestOption {
 	}
 }
 
-// WithMaxRetries sets the maximum number of automatic retries for transient failures.
+// WithMaxRetries sets the maximum retries for GET and server-deduplicated Alexandria requests.
 // Default: 3.
 func WithMaxRetries(n int) RequestOption {
 	return func(c *RequestConfig) {
