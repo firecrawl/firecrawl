@@ -1,6 +1,8 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  HAS_AI,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
@@ -478,5 +480,75 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
       },
       scrapeTimeout * 2,
     );
+  });
+
+  describe("LLM formats with PDF parsing disabled", () => {
+    it.concurrent(
+      "skips summary on a raw base64 PDF and warns",
+      async () => {
+        const response = await scrape(
+          {
+            url: pdfUrl,
+            parsers: [],
+            formats: ["markdown", "summary"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain("JVBER");
+        expect(response.summary).toBeUndefined();
+        expect(response.warning).toContain("PDF parsing is disabled");
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "skips json extraction on a raw base64 PDF and warns",
+      async () => {
+        const response = await scrape(
+          {
+            url: pdfUrl,
+            parsers: [],
+            formats: [
+              {
+                type: "json",
+                prompt: "Extract the document title.",
+                schema: {
+                  type: "object",
+                  properties: { title: { type: "string" } },
+                },
+              },
+            ],
+          },
+          identity,
+        );
+
+        expect(response.json).toBeUndefined();
+        expect(response.warning).toContain("PDF parsing is disabled");
+      },
+      scrapeTimeout * 2,
+    );
+
+    describeIf(TEST_PRODUCTION || HAS_AI)("with PDF parsing enabled", () => {
+      it.concurrent(
+        "still summarizes the parsed PDF text",
+        async () => {
+          const response = await scrape(
+            {
+              url: pdfUrl,
+              parsers: ["pdf"],
+              formats: ["markdown", "summary"],
+            },
+            identity,
+          );
+
+          expect(response.summary).toBeDefined();
+          expect(response.warning ?? "").not.toContain(
+            "PDF parsing is disabled",
+          );
+        },
+        scrapeTimeout * 2,
+      );
+    });
   });
 });
