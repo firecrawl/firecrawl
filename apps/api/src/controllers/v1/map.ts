@@ -13,10 +13,9 @@ import { MapResponse, MapRequest, MAX_MAP_LIMIT } from "./types";
 import { configDotenv } from "dotenv";
 import {
   checkAndUpdateURLForMap,
-  isSameDomain,
-  isSameSubdomain,
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
+import { filterMapResultsList } from "../../lib/map-utils";
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
@@ -327,38 +326,11 @@ export async function getMapResults({
       })
       .filter(x => x !== null) as string[];
 
-    // allows for subdomains to be included
-    links = links.filter(x => isSameDomain(x, url));
-
-    // if includeSubdomains is false, filter out subdomains
-    if (!includeSubdomains) {
-      links = links.filter(x => isSameSubdomain(x, url));
-    }
-
-    // Filter by path if enabled
-    if (filterByPath && !allowExternalLinks) {
-      try {
-        const urlObj = new URL(url);
-        const urlPath = urlObj.pathname;
-        // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-        // This means we only filter by path if the user has not selected a root domain
-        if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-          links = links.filter(link => {
-            try {
-              const linkObj = new URL(link);
-              return linkObj.pathname.startsWith(urlPath);
-            } catch (e) {
-              return false;
-            }
-          });
-        }
-      } catch (e) {
-        // If URL parsing fails, continue without path filtering
-        logger.warn(`Failed to parse URL for path filtering: ${url}`, {
-          error: e,
-        });
-      }
-    }
+    links = filterMapResultsList(links, url, {
+      allowExternalLinks,
+      includeSubdomains,
+      filterByPath,
+    });
 
     // remove duplicates that could be due to http/https or www
     links = removeDuplicateUrls(links);

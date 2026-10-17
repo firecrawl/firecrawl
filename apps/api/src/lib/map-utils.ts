@@ -35,6 +35,62 @@ export interface MapResult {
   mapResults: MapDocument[];
 }
 
+export function filterMapResultsList<T extends { url: string } | string>(
+  items: T[],
+  baseUrl: string,
+  options: {
+    allowExternalLinks?: boolean;
+    includeSubdomains?: boolean;
+    filterByPath?: boolean;
+  } = {},
+): T[] {
+  const {
+    allowExternalLinks = false,
+    includeSubdomains = true,
+    filterByPath = true,
+  } = options;
+
+  let results = items;
+
+  if (!allowExternalLinks) {
+    results = results.filter(x => {
+      const u = typeof x === "string" ? x : x.url;
+      return isSameDomain(u, baseUrl);
+    });
+
+    if (!includeSubdomains) {
+      results = results.filter(x => {
+        const u = typeof x === "string" ? x : x.url;
+        return isSameSubdomain(u, baseUrl);
+      });
+    }
+  }
+
+  if (filterByPath && !allowExternalLinks) {
+    try {
+      const urlObj = new URL(baseUrl);
+      const urlPath = urlObj.pathname;
+      // Only apply path filtering if the URL has a significant path (not just '/' or empty)
+      // This means we only filter by path if the user has not selected a root domain
+      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
+        results = results.filter(x => {
+          try {
+            const u = typeof x === "string" ? x : x.url;
+            const linkObj = new URL(u);
+            return linkObj.pathname.startsWith(urlPath);
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+    } catch (e) {
+      // If URL parsing fails, continue without path filtering
+    }
+  }
+
+  return results;
+}
+
 function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
   const urlMap = new Map<string, MapDocument>();
 
@@ -342,32 +398,11 @@ export async function getMapResults({
     })
     .filter(x => x !== null) as MapDocument[];
 
-  mapResults = mapResults.filter(x => isSameDomain(x.url, url));
-
-  if (!includeSubdomains) {
-    mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
-  }
-
-  if (filterByPath && !allowExternalLinks) {
-    try {
-      const urlObj = new URL(url);
-      const urlPath = urlObj.pathname;
-      // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-      // This means we only filter by path if the user has not selected a root domain
-      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-        mapResults = mapResults.filter(x => {
-          try {
-            const linkObj = new URL(x.url);
-            return linkObj.pathname.startsWith(urlPath);
-          } catch (e) {
-            return false;
-          }
-        });
-      }
-    } catch (e) {
-      // If URL parsing fails, continue without path filtering
-    }
-  }
+  mapResults = filterMapResultsList(mapResults, url, {
+    allowExternalLinks,
+    includeSubdomains,
+    filterByPath,
+  });
 
   mapResults = dedupeMapDocumentArray(mapResults);
   mapResults = mapResults.slice(0, limit);
