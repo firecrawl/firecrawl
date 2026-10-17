@@ -170,7 +170,9 @@ type MapOptions struct {
 
 // SearchOptions configures a search request.
 type SearchOptions struct {
-	DomainTools       *bool          `json:"domainTools,omitempty"`
+	DomainTools *bool `json:"domainTools,omitempty"`
+	// ToolDetail selects compact, summary, or full tool discovery contracts.
+	ToolDetail        *string        `json:"toolDetail,omitempty"`
 	Sources           []interface{}  `json:"sources,omitempty"`
 	Categories        []interface{}  `json:"categories,omitempty"`
 	IncludeDomains    []string       `json:"includeDomains,omitempty"`
