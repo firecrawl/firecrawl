@@ -44,6 +44,7 @@ export async function map(
       success: boolean;
       id?: string;
       error?: string;
+      warning?: string;
       links?: Array<string | SearchResultWeb>;
     }>(
       "/v2/map",
@@ -66,7 +67,12 @@ export async function map(
           description: (item as any).description,
         });
     }
-    return { id: res.data.id, links, ...agentHintMetadata(res.data) };
+    return {
+      id: res.data.id,
+      ...(res.data.warning ? { warning: res.data.warning } : {}),
+      links,
+      ...agentHintMetadata(res.data),
+    };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "map");
     throw err;
