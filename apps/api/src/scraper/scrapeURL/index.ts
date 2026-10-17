@@ -757,9 +757,14 @@ async function scrapeURLLoopIter(
     // engine in its waterfall, surface as an all-engines failure.
     const isParsedImage =
       engine === "image" && isGoodStatusCode && hasNoPageError;
+    const isParsedEmptyPdf =
+      engine === "pdf" &&
+      engineResult.parsedEmpty === true &&
+      isGoodStatusCode &&
+      hasNoPageError;
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
-      : isParsedImage || isLongEnough || !isGoodStatusCode;
+      : isParsedImage || isParsedEmptyPdf || isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -792,6 +797,7 @@ async function scrapeURLLoopIter(
           isGoodStatusCode,
           hasNoPageError,
           isParsedImage,
+          isParsedEmptyPdf,
         },
       });
       return engineResult;
@@ -1184,6 +1190,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         ...(engineResult.pdfMetadata?.title
           ? { title: engineResult.pdfMetadata.title }
           : {}),
+        ...(engineResult.parsedEmpty ? { noTextFound: true } : {}),
         contentType: engineResult.contentType,
         timezone: engineResult.timezone,
         proxyUsed: engineResult.proxyUsed ?? "basic",
@@ -1203,6 +1210,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         provider: engineResult.exchange?.provider,
       },
     };
+
+    if (engineResult.parsedEmpty) {
+      const warning =
+        "No text was found in this PDF. Its pages appear to be blank or to contain only images.";
+      document.warning =
+        document.warning !== undefined
+          ? document.warning + " " + warning
+          : warning;
+    }
 
     if (result.unsupportedFeatures.size > 0) {
       const warning = `The engine used does not support the following features: ${[...result.unsupportedFeatures].join(", ")} -- your scrape may be partial.`;

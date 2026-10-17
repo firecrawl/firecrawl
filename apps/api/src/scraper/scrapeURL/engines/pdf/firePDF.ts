@@ -48,6 +48,21 @@ export function reconcilePageCountWithFirePdf(
   return Math.max(current, fromFirePdf);
 }
 
+/**
+ * Pages a parser read for a result that holds no text, or undefined when the
+ * result is not a no-text document. Only an engine-reported page count >= 1
+ * qualifies: a result with zero (or unreported) processed pages never read
+ * the document, so it is a failure, not a blank document, and its page count
+ * must not come from a pre-parse estimate.
+ */
+export function noTextPagesProcessed(
+  result: { markdown?: string; pagesProcessed?: number } | null | undefined,
+): number | undefined {
+  if (!result || result.markdown?.trim()) return undefined;
+  const pages = result.pagesProcessed;
+  return pages !== undefined && pages > 0 ? pages : undefined;
+}
+
 export async function scrapePDFWithFirePDF(
   meta: Meta,
   base64Content: string,
