@@ -47,7 +47,7 @@ class AsyncWatcher:
             self._api_key = getattr(client, "api_key", None)
 
         self._status: str = "scraping"
-        self._data: List[Dict] = []
+        self._data: List[Document] = []
 
     def __aiter__(self) -> AsyncIterator[object]:
         return self._iterate()
@@ -129,12 +129,12 @@ class AsyncWatcher:
                         d = body.get("data", {})
                         self._status = d.get("status", self._status)
                         docs_in = d.get("data", []) or []
-                        self._data.extend(docs_in)
+                        self._append_documents(docs_in)
                         # Fall through to emit a snapshot below
                     elif msg_type == "document":
                         doc = body.get("data")
                         if isinstance(doc, dict):
-                            self._data.append(doc)
+                            self._append_documents([doc])
                         # Fall through to emit a snapshot below
                     elif msg_type == "done":
                         self._status = "completed"
@@ -143,7 +143,7 @@ class AsyncWatcher:
                         if isinstance(docs_in, list) and docs_in:
                             for doc in docs_in:
                                 if isinstance(doc, dict):
-                                    self._data.append(doc)
+                                    self._append_documents([doc])
                         # Emit final snapshot then end
                         yield self._make_snapshot(status="completed", payload=raw_payload, docs_override=self._data)
                         return
@@ -151,7 +151,11 @@ class AsyncWatcher:
                     # Generic snapshot emit for status messages and periodic progress
                     payload = body.get("data", body)
                     status_str = payload.get("status", body.get("status", self._status))
-                    snapshot = self._make_snapshot(status=status_str, payload=payload)
+                    snapshot = self._make_snapshot(
+                        status=status_str,
+                        payload=payload,
+                        docs_override=self._data if msg_type in ("catchup", "document") else None,
+                    )
                     yield snapshot
                     if status_str in ("completed", "failed", "cancelled"):
                         return
@@ -213,13 +217,21 @@ class AsyncWatcher:
         except Exception:
             return None
 
-    def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Dict]] = None):
-        docs = []
-        source_docs = docs_override if docs_override is not None else payload.get("data", []) or []
-        for doc in source_docs:
+    def _append_documents(self, raw_docs: List[Dict]) -> None:
+        # Streamed documents are append-only; normalize and validate each once.
+        for doc in raw_docs:
             if isinstance(doc, dict):
-                d = normalize_document_input(doc)
-                docs.append(Document(**d))
+                self._data.append(Document(**normalize_document_input(doc)))
+
+    def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Document]] = None):
+        if docs_override is not None:
+            # Never expose the cache: consumers may mutate nested document values.
+            docs = [doc.model_copy(deep=True) for doc in docs_override]
+        else:
+            docs = []
+            for doc in payload.get("data", []) or []:
+                if isinstance(doc, dict):
+                    docs.append(Document(**normalize_document_input(doc)))
 
         if self._kind == "crawl":
             return CrawlJob(
