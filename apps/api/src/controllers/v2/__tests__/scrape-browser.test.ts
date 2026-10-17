@@ -3,6 +3,9 @@ import { readScrapeJobState } from "../../../lib/job-state-store";
 import { vi } from "vitest";
 import { config } from "../../../config";
 import {
+  abandonBrowserSession,
+  getBrowserSessionFromScrape,
+  updateBrowserSessionScrapeId,
   insertBrowserSession,
   getBrowserSession,
   listUnsettledHangarSessions,
@@ -62,6 +65,11 @@ vi.mock("ai", async importOriginal => ({
   generateText: vi.fn(async () => ({ text: "done" })),
 }));
 
+const lockState = vi.hoisted(() => ({
+  chains: new Map<string, Promise<void>>(),
+  controllers: new Map<string, AbortController>(),
+}));
+
 vi.mock("uuid", () => ({
   v7: vi.fn(() => "session-123"),
 }));
@@ -70,6 +78,7 @@ vi.mock("../../../config", () => ({
   config: {
     USE_DB_AUTHENTICATION: true,
     HANGAR_URL: "http://localhost:9000",
+    REDIS_RATE_LIMIT_URL: process.env.REDIS_RATE_LIMIT_URL,
   },
 }));
 vi.mock("../../../lib/logger", () => ({
@@ -123,6 +132,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   settleBrowserSessionOnce: vi.fn(),
   withLockedBrowserSession: vi.fn(),
   getBrowserSessionFromScrape: vi.fn(),
+  abandonBrowserSession: vi.fn(),
   markBrowserSessionUsedPrompt: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
 }));
@@ -187,6 +197,9 @@ describe("scrapeInteractController", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    lockState.chains.clear();
+    lockState.controllers.clear();
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
     vi.mocked(getBrowserSession).mockResolvedValue(null);
   });
 
@@ -239,6 +252,256 @@ describe("scrapeInteractController", () => {
       );
       vi.mocked(getBrowserSession).mockResolvedValue(session);
       vi.mocked(executeHangarBrowser).mockResolvedValue(output);
+    });
+
+    describe("locked scrape initialization", () => {
+      let stored: any;
+      const request = () =>
+        ({
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('private')" },
+          headers: {},
+          auth: { team_id: "team-123" },
+          acuc: { flags: { scrapeZDR: "allowed" } },
+        }) as any;
+      const expire = () =>
+        lockState.controllers
+          .get("browser:scrape:scrape-123:create")!
+          .abort(new Error("creation lease lost"));
+      beforeEach(() => {
+        stored = null;
+        vi.mocked(readScrapeJobState).mockResolvedValue({
+          status: "completed",
+          zeroDataRetention: true,
+          replay: {
+            targetUrl: "https://private.example",
+            waitForMs: 0,
+            actions: [],
+          },
+        } as any);
+        vi.mocked(getBrowserSessionFromScrape).mockImplementation(
+          async scrapeId => {
+            expect(isZeroDataRetentionActive()).toBe(true);
+            return stored?.scrape_id === scrapeId ? stored : null;
+          },
+        );
+        vi.mocked(insertBrowserSession).mockImplementation(async row => {
+          expect(row.scrape_id).toBeNull();
+          expect(row.zero_data_retention).toBe(true);
+          expect(isZeroDataRetentionActive()).toBe(true);
+          stored = row;
+          return row as any;
+        });
+        // A lookup abort leaves a queued link implementation unused. Clear
+        // that queue so subsequent lease phases exercise their own fixture.
+        vi.mocked(updateBrowserSessionScrapeId).mockReset();
+        vi.mocked(updateBrowserSessionScrapeId).mockImplementation(
+          async (id, scrapeId) => {
+            expect(isZeroDataRetentionActive()).toBe(true);
+            expect(id).toBe(stored.id);
+            stored = { ...stored, scrape_id: scrapeId };
+          },
+        );
+        vi.mocked(abandonBrowserSession).mockImplementation(async id => {
+          expect(isZeroDataRetentionActive()).toBe(true);
+          expect(id).toBe(stored.id);
+          stored = { ...stored, should_bill: false, scrape_id: null };
+          return stored;
+        });
+        vi.mocked(executeCodeViaBrowserSession).mockImplementation(async () => {
+          expect(isZeroDataRetentionActive()).toBe(true);
+          return output;
+        });
+        vi.mocked(stopHangarBrowser).mockResolvedValue({
+          status: "stopped",
+          created_at: 100,
+          ended_at: 100,
+        } as any);
+      });
+      afterEach(() => {
+        vi.mocked(readScrapeJobState).mockResolvedValue(null);
+        vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
+        vi.mocked(updateBrowserSessionScrapeId)
+          .mockReset()
+          .mockResolvedValue(undefined);
+        vi.mocked(insertBrowserSession).mockImplementation(
+          async row => row as any,
+        );
+        vi.mocked(executeCodeViaBrowserSession).mockReset();
+        vi.mocked(stopHangarBrowser).mockReset();
+      });
+      it("publishes only one initialized private browser for concurrent first interactions", async () => {
+        const responses = [buildRes(), buildRes()];
+        await Promise.all(
+          responses.map(res => scrapeInteractController(request(), res)),
+        );
+        expect(createHangarBrowser).toHaveBeenCalledTimes(1);
+        expect(insertBrowserSession).toHaveBeenCalledTimes(1);
+        expect(updateBrowserSessionScrapeId).toHaveBeenCalledTimes(1);
+        expect(redlock.using).toHaveBeenCalledTimes(2);
+        expect(executeCodeViaBrowserSession).toHaveBeenCalledTimes(2);
+        for (const res of responses)
+          expect(res.status).toHaveBeenCalledWith(200);
+        expect(stored.scrape_id).toBe("scrape-123");
+      });
+      it("serializes concurrent creation through the actual harness Redis lease", async () => {
+        expect(process.env.REDIS_RATE_LIMIT_URL).toBeTruthy();
+        const actual = await vi.importActual<
+          typeof import("../../../services/redlock")
+        >("../../../services/redlock");
+        try {
+          vi.mocked(redlock.using).mockImplementationOnce(
+            actual.redlock.using.bind(actual.redlock),
+          );
+          vi.mocked(redlock.using).mockImplementationOnce(
+            actual.redlock.using.bind(actual.redlock),
+          );
+          const responses = [buildRes(), buildRes()];
+          await Promise.all(
+            responses.map(res => scrapeInteractController(request(), res)),
+          );
+          expect(createHangarBrowser).toHaveBeenCalledTimes(1);
+          expect(updateBrowserSessionScrapeId).toHaveBeenCalledTimes(1);
+          expect(executeCodeViaBrowserSession).toHaveBeenCalledTimes(2);
+          for (const res of responses)
+            expect(res.status).toHaveBeenCalledWith(200);
+        } finally {
+          await Promise.all(
+            [...actual.redlock.clients].map(client => client.quit()),
+          );
+        }
+      });
+      it.each(["lookup", "link", "healthy"] as const)(
+        "checks the adopted private browser lease during %s",
+        async phase => {
+          const existing = { ...session, should_bill: true, scrape_id: null };
+          const req = request();
+          req.body.existingSessionId = existing.id;
+          vi.mocked(getBrowserSession).mockImplementationOnce(async () => {
+            expect(isZeroDataRetentionActive()).toBe(true);
+            if (phase === "lookup") expire();
+            return existing;
+          });
+          vi.mocked(updateBrowserSessionScrapeId).mockImplementationOnce(
+            async () => {
+              expect(isZeroDataRetentionActive()).toBe(true);
+              if (phase === "link") expire();
+            },
+          );
+          const res = buildRes();
+          await scrapeInteractController(req, res);
+          expect(res.status).toHaveBeenCalledWith(
+            phase === "healthy" ? 200 : 503,
+          );
+          expect(executeCodeViaBrowserSession).toHaveBeenCalledTimes(
+            phase === "healthy" ? 1 : 0,
+          );
+          expect(updateBrowserSessionScrapeId).toHaveBeenCalledTimes(
+            phase === "lookup" ? 0 : 1,
+          );
+          expect(createHangarBrowser).not.toHaveBeenCalled();
+          expect(abandonBrowserSession).not.toHaveBeenCalled();
+          expect(stopHangarBrowser).not.toHaveBeenCalled();
+        },
+      );
+      it.each(["lease", "link", "link-lease"] as const)(
+        "abandons an unexposed private browser after %s failure",
+        async phase => {
+          if (phase === "lease")
+            vi.mocked(executeHangarBrowser).mockImplementationOnce(async () => {
+              expire();
+              return output;
+            });
+          else if (phase === "link")
+            vi.mocked(updateBrowserSessionScrapeId).mockRejectedValueOnce(
+              new Error("link failed"),
+            );
+          else
+            vi.mocked(updateBrowserSessionScrapeId).mockImplementationOnce(
+              async (_id, scrapeId) => {
+                stored = { ...stored, scrape_id: scrapeId };
+                expire();
+              },
+            );
+          const res = buildRes();
+          await scrapeInteractController(request(), res);
+          expect(res.status).toHaveBeenCalledWith(503);
+          expect(abandonBrowserSession).toHaveBeenCalledWith(stored.id);
+          expect(stored).toMatchObject({
+            scrape_id: null,
+            should_bill: false,
+            zero_data_retention: true,
+          });
+          expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+          expect(stopHangarBrowser).toHaveBeenCalled();
+        },
+      );
+      it("fails without creating a browser when the shared creation lease is unavailable", async () => {
+        vi.mocked(redlock.using).mockRejectedValueOnce(
+          new Error("lease unavailable"),
+        );
+        const res = buildRes();
+        await scrapeInteractController(request(), res);
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(createHangarBrowser).not.toHaveBeenCalled();
+        expect(insertBrowserSession).not.toHaveBeenCalled();
+        expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+      });
+      it("uses independent leases for different scrape jobs", async () => {
+        const rows = new Map<string, any>();
+        const uuid = await vi.importMock<typeof import("uuid")>("uuid");
+        vi.mocked(uuid.v7 as () => string)
+          .mockReturnValueOnce("session-one")
+          .mockReturnValueOnce("session-two");
+        vi.mocked(getBrowserSessionFromScrape).mockImplementation(
+          async scrapeId =>
+            [...rows.values()].find(row => row.scrape_id === scrapeId) ?? null,
+        );
+        vi.mocked(insertBrowserSession).mockImplementation(async row => {
+          rows.set(row.id, row);
+          return row as any;
+        });
+        vi.mocked(updateBrowserSessionScrapeId).mockImplementation(
+          async (id, scrapeId) => {
+            rows.set(id, { ...rows.get(id), scrape_id: scrapeId });
+          },
+        );
+        const requests = [request(), request()];
+        requests[1].params.jobId = "scrape-other";
+        const responses = [buildRes(), buildRes()];
+        await Promise.all(
+          requests.map((req, index) =>
+            scrapeInteractController(req, responses[index]),
+          ),
+        );
+        expect(
+          vi.mocked(redlock.using).mock.calls.map(([keys]) => keys),
+        ).toEqual([
+          ["browser:scrape:scrape-123:create"],
+          ["browser:scrape:scrape-other:create"],
+        ]);
+        expect(createHangarBrowser).toHaveBeenCalledTimes(2);
+        for (const res of responses)
+          expect(res.status).toHaveBeenCalledWith(200);
+        expect([...rows.values()].map(row => row.scrape_id).sort()).toEqual([
+          "scrape-123",
+          "scrape-other",
+        ]);
+      });
+      it("preserves the privacy rejection when adopting a retained browser for a private scrape", async () => {
+        vi.mocked(getBrowserSession).mockResolvedValueOnce({
+          ...session,
+          zero_data_retention: false,
+        });
+        const req = request();
+        req.body.existingSessionId = session.id;
+        const res = buildRes();
+        await scrapeInteractController(req, res);
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(updateBrowserSessionScrapeId).not.toHaveBeenCalled();
+        expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+        expect(abandonBrowserSession).not.toHaveBeenCalled();
+      });
     });
 
     it.each(["allowed", "forced"] as const)(
@@ -719,4 +982,32 @@ describe("scrapeInteractController", () => {
   });
 });
 
-vi.mock("../../../services/redlock", () => ({ redlock: { using: vi.fn() } }));
+// A controllable lease double protects controller state boundaries; native
+// Redis acquisition itself remains the harness's responsibility.
+vi.mock("../../../services/redlock", () => ({
+  redlock: {
+    using: vi.fn(async (keys: string[], _ttl: number, ...args: any[]) => {
+      const key = [...keys].sort().join("|");
+      const previous = lockState.chains.get(key) ?? Promise.resolve();
+      let release!: () => void;
+      const held = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      lockState.chains.set(key, held);
+      await previous;
+      const controller = new AbortController();
+      Object.defineProperty(controller.signal, "error", {
+        get: () => controller.signal.reason,
+      });
+      lockState.controllers.set(key, controller);
+      try {
+        return await args.at(-1)(controller.signal);
+      } finally {
+        release();
+        if (lockState.chains.get(key) === held) lockState.chains.delete(key);
+        if (lockState.controllers.get(key) === controller)
+          lockState.controllers.delete(key);
+      }
+    }),
+  },
+}));

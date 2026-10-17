@@ -125,6 +125,8 @@ export async function createBrowserSession(
     recordSession: boolean;
     zeroDataRetention?: boolean;
     scrapeId?: string;
+    /** Keep a new session private until the caller has validated its lock. */
+    deferScrapeLink?: boolean;
     shouldBill?: boolean;
     requestId?: string;
     initialize?: (browserId: string) => Promise<void>;
@@ -234,7 +236,7 @@ async function createBrowserSessionInternal(
       request_id: options.requestId ?? id,
       zero_data_retention: zeroDataRetention,
       should_bill: shouldBill,
-      scrape_id: options.scrapeId,
+      scrape_id: options.deferScrapeLink ? null : options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
       context_id: zeroDataRetention ? "" : (browser.playlist_url ?? ""),
