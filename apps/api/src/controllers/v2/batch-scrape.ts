@@ -36,6 +36,7 @@ import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
+import { normalizeOwnerId } from "../../lib/owner-id";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import type { BillingMetadata } from "../../services/billing/types";
@@ -462,6 +463,23 @@ export async function batchScrapeController(
         error: "Job not found",
       });
     }
+
+    const group = await crawlGroup.getGroup(req.body.appendToId);
+    if (!group || group.ownerId !== normalizeOwnerId(req.auth.team_id)) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (sc.cancelled || group.status !== "active") {
+      const status = sc.cancelled ? "cancelled" : group.status;
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a ${status} batch. Please start a new batch.`,
+      });
+    }
+
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
     // first created.
