@@ -300,7 +300,7 @@ async def cancel_crawl(client: AsyncHttpClient, job_id: str) -> bool:
         
     Raises:
         FirecrawlError: If the API returns any other error status
-        httpx.HTTPError: If the request fails before a response arrives
+        httpx2.HTTPError: If the request fails before a response arrives
     """
     response = await client.delete(f"/v2/crawl/{job_id}")
     if response.status_code == 409:

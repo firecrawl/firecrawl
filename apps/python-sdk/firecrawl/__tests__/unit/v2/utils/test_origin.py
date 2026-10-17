@@ -99,18 +99,18 @@ def test_sync_post_keeps_explicit_request_origin(monkeypatch):
 def test_async_post_stamps_client_origin_and_keeps_explicit_one():
     import asyncio
     import json
-    import httpx
+    import httpx2
 
     sent = []
 
     def handler(request):
         sent.append(json.loads(request.content))
-        return httpx.Response(200, json={"success": True})
+        return httpx2.Response(200, json={"success": True})
 
     async def run():
         client = AsyncHttpClient(api_key="fc-test", api_url="https://api.firecrawl.dev", origin="arcade-mcp")
-        client._client = httpx.AsyncClient(
-            base_url="https://api.firecrawl.dev", transport=httpx.MockTransport(handler)
+        client._client = httpx2.AsyncClient(
+            base_url="https://api.firecrawl.dev", transport=httpx2.MockTransport(handler)
         )
         await client.post("/v2/scrape", {"url": "https://example.com"})
         await client.post("/v2/scrape", {"url": "https://example.com", "origin": "per-call"})
