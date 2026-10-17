@@ -112,6 +112,13 @@ const errorMap: Record<ErrorCodes, any> = {
   thread_expired: null,
   threads_disabled: null,
   exchange_not_enabled: null,
+
+  // Agent zero data retention rejections are API-level too.
+  zdr_threads_unsupported: null,
+  zdr_exchange_unsupported: null,
+  zdr_expired: null,
+  zdr_no_snapshots: null,
+  zdr_skills_unavailable: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {

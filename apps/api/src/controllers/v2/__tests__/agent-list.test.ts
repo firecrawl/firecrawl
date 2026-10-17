@@ -141,3 +141,96 @@ describe("agentListController options", () => {
     expect(options).not.toHaveProperty("threadTurn");
   });
 });
+
+describe("agentListController zero data retention rows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("lists a ZDR row with only model, effort and the flag", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => [] }),
+    );
+    mocks.query.mockImplementation(async ({ query }: { query: string }) => ({
+      json: async () =>
+        query.includes("FROM requests")
+          ? [
+              {
+                id: AGENT_ID,
+                created_at: "2026-09-23 12:00:00.000",
+                target_hint: "<redacted due to zero data retention>",
+                origin: "api",
+                integration: null,
+              },
+            ]
+          : [
+              {
+                id: AGENT_ID,
+                options: JSON.stringify({
+                  prompt: "secret prompt",
+                  urls: ["https://example.com"],
+                  threadId: "thread-1",
+                  model: "spark-2",
+                  effort: "high",
+                  zeroDataRetention: true,
+                }),
+                is_successful: true,
+                error: null,
+              },
+            ],
+    }));
+
+    const res = makeRes();
+    await agentListController(makeReq(), res);
+    const agent = vi.mocked(res.json).mock.calls[0][0].agents[0];
+
+    expect(agent.targetHint).toBe("<redacted due to zero data retention>");
+    expect(agent.status).toBe("completed");
+    expect(agent.options).toEqual({
+      prompt: "",
+      model: "spark-2",
+      effort: "high",
+      zeroDataRetention: true,
+    });
+  });
+
+  it("drops content from a recent ZDR run not yet in ClickHouse", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            id: AGENT_ID,
+            createdAt: "2026-09-23T12:00:00.000Z",
+            status: "processing",
+            options: {
+              prompt: "secret prompt",
+              urls: ["https://example.com"],
+              modelPreset: "spark-2",
+              zeroDataRetention: true,
+            },
+          },
+        ],
+      }),
+    );
+    mocks.query.mockImplementation(async () => ({ json: async () => [] }));
+
+    const res = makeRes();
+    await agentListController(makeReq(), res);
+    const agent = vi.mocked(res.json).mock.calls[0][0].agents[0];
+
+    expect(agent.targetHint).toBe("<redacted due to zero data retention>");
+    expect(agent.options).toEqual({
+      prompt: "",
+      model: "spark-2",
+      effort: "medium",
+      zeroDataRetention: true,
+    });
+  });
+});

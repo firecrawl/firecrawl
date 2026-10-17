@@ -1,4 +1,5 @@
 import { config } from "../config";
+import type { ErrorCodes } from "./error";
 
 type ExtractV3AgentStatus = {
   success: true;
@@ -22,6 +23,21 @@ type ExtractV3AgentStatus = {
   creditsUsed?: number;
 };
 
+/**
+ * The agent service answered with an error the caller should see as is, such
+ * as 410 zdr_expired once a zero data retention run's result is deleted.
+ */
+export class ExtractV3AgentStatusError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: ErrorCodes,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ExtractV3AgentStatusError";
+  }
+}
+
 export async function getExtractV3AgentStatus(
   id: string,
 ): Promise<ExtractV3AgentStatus> {
@@ -40,8 +56,24 @@ export async function getExtractV3AgentStatus(
   });
 
   if (!response.ok) {
+    const text = await response.text();
+    if (response.status === 410) {
+      let body: { code?: unknown; error?: unknown } | null = null;
+      try {
+        body = JSON.parse(text);
+      } catch {}
+      if (body?.code === "zdr_expired") {
+        throw new ExtractV3AgentStatusError(
+          410,
+          "zdr_expired",
+          typeof body.error === "string"
+            ? body.error
+            : "This zero data retention agent run's result has been deleted.",
+        );
+      }
+    }
     throw new Error(
-      `Agent status service returned ${response.status}: ${await response.text()}`,
+      `Agent status service returned ${response.status}: ${text}`,
     );
   }
 

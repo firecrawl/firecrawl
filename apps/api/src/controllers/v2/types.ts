@@ -1192,6 +1192,7 @@ export const agentRequestSchema = z
     threadId: z.string().uuid().optional(),
     mode: z.enum(["extract", "chat"]).optional(),
     exchange: agentExchangeSchema.optional(),
+    zeroDataRetention: z.boolean().optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
   // remain valid input and silently resolve to spark-2, so every request —
@@ -1712,6 +1713,7 @@ export type AgentListResponse =
           effort?: "low" | "medium" | "high";
           threadId?: string;
           threadTurn?: number;
+          zeroDataRetention?: boolean;
         };
       }[];
       next?: string;
@@ -1931,6 +1933,9 @@ export type AgentTraceResponse =
       id: string;
       events: object[];
       creditsUsed: number;
+      // Set by the agent service on a zero data retention run, whose events
+      // are limited to content-free lifecycle events.
+      zeroDataRetention?: boolean;
       activeBrowserSessions?: Array<{
         id: string;
         liveViewUrl: string;

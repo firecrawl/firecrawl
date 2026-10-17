@@ -1929,6 +1929,8 @@ export interface AgentTraceResponse {
   creditsUsed?: number;
   /** Present only when the trace was requested with liveView: true. */
   activeBrowserSessions?: AgentTraceActiveBrowserSession[];
+  /** True for a zero data retention run: events are limited to content-free lifecycle events. */
+  zeroDataRetention?: boolean;
   error?: string;
 }
 

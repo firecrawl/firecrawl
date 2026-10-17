@@ -8,7 +8,10 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
-import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
+import {
+  ExtractV3AgentStatusError,
+  getExtractV3AgentStatus,
+} from "../../lib/extract-v3-status";
 
 // python-sdk versions before 4.37.1 validate the status response's `model`
 // with pydantic as Literal["spark-1-pro", "spark-1-mini"], so any other value
@@ -73,7 +76,17 @@ export async function agentStatusController(
     });
   }
 
-  const agent = await getExtractV3AgentStatus(req.params.jobId);
+  let agent: Awaited<ReturnType<typeof getExtractV3AgentStatus>>;
+  try {
+    agent = await getExtractV3AgentStatus(req.params.jobId);
+  } catch (error) {
+    if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+    return res.status(error.status).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+    });
+  }
 
   let model: "spark-1-pro" | "spark-1-mini" | "spark-2" =
     agent.model ?? "spark-1-pro";

@@ -12,7 +12,10 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
-import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
+import {
+  ExtractV3AgentStatusError,
+  getExtractV3AgentStatus,
+} from "../../lib/extract-v3-status";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -50,7 +53,17 @@ export async function extractStatusController(
     }
 
     if (access.kind === "agent") {
-      const agent = await getExtractV3AgentStatus(req.params.jobId);
+      let agent: Awaited<ReturnType<typeof getExtractV3AgentStatus>>;
+      try {
+        agent = await getExtractV3AgentStatus(req.params.jobId);
+      } catch (error) {
+        if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+        return res.status(error.status).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+        });
+      }
 
       return res.status(200).json({
         success: true,

@@ -2081,6 +2081,9 @@ class AgentTraceResponse(BaseModel):
     active_browser_sessions: Optional[List[AgentTraceActiveBrowserSession]] = Field(
         default=None, alias="activeBrowserSessions"
     )
+    zero_data_retention: Optional[bool] = Field(
+        default=None, alias="zeroDataRetention"
+    )
     error: Optional[str] = None
 
 
