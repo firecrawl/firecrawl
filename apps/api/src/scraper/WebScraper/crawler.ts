@@ -417,11 +417,22 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        const isSameHost = linkHostname === initialHostname;
+        const isSubdomain = linkHostname.endsWith(`.${initialHostname}`);
+
+        if (!isSameHost) {
+          if (!this.allowExternalContentLinks) {
+            if (this.allowSubdomains && isSubdomain) {
+              // Subdomain allowed when allowSubdomains is true
+            } else {
+              if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+                this.logger.debug(`${link} HOST SCOPE FAIL`);
+              }
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+          }
+        }
 
         if (!this.allowBackwardCrawling) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
@@ -895,7 +906,7 @@ export class WebCrawler {
     ];
 
     try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
+      const urlWithoutQuery = url.split("?")[0].split("#")[0].toLowerCase();
       return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
