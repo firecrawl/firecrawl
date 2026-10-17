@@ -32,6 +32,56 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     });
   }, 10000);
 
+  it("preserves minute intervals when creating and updating an offset schedule", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "offset minute schedule",
+        schedule: { text: "every 30 minutes starting at :45", timezone: "UTC" },
+        targets: [{ type: "scrape", urls: [createTestIdUrl()] }],
+        notification: { email: { enabled: false } },
+      },
+      identity,
+    );
+    expect(create.statusCode).toBe(200);
+    const id = create.body.data.id;
+    try {
+      expect(create.body.data.schedule.cron).toBe("15-59/30 * * * *");
+      const get = await monitorGetRaw(id, identity);
+      expect(get.statusCode).toBe(200);
+      expect(get.body.data.schedule.cron).toBe("15-59/30 * * * *");
+
+      const patch = await monitorPatchRaw(
+        id,
+        {
+          schedule: {
+            text: "every 5 minutes starting at :55",
+            timezone: "UTC",
+          },
+        },
+        identity,
+      );
+      expect(patch.statusCode).toBe(200);
+      expect(patch.body.data.schedule.cron).toBe("*/5 * * * *");
+
+      const invalid = await monitorPatchRaw(
+        id,
+        {
+          schedule: {
+            text: "every 5 minutes starting at :60",
+            timezone: "UTC",
+          },
+        },
+        identity,
+      );
+      expect(invalid.statusCode).toBe(400);
+      const unchanged = await monitorGetRaw(id, identity);
+      expect(unchanged.statusCode).toBe(200);
+      expect(unchanged.body.data.schedule.cron).toBe("*/5 * * * *");
+    } finally {
+      await monitorDeleteRaw(id, identity);
+    }
+  });
+
   it(
     "reserves the known PDF page cost before a repeat monitor run",
     async () => {

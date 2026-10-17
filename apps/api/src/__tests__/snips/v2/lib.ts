@@ -94,7 +94,9 @@ export async function scrapeWithFailure(
 
 export type MonitorCreateInput = {
   name: string;
-  schedule: { cron: string; timezone?: string };
+  schedule:
+    | { cron: string; timezone?: string }
+    | { text: string; timezone?: string };
   webhook?: { url: string; headers?: Record<string, string> };
   notification?: {
     email?: {
