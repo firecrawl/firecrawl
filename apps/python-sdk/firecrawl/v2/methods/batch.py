@@ -303,6 +303,11 @@ def wait_for_batch_completion(
     """
     Wait for a batch scrape job to complete, polling for status updates.
     
+    Only fetches the status metadata (status, completed, total) on each poll
+    without materializing result documents, avoiding O(n) memory overhead for
+    large batches during the wait phase.  Documents are fetched once when the
+    job reaches a terminal state.
+    
     Args:
         client: HTTP client instance
         job_id: ID of the batch scrape job
@@ -317,18 +322,28 @@ def wait_for_batch_completion(
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
-    
+
+    # Disable auto-pagination while polling — we only need status fields,
+    # not the full document payload, on each intermediate check.
+    poll_config = PaginationConfig(auto_paginate=False)
+
     while True:
-        status_job = get_batch_scrape_status(client, job_id)
-        
+        status_job = get_batch_scrape_status(client, job_id, pagination_config=poll_config)
+
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
+            # Only re-fetch with full pagination for completed jobs,
+            # where a full document set is expected. For failed/cancelled
+            # there's no complete document set to gain; re-fetch would add
+            # latency and a failure point without benefit.
+            if status_job.status == "completed":
+                return get_batch_scrape_status(client, job_id)
             return status_job
-        
+
         # Check timeout
         if timeout and (time.monotonic() - start_time) > timeout:
             raise TimeoutError(f"Batch scrape job {job_id} did not complete within {timeout} seconds")
-        
+
         # Wait before next poll
         time.sleep(poll_interval)
 
