@@ -50,7 +50,12 @@ export const checkUrl = (url: string) => {
     throw new Error("Invalid URL");
   }
 
-  if ((url.split(".")[0].match(/:/g) || []).length !== 1) {
+  const colonCount = (url.split(".")[0].match(/:/g) || []).length;
+  // A port on a single-label self-hosted name adds a second colon before the
+  // first dot. It is part of the parsed authority, not another URL scheme.
+  const hasAuthorityPort =
+    typedUrlObj.port !== "" && !typedUrlObj.username && !typedUrlObj.password;
+  if (colonCount !== 1 && !(colonCount === 2 && hasAuthorityPort)) {
     throw new Error("Invalid URL. Invalid protocol."); // for this one: http://http://example.com
   }
 

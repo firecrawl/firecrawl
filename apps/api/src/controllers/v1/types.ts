@@ -5,6 +5,7 @@ import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
+import { allowsBarePrivateHost } from "../../lib/private-host-url";
 import { countries } from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
@@ -73,15 +74,14 @@ export const url = z
   .url()
   .regex(/^https?:\/\//i, "URL uses unsupported protocol")
   .refine(x => {
-    if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
-      if (
-        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-          x as string,
-        )
-      ) {
-        return true;
-      }
-    }
+    if (
+      allowsBarePrivateHost(x as string, {
+        privateScraping: config.ALLOW_PRIVATE_IP_SCRAPING === true,
+        legacyWebhooks: config.ALLOW_LOCAL_WEBHOOKS === true,
+        selfHostedTestSuite: config.TEST_SUITE_SELF_HOSTED === true,
+      })
+    )
+      return true;
     // Same TLD-shaped check as before, plus IP literals — which the old
     // inline regex accepted only when the last octet had 2+ digits, so
     // 8.8.8.8 was rejected while 169.254.169.254 passed.

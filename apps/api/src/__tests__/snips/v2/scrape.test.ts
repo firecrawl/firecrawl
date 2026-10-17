@@ -55,9 +55,9 @@ beforeAll(async () => {
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
-  const playwrightAllowsLocalTargets = stringbool.parse(
-    process.env.ALLOW_LOCAL_WEBHOOKS,
-  );
+  const playwrightAllowsLocalTargets =
+    stringbool.parse(process.env.ALLOW_LOCAL_WEBHOOKS) ||
+    stringbool.parse(process.env.ALLOW_PRIVATE_IP_SCRAPING);
   const createSelfHostedLocalUrl = () => {
     const target = new URL(TEST_SUITE_WEBSITE);
     target.searchParams.set("testId", crypto.randomUUID());
@@ -302,7 +302,7 @@ describe("Scrape tests", () => {
       ALLOW_TEST_SUITE_WEBSITE &&
       playwrightAllowsLocalTargets,
   )(
-    "playwright allows local-network targets when ALLOW_LOCAL_WEBHOOKS is enabled",
+    "playwright allows local-network targets when private scraping is enabled",
     async () => {
       const response = await scrape(
         {

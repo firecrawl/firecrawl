@@ -154,7 +154,7 @@ export async function scrapeURLWithFetch(
   } else {
     try {
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
-        dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
+        dispatcher: getSecureDispatcher(meta.options.skipTlsVerification, true),
         redirect: "follow",
         headers: meta.options.headers,
         signal: meta.abort.asSignal(),

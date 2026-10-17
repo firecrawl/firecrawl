@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../../../config";
 import {
   MAX_PATH_PATTERNS,
   MAX_PATH_PATTERN_LENGTH,
@@ -26,6 +27,33 @@ import {
 
 describe("V1 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
+    it("accepts a self-hosted private hostname only with the explicit scraping flag", () => {
+      const priorPrivate = config.ALLOW_PRIVATE_IP_SCRAPING;
+      const priorLegacy = config.ALLOW_LOCAL_WEBHOOKS;
+      const priorTestSuite = config.TEST_SUITE_SELF_HOSTED;
+      try {
+        config.TEST_SUITE_SELF_HOSTED = false;
+        config.ALLOW_LOCAL_WEBHOOKS = false;
+        config.ALLOW_PRIVATE_IP_SCRAPING = false;
+        expect(
+          scrapeRequestSchema.safeParse({ url: "http://localhost:8080" })
+            .success,
+        ).toBe(false);
+        config.ALLOW_PRIVATE_IP_SCRAPING = true;
+        expect(
+          scrapeRequestSchema.safeParse({ url: "http://localhost:8080" })
+            .success,
+        ).toBe(true);
+        expect(
+          scrapeRequestSchema.safeParse({ url: "http://service:8080" }).success,
+        ).toBe(true);
+      } finally {
+        config.ALLOW_PRIVATE_IP_SCRAPING = priorPrivate;
+        config.ALLOW_LOCAL_WEBHOOKS = priorLegacy;
+        config.TEST_SUITE_SELF_HOSTED = priorTestSuite;
+      }
+    });
+
     it("should accept valid minimal scrape request", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

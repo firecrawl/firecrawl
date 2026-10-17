@@ -178,7 +178,7 @@ export async function fetchFileToBuffer(
     const response = await undici.fetch(url, {
       ...init,
       redirect: "follow",
-      dispatcher: getSecureDispatcher(skipTlsVerification),
+      dispatcher: getSecureDispatcher(skipTlsVerification, true),
     });
     if (maxSize !== undefined) {
       checkContentLength(response, maxSize);
@@ -231,7 +231,7 @@ export async function downloadFile(
     const response = await undici.fetch(url, {
       ...init,
       redirect: "follow",
-      dispatcher: getSecureDispatcher(skipTlsVerification),
+      dispatcher: getSecureDispatcher(skipTlsVerification, true),
     });
 
     if (maxSize !== undefined) {

@@ -1,4 +1,4 @@
-import { isSameDomain, removeDuplicateUrls } from "./validateUrl";
+import { checkUrl, isSameDomain, removeDuplicateUrls } from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
 
 describe("isSameDomain", () => {
@@ -167,5 +167,22 @@ describe("removeDuplicateUrls", () => {
     const urls = ["https://example.com", "https://example.com/"];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual(["https://example.com"]);
+  });
+});
+
+describe("URL protocol validation", () => {
+  it("accepts ports on single-label self-hosted names", () => {
+    expect(checkUrl("http://localhost:8080/path")).toBe(
+      "http://localhost:8080/path",
+    );
+    expect(checkUrl("http://service:8080/path")).toBe(
+      "http://service:8080/path",
+    );
+  });
+
+  it("continues to reject a repeated URL scheme", () => {
+    expect(() => checkUrl("http://http://example.com")).toThrow(
+      "Invalid URL. Invalid protocol.",
+    );
   });
 });
