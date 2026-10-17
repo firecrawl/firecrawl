@@ -797,32 +797,28 @@ func (c *Client) AgentWithPolling(ctx context.Context, opts *AgentOptions, pollI
 		return nil, &FirecrawlError{Message: "agent start did not return a job ID"}
 	}
 
-	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
-	for time.Now().Before(deadline) {
+	parentContext := ctx
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, start.ID, timeoutSec, ctx.Err())
 		default:
 		}
 
 		status, err := c.GetAgentStatus(ctx, start.ID)
 		if err != nil {
-			return nil, err
+			return nil, pollingError(parentContext, ctx, start.ID, timeoutSec, err)
 		}
 		if status.IsDone() {
 			return status, nil
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, start.ID, timeoutSec, ctx.Err())
 		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
 		}
-	}
-
-	return nil, &JobTimeoutError{
-		FirecrawlError: FirecrawlError{Message: "agent job timed out"},
-		JobID:          start.ID,
-		TimeoutSeconds: timeoutSec,
 	}
 }
 
@@ -1029,63 +1025,68 @@ func (c *Client) GetCreditUsage(ctx context.Context) (*CreditUsage, error) {
 // INTERNAL POLLING HELPERS
 // ================================================================
 
+// Preserve caller cancellation while identifying the polling operation's own deadline.
+func pollingError(parent, polling context.Context, jobID string, timeoutSec int, err error) error {
+	if parent.Err() != nil {
+		return parent.Err()
+	}
+	if polling.Err() != nil {
+		return &JobTimeoutError{FirecrawlError: FirecrawlError{Message: "job timed out"}, JobID: jobID, TimeoutSeconds: timeoutSec}
+	}
+	return err
+}
+
 func (c *Client) pollCrawl(ctx context.Context, jobID string, pollIntervalSec, timeoutSec int) (*CrawlJob, error) {
-	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
-	for time.Now().Before(deadline) {
+	parentContext := ctx
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, ctx.Err())
 		default:
 		}
 
 		job, err := c.GetCrawlStatus(ctx, jobID)
 		if err != nil {
-			return nil, err
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, err)
 		}
 		if job.IsDone() {
-			return c.paginateCrawl(ctx, job)
+			complete, err := c.paginateCrawl(ctx, job)
+			return complete, pollingError(parentContext, ctx, jobID, timeoutSec, err)
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, ctx.Err())
 		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
 		}
-	}
-
-	return nil, &JobTimeoutError{
-		FirecrawlError: FirecrawlError{Message: "crawl job timed out"},
-		JobID:          jobID,
-		TimeoutSeconds: timeoutSec,
 	}
 }
 
 func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollIntervalSec, timeoutSec int) (*BatchScrapeJob, error) {
-	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
-	for time.Now().Before(deadline) {
+	parentContext := ctx
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, ctx.Err())
 		default:
 		}
 
 		job, err := c.GetBatchScrapeStatus(ctx, jobID)
 		if err != nil {
-			return nil, err
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, err)
 		}
 		if job.IsDone() {
-			return c.paginateBatchScrape(ctx, job)
+			complete, err := c.paginateBatchScrape(ctx, job)
+			return complete, pollingError(parentContext, ctx, jobID, timeoutSec, err)
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, pollingError(parentContext, ctx, jobID, timeoutSec, ctx.Err())
 		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
 		}
-	}
-
-	return nil, &JobTimeoutError{
-		FirecrawlError: FirecrawlError{Message: "batch scrape job timed out"},
-		JobID:          jobID,
-		TimeoutSeconds: timeoutSec,
 	}
 }
 
