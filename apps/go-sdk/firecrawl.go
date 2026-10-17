@@ -1043,6 +1043,18 @@ func (c *Client) pollCrawl(ctx context.Context, jobID string, pollIntervalSec, t
 			return nil, err
 		}
 		if job.IsDone() {
+			if job.Status != "completed" {
+				// Keep every available result page on the typed failure.
+				_, paginationErr := c.paginateCrawl(ctx, job)
+				message := job.Error
+				if message == "" {
+					message = "crawl did not complete"
+				}
+				return nil, &JobFailedError{
+					FirecrawlError: FirecrawlError{Message: message},
+					JobID:          jobID, Status: job.Status, Job: job, PaginationError: paginationErr,
+				}
+			}
 			return c.paginateCrawl(ctx, job)
 		}
 		select {
@@ -1073,6 +1085,17 @@ func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollInterval
 			return nil, err
 		}
 		if job.IsDone() {
+			if job.Status != "completed" {
+				_, paginationErr := c.paginateBatchScrape(ctx, job)
+				message := job.Error
+				if message == "" {
+					message = "batch scrape did not complete"
+				}
+				return nil, &JobFailedError{
+					FirecrawlError: FirecrawlError{Message: message},
+					JobID:          jobID, Status: job.Status, Job: job, PaginationError: paginationErr,
+				}
+			}
 			return c.paginateBatchScrape(ctx, job)
 		}
 		select {
@@ -1094,7 +1117,12 @@ func (c *Client) paginateCrawl(ctx context.Context, job *CrawlJob) (*CrawlJob, e
 		job.Data = []Document{}
 	}
 	current := job
+	seen := make(map[string]struct{})
 	for current.Next != "" {
+		if _, ok := seen[current.Next]; ok {
+			return nil, &FirecrawlError{Message: "crawl pagination cursor repeated"}
+		}
+		seen[current.Next] = struct{}{}
 		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err
@@ -1114,7 +1142,12 @@ func (c *Client) paginateBatchScrape(ctx context.Context, job *BatchScrapeJob) (
 		job.Data = []Document{}
 	}
 	current := job
+	seen := make(map[string]struct{})
 	for current.Next != "" {
+		if _, ok := seen[current.Next]; ok {
+			return nil, &FirecrawlError{Message: "batch scrape pagination cursor repeated"}
+		}
+		seen[current.Next] = struct{}{}
 		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err

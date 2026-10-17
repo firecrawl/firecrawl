@@ -58,3 +58,27 @@ type JobTimeoutError struct {
 func (e *JobTimeoutError) Error() string {
 	return fmt.Sprintf("firecrawl: job %s timed out after %d seconds", e.JobID, e.TimeoutSeconds)
 }
+
+// JobFailedError is returned by polling helpers when a crawl or batch scrape
+// terminates without completing. Job retains any partial results for inspection.
+type JobFailedError struct {
+	FirecrawlError
+	JobID           string
+	Status          string
+	Job             interface{}
+	PaginationError error
+}
+
+func (e *JobFailedError) Error() string {
+	if e.PaginationError != nil {
+		return fmt.Sprintf("firecrawl: job %s %s: %s (partial results could not be fully fetched: %v)", e.JobID, e.Status, e.Message, e.PaginationError)
+	}
+	return fmt.Sprintf("firecrawl: job %s %s: %s", e.JobID, e.Status, e.Message)
+}
+
+func (e *JobFailedError) Unwrap() []error {
+	if e.PaginationError != nil {
+		return []error{&e.FirecrawlError, e.PaginationError}
+	}
+	return []error{&e.FirecrawlError}
+}

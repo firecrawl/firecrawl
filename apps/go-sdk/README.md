@@ -214,6 +214,10 @@ _, err = client.CancelCrawl(ctx, resp.ID)
 errors, err := client.GetCrawlErrors(ctx, resp.ID)
 ```
 
+`Crawl` and `BatchScrape` return a `JobFailedError` when polling reaches `failed`
+or `cancelled`. The error includes the job ID and terminal status; its `Job` field
+retains any partial `*CrawlJob` or `*BatchScrapeJob` returned by the API.
+
 ### Batch Scrape
 
 Scrape multiple URLs in a single batch job.
@@ -352,6 +356,7 @@ if err != nil {
 	var authErr *firecrawl.AuthenticationError
 	var rateErr *firecrawl.RateLimitError
 	var timeoutErr *firecrawl.JobTimeoutError
+	var failedErr *firecrawl.JobFailedError
 	var fcErr *firecrawl.FirecrawlError
 
 	switch {
@@ -361,6 +366,8 @@ if err != nil {
 		fmt.Println("Rate limited:", rateErr.Message)
 	case errors.As(err, &timeoutErr):
 		fmt.Printf("Job %s timed out after %ds\n", timeoutErr.JobID, timeoutErr.TimeoutSeconds)
+	case errors.As(err, &failedErr):
+		fmt.Printf("Job %s %s: %s\n", failedErr.JobID, failedErr.Status, failedErr.Message)
 	case errors.As(err, &fcErr):
 		fmt.Printf("API error (HTTP %d): %s\n", fcErr.StatusCode, fcErr.Message)
 	default:
