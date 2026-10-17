@@ -37,6 +37,8 @@ data:
   FIRECRAWL_APP_HOST: {{ default $apiHostDefault .Values.config.FIRECRAWL_APP_HOST | quote }}
   FIRECRAWL_APP_PORT: {{ default $apiPortDefault .Values.config.FIRECRAWL_APP_PORT | quote }}
   OPENAI_BASE_URL: {{ .Values.config.OPENAI_BASE_URL | quote }}
+  OPENAI_API_MODE: {{ .Values.config.OPENAI_API_MODE | quote }}
+  OPENAI_STRUCTURED_OUTPUT_MODE: {{ .Values.config.OPENAI_STRUCTURED_OUTPUT_MODE | quote }}
   MODEL_NAME: {{ .Values.config.MODEL_NAME | quote }}
   MODEL_EMBEDDING_NAME: {{ .Values.config.MODEL_EMBEDDING_NAME | quote }}
   OLLAMA_BASE_URL: {{ .Values.config.OLLAMA_BASE_URL | quote }}
