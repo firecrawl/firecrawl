@@ -22,9 +22,6 @@ importers:
       axios:
         specifier: 1.20.0
         version: 1.20.0
-      firecrawl:
-        specifier: 4.30.1
-        version: 4.30.1
       typescript-event-target:
         specifier: ^1.1.1
         version: 1.1.1
@@ -711,10 +708,6 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
-
-  firecrawl@4.30.1:
-    resolution: {integrity: sha512-gW9nId70DeSNFIwW8YX8XINvr2xslCxjYLcaWe6As0NFPnTeaP0yQmKWNOA77vk/PcZaeGFrwFdR6s3eqBZiwA==}
-    engines: {node: '>=22.0.0'}
 
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
@@ -1710,16 +1703,6 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
-
-  firecrawl@4.30.1:
-    dependencies:
-      axios: 1.20.0
-      typescript-event-target: 1.1.1
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
-    transitivePeerDependencies:
-      - debug
-      - supports-color
 
   fix-dts-default-cjs-exports@1.0.1:
     dependencies:
