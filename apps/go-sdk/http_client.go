@@ -194,6 +194,9 @@ func (h *httpClient) postMultipart(
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			lastErr = err
 			continue
 		}
@@ -287,6 +290,9 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			lastErr = err
 			continue
 		}
