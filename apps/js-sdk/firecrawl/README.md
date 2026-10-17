@@ -126,7 +126,7 @@ const crawlResponse = await app.crawl('https://firecrawl.dev', {
 To start an asynchronous crawl, use `startCrawl`. It returns a job ID you can poll with `getCrawlStatus`.
 
 ```js
-const start = await app.startCrawl('https://mendable.ai', {
+const start = await app.startCrawl('https://firecrawl.dev', {
   excludePaths: ['blog/*'],
   limit: 5,
 });
@@ -323,7 +323,7 @@ await app.stopInteraction(scrapeJobId);
 To receive real‑time updates, start a crawl and attach a watcher.
 
 ```js
-const start = await app.startCrawl('https://mendable.ai', { excludePaths: ['blog/*'], limit: 5 });
+const start = await app.startCrawl('https://firecrawl.dev', { excludePaths: ['blog/*'], limit: 5 });
 const watch = app.watcher(start.id, { kind: 'crawl', pollInterval: 2 });
 
 watch.on('document', (doc) => {
@@ -346,7 +346,7 @@ await watch.start();
 To batch scrape multiple URLs with error handling, use the `batchScrape` method.
 
 ```js
-const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'https://mendable.ai'], {
+const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], {
   formats: ['markdown', 'html'],
 });
 ```
@@ -357,7 +357,7 @@ const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'htt
 To start an asynchronous batch scrape, use `startBatchScrape` and poll with `getBatchScrapeStatus`.
 
 ```js
-const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.dev', 'https://mendable.ai'], {
+const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], {
   formats: ['markdown', 'html'],
 });
 ```
@@ -367,7 +367,7 @@ const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.de
 To use batch scrape with real‑time updates, start the job and watch it using the watcher.
 
 ```js
-const start = await app.startBatchScrape(['https://firecrawl.dev', 'https://mendable.ai'], { formats: ['markdown', 'html'] });
+const start = await app.startBatchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], { formats: ['markdown', 'html'] });
 const watch = app.watcher(start.id, { kind: 'batch', pollInterval: 2 });
 
 watch.on('document', (doc) => {
