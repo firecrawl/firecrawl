@@ -25,7 +25,9 @@ class AsyncHttpClient:
         # Attribution string stamped into request payloads / research query params.
         self.origin = origin or f"python-sdk@{version}"
 
-        headers = {}
+        headers = {
+            "User-Agent": f"FireCrawl/{version}",
+        }
 
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
