@@ -45,7 +45,7 @@ export function parseMonitorScheduleText(input: string): string {
       throw new Error("Minute interval must be between 1 and 60");
     }
     assertDivides(interval, 60, "Minute");
-    const startMinute = parseMinuteStart(minuteMatch[2]);
+    const startMinute = parseMinuteStart(minuteMatch[2]) % interval;
     return startMinute === 0
       ? `*/${interval} * * * *`
       : `${startMinute}-59/${interval} * * * *`;
