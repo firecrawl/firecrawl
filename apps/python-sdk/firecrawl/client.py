@@ -267,8 +267,10 @@ class Firecrawl:
         self.api_key = api_key
         self.api_url = api_url
 
-        # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
+        # Initialize version-specific clients lazily for v1 to avoid requiring
+        # an API key for keyless v2 operations
+        self._v1_client = None
+        self._v1_proxy = None
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -277,9 +279,8 @@ class Firecrawl:
             backoff_factor=backoff_factor,
             origin=origin,
         ) if V2FirecrawlClient else None
-        
+
         # Create version-specific proxies
-        self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
@@ -396,6 +397,15 @@ class Firecrawl:
     def search_github(self, query: str, **kwargs):
         return self._v2_client.search_github(query, **kwargs)
 
+    @property
+    def v1(self) -> Optional[V1Proxy]:
+        """Type-annotated proxy for v1 client methods."""
+        if self._v1_proxy is None and V1FirecrawlApp:
+            if self._v1_client is None:
+                self._v1_client = V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url)
+            self._v1_proxy = V1Proxy(self._v1_client)
+        return self._v1_proxy
+
 
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
@@ -412,8 +422,10 @@ class AsyncFirecrawl:
         self.api_key = api_key
         self.api_url = api_url
 
-        # Initialize version-specific clients
-        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
+        # Initialize version-specific clients lazily for v1 to avoid requiring
+        # an API key for keyless v2 operations
+        self._v1_client = None
+        self._v1_proxy = None
         self._v2_client = AsyncFirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -422,9 +434,8 @@ class AsyncFirecrawl:
             backoff_factor=backoff_factor,
             origin=origin,
         ) if AsyncFirecrawlClient else None
-        
+
         # Create version-specific proxies
-        self.v1 = AsyncV1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = AsyncV2Proxy(self._v2_client)
 
         # Expose v2 async surface directly on the top-level client for ergonomic access
@@ -541,6 +552,15 @@ class AsyncFirecrawl:
     @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
     async def search_github(self, query: str, **kwargs):
         return await self._v2_client.search_github(query, **kwargs)
+
+    @property
+    def v1(self) -> Optional[AsyncV1Proxy]:
+        """Type-annotated proxy for async v1 client methods."""
+        if self._v1_proxy is None and AsyncV1FirecrawlApp:
+            if self._v1_client is None:
+                self._v1_client = AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url)
+            self._v1_proxy = AsyncV1Proxy(self._v1_client)
+        return self._v1_proxy
 
 
 # Export Firecrawl as an alias for FirecrawlApp

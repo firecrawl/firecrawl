@@ -113,8 +113,12 @@ class AsyncFirecrawlClient:
     ):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        if self._is_cloud_service(api_url) and not api_key:
-            raise ValueError("API key is required for the cloud API. Set FIRECRAWL_API_KEY or pass api_key.")
+
+        # No API key is allowed: scrape, search, and interact fall back to the
+        # keyless free tier (rate-limited per IP). The HTTP client only sends an
+        # Authorization header when a key is present, and other methods return
+        # 401 from the API until a key is provided.
+
         self.http_client = HttpClient(
             api_key,
             api_url,
