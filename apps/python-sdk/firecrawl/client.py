@@ -21,6 +21,7 @@ Check example.py for other usage examples.
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Union, BinaryIO
 import logging
+import os
 
 
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
@@ -42,6 +43,10 @@ from .v2.methods.research_docs import (
 from .v2.types import Document, ParseOptions, ScrapeOptions
 
 logger = logging.getLogger("firecrawl")
+
+
+def _can_use_v1(api_key: Optional[str], api_url: str) -> bool:
+    return bool(api_key or os.getenv("FIRECRAWL_API_KEY") or "api.firecrawl.dev" not in api_url)
 
 class V1Proxy:
     """Type-annotated proxy for v1 client methods."""
@@ -268,7 +273,7 @@ class Firecrawl:
         self.api_url = api_url
 
         # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
+        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp and _can_use_v1(api_key, api_url) else None
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -413,7 +418,7 @@ class AsyncFirecrawl:
         self.api_url = api_url
 
         # Initialize version-specific clients
-        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
+        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp and _can_use_v1(api_key, api_url) else None
         self._v2_client = AsyncFirecrawlClient(
             api_key=api_key,
             api_url=api_url,
