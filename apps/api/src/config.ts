@@ -16,6 +16,19 @@ const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
+const worldIdSubjectList = (name: string) =>
+  emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(entry => /^[A-Za-z0-9_-]{43}$/.test(entry.trim())),
+        `${name} must be comma-separated subject hashes`,
+      ),
+  );
+
 const RESEARCH_PAPER_OPERATIONS = [
   "search",
   "inspect",
@@ -135,6 +148,35 @@ const configSchema = z.object({
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.
   MCP_DELEGATED_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // World ID verified-human keyless bucket. Off unless all five are set: the
+  // OIDC issuer (e.g. https://auth.world.org), the confidential client ID and
+  // secret registered with it, WORLD_ID_CREDENTIAL_SECRET (signs the keyless
+  // credentials minted after verification) and WORLD_ID_SUBJECT_SECRET (keys
+  // the World ID subject hashes).
+  WORLD_ID_ISSUER: emptyStringAsUndefined(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine(
+        value => value.startsWith("https://"),
+        "WORLD_ID_ISSUER must be an https URL",
+      ),
+  ),
+  WORLD_ID_CLIENT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CLIENT_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().trim().min(32)),
+  // Keys the subject hashes (bucket ids, allow and deny lists). Kept apart
+  // from the credential secret so rotating that one revokes credentials
+  // without resetting buckets or the lists.
+  WORLD_ID_SUBJECT_SECRET: emptyStringAsUndefined(z.string().trim().min(32)),
+  // Optional comma-separated allowlist of subject hashes. When set, only these
+  // verified humans are issued a credential; unset issues one to anyone who
+  // verifies.
+  WORLD_ID_ALLOWED_SUBJECTS: worldIdSubjectList("WORLD_ID_ALLOWED_SUBJECTS"),
+  // Optional comma-separated subject hashes that are refused: no new
+  // credential, and their existing credentials stop working.
+  WORLD_ID_DENIED_SUBJECTS: worldIdSubjectList("WORLD_ID_DENIED_SUBJECTS"),
   // Optional Spur Context API token (https://docs.spur.us/context-api). When
   // set, keyless requests have their client IP checked against Spur and are
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/

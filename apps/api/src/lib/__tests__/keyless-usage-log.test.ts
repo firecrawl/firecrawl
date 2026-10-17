@@ -39,6 +39,7 @@ import {
   chargeKeylessCredits,
   keylessTeamId,
   keylessTeamUuid,
+  keylessWorldIdIdentity,
   logKeylessCreditUsage,
 } from "../keyless";
 import { logger } from "../logger";
@@ -128,6 +129,21 @@ describe("logKeylessCreditUsage", () => {
     await logKeylessCreditUsage(KEYLESS_TEAM, 3);
 
     expect(dbInsert).not.toHaveBeenCalled();
+  });
+
+  it("keeps a World ID bucket out of the raw-IP records", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+    const team = keylessTeamId(keylessWorldIdIdentity("h".repeat(43)));
+
+    await logKeylessCreditUsage(team, 3);
+
+    expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith("Keyless World ID usage", {
+      canonicalLog: "keyless/usage",
+      teamId: keylessTeamUuid(team),
+      worldId: true,
+      creditsUsed: 3,
+    });
   });
 
   it("swallows insert failures so the request is unaffected", async () => {
