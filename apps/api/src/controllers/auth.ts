@@ -938,9 +938,12 @@ async function supaAuthenticateUser(
         status: 401,
       });
     }
+    // REST API OAuth grants are backed by a per-grant managed key. The
+    // introspection client already requires a REST audience for those.
+    const credentialPurpose = introspection.credential_purpose ?? "general";
     if (
-      introspection.credential_purpose !== undefined &&
-      introspection.credential_purpose !== "general"
+      credentialPurpose !== "general" &&
+      credentialPurpose !== "hosted_mcp_oauth"
     ) {
       return denied(req, "oauth_purpose_mismatch", {
         success: false,
@@ -949,14 +952,13 @@ async function supaAuthenticateUser(
       });
     }
 
-    // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
     chunk = await getACUC(
       resolvedApi,
       false,
       true,
       RateLimiterMode.Scrape,
-      "general",
+      credentialPurpose,
     );
 
     if (chunk === null) {
