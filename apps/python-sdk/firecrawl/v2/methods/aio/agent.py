@@ -161,7 +161,7 @@ async def list_agents(
     if before is not None:
         endpoint = f"{endpoint}?before={before}"
     resp = await client.get(endpoint)
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "list agents")
     return AgentListResponse(**resp.json())
 
@@ -265,7 +265,7 @@ async def get_agent_thread(
     if include_data:
         endpoint += "?includeData=true"
     resp = await client.get(endpoint)
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "agent-thread")
     return AgentThreadResponse(**resp.json())
 
