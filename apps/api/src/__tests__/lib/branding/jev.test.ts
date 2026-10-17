@@ -31,7 +31,6 @@ import {
   brandingRoutedTotal,
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
-  brandingJevRolloutPercent,
 } from "../../../lib/branding/metrics";
 import { mergeBrandingResults } from "../../../lib/branding/merge";
 import { BrandingLLMInput } from "../../../lib/branding/types";
@@ -105,7 +104,6 @@ const baseInput = (costTracking: CostTracking): BrandingLLMInput => ({
   pageTitle: "Acme | Home",
   url: "https://acme.test/",
   teamId: "team-jev",
-  mode: "fast",
   costTracking,
   logger,
 });
@@ -214,18 +212,12 @@ const jevResponse = (overrides: Record<string, unknown> = {}) => ({
 const saved = {
   key: config.TYPESAFE_API_KEY,
   global: config.BRANDING_JEV,
-  teamIds: config.BRANDING_JEV_TEAM_IDS,
-  rollout: config.BRANDING_JEV_ROLLOUT_PERCENT,
-  escalate: config.BRANDING_JEV_ESCALATE_BELOW,
 };
 
 beforeEach(() => {
   resetJevBreaker();
   config.TYPESAFE_API_KEY = "ts-test";
   config.BRANDING_JEV = undefined;
-  config.BRANDING_JEV_TEAM_IDS = ["team-jev"];
-  config.BRANDING_JEV_ROLLOUT_PERCENT = 0;
-  config.BRANDING_JEV_ESCALATE_BELOW = undefined;
   mocks.systemOne.mockReset();
   (generateObject as Mock).mockReset().mockResolvedValue({
     object: {
@@ -253,9 +245,6 @@ afterEach(() => {
   vi.useRealTimers();
   config.TYPESAFE_API_KEY = saved.key;
   config.BRANDING_JEV = saved.global;
-  config.BRANDING_JEV_TEAM_IDS = saved.teamIds;
-  config.BRANDING_JEV_ROLLOUT_PERCENT = saved.rollout;
-  config.BRANDING_JEV_ESCALATE_BELOW = saved.escalate;
 });
 
 const respondWith = (body: unknown) =>
@@ -769,36 +758,18 @@ describe("branding with Jev", () => {
     ]);
   });
 
-  it("escalates to the LLM when Jev is unsure of the logo", async () => {
-    config.BRANDING_JEV_ESCALATE_BELOW = 0.6;
-    respondWith(
-      jevResponse({
-        logo: {
-          type: "choice",
-          choice: "logo_1",
-          probabilities: { logo_0: 0.45, logo_1: 0.5, none: 0.05 },
-          confidence: 0.3,
-        },
-      }),
-    );
-    const costTracking = new CostTracking();
-
-    await enhanceBrandingWithLLM(baseInput(costTracking));
-
-    expect(generateObject).toHaveBeenCalledTimes(1);
-    expect(costTracking.calls.map(c => c.metadata.method)).toEqual([
-      "enhanceBrandingWithJev",
-      "enhanceBrandingWithLLM",
-    ]);
-  });
-
-  it("keeps unlisted teams off Jev", async () => {
+  it("sends every team to Jev unless it's switched off", async () => {
+    respondWith(jevResponse());
     await enhanceBrandingWithLLM({
       ...baseInput(new CostTracking()),
-      teamId: "team-unlisted",
+      teamId: "team-any",
     });
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+    expect(generateObject).not.toHaveBeenCalled();
 
-    expect(mocks.systemOne).not.toHaveBeenCalled();
+    config.BRANDING_JEV = false;
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
     expect(generateObject).toHaveBeenCalledTimes(1);
   });
 
@@ -834,51 +805,6 @@ describe("branding with Jev", () => {
       teamId: "team-jev",
     });
     withSpan.mockRestore();
-  });
-
-  it("keeps a listed team on the LLM unless the request asks for fast", async () => {
-    for (const mode of [undefined, "auto", "standard"] as const) {
-      await enhanceBrandingWithLLM({ ...baseInput(new CostTracking()), mode });
-    }
-    expect(mocks.systemOne).not.toHaveBeenCalled();
-    expect(generateObject).toHaveBeenCalledTimes(3);
-
-    respondWith(jevResponse());
-    await enhanceBrandingWithLLM({
-      ...baseInput(new CostTracking()),
-      mode: "fast",
-    });
-    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores mode for teams that aren't listed", async () => {
-    await enhanceBrandingWithLLM({
-      ...baseInput(new CostTracking()),
-      teamId: "team-unlisted",
-      mode: "fast",
-    });
-    expect(mocks.systemOne).not.toHaveBeenCalled();
-
-    config.BRANDING_JEV = true;
-    respondWith(jevResponse());
-    await enhanceBrandingWithLLM({
-      ...baseInput(new CostTracking()),
-      teamId: "team-unlisted",
-      mode: "standard",
-    });
-    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
-  });
-
-  it("puts a rollout share of teams on Jev without listing them", async () => {
-    const unlisted = { ...baseInput(new CostTracking()), teamId: "team-a" };
-
-    await enhanceBrandingWithLLM(unlisted);
-    expect(mocks.systemOne).not.toHaveBeenCalled();
-
-    config.BRANDING_JEV_ROLLOUT_PERCENT = 100;
-    respondWith(jevResponse());
-    await enhanceBrandingWithLLM(unlisted);
-    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
   });
 
   it("stays on the LLM when no TypeSafe key is configured", async () => {
@@ -1012,10 +938,10 @@ describe("branding metrics", () => {
     )?.value ?? 0;
 
   it("counts which model answered and how each Jev call ended", async () => {
-    const jevOk = { outcome: "ok", shadow: "false" };
-    const rateLimited = { outcome: "rate_limited", shadow: "false" };
-    const timedOut = { outcome: "timeout", shadow: "false" };
-    const byJev = { model: "jev", reason: "rollout" };
+    const jevOk = { outcome: "ok" };
+    const rateLimited = { outcome: "rate_limited" };
+    const timedOut = { outcome: "timeout" };
+    const byJev = { model: "jev", reason: "jev" };
     const fellBack = { model: "llm", reason: "jev_unavailable" };
     const before = {
       jevOk: await value(brandingJevCallsTotal, jevOk),
@@ -1048,7 +974,7 @@ describe("branding metrics", () => {
   });
 
   it("counts the breaker opening and the calls it skips", async () => {
-    const skipped = { outcome: "breaker_open", shadow: "false" };
+    const skipped = { outcome: "breaker_open" };
     const opensBefore = await value(brandingJevBreakerOpensTotal);
     const skippedBefore = await value(brandingJevCallsTotal, skipped);
     mocks.systemOne.mockRejectedValue(new Error("529 high traffic"));
@@ -1061,30 +987,14 @@ describe("branding metrics", () => {
     expect(await value(brandingJevCallsTotal, skipped)).toBe(skippedBefore + 1);
   });
 
-  it("counts teams outside the rollout as answered by the LLM", async () => {
-    const outside = { model: "llm", reason: "not_in_rollout" };
+  it("counts branding sent to the LLM while Jev is switched off", async () => {
+    const outside = { model: "llm", reason: "jev_off" };
     const before = await value(brandingRoutedTotal, outside);
-    config.BRANDING_JEV_TEAM_IDS = [];
+    config.BRANDING_JEV = false;
 
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
 
     expect(await value(brandingRoutedTotal, outside)).toBe(before + 1);
     expect(mocks.systemOne).not.toHaveBeenCalled();
-  });
-});
-
-describe("rollout gauge", () => {
-  it("reports the share of teams this process sends to Jev", async () => {
-    const read = async () =>
-      (await brandingJevRolloutPercent.get()).values[0]?.value;
-
-    config.BRANDING_JEV_ROLLOUT_PERCENT = 75;
-    expect(await read()).toBe(75);
-
-    config.BRANDING_JEV = true;
-    expect(await read()).toBe(100);
-
-    config.TYPESAFE_API_KEY = undefined;
-    expect(await read()).toBe(0);
   });
 });

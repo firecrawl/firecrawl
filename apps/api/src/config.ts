@@ -558,24 +558,13 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
-  // TypeSafe Jev for branding decisions (lib/branding/jev.ts); needs
-  // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team,
-  // BRANDING_JEV_TEAM_IDS (comma-separated) for listed teams, and
-  // BRANDING_JEV_ROLLOUT_PERCENT for a stable share of teams.
+  // TypeSafe Jev answers branding decisions whenever TYPESAFE_API_KEY is set
+  // (lib/branding/jev.ts), with the LLM as fallback. BRANDING_JEV=false sends
+  // every branding request to the LLM instead.
   BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
-  BRANDING_JEV_TEAM_IDS: delimitedList(",").optional(),
-  BRANDING_JEV_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
   BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
     z.coerce.number().int().positive(),
   ),
-  // Rerun branding on the LLM when Jev's logo confidence is below this (0-1).
-  BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
-    z.coerce.number().min(0).max(1),
-  ),
-  // Share of LLM-answered branding requests (0-100) that also ask Jev in the
-  // background and record how its answer compares (lib/branding/jev-shadow.ts).
-  // Customers always get the LLM's answer.
-  BRANDING_JEV_SHADOW_PERCENT: z.coerce.number().min(0).max(100).default(0),
   // Warn scrapes of search engine results pages (google.*/search, ...) that
   // /search returns those results directly (lib/serp-url.ts).
   // SERP_SCRAPE_WARNING turns it on for every team, SERP_SCRAPE_WARNING_TEAM_IDS

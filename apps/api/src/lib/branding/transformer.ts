@@ -240,7 +240,6 @@ export async function brandingTransformer(
       scrapeId: meta.id,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       teamFlags: meta.internalOptions.teamFlags,
-      mode: hasFormatOfType(meta.options.formats, "branding")?.mode,
       costTracking: meta.costTracking,
       logger: meta.logger,
     });

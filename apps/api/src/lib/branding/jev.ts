@@ -10,7 +10,6 @@ import { formatHex, hsl, parse } from "culori";
 
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
-import { sampled } from "../rollout";
 import { getTypeSafeClient } from "../typesafe";
 import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
 import {
@@ -59,7 +58,7 @@ const BREAKER_COOLDOWN_MS = 60_000;
 let consecutiveFailures = 0;
 let breakerOpenUntil = 0;
 
-export function isJevBreakerOpen(now = Date.now()): boolean {
+function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
 }
 
@@ -103,18 +102,9 @@ type JevBrandingResult = {
   logoConfidence?: number;
 };
 
-export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
-  if (!config.TYPESAFE_API_KEY) return false;
-  // Listed teams stay on the LLM unless a request asks for mode "fast". Every
-  // other team ignores `mode` and follows the settings below.
-  if (input.teamId && config.BRANDING_JEV_TEAM_IDS?.includes(input.teamId)) {
-    return input.mode === "fast";
-  }
-  return (
-    config.BRANDING_JEV === true ||
-    (!!input.teamId &&
-      sampled(`team:${input.teamId}`, config.BRANDING_JEV_ROLLOUT_PERCENT))
-  );
+/** Jev answers branding unless there's no TypeSafe key or BRANDING_JEV is off. */
+export function isJevBrandingEnabled(): boolean {
+  return !!config.TYPESAFE_API_KEY && config.BRANDING_JEV !== false;
 }
 
 // ---------------------------------------------------------------------------
@@ -925,13 +915,11 @@ function mapJevAnswers(
  */
 export async function enhanceBrandingWithJev(
   input: BrandingLLMInput,
-  options: { shadow?: boolean } = {},
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
   if (!typesafe) return null;
-  const shadow = options.shadow ? "true" : "false";
   const count = (outcome: JevCallOutcome) =>
-    brandingJevCallsTotal.inc({ outcome, shadow });
+    brandingJevCallsTotal.inc({ outcome });
   if (isJevBreakerOpen()) {
     count("breaker_open");
     return null;
@@ -972,7 +960,6 @@ export async function enhanceBrandingWithJev(
         attributes: {
           feature: "branding",
           "branding.jev.questions": Object.keys(request.questions).length,
-          ...(options.shadow ? { "branding.jev.shadow": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
@@ -982,10 +969,7 @@ export async function enhanceBrandingWithJev(
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
       recordJevFailure(input);
-      brandingJevDurationSeconds.observe(
-        { shadow },
-        (Date.now() - started) / 1000,
-      );
+      brandingJevDurationSeconds.observe((Date.now() - started) / 1000);
       count(
         error instanceof RateLimitError
           ? "rate_limited"
@@ -994,21 +978,16 @@ export async function enhanceBrandingWithJev(
             : "error",
       );
     }
-    input.logger.warn(
-      options.shadow
-        ? "Jev branding shadow call failed"
-        : "Jev branding call failed, falling back to LLM",
-      {
-        error,
-        elapsedMs: Date.now() - started,
-      },
-    );
+    input.logger.warn("Jev branding call failed, falling back to LLM", {
+      error,
+      elapsedMs: Date.now() - started,
+    });
     return null;
   }
   // A call that started before the breaker opened and succeeds late doesn't
   // close it: the next failure after the cooldown should reopen it at once.
   if (!isJevBreakerOpen()) consecutiveFailures = 0;
-  brandingJevDurationSeconds.observe({ shadow }, (Date.now() - started) / 1000);
+  brandingJevDurationSeconds.observe((Date.now() - started) / 1000);
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;
@@ -1026,21 +1005,15 @@ export async function enhanceBrandingWithJev(
   } catch (error) {
     // A successful call whose answers don't have the expected shape.
     count("unusable");
-    input.logger.warn(
-      options.shadow
-        ? "Jev branding shadow answers unusable"
-        : "Jev branding answers unusable, falling back to LLM",
-      {
-        error,
-        model: response.model,
-      },
-    );
+    input.logger.warn("Jev branding answers unusable, falling back to LLM", {
+      error,
+      model: response.model,
+    });
     return null;
   }
   count("ok");
   input.logger.info("Jev branding call", {
     model: response.model,
-    shadow: options.shadow === true,
     elapsedMs: Date.now() - started,
     inputTokens,
     questions: Object.keys(request.questions).length,

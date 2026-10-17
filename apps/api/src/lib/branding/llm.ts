@@ -6,7 +6,6 @@ import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { enhanceBrandingWithJev, isJevBrandingEnabled } from "./jev";
 import { brandingRoutedTotal } from "./metrics";
-import { shadowJev, shouldShadowJev } from "./jev-shadow";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
@@ -109,30 +108,15 @@ export async function enhanceBrandingWithLLM(
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
 
-  const triedJev = isJevBrandingEnabled(input);
-  if (!triedJev) {
-    brandingRoutedTotal.inc({ model: "llm", reason: "not_in_rollout" });
+  if (!isJevBrandingEnabled()) {
+    brandingRoutedTotal.inc({ model: "llm", reason: "jev_off" });
   } else {
     const jev = await enhanceBrandingWithJev(input);
-    const escalateBelow = config.BRANDING_JEV_ESCALATE_BELOW;
-    const unsureOfLogo =
-      escalateBelow !== undefined &&
-      jev?.logoConfidence !== undefined &&
-      jev.logoConfidence < escalateBelow;
-    if (jev && !unsureOfLogo) {
-      brandingRoutedTotal.inc({ model: "jev", reason: "rollout" });
+    if (jev) {
+      brandingRoutedTotal.inc({ model: "jev", reason: "jev" });
       return jev.enhancement;
     }
-    brandingRoutedTotal.inc({
-      model: "llm",
-      reason: jev ? "logo_escalation" : "jev_unavailable",
-    });
-    if (jev) {
-      logger.info("Jev unsure of the logo, escalating branding to the LLM", {
-        logoConfidence: jev.logoConfidence,
-        escalateBelow,
-      });
-    }
+    brandingRoutedTotal.inc({ model: "llm", reason: "jev_unavailable" });
   }
 
   const prompt = buildBrandingPrompt(input);
@@ -300,10 +284,6 @@ export async function enhanceBrandingWithLLM(
     if (!hasLogoCandidates && answer?.logoSelection != null) {
       const { logoSelection: _, ...rest } = answer;
       answer = rest as BrandingEnhancement;
-    }
-    // Requests that already went to Jev have nothing to compare against.
-    if (!triedJev && answer && shouldShadowJev(input)) {
-      void shadowJev(input, answer, modelId);
     }
     return answer;
   } catch (error) {
