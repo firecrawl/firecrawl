@@ -51,7 +51,7 @@ def _prepare_agent_request(
         body["integration"] = str(integration).strip()
     if max_credits is not None and max_credits > 0:
         body["maxCredits"] = max_credits
-    if strict_constrain_to_urls is not None and strict_constrain_to_urls:
+    if strict_constrain_to_urls is not None:
         body["strictConstrainToURLs"] = strict_constrain_to_urls
     if model is not None:
         body["model"] = model
