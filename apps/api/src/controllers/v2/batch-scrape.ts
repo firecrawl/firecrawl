@@ -462,6 +462,22 @@ export async function batchScrapeController(
         error: "Job not found",
       });
     }
+
+    const group = await crawlGroup.getGroup(req.body.appendToId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (group.status !== "active" || sc.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${sc.cancelled ? "cancelled" : group.status}". Please start a new batch without appendToId.`,
+      });
+    }
+
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
     // first created.
