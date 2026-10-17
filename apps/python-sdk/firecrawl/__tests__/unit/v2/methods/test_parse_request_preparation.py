@@ -1,4 +1,7 @@
 import json
+import asyncio
+import os
+import tempfile
 import pytest
 
 from firecrawl.v2.types import ParseOptions
@@ -100,3 +103,30 @@ class TestParseRequestPreparation:
         payload = json.loads(fields["options"])
         assert "minAge" not in payload
         assert "min_age" not in payload
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("filename", [None, "report.html"])
+def test_parse_accepts_file_descriptor_names(async_mode, filename):
+    from firecrawl.v2.methods.aio.parse import _prepare_parse_request as prepare_async
+
+    with tempfile.TemporaryFile(mode="w+b") as backing, os.fdopen(os.dup(backing.fileno()), "w+b") as file:
+        file.write(b"<html>temporary upload</html>")
+        file.seek(0)
+        if async_mode:
+            _, files = asyncio.run(prepare_async(file, filename=filename))
+        else:
+            _, files = _prepare_parse_request(file, filename=filename)
+
+    name, content, mime = files["file"]
+    assert name == (filename or "upload")
+    assert content == b"<html>temporary upload</html>"
+    assert mime == ("text/html" if filename else "application/octet-stream")
+
+
+def test_parse_preserves_named_binary_file_basename(tmp_path):
+    path = tmp_path / "report.html"
+    path.write_bytes(b"<html>named upload</html>")
+    with path.open("rb") as file:
+        _, files = _prepare_parse_request(file)
+    assert files["file"] == ("report.html", b"<html>named upload</html>", "text/html")
