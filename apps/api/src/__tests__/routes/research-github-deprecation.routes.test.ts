@@ -52,6 +52,13 @@ vi.mock("../../lib/keyless", () => ({
   chargeKeylessCredits: async () => {},
 }));
 
+// These tests cover the deprecation notice, not the daily index limit.
+// The limiter needs Redis, so here it admits every call.
+vi.mock("../../lib/index-daily-limit", () => ({
+  reserveIndexCalls: vi.fn(async () => ({ ok: true, release: async () => {} })),
+  indexDailyLimitRefusal: vi.fn(),
+}));
+
 vi.mock("../../services/billing/credit_billing", () => ({
   billTeam: async () => {},
 }));

@@ -1,8 +1,16 @@
-import { config } from "../config";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { isKeylessTeamId } from "./keyless";
 import { logger } from "./logger";
 
-type GovIndexDailyReservation =
+// Daily call budgets for the free Firecrawl indexes, per team and per UTC day,
+// sized by plan. Every route into an index reserves from the same counter, so a
+// team cannot raise its budget by switching between the direct endpoint, the
+// search category and the Alexandria provider. A new route into an index (for
+// example the `research` category on /search) must reserve here as well.
+
+export type IndexName = "gov" | "research";
+
+type IndexDailyReservation =
   | { ok: true; release: () => Promise<void> }
   | {
       ok: false;
@@ -10,7 +18,28 @@ type GovIndexDailyReservation =
       limit: number;
       requested: number;
       retryAfterSeconds: number;
+      resetsAt: Date;
     };
+
+const DISPLAY_NAMES: Record<IndexName, string> = {
+  gov: "Government Index",
+  research: "Research Index",
+};
+
+const UPGRADE_URL = "https://firecrawl.dev/pricing";
+
+const BASE_CALLS_PER_DAY = 1000;
+
+// Thresholds are the Autumn `rate_limits` grants: 500 is Growth, 1000 is
+// Scale, and Enterprise grants more. A wrong threshold refuses or unlimits real
+// teams, not just their queue order. `PLAN_PRIORITY_TIERS` in
+// services/rate-limiter.ts keys on the same grants, and the Alexandria catalogue
+// in firecrawl/exchange (`usageLimits` on the index providers) and the public
+// rate-limits docs repeat these numbers; change them together.
+const PLAN_TIERS: { minMultiplier: number; callsPerDay: number | null }[] = [
+  { minMultiplier: 1000, callsPerDay: null },
+  { minMultiplier: 500, callsPerDay: 2000 },
+];
 
 const REDIS_TIMEOUT_MS = 500;
 
@@ -27,14 +56,23 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-export async function reserveGovIndexCalls(
+/** The team's daily calls per index for its rate-limit multiplier; null is unlimited. */
+function indexCallsPerDay(rateLimitMultiplier: number): number | null {
+  const tier = PLAN_TIERS.find(t => rateLimitMultiplier >= t.minMultiplier);
+  return tier ? tier.callsPerDay : BASE_CALLS_PER_DAY;
+}
+
+export async function reserveIndexCalls(
+  index: IndexName,
   teamId: string,
+  rateLimitMultiplier: number,
   calls: number,
   now = new Date(),
-): Promise<GovIndexDailyReservation> {
-  if (calls <= 0) return { ok: true, release: async () => {} };
+): Promise<IndexDailyReservation> {
+  const limit = indexCallsPerDay(rateLimitMultiplier);
+  if (calls <= 0 || limit === null)
+    return { ok: true, release: async () => {} };
 
-  const limit = config.GOV_INDEX_CALLS_PER_DAY;
   const day = now.toISOString().slice(0, 10);
   const resetAt = Math.floor(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) /
@@ -44,7 +82,9 @@ export async function reserveGovIndexCalls(
     1,
     Math.ceil(resetAt - now.getTime() / 1000),
   );
-  const key = `index-daily-calls:gov:${teamId}:${day}`;
+  // FROZEN: `index-daily-calls:gov:` holds live counters in production.
+  // Renaming the key resets every team's count for the day.
+  const key = `index-daily-calls:${index}:${teamId}:${day}`;
   const pending = Promise.resolve().then(() =>
     redisRateLimitClient.eval(
       `
@@ -84,7 +124,8 @@ return 1
           ),
         );
       } catch (error) {
-        logger.warn("Government index daily limit release failed", {
+        logger.warn("Index daily limit release failed", {
+          index,
           teamId,
           error,
         });
@@ -100,9 +141,11 @@ return 1
       limit,
       requested: calls,
       retryAfterSeconds,
+      resetsAt: new Date(resetAt * 1000),
     };
   } catch (error) {
-    logger.warn("Government index daily limit check failed; allowing request", {
+    logger.warn("Index daily limit check failed; allowing request", {
+      index,
       teamId,
       error,
     });
@@ -120,8 +163,33 @@ return 1
   }
 }
 
-export function govIndexDailyLimitMessage(
-  reservation: Extract<GovIndexDailyReservation, { ok: false }>,
-): string {
-  return `Daily government index limit reached: this team has used ${reservation.used} of ${reservation.limit} government index calls today and this request needs ${reservation.requested}. The limit resets at 00:00 UTC, in ${reservation.retryAfterSeconds}s. Contact help@firecrawl.com for bulk access.`;
+/** The caller-facing fields of a refusal, shared by every route into an index. */
+export function indexDailyLimitRefusal(
+  index: IndexName,
+  teamId: string,
+  reservation: Extract<IndexDailyReservation, { ok: false }>,
+) {
+  const name = DISPLAY_NAMES[index];
+  const totalMinutes = Math.max(
+    1,
+    Math.ceil(reservation.retryAfterSeconds / 60),
+  );
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const resetsIn = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  const limit = reservation.limit.toLocaleString("en-US");
+  const needs =
+    reservation.requested > 1
+      ? ` and this request needs ${reservation.requested.toLocaleString("en-US")}`
+      : "";
+  const error = isKeylessTeamId(teamId)
+    ? `Daily ${name} limit reached: requests without an API key are limited to ${limit} a day${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Add an API key, and upgrade to Scale or Enterprise for unlimited calls: ${UPGRADE_URL}`
+    : `Daily ${name} limit reached: your team has used ${reservation.used.toLocaleString("en-US")} of its ${limit} calls today${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Upgrade to Scale or Enterprise for unlimited ${name} calls: ${UPGRADE_URL}`;
+  return {
+    error,
+    limit: reservation.limit,
+    used: reservation.used,
+    resetsAt: reservation.resetsAt.toISOString(),
+    upgradeUrl: UPGRADE_URL,
+  };
 }

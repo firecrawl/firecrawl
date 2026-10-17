@@ -62,6 +62,7 @@ const run = (overrides: Record<string, unknown> = {}) =>
     requestId: "request-1",
     scrapeId: "scrape-1",
     timeoutMs: 50000,
+    rateLimitMultiplier: 1,
     ...overrides,
   });
 const executions = () =>

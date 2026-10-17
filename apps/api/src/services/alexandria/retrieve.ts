@@ -4,8 +4,9 @@ import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { reportExchangeUsageBilling } from "../../lib/exchange";
 import {
-  govIndexDailyLimitMessage,
-  reserveGovIndexCalls,
+  indexDailyLimitRefusal,
+  reserveIndexCalls,
+  type IndexName,
 } from "../../lib/index-daily-limit";
 import { logger } from "../../lib/logger";
 import {
@@ -28,6 +29,13 @@ export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
+
+// The providers served by the free Firecrawl indexes, each reserving from that
+// index's daily budget. Matched on the exact provider slug.
+const INDEX_PROVIDERS: [IndexName, string][] = [
+  ["gov", "firecrawl-gov-index"],
+  ["research", "firecrawl-research-index"],
+];
 
 // One record per charge id (team + x-request-id), written before the provider
 // call so a crash is found as unresolved instead of re-executed, and rewritten
@@ -94,6 +102,8 @@ export async function retrieveProviders(input: {
   timeoutMs: number;
   bypassBilling?: boolean;
   resultAuthorization?: string;
+  /** The team's Autumn rate-limit multiplier, which sizes its index budgets. */
+  rateLimitMultiplier: number;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -227,9 +237,12 @@ export async function retrieveProviders(input: {
     apiKeyId: input.apiKeyId,
   };
   const remaining = () => Math.max(1, record.deadline - Date.now());
-  let releaseGovCalls: (() => Promise<void>) | undefined;
+  const indexReleases: (() => Promise<void>)[] = [];
+  const releaseIndexCalls = async () => {
+    for (const release of indexReleases) await release();
+  };
   const refuse = async (response: ExchangeResponse, executed = false) => {
-    if (!executed && releaseGovCalls) await releaseGovCalls();
+    if (!executed) await releaseIndexCalls();
     await redisRateLimitClient.del(key);
     return { ...response, executed, scrapeId: input.scrapeId };
   };
@@ -237,6 +250,32 @@ export async function retrieveProviders(input: {
   let lockId: string | undefined;
   let maximumCredits: number;
   let refundable = false;
+  const finalize = async (credits: number) => {
+    if (!lockId) return true;
+    const settled = await autumnService.finalizeCreditsLock({
+      // Omitted without an org: the settle goes straight to Autumn, the route
+      // an unnameable org already took.
+      team:
+        input.orgId !== null
+          ? { teamId: input.teamId, orgId: input.orgId }
+          : undefined,
+      lockId,
+      action: credits > 0 ? "confirm" : "release",
+      ...(credits > 0 ? { overrideValue: credits } : {}),
+      heldValue: maximumCredits,
+      featureId,
+      properties,
+    });
+    if (!settled)
+      logger.error("Provider credits were not settled; hold expires unbilled", {
+        chargeId: id,
+        teamId: input.teamId,
+        lockId,
+        credits,
+      });
+    return settled;
+  };
+
   try {
     const denied = await authorizeProviders(
       input.teamId,
@@ -246,19 +285,28 @@ export async function retrieveProviders(input: {
     );
     if (denied) return refuse(denied);
 
-    const govCalls = input.calls.filter(
-      call => call.provider === "firecrawl-gov-index",
-    ).length;
-    if (govCalls > 0) {
-      const indexBudget = await reserveGovIndexCalls(input.teamId, govCalls);
-      if (!indexBudget.ok)
+    for (const [index, provider] of INDEX_PROVIDERS) {
+      const indexBudget = await reserveIndexCalls(
+        index,
+        input.teamId,
+        input.rateLimitMultiplier,
+        input.calls.filter(call => call.provider === provider).length,
+      );
+      if (!indexBudget.ok) {
+        const { error, ...limitFields } = indexDailyLimitRefusal(
+          index,
+          input.teamId,
+          indexBudget,
+        );
         return refuse(
-          refusal(429, govIndexDailyLimitMessage(indexBudget), {
+          refusal(429, error, {
             code: "index_daily_limit",
             retryAfterSeconds: indexBudget.retryAfterSeconds,
+            ...limitFields,
           }),
         );
-      releaseGovCalls = indexBudget.release;
+      }
+      indexReleases.push(indexBudget.release);
     }
 
     const quote = await exchangeRequest({
@@ -337,13 +385,18 @@ export async function retrieveProviders(input: {
         );
       lockId = hold.lockId;
     }
+
+    // The record is written before the provider runs, so a failed write means
+    // nothing ran: the catch below hands back the index calls and the hold.
+    record.lockId = lockId;
+    record.maximumCredits = maximumCredits;
+    await write(record);
   } catch (error) {
-    if (releaseGovCalls) await releaseGovCalls();
+    if (lockId) await finalize(0).catch(() => false);
+    await releaseIndexCalls();
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
   }
-  record.lockId = lockId;
-  record.maximumCredits = maximumCredits;
   const fail = async (reason: string): Promise<ProviderRetrieval> => {
     logger.error(
       "Provider request outcome is uncertain; needs reconciliation",
@@ -358,34 +411,8 @@ export async function retrieveProviders(input: {
     await write({ ...record, failure: reason }).catch(() => {});
     return { ...unresolved(id), executed: true, scrapeId: input.scrapeId };
   };
-  const finalize = async (credits: number) => {
-    if (!lockId) return true;
-    const settled = await autumnService.finalizeCreditsLock({
-      // Omitted without an org: the settle goes straight to Autumn, the route
-      // an unnameable org already took.
-      team:
-        input.orgId !== null
-          ? { teamId: input.teamId, orgId: input.orgId }
-          : undefined,
-      lockId,
-      action: credits > 0 ? "confirm" : "release",
-      ...(credits > 0 ? { overrideValue: credits } : {}),
-      heldValue: maximumCredits,
-      featureId,
-      properties,
-    });
-    if (!settled)
-      logger.error("Provider credits were not settled; hold expires unbilled", {
-        chargeId: id,
-        teamId: input.teamId,
-        lockId,
-        credits,
-      });
-    return settled;
-  };
 
   try {
-    await write(record);
     const response = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
