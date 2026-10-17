@@ -32,6 +32,7 @@ import {
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
+import { stripWwwFromUrl } from "../../lib/url-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
@@ -198,7 +199,7 @@ export async function getMapResults({
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = stripWwwFromUrl(url);
 
     let mapUrl =
       search && allowExternalLinks
