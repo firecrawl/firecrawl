@@ -193,6 +193,47 @@ export function removeDuplicateUrls(urls: string[]): string[] {
   return [...new Set(Array.from(urlMap.values()))];
 }
 
+export function removeWwwFromUrl(url: string): string {
+  const hasProtocol = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//i.test(url);
+  const parseTarget = hasProtocol ? url : `http://${url}`;
+  try {
+    const parsed = new URL(parseTarget);
+    if (/^www\./i.test(parsed.hostname)) {
+      let hostStartIndex = 0;
+      if (hasProtocol) {
+        const schemeEnd = url.indexOf("://") + 3;
+        let authEnd = url.length;
+        for (let i = schemeEnd; i < url.length; i++) {
+          if (url[i] === "/" || url[i] === "?" || url[i] === "#") {
+            authEnd = i;
+            break;
+          }
+        }
+        const atIndex = url.lastIndexOf("@", authEnd);
+        if (atIndex !== -1 && atIndex >= schemeEnd) {
+          hostStartIndex = atIndex + 1;
+        } else {
+          hostStartIndex = schemeEnd;
+        }
+      } else {
+        const slashIndex = url.search(/[/?#]/);
+        const authEnd = slashIndex === -1 ? url.length : slashIndex;
+        const atIndex = url.lastIndexOf("@", authEnd);
+        if (atIndex !== -1) {
+          hostStartIndex = atIndex + 1;
+        }
+      }
+
+      if (url.slice(hostStartIndex).match(/^www\./i)) {
+        return url.slice(0, hostStartIndex) + url.slice(hostStartIndex + 4);
+      }
+    }
+    return url;
+  } catch (_) {
+    return url.replace(/^www\./i, "");
+  }
+}
+
 export async function resolveRedirects(
   url: string,
   abort?: AbortSignal,
