@@ -519,7 +519,12 @@ func (c *Client) GetMonitorCheck(ctx context.Context, monitorID, checkID string,
 	if opts != nil && opts.AutoPaginate != nil {
 		autoPaginate = *opts.AutoPaginate
 	}
+	seen := make(map[string]struct{})
 	for autoPaginate && detail.Next != "" {
+		if _, ok := seen[detail.Next]; ok {
+			return nil, &FirecrawlError{Message: "monitor pagination cursor repeated"}
+		}
+		seen[detail.Next] = struct{}{}
 		raw, err := c.http.getAbsolute(ctx, detail.Next)
 		if err != nil {
 			return nil, err
