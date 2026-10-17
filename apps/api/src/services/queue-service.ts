@@ -4,6 +4,7 @@ import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
+import { updateExtract } from "../lib/extract/extract-redis";
 import type { BillTeamJobData } from "./billing/types";
 
 let loggingQueue: Queue;
@@ -35,7 +36,26 @@ export async function addExtractJobToQueue(
   extractId: string,
   data: ExtractJobData,
 ): Promise<void> {
-  await addExtractJob(extractId, data);
+  try {
+    await addExtractJob(extractId, data);
+  } catch (error) {
+    // Both extract controllers save a "processing" record before publishing.
+    // A rejected publish must not leave a job with no worker permanently pending.
+    // On an ambiguous timeout, a worker may still receive the job and later
+    // replace this status with its actual outcome.
+    try {
+      await updateExtract(extractId, {
+        status: "failed",
+        error: "Failed to enqueue extract job",
+      });
+    } catch (statusError) {
+      logger.error("Failed to mark unqueued extract as failed", {
+        extractId,
+        statusError,
+      });
+    }
+    throw error;
+  }
 }
 
 export function getGenerateLlmsTxtQueue() {
