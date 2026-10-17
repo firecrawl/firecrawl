@@ -129,7 +129,6 @@ const ROBOTS_TXT: &str = "ROBOTS_TXT";
 const FILE_TYPE: &str = "FILE_TYPE";
 const SOCIAL_MEDIA: &str = "SOCIAL_MEDIA";
 const EXTERNAL_LINK: &str = "EXTERNAL_LINK";
-const SECTION_LINK: &str = "SECTION_LINK";
 const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 
 #[inline]
@@ -205,18 +204,21 @@ fn is_internal_link(url: &Url, base_url: &Url) -> bool {
   link_domain == base_domain
 }
 
+/// Whether a fragment is a client-side route (`#/settings/account`) that
+/// addresses its own content, rather than an anchor within the page.
 #[inline]
-fn no_sections(url_str: &str) -> bool {
-  if !url_str.contains('#') {
-    return true;
-  }
+fn is_hash_route(fragment: &str) -> bool {
+  fragment.len() > 1 && fragment.contains('/')
+}
 
-  // Check if the hash fragment looks like a route (contains forward slashes and has substantial content)
-  if let Some(hash_part) = url_str.split('#').nth(1) {
-    hash_part.len() > 1 && hash_part.contains('/')
-  } else {
-    false
+/// Drops a section anchor so the link resolves to the page it points into.
+/// Returns whether the URL changed.
+fn strip_section_fragment(url: &mut Url) -> bool {
+  let is_section = url.fragment().is_some_and(|f| !is_hash_route(f));
+  if is_section {
+    url.set_fragment(None);
   }
+  is_section
 }
 
 #[inline]
@@ -323,6 +325,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   );
 
   let mut result_links = Vec::new();
+  let mut internal_links = HashSet::new();
   let mut denial_reasons = HashMap::new();
 
   for link in data.links {
@@ -330,13 +333,18 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       break;
     }
 
-    let url = match base_url.join(&link) {
+    let mut url = match base_url.join(&link) {
       Ok(url) => url,
       Err(_) => {
         denial_reasons.insert(link, URL_PARSE_ERROR.to_string());
         continue;
       }
     };
+
+    let is_internal = is_internal_link(&url, &base_url);
+    // `/docs#install` points into /docs: filter and crawl the page itself, so a
+    // page linked only through its sections is still discovered.
+    let is_section_link = is_internal && strip_section_fragment(&mut url);
 
     let path = url.path();
     let url_str = url.as_str();
@@ -356,13 +364,8 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       continue;
     }
 
-    if is_internal_link(&url, &base_url) {
+    if is_internal {
       // INTERNAL LINKS
-      if !no_sections(url_str) {
-        denial_reasons.insert(link, SECTION_LINK.to_string());
-        continue;
-      }
-
       if !data.allow_backward_crawling && !is_within_crawl_scope(path, &scope) {
         denial_reasons.insert(link, BACKWARD_CRAWLING.to_string());
         continue;
@@ -399,7 +402,14 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         }
       }
 
-      result_links.push(link);
+      // Section links collapse onto their page, which may already be listed.
+      if internal_links.insert(url_str.to_string()) {
+        result_links.push(if is_section_link {
+          url_str.to_string()
+        } else {
+          link
+        });
+      }
     } else {
       // EXTERNAL LINKS
       if is_social_media_or_email(url_str) {
@@ -556,7 +566,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     }
   }
 
-  let url = match Url::parse(&full_url) {
+  let mut url = match Url::parse(&full_url) {
     Ok(url) => url,
     Err(_) => {
       return Ok(FilterUrlResult {
@@ -577,6 +587,12 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
   };
+
+  let is_internal = is_internal_link(&url, &base_url);
+  // `/docs#install` points into /docs: filter and return the page itself.
+  if is_internal && strip_section_fragment(&mut url) {
+    full_url = url.to_string();
+  }
 
   let path = url.path();
   let url_str = url.as_str();
@@ -601,16 +617,8 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     data.robots_user_agent.as_deref(),
   );
 
-  if is_internal_link(&url, &base_url) {
+  if is_internal {
     // INTERNAL LINKS
-    if !no_sections(url_str) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(SECTION_LINK.to_string()),
-      });
-    }
-
     if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path.as_bytes())) {
       return Ok(FilterUrlResult {
         allowed: false,
@@ -1501,5 +1509,109 @@ mod tests {
     .unwrap();
     assert!(!result.allowed);
     assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
+  }
+
+  #[test]
+  fn test_is_hash_route() {
+    assert!(is_hash_route("/dashboard"));
+    assert!(is_hash_route("/user/profile"));
+    assert!(is_hash_route("abc/def"));
+    assert!(!is_hash_route("section"));
+    assert!(!is_hash_route("a"));
+    assert!(!is_hash_route(""));
+    assert!(!is_hash_route("/"));
+  }
+
+  // A page linked only through section anchors must still be discovered, so
+  // the anchor resolves to its page instead of being denied.
+  #[test]
+  fn test_filter_url_resolves_section_links_to_their_page() {
+    let page = "https://example.com/guide";
+    for (href, expected) in [
+      ("/docs#install", "https://example.com/docs"),
+      (
+        "https://www.example.com/docs#",
+        "https://www.example.com/docs",
+      ),
+      ("#top", page),
+      ("/app#/settings", "https://example.com/app#/settings"),
+    ] {
+      let result = _filter_url(filter_url_call(href, page, "https://example.com")).unwrap();
+      assert!(result.allowed, "{href}");
+      assert_eq!(result.url.as_deref(), Some(expected), "{href}");
+    }
+  }
+
+  #[test]
+  fn test_filter_links_returns_each_section_linked_page_once() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs#install".to_string(),
+        "https://example.com/docs#usage".to_string(),
+        "https://example.com/docs".to_string(),
+        "https://example.com/app#/settings".to_string(),
+        "https://example.com/app#/billing".to_string(),
+      ],
+      // Duplicates of a page must not use up the limit.
+      limit: Some(3),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: true,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(
+      result.links,
+      vec![
+        "https://example.com/docs",
+        "https://example.com/app#/settings",
+        "https://example.com/app#/billing",
+      ]
+    );
+    assert!(result.denial_reasons.is_empty());
+  }
+
+  // Filters judge the page a section link points into, and a denial is still
+  // reported against the link as it was discovered.
+  #[test]
+  fn test_filter_links_filters_the_page_of_a_section_link() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs#install".to_string(),
+        "https://example.com/blog#top".to_string(),
+      ],
+      limit: Some(10),
+      includes: vec!["^https://example\\.com/docs$".to_string()],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com".to_string(),
+      regex_on_full_url: true,
+      allow_backward_crawling: true,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(result.links, vec!["https://example.com/docs"]);
+    assert_eq!(
+      result
+        .denial_reasons
+        .get("https://example.com/blog#top")
+        .unwrap(),
+      "INCLUDE_PATTERN"
+    );
   }
 }

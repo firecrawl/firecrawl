@@ -1,0 +1,23 @@
+---
+// Fixture for crawling through section anchors: the guide page is linked from
+// here only as guide#install and guide#usage, so a crawl that skips the
+// sitemap reaches it only if those anchors resolve to the guide itself.
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Section Anchors — Crawl Fixture</title>
+	</head>
+	<body>
+		<main>
+			<h1 id="overview">Section Anchors</h1>
+			<nav>
+				<a href="#overview">Overview</a>
+				<a href="/crawl/section-anchors/guide#install">Install</a>
+				<a href="/crawl/section-anchors/guide#usage">Usage</a>
+			</nav>
+		</main>
+	</body>
+</html>
