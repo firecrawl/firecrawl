@@ -17,7 +17,7 @@ function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
   }
 
   if (typeof Buffer !== "undefined" && Buffer.isBuffer(input)) {
-    return new Blob([input], { type: contentType });
+    return new Blob([Uint8Array.from(input)], { type: contentType });
   }
 
   if (input instanceof ArrayBuffer) {
@@ -25,7 +25,12 @@ function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
   }
 
   if (ArrayBuffer.isView(input)) {
-    return new Blob([input], { type: contentType });
+    const bytes = new Uint8Array(
+      input.buffer,
+      input.byteOffset,
+      input.byteLength,
+    );
+    return new Blob([bytes.slice()], { type: contentType });
   }
 
   if (typeof input === "string") {
@@ -68,11 +73,7 @@ export async function parse(
 
   const formData = new FormData();
   formData.append("options", JSON.stringify(normalizedOptions));
-  formData.append(
-    "file",
-    toUploadBlob(file.data, file.contentType),
-    file.filename.trim(),
-  );
+  formData.append("file", blob, file.filename.trim());
 
   try {
     const res = await http.postMultipart<{
