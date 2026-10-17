@@ -21,6 +21,8 @@ function prepareAgentPayload(args: {
   threadId?: string;
   mode?: AgentMode;
   exchange?: AgentExchangeOptions;
+  /** Proxy country for every request the agent makes (ISO 3166-1 alpha-2). The agent cannot change it. */
+  location?: { country: string };
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -42,6 +44,7 @@ function prepareAgentPayload(args: {
   if (args.threadId != null) body.threadId = args.threadId;
   if (args.mode != null) body.mode = args.mode;
   if (args.exchange != null) body.exchange = args.exchange;
+  if (args.location != null) body.location = args.location;
   return body;
 }
 

@@ -714,6 +714,16 @@ const locationSchema = z
   })
   .optional();
 
+export const countryLocationSchema = z.strictObject({
+  country: z
+    .string()
+    .refine(
+      value => Object.keys(countries).includes(value.toUpperCase()),
+      "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
+    )
+    .transform(value => value.toLowerCase()),
+});
+
 // Unified entity taxonomy exposed to callers. Maps to fire-privacy's
 // internal span kinds (PRIVATE_PERSON / EMAIL_ADDRESS / ACCOUNT_NUMBER /
 // etc.) inside the fire-privacy client. Names chosen to match the public
@@ -1192,6 +1202,7 @@ export const agentRequestSchema = z
     threadId: z.string().uuid().optional(),
     mode: z.enum(["extract", "chat"]).optional(),
     exchange: agentExchangeSchema.optional(),
+    location: countryLocationSchema.optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
   // remain valid input and silently resolve to spark-2, so every request —
