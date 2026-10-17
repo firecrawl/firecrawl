@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { chInsert } from "./clickhouse-client";
+import { persistedTeamId } from "./keyless-team";
 import type { SearchV2Response } from "./entities";
 import type { MonitorTarget } from "../services/monitoring/types";
 
@@ -54,7 +55,7 @@ export async function trackScrape(opts: TrackScrapeParams): Promise<void> {
     {
       scrape_id: opts.scrapeId,
       request_id: opts.requestId,
-      team_id: opts.teamId,
+      team_id: persistedTeamId(opts.teamId),
       url: opts.url,
       url_domain: extractDomain(opts.url),
       origin: opts.origin,
@@ -259,7 +260,7 @@ export async function trackSearchRequest(
     {
       search_id: opts.searchId,
       request_id: opts.requestId,
-      team_id: opts.teamId,
+      team_id: persistedTeamId(opts.teamId),
       query: opts.query,
       origin: opts.origin,
       kind: opts.kind,
@@ -338,7 +339,7 @@ export async function trackSearchResults(
     "search_results",
     urls.map(({ url, type, index }) => ({
       search_id: opts.searchId,
-      team_id: opts.teamId,
+      team_id: persistedTeamId(opts.teamId),
       url,
       url_domain: extractDomain(url),
       result_type: type,

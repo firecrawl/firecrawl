@@ -1,7 +1,11 @@
 import { createHmac } from "node:crypto";
 import { isIPv4 } from "node:net";
-import { v5 as uuidv5 } from "uuid";
 import { config } from "../config";
+import {
+  KEYLESS_TEAM_PREFIX,
+  keylessTeamId,
+  keylessTeamUuid,
+} from "./keyless-team";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { redisRateLimitClient } from "../services/rate-limiter";
@@ -91,37 +95,12 @@ export function keylessExhaustionTelemetry(ip: string): Record<string, string> {
   return conversionCohort ? { conversionCohort } : {};
 }
 
-// Keyless teams reuse the `preview_` prefix so billing (autumn `isPreviewTeam`)
-// and GCS persistence are skipped automatically, with a dedicated infix so the
-// IP can be recovered when charging credits after a request completes.
-const KEYLESS_TEAM_PREFIX = "preview_keyless_";
-
-export function keylessTeamId(ip: string): string {
-  return `${KEYLESS_TEAM_PREFIX}${ip}`;
-}
+export { keylessTeamId, keylessTeamUuid };
 
 function keylessIpFromTeamId(teamId: string): string | null {
   return teamId.startsWith(KEYLESS_TEAM_PREFIX)
     ? teamId.slice(KEYLESS_TEAM_PREFIX.length)
     : null;
-}
-
-// Fixed namespace for deriving a stable per-keyless-team UUID. Tables like
-// `scrapes` require a UUID team_id, but keyless teams are `preview_keyless_<ip>`
-// strings. Mapping each to a deterministic UUIDv5 keeps rows per-IP-distinct
-// (so ownership checks such as interact still isolate keyless users) while
-// satisfying the UUID column — unlike the shared preview placeholder.
-const KEYLESS_TEAM_UUID_NAMESPACE = "9e6c8f2a-3b1d-4c7e-8a5f-2d4b6e8c0a1f";
-
-/**
- * Deterministic UUID for a keyless team's persisted rows, or null for
- * non-keyless teams (callers then fall back to the raw/placeholder team_id).
- */
-export function keylessTeamUuid(
-  teamId: string | null | undefined,
-): string | null {
-  if (!teamId || !teamId.startsWith(KEYLESS_TEAM_PREFIX)) return null;
-  return uuidv5(teamId, KEYLESS_TEAM_UUID_NAMESPACE);
 }
 
 /**

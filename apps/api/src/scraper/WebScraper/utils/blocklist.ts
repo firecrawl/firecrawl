@@ -1,4 +1,5 @@
 import { configDotenv } from "dotenv";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
 import { parse } from "tldts";
@@ -6,6 +7,9 @@ import { TeamFlags } from "../../../controllers/v1/types";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { exchangeClaimsUrl } from "../../../lib/exchange";
+import { persistedTeamId } from "../../../lib/keyless-team";
+import { logger } from "../../../lib/logger";
+import { isValidUuid } from "../../../lib/owner-id";
 
 configDotenv();
 
@@ -42,7 +46,19 @@ async function flushHits(): Promise<void> {
   if (config.USE_DB_AUTHENTICATION !== true) return;
   try {
     await db.insert(schema.blocklist_hits).values(batch);
-  } catch {}
+  } catch (error) {
+    // Database errors can include the inserted URLs; log only the SQLSTATE.
+    const cause = error instanceof DrizzleQueryError ? error.cause : error;
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? cause.code
+        : undefined;
+    logger.warn("Failed to record blocklist hits", {
+      hits: batch.length,
+      errorCode:
+        typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null,
+    });
+  }
 }
 
 function scheduleHitFlush(): void {
@@ -52,6 +68,14 @@ function scheduleHitFlush(): void {
     void flushHits();
   }, HIT_BUFFER_FLUSH_MS);
   if (typeof hitFlushTimer.unref === "function") hitFlushTimer.unref();
+}
+
+// blocklist_hits.team_id is a uuid column, and one invalid value fails the whole
+// batched insert, so a team id that is still not a UUID is stored as null.
+function hitTeamId(teamId: string | null | undefined): string | null {
+  if (!teamId) return null;
+  const stored = persistedTeamId(teamId);
+  return isValidUuid(stored) ? stored : null;
 }
 
 function recordHit(
@@ -65,7 +89,7 @@ function recordHit(
     id: uuidv7(),
     domain,
     url: url.length > 2048 ? url.slice(0, 2048) : url,
-    team_id: context.team_id ?? null,
+    team_id: hitTeamId(context.team_id),
     origin: context.origin ?? null,
   });
   if (hitBuffer.length >= HIT_BUFFER_MAX_SIZE) {
