@@ -11,6 +11,9 @@ export async function spreadSchemas(
   let multiEntitySchema: any = {
     type: "object",
     properties: {},
+    ...(schema.$id ? { $id: schema.$id } : {}),
+    ...(schema.$defs ? { $defs: schema.$defs } : {}),
+    ...(schema.definitions ? { definitions: schema.definitions } : {}),
     ...(schema.required ? { required: [] } : {}),
   };
 
