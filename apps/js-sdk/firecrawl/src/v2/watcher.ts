@@ -89,6 +89,7 @@ export class Watcher extends EventEmitter {
   private readonly timeout?: number;
   private ws?: WebSocket;
   private closed = false;
+  private startedAt?: number;
   private readonly emittedDocumentKeys = new Set<string>();
 
   constructor(http: HttpClient, jobId: string, opts: WatcherOptions = {}) {
@@ -109,6 +110,7 @@ export class Watcher extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    this.startedAt = Date.now();
     return new Promise<void>((resolve, reject) => {
       const onDone = () => { cleanup(); resolve(); };
       const onError = (err: any) => { cleanup(); resolve(); };
@@ -143,8 +145,20 @@ export class Watcher extends EventEmitter {
   }
 
   private attachWsHandlers(ws: WebSocket) {
-    let startTs = Date.now();
+    const startTs = this.startedAt ?? Date.now();
     const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
+    let fallingBack = false;
+    const fallBackToPolling = () => {
+      if (this.closed || fallingBack) return;
+      fallingBack = true;
+      // Closing the socket can also fire onclose; start only one poll loop.
+      try {
+        ws.close();
+      } catch {
+        // The HTTP fallback still works if the socket cannot be closed.
+      }
+      void this.pollLoop();
+    };
     ws.onmessage = (ev: MessageEvent) => {
       try {
         const raw = ensureUtf8String(ev.data);
@@ -185,11 +199,10 @@ export class Watcher extends EventEmitter {
       }
     };
     ws.onerror = () => {
-      this.emit("error", { status: "failed", data: [], error: "WebSocket error", id: this.jobId });
-      this.close();
+      fallBackToPolling();
     };
     ws.onclose = () => {
-      if (!this.closed) this.pollLoop();
+      fallBackToPolling();
     };
   }
 
@@ -249,9 +262,14 @@ export class Watcher extends EventEmitter {
   }
 
   private async pollLoop() {
-    const startTs = Date.now();
+    const startTs = this.startedAt ?? Date.now();
     const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
     while (!this.closed) {
+      if (timeoutMs && Date.now() - startTs > timeoutMs) {
+        this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
+        this.close();
+        break;
+      }
       try {
         const snap = this.kind === "crawl"
           ? await getCrawlStatus(this.http as any, this.jobId)
@@ -280,4 +298,3 @@ export class Watcher extends EventEmitter {
     if (this.ws && (this.ws as any).close) (this.ws as any).close();
   }
 }
-
