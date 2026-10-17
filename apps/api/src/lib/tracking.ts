@@ -268,9 +268,12 @@ export async function trackSearchRequest(
       country: opts.country ?? "",
       sources: opts.sources,
       num_results: opts.numResults,
-      search_credits: opts.searchCredits,
+      // The search charge can be fractional. The DDL for this table is not in
+      // this repo, and the other credit columns are integer, so the row keeps
+      // a whole-number record of the charge.
+      search_credits: Math.round(opts.searchCredits),
       scrape_credits: opts.scrapeCredits,
-      total_credits: opts.totalCredits,
+      total_credits: Math.round(opts.totalCredits),
       has_scrape_formats: opts.hasScrapeFormats,
       scrape_formats: opts.scrapeFormats,
       is_successful: opts.isSuccessful,
