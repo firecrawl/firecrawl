@@ -36,7 +36,7 @@ export function areMergeable_F0(obj1: any, obj2: any): boolean {
     }
 
     // If both values exist and are not null
-    if (val1 !== null && val2 !== null) {
+    if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
       nonNullComparisons++;
       if (val1 === val2) {
         matchingNonNullValues++;
