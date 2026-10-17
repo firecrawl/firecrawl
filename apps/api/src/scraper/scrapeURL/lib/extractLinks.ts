@@ -1,10 +1,7 @@
 // TODO: refactor
 import { load } from "cheerio"; // rustified
 import { logger } from "../../../lib/logger";
-import {
-  extractLinks as _extractLinks,
-  extractBaseHref as _extractBaseHref,
-} from "@mendable/firecrawl-rs";
+import { extractLinksWithBaseHref as _extractLinksWithBaseHref } from "@mendable/firecrawl-rs";
 import {
   extractLinksFromMarkdown,
   isMarkdownContentType,
@@ -53,8 +50,11 @@ async function extractLinksRust(
   html: string,
   baseUrl: string,
 ): Promise<string[]> {
-  const hrefs = await _extractLinks(html);
-  const baseHref = await _extractBaseHref(html, baseUrl);
+  // One native call, so the HTML is copied into Rust and parsed only once.
+  const { links: hrefs, baseHref } = await _extractLinksWithBaseHref(
+    html,
+    baseUrl,
+  );
   const links: string[] = [];
 
   hrefs.forEach(href => {
