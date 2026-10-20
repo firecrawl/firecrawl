@@ -49,7 +49,13 @@ async function readCache(key: string): Promise<VercelOidcResolution | null> {
     const cached = await getValue(key);
     if (cached === null) return null;
     const parsed = JSON.parse(cached) as VercelOidcResolution;
-    if (parsed.ok === false) return parsed;
+    if (
+      parsed.ok === false &&
+      typeof parsed.reason === "string" &&
+      parsed.reason.length > 0
+    ) {
+      return parsed;
+    }
     if (
       parsed.ok === true &&
       typeof parsed.apiKey === "string" &&

@@ -213,6 +213,31 @@ describe("createVercelJwks", () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
+  it("returns unavailable when a rotated key cannot be fetched", async () => {
+    let now = 1_000_000;
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce(async () => jwksResponse([signingJwk]))
+      .mockImplementation(async () => new Response("down", { status: 503 }));
+    const getKey = createVercelJwks(JWKS_URL, { fetchFn, now: () => now });
+
+    await verifyVercelOidcToken(await sign(), {
+      integrationId: INTEGRATION_ID,
+      getKey,
+    });
+    now += 31_000;
+
+    await expect(
+      verifyVercelOidcToken(await sign({ kid: "k2", key: other.privateKey }), {
+        integrationId: INTEGRATION_ID,
+        getKey,
+      }),
+    ).rejects.toBeInstanceOf(VercelJwksUnavailableError);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+
   it("keeps using cached keys for up to 24h when a refresh fails", async () => {
     let now = 1_000_000;
     const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
