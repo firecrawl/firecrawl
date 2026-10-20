@@ -216,10 +216,12 @@ describe("createVercelJwks", () => {
   it("keeps using cached keys for up to 24h when a refresh fails", async () => {
     let now = 1_000_000;
     const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const failedResponse = new Response("down", { status: 503 });
+    const cancelBody = vi.spyOn(failedResponse.body!, "cancel");
     const fetchFn = vi
       .fn()
       .mockImplementationOnce(async () => jwksResponse([signingJwk]))
-      .mockImplementation(async () => new Response("down", { status: 503 }));
+      .mockImplementation(async () => failedResponse);
     const getKey = createVercelJwks(JWKS_URL, { fetchFn, now: () => now });
     const token = await sign();
 
@@ -236,6 +238,7 @@ describe("createVercelJwks", () => {
       expect.any(Object),
     );
     expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(cancelBody).toHaveBeenCalledTimes(1);
 
     // The failed refresh is not retried on every request.
     now += 1_000;
