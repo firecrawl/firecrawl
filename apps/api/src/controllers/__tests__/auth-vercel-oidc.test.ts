@@ -9,10 +9,14 @@ import { getAutumnRateLimiter } from "../../services/rate-limiter";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { logger } from "../../lib/logger";
 
-const { rows, dbChain } = vi.hoisted(() => {
+const { rows, errors, dbChain } = vi.hoisted(() => {
   const rows = {
     replica: [] as unknown[],
     primary: [] as unknown[],
+  };
+  const errors = {
+    replica: null as Error | null,
+    primary: null as Error | null,
   };
   const dbChain = (which: "replica" | "primary") => {
     const chain = {
@@ -20,11 +24,14 @@ const { rows, dbChain } = vi.hoisted(() => {
       from: vi.fn(() => chain),
       leftJoin: vi.fn(() => chain),
       where: vi.fn(() => chain),
-      limit: vi.fn(async () => rows[which]),
+      limit: vi.fn(async () => {
+        if (errors[which]) throw errors[which];
+        return rows[which];
+      }),
     };
     return chain;
   };
-  return { rows, dbChain };
+  return { rows, errors, dbChain };
 });
 
 vi.mock("../../db/connection", () => ({
@@ -141,6 +148,8 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
   beforeEach(() => {
     config.USE_DB_AUTHENTICATION = true;
     config.VERCEL_MARKETPLACE_INTEGRATION_ID = INTEGRATION_ID;
+    errors.replica = null;
+    errors.primary = null;
     rows.replica = [{ teamId: TEAM_ID, apiKey: API_KEY }];
     rows.primary = [];
     vi.mocked(getValue).mockResolvedValue(null);
@@ -246,6 +255,29 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     );
   });
 
+  it("scopes cached resolutions to the configured integration", async () => {
+    await authenticateUser(request(await sign()), {}, RateLimiterMode.Scrape);
+    const cached = vi
+      .mocked(setValue)
+      .mock.calls.find(([key]) => key.startsWith("vercel_oidc_token:"));
+    expect(cached).toBeDefined();
+    vi.mocked(getValue).mockImplementation(async key =>
+      key === cached?.[0] ? cached![1] : null,
+    );
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID = "oac_other";
+
+    const auth = await authenticateUser(
+      request(await sign()),
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual(UNAUTHORIZED);
+    expect(getValue).toHaveBeenCalledWith(
+      expect.stringMatching(/^vercel_oidc_token:oac_other:/),
+    );
+  });
+
   it.each([
     [
       "another integration's issuer",
@@ -259,6 +291,14 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
       RateLimiterMode.Scrape,
     );
     expect(auth).toEqual(UNAUTHORIZED);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Request denied",
+      expect.objectContaining({
+        canonicalLog: "auth/denied",
+        reason: "invalid_vercel_oidc_token",
+        status: 401,
+      }),
+    );
     expect(authCreditUsageChunk).not.toHaveBeenCalled();
     const negative = vi
       .mocked(setValue)
@@ -304,6 +344,36 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     expect(auth.success).toBe(true);
   });
 
+  it("falls back to the primary when the resource replica query fails", async () => {
+    errors.replica = new Error("replica unavailable");
+    rows.primary = [{ teamId: TEAM_ID, apiKey: API_KEY }];
+
+    const auth = await authenticateUser(
+      request(await sign()),
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Vercel OIDC resource replica lookup failed",
+      expect.any(Object),
+    );
+  });
+
+  it("falls back to the primary when the replica row has no team", async () => {
+    rows.replica = [{ teamId: null, apiKey: API_KEY }];
+    rows.primary = [{ teamId: TEAM_ID, apiKey: API_KEY }];
+
+    const auth = await authenticateUser(
+      request(await sign()),
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(true);
+  });
+
   it("rejects a resource whose api_key_id is null with 401", async () => {
     rows.replica = [{ teamId: TEAM_ID, apiKey: null }];
     rows.primary = [{ teamId: TEAM_ID, apiKey: null }];
@@ -336,6 +406,14 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     );
 
     expect(auth).toEqual(UNAUTHORIZED);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Request denied",
+      expect.objectContaining({
+        canonicalLog: "auth/denied",
+        reason: "vercel_oidc_team_mismatch",
+        status: 401,
+      }),
+    );
   });
 
   it("returns 503 when no signing keys can be fetched", async () => {
@@ -376,6 +454,20 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
 
   it("treats JWTs as ordinary invalid keys when the integration is not configured", async () => {
     config.VERCEL_MARKETPLACE_INTEGRATION_ID = undefined;
+
+    const auth = await authenticateUser(
+      request(await sign()),
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual(UNAUTHORIZED);
+    expect(jwksFetch).not.toHaveBeenCalled();
+    expect(authCreditUsageChunk).not.toHaveBeenCalled();
+  });
+
+  it("does not enter the Marketplace auth path without DB authentication", async () => {
+    config.USE_DB_AUTHENTICATION = false;
 
     const auth = await authenticateUser(
       request(await sign()),

@@ -39,9 +39,9 @@ function jwksFor(integrationId: string): JWTVerifyGetKey {
   return getKey;
 }
 
-function cacheKey(token: string): string {
+function cacheKey(integrationId: string, token: string): string {
   const hash = createHash("sha256").update(token).digest("hex");
-  return `vercel_oidc_token:${hash.slice(0, 32)}`;
+  return `vercel_oidc_token:${integrationId}:${hash.slice(0, 32)}`;
 }
 
 async function readCache(key: string): Promise<VercelOidcResolution | null> {
@@ -104,8 +104,13 @@ async function lookupResource(installationId: string, resourceId: string) {
   // The replica serves the steady state. A miss re-reads the primary so a
   // resource provisioned moments ago is not negatively cached through replica
   // lag.
-  const [replicaRow] = await query(dbRr);
-  if (replicaRow?.apiKey) return replicaRow;
+  let replicaRow: Awaited<ReturnType<typeof query>>[number] | undefined;
+  try {
+    [replicaRow] = await query(dbRr);
+  } catch (error) {
+    logger.warn("Vercel OIDC resource replica lookup failed", { error });
+  }
+  if (replicaRow?.apiKey && replicaRow.teamId) return replicaRow;
   const [primaryRow] = await query(db);
   return primaryRow;
 }
@@ -121,7 +126,7 @@ export async function resolveVercelOidcToken(
   token: string,
   integrationId: string,
 ): Promise<VercelOidcResolution> {
-  const key = cacheKey(token);
+  const key = cacheKey(integrationId, token);
   const cached = await readCache(key);
   if (cached) return cached;
 

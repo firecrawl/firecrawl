@@ -108,6 +108,7 @@ export function createVercelJwks(
       signal: AbortSignal.timeout(JWKS_FETCH_TIMEOUT_MS),
     });
     if (response.status !== 200) {
+      await response.body?.cancel();
       throw new Error(`JWKS fetch returned HTTP ${response.status}`);
     }
     const jwks = (await response.json()) as JSONWebKeySet;

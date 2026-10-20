@@ -13,6 +13,8 @@ export type AuthDenialReason =
   | "invalid_oauth_token"
   | "oauth_purpose_mismatch"
   | "oauth_team_mismatch"
+  | "invalid_vercel_oidc_token"
+  | "vercel_oidc_team_mismatch"
   | "team_banned"
   | "ip_restricted"
   | "endpoint_restricted"

@@ -1033,7 +1033,11 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-  } else if (config.VERCEL_MARKETPLACE_INTEGRATION_ID && looksLikeJwt(token)) {
+  } else if (
+    config.USE_DB_AUTHENTICATION === true &&
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID &&
+    looksLikeJwt(token)
+  ) {
     // Vercel Marketplace OIDC resource token. It resolves to the API key issued
     // for the resource, so per-key behavior and billing stay on the key path.
     let resolution: VercelOidcResolution;
@@ -1053,11 +1057,11 @@ async function supaAuthenticateUser(
       throw error;
     }
     if (!resolution.ok) {
-      return {
+      return denied(req, "invalid_vercel_oidc_token", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     chunk = await getACUC(
@@ -1067,17 +1071,24 @@ async function supaAuthenticateUser(
       RateLimiterMode.Scrape,
       "general",
     );
-    if (chunk === null || chunk.team_id !== resolution.teamId) {
-      logger.warn("Vercel OIDC token rejected", {
-        reason: chunk === null ? "key_not_found" : "team_mismatch",
-        installationId: resolution.installationId,
-        resourceId: resolution.resourceId,
-      });
-      return {
+    if (chunk === null) {
+      return denied(req, "unknown_key", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
+    }
+    if (chunk.team_id !== resolution.teamId) {
+      return denied(
+        req,
+        "vercel_oidc_team_mismatch",
+        {
+          success: false,
+          error: "Unauthorized: Invalid token",
+          status: 401,
+        },
+        chunk,
+      );
     }
 
     teamId = chunk.team_id;
