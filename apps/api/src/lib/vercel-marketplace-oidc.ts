@@ -97,6 +97,7 @@ export function createVercelJwks(
   let fetchedAt = 0;
   let maxAgeMs = DEFAULT_JWKS_MAX_AGE_MS;
   let lastAttemptAt = Number.NEGATIVE_INFINITY;
+  let lastRefreshFailed = false;
   let pending: Promise<void> | undefined;
 
   const fetchKeys = async (): Promise<void> => {
@@ -119,14 +120,17 @@ export function createVercelJwks(
 
   // Refreshes the key set, deduplicating concurrent callers. A failed refresh
   // is tolerated while the last good keys are under 24h old.
-  const refresh = async (): Promise<void> => {
+  const refresh = async (): Promise<boolean> => {
     pending ??= fetchKeys().finally(() => {
       pending = undefined;
     });
     try {
       await pending;
+      lastRefreshFailed = false;
+      return true;
     } catch (error) {
       if (local && now() - fetchedAt < JWKS_STALE_LIMIT_MS) {
+        lastRefreshFailed = true;
         logger.error(
           "Vercel Marketplace JWKS refresh failed, using cached keys",
           {
@@ -134,8 +138,9 @@ export function createVercelJwks(
             keysAgeMs: now() - fetchedAt,
           },
         );
-        return;
+        return false;
       }
+      lastRefreshFailed = true;
       logger.error("Vercel Marketplace JWKS fetch failed, no usable keys", {
         error,
       });
@@ -148,7 +153,10 @@ export function createVercelJwks(
   const ensureKeys = async (): Promise<void> => {
     const age = now() - fetchedAt;
     if (local && age < maxAgeMs) return;
-    if (pending || !coolingDown()) return refresh();
+    if (pending || !coolingDown()) {
+      await refresh();
+      return;
+    }
     // A refresh failed moments ago: serve cached keys inside the stale limit
     // rather than refetching on every request.
     if (!local || age >= JWKS_STALE_LIMIT_MS) {
@@ -161,9 +169,12 @@ export function createVercelJwks(
     try {
       return await local!(protectedHeader, token);
     } catch (error) {
-      if (error instanceof joseErrors.JWKSNoMatchingKey && !coolingDown()) {
-        await refresh();
-        return local!(protectedHeader, token);
+      if (error instanceof joseErrors.JWKSNoMatchingKey) {
+        if (!coolingDown()) {
+          if (!(await refresh())) throw new VercelJwksUnavailableError();
+          return local!(protectedHeader, token);
+        }
+        if (lastRefreshFailed) throw new VercelJwksUnavailableError();
       }
       throw error;
     }

@@ -255,6 +255,23 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     );
   });
 
+  it("re-verifies a token when a cached rejection has no reason", async () => {
+    vi.mocked(getValue).mockImplementation(async key =>
+      key.startsWith("vercel_oidc_token:")
+        ? JSON.stringify({ ok: false })
+        : null,
+    );
+
+    const auth = await authenticateUser(
+      request(await sign()),
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(true);
+    expect(jwksFetch).toHaveBeenCalled();
+  });
+
   it("scopes cached resolutions to the configured integration", async () => {
     await authenticateUser(request(await sign()), {}, RateLimiterMode.Scrape);
     const cached = vi
