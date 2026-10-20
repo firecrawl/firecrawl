@@ -68,7 +68,12 @@ vi.mock("../../lib/spur", () => ({
 }));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { getRateLimitMultiplier: vi.fn() },
+  DEFAULT_TEAM_LIMITS: {
+    concurrency_limit: 2,
+    rate_limit_multiplier: 1,
+    is_paid_plan: false,
+  },
+  autumnService: { getTeamLimits: vi.fn() },
 }));
 
 vi.mock("../../services/agent-sponsor", () => ({
@@ -140,7 +145,11 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     rows.primary = [];
     vi.mocked(getValue).mockResolvedValue(null);
     vi.mocked(setValue).mockResolvedValue(undefined as never);
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+    vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+      concurrency_limit: 2,
+      rate_limit_multiplier: 1,
+      is_paid_plan: false,
+    });
     vi.mocked(getAutumnRateLimiter).mockReturnValue({
       consume: vi.fn().mockResolvedValue(undefined),
     } as never);
