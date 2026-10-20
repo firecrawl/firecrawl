@@ -256,6 +256,8 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
   });
 
   it("re-verifies a token when a cached rejection has no reason", async () => {
+    const integrationId = "oac_malformed_cache";
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID = integrationId;
     vi.mocked(getValue).mockImplementation(async key =>
       key.startsWith("vercel_oidc_token:")
         ? JSON.stringify({ ok: false })
@@ -263,13 +265,20 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
     );
 
     const auth = await authenticateUser(
-      request(await sign()),
+      request(
+        await sign({
+          iss: `https://integrations.vercel.com/${integrationId}`,
+        }),
+      ),
       {},
       RateLimiterMode.Scrape,
     );
 
     expect(auth.success).toBe(true);
-    expect(jwksFetch).toHaveBeenCalled();
+    expect(jwksFetch).toHaveBeenCalledWith(
+      `https://integrations.vercel.com/${integrationId}/jwks.json`,
+      expect.any(Object),
+    );
   });
 
   it("scopes cached resolutions to the configured integration", async () => {
