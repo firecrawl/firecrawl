@@ -128,13 +128,13 @@ export async function insertBrowserSession(
   row: Omit<BrowserSessionRow, "created_at" | "updated_at">,
 ): Promise<BrowserSessionRow> {
   const now = new Date().toISOString();
+  const persisted = persistedTeamId(row.team_id);
   const [data] = await db
     .insert(schema.browser_sessions)
     .values({
       ...row,
-      persisted_team_id: z.uuid().safeParse(persistedTeamId(row.team_id))
-        .success
-        ? persistedTeamId(row.team_id)
+      persisted_team_id: z.uuid().safeParse(persisted).success
+        ? persisted
         : null,
       created_at: now,
       updated_at: now,
