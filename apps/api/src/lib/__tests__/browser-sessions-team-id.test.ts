@@ -65,4 +65,12 @@ describe("insertBrowserSession team ids", () => {
       expect.objectContaining({ team_id: teamId, persisted_team_id: teamId }),
     );
   });
+
+  it("stores no uuid for the self-hosted bypass team", async () => {
+    await insertBrowserSession({ ...row, team_id: "bypass" });
+
+    expect(values).toHaveBeenLastCalledWith(
+      expect.objectContaining({ team_id: "bypass", persisted_team_id: null }),
+    );
+  });
 });

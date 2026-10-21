@@ -132,7 +132,10 @@ export async function insertBrowserSession(
     .insert(schema.browser_sessions)
     .values({
       ...row,
-      persisted_team_id: persistedTeamId(row.team_id),
+      persisted_team_id: z.uuid().safeParse(persistedTeamId(row.team_id))
+        .success
+        ? persistedTeamId(row.team_id)
+        : null,
       created_at: now,
       updated_at: now,
     })
