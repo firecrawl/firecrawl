@@ -116,6 +116,21 @@ describe("isTransientFirePdfFailure", () => {
     ["async http_503", new FirePdfAsyncFailure("http_503"), true],
     ["async network_error", new FirePdfAsyncFailure("network_error"), true],
     [
+      "async 5xx status",
+      new FirePdfAsyncFailure("http_5xx", { status: 500 }),
+      true,
+    ],
+    [
+      "async unexpected 4xx",
+      new FirePdfAsyncFailure("http_5xx", { status: 404 }),
+      false,
+    ],
+    [
+      "async response validation failure",
+      new FirePdfAsyncFailure("http_5xx", { error: "invalid body" }),
+      false,
+    ],
+    [
       "async deadline_too_close",
       new FirePdfAsyncFailure("deadline_too_close"),
       true,

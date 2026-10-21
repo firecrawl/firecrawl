@@ -59,13 +59,10 @@ type SubmitArgs = {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 };
 
-/**
- * The submit request may have reached FirePDF even though Firecrawl could not
- * observe a valid success response. The caller should best-effort DELETE the
- * idempotent scrape_id before falling back, then rethrow `originalError`.
- */
 /** fire-pdf already holds a job under this scrape_id with different inputs,
- * e.g. when the same scrape submits again after re-fetching the document. */
+ * e.g. when the same scrape submits again after re-fetching the document.
+ * That job belongs to the earlier submit and must be left alone; the request
+ * can still be served by the synchronous endpoint, which has no job id. */
 export class FirePdfScrapeIdConflictError extends Error {
   constructor() {
     super(
@@ -75,6 +72,11 @@ export class FirePdfScrapeIdConflictError extends Error {
   }
 }
 
+/**
+ * The submit request may have reached FirePDF even though Firecrawl could not
+ * observe a valid success response. The caller should best-effort DELETE the
+ * idempotent scrape_id before falling back, then rethrow `originalError`.
+ */
 export class SubmitJobMayHaveBeenAcceptedError extends Error {
   constructor(public readonly originalError: unknown) {
     super("FirePDF submit may have been accepted");

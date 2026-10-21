@@ -10,7 +10,6 @@ const RETRYABLE_ASYNC_REASONS = new Set<FallbackReason>([
   "http_429",
   "http_502",
   "http_503",
-  "http_5xx",
   "result_503",
   "network_error",
   "deadline_too_close",
@@ -36,6 +35,12 @@ export function isTransientFirePdfFailure(error: unknown): boolean {
   if (error instanceof FirePdfScrapeIdConflictError) return true;
   if (error instanceof FirePdfAsyncFailure) {
     if (RETRYABLE_ASYNC_REASONS.has(error.reason)) return true;
+    // http_5xx also covers unexpected 4xx and response-validation failures;
+    // only a real 5xx status is an infrastructure error.
+    if (error.reason === "http_5xx") {
+      const status = error.extra.status;
+      return typeof status === "number" && status >= 500;
+    }
     if (error.reason !== "terminal_failed") return false;
     const errorClass = jobErrorClass(error);
     return (
