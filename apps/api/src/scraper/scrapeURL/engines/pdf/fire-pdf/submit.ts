@@ -64,6 +64,17 @@ type SubmitArgs = {
  * observe a valid success response. The caller should best-effort DELETE the
  * idempotent scrape_id before falling back, then rethrow `originalError`.
  */
+/** fire-pdf already holds a job under this scrape_id with different inputs,
+ * e.g. when the same scrape submits again after re-fetching the document. */
+export class FirePdfScrapeIdConflictError extends Error {
+  constructor() {
+    super(
+      "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
+    );
+    this.name = "FirePdfScrapeIdConflictError";
+  }
+}
+
 export class SubmitJobMayHaveBeenAcceptedError extends Error {
   constructor(public readonly originalError: unknown) {
     super("FirePDF submit may have been accepted");
@@ -250,9 +261,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
         body: json,
       },
     );
-    throw new Error(
-      "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
-    );
+    throw new FirePdfScrapeIdConflictError();
   }
 
   if (status === 400) {
