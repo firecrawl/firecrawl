@@ -427,6 +427,10 @@ async function subscribe(
           });
 
           try {
+            // An unsettled earlier delivery (worker died, channel closed) counts as a failed attempt.
+            if (msg.fields.redelivered) {
+              throw new Error("ZDR cleanup job was redelivered unsettled");
+            }
             await handler(job);
           } catch (error) {
             recordSpanException(span, error);

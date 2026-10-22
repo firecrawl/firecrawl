@@ -94,12 +94,16 @@ vi.mock("./otel-tracer", () => ({
   recordSpanException,
 }));
 
-function message(body: unknown, headers?: Record<string, unknown>) {
+function message(
+  body: unknown,
+  headers?: Record<string, unknown>,
+  redelivered = false,
+) {
   return {
     content: Buffer.from(
       typeof body === "string" ? body : JSON.stringify(body),
     ),
-    fields: {},
+    fields: { redelivered },
     properties: { headers },
   };
 }
@@ -370,6 +374,44 @@ describe("ZDR cleanup queue", () => {
         "zdr.rabbitmq.outcome": "dead_lettered",
       }),
     });
+    await shutdownZdrQueue();
+  });
+
+  it("counts an unsettled redelivery as a failed attempt", async () => {
+    const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+    const handler = vi.fn(async () => {});
+    await consumeZdrCleanupJobs(handler);
+    const consume = consumerCallbacks[0];
+
+    const redelivered = message(
+      { blobId: "blob-6" },
+      { "zdr-attempt": 3 },
+      true,
+    );
+    await consume(redelivered);
+    const lastRedelivery = message(
+      { blobId: "blob-7" },
+      { "zdr-attempt": 24 },
+      true,
+    );
+    await consume(lastRedelivery);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(publishChannel.sendToQueue).toHaveBeenCalledOnce();
+    expect(publishChannel.sendToQueue).toHaveBeenCalledWith(
+      "zdr.cleanup.retry",
+      Buffer.from(JSON.stringify({ blobId: "blob-6" })),
+      expect.objectContaining({ headers: { "zdr-attempt": 4 } }),
+      expect.any(Function),
+    );
+    expect(consumeChannel.ack).toHaveBeenCalledWith(redelivered);
+    expect(consumeChannel.nack).toHaveBeenCalledWith(
+      lastRedelivery,
+      false,
+      false,
+    );
     await shutdownZdrQueue();
   });
 
