@@ -570,7 +570,7 @@ async function logRequestInternal(request: LoggedRequest) {
   }
 
   if (request.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
-    await enqueueZdrCleanupJob(request.id);
+    await enqueueZdrCleanupJob({ requestId: request.id });
   }
 
   await robustInsert(
