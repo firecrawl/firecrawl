@@ -47,6 +47,39 @@ describe("isSameDomain", () => {
     );
     expect(result).toBe(true);
   });
+
+  it("should distinguish registrable domains under a multi-label public suffix", () => {
+    expect(
+      isSameDomain("https://shop.alpha.co.uk", "https://api.beta.co.uk"),
+    ).toBe(false);
+    expect(
+      isSameDomain("https://shop.alpha.co.uk", "https://api.alpha.co.uk"),
+    ).toBe(true);
+  });
+
+  it("should distinguish sites under a private suffix", () => {
+    expect(
+      isSameDomain("https://alice.github.io", "https://bob.github.io"),
+    ).toBe(false);
+    expect(
+      isSameDomain("https://docs.alice.github.io", "https://alice.github.io"),
+    ).toBe(true);
+  });
+
+  it("should compare IP addresses by their full hostname", () => {
+    expect(isSameDomain("http://192.168.1.1", "http://10.0.1.1")).toBe(false);
+    expect(isSameDomain("http://192.168.1.1", "https://192.168.1.1")).toBe(
+      true,
+    );
+    expect(isSameDomain("http://[2001:db8::1]", "http://[2001:db8::2]")).toBe(
+      false,
+    );
+  });
+
+  it("should compare single-label hosts by their full hostname", () => {
+    expect(isSameDomain("http://localhost", "http://localhost")).toBe(true);
+    expect(isSameDomain("http://localhost", "http://intranet")).toBe(false);
+  });
 });
 
 describe("isSameSubdomain", () => {
