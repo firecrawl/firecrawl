@@ -54,8 +54,20 @@ jobs:
       - name: Push
         if: github.ref == 'refs/heads/main'
         run: docker push "$IMAGE:$GITHUB_SHA"
+
+  snapshot:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Snapshot on Flare
-        if: github.ref == 'refs/heads/main'
         env:
           FLARE_API_KEY: ${{ secrets.FLARE_API_KEY }}
           FLARE_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}

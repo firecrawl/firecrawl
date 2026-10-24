@@ -52,7 +52,9 @@ async function until(path, data, done, seconds) {
         `${path}: ${data.error ?? data.stop_reason ?? data.status}`,
       );
     if (Date.now() > deadline) throw new Error(`${path}: timed out`);
-    data = { ...data, ...(await flare(path, { query: "?wait=30" })) };
+    const next = await flare(path, { query: "?wait=30" });
+    if (!next) throw new Error(`${path}: not found`);
+    data = { ...data, ...next };
   }
   return data;
 }
@@ -108,43 +110,53 @@ if (same && !process.env.FLARE_SNAPSHOT_FORCE) {
   process.exit(0);
 }
 
-const base = await createSandbox({
-  image: image.id,
-  cmd: [],
-  resources,
-  timeout_s: 600,
-});
-await run(base, probe);
-let snap = await flare(`/v1/sandboxes/${base.id}/snapshots`, {
-  method: "POST",
-  json: { name, labels: { source } },
-  query: "?wait=30",
-});
-snap = await until(
-  `/v1/snapshots/${snap.id}`,
-  snap,
-  (s) => s.status === "ready",
-  300,
-);
-await remove(`/v1/sandboxes/${base.id}`);
-console.log(`snapshot ${snap.id}`);
+async function withSandbox(body, use) {
+  const sb = await createSandbox(body);
+  try {
+    return await use(sb);
+  } finally {
+    await remove(`/v1/sandboxes/${sb.id}`).catch((err) =>
+      console.error(`could not delete ${sb.id}: ${err.message}`),
+    );
+  }
+}
 
-const fork = await createSandbox({
-  snapshot: snap.id,
-  network: { egress: "none" },
-  timeout_s: 120,
-});
-const loaded = await run(fork, probe);
-const net = await run(fork, [
+const egressProbe = [
   "node",
   "-e",
-  "fetch('https://example.com', { signal: AbortSignal.timeout(5000) }).then(() => console.log('reached'), () => console.log('blocked'))",
-]);
-await remove(`/v1/sandboxes/${fork.id}`);
-if (loaded !== "ok") throw new Error("fork could not load jsdom");
-if (net !== "blocked")
-  throw new Error(`fork egress: expected blocked, got ${net}`);
-console.log(`fork ${fork.id} verified`);
+  "const s = require('node:net').connect({ host: '1.1.1.1', port: 443, timeout: 5000 }); s.on('connect', () => { console.log('reached'); s.destroy(); }); s.on('timeout', () => { console.log('blocked'); s.destroy(); }); s.on('error', (e) => console.log(['ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED', 'EACCES', 'EPERM'].includes(e.code) ? 'blocked' : 'error ' + e.code));",
+];
+
+const snap = await withSandbox(
+  { image: image.id, cmd: [], resources, timeout_s: 600 },
+  async (base) => {
+    await run(base, probe);
+    const created = await flare(`/v1/sandboxes/${base.id}/snapshots`, {
+      method: "POST",
+      json: { name, labels: { source } },
+      query: "?wait=30",
+    });
+    return until(
+      `/v1/snapshots/${created.id}`,
+      created,
+      (s) => s.status === "ready",
+      300,
+    );
+  },
+);
+console.log(`snapshot ${snap.id}`);
+
+await withSandbox(
+  { snapshot: snap.id, network: { egress: "none" }, timeout_s: 120 },
+  async (fork) => {
+    if ((await run(fork, probe)) !== "ok")
+      throw new Error("fork could not load jsdom");
+    const net = await run(fork, egressProbe);
+    if (net !== "blocked")
+      throw new Error(`fork egress: expected blocked, got ${net}`);
+    console.log(`fork ${fork.id} verified`);
+  },
+);
 
 if (previous && previous.id !== snap.id) {
   await remove(`/v1/snapshots/${previous.id}`);

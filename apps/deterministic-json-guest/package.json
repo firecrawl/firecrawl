@@ -1,0 +1,7 @@
+{
+  "name": "deterministic-json-guest",
+  "private": true,
+  "dependencies": {
+    "jsdom": "29.1.1"
+  }
+}
