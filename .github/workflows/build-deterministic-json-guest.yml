@@ -1,0 +1,63 @@
+name: Build Deterministic JSON Guest
+
+on:
+  pull_request:
+    paths:
+      - apps/deterministic-json-guest/**
+      - .github/workflows/build-deterministic-json-guest.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/deterministic-json-guest/**
+      - .github/workflows/build-deterministic-json-guest.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Recapture the snapshot even if the image is unchanged
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deterministic-json-guest-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/deterministic-json-guest
+
+jobs:
+  build:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build
+        run: docker build --platform linux/amd64 --tag "$IMAGE:$GITHUB_SHA" apps/deterministic-json-guest
+      - name: Check jsdom loads
+        run: |
+          docker run --rm --user node "$IMAGE:$GITHUB_SHA" node -e \
+            "const { JSDOM } = require('/opt/node_modules/jsdom'); new JSDOM('<p></p>')"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push
+        if: github.ref == 'refs/heads/main'
+        run: docker push "$IMAGE:$GITHUB_SHA"
+      - name: Snapshot on Flare
+        if: github.ref == 'refs/heads/main'
+        env:
+          FLARE_API_KEY: ${{ secrets.FLARE_API_KEY }}
+          FLARE_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLARE_SNAPSHOT_FORCE: ${{ inputs.force && '1' || '' }}
+        run: node apps/deterministic-json-guest/snapshot.mjs "$IMAGE:$GITHUB_SHA"
