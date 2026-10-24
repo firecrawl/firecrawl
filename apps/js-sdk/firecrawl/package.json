@@ -37,9 +37,7 @@
   },
   "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@types/dotenv": "^8.2.0",
     "@types/node": "^20.12.12",
-    "@types/uuid": "^9.0.8",
     "dotenv": "^16.4.5",
     "tsup": "^8.5.0",
     "typescript": "^5.4.5",

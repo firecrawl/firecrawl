@@ -36,15 +36,9 @@ importers:
         specifier: ^3.25.2
         version: 3.25.2(zod@4.6.7)
     devDependencies:
-      '@types/dotenv':
-        specifier: ^8.2.0
-        version: 8.2.3
       '@types/node':
         specifier: ^20.12.12
         version: 20.19.9
-      '@types/uuid':
-        specifier: ^9.0.8
-        version: 9.0.8
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
@@ -492,18 +486,11 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
-  '@types/dotenv@8.2.3':
-    resolution: {integrity: sha512-g2FXjlDX/cYuc5CiQvyU/6kkbP1JtmGzh0obW50zD7OKeILVL0NSpPWLXVfqoAGQjom2/SLLx9zHq0KXvD6mbw==}
-    deprecated: This is a stub types definition. dotenv provides its own type definitions, so you do not need this installed.
-
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
   '@types/node@20.19.9':
     resolution: {integrity: sha512-cuVNgarYWZqxRJDQHEB58GEONhOK79QVR/qYx4S7kcUObQvUwvFnYxJuuHUKm2aieN9X3yZB4LZsuYNU1Qphsw==}
-
-  '@types/uuid@9.0.8':
-    resolution: {integrity: sha512-jg+97EGIcY9AGHJJRaaPVgetKDsrTgbRjQ5Msgjh/DQKEFl0DtyRr/VCOyD1T2R1MNeWPK/u7JoGhlDZnKBAfA==}
 
   '@vitest/expect@4.1.12':
     resolution: {integrity: sha512-vFlTt+YEu9WBpNjdGayNmlMVzrWPi1+sv853/7t2FU7hpO5gAFBKHzQmkCq5Xjpr+evegF2994LQT3hF3mRlqQ==}
@@ -1500,17 +1487,11 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
-  '@types/dotenv@8.2.3':
-    dependencies:
-      dotenv: 16.6.1
-
   '@types/estree@1.0.8': {}
 
   '@types/node@20.19.9':
     dependencies:
       undici-types: 6.21.0
-
-  '@types/uuid@9.0.8': {}
 
   '@vitest/expect@4.1.12':
     dependencies:
