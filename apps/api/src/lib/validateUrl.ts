@@ -50,8 +50,8 @@ export const checkUrl = (url: string) => {
     throw new Error("Invalid URL");
   }
 
-  // Reject repeated schemes without counting colons in IPv6 hosts, ports, or userinfo.
-  if (/^https?:\/\/[a-z][a-z\d+.-]*:\/\//i.test(url)) {
+  // Reject a second scheme in the authority without counting IPv6 or port colons.
+  if (/^https?:\/\/[^\/?#@\[\]:]+:\/\//i.test(url)) {
     throw new Error("Invalid URL. Invalid protocol.");
   }
 
