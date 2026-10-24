@@ -343,7 +343,7 @@ export class ResearchLLMService {
         ).text,
       },
       markdown: "",
-      model: getModel("o3-mini"),
+      model: getModel("gpt-4.1"),
       costTrackingOptions: {
         costTracking,
         metadata: {
