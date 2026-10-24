@@ -3,7 +3,7 @@ import { config } from "../../../config";
 import { SANDBOX_TIMEOUT_MS } from "../config";
 import type { SandboxRunner } from "./runExtractor";
 
-const SNAPSHOT = "jsdom";
+const SNAPSHOT = "deterministic-json";
 
 // Runs inside the sandbox: executes job.json's code as the body of
 // `async (input, host, require) => { ... }` and speaks JSON lines with the
@@ -133,7 +133,7 @@ async function* stdoutLines(
   }
 }
 
-/** Runs each job in a fresh VM forked from the jsdom snapshot, with no network egress. */
+/** Runs each job in a fresh VM forked from the deterministic-json snapshot, with no network egress. */
 export function flareSandboxRunner(): SandboxRunner | undefined {
   const apiKey = config.FLARE_API_KEY;
   if (!apiKey) return undefined;
