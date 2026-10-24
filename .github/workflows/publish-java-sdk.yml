@@ -30,7 +30,9 @@ jobs:
           python-version: '3.x'
 
       - name: Install version check dependencies
-        run: pip install requests packaging
+        run: |
+          python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
+          pip install requests packaging
 
       - name: Run version check script
         id: version_check
