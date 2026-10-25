@@ -899,6 +899,16 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     let enginePromises: EngineBundlePromise[] = [];
     const enginesAttempted: string[] = [];
 
+    // A feature escalation (AddFeatureError/RemoveFeatureError) raised by one
+    // attempt is not a reason to abandon attempts that are still running: the
+    // speculation that escalated may lose while a waterfalled browser attempt
+    // is about to return a perfectly good page. Hold the escalation instead and
+    // only surface it once no attempt can still produce a result, or once the
+    // remaining attempts have used up their own reasonable-time budget.
+    let deferredFeatureError: AddFeatureError | RemoveFeatureError | null =
+      null;
+    let deferredFeatureDeadline: number | null = null;
+
     meta.abort.throwIfAborted();
 
     let result: EngineScrapeResultWithContext | null = null;
@@ -961,6 +971,20 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                   }),
                 ]
               : []),
+            ...(deferredFeatureDeadline !== null
+              ? [
+                  new Promise<EngineScrapeResultWithContext>((_, reject) => {
+                    timeouts.push(
+                      setTimeout(
+                        () => {
+                          reject(deferredFeatureError);
+                        },
+                        Math.max(0, deferredFeatureDeadline! - Date.now()),
+                      ),
+                    );
+                  }),
+                ]
+              : []),
             new Promise<EngineScrapeResultWithContext>((_, reject) => {
               timeouts.push(
                 setTimeout(() => {
@@ -1017,7 +1041,33 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               // catch-all branch and get reported as an unexpected error.
             } else if (
               error.error instanceof AddFeatureError ||
-              error.error instanceof RemoveFeatureError ||
+              error.error instanceof RemoveFeatureError
+            ) {
+              // One attempt is asking for a feature toggle. Stop that attempt
+              // only: any other attempt that is still running may still
+              // produce the page, so it must not be discarded.
+              enginePromises = enginePromises.filter(
+                x => x.engine !== error.engine,
+              );
+
+              if (enginePromises.length === 0) {
+                // Nothing is left that could still produce a result.
+                throw error.error;
+              }
+
+              if (deferredFeatureError === null) {
+                deferredFeatureError = error.error;
+                deferredFeatureDeadline =
+                  Date.now() +
+                  Math.max(
+                    ...enginePromises.map(x =>
+                      getEngineMaxReasonableTime(meta, x.engine),
+                    ),
+                  );
+              }
+
+              continue;
+            } else if (
               error.error instanceof SiteError ||
               error.error instanceof SiteRestrictionError ||
               error.error instanceof SSLError ||
@@ -1073,6 +1123,11 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
             // If we don't have any engines waterfalled, let's waterfall the next engine
             if (enginePromises.length === 0) {
+              if (deferredFeatureError !== null) {
+                // Nothing left that could still produce a result: honour the
+                // escalation the failed attempt asked for.
+                throw deferredFeatureError;
+              }
               break;
             }
 
