@@ -16,6 +16,8 @@ minimumReleaseAgeExclude:
   - "@typescript/typescript6"
   - "@typescript/typescript-*"
 overrides:
+  # GHSA-mrhx-c7xc-m3w5: fixed in 4.6.6. Bounded <5.0.0; cannot resolve to 5.x.
+  "zod@>=4.0.0 <4.6.6": "4.6.7"
   # GHSA-27r3-jxmh-p828: Express 5.2.1 also loads body-parser 2.x.
   "body-parser@<1.20.9": "1.20.9"
   "body-parser@>=2.0.0 <2.4.0": "2.4.0"
