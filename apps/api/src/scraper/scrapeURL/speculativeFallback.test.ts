@@ -6,6 +6,7 @@ config.ENV = "test";
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { CostTracking } from "../../lib/cost-tracking";
+import { AddFeatureError } from "./error";
 
 /**
  * Regression coverage for the engine waterfall race: a speculative engine that
@@ -17,6 +18,14 @@ import { CostTracking } from "../../lib/cost-tracking";
  * The engines module is faked so the ordering is fully controlled: only the
  * engine selection and the per-engine answers are synthetic, the waterfall,
  * escalation and retry code under test is the real implementation.
+ *
+ * The 401/403/429 -> stealthProxy conversion itself lives in this file's
+ * success-factor check, which runs after the engine's page has been parsed; how
+ * long that takes depends on the machine load, so the case that asserts a
+ * still-running browser result must not depend on it. That case raises the
+ * escalation at the engine boundary instead, which is the same
+ * ``AddFeatureError`` the waterfall sees in production. The conversion is
+ * covered by the escalation cases below, which do drive it with a 403.
  */
 
 type Plan = {
@@ -25,6 +34,8 @@ type Plan = {
   statusCode: number;
   markdown?: string;
   html?: string;
+  /** Raise this feature escalation instead of returning a result. */
+  throwFeature?: "stealthProxy";
 };
 
 const harness = vi.hoisted(() => ({
@@ -60,6 +71,9 @@ vi.mock("./engines", async importOriginal => {
         throw new Error("speculativeFallback: no plan for engine " + engine);
       }
       await new Promise(resolve => setTimeout(resolve, plan.delayMs));
+      if (plan.throwFeature !== undefined) {
+        throw new AddFeatureError([plan.throwFeature]);
+      }
       return {
         url: meta.url,
         html: plan.html ?? "",
@@ -94,15 +108,19 @@ describe("speculative fallback escalation", () => {
   });
 
   it("keeps a browser result that is still running when a waterfalled fetch hits a block", async () => {
-    harness.reasonableTimes = { playwright: 100, fetch: 100 };
+    // The browser answers at +600ms; the fetch is waterfalled at the browser's
+    // 400ms reasonable time and escalates at once, which grants the attempts
+    // still running another 400ms -- past the browser's answer, so its result
+    // must stay eligible and win.
+    harness.reasonableTimes = { playwright: 400, fetch: 400 };
     harness.plans = {
       playwright: {
-        delayMs: 400,
+        delayMs: 600,
         statusCode: 200,
         markdown: "late browser result",
       },
-      // Waterfalled at +100ms, blocked immediately.
-      fetch: { delayMs: 5, statusCode: 403 },
+      // Waterfalled at +400ms, escalates immediately.
+      fetch: { delayMs: 5, statusCode: 403, throwFeature: "stealthProxy" },
     };
 
     const out = await scrape();
@@ -190,9 +208,22 @@ describe("speculative fallback escalation", () => {
     };
 
     const start = Date.now();
-    // The request deadline still terminates the scrape; it surfaces as the
-    // timeout error rather than as a completed response.
-    await expect(scrape({ timeout: 1000 })).rejects.toThrow(/timed out/i);
+    // The request deadline still terminates the scrape. Two mechanisms enforce
+    // it (the race's own timer and the abort manager), and which one fires
+    // first decides the surface: the abort manager rethrows, the race timer
+    // returns an unsuccessful response. Assert the deadline outcome, not one
+    // of the two surfaces.
+    const outcome = await scrape({ timeout: 1000 }).then(
+      result => ({ result }),
+      error => ({ error }),
+    );
+    const error =
+      "error" in outcome
+        ? outcome.error
+        : outcome.result.success
+          ? undefined
+          : outcome.result.error;
+    expect(String((error as Error).message)).toMatch(/timed out/i);
     expect(elapsedSince(start)).toBeLessThan(3000);
   });
 });
