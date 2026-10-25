@@ -29,7 +29,7 @@ overrides:
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  fast-uri: "3.1.8"
+  fast-uri: "3.1.9"
   "glob@>=10.2.0 <10.5.0": ">=10.5.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
