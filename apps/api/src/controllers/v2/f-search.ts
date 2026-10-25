@@ -13,10 +13,7 @@ const searchRequestSchema = z.object({
   query: z.string().min(1).max(500),
   limit: z.int().min(1).max(100).prefault(50),
   offset: z.int().min(0).prefault(0),
-  mode: z
-    .enum(["hybrid", "keyword", "semantic", "bm25"])
-
-    .prefault("hybrid"),
+  mode: z.enum(["hybrid", "keyword", "semantic", "bm25"]).prefault("hybrid"),
   filters: z
     .object({
       domain: z.string().optional(),
@@ -25,7 +22,6 @@ const searchRequestSchema = z.object({
       minFreshness: z.number().min(0).max(1).optional(),
       language: z.string().optional(),
     })
-
     .prefault({}),
 });
 
@@ -36,7 +32,6 @@ const searchChunksRequestSchema = z.object({
     .object({
       domain: z.string().optional(),
     })
-
     .prefault({}),
 });
 

@@ -29,8 +29,8 @@
     "axios": "1.20.0",
     "firecrawl": "4.49.1",
     "typescript-event-target": "^1.1.1",
-    "zod": "^3.23.8",
-    "zod-to-json-schema": "^3.23.0"
+    "zod": "^3.25.28 || ^4.6.6",
+    "zod-to-json-schema": "^3.25.2"
   },
   "bugs": {
     "url": "https://github.com/firecrawl/firecrawl/issues"

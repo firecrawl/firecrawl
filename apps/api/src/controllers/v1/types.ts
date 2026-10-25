@@ -461,7 +461,6 @@ const baseScrapeOptions = z.strictObject({
       "menu",
     ])
     .array()
-
     .prefault(["markdown"])
     .refine(
       x => !(x.includes("screenshot") && x.includes("screenshot@fullPage")),

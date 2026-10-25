@@ -4,6 +4,9 @@ minimumReleaseAge: 4320 # 3 days
 minimumReleaseAgeExclude:
   - firecrawl
 overrides:
+  # GHSA-mrhx-c7xc-m3w5: every zod <4.6.6 is affected, 3.x included, and 3.x has no
+  # fixed release. The published firecrawl dependency only uses zod for types.
+  "zod@<4.6.6": "4.6.7"
   "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1"
   "minimatch@<10.2.3": ">=10.2.3"
   "rollup@<4.59.0": ">=4.59.0"

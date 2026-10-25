@@ -814,7 +814,6 @@ const scrapeOptionFields = z.strictObject({
           z.strictObject({ type: z.literal("video") }),
         ])
         .array()
-
         .prefault([{ type: "markdown" }]),
     )
     .refine(x => {
@@ -2605,7 +2604,6 @@ export const searchRequestSchema = z
           ]),
         ),
       ])
-
       .prefault(["web"]),
     categories: z
       .preprocess(
@@ -2674,7 +2672,6 @@ export const searchRequestSchema = z
                 screenshotFormatWithOptions,
               ])
               .array()
-
               .prefault([]),
           )
           .refine(x => {
