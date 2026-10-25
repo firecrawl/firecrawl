@@ -129,7 +129,7 @@
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",
     "marked": "^14.1.2",
-    "multer": "^2.4.0",
+    "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^3.6.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
