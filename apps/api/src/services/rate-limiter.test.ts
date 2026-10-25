@@ -399,7 +399,9 @@ describe("getAutumnRateLimiter", () => {
   });
 
   it("scales the exchange mode like scrape", () => {
-    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(10);
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 1).points,
+    );
     expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 50).points).toBe(
       getAutumnRateLimiter(RateLimiterMode.Scrape, 50).points,
     );
@@ -415,6 +417,43 @@ describe("getAutumnRateLimiter", () => {
     expect(
       getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1000).points,
     ).toBe(10000);
+  });
+
+  it("raises free scrape, search and exchange to the minimum", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 1).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Search, 1).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(50);
+    // A missing or invalid multiplier is treated as ×1.
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Search, 0).points).toBe(50);
+  });
+
+  it("leaves free limits without a minimum at base", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Map, 1).points).toBe(10);
+    expect(getAutumnRateLimiter(RateLimiterMode.Crawl, 1).points).toBe(2);
+    expect(getAutumnRateLimiter(RateLimiterMode.Extract, 1).points).toBe(2);
+  });
+
+  it("applies the minimum to every multiplier below 5, not only ×1", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 2).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Search, 4).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 5).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 6).points).toBe(60);
+  });
+
+  it("keeps base × multiplier when it is above the minimum", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 10).points).toBe(100);
+    expect(getAutumnRateLimiter(RateLimiterMode.Search, 10).points).toBe(100);
+  });
+
+  it("lets an override go below the minimum", () => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      1,
+      flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+    );
+
+    expect(limiter.points).toBe(5);
   });
 
   it("replaces the computed limit with the override for that mode", () => {

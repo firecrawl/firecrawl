@@ -46,9 +46,9 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
 
 /**
  * Per-minute base rate limits, i.e. the ×1 values. The effective limit is
- * `base × multiplier`, where the multiplier is read from Autumn's `rate_limits`
- * feature. Modes absent here are not multiplier-scaled and use the fallback
- * table.
+ * `base × multiplier`, raised to MIN_RATE_LIMITS where set, and the
+ * multiplier is read from Autumn's `rate_limits` feature. Modes absent here
+ * are not multiplier-scaled and use the fallback table.
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
@@ -67,6 +67,19 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
   [RateLimiterMode.BrowserExecute]: 10,
   [RateLimiterMode.CrawlStatus]: 500,
   [RateLimiterMode.ExtractStatus]: 500,
+};
+
+/**
+ * Per-minute minimums applied after the multiplier. Agent traffic is bursty,
+ * so the ×1 scrape and search limits refused valid calls from free teams.
+ * Raising the floor instead of the base lifts free without changing any plan
+ * whose `base × multiplier` is already higher. Exchange keeps parity with
+ * Scrape, as in the base table.
+ */
+const MIN_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
+  [RateLimiterMode.Scrape]: 50,
+  [RateLimiterMode.Exchange]: 50,
+  [RateLimiterMode.Search]: 50,
 };
 
 /**
@@ -102,12 +115,12 @@ export function getRateLimitOverride(
 /**
  * Builds the per-minute rate limiter for an authenticated team from its Autumn
  * rate-limit multiplier: the effective limit is `base × multiplier` for
- * multiplier-scaled modes (default ×1). Modes without a base fall back to the
- * static table.
+ * multiplier-scaled modes (default ×1), never below the mode's MIN_RATE_LIMITS
+ * entry. Modes without a base fall back to the static table.
  *
  * An org-level override for the mode replaces that whole computation, so the
- * multiplier and the base table are both discarded. Modes without an override
- * keep the normal result.
+ * multiplier, the base table and the minimum are all discarded. Modes without
+ * an override keep the normal result.
  */
 export function getAutumnRateLimiter(
   mode: RateLimiterMode,
@@ -123,7 +136,7 @@ export function getAutumnRateLimiter(
   let rateLimit: number;
   if (base !== undefined) {
     const safeMultiplier = multiplier > 0 ? multiplier : 1;
-    rateLimit = base * safeMultiplier;
+    rateLimit = Math.max(base * safeMultiplier, MIN_RATE_LIMITS[mode] ?? 0);
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
   }
