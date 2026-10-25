@@ -494,5 +494,12 @@ describe("FirePDF table format", () => {
     expect(buildFirePdfJobOptions({ ...base, tableFormat: undefined })).toEqual(
       { pages_estimate: 2, mode: "auto", training_capture: trainingCapture },
     );
+    expect(
+      buildFirePdfJobOptions({
+        ...base,
+        tableFormat: undefined,
+        trainingCapture: undefined,
+      }),
+    ).toEqual({ pages_estimate: 2, mode: "auto" });
   });
 });
