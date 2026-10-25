@@ -706,6 +706,15 @@ const configSchema = z.object({
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
   RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
+  // Stable percentage of teams, by a hash of the team id, that get the
+  // per-minute minimums in services/rate-limiter.ts. The other teams keep
+  // `base × multiplier`, so 0 (the default) gives the limits from before the
+  // minimums existed and is also the kill switch.
+  RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
 
   // Testing
   TEST_API_KEY: z.string().optional(),

@@ -741,6 +741,58 @@ describe("authenticateUser", () => {
     );
   });
 
+  it("logs the team's rate-limit minimum arm on a keyed 429", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-limited",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({
+      consume: vi.fn().mockRejectedValue({
+        msBeforeNext: 41_200,
+        consumedPoints: 51,
+        remainingPoints: 0,
+      }),
+    } as never);
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const originalPercent = config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT;
+
+    const armAt = async (percent: number) => {
+      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = percent;
+      error.mockClear();
+      await authenticateUser(
+        {
+          headers: {
+            authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+          },
+          socket: { remoteAddress: "127.0.0.1" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+      );
+      const call = (error.mock.calls as unknown as [string, any][]).find(
+        ([message]) => message.startsWith("Rate limit exceeded"),
+      );
+      return call?.[1]?.rateLimitMinimumArm;
+    };
+
+    try {
+      expect(await armAt(100)).toBe("treatment");
+      expect(await armAt(0)).toBe("control");
+    } finally {
+      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = originalPercent;
+    }
+  });
+
   it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
@@ -1004,6 +1056,7 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
       1,
       flags,
+      "team-1",
     );
   });
 
@@ -1042,6 +1095,7 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
       50,
       flags,
+      "team-1",
     );
   });
 
@@ -1087,6 +1141,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         flags,
+        "team-1",
       );
     });
 
@@ -1103,6 +1158,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         50,
         flags,
+        "team-1",
       );
     });
 
@@ -1119,6 +1175,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         flags,
+        "team-1",
       );
     });
 
@@ -1136,6 +1193,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         flags,
+        "team-1",
       );
     });
 
@@ -1164,6 +1222,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         overrideFlags,
+        "team-1",
       );
     });
   });
@@ -1525,6 +1584,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.BrowserExecute,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         null,
+        "team-mcp",
       );
     });
   });
@@ -1627,6 +1687,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
+        "team-1",
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
@@ -1646,6 +1707,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         2500,
         null,
+        "team-1",
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [, value, ttl] = vi.mocked(setValue).mock.calls[0];
@@ -1665,6 +1727,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
+        "team-1",
       );
     });
 
@@ -1742,6 +1805,7 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
+        "team-1",
       );
     });
   });

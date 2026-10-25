@@ -11,6 +11,7 @@ import {
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
+  rateLimitMinimumApplies,
 } from "../services/rate-limiter";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
@@ -835,7 +836,7 @@ async function buildAuthenticatedRateLimiter(
       multiplier = Math.max(multiplier, minMultiplier);
     }
   }
-  return getAutumnRateLimiter(mode, multiplier, flags);
+  return getAutumnRateLimiter(mode, multiplier, flags, chunk.team_id);
 }
 
 type AuthenticateOptions = {
@@ -1128,6 +1129,13 @@ async function supaAuthenticateUser(
       teamId,
       mode,
       rateLimiterRes,
+      // A/B arm of the rate-limit minimum rollout. Assignment only: a team
+      // whose limit is already above the minimum is in an arm but unaffected.
+      rateLimitMinimumArm: chunk
+        ? rateLimitMinimumApplies(chunk.team_id)
+          ? "treatment"
+          : "control"
+        : undefined,
     });
 
     const secs = Math.ceil(rateLimiterRes.msBeforeNext / 1000) || 1;

@@ -2,6 +2,7 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import type { TeamFlags } from "../controllers/v1/types";
+import { sampled } from "../lib/rollout";
 import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
@@ -46,9 +47,10 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
 
 /**
  * Per-minute base rate limits, i.e. the ×1 values. The effective limit is
- * `base × multiplier`, raised to MIN_RATE_LIMITS where set, and the
- * multiplier is read from Autumn's `rate_limits` feature. Modes absent here
- * are not multiplier-scaled and use the fallback table.
+ * `base × multiplier`, raised to MIN_RATE_LIMITS where set for teams in the
+ * minimum rollout, and the multiplier is read from Autumn's `rate_limits`
+ * feature. Modes absent here are not multiplier-scaled and use the fallback
+ * table.
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
@@ -74,13 +76,26 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
  * so the ×1 scrape and search limits refused valid calls from free teams.
  * Raising the floor instead of the base lifts free without changing any plan
  * whose `base × multiplier` is already higher. Exchange keeps parity with
- * Scrape, as in the base table.
+ * Scrape, as in the base table. Applies only to teams in the minimum rollout;
+ * see rateLimitMinimumApplies.
  */
 const MIN_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
   [RateLimiterMode.Scrape]: 50,
   [RateLimiterMode.Exchange]: 50,
   [RateLimiterMode.Search]: 50,
 };
+
+/**
+ * Whether a team gets MIN_RATE_LIMITS: a sticky A/B split on a hash of the
+ * team id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its
+ * own prefix so the split is independent of the rollouts keyed on `team:`.
+ */
+export function rateLimitMinimumApplies(teamId: string): boolean {
+  return sampled(
+    `rate-limit-minimum:team:${teamId}`,
+    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT,
+  );
+}
 
 /**
  * Builds the per-minute rate limiter for a mode from the static fallback table.
@@ -116,7 +131,8 @@ export function getRateLimitOverride(
  * Builds the per-minute rate limiter for an authenticated team from its Autumn
  * rate-limit multiplier: the effective limit is `base × multiplier` for
  * multiplier-scaled modes (default ×1), never below the mode's MIN_RATE_LIMITS
- * entry. Modes without a base fall back to the static table.
+ * entry when `teamId` is in the minimum rollout. Without a team id the minimum
+ * never applies. Modes without a base fall back to the static table.
  *
  * An org-level override for the mode replaces that whole computation, so the
  * multiplier, the base table and the minimum are all discarded. Modes without
@@ -126,6 +142,7 @@ export function getAutumnRateLimiter(
   mode: RateLimiterMode,
   multiplier: number = 1,
   flags?: TeamFlags,
+  teamId?: string,
 ): RateLimiterRedis {
   const override = getRateLimitOverride(mode, flags?.rateLimitOverrides);
   if (override !== undefined) {
@@ -136,7 +153,11 @@ export function getAutumnRateLimiter(
   let rateLimit: number;
   if (base !== undefined) {
     const safeMultiplier = multiplier > 0 ? multiplier : 1;
-    rateLimit = Math.max(base * safeMultiplier, MIN_RATE_LIMITS[mode] ?? 0);
+    const minimum =
+      teamId !== undefined && rateLimitMinimumApplies(teamId)
+        ? (MIN_RATE_LIMITS[mode] ?? 0)
+        : 0;
+    rateLimit = Math.max(base * safeMultiplier, minimum);
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
   }
