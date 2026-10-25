@@ -30,6 +30,11 @@ import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import { searchGovCategory, wantsGovCategory } from "./gov";
 import { removeExplicitResults } from "./safe-search";
 import {
+  matchesQueryOperators,
+  planOperatorQuery,
+  siteHostnames,
+} from "./operators";
+import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
   searchHighlightsMode,
@@ -190,8 +195,11 @@ export async function executeSearch(
         .map(source => source.type as SearchResultType),
     ),
   ];
+  const operatorPlan = planOperatorQuery(query);
+  const { operators } = operatorPlan;
+  const nonEmpty = (list: string[]) => (list.length > 0 ? list : undefined);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    query,
+    operatorPlan.query,
     categories,
     {
       includeDomains: options.includeDomains,
@@ -231,7 +239,9 @@ export async function executeSearch(
           logger,
           requestId: context.requestId,
           advanced: false,
-          num_results: num_results_buffer,
+          num_results: operatorPlan.relaxed
+            ? Math.max(num_results_buffer, Math.min(limit * 5, 100))
+            : num_results_buffer,
           tbs: options.tbs,
           filter: options.filter,
           lang: options.lang,
@@ -240,10 +250,33 @@ export async function executeSearch(
           safe: options.safe,
           type: searchTypes,
           enterprise: options.enterprise,
-          includeDomains: options.includeDomains,
-          excludeDomains: options.excludeDomains,
+          includeDomains: options.includeDomains?.length
+            ? options.includeDomains
+            : nonEmpty(siteHostnames(operators.sites)),
+          excludeDomains: nonEmpty([
+            ...(options.excludeDomains ?? []),
+            ...operators.excludedSites.filter(site => !site.includes("/")),
+          ]),
         })) as SearchV2Response);
-  let indexResults = indexResultsPromise ? await indexResultsPromise : [];
+  const keepOperatorMatches = <
+    T extends { url?: string; title?: string; position?: number },
+  >(
+    results: T[] | undefined,
+  ): T[] | undefined => {
+    const kept = results?.filter(result =>
+      matchesQueryOperators(result, operatorPlan),
+    );
+    return kept?.length === results?.length
+      ? results
+      : kept?.map((result, index) => ({ ...result, position: index + 1 }));
+  };
+  searchResponse.web = keepOperatorMatches(searchResponse.web);
+  searchResponse.news = keepOperatorMatches(searchResponse.news);
+  searchResponse.images = keepOperatorMatches(searchResponse.images);
+  let indexResults =
+    keepOperatorMatches(
+      indexResultsPromise ? await indexResultsPromise : undefined,
+    ) ?? [];
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are

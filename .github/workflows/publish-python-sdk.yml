@@ -29,7 +29,9 @@ jobs:
           python-version: '3.x'
 
       - name: Install build tools
-        run: python -m pip install build==1.6.1 requests==2.34.2 packaging==26.3
+        run: |
+          python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
+          python -m pip install build==1.6.1 requests==2.34.2 packaging==26.3
 
       - name: Run version check script
         id: version_check

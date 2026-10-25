@@ -618,7 +618,9 @@ export type InternalOptions = {
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
-  teamFlags?: TeamFlags;
+  /** null: the team has no flags. Absent: not snapshotted, so a check that
+   * must fail closed treats the org as unresolved. */
+  teamFlags?: TeamFlags | null;
   /** Team's org, snapshotted from the request ACUC at acceptance (same
    * pattern as teamFlags). Rides the job payload so org-scoped blocklist
    * checks work without re-fetching the chunk. Required so a payload

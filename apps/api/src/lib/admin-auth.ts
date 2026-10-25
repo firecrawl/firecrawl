@@ -23,12 +23,15 @@ export function secretsMatch(
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-/**
- * Accepts `Authorization: Bearer` matching BULL_AUTH_KEY, or BULL_AUTH_KEY_PREVIOUS
- * while callers move to a new key. Logs which key matched, never its value.
- */
-export function adminAuth(req: Request, res: Response, next: NextFunction) {
-  const provided = bearerToken(req.headers.authorization);
+export const ADMIN_KEY_HEADER = "x-firecrawl-admin-key";
+
+function authorizeAdminKey(
+  provided: string | null,
+  missing: boolean,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   const current = secretsMatch(provided, config.BULL_AUTH_KEY);
   const previous = secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS);
 
@@ -36,7 +39,7 @@ export function adminAuth(req: Request, res: Response, next: NextFunction) {
     logAuthDenied(
       req,
       401,
-      !req.headers.authorization
+      missing
         ? "missing_credentials"
         : provided
           ? "unknown_key"
@@ -51,4 +54,32 @@ export function adminAuth(req: Request, res: Response, next: NextFunction) {
     matchedKey: current ? "current" : "previous",
   });
   next();
+}
+
+/**
+ * Accepts `Authorization: Bearer` matching BULL_AUTH_KEY, or BULL_AUTH_KEY_PREVIOUS
+ * while callers move to a new key. Logs which key matched, never its value.
+ */
+export function adminAuth(req: Request, res: Response, next: NextFunction) {
+  authorizeAdminKey(
+    bearerToken(req.headers.authorization),
+    !req.headers.authorization,
+    req,
+    res,
+    next,
+  );
+}
+
+/**
+ * Same keys as adminAuth, read from ADMIN_KEY_HEADER, for admin routes whose
+ * Authorization header carries a team API key.
+ */
+export function adminKeyHeaderAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const value = req.headers[ADMIN_KEY_HEADER];
+  const provided = (Array.isArray(value) ? value[0] : value) || null;
+  authorizeAdminKey(provided, !provided, req, res, next);
 }

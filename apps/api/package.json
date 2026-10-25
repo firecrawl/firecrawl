@@ -153,7 +153,7 @@
     "winston": "^3.14.2",
     "ws": "^8.21.0",
     "xml2js": "^0.6.2",
-    "zod": "4.1.12"
+    "zod": "4.6.7"
   },
   "nodemonConfig": {
     "ignore": [

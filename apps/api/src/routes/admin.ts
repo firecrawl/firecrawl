@@ -22,7 +22,12 @@ import {
   handleIntegrationAdminRotateProxy,
   handleIntegrationAdminValidateProxy,
 } from "../lib/admin-integration-integrations-proxy";
-import { adminAuth, bearerToken, secretsMatch } from "../lib/admin-auth";
+import {
+  adminAuth,
+  adminKeyHeaderAuth,
+  bearerToken,
+  secretsMatch,
+} from "../lib/admin-auth";
 import { logger } from "../lib/logger";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
@@ -130,6 +135,8 @@ if (config.BULL_AUTH_KEY) {
 
   opsRouter.get("/autumn-health", autumnHealthController);
 
+  opsRouter.get("/feng-check", wrap(checkFireEngine));
+
   opsRouter.post("/acuc-cache-clear", wrap(acucCacheClearController));
 
   opsRouter.post(
@@ -145,6 +152,14 @@ if (config.BULL_AUTH_KEY) {
   opsRouter.post(
     "/concurrency-queue-backfill",
     wrap(concurrencyQueueBackfillController),
+  );
+
+  adminRouter.post(
+    "/admin/ops/crawl-monitor",
+    adminKeyHeaderAuth,
+    authMiddleware(RateLimiterMode.Crawl),
+    checkCreditsMiddleware(2),
+    wrap(crawlMonitorController),
   );
 
   adminRouter.use("/admin/ops", opsRouter);
