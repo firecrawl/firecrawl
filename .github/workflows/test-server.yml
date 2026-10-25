@@ -285,6 +285,7 @@ jobs:
           pnpm exec vitest run
           src/search/safe-search.test.ts
           src/search/execute.test.ts
+          src/search/operators.test.ts
           --reporter=default
         working-directory: apps/api
 
