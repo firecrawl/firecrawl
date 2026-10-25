@@ -2173,6 +2173,9 @@ export type TeamFlags = {
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
   dpaRestricted?: boolean;
+  // The org's contract bars training on its data: FirePDF never captures its
+  // documents (buildFirePdfTrainingCapture).
+  trainingRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {

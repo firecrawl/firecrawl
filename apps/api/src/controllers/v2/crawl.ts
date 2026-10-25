@@ -343,7 +343,7 @@ export async function crawlController(
       threatProtection: threatProtection.policy ?? undefined,
       // Safe Mode rides the crawl payload so every child scrape resolves it
       // per-URL at the scrapeURL backstop (allowlist applies per child).
-      teamFlags: req.acuc?.flags ?? undefined,
+      teamFlags: req.acuc?.flags ?? null,
       safeModeBypassed: safeMode.bypassed === true,
     },
     team_id: req.auth.team_id,
