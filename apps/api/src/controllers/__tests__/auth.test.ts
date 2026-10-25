@@ -790,6 +790,7 @@ describe("authenticateUser", () => {
       expect(await armAt(0)).toBe("control");
     } finally {
       config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = originalPercent;
+      error.mockRestore();
     }
   });
 
