@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   logRequest: vi.fn(),
   logResearchEndpoint: vi.fn(),
   fetchResearchUpstream: vi.fn(),
+  billTeam: vi.fn(),
 }));
 
 vi.mock("../../../services/logging/log_job", () => ({
@@ -16,7 +17,7 @@ vi.mock("../../../lib/research-upstream", () => ({
 }));
 
 vi.mock("../../../services/billing/credit_billing", () => ({
-  billTeam: vi.fn().mockResolvedValue(undefined),
+  billTeam: mocks.billTeam,
 }));
 
 vi.mock("../../../lib/keyless", () => ({
@@ -97,6 +98,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
+  mocks.billTeam.mockResolvedValue(undefined);
   mocks.fetchResearchUpstream.mockResolvedValue({
     ok: true,
     status: 200,
@@ -126,6 +128,8 @@ describe.each([
   it.each([
     { searchZDR: "forced-zdr" },
     { searchZDR: "forced-anon" },
+    { scrapeZDR: "forced" },
+    { scrapeZDR: "forced", searchZDR: "allowed" },
     { forceZDR: true },
   ])("marks forced team payloads for redaction and cleanup", async flags => {
     await callRoute(testCase.router(), testCase.path, testCase.query, flags);
@@ -145,10 +149,11 @@ describe.each([
     );
   });
 
-  it("keeps normal retention for a team that may opt into ZDR", async () => {
-    await callRoute(testCase.router(), testCase.path, testCase.query, {
-      searchZDR: "allowed",
-    });
+  it.each([
+    { searchZDR: "allowed" },
+    { scrapeZDR: "allowed", searchZDR: "allowed" },
+  ])("keeps normal retention for a team that may opt into ZDR", async flags => {
+    await callRoute(testCase.router(), testCase.path, testCase.query, flags);
 
     expect(mocks.logRequest).toHaveBeenCalledWith(
       expect.objectContaining({ zeroDataRetention: false }),
@@ -183,6 +188,7 @@ describe("legacy research mount notice", () => {
   it.each([
     { searchZDR: "forced-zdr" },
     { searchZDR: "forced-anon" },
+    { scrapeZDR: "forced" },
     { forceZDR: true },
   ])("marks the notice so the log filter drops it", flags => {
     expect(logNotice(flags)).toEqual(
@@ -193,6 +199,28 @@ describe("legacy research mount notice", () => {
   it("keeps the notice for a team that may opt into ZDR", () => {
     expect(logNotice({ searchZDR: "allowed" })).toEqual(
       expect.objectContaining({ zeroDataRetention: false }),
+    );
+  });
+});
+
+describe("developer search price for forced ZDR teams", () => {
+  it.each([
+    { flags: { scrapeZDR: "forced" }, credits: 2 },
+    { flags: { searchZDR: "forced-zdr" }, credits: 10 },
+  ])("charges $credits credits for $flags", async ({ flags, credits }) => {
+    await callRoute(
+      createDeveloperRouter(),
+      "/search",
+      { query: "private code query" },
+      flags,
+    );
+
+    expect(mocks.billTeam).toHaveBeenCalledWith(
+      TEAM_ID,
+      null,
+      credits,
+      7,
+      expect.objectContaining({ endpoint: "search" }),
     );
   });
 });
