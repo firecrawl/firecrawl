@@ -68,7 +68,9 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
       for (const result of law) {
         expect(typeof result.url).toBe("string");
         expect(typeof result.position).toBe("number");
-        expect(typeof result.updated_at).toBe("number");
+        if (result.updated_at !== undefined) {
+          expect(typeof result.updated_at).toBe("number");
+        }
         if (result.jurisdiction !== undefined) {
           expect(result.jurisdiction).toBe("us");
         }
