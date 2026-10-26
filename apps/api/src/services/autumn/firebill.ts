@@ -357,8 +357,9 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // one per request, so a retry after an accepted-but-lost first attempt would
   // be a second charge; minting here instead keeps one identity per call while
   // separate calls stay distinct, exactly as before.
+  const { durableRetry = true, ...event } = params;
   const attempted = {
-    ...params,
+    ...event,
     idempotencyKey: params.idempotencyKey ?? randomUUID(),
   };
 
@@ -392,7 +393,9 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // and a log alone is too quiet to alert on.
   const outcome = last.reason === "not_success" ? "refused" : "ambiguous";
   const handedToRetry =
-    outcome === "ambiguous" && (await enqueueFirebillTrackRetry(attempted));
+    outcome === "ambiguous" &&
+    durableRetry &&
+    (await enqueueFirebillTrackRetry(attempted));
   logger.error(
     outcome === "refused"
       ? "firebill refused a usage event; it will not be billed"

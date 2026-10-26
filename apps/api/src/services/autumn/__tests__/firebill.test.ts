@@ -651,6 +651,26 @@ describe("firebillTrack durable retry", () => {
     expect(retryQueueAdd).not.toHaveBeenCalled();
   });
 
+  it("keeps an unanswered event out of the retry when the caller opts out", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ambiguous());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      firebillTrack({ ...params, value: -1, durableRetry: false }),
+    ).resolves.toBe(false);
+
+    expect(retryQueueAdd).not.toHaveBeenCalled();
+    expect(await retryOutcomes()).toEqual({});
+    expect(logCalls("error")[0][1]).toMatchObject({ handedToRetry: false });
+    // The flag is ours; firebill never sees it.
+    expect(
+      Object.hasOwn(
+        JSON.parse(fetchMock.mock.calls[0][1].body),
+        "durableRetry",
+      ),
+    ).toBe(false);
+  });
+
   it("gives distinct keys distinct job ids even when they differ only in delimiters", async () => {
     vi.stubGlobal(
       "fetch",
