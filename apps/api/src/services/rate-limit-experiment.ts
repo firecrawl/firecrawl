@@ -56,7 +56,10 @@ type ExperimentCaller = {
   teamId: string;
   /** The exact decimal id when known, as bigint ids can pass the safe range. */
   apiKeyId?: string | number | null;
-  /** The team's plan, recorded on the exposure as its starting plan. */
+  /**
+   * The team's plan when the exposure is sent. An org's first exposure, sent
+   * when it enrolls, so carries the plan it started on.
+   */
   rateLimitMultiplier: number;
   isPaidPlan: boolean;
 };

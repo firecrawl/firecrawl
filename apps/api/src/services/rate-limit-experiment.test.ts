@@ -74,7 +74,7 @@ afterEach(async () => {
 // The module keeps per-process caches for the life of the process, so each
 // test uses its own org id.
 describe("getRateLimitExperimentVariant", () => {
-  it("asks PostHog for the org's variant once, stores it, and sends the exposure with the starting plan", async () => {
+  it("asks PostHog for the org's variant once, stores it, and sends the exposure with the plan", async () => {
     await expect(
       getRateLimitExperimentVariant(caller("org-new")),
     ).resolves.toBe("treatment");
