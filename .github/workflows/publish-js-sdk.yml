@@ -58,9 +58,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  release-summary:
+    name: Release summary
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: Publish
+          version: firecrawl, @mendable/firecrawl-js and @mendable/firecrawl ${{ needs.build.outputs.version }}
+          paths: apps/js-sdk/firecrawl
+
   publish:
     name: Publish
-    needs: build
+    needs: [build, release-summary]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: release

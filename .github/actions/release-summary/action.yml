@@ -1,0 +1,34 @@
+name: Release summary
+description: Writes what approving this run's gated job would ship to the job summary.
+inputs:
+  gated-job:
+    description: Name of the environment-gated job as it appears on the run page.
+    required: true
+  version:
+    description: Version or image tag the gated job publishes.
+    required: true
+  paths:
+    description: Space-separated pathspecs that limit the listed changes to one package.
+    required: false
+    default: ""
+  published-step:
+    description: Step of the gated job that only succeeds when something was published. Earlier runs where it was skipped do not count as releases.
+    required: false
+    default: ""
+  publishes:
+    description: Set to false when the gated job will find nothing new to publish.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Write the release summary
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GATED_JOB: ${{ inputs.gated-job }}
+        VERSION: ${{ inputs.version }}
+        PATHS: ${{ inputs.paths }}
+        PUBLISHED_STEP: ${{ inputs.published-step }}
+        PUBLISHES: ${{ inputs.publishes }}
+      run: bash "$GITHUB_ACTION_PATH/summary.sh"

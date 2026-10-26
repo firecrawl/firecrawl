@@ -58,9 +58,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  release-summary:
+    name: Release summary
+    needs: build
+    if: needs.build.outputs.publish == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Read the version
+        id: version
+        continue-on-error: true
+        run: |
+          echo "version=$(sed -nE "s/^__version__ = ['\"]([^'\"]+)['\"].*/\1/p" apps/python-sdk/firecrawl/__init__.py)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: Publish to PyPI
+          version: firecrawl-py and firecrawl ${{ steps.version.outputs.version }}
+          paths: apps/python-sdk
+
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build, release-summary]
     if: needs.build.outputs.publish == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: release

@@ -19,8 +19,42 @@ on:
 permissions: {}
 
 jobs:
+  release-summary:
+    name: Release summary
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Read the version
+        id: version
+        continue-on-error: true
+        run: |
+          version=$(grep -E '^const Version = ' apps/go-sdk/version.go | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/apps/go-sdk/v$version" >/dev/null; then publishes=false; else publishes=true; fi
+          echo "publishes=$publishes" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: Tag and index on pkg.go.dev
+          version: apps/go-sdk/v${{ steps.version.outputs.version }}
+          publishes: ${{ steps.version.outputs.publishes }}
+          published-step: Create and push tag
+          paths: apps/go-sdk
+
   publish:
     name: Tag and index on pkg.go.dev
+    needs: release-summary
     if: github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     environment: release
