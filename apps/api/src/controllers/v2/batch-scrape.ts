@@ -442,7 +442,7 @@ export async function batchScrapeController(
           threatProtection: threatProtection.policy ?? undefined,
           // Safe Mode rides the batch payload so each URL resolves it per-URL
           // at the scrapeURL backstop.
-          teamFlags: req.acuc?.flags ?? undefined,
+          teamFlags: req.acuc?.flags ?? null,
           safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
