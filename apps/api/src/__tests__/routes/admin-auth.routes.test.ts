@@ -1,7 +1,11 @@
 import express from "express";
 import request from "supertest";
 import { config } from "../../config";
-import { adminAuth } from "../../lib/admin-auth";
+import {
+  ADMIN_KEY_HEADER,
+  adminAuth,
+  adminKeyHeaderAuth,
+} from "../../lib/admin-auth";
 import { logger } from "../../lib/logger";
 
 const CURRENT = "current-admin-key-0001";
@@ -19,6 +23,14 @@ function appWithAdminAuth() {
   ops.use(adminAuth);
   ops.get("/redis-health", (_req, res) => res.status(200).json({ ok: true }));
   app.use("/admin/ops", ops);
+  return app;
+}
+
+function appWithAdminKeyHeaderAuth() {
+  const app = express();
+  app.post("/admin/ops/crawl-monitor", adminKeyHeaderAuth, (req, res) =>
+    res.status(200).json({ authorization: req.headers.authorization }),
+  );
   return app;
 }
 
@@ -97,5 +109,60 @@ describe("adminAuth", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+});
+
+describe("adminKeyHeaderAuth", () => {
+  const original = {
+    BULL_AUTH_KEY: config.BULL_AUTH_KEY,
+    BULL_AUTH_KEY_PREVIOUS: config.BULL_AUTH_KEY_PREVIOUS,
+  };
+
+  beforeEach(() => {
+    config.BULL_AUTH_KEY = CURRENT;
+    config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
+  });
+
+  afterEach(() => {
+    config.BULL_AUTH_KEY = original.BULL_AUTH_KEY;
+    config.BULL_AUTH_KEY_PREVIOUS = original.BULL_AUTH_KEY_PREVIOUS;
+    vi.restoreAllMocks();
+  });
+
+  it("accepts either key and leaves Authorization for the team key", async () => {
+    for (const [key, matched] of [
+      [CURRENT, "current"],
+      [PREVIOUS, "previous"],
+    ]) {
+      const info = vi.spyOn(logger, "info");
+      const response = await request(appWithAdminKeyHeaderAuth())
+        .post("/admin/ops/crawl-monitor")
+        .set(ADMIN_KEY_HEADER, key)
+        .set("Authorization", "Bearer fc-team-key");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ authorization: "Bearer fc-team-key" });
+      expect(matchedKeys(info)).toEqual([matched]);
+      expect(JSON.stringify(info.mock.calls)).not.toContain(key);
+      info.mockRestore();
+    }
+  });
+
+  it("rejects a missing or wrong key, including one sent as a bearer", async () => {
+    const app = appWithAdminKeyHeaderAuth();
+    const cases: Array<Record<string, string>> = [
+      {},
+      { Authorization: `Bearer ${CURRENT}` },
+      { [ADMIN_KEY_HEADER]: `${CURRENT}x` },
+      { [ADMIN_KEY_HEADER]: "" },
+    ];
+
+    for (const headers of cases) {
+      const response = await request(app)
+        .post("/admin/ops/crawl-monitor")
+        .set(headers);
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({ success: false, error: "Unauthorized" });
+    }
   });
 });

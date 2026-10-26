@@ -26,6 +26,7 @@ import { trackKeylessPromptShown } from "../../lib/keyless-prompt-analytics";
 import { mintWorldIdCredential, worldIdSubjectHash } from "../../lib/world-id";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { getRateLimitExperimentVariant } from "../../services/rate-limit-experiment";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -105,6 +106,10 @@ vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
     getTeamLimits: vi.fn(),
   },
+}));
+
+vi.mock("../../services/rate-limit-experiment", () => ({
+  getRateLimitExperimentVariant: vi.fn(),
 }));
 
 vi.mock("../../services/agent-sponsor", () => ({
@@ -1045,6 +1050,88 @@ describe("authenticateUser", () => {
     );
   });
 
+  describe("rate-limit experiment", () => {
+    const request = {
+      headers: {
+        authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+      },
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+    const chunkWith = (extra: Record<string, unknown> = {}) => [
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: {},
+        ...extra,
+      },
+    ];
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue(chunkWith());
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      mockMultiplier(1);
+    });
+
+    it("gives a treatment org the raised limit", async () => {
+      vi.mocked(getRateLimitExperimentVariant).mockResolvedValue("treatment");
+
+      const auth = await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+      expect(auth.success).toBe(true);
+      expect(getRateLimitExperimentVariant).toHaveBeenCalledExactlyOnceWith({
+        orgId: "org-1",
+        teamId: "team-1",
+        apiKeyId: 1,
+        rateLimitMultiplier: 1,
+        isPaidPlan: false,
+      });
+      expect(getAutumnRateLimiter).toHaveBeenLastCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        {},
+        "treatment",
+      );
+    });
+
+    it("keeps the current limit for a control or unenrolled org", async () => {
+      for (const variant of ["control", undefined] as const) {
+        vi.mocked(getAutumnRateLimiter).mockClear();
+        vi.mocked(getRateLimitExperimentVariant).mockResolvedValue(variant);
+
+        await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+        expect(getAutumnRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          RateLimiterMode.Scrape,
+          1,
+          {},
+        );
+      }
+    });
+
+    it("does not ask for a variant where it cannot change the limit", async () => {
+      await authenticateUser(request, {}, RateLimiterMode.Map);
+
+      expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+    });
+
+    it("does not enroll a request denied by the auth checks", async () => {
+      vi.mocked(authCreditUsageChunk).mockResolvedValue(
+        chunkWith({ is_banned: true }),
+      );
+
+      const auth = await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+      expect(auth.success).toBe(false);
+      expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+    });
+  });
+
   describe("agent interop rate-limit floor", () => {
     const flags = {};
     const agentRequest = (auth: string) => ({
@@ -1087,6 +1174,10 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         flags,
+      );
+      // The experiment records the team's plan, not the floor.
+      expect(getRateLimitExperimentVariant).toHaveBeenCalledWith(
+        expect.objectContaining({ rateLimitMultiplier: 1, isPaidPlan: false }),
       );
     });
 

@@ -8,19 +8,23 @@ on:
       - apps/js-sdk/firecrawl/package.json
   workflow_dispatch:
 
-env:
-  TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 jobs:
-  publish:
-    name: Publish
+  build:
+    name: Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+    defaults:
+      run:
+        working-directory: ./apps/js-sdk/firecrawl
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Install pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
@@ -29,18 +33,58 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: './apps/js-sdk/firecrawl/pnpm-lock.yaml'
-      - name: Publish
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm run build
+      - name: Pack the three package names
+        id: pack
         run: |
-          pnpm install
-          pnpm run build
           VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/dist"
           npm pkg set name=firecrawl
           npm pkg delete dependencies.firecrawl
-          pnpm publish --access public --no-git-checks
+          pnpm pack --pack-destination "$RUNNER_TEMP/dist"
           npm pkg set name=@mendable/firecrawl-js dependencies.firecrawl=$VERSION
-          pnpm publish --access public --no-git-checks
+          pnpm pack --pack-destination "$RUNNER_TEMP/dist"
           npm pkg set name=@mendable/firecrawl
-          pnpm publish --access public --no-git-checks
-        working-directory: ./apps/js-sdk/firecrawl
+          pnpm pack --pack-destination "$RUNNER_TEMP/dist"
+          ls -l "$RUNNER_TEMP/dist"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: js-sdk-dist
+          path: ${{ runner.temp }}/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: js-sdk-dist
+          path: dist
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Publish
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          for name in firecrawl @mendable/firecrawl-js @mendable/firecrawl; do
+            file="dist/$(echo "$name" | sed 's#^@##; s#/#-#')-$VERSION.tgz"
+            if [ "$(npm view "$name@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+              echo "$name@$VERSION is already on npm; skipping"
+              continue
+            fi
+            npm publish "$file" --provenance --access public
+          done
