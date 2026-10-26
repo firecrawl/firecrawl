@@ -2,7 +2,6 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import type { TeamFlags } from "../controllers/v1/types";
-import { sampled } from "../lib/rollout";
 import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
@@ -47,8 +46,8 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
 
 /**
  * Per-minute base rate limits, i.e. the ×1 values. The effective limit is
- * `base × multiplier`, raised to the rollout minimum (see rolloutMinimum) for
- * teams in the "test" variant, and the multiplier is read from Autumn's
+ * `base × multiplier`, raised to the minimum (see treatmentMinimum) for orgs in
+ * the "treatment" variant, and the multiplier is read from Autumn's
  * `rate_limits` feature. Modes absent here are not multiplier-scaled and use
  * the fallback table.
  *
@@ -104,9 +103,9 @@ export function getRateLimitOverride(
 /**
  * Builds the per-minute rate limiter for an authenticated team from its Autumn
  * rate-limit multiplier: the effective limit is `base × multiplier` for
- * multiplier-scaled modes (default ×1), raised to the rollout minimum when the
- * team is in the "test" variant (see rateLimitExperimentVariant). Without a
- * team id the minimum never applies. Modes without a base fall back to the
+ * multiplier-scaled modes (default ×1), raised to the minimum for the
+ * "treatment" variant of the rate-limit experiment (see
+ * services/rate-limit-experiment.ts). Modes without a base fall back to the
  * static table.
  *
  * An org-level override for the mode replaces that whole computation, so the
@@ -117,7 +116,7 @@ export function getAutumnRateLimiter(
   mode: RateLimiterMode,
   multiplier: number = 1,
   flags?: TeamFlags,
-  teamId?: string,
+  variant?: RateLimitExperimentVariant,
 ): RateLimiterRedis {
   const override = getRateLimitOverride(mode, flags?.rateLimitOverrides);
   if (override !== undefined) {
@@ -129,8 +128,11 @@ export function getAutumnRateLimiter(
   if (base !== undefined) {
     const safeMultiplier = multiplier > 0 ? multiplier : 1;
     rateLimit =
-      rateLimitExperimentVariant(mode, safeMultiplier, flags, teamId) === "test"
-        ? rolloutMinimum(mode, safeMultiplier)
+      variant === "treatment"
+        ? Math.max(
+            base * safeMultiplier,
+            treatmentMinimum(mode, safeMultiplier),
+          )
         : base * safeMultiplier;
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
@@ -151,78 +153,60 @@ export function getAutumnRateLimiter(
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
 
 /**
- * Modes that get the rollout minimum. Agent traffic is bursty, so the scrape
+ * Modes that get the treatment minimum. Agent traffic is bursty, so the scrape
  * and search limits refused valid calls. Exchange keeps parity with Scrape, as
  * in the base table.
  */
-const ROLLOUT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
+const TREATMENT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
   RateLimiterMode.Scrape,
   RateLimiterMode.Exchange,
   RateLimiterMode.Search,
 ]);
 
 /**
- * Per-minute minimums for teams in the minimum rollout, keyed by the lowest
- * Autumn rate-limit multiplier each applies to. A team takes the entry for the
+ * Per-minute minimums for orgs in the "treatment" variant, keyed by the lowest
+ * Autumn rate-limit multiplier each applies to. An org takes the entry for the
  * highest multiplier it meets, so off-tier multipliers round down, and the
  * limit is `max(base × multiplier, minimum)`. Raising a floor instead of the
  * base leaves every plan whose `base × multiplier` is already higher, growth
  * and above, unchanged.
  */
-const ROLLOUT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
+const TREATMENT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
   { minMultiplier: 1, limit: 50 }, // free
   { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 500 }, // hobby
   { minMultiplier: 50, limit: 1000 }, // standard
 ];
 
-/**
- * Whether a team is in the "test" variant: a sticky split on a hash of the team
- * id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its own
- * prefix so the split is independent of the rollouts keyed on `team:`.
- */
-function rateLimitMinimumApplies(teamId: string): boolean {
-  return sampled(
-    `rate-limit-minimum:team:${teamId}`,
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT,
-  );
-}
-
-/** The rollout minimum for a mode and multiplier, or 0 when there is none. */
-function rolloutMinimum(mode: RateLimiterMode, multiplier: number): number {
-  if (!ROLLOUT_MINIMUM_MODES.has(mode)) return 0;
+/** The treatment minimum for a mode and multiplier, or 0 when there is none. */
+function treatmentMinimum(mode: RateLimiterMode, multiplier: number): number {
+  if (!TREATMENT_MINIMUM_MODES.has(mode)) return 0;
   let minimum = 0;
-  for (const tier of ROLLOUT_MINIMUM_TIERS) {
+  for (const tier of TREATMENT_MINIMUM_TIERS) {
     if (multiplier >= tier.minMultiplier) minimum = tier.limit;
   }
   return minimum;
 }
 
-export type RateLimitExperimentVariant = "control" | "test";
+export type RateLimitExperimentVariant = "control" | "treatment";
 
 /**
- * The variant a team is in for a mode: "test" gets the rollout minimum and
- * "control" keeps `base × multiplier`. Undefined when the minimum cannot change
- * the team's limit there (no team id, an org override, a mode without a
- * minimum, or a plan whose `base × multiplier` already meets it), so the
- * request is not part of the experiment.
+ * Whether the rate-limit experiment decides this limit: true only when the
+ * "treatment" minimum is above `base × multiplier`. False under an org
+ * override, for a mode without a minimum, and for a plan that already meets
+ * it, where both variants get the same limit.
  */
-export function rateLimitExperimentVariant(
+export function rateLimitExperimentApplies(
   mode: RateLimiterMode,
   multiplier: number,
   flags?: TeamFlags,
-  teamId?: string,
-): RateLimitExperimentVariant | undefined {
-  if (teamId === undefined) return undefined;
+): boolean {
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
-    return undefined;
+    return false;
   }
   const base = BASE_RATE_LIMITS[mode];
-  if (base === undefined) return undefined;
+  if (base === undefined) return false;
   const safeMultiplier = multiplier > 0 ? multiplier : 1;
-  if (rolloutMinimum(mode, safeMultiplier) <= base * safeMultiplier) {
-    return undefined;
-  }
-  return rateLimitMinimumApplies(teamId) ? "test" : "control";
+  return treatmentMinimum(mode, safeMultiplier) > base * safeMultiplier;
 }
 
 /**

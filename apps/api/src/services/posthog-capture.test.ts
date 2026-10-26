@@ -64,3 +64,97 @@ describe("capturePostHog", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("evaluatePostHogFlag", () => {
+  const flagsResponse = (body: unknown) =>
+    vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
+
+  it("returns the variant and asks for that flag with the groups", async () => {
+    const fetchMock = flagsResponse({
+      flags: { "my-flag": { enabled: true, variant: "treatment" } },
+      errorsWhileComputingFlags: false,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { evaluatePostHogFlag } = await load("phc_test");
+
+    await expect(
+      evaluatePostHogFlag("my-flag", "d", { company: "org-1" }),
+    ).resolves.toEqual({ status: "resolved", variant: "treatment" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://ph.example.com/flags/?v=2",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          api_key: "phc_test",
+          distinct_id: "d",
+          groups: { company: "org-1" },
+          flag_keys_to_evaluate: ["my-flag"],
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    ["an unknown flag", { flags: {} }],
+    ["a flag that is off", { flags: { "my-flag": { enabled: false } } }],
+    [
+      "a boolean flag",
+      { flags: { "my-flag": { enabled: true, variant: null } } },
+    ],
+  ])("is disabled for %s", async (_label, body) => {
+    vi.stubGlobal("fetch", flagsResponse(body));
+    const { evaluatePostHogFlag } = await load("phc_test");
+
+    await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+      status: "disabled",
+    });
+  });
+
+  it.each([
+    ["a 503 answer", () => new Response("no", { status: 503 })],
+    [
+      "errors while computing flags",
+      () =>
+        new Response(
+          JSON.stringify({ flags: {}, errorsWhileComputingFlags: true }),
+        ),
+    ],
+    [
+      "a quota limit",
+      () =>
+        new Response(
+          JSON.stringify({ flags: {}, quotaLimited: ["feature_flags"] }),
+        ),
+    ],
+  ])("is retryable on %s", async (_label, response) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response()));
+    const { evaluatePostHogFlag } = await load("phc_test");
+
+    await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+      status: "retryable",
+    });
+  });
+
+  it("is retryable, without rejecting, on a network error or timeout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("timed out", "TimeoutError")),
+    );
+    const { evaluatePostHogFlag } = await load("phc_test");
+
+    await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+      status: "retryable",
+    });
+  });
+
+  it("asks nothing and is disabled with no key", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { evaluatePostHogFlag } = await load("");
+
+    await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+      status: "disabled",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

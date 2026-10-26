@@ -11,9 +11,9 @@ import {
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
-  rateLimitExperimentVariant,
+  rateLimitExperimentApplies,
 } from "../services/rate-limiter";
-import { trackRateLimitExperimentExposure } from "../services/posthog";
+import { getRateLimitExperimentVariant } from "../services/rate-limit-experiment";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
@@ -827,7 +827,6 @@ async function buildAuthenticatedRateLimiter(
     mode,
     authenticatedRateLimitMultiplier(chunk, mode, minMultiplier),
     chunk.flags,
-    chunk.team_id,
   );
 }
 
@@ -1132,21 +1131,28 @@ async function supaAuthenticateUser(
     }
   }
 
-  // Reported after the ban and restriction checks, so only requests that reach
-  // the limiter count as exposed to the rate-limit experiment.
+  // The rate-limit experiment runs after the ban and restriction checks, so
+  // only requests that reach the limiter enroll an org or count as exposed.
   if (chunk !== null) {
-    const variant = rateLimitExperimentVariant(
+    const multiplier = authenticatedRateLimitMultiplier(
+      chunk,
       mode,
-      authenticatedRateLimitMultiplier(chunk, mode, minRateMultiplier),
-      chunk.flags,
-      chunk.team_id,
+      minRateMultiplier,
     );
-    if (variant !== undefined) {
-      trackRateLimitExperimentExposure({
+    if (
+      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
+      (await getRateLimitExperimentVariant({
+        orgId: chunk.org_id,
         teamId: chunk.team_id,
         apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
-        variant,
-      });
+      })) === "treatment"
+    ) {
+      rateLimiter = getAutumnRateLimiter(
+        mode,
+        multiplier,
+        chunk.flags,
+        "treatment",
+      );
     }
   }
 

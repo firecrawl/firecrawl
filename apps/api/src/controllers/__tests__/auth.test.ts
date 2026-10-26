@@ -26,7 +26,7 @@ import { trackKeylessPromptShown } from "../../lib/keyless-prompt-analytics";
 import { mintWorldIdCredential, worldIdSubjectHash } from "../../lib/world-id";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { trackRateLimitExperimentExposure } from "../../services/posthog";
+import { getRateLimitExperimentVariant } from "../../services/rate-limit-experiment";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -108,8 +108,8 @@ vi.mock("../../services/autumn/autumn.service", () => ({
   },
 }));
 
-vi.mock("../../services/posthog", () => ({
-  trackRateLimitExperimentExposure: vi.fn(),
+vi.mock("../../services/rate-limit-experiment", () => ({
+  getRateLimitExperimentVariant: vi.fn(),
 }));
 
 vi.mock("../../services/agent-sponsor", () => ({
@@ -135,8 +135,6 @@ describe("authenticateUser", () => {
   const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
   const originalPreviewToken = config.PREVIEW_TOKEN;
   const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
-  const originalRateLimitMinimumPercent =
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT;
   const originalKeylessSignupLinkKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
   const originalWorldId = {
     WORLD_ID_ISSUER: config.WORLD_ID_ISSUER,
@@ -164,7 +162,6 @@ describe("authenticateUser", () => {
     config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
     config.PREVIEW_TOKEN = originalPreviewToken;
     config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = originalRateLimitMinimumPercent;
     config.KEYLESS_SIGNUP_LINK_KEYS = originalKeylessSignupLinkKeys;
     Object.assign(config, originalWorldId);
     vi.unstubAllGlobals();
@@ -1012,7 +1009,6 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
       1,
       flags,
-      "team-1",
     );
   });
 
@@ -1051,79 +1047,87 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
       50,
       flags,
-      "team-1",
     );
   });
 
-  it("reports the rate-limit experiment variant only where it sets the limit", async () => {
-    config.USE_DB_AUTHENTICATION = true;
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
-    vi.mocked(getValue).mockResolvedValue(null);
-    vi.mocked(authCreditUsageChunk).mockResolvedValue([
-      {
-        api_key: "00000000-0000-4000-8000-000000000000",
-        api_key_id: 1,
-        team_id: "team-1",
-        org_id: "org-1",
-        flags: {},
-      },
-    ]);
-    vi.mocked(redlock.using).mockImplementation(
-      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
-    );
-    mockMultiplier(1);
+  describe("rate-limit experiment", () => {
     const request = {
       headers: {
         authorization: "Bearer 00000000-0000-4000-8000-000000000000",
       },
       socket: { remoteAddress: "127.0.0.1" },
     };
-
-    await authenticateUser(request, {}, RateLimiterMode.Scrape);
-    expect(trackRateLimitExperimentExposure).toHaveBeenCalledExactlyOnceWith({
-      teamId: "team-1",
-      apiKeyId: 1,
-      variant: "test",
-    });
-
-    // Map has no minimum, so both variants get the same limit there.
-    vi.mocked(trackRateLimitExperimentExposure).mockClear();
-    await authenticateUser(request, {}, RateLimiterMode.Map);
-    expect(trackRateLimitExperimentExposure).not.toHaveBeenCalled();
-  });
-
-  it("does not report the rate-limit experiment variant for a denied request", async () => {
-    config.USE_DB_AUTHENTICATION = true;
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
-    vi.mocked(getValue).mockResolvedValue(null);
-    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+    const chunkWith = (extra: Record<string, unknown> = {}) => [
       {
         api_key: "00000000-0000-4000-8000-000000000000",
         api_key_id: 1,
         team_id: "team-1",
         org_id: "org-1",
         flags: {},
-        is_banned: true,
+        ...extra,
       },
-    ]);
-    vi.mocked(redlock.using).mockImplementation(
-      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
-    );
-    mockMultiplier(1);
+    ];
 
-    const auth = await authenticateUser(
-      {
-        headers: {
-          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
-        },
-        socket: { remoteAddress: "127.0.0.1" },
-      },
-      {},
-      RateLimiterMode.Scrape,
-    );
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue(chunkWith());
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      mockMultiplier(1);
+    });
 
-    expect(auth.success).toBe(false);
-    expect(trackRateLimitExperimentExposure).not.toHaveBeenCalled();
+    it("gives a treatment org the raised limit", async () => {
+      vi.mocked(getRateLimitExperimentVariant).mockResolvedValue("treatment");
+
+      const auth = await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+      expect(auth.success).toBe(true);
+      expect(getRateLimitExperimentVariant).toHaveBeenCalledExactlyOnceWith({
+        orgId: "org-1",
+        teamId: "team-1",
+        apiKeyId: 1,
+      });
+      expect(getAutumnRateLimiter).toHaveBeenLastCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        {},
+        "treatment",
+      );
+    });
+
+    it("keeps the current limit for a control or unenrolled org", async () => {
+      for (const variant of ["control", undefined] as const) {
+        vi.mocked(getAutumnRateLimiter).mockClear();
+        vi.mocked(getRateLimitExperimentVariant).mockResolvedValue(variant);
+
+        await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+        expect(getAutumnRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          RateLimiterMode.Scrape,
+          1,
+          {},
+        );
+      }
+    });
+
+    it("does not ask for a variant where it cannot change the limit", async () => {
+      await authenticateUser(request, {}, RateLimiterMode.Map);
+
+      expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+    });
+
+    it("does not enroll a request denied by the auth checks", async () => {
+      vi.mocked(authCreditUsageChunk).mockResolvedValue(
+        chunkWith({ is_banned: true }),
+      );
+
+      const auth = await authenticateUser(request, {}, RateLimiterMode.Scrape);
+
+      expect(auth.success).toBe(false);
+      expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+    });
   });
 
   describe("agent interop rate-limit floor", () => {
@@ -1168,7 +1172,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         flags,
-        "team-1",
       );
     });
 
@@ -1185,7 +1188,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         50,
         flags,
-        "team-1",
       );
     });
 
@@ -1202,7 +1204,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         flags,
-        "team-1",
       );
     });
 
@@ -1220,7 +1221,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         flags,
-        "team-1",
       );
     });
 
@@ -1249,7 +1249,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         overrideFlags,
-        "team-1",
       );
     });
   });
@@ -1611,7 +1610,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.BrowserExecute,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         null,
-        "team-mcp",
       );
     });
   });
@@ -1714,7 +1712,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
-        "team-1",
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
@@ -1734,7 +1731,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         2500,
         null,
-        "team-1",
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [, value, ttl] = vi.mocked(setValue).mock.calls[0];
@@ -1754,7 +1750,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
-        "team-1",
       );
     });
 
@@ -1832,7 +1827,6 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         25,
         null,
-        "team-1",
       );
     });
   });

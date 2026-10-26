@@ -706,18 +706,6 @@ const configSchema = z.object({
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
   RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
-  // Stable percentage of teams, by a hash of the team id, that get the
-  // per-minute minimums in services/rate-limiter.ts (the "test" variant). The
-  // other teams keep `base × multiplier` ("control"). When POSTHOG_API_KEY is
-  // set, a team whose limit differs between the variants is reported to PostHog
-  // as an experiment exposure with its variant. The default of 50 is an even
-  // split; 0 gives every team the limits from before the minimums existed and
-  // is the kill switch, and 100 gives every team the minimums.
-  RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT: z.coerce
-    .number()
-    .min(0)
-    .max(100)
-    .default(50),
 
   // Testing
   TEST_API_KEY: z.string().optional(),

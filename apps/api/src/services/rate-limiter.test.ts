@@ -13,9 +13,8 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
-  rateLimitExperimentVariant,
+  rateLimitExperimentApplies,
 } from "./rate-limiter";
-import { sampled } from "../lib/rollout";
 
 // import {
 //   getRateLimiter,
@@ -421,132 +420,72 @@ describe("getAutumnRateLimiter", () => {
     ).toBe(10000);
   });
 
-  describe("rate-limit minimum rollout", () => {
-    const originalPercent = config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT;
+  describe("rate-limit experiment", () => {
     const limit = (
       mode: RateLimiterMode,
       multiplier: number,
-      team = "team-a",
-    ) => getAutumnRateLimiter(mode, multiplier, undefined, team).points;
+      variant?: "control" | "treatment",
+    ) => getAutumnRateLimiter(mode, multiplier, undefined, variant).points;
 
-    afterEach(() => {
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = originalPercent;
+    it("raises scrape, search and exchange to the plan's minimum for treatment", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        expect(limit(mode, 1, "treatment")).toBe(50);
+        expect(limit(mode, 10, "treatment")).toBe(500);
+        expect(limit(mode, 50, "treatment")).toBe(1000);
+        expect(limit(mode, 500, "treatment")).toBe(5000);
+      }
     });
 
-    describe("for a team in the rollout", () => {
-      beforeEach(() => {
-        config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
-      });
-
-      it("raises scrape, search and exchange to the plan's minimum", () => {
-        for (const mode of [
-          RateLimiterMode.Scrape,
-          RateLimiterMode.Search,
-          RateLimiterMode.Exchange,
-        ]) {
-          expect(limit(mode, 1)).toBe(50);
-          expect(limit(mode, 10)).toBe(500);
-          expect(limit(mode, 50)).toBe(1000);
-          expect(limit(mode, 500)).toBe(5000);
-        }
-      });
-
-      it("rounds an off-tier multiplier down to the tier below it", () => {
-        expect(limit(RateLimiterMode.Scrape, 5)).toBe(50);
-        expect(limit(RateLimiterMode.Scrape, 6)).toBe(60);
-        expect(limit(RateLimiterMode.Scrape, 20)).toBe(500);
-        expect(limit(RateLimiterMode.Scrape, 200)).toBe(2000);
-      });
-
-      it("leaves other modes at base × multiplier", () => {
-        expect(limit(RateLimiterMode.Map, 1)).toBe(10);
-        expect(limit(RateLimiterMode.Crawl, 1)).toBe(2);
-        expect(limit(RateLimiterMode.Map, 10)).toBe(100);
-      });
-
-      it("lets an override go below the minimum", () => {
-        const limiter = getAutumnRateLimiter(
-          RateLimiterMode.Scrape,
-          1,
-          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
-          "team-a",
-        );
-
-        expect(limiter.points).toBe(5);
-      });
-
-      it("never applies the minimum without a team id", () => {
-        expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 1).points).toBe(10);
-      });
-    });
-
-    it("keeps the current limits for a team outside the rollout", () => {
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 0;
-
-      expect(limit(RateLimiterMode.Scrape, 1)).toBe(10);
-      expect(limit(RateLimiterMode.Search, 10)).toBe(100);
+    it("keeps base × multiplier for control and without a variant", () => {
+      expect(limit(RateLimiterMode.Scrape, 1, "control")).toBe(10);
+      expect(limit(RateLimiterMode.Search, 10, "control")).toBe(100);
       expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
     });
 
-    it("reports a variant only where the minimum changes the limit", () => {
-      const variant = (
-        mode: RateLimiterMode,
-        multiplier: number,
-        flags?: TeamFlags,
-      ) => rateLimitExperimentVariant(mode, multiplier, flags, "team-a");
+    it("rounds an off-tier multiplier down to the tier below it", () => {
+      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(50);
+      expect(limit(RateLimiterMode.Scrape, 6, "treatment")).toBe(60);
+      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(500);
+      expect(limit(RateLimiterMode.Scrape, 200, "treatment")).toBe(2000);
+    });
 
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
-      expect(variant(RateLimiterMode.Scrape, 1)).toBe("test");
-      expect(variant(RateLimiterMode.Search, 10)).toBe("test");
-      expect(variant(RateLimiterMode.Exchange, 50)).toBe("test");
-      expect(variant(RateLimiterMode.Scrape, 20)).toBe("test");
-      // 50/min in both variants, or above every minimum.
-      expect(variant(RateLimiterMode.Scrape, 5)).toBeUndefined();
-      expect(variant(RateLimiterMode.Scrape, 500)).toBeUndefined();
-      expect(variant(RateLimiterMode.Map, 1)).toBeUndefined();
+    it("leaves other modes and overrides alone for treatment", () => {
+      expect(limit(RateLimiterMode.Map, 1, "treatment")).toBe(10);
+      expect(limit(RateLimiterMode.Crawl, 1, "treatment")).toBe(2);
       expect(
-        variant(
+        getAutumnRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+          "treatment",
+        ).points,
+      ).toBe(5);
+    });
+
+    it("applies only where the treatment minimum changes the limit", () => {
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 1)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Search, 10)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Exchange, 50)).toBe(
+        true,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 20)).toBe(true);
+      // 50/min in both variants, or above every minimum.
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(false);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 500)).toBe(
+        false,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Map, 1)).toBe(false);
+      expect(
+        rateLimitExperimentApplies(
           RateLimiterMode.Scrape,
           1,
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
         ),
-      ).toBeUndefined();
-      expect(
-        rateLimitExperimentVariant(RateLimiterMode.Scrape, 1),
-      ).toBeUndefined();
-
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 0;
-      expect(variant(RateLimiterMode.Scrape, 1)).toBe("control");
-    });
-
-    it("splits teams by the rollout percent, independently of team: rollouts", () => {
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 50;
-      const teams = Array.from({ length: 2000 }, (_, i) => `team-${i}`);
-      const inRollout = (team: string) =>
-        limit(RateLimiterMode.Scrape, 1, team) === 50;
-      const share = (pick: (team: string) => boolean) =>
-        teams.filter(pick).length / teams.length;
-
-      expect(share(inRollout)).toBeGreaterThan(0.45);
-      expect(share(inRollout)).toBeLessThan(0.55);
-      // The reported variant is the one each limit was built from.
-      const reportedTest = (team: string) =>
-        rateLimitExperimentVariant(
-          RateLimiterMode.Scrape,
-          1,
-          undefined,
-          team,
-        ) === "test";
-      expect(teams.every(team => inRollout(team) === reportedTest(team))).toBe(
-        true,
-      );
-      // Sharing a cohort key would agree on every team; independent keys
-      // agree on about half.
-      const agree = share(
-        team => inRollout(team) === sampled(`team:${team}`, 50),
-      );
-      expect(agree).toBeGreaterThan(0.4);
-      expect(agree).toBeLessThan(0.6);
+      ).toBe(false);
     });
   });
 
