@@ -72,41 +72,6 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
 };
 
 /**
- * Modes that get the rollout minimum. Agent traffic is bursty, so the scrape
- * and search limits refused valid calls. Exchange keeps parity with Scrape, as
- * in the base table.
- */
-const ROLLOUT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
-  RateLimiterMode.Scrape,
-  RateLimiterMode.Exchange,
-  RateLimiterMode.Search,
-]);
-
-/**
- * Per-minute minimums for teams in the minimum rollout, keyed by the lowest
- * Autumn rate-limit multiplier each applies to. A team takes the entry for the
- * highest multiplier it meets, so off-tier multipliers round down, and the
- * limit is `max(base × multiplier, minimum)`. Raising a floor instead of the
- * base leaves every plan whose `base × multiplier` is already higher, growth
- * and above, unchanged.
- */
-const ROLLOUT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
-  { minMultiplier: 1, limit: 50 }, // free
-  { minMultiplier: 10, limit: 500 }, // hobby
-  { minMultiplier: 50, limit: 1000 }, // standard
-];
-
-/** The rollout minimum for a mode and multiplier, or 0 when there is none. */
-function rolloutMinimum(mode: RateLimiterMode, multiplier: number): number {
-  if (!ROLLOUT_MINIMUM_MODES.has(mode)) return 0;
-  let minimum = 0;
-  for (const tier of ROLLOUT_MINIMUM_TIERS) {
-    if (multiplier >= tier.minMultiplier) minimum = tier.limit;
-  }
-  return minimum;
-}
-
-/**
  * Whether a team gets the rollout minimum: a sticky A/B split on a hash of the
  * team id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its
  * own prefix so the split is independent of the rollouts keyed on `team:`.
@@ -196,6 +161,41 @@ export function getAutumnRateLimiter(
  * hobby plan in firecrawl-web autumn.config.ts changes.
  */
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
+
+/**
+ * Modes that get the rollout minimum. Agent traffic is bursty, so the scrape
+ * and search limits refused valid calls. Exchange keeps parity with Scrape, as
+ * in the base table.
+ */
+const ROLLOUT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
+  RateLimiterMode.Scrape,
+  RateLimiterMode.Exchange,
+  RateLimiterMode.Search,
+]);
+
+/**
+ * Per-minute minimums for teams in the minimum rollout, keyed by the lowest
+ * Autumn rate-limit multiplier each applies to. A team takes the entry for the
+ * highest multiplier it meets, so off-tier multipliers round down, and the
+ * limit is `max(base × multiplier, minimum)`. Raising a floor instead of the
+ * base leaves every plan whose `base × multiplier` is already higher, growth
+ * and above, unchanged.
+ */
+const ROLLOUT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
+  { minMultiplier: 1, limit: 50 }, // free
+  { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 500 }, // hobby
+  { minMultiplier: 50, limit: 1000 }, // standard
+];
+
+/** The rollout minimum for a mode and multiplier, or 0 when there is none. */
+function rolloutMinimum(mode: RateLimiterMode, multiplier: number): number {
+  if (!ROLLOUT_MINIMUM_MODES.has(mode)) return 0;
+  let minimum = 0;
+  for (const tier of ROLLOUT_MINIMUM_TIERS) {
+    if (multiplier >= tier.minMultiplier) minimum = tier.limit;
+  }
+  return minimum;
+}
 
 /**
  * Plan-priority tiers keyed by the minimum Autumn rate-limit multiplier that
