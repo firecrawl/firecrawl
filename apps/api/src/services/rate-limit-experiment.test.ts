@@ -259,6 +259,22 @@ describe("getRateLimitExperimentVariant", () => {
     expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["reading", "org-stalled-read", mocks.get],
+    ["storing", "org-stalled-store", mocks.set],
+  ])(
+    "does not hold the request while Redis stalls %s the assignment",
+    async (_label, org, command) => {
+      command.mockReturnValueOnce(new Promise(() => {}));
+
+      const start = Date.now();
+      await expect(getRateLimitExperimentVariant(caller(org))).resolves.toBe(
+        "treatment",
+      );
+      expect(Date.now() - start).toBeLessThan(400);
+    },
+  );
+
   it("releases the exposure marker when PostHog rejects it, so a later request retries", async () => {
     mocks.capture.mockResolvedValueOnce(false);
     mocks.store.set(

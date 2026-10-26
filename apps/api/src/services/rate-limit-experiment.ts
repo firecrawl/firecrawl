@@ -34,6 +34,10 @@ const ASSIGNMENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCAL_TTL_MS = 60 * 1000;
 const LOCAL_MAX_ENTRIES = 100_000;
 
+// The stored assignment is read in the auth path, so a stalled Redis counts as
+// a miss rather than holding the request.
+const REDIS_READ_TIMEOUT_MS = 100;
+
 // An exposure marker is short-lived until PostHog accepts the event, so one a
 // failed send leaves behind expires and the exposure is retried. An expired
 // marker only resends an exposure PostHog already counts once per person and
@@ -67,6 +71,20 @@ const pendingExposures = new Set<string>();
 const assignmentKey = (orgId: string) =>
   `firecrawl:rate_limit_experiment:${orgId}`;
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("Redis did not answer in time")),
+        ms,
+      );
+      timer.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function setBounded<V>(map: Map<string, V>, key: string, value: V): void {
   if (map.size >= LOCAL_MAX_ENTRIES) map.clear();
   map.set(key, value);
@@ -74,7 +92,10 @@ function setBounded<V>(map: Map<string, V>, key: string, value: V): void {
 
 async function readAssignment(orgId: string): Promise<Assignment | undefined> {
   try {
-    const raw = await redisEvictConnection.get(assignmentKey(orgId));
+    const raw = await withTimeout(
+      redisEvictConnection.get(assignmentKey(orgId)),
+      REDIS_READ_TIMEOUT_MS,
+    );
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as Partial<Assignment> | null;
     // Anything else, e.g. a variant this code no longer knows, is a miss.
@@ -118,9 +139,10 @@ function fetchAssignment(
           ? (result.variant as RateLimitExperimentVariant)
           : null;
       const assignment: Assignment = { variant, checkedAt: Date.now() };
-      // A failed store still serves the answer; the per-process copy holds it
-      // and the next lookup after that asks PostHog again.
-      await redisEvictConnection
+      // Not awaited, so a stalled Redis never holds the request. A failed
+      // store still serves the answer; the per-process copy holds it and the
+      // next lookup after that asks PostHog again.
+      void redisEvictConnection
         .set(
           assignmentKey(caller.orgId),
           JSON.stringify(assignment),
