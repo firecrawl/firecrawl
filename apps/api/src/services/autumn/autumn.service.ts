@@ -836,6 +836,7 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
     externalRequestId,
+    durableRetry,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -855,6 +856,7 @@ export class AutumnService {
           properties,
           idempotencyKey,
           externalRequestId,
+          durableRetry,
         },
         routed,
       );
