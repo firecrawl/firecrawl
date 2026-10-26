@@ -11,7 +11,10 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { getAutumnRateLimiter } from "./rate-limiter";
+import {
+  getAutumnRateLimiter,
+  rateLimitExperimentVariant,
+} from "./rate-limiter";
 import { sampled } from "../lib/rollout";
 
 // import {
@@ -485,6 +488,37 @@ describe("getAutumnRateLimiter", () => {
       expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
     });
 
+    it("reports a variant only where the minimum changes the limit", () => {
+      const variant = (
+        mode: RateLimiterMode,
+        multiplier: number,
+        flags?: TeamFlags,
+      ) => rateLimitExperimentVariant(mode, multiplier, flags, "team-a");
+
+      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
+      expect(variant(RateLimiterMode.Scrape, 1)).toBe("test");
+      expect(variant(RateLimiterMode.Search, 10)).toBe("test");
+      expect(variant(RateLimiterMode.Exchange, 50)).toBe("test");
+      expect(variant(RateLimiterMode.Scrape, 20)).toBe("test");
+      // 50/min in both variants, or above every minimum.
+      expect(variant(RateLimiterMode.Scrape, 5)).toBeUndefined();
+      expect(variant(RateLimiterMode.Scrape, 500)).toBeUndefined();
+      expect(variant(RateLimiterMode.Map, 1)).toBeUndefined();
+      expect(
+        variant(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBeUndefined();
+      expect(
+        rateLimitExperimentVariant(RateLimiterMode.Scrape, 1),
+      ).toBeUndefined();
+
+      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 0;
+      expect(variant(RateLimiterMode.Scrape, 1)).toBe("control");
+    });
+
     it("splits teams by the rollout percent, independently of team: rollouts", () => {
       config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 50;
       const teams = Array.from({ length: 2000 }, (_, i) => `team-${i}`);
@@ -495,6 +529,17 @@ describe("getAutumnRateLimiter", () => {
 
       expect(share(inRollout)).toBeGreaterThan(0.45);
       expect(share(inRollout)).toBeLessThan(0.55);
+      // The reported variant is the one each limit was built from.
+      const reportedTest = (team: string) =>
+        rateLimitExperimentVariant(
+          RateLimiterMode.Scrape,
+          1,
+          undefined,
+          team,
+        ) === "test";
+      expect(teams.every(team => inRollout(team) === reportedTest(team))).toBe(
+        true,
+      );
       // Sharing a cohort key would agree on every team; independent keys
       // agree on about half.
       const agree = share(

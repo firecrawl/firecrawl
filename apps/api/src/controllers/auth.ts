@@ -11,7 +11,9 @@ import {
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
+  rateLimitExperimentVariant,
 } from "../services/rate-limiter";
+import { trackRateLimitExperimentExposure } from "../services/posthog";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
@@ -819,6 +821,9 @@ export async function authenticateUser(
  * `minMultiplier` floors the Autumn multiplier (trusted agent traffic passes
  * the hobby multiplier). It never applies on top of an override, which already
  * replaces the whole computation.
+ *
+ * When the team's limit for this mode depends on its rate-limit experiment
+ * variant, the variant is reported to PostHog as the experiment exposure.
  */
 async function buildAuthenticatedRateLimiter(
   chunk: AuthCreditUsageChunk,
@@ -834,6 +839,19 @@ async function buildAuthenticatedRateLimiter(
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }
+  }
+  const variant = rateLimitExperimentVariant(
+    mode,
+    multiplier,
+    flags,
+    chunk.team_id,
+  );
+  if (variant !== undefined) {
+    trackRateLimitExperimentExposure({
+      teamId: chunk.team_id,
+      apiKeyId: chunk.api_key_id,
+      variant,
+    });
   }
   return getAutumnRateLimiter(mode, multiplier, flags, chunk.team_id);
 }

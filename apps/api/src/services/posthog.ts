@@ -4,6 +4,7 @@ import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { logger as _logger } from "../lib/logger";
 import { capturePostHog, isPostHogCaptureEnabled } from "./posthog-capture";
+import type { RateLimitExperimentVariant } from "./rate-limiter";
 
 /** Normalized request surface, derived from the `origin` + `integration` fields. */
 type RequestSurface =
@@ -153,6 +154,99 @@ export function trackFirstSurfaceUse(args: {
       if (!sent) await redisEvictConnection.del(key);
     } catch (error) {
       _logger.debug("trackFirstSurfaceUse failed", {
+        module: "posthog",
+        teamId,
+        error,
+      });
+    }
+  })();
+}
+
+/**
+ * Flag key of the PostHog experiment for the rate-limit minimums. The API
+ * assigns the variant (see rateLimitExperimentVariant), so no PostHog call sits
+ * in the rate-limit path; PostHog only reads the variant off the exposure.
+ */
+const RATE_LIMIT_EXPERIMENT_FLAG_KEY = "rate-limit-minimum";
+
+// An expired marker only resends an exposure PostHog already counts once per
+// person and variant, so the TTL just keeps Redis from holding every team.
+const RATE_LIMIT_EXPOSURE_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+// Exposures this process already reported, so later requests from the same
+// team skip the Redis round trip. Cleared when it grows past the cap.
+const reportedRateLimitExposures = new Set<string>();
+const REPORTED_RATE_LIMIT_EXPOSURES_MAX = 100_000;
+
+function rememberRateLimitExposure(marker: string): void {
+  if (reportedRateLimitExposures.size >= REPORTED_RATE_LIMIT_EXPOSURES_MAX) {
+    reportedRateLimitExposures.clear();
+  }
+  reportedRateLimitExposures.add(marker);
+}
+
+/**
+ * Emit `rate_limit_experiment_exposure` the first time a team makes a request
+ * whose limit depends on its variant, carrying the variant as
+ * `$feature/rate-limit-minimum`. The PostHog experiment uses it as a custom
+ * exposure event and attributes the person's later events, such as an upgrade,
+ * to that variant.
+ *
+ * Dedup is a Redis SET NX per (team, variant). A team moved to the other
+ * variant is reported again, and PostHog excludes it as a multiple exposure.
+ *
+ * Fire-and-forget: never awaited in the request path, never throws.
+ */
+export function trackRateLimitExperimentExposure(args: {
+  teamId: string;
+  apiKeyId?: number | null;
+  variant: RateLimitExperimentVariant;
+}): void {
+  const { teamId, apiKeyId, variant } = args;
+
+  // Bail before the SET NX so a marker is not spent while capture is off.
+  if (!isPostHogCaptureEnabled()) return;
+
+  const marker = `${teamId}:${variant}`;
+  if (reportedRateLimitExposures.has(marker)) return;
+
+  void (async () => {
+    try {
+      const key = `firecrawl:rate_limit_exposure:${marker}`;
+      const isFirst = await redisEvictConnection.set(
+        key,
+        "1",
+        "EX",
+        RATE_LIMIT_EXPOSURE_TTL_SECONDS,
+        "NX",
+      );
+      if (isFirst !== "OK") {
+        rememberRateLimitExposure(marker);
+        return;
+      }
+
+      const [distinctId, orgId] = await Promise.all([
+        resolveDistinctId(teamId, apiKeyId),
+        resolveOrgId(teamId),
+      ]);
+
+      const sent = await capturePostHog(
+        "rate_limit_experiment_exposure",
+        distinctId,
+        {
+          [`$feature/${RATE_LIMIT_EXPERIMENT_FLAG_KEY}`]: variant,
+          team_id: teamId,
+          $groups: { team: teamId, ...(orgId ? { company: orgId } : {}) },
+        },
+      );
+      if (sent) {
+        rememberRateLimitExposure(marker);
+      } else {
+        // A rejected capture must not use up the exposure.
+        await redisEvictConnection.del(key);
+      }
+    } catch (error) {
+      _logger.debug("trackRateLimitExperimentExposure failed", {
         module: "posthog",
         teamId,
         error,

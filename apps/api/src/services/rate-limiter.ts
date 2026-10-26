@@ -48,7 +48,7 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
 /**
  * Per-minute base rate limits, i.e. the ×1 values. The effective limit is
  * `base × multiplier`, raised to the rollout minimum (see rolloutMinimum) for
- * teams in the minimum rollout, and the multiplier is read from Autumn's
+ * teams in the "test" variant, and the multiplier is read from Autumn's
  * `rate_limits` feature. Modes absent here are not multiplier-scaled and use
  * the fallback table.
  *
@@ -104,9 +104,10 @@ export function getRateLimitOverride(
 /**
  * Builds the per-minute rate limiter for an authenticated team from its Autumn
  * rate-limit multiplier: the effective limit is `base × multiplier` for
- * multiplier-scaled modes (default ×1), never below the rollout minimum when
- * `teamId` is in the minimum rollout. Without a team id the minimum never
- * applies. Modes without a base fall back to the static table.
+ * multiplier-scaled modes (default ×1), raised to the rollout minimum when the
+ * team is in the "test" variant (see rateLimitExperimentVariant). Without a
+ * team id the minimum never applies. Modes without a base fall back to the
+ * static table.
  *
  * An org-level override for the mode replaces that whole computation, so the
  * multiplier, the base table and the minimum are all discarded. Modes without
@@ -127,11 +128,10 @@ export function getAutumnRateLimiter(
   let rateLimit: number;
   if (base !== undefined) {
     const safeMultiplier = multiplier > 0 ? multiplier : 1;
-    const minimum =
-      teamId !== undefined && rateLimitMinimumApplies(teamId)
+    rateLimit =
+      rateLimitExperimentVariant(mode, safeMultiplier, flags, teamId) === "test"
         ? rolloutMinimum(mode, safeMultiplier)
-        : 0;
-    rateLimit = Math.max(base * safeMultiplier, minimum);
+        : base * safeMultiplier;
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
   }
@@ -176,9 +176,9 @@ const ROLLOUT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
 ];
 
 /**
- * Whether a team gets the rollout minimum: a sticky A/B split on a hash of the
- * team id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its
- * own prefix so the split is independent of the rollouts keyed on `team:`.
+ * Whether a team is in the "test" variant: a sticky split on a hash of the team
+ * id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its own
+ * prefix so the split is independent of the rollouts keyed on `team:`.
  */
 function rateLimitMinimumApplies(teamId: string): boolean {
   return sampled(
@@ -195,6 +195,34 @@ function rolloutMinimum(mode: RateLimiterMode, multiplier: number): number {
     if (multiplier >= tier.minMultiplier) minimum = tier.limit;
   }
   return minimum;
+}
+
+export type RateLimitExperimentVariant = "control" | "test";
+
+/**
+ * The variant a team is in for a mode: "test" gets the rollout minimum and
+ * "control" keeps `base × multiplier`. Undefined when the minimum cannot change
+ * the team's limit there (no team id, an org override, a mode without a
+ * minimum, or a plan whose `base × multiplier` already meets it), so the
+ * request is not part of the experiment.
+ */
+export function rateLimitExperimentVariant(
+  mode: RateLimiterMode,
+  multiplier: number,
+  flags?: TeamFlags,
+  teamId?: string,
+): RateLimitExperimentVariant | undefined {
+  if (teamId === undefined) return undefined;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    return undefined;
+  }
+  const base = BASE_RATE_LIMITS[mode];
+  if (base === undefined) return undefined;
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  if (rolloutMinimum(mode, safeMultiplier) <= base * safeMultiplier) {
+    return undefined;
+  }
+  return rateLimitMinimumApplies(teamId) ? "test" : "control";
 }
 
 /**
