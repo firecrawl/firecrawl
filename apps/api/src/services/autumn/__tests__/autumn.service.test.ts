@@ -100,6 +100,12 @@ vi.mock("../client", () => ({
   },
 }));
 
+// An unanswered firebill track is handed to a Redis-backed retry queue; no
+// Redis here, so the hand-off is accepted and dropped.
+vi.mock("../../queue-service", () => ({
+  getFirebillTrackRetryQueue: () => ({ add: async () => undefined }),
+}));
+
 vi.mock("../../../db/connection", () => ({
   get dbRr() {
     return makeDbStub(state.gatewayStubRow, state.gatewayStubThrows);
