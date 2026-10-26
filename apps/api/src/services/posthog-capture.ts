@@ -103,7 +103,14 @@ export async function evaluatePostHogFlag(
         signal: AbortSignal.timeout(FLAG_TIMEOUT_MS),
       },
     );
-    if (!response.ok) return { status: "retryable" };
+    if (!response.ok) {
+      _logger.debug("PostHog flag evaluation rejected", {
+        module: "posthog",
+        key,
+        status: response.status,
+      });
+      return { status: "retryable" };
+    }
     const body = (await response.json()) as {
       flags?: Record<string, { enabled?: boolean; variant?: unknown }>;
       errorsWhileComputingFlags?: boolean;

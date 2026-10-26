@@ -34,8 +34,11 @@ const ASSIGNMENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCAL_TTL_MS = 60 * 1000;
 const LOCAL_MAX_ENTRIES = 100_000;
 
-// An expired exposure marker only resends an exposure PostHog already counts
-// once per person and variant.
+// An exposure marker is short-lived until PostHog accepts the event, so one a
+// failed send leaves behind expires and the exposure is retried. An expired
+// marker only resends an exposure PostHog already counts once per person and
+// variant.
+const EXPOSURE_PENDING_TTL_SECONDS = 5 * 60;
 const EXPOSURE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 type Assignment = {
@@ -71,8 +74,16 @@ async function readAssignment(orgId: string): Promise<Assignment | undefined> {
   try {
     const raw = await redisEvictConnection.get(assignmentKey(orgId));
     if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Assignment;
-    return typeof parsed.checkedAt === "number" ? parsed : undefined;
+    const parsed = JSON.parse(raw) as Partial<Assignment> | null;
+    // Anything else, e.g. a variant this code no longer knows, is a miss.
+    if (
+      typeof parsed?.checkedAt !== "number" ||
+      (parsed.variant !== null &&
+        (typeof parsed.variant !== "string" || !VARIANTS.has(parsed.variant)))
+    ) {
+      return undefined;
+    }
+    return { variant: parsed.variant, checkedAt: parsed.checkedAt };
   } catch {
     return undefined;
   }
@@ -177,7 +188,7 @@ function trackExposure(
         key,
         "1",
         "EX",
-        EXPOSURE_TTL_SECONDS,
+        EXPOSURE_PENDING_TTL_SECONDS,
         "NX",
       );
       if (isFirst !== "OK") {
@@ -197,6 +208,7 @@ function trackExposure(
         $groups: { company: caller.orgId, team: caller.teamId },
       });
       if (sent) {
+        await redisEvictConnection.expire(key, EXPOSURE_TTL_SECONDS);
         if (reportedExposures.size >= LOCAL_MAX_ENTRIES) {
           reportedExposures.clear();
         }

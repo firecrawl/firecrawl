@@ -6,13 +6,19 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   set: vi.fn(),
   del: vi.fn(),
+  expire: vi.fn(),
   evaluate: vi.fn(),
   capture: vi.fn(),
   enabled: vi.fn(),
 }));
 
 vi.mock("./redis", () => ({
-  redisEvictConnection: { get: mocks.get, set: mocks.set, del: mocks.del },
+  redisEvictConnection: {
+    get: mocks.get,
+    set: mocks.set,
+    del: mocks.del,
+    expire: mocks.expire,
+  },
 }));
 vi.mock("./posthog-capture", () => ({
   evaluatePostHogFlag: mocks.evaluate,
@@ -51,7 +57,9 @@ beforeEach(() => {
   mocks.capture.mockResolvedValue(true);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A test must not leave an exposure send running into the next one.
+  await settle();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -85,6 +93,19 @@ describe("getRateLimitExperimentVariant", () => {
       },
     );
 
+    // The marker is short-lived until PostHog accepts the event.
+    expect(mocks.set).toHaveBeenCalledWith(
+      "firecrawl:rate_limit_experiment_exposure:org-new:treatment",
+      "1",
+      "EX",
+      5 * 60,
+      "NX",
+    );
+    expect(mocks.expire).toHaveBeenCalledExactlyOnceWith(
+      "firecrawl:rate_limit_experiment_exposure:org-new:treatment",
+      30 * 24 * 60 * 60,
+    );
+
     await getRateLimitExperimentVariant(caller("org-new"));
     await settle();
     expect(mocks.evaluate).toHaveBeenCalledTimes(1);
@@ -100,7 +121,21 @@ describe("getRateLimitExperimentVariant", () => {
     await expect(
       getRateLimitExperimentVariant(caller("org-stored")),
     ).resolves.toBe("control");
+    await settle();
     expect(mocks.evaluate).not.toHaveBeenCalled();
+  });
+
+  it("treats a malformed stored assignment as missing", async () => {
+    mocks.store.set(
+      assignmentKey("org-malformed"),
+      JSON.stringify({ variant: "test", checkedAt: Date.now() }),
+    );
+
+    await expect(
+      getRateLimitExperimentVariant(caller("org-malformed")),
+    ).resolves.toBe("treatment");
+    await settle();
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
   it("serves a stale assignment while it re-reads PostHog in the background", async () => {
@@ -161,6 +196,7 @@ describe("getRateLimitExperimentVariant", () => {
     await expect(
       getRateLimitExperimentVariant(caller("org-flaky")),
     ).resolves.toBe("treatment");
+    await settle();
     expect(mocks.evaluate).toHaveBeenCalledTimes(2);
   });
 
@@ -201,6 +237,7 @@ describe("getRateLimitExperimentVariant", () => {
     await settle();
 
     expect(mocks.capture).toHaveBeenCalledTimes(2);
+    expect(mocks.expire).toHaveBeenCalledTimes(1);
     expect(
       mocks.store.has(
         "firecrawl:rate_limit_experiment_exposure:org-retry:control",
