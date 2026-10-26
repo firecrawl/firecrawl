@@ -59,7 +59,9 @@ const localAssignments = new Map<
   { assignment: Assignment | undefined; until: number }
 >();
 const pendingAssignments = new Map<string, Promise<Assignment | undefined>>();
-const reportedExposures = new Set<string>();
+// Exposures not to send again before the time stored here: forever once this
+// process sent one, until another process's pending marker expires otherwise.
+const skipExposureUntil = new Map<string, number>();
 const pendingExposures = new Set<string>();
 
 const assignmentKey = (orgId: string) =>
@@ -101,13 +103,11 @@ function fetchAssignment(
 
   const promise = (async () => {
     try {
-      const distinctId = await resolveDistinctId(
-        caller.teamId,
-        caller.apiKeyId,
-      );
+      // The flag buckets on the company group, so the distinct id does not
+      // decide the variant, and the org id keeps a DB read out of this path.
       const result = await evaluatePostHogFlag(
         RATE_LIMIT_EXPERIMENT_FLAG,
-        distinctId,
+        caller.orgId,
         { company: caller.orgId },
       );
       if (result.status === "retryable") return undefined;
@@ -118,12 +118,22 @@ function fetchAssignment(
           ? (result.variant as RateLimitExperimentVariant)
           : null;
       const assignment: Assignment = { variant, checkedAt: Date.now() };
-      await redisEvictConnection.set(
-        assignmentKey(caller.orgId),
-        JSON.stringify(assignment),
-        "EX",
-        ASSIGNMENT_TTL_SECONDS,
-      );
+      // A failed store still serves the answer; the per-process copy holds it
+      // and the next lookup after that asks PostHog again.
+      await redisEvictConnection
+        .set(
+          assignmentKey(caller.orgId),
+          JSON.stringify(assignment),
+          "EX",
+          ASSIGNMENT_TTL_SECONDS,
+        )
+        .catch(error => {
+          _logger.debug("Rate-limit experiment assignment not stored", {
+            module: "rate-limit-experiment",
+            orgId: caller.orgId,
+            error,
+          });
+        });
       return assignment;
     } catch (error) {
       _logger.debug("Rate-limit experiment assignment failed", {
@@ -178,7 +188,8 @@ function trackExposure(
   variant: RateLimitExperimentVariant,
 ): void {
   const marker = `${caller.orgId}:${variant}`;
-  if (reportedExposures.has(marker) || pendingExposures.has(marker)) return;
+  if ((skipExposureUntil.get(marker) ?? 0) > Date.now()) return;
+  if (pendingExposures.has(marker)) return;
   pendingExposures.add(marker);
 
   void (async () => {
@@ -192,9 +203,13 @@ function trackExposure(
         "NX",
       );
       if (isFirst !== "OK") {
-        // Another process holds the marker. If its capture fails, it releases
-        // the marker and retries on its own next request.
-        reportedExposures.add(marker);
+        // Another process holds the marker. Check again once a pending marker
+        // would have expired, in case that process's send failed.
+        setBounded(
+          skipExposureUntil,
+          marker,
+          Date.now() + EXPOSURE_PENDING_TTL_SECONDS * 1000,
+        );
         return;
       }
       const distinctId = await resolveDistinctId(
@@ -208,10 +223,7 @@ function trackExposure(
         $groups: { company: caller.orgId, team: caller.teamId },
       });
       if (sent) {
-        if (reportedExposures.size >= LOCAL_MAX_ENTRIES) {
-          reportedExposures.clear();
-        }
-        reportedExposures.add(marker);
+        setBounded(skipExposureUntil, marker, Number.POSITIVE_INFINITY);
         // Best effort: if this fails, the pending marker expires and another
         // process may resend an exposure PostHog already counted once.
         await redisEvictConnection

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   evaluate: vi.fn(),
   capture: vi.fn(),
   enabled: vi.fn(),
+  distinctId: vi.fn(),
 }));
 
 vi.mock("./redis", () => ({
@@ -25,9 +26,7 @@ vi.mock("./posthog-capture", () => ({
   capturePostHog: mocks.capture,
   isPostHogCaptureEnabled: mocks.enabled,
 }));
-vi.mock("./posthog", () => ({
-  resolveDistinctId: async () => "owner@example.com",
-}));
+vi.mock("./posthog", () => ({ resolveDistinctId: mocks.distinctId }));
 
 import { getRateLimitExperimentVariant } from "./rate-limit-experiment";
 
@@ -55,6 +54,7 @@ beforeEach(() => {
     variant: "treatment",
   });
   mocks.capture.mockResolvedValue(true);
+  mocks.distinctId.mockResolvedValue("owner@example.com");
 });
 
 afterEach(async () => {
@@ -73,11 +73,13 @@ describe("getRateLimitExperimentVariant", () => {
     ).resolves.toBe("treatment");
     await settle();
 
+    // The flag buckets on the org, so the read needs no DB lookup.
     expect(mocks.evaluate).toHaveBeenCalledExactlyOnceWith(
       "higher-rate-limits",
-      "owner@example.com",
+      "org-new",
       { company: "org-new" },
     );
+    expect(mocks.distinctId).toHaveBeenCalledExactlyOnceWith("team-1", 7);
     expect(JSON.parse(mocks.store.get(assignmentKey("org-new"))!)).toEqual({
       variant: "treatment",
       checkedAt: expect.any(Number),
@@ -223,16 +225,38 @@ describe("getRateLimitExperimentVariant", () => {
     expect(mocks.capture).toHaveBeenCalledTimes(1);
   });
 
-  it("does not resend an exposure another process already sent", async () => {
-    mocks.store.set(
-      "firecrawl:rate_limit_experiment_exposure:org-elsewhere:treatment",
-      "1",
-    );
+  it("does not resend an exposure another process holds, but checks again once its marker could expire", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const marker =
+      "firecrawl:rate_limit_experiment_exposure:org-elsewhere:treatment";
+    mocks.store.set(marker, "1");
 
     await getRateLimitExperimentVariant(caller("org-elsewhere"));
     await settle();
-
+    await getRateLimitExperimentVariant(caller("org-elsewhere"));
+    await settle();
+    expect(mocks.set).toHaveBeenCalledTimes(2); // the assignment, one NX try
     expect(mocks.capture).not.toHaveBeenCalled();
+
+    // That process's send failed and released the marker.
+    mocks.store.delete(marker);
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    await getRateLimitExperimentVariant(caller("org-elsewhere"));
+    await settle();
+    expect(mocks.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves the variant PostHog assigned even when storing it fails", async () => {
+    mocks.set.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(
+      getRateLimitExperimentVariant(caller("org-unstored")),
+    ).resolves.toBe("treatment");
+    await settle();
+    await expect(
+      getRateLimitExperimentVariant(caller("org-unstored")),
+    ).resolves.toBe("treatment");
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
   it("releases the exposure marker when PostHog rejects it, so a later request retries", async () => {
