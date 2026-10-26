@@ -29,7 +29,10 @@ overrides:
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  fast-uri: "3.1.8"
+  # GHSA-w74x-v6f9-j3xg / GHSA-xhq7-xmqj-769h / GHSA-wjr9-j795-jxcr /
+  # GHSA-333x-w4r6-6crp: pin the 3.x line only. Exact 3.1.9 cannot
+  # resolve to 4.x.
+  fast-uri: "3.1.9"
   "glob@>=10.2.0 <10.5.0": ">=10.5.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
@@ -92,6 +95,9 @@ overrides:
   "@opentelemetry/core@<2.9.0": "2.9.0"
   "@opentelemetry/resources@<2.9.0": "2.9.0"
   "@opentelemetry/sdk-metrics@<2.9.0": "2.9.0"
+  # GHSA-mrhx-c7xc-m3w5: pin the 4.x line only. Exact 4.6.7 cannot
+  # resolve to 5.x.
+  "zod@>=4.0.0 <4.6.6": "4.6.7"
   # GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
   # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
   # ip-address@^6, but only its updatedb script loads it; lookup() never does.

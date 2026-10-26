@@ -1,5 +1,10 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
-    "allowlist": []
+    "allowlist": [
+        // GHSA-mrhx-c7xc-m3w5 / zod 3.x: patched only on 4.6.6+.
+        // Published JS SDK stays on zod 3. Expires 2026-11-07.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        "GHSA-mrhx-c7xc-m3w5"
+    ]
 }
