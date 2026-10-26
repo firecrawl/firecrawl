@@ -11,7 +11,9 @@ import {
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
+  rateLimitExperimentApplies,
 } from "../services/rate-limiter";
+import { getRateLimitExperimentVariant } from "../services/rate-limit-experiment";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
@@ -815,27 +817,39 @@ export async function authenticateUser(
  * on to getAutumnRateLimiter, which stays the only place deciding the final
  * limit. An override makes the multiplier irrelevant, so we skip fetching it
  * from Autumn in that case rather than paying for a value that is discarded.
- *
- * `minMultiplier` floors the Autumn multiplier (trusted agent traffic passes
- * the hobby multiplier). It never applies on top of an override, which already
- * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
   chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
-  const flags = chunk.flags;
-  let multiplier: number;
-  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
-    multiplier = 1;
-  } else {
-    multiplier = chunk.rate_limit_multiplier;
-    if (minMultiplier !== undefined) {
-      multiplier = Math.max(multiplier, minMultiplier);
-    }
+  return getAutumnRateLimiter(
+    mode,
+    authenticatedRateLimitMultiplier(chunk, mode, minMultiplier),
+    chunk.flags,
+  );
+}
+
+/**
+ * The multiplier an authenticated team's limiter uses for a mode: a neutral 1
+ * under an override, otherwise the Autumn multiplier floored at
+ * `minMultiplier` (trusted agent traffic passes the hobby multiplier). The
+ * floor never applies on top of an override, which already replaces the whole
+ * computation.
+ */
+function authenticatedRateLimitMultiplier(
+  chunk: AuthCreditUsageChunk,
+  mode: RateLimiterMode,
+  minMultiplier?: number,
+): number {
+  if (
+    getRateLimitOverride(mode, chunk.flags?.rateLimitOverrides) !== undefined
+  ) {
+    return 1;
   }
-  return getAutumnRateLimiter(mode, multiplier, flags);
+  return minMultiplier !== undefined
+    ? Math.max(chunk.rate_limit_multiplier, minMultiplier)
+    : chunk.rate_limit_multiplier;
 }
 
 type AuthenticateOptions = {
@@ -1113,6 +1127,33 @@ async function supaAuthenticateUser(
           status: endpointCheck.status,
         },
         chunk,
+      );
+    }
+  }
+
+  // The rate-limit experiment runs after the ban and restriction checks, so
+  // only requests that reach the limiter enroll an org or count as exposed.
+  if (chunk !== null) {
+    const multiplier = authenticatedRateLimitMultiplier(
+      chunk,
+      mode,
+      minRateMultiplier,
+    );
+    if (
+      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
+      (await getRateLimitExperimentVariant({
+        orgId: chunk.org_id,
+        teamId: chunk.team_id,
+        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+        rateLimitMultiplier: chunk.rate_limit_multiplier,
+        isPaidPlan: chunk.is_paid_plan,
+      })) === "treatment"
+    ) {
+      rateLimiter = getAutumnRateLimiter(
+        mode,
+        multiplier,
+        chunk.flags,
+        "treatment",
       );
     }
   }
