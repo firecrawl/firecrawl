@@ -151,16 +151,36 @@ describe("evaluatePostHogFlag", () => {
     });
   });
 
-  it("is retryable, without rejecting, on a network error or timeout", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new DOMException("timed out", "TimeoutError")),
-    );
+  it("is retryable, without rejecting, on a network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("failed")));
     const { evaluatePostHogFlag } = await load("phc_test");
 
     await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
       status: "retryable",
     });
+  });
+
+  it("gives up after 500 ms and is retryable", async () => {
+    // Answers only when the request is aborted, like a PostHog that hangs.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) =>
+            init.signal!.addEventListener("abort", () =>
+              reject(init.signal!.reason),
+            ),
+          ),
+      ),
+    );
+    const { evaluatePostHogFlag } = await load("phc_test");
+
+    const start = Date.now();
+    await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+      status: "retryable",
+    });
+    expect(Date.now() - start).toBeGreaterThanOrEqual(450);
+    expect(Date.now() - start).toBeLessThan(1500);
   });
 
   it("asks nothing and is disabled with no key", async () => {
