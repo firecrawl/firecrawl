@@ -33,7 +33,13 @@ import { getRateLimitExperimentVariant } from "./rate-limit-experiment";
 /** Let the fire-and-forget tasks run. */
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-const caller = (orgId: string) => ({ orgId, teamId: "team-1", apiKeyId: 7 });
+const caller = (orgId: string) => ({
+  orgId,
+  teamId: "team-1",
+  apiKeyId: 7,
+  rateLimitMultiplier: 10,
+  isPaidPlan: true,
+});
 const assignmentKey = (orgId: string) =>
   `firecrawl:rate_limit_experiment:${orgId}`;
 
@@ -68,7 +74,7 @@ afterEach(async () => {
 // The module keeps per-process caches for the life of the process, so each
 // test uses its own org id.
 describe("getRateLimitExperimentVariant", () => {
-  it("asks PostHog for the org's variant once, stores it, and sends the exposure", async () => {
+  it("asks PostHog for the org's variant once, stores it, and sends the exposure with the starting plan", async () => {
     await expect(
       getRateLimitExperimentVariant(caller("org-new")),
     ).resolves.toBe("treatment");
@@ -92,6 +98,8 @@ describe("getRateLimitExperimentVariant", () => {
         $feature_flag: "higher-rate-limits",
         $feature_flag_response: "treatment",
         team_id: "team-1",
+        rate_limit_multiplier: 10,
+        is_paid_plan: true,
         $groups: { company: "org-new", team: "team-1" },
       },
     );

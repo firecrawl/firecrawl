@@ -56,6 +56,9 @@ type ExperimentCaller = {
   teamId: string;
   /** The exact decimal id when known, as bigint ids can pass the safe range. */
   apiKeyId?: string | number | null;
+  /** The team's plan, recorded on the exposure as its starting plan. */
+  rateLimitMultiplier: number;
+  isPaidPlan: boolean;
 };
 
 const localAssignments = new Map<
@@ -266,6 +269,8 @@ function trackExposure(
         $feature_flag: RATE_LIMIT_EXPERIMENT_FLAG,
         $feature_flag_response: variant,
         team_id: caller.teamId,
+        rate_limit_multiplier: caller.rateLimitMultiplier,
+        is_paid_plan: caller.isPaidPlan,
         $groups: { company: caller.orgId, team: caller.teamId },
       });
       if (sent) {

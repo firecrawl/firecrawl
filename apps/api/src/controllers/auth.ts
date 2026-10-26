@@ -1145,6 +1145,8 @@ async function supaAuthenticateUser(
         orgId: chunk.org_id,
         teamId: chunk.team_id,
         apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+        rateLimitMultiplier: chunk.rate_limit_multiplier,
+        isPaidPlan: chunk.is_paid_plan,
       })) === "treatment"
     ) {
       rateLimiter = getAutumnRateLimiter(

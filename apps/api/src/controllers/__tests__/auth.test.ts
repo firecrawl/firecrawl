@@ -1088,6 +1088,8 @@ describe("authenticateUser", () => {
         orgId: "org-1",
         teamId: "team-1",
         apiKeyId: 1,
+        rateLimitMultiplier: 1,
+        isPaidPlan: false,
       });
       expect(getAutumnRateLimiter).toHaveBeenLastCalledWith(
         RateLimiterMode.Scrape,
@@ -1172,6 +1174,10 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         HOBBY_RATE_LIMIT_MULTIPLIER,
         flags,
+      );
+      // The experiment records the team's plan, not the floor.
+      expect(getRateLimitExperimentVariant).toHaveBeenCalledWith(
+        expect.objectContaining({ rateLimitMultiplier: 1, isPaidPlan: false }),
       );
     });
 
