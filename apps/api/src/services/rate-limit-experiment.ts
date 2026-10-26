@@ -64,7 +64,8 @@ const localAssignments = new Map<
 >();
 const pendingAssignments = new Map<string, Promise<Assignment | undefined>>();
 // Exposures not to send again before the time stored here: forever once this
-// process sent one, until another process's pending marker expires otherwise.
+// process sent one, for a pending marker's lifetime after another process held
+// the marker or PostHog rejected the event.
 const skipExposureUntil = new Map<string, number>();
 const pendingExposures = new Set<string>();
 
@@ -284,7 +285,13 @@ function trackExposure(
             );
           });
       } else {
-        // A rejected capture must not use up the exposure.
+        // A rejected capture must not use up the exposure, but is not retried
+        // on every request while PostHog keeps rejecting it.
+        setBounded(
+          skipExposureUntil,
+          marker,
+          Date.now() + EXPOSURE_PENDING_TTL_SECONDS * 1000,
+        );
         await redisEvictConnection.del(key);
       }
     } catch (error) {

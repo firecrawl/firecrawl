@@ -109,7 +109,11 @@ export async function evaluatePostHogFlag(
         key,
         status: response.status,
       });
-      return { status: "retryable" };
+      // Only rate limiting and server errors pass; any other rejection, e.g.
+      // a wrong key or host, enrolls nobody like a flag that is off.
+      return response.status === 429 || response.status >= 500
+        ? { status: "retryable" }
+        : { status: "disabled" };
     }
     const body = (await response.json()) as {
       flags?: Record<string, { enabled?: boolean; variant?: unknown }>;

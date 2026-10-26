@@ -53,6 +53,7 @@ beforeEach(() => {
     status: "resolved",
     variant: "treatment",
   });
+  mocks.expire.mockResolvedValue(1);
   mocks.capture.mockResolvedValue(true);
   mocks.distinctId.mockResolvedValue("owner@example.com");
 });
@@ -304,25 +305,28 @@ describe("getRateLimitExperimentVariant", () => {
     expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it("releases the exposure marker when PostHog rejects it, so a later request retries", async () => {
+  it("releases the exposure marker when PostHog rejects it, and retries after a wait", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     mocks.capture.mockResolvedValueOnce(false);
     mocks.store.set(
       assignmentKey("org-retry"),
       JSON.stringify({ variant: "control", checkedAt: Date.now() }),
     );
+    const marker = "firecrawl:rate_limit_experiment_exposure:org-retry:control";
 
     await getRateLimitExperimentVariant(caller("org-retry"));
     await settle();
+    expect(mocks.store.has(marker)).toBe(false);
     await getRateLimitExperimentVariant(caller("org-retry"));
     await settle();
+    expect(mocks.capture).toHaveBeenCalledTimes(1);
 
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    await getRateLimitExperimentVariant(caller("org-retry"));
+    await settle();
     expect(mocks.capture).toHaveBeenCalledTimes(2);
     expect(mocks.expire).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.store.has(
-        "firecrawl:rate_limit_experiment_exposure:org-retry:control",
-      ),
-    ).toBe(true);
+    expect(mocks.store.has(marker)).toBe(true);
   });
 
   it("does nothing while PostHog is off", async () => {

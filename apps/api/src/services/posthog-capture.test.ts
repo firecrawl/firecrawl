@@ -94,6 +94,21 @@ describe("evaluatePostHogFlag", () => {
     );
   });
 
+  it.each([401, 404])(
+    "is disabled when PostHog rejects the request with %i",
+    async status => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response("no", { status })),
+      );
+      const { evaluatePostHogFlag } = await load("phc_test");
+
+      await expect(evaluatePostHogFlag("my-flag", "d")).resolves.toEqual({
+        status: "disabled",
+      });
+    },
+  );
+
   it.each([
     ["an unknown flag", { flags: {} }],
     ["a flag that is off", { flags: { "my-flag": { enabled: false } } }],
@@ -112,6 +127,7 @@ describe("evaluatePostHogFlag", () => {
 
   it.each([
     ["a 503 answer", () => new Response("no", { status: 503 })],
+    ["a 429 answer", () => new Response("no", { status: 429 })],
     [
       "errors while computing flags",
       () =>
