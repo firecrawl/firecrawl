@@ -72,18 +72,6 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
 };
 
 /**
- * Whether a team gets the rollout minimum: a sticky A/B split on a hash of the
- * team id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its
- * own prefix so the split is independent of the rollouts keyed on `team:`.
- */
-export function rateLimitMinimumApplies(teamId: string): boolean {
-  return sampled(
-    `rate-limit-minimum:team:${teamId}`,
-    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT,
-  );
-}
-
-/**
  * Builds the per-minute rate limiter for a mode from the static fallback table.
  * Used for the preview token, which has no Autumn entity; authenticated teams
  * use getAutumnRateLimiter.
@@ -186,6 +174,18 @@ const ROLLOUT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
   { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 500 }, // hobby
   { minMultiplier: 50, limit: 1000 }, // standard
 ];
+
+/**
+ * Whether a team gets the rollout minimum: a sticky A/B split on a hash of the
+ * team id, sized by RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT. The cohort key has its
+ * own prefix so the split is independent of the rollouts keyed on `team:`.
+ */
+function rateLimitMinimumApplies(teamId: string): boolean {
+  return sampled(
+    `rate-limit-minimum:team:${teamId}`,
+    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT,
+  );
+}
 
 /** The rollout minimum for a mode and multiplier, or 0 when there is none. */
 function rolloutMinimum(mode: RateLimiterMode, multiplier: number): number {

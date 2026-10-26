@@ -273,8 +273,7 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 export const exchangeRouter = express.Router();
 
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
-// the plan's scrape-equivalent budget (base 10/min, multiplier scaled, and
-// raised to the plan's rollout minimum for teams in that rollout).
+// the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
 // Dashboard and publisher routes below stay on the flat Labs limit.
 exchangeRouter.get(
   "/discover{/*path}",

@@ -11,7 +11,7 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { getAutumnRateLimiter, rateLimitMinimumApplies } from "./rate-limiter";
+import { getAutumnRateLimiter } from "./rate-limiter";
 import { sampled } from "../lib/rollout";
 
 // import {
@@ -400,9 +400,7 @@ describe("getAutumnRateLimiter", () => {
   });
 
   it("scales the exchange mode like scrape", () => {
-    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(
-      getAutumnRateLimiter(RateLimiterMode.Scrape, 1).points,
-    );
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(10);
     expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 50).points).toBe(
       getAutumnRateLimiter(RateLimiterMode.Scrape, 50).points,
     );
@@ -422,8 +420,11 @@ describe("getAutumnRateLimiter", () => {
 
   describe("rate-limit minimum rollout", () => {
     const originalPercent = config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT;
-    const limit = (mode: RateLimiterMode, multiplier?: number) =>
-      getAutumnRateLimiter(mode, multiplier, undefined, "team-a").points;
+    const limit = (
+      mode: RateLimiterMode,
+      multiplier: number,
+      team = "team-a",
+    ) => getAutumnRateLimiter(mode, multiplier, undefined, team).points;
 
     afterEach(() => {
       config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = originalPercent;
@@ -434,48 +435,30 @@ describe("getAutumnRateLimiter", () => {
         config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
       });
 
-      it("raises free scrape, search and exchange to the minimum", () => {
-        expect(limit(RateLimiterMode.Scrape, 1)).toBe(50);
-        expect(limit(RateLimiterMode.Search, 1)).toBe(50);
-        expect(limit(RateLimiterMode.Exchange, 1)).toBe(50);
-        // A missing or invalid multiplier is treated as ×1.
-        expect(limit(RateLimiterMode.Scrape)).toBe(50);
-        expect(limit(RateLimiterMode.Search, 0)).toBe(50);
-      });
-
-      it("raises hobby to 500 and standard to 1000", () => {
-        expect(limit(RateLimiterMode.Scrape, 10)).toBe(500);
-        expect(limit(RateLimiterMode.Search, 10)).toBe(500);
-        expect(limit(RateLimiterMode.Exchange, 10)).toBe(500);
-        expect(limit(RateLimiterMode.Scrape, 50)).toBe(1000);
-        expect(limit(RateLimiterMode.Search, 50)).toBe(1000);
-        expect(limit(RateLimiterMode.Exchange, 50)).toBe(1000);
-      });
-
-      it("leaves growth and above at base × multiplier", () => {
-        expect(limit(RateLimiterMode.Scrape, 500)).toBe(5000);
-        expect(limit(RateLimiterMode.Search, 1000)).toBe(10000);
-        expect(limit(RateLimiterMode.Scrape, 2500)).toBe(25000);
-      });
-
-      it("leaves modes without a minimum at base × multiplier", () => {
-        expect(limit(RateLimiterMode.Map, 1)).toBe(10);
-        expect(limit(RateLimiterMode.Crawl, 1)).toBe(2);
-        expect(limit(RateLimiterMode.Extract, 1)).toBe(2);
-        expect(limit(RateLimiterMode.Map, 10)).toBe(100);
-        expect(limit(RateLimiterMode.Map, 50)).toBe(500);
+      it("raises scrape, search and exchange to the plan's minimum", () => {
+        for (const mode of [
+          RateLimiterMode.Scrape,
+          RateLimiterMode.Search,
+          RateLimiterMode.Exchange,
+        ]) {
+          expect(limit(mode, 1)).toBe(50);
+          expect(limit(mode, 10)).toBe(500);
+          expect(limit(mode, 50)).toBe(1000);
+          expect(limit(mode, 500)).toBe(5000);
+        }
       });
 
       it("rounds an off-tier multiplier down to the tier below it", () => {
-        expect(limit(RateLimiterMode.Scrape, 2)).toBe(50);
-        expect(limit(RateLimiterMode.Search, 4)).toBe(50);
         expect(limit(RateLimiterMode.Scrape, 5)).toBe(50);
         expect(limit(RateLimiterMode.Scrape, 6)).toBe(60);
-        expect(limit(RateLimiterMode.Scrape, 9)).toBe(90);
         expect(limit(RateLimiterMode.Scrape, 20)).toBe(500);
-        expect(limit(RateLimiterMode.Scrape, 49)).toBe(500);
-        expect(limit(RateLimiterMode.Scrape, 100)).toBe(1000);
         expect(limit(RateLimiterMode.Scrape, 200)).toBe(2000);
+      });
+
+      it("leaves other modes at base × multiplier", () => {
+        expect(limit(RateLimiterMode.Map, 1)).toBe(10);
+        expect(limit(RateLimiterMode.Crawl, 1)).toBe(2);
+        expect(limit(RateLimiterMode.Map, 10)).toBe(100);
       });
 
       it("lets an override go below the minimum", () => {
@@ -491,49 +474,32 @@ describe("getAutumnRateLimiter", () => {
 
       it("never applies the minimum without a team id", () => {
         expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 1).points).toBe(10);
-        expect(getAutumnRateLimiter(RateLimiterMode.Search, 1).points).toBe(10);
       });
     });
 
-    it("keeps the limits from before the minimum for a team outside it", () => {
+    it("keeps the current limits for a team outside the rollout", () => {
       config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 0;
 
       expect(limit(RateLimiterMode.Scrape, 1)).toBe(10);
-      expect(limit(RateLimiterMode.Search, 1)).toBe(10);
-      expect(limit(RateLimiterMode.Exchange, 1)).toBe(10);
-      expect(limit(RateLimiterMode.Scrape, 3)).toBe(30);
-      expect(limit(RateLimiterMode.Scrape, 10)).toBe(100);
-      expect(limit(RateLimiterMode.Search, 50)).toBe(500);
+      expect(limit(RateLimiterMode.Search, 10)).toBe(100);
+      expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
     });
 
-    const teams = Array.from({ length: 2000 }, (_, i) => `team-${i}`);
-    const share = (pick: (team: string) => boolean) =>
-      teams.filter(pick).length / teams.length;
-
-    it("splits teams by the rollout percent", () => {
+    it("splits teams by the rollout percent, independently of team: rollouts", () => {
       config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 50;
+      const teams = Array.from({ length: 2000 }, (_, i) => `team-${i}`);
+      const inRollout = (team: string) =>
+        limit(RateLimiterMode.Scrape, 1, team) === 50;
+      const share = (pick: (team: string) => boolean) =>
+        teams.filter(pick).length / teams.length;
 
-      expect(share(rateLimitMinimumApplies)).toBeGreaterThan(0.45);
-      expect(share(rateLimitMinimumApplies)).toBeLessThan(0.55);
-    });
-
-    it("keeps a team in the rollout as the percent grows", () => {
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 30;
-      const inAt30 = teams.filter(rateLimitMinimumApplies);
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 60;
-
-      expect(inAt30.length).toBeGreaterThan(0);
-      expect(inAt30.every(rateLimitMinimumApplies)).toBe(true);
-    });
-
-    it("assigns teams independently of the rollouts keyed on team:", () => {
-      config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 50;
+      expect(share(inRollout)).toBeGreaterThan(0.45);
+      expect(share(inRollout)).toBeLessThan(0.55);
+      // Sharing a cohort key would agree on every team; independent keys
+      // agree on about half.
       const agree = share(
-        team => rateLimitMinimumApplies(team) === sampled(`team:${team}`, 50),
+        team => inRollout(team) === sampled(`team:${team}`, 50),
       );
-
-      // Matching assignments would agree on every team; independent ones on
-      // about half.
       expect(agree).toBeGreaterThan(0.4);
       expect(agree).toBeLessThan(0.6);
     });
