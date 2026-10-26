@@ -22,8 +22,8 @@ const VARIANTS: ReadonlySet<string> = new Set(["control", "treatment"]);
 /**
  * How long a stored assignment is trusted. After that it still serves while
  * it is re-read in the background, so pausing or ending the experiment in
- * PostHog reaches every org within about this long, and no request waits on
- * PostHog after an org's first.
+ * PostHog reaches every org within about this long, and only a lookup with
+ * no stored answer waits on PostHog.
  */
 const ASSIGNMENT_FRESH_MS = 60 * 60 * 1000;
 const ASSIGNMENT_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -214,7 +214,8 @@ async function getAssignment(
     assignment = local?.assignment;
     refreshAssignment(caller);
   } else if (!stored) {
-    // First request from this org: the only one that waits on PostHog.
+    // No stored answer yet, e.g. the org's first request: the only case that
+    // waits on PostHog.
     assignment = await fetchAssignment(caller);
   } else {
     assignment = stored;
@@ -230,10 +231,11 @@ async function getAssignment(
 }
 
 /**
- * Send the experiment exposure, `$feature_flag_called` with the variant, at
- * most once per (org, variant), the same event the web app's server-resolved
- * experiments send. An org moved to the other variant is reported again, and
- * PostHog excludes it as a multiple exposure. Fire-and-forget; never throws.
+ * Send the experiment exposure, `$feature_flag_called` with the variant, once
+ * per (org, variant) while its marker lasts (EXPOSURE_TTL_SECONDS), the same
+ * event the web app's server-resolved experiments send. An org moved to the
+ * other variant is reported again, and PostHog excludes it as a multiple
+ * exposure. Fire-and-forget; never throws.
  */
 function trackExposure(
   caller: ExperimentCaller,
