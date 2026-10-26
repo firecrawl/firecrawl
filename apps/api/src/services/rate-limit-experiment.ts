@@ -208,11 +208,15 @@ function trackExposure(
         $groups: { company: caller.orgId, team: caller.teamId },
       });
       if (sent) {
-        await redisEvictConnection.expire(key, EXPOSURE_TTL_SECONDS);
         if (reportedExposures.size >= LOCAL_MAX_ENTRIES) {
           reportedExposures.clear();
         }
         reportedExposures.add(marker);
+        // Best effort: if this fails, the pending marker expires and another
+        // process may resend an exposure PostHog already counted once.
+        await redisEvictConnection
+          .expire(key, EXPOSURE_TTL_SECONDS)
+          .catch(() => undefined);
       } else {
         // A rejected capture must not use up the exposure.
         await redisEvictConnection.del(key);

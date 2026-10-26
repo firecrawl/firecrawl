@@ -212,6 +212,17 @@ describe("getRateLimitExperimentVariant", () => {
     expect(mocks.capture).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps an accepted exposure reported when extending its marker fails", async () => {
+    mocks.expire.mockRejectedValueOnce(new Error("redis down"));
+
+    await getRateLimitExperimentVariant(caller("org-expire"));
+    await settle();
+    await getRateLimitExperimentVariant(caller("org-expire"));
+    await settle();
+
+    expect(mocks.capture).toHaveBeenCalledTimes(1);
+  });
+
   it("does not resend an exposure another process already sent", async () => {
     mocks.store.set(
       "firecrawl:rate_limit_experiment_exposure:org-elsewhere:treatment",
