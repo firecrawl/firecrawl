@@ -443,22 +443,39 @@ describe("getAutumnRateLimiter", () => {
         expect(limit(RateLimiterMode.Search, 0)).toBe(50);
       });
 
-      it("leaves free limits without a minimum at base", () => {
+      it("raises hobby to 500 and standard to 1000", () => {
+        expect(limit(RateLimiterMode.Scrape, 10)).toBe(500);
+        expect(limit(RateLimiterMode.Search, 10)).toBe(500);
+        expect(limit(RateLimiterMode.Exchange, 10)).toBe(500);
+        expect(limit(RateLimiterMode.Scrape, 50)).toBe(1000);
+        expect(limit(RateLimiterMode.Search, 50)).toBe(1000);
+        expect(limit(RateLimiterMode.Exchange, 50)).toBe(1000);
+      });
+
+      it("leaves growth and above at base × multiplier", () => {
+        expect(limit(RateLimiterMode.Scrape, 500)).toBe(5000);
+        expect(limit(RateLimiterMode.Search, 1000)).toBe(10000);
+        expect(limit(RateLimiterMode.Scrape, 2500)).toBe(25000);
+      });
+
+      it("leaves modes without a minimum at base × multiplier", () => {
         expect(limit(RateLimiterMode.Map, 1)).toBe(10);
         expect(limit(RateLimiterMode.Crawl, 1)).toBe(2);
         expect(limit(RateLimiterMode.Extract, 1)).toBe(2);
+        expect(limit(RateLimiterMode.Map, 10)).toBe(100);
+        expect(limit(RateLimiterMode.Map, 50)).toBe(500);
       });
 
-      it("applies the minimum to every multiplier below 5, not only ×1", () => {
+      it("rounds an off-tier multiplier down to the tier below it", () => {
         expect(limit(RateLimiterMode.Scrape, 2)).toBe(50);
         expect(limit(RateLimiterMode.Search, 4)).toBe(50);
         expect(limit(RateLimiterMode.Scrape, 5)).toBe(50);
         expect(limit(RateLimiterMode.Scrape, 6)).toBe(60);
-      });
-
-      it("keeps base × multiplier when it is above the minimum", () => {
-        expect(limit(RateLimiterMode.Scrape, 10)).toBe(100);
-        expect(limit(RateLimiterMode.Search, 10)).toBe(100);
+        expect(limit(RateLimiterMode.Scrape, 9)).toBe(90);
+        expect(limit(RateLimiterMode.Scrape, 20)).toBe(500);
+        expect(limit(RateLimiterMode.Scrape, 49)).toBe(500);
+        expect(limit(RateLimiterMode.Scrape, 100)).toBe(1000);
+        expect(limit(RateLimiterMode.Scrape, 200)).toBe(2000);
       });
 
       it("lets an override go below the minimum", () => {
@@ -485,6 +502,8 @@ describe("getAutumnRateLimiter", () => {
       expect(limit(RateLimiterMode.Search, 1)).toBe(10);
       expect(limit(RateLimiterMode.Exchange, 1)).toBe(10);
       expect(limit(RateLimiterMode.Scrape, 3)).toBe(30);
+      expect(limit(RateLimiterMode.Scrape, 10)).toBe(100);
+      expect(limit(RateLimiterMode.Search, 50)).toBe(500);
     });
 
     const teams = Array.from({ length: 2000 }, (_, i) => `team-${i}`);
