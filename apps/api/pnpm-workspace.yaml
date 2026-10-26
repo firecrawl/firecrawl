@@ -29,7 +29,9 @@ overrides:
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  fast-uri: "3.1.8"
+  # GHSA-w74x-v6f9-j3xg / GHSA-xhq7-xmqj-769h / GHSA-wjr9-j795-jxcr /
+  # GHSA-333x-w4r6-6crp: fixed in 3.1.9. Exact 3.1.9 cannot resolve to 4.x.
+  fast-uri: "3.1.9"
   "glob@>=10.2.0 <10.5.0": ">=10.5.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
