@@ -59,6 +59,37 @@ export const firebillFailureCauseTotal = new Counter({
   labelNames: ["operation", "cause"] as const,
 });
 
+/**
+ * The durable retry behind a track or refund that firebill never confirmed.
+ * Counted where each step happens: the `enqueue*` outcomes by the
+ * caller that gave up, `retried`, `settled` and `exhausted` by the
+ * retry worker.
+ *
+ * - `enqueued` — handed to the retry queue instead of being dropped.
+ * - `enqueue_failed` — the queue rejected the hand-off; the event is
+ *   unbilled unless someone replays it from the log line.
+ * - `enqueue_timeout` — the hand-off did not confirm in time and may still
+ *   land; check the queue for the key before treating it as lost.
+ * - `retried` — one re-send under the same idempotency key.
+ * - `settled` — firebill accepted a re-send.
+ * - `exhausted` — every attempt failed; see the exhausted value counter
+ *   and the "firebill durable retry exhausted" log for the key and amount.
+ */
+export const firebillTrackRetryTotal = new Counter({
+  name: "firecrawl_firebill_track_retry_total",
+  help: "Durable retries of usage events firebill did not confirm",
+  // operation: track|refund
+  // outcome: enqueued|enqueue_failed|enqueue_timeout|retried|settled|exhausted
+  labelNames: ["operation", "outcome"] as const,
+});
+
+/** The amount, made positive, behind each exhausted durable retry. */
+export const firebillTrackRetryExhaustedValueTotal = new Counter({
+  name: "firecrawl_firebill_track_retry_exhausted_value_total",
+  help: "Usage value whose durable firebill retry was exhausted",
+  labelNames: ["operation", "feature"] as const,
+});
+
 /** Retries of a firebill call that answered `false` or threw. */
 export const firebillRetryTotal = new Counter({
   name: "firecrawl_firebill_retry_total",

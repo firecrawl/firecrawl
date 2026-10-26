@@ -331,6 +331,7 @@ export class AutumnService {
       properties,
       idempotencyKey,
       externalRequestId,
+      durableRetry,
     }: TrackParams,
     routed: boolean,
   ): Promise<boolean> {
@@ -348,6 +349,7 @@ export class AutumnService {
         properties,
         idempotencyKey,
         externalRequestId,
+        durableRetry,
       });
     }
 
@@ -834,6 +836,7 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
     externalRequestId,
+    durableRetry,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -853,6 +856,7 @@ export class AutumnService {
           properties,
           idempotencyKey,
           externalRequestId,
+          durableRetry,
         },
         routed,
       );
@@ -928,6 +932,7 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
     externalRequestId,
+    durableRetry,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -947,6 +952,7 @@ export class AutumnService {
           properties: { ...properties, source: "autumn_refund" },
           idempotencyKey,
           externalRequestId,
+          durableRetry,
         },
         routed,
       );

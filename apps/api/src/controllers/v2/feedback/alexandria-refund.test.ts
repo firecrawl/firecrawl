@@ -119,6 +119,7 @@ it("reserves the refund under a per-team lock before billing, then reports it", 
     orgId: "org-1",
     value: 1,
     idempotencyKey: "fc:refund:alexandria-feedback:feedback-1",
+    durableRetry: false,
     featureId: "CREDITS",
     properties: {
       source: "feedback",

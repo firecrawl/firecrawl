@@ -9,6 +9,7 @@ import {
   getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
+  getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
@@ -107,6 +108,7 @@ const bullBoardQueues = [
   new BullMQAdapter(getDeepResearchQueue()),
   new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
+  new BullMQAdapter(getFirebillTrackRetryQueue()),
   // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
   // management UI, not here.
 ];
