@@ -883,7 +883,19 @@ describe("authenticateUser", () => {
     config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
     config.OAUTH_INTROSPECT_SECRET = "secret";
     vi.mocked(getValue).mockResolvedValue(null);
-    vi.mocked(authCreditUsageChunk).mockResolvedValue([]);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "11111111-1111-1111-8111-111111111111",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    mockMultiplier(1);
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({
+      consume: vi.fn().mockResolvedValue(undefined),
+    } as never);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -912,11 +924,9 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
     );
 
-    expect(auth).toEqual({
-      success: false,
-      error: "Unauthorized: Invalid token",
-      status: 401,
-    });
+    expect(auth).toEqual(
+      expect.objectContaining({ success: true, team_id: "team-1" }),
+    );
     expect(authCreditUsageChunk).toHaveBeenCalledWith(
       expect.anything(),
       "11111111-1111-1111-8111-111111111111",
