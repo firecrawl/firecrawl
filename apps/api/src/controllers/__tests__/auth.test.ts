@@ -1092,6 +1092,40 @@ describe("authenticateUser", () => {
     expect(trackRateLimitExperimentExposure).not.toHaveBeenCalled();
   });
 
+  it("does not report the rate-limit experiment variant for a denied request", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.RATE_LIMIT_MINIMUM_ROLLOUT_PERCENT = 100;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: {},
+        is_banned: true,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    mockMultiplier(1);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(false);
+    expect(trackRateLimitExperimentExposure).not.toHaveBeenCalled();
+  });
+
   describe("agent interop rate-limit floor", () => {
     const flags = {};
     const agentRequest = (auth: string) => ({

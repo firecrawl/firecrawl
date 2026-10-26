@@ -102,6 +102,21 @@ describe("trackRateLimitExperimentExposure", () => {
     expect(mocks.capturePostHog).toHaveBeenCalledTimes(1);
   });
 
+  it("sends once for concurrent requests, and still retries if that send fails", async () => {
+    mocks.capturePostHog.mockResolvedValueOnce(false);
+    const exposure = { teamId: "team-concurrent", variant: "test" } as const;
+
+    trackRateLimitExperimentExposure(exposure);
+    trackRateLimitExperimentExposure(exposure);
+    await settle();
+    expect(mocks.set).toHaveBeenCalledTimes(1);
+    expect(mocks.capturePostHog).toHaveBeenCalledTimes(1);
+
+    trackRateLimitExperimentExposure(exposure);
+    await settle();
+    expect(mocks.capturePostHog).toHaveBeenCalledTimes(2);
+  });
+
   it("does not resend an exposure another process already reported", async () => {
     mocks.markers.add("firecrawl:rate_limit_exposure:team-elsewhere:test");
 

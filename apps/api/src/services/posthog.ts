@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { redisEvictConnection } from "./redis";
 import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
@@ -53,7 +53,7 @@ function originToSurface(
  */
 async function resolveDistinctId(
   teamId: string,
-  apiKeyId?: number | null,
+  apiKeyId?: string | number | null,
 ): Promise<string> {
   if (!apiKeyId) return teamId;
   try {
@@ -65,7 +65,9 @@ async function resolveDistinctId(
       // team's milestone to another team's owner email — falls back to teamId.
       .where(
         and(
-          eq(schema.api_keys.id, apiKeyId),
+          // Compared as text cast to bigint, so an id past the safe-integer
+          // range (passed as its exact decimal string) is matched exactly.
+          sql`${schema.api_keys.id} = cast(${String(apiKeyId)} as bigint)`,
           eq(schema.api_keys.team_id, teamId),
         ),
       )
@@ -174,8 +176,13 @@ const RATE_LIMIT_EXPERIMENT_FLAG_KEY = "rate-limit-minimum";
 const RATE_LIMIT_EXPOSURE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Exposures this process already reported, so later requests from the same
-// team skip the Redis round trip. Cleared when it grows past the cap.
+// team skip the Redis round trip. Cleared when it grows past the cap. A marker
+// another process holds is remembered too: if that process's capture fails, it
+// releases the marker and retries on its own next request.
 const reportedRateLimitExposures = new Set<string>();
+// Exposures this process is sending, so a concurrent request neither sends
+// again nor remembers a send that may still fail.
+const pendingRateLimitExposures = new Set<string>();
 const REPORTED_RATE_LIMIT_EXPOSURES_MAX = 100_000;
 
 function rememberRateLimitExposure(marker: string): void {
@@ -199,7 +206,8 @@ function rememberRateLimitExposure(marker: string): void {
  */
 export function trackRateLimitExperimentExposure(args: {
   teamId: string;
-  apiKeyId?: number | null;
+  /** The exact decimal id when known, as bigint ids can pass the safe range. */
+  apiKeyId?: string | number | null;
   variant: RateLimitExperimentVariant;
 }): void {
   const { teamId, apiKeyId, variant } = args;
@@ -208,7 +216,13 @@ export function trackRateLimitExperimentExposure(args: {
   if (!isPostHogCaptureEnabled()) return;
 
   const marker = `${teamId}:${variant}`;
-  if (reportedRateLimitExposures.has(marker)) return;
+  if (
+    reportedRateLimitExposures.has(marker) ||
+    pendingRateLimitExposures.has(marker)
+  ) {
+    return;
+  }
+  pendingRateLimitExposures.add(marker);
 
   void (async () => {
     try {
@@ -251,6 +265,8 @@ export function trackRateLimitExperimentExposure(args: {
         teamId,
         error,
       });
+    } finally {
+      pendingRateLimitExposures.delete(marker);
     }
   })();
 }
