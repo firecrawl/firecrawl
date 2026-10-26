@@ -96,6 +96,8 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     # Normalize branding top-level camelCase keys
     branding = normalized.get("branding")
     if isinstance(branding, dict):
+        branding = dict(branding)
+        normalized["branding"] = branding
         if "colorScheme" in branding and "color_scheme" not in branding:
             branding["color_scheme"] = branding.pop("colorScheme")
 
