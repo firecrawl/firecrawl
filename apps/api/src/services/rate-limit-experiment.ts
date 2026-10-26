@@ -216,7 +216,16 @@ function trackExposure(
         // process may resend an exposure PostHog already counted once.
         await redisEvictConnection
           .expire(key, EXPOSURE_TTL_SECONDS)
-          .catch(() => undefined);
+          .catch(error => {
+            _logger.debug(
+              "Rate-limit experiment exposure marker not extended",
+              {
+                module: "rate-limit-experiment",
+                orgId: caller.orgId,
+                error,
+              },
+            );
+          });
       } else {
         // A rejected capture must not use up the exposure.
         await redisEvictConnection.del(key);
