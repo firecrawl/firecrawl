@@ -61,13 +61,15 @@ export const firebillFailureCauseTotal = new Counter({
 
 /**
  * The durable retry behind a track or refund that firebill never confirmed.
- * Counted where each step happens: `enqueued` and `enqueue_failed` by the
+ * Counted where each step happens: the `enqueue*` outcomes by the
  * caller that gave up, `retried`, `settled` and `exhausted` by the
  * retry worker.
  *
  * - `enqueued` — handed to the retry queue instead of being dropped.
- * - `enqueue_failed` — could not be handed over; the event is unbilled
- *   unless someone replays it from the log line.
+ * - `enqueue_failed` — the queue rejected the hand-off; the event is
+ *   unbilled unless someone replays it from the log line.
+ * - `enqueue_timeout` — the hand-off did not confirm in time and may still
+ *   land; check the queue for the key before treating it as lost.
  * - `retried` — one re-send under the same idempotency key.
  * - `settled` — firebill accepted a re-send.
  * - `exhausted` — every attempt failed; see the exhausted value counter
@@ -77,7 +79,7 @@ export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Durable retries of usage events firebill did not confirm",
   // operation: track|refund
-  // outcome: enqueued|enqueue_failed|retried|settled|exhausted
+  // outcome: enqueued|enqueue_failed|enqueue_timeout|retried|settled|exhausted
   labelNames: ["operation", "outcome"] as const,
 });
 

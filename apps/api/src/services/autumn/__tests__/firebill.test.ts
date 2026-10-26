@@ -599,11 +599,20 @@ describe("firebillTrack durable retry", () => {
     expect(name).toBe("track");
     expect(data).toEqual(params);
     expect(opts).toMatchObject({
-      jobId: "firebill|fc|track|scrape|job-1",
+      jobId: "firebill|fc%3Atrack%3Ascrape%3Ajob-1",
       attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
       backoff: { type: "exponential" },
     });
-    expect(opts.delay).toBeGreaterThan(0);
+    // BullMQ waits backoff * 2^(n-1) after the nth failure: 30s to the first
+    // re-send, then doubling, which puts the last one about two hours out.
+    const gaps = [opts.delay];
+    for (let n = 1; n < FIREBILL_DURABLE_RETRY_ATTEMPTS; n++) {
+      gaps.push(opts.backoff.delay * 2 ** (n - 1));
+    }
+    expect(gaps.slice(0, 3)).toEqual([30_000, 60_000, 120_000]);
+    const total = gaps.reduce((a, b) => a + b, 0);
+    expect(total).toBeGreaterThan(2 * 60 * 60 * 1000);
+    expect(total).toBeLessThan(3 * 60 * 60 * 1000);
     expect(await retryOutcomes()).toEqual({ "track/enqueued": 1 });
     // The alerted counter still says what the caller saw.
     expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
@@ -640,6 +649,34 @@ describe("firebillTrack durable retry", () => {
     await firebillTrack(params);
 
     expect(retryQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("gives distinct keys distinct job ids even when they differ only in delimiters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+
+    await firebillTrack({ ...params, idempotencyKey: "a:b" });
+    await firebillTrack({ ...params, idempotencyKey: "a|b" });
+
+    const [first, second] = retryQueueAdd.mock.calls.map(c => c[2].jobId);
+    expect(first).not.toBe(second);
+  });
+
+  it("counts an enqueue that does not confirm in time as unknown, not lost", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueAdd.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueue_timeout": 1 });
+    expect(logCalls("error").map(c => c[0])).toContain(
+      "firebill durable retry enqueue timed out; the retry may or may not have been queued",
+    );
   });
 
   it("logs and counts an enqueue that fails, still reporting false", async () => {

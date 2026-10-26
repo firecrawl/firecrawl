@@ -62,10 +62,14 @@ const FIREBILL_ATTEMPTS = 2;
 const FIREBILL_RETRY_DELAY_MS = 150;
 
 // The durable retry behind an unanswered track: first re-send after 30s, then
-// doubling, so the eighth and last lands about two hours after the caller gave
-// up. Long enough to outlast a firebill pod being rescheduled off a lost node.
+// 60s, 120s and doubling, so the eighth and last lands about two hours after
+// the caller gave up. Long enough to outlast a firebill pod being rescheduled
+// off a lost node.
 export const FIREBILL_DURABLE_RETRY_ATTEMPTS = 8;
-const FIREBILL_DURABLE_RETRY_DELAY_MS = 30_000;
+const FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS = 30_000;
+// BullMQ's exponential backoff waits base * 2^(n-1) after the nth failure, so
+// a 60s base is what makes the second gap double the first.
+const FIREBILL_DURABLE_RETRY_BACKOFF_MS = 60_000;
 // The queue's Redis client retries a command forever while disconnected, so an
 // enqueue is bounded here: a Redis outage must not hang the billing call.
 const FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS = 2000;
@@ -432,38 +436,48 @@ async function enqueueFirebillTrackRetry(
   event: FirebillTrackRetryJobData,
 ): Promise<boolean> {
   const operation = trackOperation(event.value);
+  const context = {
+    customerId: event.customerId,
+    entityId: event.entityId,
+    featureId: event.featureId,
+    value: event.value,
+    idempotencyKey: event.idempotencyKey,
+  };
+  const timedOut = Symbol("enqueue timed out");
   let timer: NodeJS.Timeout | undefined;
   try {
-    await Promise.race([
+    const added = await Promise.race([
       getFirebillTrackRetryQueue().add(operation, event, {
-        jobId: `firebill|${event.idempotencyKey.replaceAll(":", "|")}`,
-        delay: FIREBILL_DURABLE_RETRY_DELAY_MS,
+        jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
+        delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
         attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
         backoff: {
           type: "exponential",
-          delay: FIREBILL_DURABLE_RETRY_DELAY_MS,
+          delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
         },
       }),
-      new Promise((_, reject) => {
+      new Promise<typeof timedOut>(resolve => {
         timer = setTimeout(
-          () => reject(new Error("enqueue timed out")),
+          () => resolve(timedOut),
           FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS,
         );
       }),
     ]);
+    // The add is still in flight and may land: unknown, not lost.
+    if (added === timedOut) {
+      logger.error(
+        "firebill durable retry enqueue timed out; the retry may or may not have been queued",
+        { ...context, timeoutMs: FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS },
+      );
+      firebillTrackRetryTotal.labels(operation, "enqueue_timeout").inc();
+      return false;
+    }
     firebillTrackRetryTotal.labels(operation, "enqueued").inc();
     return true;
   } catch (error) {
     logger.error(
       "firebill durable retry could not be enqueued; the event will not be billed unless replayed",
-      {
-        customerId: event.customerId,
-        entityId: event.entityId,
-        featureId: event.featureId,
-        value: event.value,
-        idempotencyKey: event.idempotencyKey,
-        error,
-      },
+      { ...context, error },
     );
     firebillTrackRetryTotal.labels(operation, "enqueue_failed").inc();
     return false;
