@@ -1,4 +1,5 @@
 import amqp from "amqplib";
+import type { Logger } from "winston";
 import { AmqpConnection } from "../lib/amqp-connection";
 import { config } from "../config";
 import { logger as _logger } from "../lib/logger";
@@ -63,6 +64,18 @@ export async function addExtractJob(
   _logger.info("Extract job added to queue", { extractId });
 }
 
+// After a broker restart the delivering channel may already be closed; the
+// broker redelivers unsettled messages, so log instead of crashing the worker.
+function settle(logger: Logger, action: string, fn: () => void) {
+  try {
+    fn();
+  } catch (error) {
+    logger.warn(`Could not ${action} extract message on a closed channel`, {
+      error,
+    });
+  }
+}
+
 export async function consumeExtractJobs(
   handler: (
     data: ExtractJobData,
@@ -100,13 +113,14 @@ export async function consumeExtractJobs(
           try {
             await handler(
               data,
-              () => ch.ack(msg),
-              () => ch.nack(msg, false, false), // Don't requeue - send to DLX
+              () => settle(logger, "ack", () => ch.ack(msg)),
+              // Don't requeue - send to DLX
+              () => settle(logger, "nack", () => ch.nack(msg, false, false)),
             );
           } catch (error) {
             logger.error("Extract job handler threw an error", { error });
             // Don't requeue - send to DLX
-            ch.nack(msg, false, false);
+            settle(logger, "nack", () => ch.nack(msg, false, false));
           }
         },
         { noAck: false },
@@ -150,11 +164,11 @@ export async function consumeExtractDLQ(
 
           try {
             await handler(data);
-            ch.ack(msg);
+            settle(logger, "ack", () => ch.ack(msg));
           } catch (error) {
             logger.error("DLQ handler threw an error, requeueing", { error });
             // Requeue DLQ messages on error so we don't lose them
-            ch.nack(msg, false, true);
+            settle(logger, "nack", () => ch.nack(msg, false, true));
           }
         },
         { noAck: false },

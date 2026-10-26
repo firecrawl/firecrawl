@@ -3,10 +3,7 @@ import { logger } from "../../lib/logger";
 import { Client, Pool } from "pg";
 import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
-import {
-  AmqpConnection,
-  isTransientAmqpError,
-} from "../../lib/amqp-connection";
+import { AmqpConnection } from "../../lib/amqp-connection";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
 import { nuqRedis } from "./redis";
@@ -223,7 +220,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
     try {
       await this.startListener();
     } catch (error) {
-      if (!isTransientAmqpError(error)) throw error;
+      // Without RabbitMQ, Postgres LISTEN is the only wake-up path, so the
+      // failure must reach the waiter. With RabbitMQ, waitForJob's Postgres
+      // safety poll keeps the wait alive; the connection owner logs the error.
+      if (!config.NUQ_RABBITMQ_URL) throw error;
     }
     if (cancelled() || this.shuttingDown) return;
 

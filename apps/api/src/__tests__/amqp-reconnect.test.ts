@@ -6,6 +6,7 @@ import { logger } from "../lib/logger";
 const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   query: vi.fn().mockResolvedValue({ rows: [] }),
+  clientConnect: vi.fn(),
 }));
 
 vi.mock("amqplib", () => ({ default: { connect: mocks.connect } }));
@@ -33,7 +34,12 @@ vi.mock("pg", () => ({
     query = mocks.query;
     end = vi.fn();
   },
-  Client: class {},
+  Client: class {
+    on = vi.fn();
+    connect = mocks.clientConnect;
+    query = vi.fn();
+    end = vi.fn().mockResolvedValue(undefined);
+  },
 }));
 vi.mock("../services/worker/redis", () => ({ nuqRedis: {} }));
 vi.mock("../lib/otel-tracer", () => ({
@@ -632,4 +638,74 @@ test("extract jobs and DLQ consumers are both restored after broker restart", as
   await extract.shutdownExtractQueue();
   await vi.advanceTimersByTimeAsync(30000);
   expect(mocks.connect).toHaveBeenCalledTimes(4);
+});
+
+test("permanent listener setup error keeps waitForJob on the PostgreSQL safety poll", async () => {
+  const { scrapeQueue } = await import("../services/worker/nuq.js");
+  resources.push({ close: () => scrapeQueue.shutdown() });
+  mocks.connect.mockRejectedValue(
+    Object.assign(new Error("ACCESS_REFUSED"), { code: 403 }),
+  );
+  mocks.query.mockResolvedValue({ rows: [{ id: "job", status: "active" }] });
+  const waiting = scrapeQueue.waitForJob("job", 10000);
+  await vi.advanceTimersByTimeAsync(0);
+  mocks.query.mockResolvedValue({
+    rows: [{ id: "job", status: "completed", returnvalue: "done" }],
+  });
+  await vi.advanceTimersByTimeAsync(500);
+  await expect(waiting).resolves.toBe("done");
+});
+
+test("PostgreSQL-only listen mode surfaces listener startup failures to the waiter", async () => {
+  const saved = { url: config.NUQ_RABBITMQ_URL, mode: config.NUQ_WAIT_MODE };
+  config.NUQ_RABBITMQ_URL = undefined;
+  config.NUQ_WAIT_MODE = "listen";
+  try {
+    const { scrapeQueue } = await import("../services/worker/nuq.js");
+    resources.push({ close: () => scrapeQueue.shutdown() });
+    const error = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED",
+    });
+    mocks.clientConnect.mockRejectedValueOnce(error);
+    await expect(scrapeQueue.waitForJob("job", 10000)).rejects.toBe(error);
+  } finally {
+    config.NUQ_RABBITMQ_URL = saved.url;
+    config.NUQ_WAIT_MODE = saved.mode;
+  }
+});
+
+test("extract ack/nack on a closed channel is logged instead of escaping the consumer", async () => {
+  const extract = await import("../services/extract-queue.js");
+  resources.push({ close: extract.shutdownExtractQueue });
+  const jobs = session();
+  const dlq = session();
+  mocks.connect
+    .mockResolvedValueOnce(jobs.connection)
+    .mockResolvedValueOnce(dlq.connection);
+  const closed = () => {
+    throw new Error("Channel closed");
+  };
+  for (const opened of [jobs, dlq]) {
+    opened.channel.ack.mockImplementation(closed);
+    opened.channel.nack.mockImplementation(closed);
+  }
+  // Job handler fails, so the catch-path nack hits the closed channel.
+  await extract.consumeExtractJobs(
+    vi.fn().mockRejectedValue(new Error("boom")),
+  );
+  // DLQ handler succeeds, so its ack hits the closed channel.
+  await extract.consumeExtractDLQ(vi.fn().mockResolvedValue(undefined));
+  const msg = { content: Buffer.from(JSON.stringify({ extractId: "x" })) };
+  const onJob = jobs.channel.consume.mock.calls[0][1];
+  const onDlq = dlq.channel.consume.mock.calls[0][1];
+  await expect(onJob(msg)).resolves.toBeUndefined();
+  await expect(onDlq(msg)).resolves.toBeUndefined();
+  expect(jobs.channel.nack).toHaveBeenCalledWith(msg, false, false);
+  expect(dlq.channel.ack).toHaveBeenCalledWith(msg);
+  for (const action of ["nack", "ack"]) {
+    expect(logger.warn).toHaveBeenCalledWith(
+      `Could not ${action} extract message on a closed channel`,
+      expect.anything(),
+    );
+  }
 });

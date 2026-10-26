@@ -323,12 +323,9 @@ const configSchema = z.object({
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
-  AMQP_SETUP_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(2147483647)
-    .default(30000),
+  AMQP_SETUP_TIMEOUT_MS: emptyStringAsDefault(
+    z.coerce.number().int().positive().max(2147483647).default(30000),
+  ),
   FDB_CLUSTER_FILE: emptyStringAsUndefined(z.string()),
   NUQ_BACKEND: emptyStringAsUndefined(z.enum(["pg", "fdb"])),
   NUQ_FDB_READY_SHARDS: emptyStringAsDefault(
