@@ -34,8 +34,8 @@ const ASSIGNMENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCAL_TTL_MS = 60 * 1000;
 const LOCAL_MAX_ENTRIES = 100_000;
 
-// The stored assignment is read in the auth path, so a stalled Redis counts as
-// a miss rather than holding the request.
+// The stored assignment is read in the auth path, so a read that takes longer
+// treats Redis as unavailable rather than holding the request.
 const REDIS_READ_TIMEOUT_MS = 100;
 
 // An exposure marker is short-lived until PostHog accepts the event, so one a
@@ -90,13 +90,23 @@ function setBounded<V>(map: Map<string, V>, key: string, value: V): void {
   map.set(key, value);
 }
 
-async function readAssignment(orgId: string): Promise<Assignment | undefined> {
+// Redis did not answer, so whether the org has a stored assignment is unknown.
+const STORE_UNAVAILABLE = Symbol("store-unavailable");
+
+async function readAssignment(
+  orgId: string,
+): Promise<Assignment | undefined | typeof STORE_UNAVAILABLE> {
+  let raw: string | null;
   try {
-    const raw = await withTimeout(
+    raw = await withTimeout(
       redisEvictConnection.get(assignmentKey(orgId)),
       REDIS_READ_TIMEOUT_MS,
     );
-    if (!raw) return undefined;
+  } catch {
+    return STORE_UNAVAILABLE;
+  }
+  if (!raw) return undefined;
+  try {
     const parsed = JSON.parse(raw) as Partial<Assignment> | null;
     // Anything else, e.g. a variant this code no longer knows, is a miss.
     if (
@@ -172,25 +182,38 @@ function fetchAssignment(
   return promise;
 }
 
+function refreshAssignment(caller: ExperimentCaller): void {
+  void fetchAssignment(caller).then(fresh => {
+    if (fresh) {
+      setBounded(localAssignments, caller.orgId, {
+        assignment: fresh,
+        until: Date.now() + LOCAL_TTL_MS,
+      });
+    }
+  });
+}
+
 async function getAssignment(
   caller: ExperimentCaller,
 ): Promise<Assignment | undefined> {
   const local = localAssignments.get(caller.orgId);
   if (local && local.until > Date.now()) return local.assignment;
 
-  let assignment = await readAssignment(caller.orgId);
-  if (!assignment) {
+  const stored = await readAssignment(caller.orgId);
+  let assignment: Assignment | undefined;
+  if (stored === STORE_UNAVAILABLE) {
+    // The org may well have a stored assignment, so keep this process's last
+    // answer rather than wait on PostHog, and ask it in the background.
+    assignment = local?.assignment;
+    refreshAssignment(caller);
+  } else if (!stored) {
     // First request from this org: the only one that waits on PostHog.
     assignment = await fetchAssignment(caller);
-  } else if (Date.now() - assignment.checkedAt > ASSIGNMENT_FRESH_MS) {
-    void fetchAssignment(caller).then(fresh => {
-      if (fresh) {
-        setBounded(localAssignments, caller.orgId, {
-          assignment: fresh,
-          until: Date.now() + LOCAL_TTL_MS,
-        });
-      }
-    });
+  } else {
+    assignment = stored;
+    if (Date.now() - stored.checkedAt > ASSIGNMENT_FRESH_MS) {
+      refreshAssignment(caller);
+    }
   }
   setBounded(localAssignments, caller.orgId, {
     assignment,

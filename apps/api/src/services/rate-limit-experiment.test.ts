@@ -259,21 +259,50 @@ describe("getRateLimitExperimentVariant", () => {
     expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ["reading", "org-stalled-read", mocks.get],
-    ["storing", "org-stalled-store", mocks.set],
-  ])(
-    "does not hold the request while Redis stalls %s the assignment",
-    async (_label, org, command) => {
-      command.mockReturnValueOnce(new Promise(() => {}));
+  it("does not hold the request while Redis stalls storing the assignment", async () => {
+    mocks.set.mockReturnValueOnce(new Promise(() => {}));
 
-      const start = Date.now();
-      await expect(getRateLimitExperimentVariant(caller(org))).resolves.toBe(
-        "treatment",
-      );
-      expect(Date.now() - start).toBeLessThan(400);
-    },
-  );
+    const start = Date.now();
+    await expect(
+      getRateLimitExperimentVariant(caller("org-stalled-store")),
+    ).resolves.toBe("treatment");
+    expect(Date.now() - start).toBeLessThan(400);
+  });
+
+  it("keeps the current limits while Redis stalls on a first read, and asks PostHog in the background", async () => {
+    mocks.get.mockReturnValueOnce(new Promise(() => {}));
+
+    const start = Date.now();
+    await expect(
+      getRateLimitExperimentVariant(caller("org-stalled-read")),
+    ).resolves.toBeUndefined();
+    expect(Date.now() - start).toBeLessThan(400);
+    await settle();
+
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);
+    await expect(
+      getRateLimitExperimentVariant(caller("org-stalled-read")),
+    ).resolves.toBe("treatment");
+  });
+
+  it("keeps an org's last variant while Redis stalls, even if PostHog fails too", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    mocks.store.set(
+      assignmentKey("org-stalled-known"),
+      JSON.stringify({ variant: "treatment", checkedAt: Date.now() }),
+    );
+    await getRateLimitExperimentVariant(caller("org-stalled-known"));
+    await settle();
+
+    vi.advanceTimersByTime(61_000);
+    mocks.get.mockReturnValueOnce(new Promise(() => {}));
+    mocks.evaluate.mockResolvedValueOnce({ status: "retryable" });
+    await expect(
+      getRateLimitExperimentVariant(caller("org-stalled-known")),
+    ).resolves.toBe("treatment");
+    await settle();
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);
+  });
 
   it("releases the exposure marker when PostHog rejects it, so a later request retries", async () => {
     mocks.capture.mockResolvedValueOnce(false);
