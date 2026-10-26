@@ -147,6 +147,9 @@ jobs:
     name: Release summary
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
     permissions:
       contents: read
       actions: read
