@@ -138,22 +138,26 @@ export function pickPageBackground(
 }
 
 // Infer color palette from snapshots
+/**
+ * What translucent colors blend against: the measured page background, or
+ * nothing when only an overlay was seen, so the ranked colors decide the
+ * background rather than the overlay blended into gray.
+ */
+function resolvePageBackground(raw: BrandingScriptReturn): string | null {
+  const measured = pickPageBackground(
+    raw.backgroundCandidates,
+    raw.colorScheme,
+  );
+  if (measured) return measured;
+  return raw.backgroundCandidates?.length ? null : (raw.pageBackground ?? null);
+}
+
 function inferPalette(
   snapshots: BrandingScriptReturn["snapshots"],
   cssColors: string[],
   colorScheme?: "light" | "dark",
   pageBackground?: string | null,
-  backgroundCandidates?: BrandingScriptReturn["backgroundCandidates"],
 ) {
-  // Translucent colors blend against the page, so settle it before voting.
-  // When nothing measured can be the page (only an overlay was seen), the
-  // ranked colors decide below rather than the overlay blended into gray.
-  const measuredBackground = pickPageBackground(
-    backgroundCandidates,
-    colorScheme,
-  );
-  if (measuredBackground) pageBackground = measuredBackground;
-  else if (backgroundCandidates?.length) pageBackground = null;
   const freq = new Map<string, number>();
   const bump = (hex: string | null, weight = 1) => {
     if (!hex || isBrowserLinkColor(hex)) return;
@@ -376,12 +380,12 @@ function pickLogo(images: Array<{ type: string; src: string }>): string | null {
 const FIRST_SCREEN_PX = 1000;
 
 export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
+  const pageBackground = resolvePageBackground(raw);
   const palette = inferPalette(
     raw.snapshots,
     raw.cssData.colors,
     raw.colorScheme,
-    raw.pageBackground,
-    raw.backgroundCandidates,
+    pageBackground,
   );
 
   // Typography
@@ -434,12 +438,12 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       if (!s.text || s.text.trim().length === 0) return false;
 
       // Include buttons with valid background OR buttons with borders (transparent bg + border is valid)
-      const bgHex = hexify(s.colors.background, raw.pageBackground);
+      const bgHex = hexify(s.colors.background, pageBackground);
 
       // Check for borders: has borderWidth > 0 AND border color is not transparent
       const hasBorder = s.colors.borderWidth && s.colors.borderWidth > 0;
       const borderHex = hasBorder
-        ? hexify(s.colors.border, raw.pageBackground)
+        ? hexify(s.colors.border, pageBackground)
         : null;
 
       // Include if has background OR has border (transparent buttons with borders are valid)
@@ -473,10 +477,10 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       ];
       if (ctaKeywords.some(kw => text.includes(kw))) score += 500;
 
-      const bgHex = hexify(s.colors.background, raw.pageBackground);
+      const bgHex = hexify(s.colors.background, pageBackground);
       const borderHex =
         s.colors.borderWidth && s.colors.borderWidth > 0
-          ? hexify(s.colors.border, raw.pageBackground)
+          ? hexify(s.colors.border, pageBackground)
           : null;
 
       // Score for non-white backgrounds
@@ -512,10 +516,10 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 
   for (const button of candidateButtons) {
     const bgHex =
-      hexify(button.colors.background, raw.pageBackground) || "transparent";
+      hexify(button.colors.background, pageBackground) || "transparent";
     const borderHex =
       button.colors.borderWidth && button.colors.borderWidth > 0
-        ? hexify(button.colors.border, raw.pageBackground) ||
+        ? hexify(button.colors.border, pageBackground) ||
           "transparent-border"
         : "no-border";
     const textKey = (button.text || "").trim().toLowerCase().substring(0, 50);
@@ -542,10 +546,10 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const topButtons = uniqueButtons.slice(0, 80);
 
   const buttonSnapshots = topButtons.map((s, idx) => {
-    let bgHex = hexify(s.colors.background, raw.pageBackground);
+    let bgHex = hexify(s.colors.background, pageBackground);
     const borderHex =
       s.colors.borderWidth && s.colors.borderWidth > 0
-        ? hexify(s.colors.border, raw.pageBackground)
+        ? hexify(s.colors.border, pageBackground)
         : null;
 
     if (!bgHex) {
@@ -585,7 +589,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       html: "",
       classes: s.classes || "",
       background: bgHex,
-      textColor: hexify(s.colors.text, raw.pageBackground) || "#000000",
+      textColor: hexify(s.colors.text, pageBackground) || "#000000",
       borderColor: borderHex,
       borderRadius: representativeBorderRadius,
       borderRadiusCorners: corners,
@@ -604,7 +608,11 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     };
   });
 
-  const inputSnapshots = extractInputSnapshots(raw, uniqueButtons);
+  const inputSnapshots = extractInputSnapshots(
+    raw,
+    uniqueButtons,
+    pageBackground,
+  );
 
   // Populate components from actual detected styles
   if (inputSnapshots.length > 0) {
@@ -640,6 +648,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 function extractInputSnapshots(
   raw: BrandingScriptReturn,
   buttonSnapshots: any[],
+  pageBackground: string | null,
 ): InputSnapshot[] {
   // Filter input fields (excluding button inputs which are already in buttonSnapshots)
   const candidateInputs = raw.snapshots.filter(s => {
@@ -703,10 +712,10 @@ function extractInputSnapshots(
 
       const meta = input.inputMetadata;
       // Hexify with the actual page background to respect light/dark mode
-      const bgHex = hexify(input.colors.background, raw.pageBackground);
+      const bgHex = hexify(input.colors.background, pageBackground);
       const borderHex =
         input.colors.borderWidth && input.colors.borderWidth > 0
-          ? hexify(input.colors.border, raw.pageBackground)
+          ? hexify(input.colors.border, pageBackground)
           : null;
 
       const corners = {
@@ -744,7 +753,7 @@ function extractInputSnapshots(
         required: meta.required,
         classes: input.classes,
         background: bgHex || "transparent",
-        textColor: hexify(input.colors.text, raw.pageBackground),
+        textColor: hexify(input.colors.text, pageBackground),
         borderColor: borderHex,
         borderRadius: representativeBorderRadius,
         borderRadiusCorners: corners,

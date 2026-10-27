@@ -396,21 +396,26 @@ const DECLARED_SOURCES = new Set(["logo-jsonld", "apple-touch-icon"]);
 /**
  * Where a candidate's link goes, read from the link itself: a `/home` or
  * `/cart` path is named rather than trusted as the homepage, so a nav glyph
- * labelled "home" doesn't read like the logo. `home` only decides links the
- * scan resolved and we can't.
+ * labelled "home" doesn't read like the logo. `home`, the scan's verdict, is
+ * kept for links it resolved and we can't: a sibling brand domain's root, a
+ * `javascript:` link labelled as the home link, an unparseable href.
  */
 function hrefKind(href: string | undefined, pageUrl: string, home: boolean) {
   if (!href?.trim()) return "no link";
   try {
     const target = new URL(href, pageUrl);
+    if (!/^https?:$/.test(target.protocol)) {
+      return home ? "links to the homepage" : `${target.protocol} link`;
+    }
     const host = (url: URL) => url.hostname.replace(/^www\./, "");
-    if (host(target) !== host(new URL(pageUrl))) {
-      return `links to another website (${host(target)})`;
-    }
     const path = target.pathname.replace(/\/+$/, "") || "/";
-    if (path === "/" || /^\/index(?:\.html?)?$/i.test(path)) {
-      return "links to the homepage";
+    const root = path === "/" || /^\/index(?:\.html?)?$/i.test(path);
+    if (host(target) !== host(new URL(pageUrl))) {
+      return root && home
+        ? "links to the homepage"
+        : `links to another website (${host(target)})`;
     }
+    if (root) return "links to the homepage";
     return `links to ${clip(path, 60)} on this site`;
   } catch {
     return home ? "links to the homepage" : "unknown link";

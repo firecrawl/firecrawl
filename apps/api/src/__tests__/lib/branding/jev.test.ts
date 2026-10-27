@@ -1364,6 +1364,11 @@ describe("logo candidates as Jev sees them", () => {
       { ...LOGO, src: "https://acme.test/www.svg", href: "https://www.acme.test/?ref=nav" },
       { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
       { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
+      // The scan resolved these as the home link; we can't tell from the href.
+      { ...LOGO, src: "https://acme.test/sibling.svg", href: "https://acme.io/" },
+      { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
+      { ...LOGO, src: "https://acme.test/mail.svg", href: "mailto:hi@acme.test", indicators: { ...LOGO.indicators, hrefMatch: false } },
+      { ...LOGO, src: "https://acme.test/other.svg", href: "https://acme.io/pricing", indicators: { ...LOGO.indicators, hrefMatch: false } },
     ];
     expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
       "links to the homepage",
@@ -1372,6 +1377,10 @@ describe("logo candidates as Jev sees them", () => {
       "links to the homepage",
       "links to another website (x.com)",
       "no link",
+      "links to the homepage",
+      "links to the homepage",
+      "mailto: link",
+      "links to another website (acme.io)",
     ]);
   });
 

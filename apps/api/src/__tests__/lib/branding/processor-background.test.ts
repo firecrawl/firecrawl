@@ -179,6 +179,26 @@ describe("link color", () => {
     expect(profile.colors?.link).not.toBe("#FFFFFF");
   });
 
+  it("composites button colors against the page, not the overlay", () => {
+    const profile = processRawBranding(
+      raw(
+        [
+          ...paragraphs,
+          snap({ tag: "button", text: "Get started", textColor: "rgb(255, 255, 255)", background: "rgba(0, 97, 254, 0.5)", isButton: true }),
+        ],
+        {
+          scheme: "light",
+          backgrounds: [
+            { color: "rgba(0,0,0,0.95)", source: "most-common-visible", priority: 12 },
+            { color: "rgb(255, 255, 255)", source: "body", priority: 10 },
+          ],
+        },
+      ),
+    );
+    // 50% brand blue over white, not over the backdrop's black.
+    expect((profile as any).__button_snapshots?.[0]?.background).toBe("#80B0FF");
+  });
+
   it("does not blend an overlay into gray when nothing measured can be the page", () => {
     const profile = processRawBranding(
       raw(paragraphs, {
