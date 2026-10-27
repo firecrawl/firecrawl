@@ -80,19 +80,22 @@ const researchKeylessDisabled = z.preprocess(
 
 const teamDailyLimits = z.preprocess(
   value =>
-    typeof value === "string"
-      ? Object.fromEntries(
-          value
+    value === undefined
+      ? []
+      : typeof value === "string"
+        ? value
             .split(",")
             .map(entry => entry.trim())
             .filter(Boolean)
-            .map(entry => {
-              const parts = entry.split(":").map(part => part.trim());
-              return parts.length === 2 ? parts : [entry, undefined];
-            }),
-        )
-      : value,
-  z.record(z.uuid(), z.coerce.number().int().positive()).default({}),
+            .map(entry => entry.split(":").map(part => part.trim()))
+        : value,
+  z
+    .array(z.tuple([z.uuid(), z.coerce.number().int().positive()]))
+    .refine(
+      pairs => new Set(pairs.map(([teamId]) => teamId)).size === pairs.length,
+      "each team id may appear only once",
+    )
+    .transform(pairs => Object.fromEntries(pairs)),
 );
 
 const containsLoneSurrogate = (value: string): boolean => {
