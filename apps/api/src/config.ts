@@ -86,10 +86,13 @@ const teamDailyLimits = z.preprocess(
             .split(",")
             .map(entry => entry.trim())
             .filter(Boolean)
-            .map(entry => entry.split(":").map(part => part.trim())),
+            .map(entry => {
+              const parts = entry.split(":").map(part => part.trim());
+              return parts.length === 2 ? parts : [entry, undefined];
+            }),
         )
       : value,
-  z.record(z.guid(), z.coerce.number().int().positive()).default({}),
+  z.record(z.uuid(), z.coerce.number().int().positive()).default({}),
 );
 
 const containsLoneSurrogate = (value: string): boolean => {
