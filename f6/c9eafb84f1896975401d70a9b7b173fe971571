@@ -1,0 +1,28 @@
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 399-401,407-408,410,412-416,418
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 1367-1371,1380-1383
+apps/api/src/__tests__/lib/branding/processor-background.test.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 182-201
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 76-78,477-480
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 141-151,153-154,383,388,441,446,480,483,519,522,549,552,592,715,718,756
+  s_3002048a2ce37a::t_1cee1f4e3300b1 152,611-615,651
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f6c9eafb84f1896975401d70a9b7b173fe971571",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
