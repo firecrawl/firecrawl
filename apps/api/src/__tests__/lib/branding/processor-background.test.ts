@@ -125,6 +125,7 @@ describe("link color", () => {
       ),
     );
     expect(profile.colors?.link).toBe("#3366CC");
+    expect((profile as any).__link_measured).toBe(true);
   });
 
   it("falls back to the navigation's links, and then to the accent", () => {
@@ -141,6 +142,7 @@ describe("link color", () => {
 
     const noLinks = processRawBranding(raw(paragraphs, page));
     expect(noLinks.colors?.link).toBe(noLinks.colors?.accent);
+    expect((noLinks as any).__link_measured).toBe(false);
   });
 
   it("ignores the browser's default blue, body-text black and a dark header's white", () => {

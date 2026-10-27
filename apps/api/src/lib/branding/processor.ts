@@ -292,9 +292,10 @@ function inferPalette(
   };
   const contentLinks = voteLinks(false);
   const linkVotes = contentLinks.size > 0 ? contentLinks : voteLinks(true);
-  const link =
-    Array.from(linkVotes.entries()).sort((x, y) => y[1] - x[1])[0]?.[0] ||
-    accent;
+  const measuredLink = Array.from(linkVotes.entries()).sort(
+    (x, y) => y[1] - x[1],
+  )[0]?.[0];
+  const link = measuredLink || accent;
 
   // Collect all detected colors with their frequencies for debugging
   const allDetectedColors = Array.from(freq.entries())
@@ -321,7 +322,7 @@ function inferPalette(
     link,
   };
 
-  return paletteResult;
+  return { ...paletteResult, linkMeasured: !!measuredLink };
 }
 
 // Infer spacing base unit
@@ -381,7 +382,7 @@ const FIRST_SCREEN_PX = 1000;
 
 export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const pageBackground = resolvePageBackground(raw);
-  const palette = inferPalette(
+  const { linkMeasured, ...palette } = inferPalette(
     raw.snapshots,
     raw.cssData.colors,
     raw.colorScheme,
@@ -639,6 +640,8 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     components,
     images,
     __button_snapshots: buttonSnapshots as any,
+    // Whether `colors.link` came from the page's links or stands in for the accent.
+    __link_measured: linkMeasured,
     __input_snapshots: inputSnapshots as any,
     __framework_hints: raw.frameworkHints as any,
     __logo_candidates: raw.logoCandidates as any,

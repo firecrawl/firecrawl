@@ -25,9 +25,10 @@ export function mergeBrandingResults(
   const merged: BrandingProfile = { ...js };
   // The heuristic link is the accent's stand-in when the page's links gave
   // no color of their own; such a link follows the accent through every
-  // change below. One measured on the page's links is the brand's and stays.
+  // change below. One measured on the page's links is the brand's and stays,
+  // even when it happens to equal the heuristic accent.
   const linkFollowsAccent =
-    !!js.colors?.link && js.colors.link === js.colors.accent;
+    !!js.colors?.link && (js as any).__link_measured !== true;
 
   // Handle logo selection only when we had logo candidates; ignore logoSelection when there were none
   const hasLogoCandidates = !!(logoCandidates && logoCandidates.length > 0);
