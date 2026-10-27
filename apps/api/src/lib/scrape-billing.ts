@@ -216,16 +216,16 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  // Not billed when zero data retention refuses it (transformers/audio.ts).
-  // Lockdown skips the fetch before that check and keeps the surcharge.
-  if (
-    hasFormatOfType(options.formats, "audio") &&
-    (options.lockdown || !internalOptions.zeroDataRetention)
-  ) {
+  // Not billed when zero data retention refuses them (transformers/audio.ts,
+  // video.ts). Lockdown skips the fetch before that check and keeps the surcharge.
+  const mediaFormatsRefused =
+    !!internalOptions.zeroDataRetention && !options.lockdown;
+
+  if (hasFormatOfType(options.formats, "audio") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
   }
 
-  if (hasFormatOfType(options.formats, "video")) {
+  if (hasFormatOfType(options.formats, "video") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
   }
 

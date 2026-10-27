@@ -234,7 +234,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     expect(response.body.success).toBe(true);
   }, 60000);
 
-  describe.each(scopes)("%s audio and product formats", scope => {
+  describe.each(scopes)("%s audio, video and product formats", scope => {
     let identity: Identity;
 
     beforeAll(async () => {
@@ -272,6 +272,28 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     );
 
     it.concurrent(
+      "refuses the video format without attempting the download",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://firecrawl.dev",
+            formats: ["markdown", "video"],
+            zeroDataRetention,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.video).toBeUndefined();
+        expect(response.videos).toBeUndefined();
+        expect(response.warning).toContain(
+          "Video format is not supported with zero data retention.",
+        );
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
       "refuses the product format",
       async () => {
         const response = await scrape(
@@ -293,7 +315,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     );
   });
 
-  describe("audio and product formats without zero data retention on the request", () => {
+  describe("audio, video and product formats without zero data retention on the request", () => {
     let identity: Identity;
 
     beforeAll(async () => {
@@ -318,6 +340,22 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         expect(response.audio).toMatch(/^https:\/\//);
       },
       scrapeTimeout,
+    );
+
+    it.concurrent(
+      "still returns video",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            formats: ["video"],
+          },
+          identity,
+        );
+
+        expect(response.video).toMatch(/^https:\/\//);
+      },
+      scrapeTimeout * 2,
     );
 
     concurrentIf(HAS_PRODUCT_SERVICE)(

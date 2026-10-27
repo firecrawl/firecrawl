@@ -481,12 +481,15 @@ describe("calculateCreditsToBeBilled — zero data retention", () => {
     expect(await bill({ lockdown: true }, true)).toBe(5);
   });
 
-  it("drops the audio surcharge it refuses, but not under lockdown", async () => {
-    const audio = { formats: [{ type: "audio" }] };
-    expect(await bill(audio, false)).toBe(5);
-    expect(await bill(audio, true)).toBe(2);
-    expect(await bill({ ...audio, lockdown: true }, true)).toBe(9);
-  });
+  it.each(["audio", "video"])(
+    "drops the %s surcharge it refuses, but not under lockdown",
+    async type => {
+      const media = { formats: [{ type }] };
+      expect(await bill(media, false)).toBe(5);
+      expect(await bill(media, true)).toBe(2);
+      expect(await bill({ ...media, lockdown: true }, true)).toBe(9);
+    },
+  );
 });
 
 describe("calculateThreatScanCredits", () => {

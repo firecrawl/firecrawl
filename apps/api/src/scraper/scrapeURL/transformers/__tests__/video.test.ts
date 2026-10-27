@@ -62,6 +62,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { rawHtml: "<html></html>" };
@@ -104,6 +105,36 @@ describe("fetchVideo", () => {
     expect(result.video).toBeUndefined();
   });
 
+  it.each([
+    "https://www.youtube.com/watch?v=abc123",
+    "https://example.com/product",
+  ])(
+    "refuses the video format under zero data retention without calling avgrab (%s)",
+    async url => {
+      const fetchSpy = mockSuccessfulAvgrab();
+
+      const meta: any = {
+        url,
+        options: {
+          lockdown: false,
+          formats: [{ type: "video" }],
+        },
+        internalOptions: { zeroDataRetention: true },
+        logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+      };
+      const document: any = { rawHtml: "<html></html>" };
+
+      const result = await fetchVideo(meta, document);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.video).toBeUndefined();
+      expect(result.videos).toBeUndefined();
+      expect(result.warning).toBe(
+        "Video format is not supported with zero data retention.",
+      );
+    },
+  );
+
   it("returns early when video format is not requested regardless of lockdown", async () => {
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
@@ -114,6 +145,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "markdown" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { markdown: "cached" };
@@ -134,6 +166,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -167,6 +200,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -212,6 +246,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -253,6 +288,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -276,6 +312,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -302,6 +339,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
