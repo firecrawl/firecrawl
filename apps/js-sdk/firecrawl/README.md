@@ -343,6 +343,20 @@ console.log(run.stdout);
 await app.stopInteraction(scrapeJobId);
 ```
 
+If the original scrape's replay context is unavailable (for example, with zero
+data retention), pass `url` to initialize the interaction at that URL:
+
+```js
+const run = await app.interact(scrapeJobId, {
+  url: 'https://example.com',
+  prompt: 'Read the page title',
+});
+```
+
+The fallback URL does not replay the original scrape's actions. It is only used
+when retained replay context is unavailable; it does not override an existing
+interaction session or retained replay context.
+
 ### Crawl a website with real‑time updates
 
 To receive real‑time updates, start a crawl and attach a watcher.
