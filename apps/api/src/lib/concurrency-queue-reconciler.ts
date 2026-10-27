@@ -1,11 +1,11 @@
 import { Logger } from "winston";
-import { validate as isUUID } from "uuid";
 import { getRedisConnection } from "../services/queue-service";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 import { type ScrapeJobData } from "../types";
 import {
   getConcurrencyLimitActiveJobs,
   getNextConcurrentJob,
+  getCrawlConcurrencyLimitActiveJobs,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
@@ -17,6 +17,7 @@ import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
+import { normalizeOwnerId } from "./owner-id";
 
 interface ReconcileOptions {
   teamId?: string;
@@ -44,11 +45,11 @@ function getBacklogJobTimeout(jobData: ScrapeJobData): number {
 }
 
 async function requeueJob(
-  ownerId: string,
+  teamId: string,
   job: NuQJob<ScrapeJobData>,
 ): Promise<void> {
   await pushConcurrencyLimitedJob(
-    ownerId,
+    teamId,
     {
       id: job.id,
       data: job.data,
@@ -83,8 +84,14 @@ async function getQueuedJobIDs(teamId: string): Promise<Set<string>> {
 
 async function reconcileTeam(
   ownerId: string,
+  teamId: string,
   teamLogger: Logger,
-): Promise<{ jobsStarted: number; jobsRequeued: number } | null> {
+): Promise<{
+  teamId: string;
+  hasDrift: boolean;
+  jobsStarted: number;
+  jobsRequeued: number;
+} | null> {
   const backloggedJobIDs = new Set(
     await scrapeQueue.getBackloggedJobIDsOfOwner(ownerId, teamLogger),
   );
@@ -92,11 +99,23 @@ async function reconcileTeam(
     return null;
   }
 
-  const queuedJobIDs = await getQueuedJobIDs(ownerId);
+  // NuQ stores a normalized owner UUID, while Redis concurrency keys use the
+  // original team ID. The backlog payload is the durable source for that ID;
+  // the Redis key index may have been cleaned up when its sorted set emptied.
+  const backlogTeamId =
+    (await scrapeQueue.getBackloggedTeamIdOfOwner(ownerId, teamLogger)) ??
+    teamId;
+
+  const queuedJobIDs = await getQueuedJobIDs(backlogTeamId);
   const missingJobIDs = [...backloggedJobIDs].filter(x => !queuedJobIDs.has(x));
 
   if (missingJobIDs.length === 0) {
-    return null;
+    return {
+      teamId: backlogTeamId,
+      hasDrift: false,
+      jobsStarted: 0,
+      jobsRequeued: 0,
+    };
   }
 
   const jobsToRecover = await scrapeQueue.getJobsFromBacklog(
@@ -104,7 +123,12 @@ async function reconcileTeam(
     teamLogger,
   );
   if (jobsToRecover.length === 0) {
-    return null;
+    return {
+      teamId: backlogTeamId,
+      hasDrift: false,
+      jobsStarted: 0,
+      jobsRequeued: 0,
+    };
   }
 
   // Autumn's CONCURRENCY balance is a single per-team pool, so crawl and
@@ -133,16 +157,50 @@ async function reconcileTeam(
 
   const jobsToStart: typeof jobsToRecover = [];
   const jobsToQueue: typeof jobsToRecover = [];
+  const crawlConcurrency = new Map<
+    string,
+    { limit: number | null; active: number }
+  >();
 
   for (const job of jobsToRecover) {
     const isExtract = isExtractJob(job.data);
     const teamLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
     const activeCount = isExtract ? activeExtractCount : activeCrawlCount;
 
-    if (activeCount < teamLimit) {
+    let crawlState: { limit: number | null; active: number } | undefined;
+    if (job.data.crawl_id) {
+      crawlState = crawlConcurrency.get(job.data.crawl_id);
+      if (!crawlState) {
+        const crawl = await getCrawl(job.data.crawl_id);
+        const limit =
+          crawl === null
+            ? null
+            : typeof crawl.crawlerOptions?.delay === "number" &&
+                crawl.crawlerOptions.delay > 0
+              ? 1
+              : (crawl.maxConcurrency ?? null);
+        crawlState = {
+          limit,
+          active:
+            limit === null
+              ? 0
+              : (await getCrawlConcurrencyLimitActiveJobs(job.data.crawl_id))
+                  .length,
+        };
+        crawlConcurrency.set(job.data.crawl_id, crawlState);
+      }
+    }
+
+    const crawlHasCapacity =
+      !crawlState ||
+      crawlState.limit === null ||
+      crawlState.active < crawlState.limit;
+
+    if (activeCount < teamLimit && crawlHasCapacity) {
       jobsToStart.push(job);
       if (isExtract) activeExtractCount++;
       else activeCrawlCount++;
+      if (crawlState) crawlState.active++;
     } else {
       jobsToQueue.push(job);
     }
@@ -152,7 +210,7 @@ async function reconcileTeam(
   let jobsRequeued = 0;
 
   for (const job of jobsToQueue) {
-    await requeueJob(ownerId, job);
+    await requeueJob(backlogTeamId, job);
     jobsRequeued++;
   }
 
@@ -169,7 +227,7 @@ async function reconcileTeam(
     );
 
     if (promoted !== null) {
-      await pushConcurrencyLimitActiveJob(ownerId, job.id, 60 * 1000);
+      await pushConcurrencyLimitActiveJob(backlogTeamId, job.id, 60 * 1000);
 
       if (job.data.crawl_id) {
         const sc = await getCrawl(job.data.crawl_id);
@@ -187,7 +245,7 @@ async function reconcileTeam(
       teamLogger.warn("Job promotion failed, re-queuing job", {
         jobId: job.id,
       });
-      await requeueJob(ownerId, job);
+      await requeueJob(backlogTeamId, job);
       jobsRequeued++;
     }
   }
@@ -199,11 +257,17 @@ async function reconcileTeam(
     startedJobs: jobsStarted,
   });
 
-  return { jobsStarted, jobsRequeued };
+  return {
+    teamId: backlogTeamId,
+    hasDrift: true,
+    jobsStarted,
+    jobsRequeued,
+  };
 }
 
 async function drainQueue(
   ownerId: string,
+  teamId: string,
   teamLogger: Logger,
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
   // Autumn's CONCURRENCY balance is a single per-team pool, so crawl and
@@ -217,7 +281,7 @@ async function drainQueue(
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
 
-  const activeIds = await getConcurrencyLimitActiveJobs(ownerId);
+  const activeIds = await getConcurrencyLimitActiveJobs(teamId);
   const activeJobs = await scrapeQueue.getJobs(activeIds, teamLogger);
   let crawlCount = 0;
   let extractCount = 0;
@@ -237,7 +301,7 @@ async function drainQueue(
     )
       break;
 
-    const nextJob = await getNextConcurrentJob(ownerId);
+    const nextJob = await getNextConcurrentJob(teamId);
     if (nextJob === null) break;
 
     const isExtract = isExtractJob(nextJob.job.data);
@@ -246,7 +310,7 @@ async function drainQueue(
 
     if (typeCount >= typeLimit) {
       await pushConcurrencyLimitedJob(
-        ownerId,
+        teamId,
         {
           id: nextJob.job.id,
           data: nextJob.job.data,
@@ -259,7 +323,7 @@ async function drainQueue(
       continue;
     }
 
-    await pushConcurrencyLimitActiveJob(ownerId, nextJob.job.id, 60 * 1000);
+    await pushConcurrencyLimitActiveJob(teamId, nextJob.job.id, 60 * 1000);
     if (nextJob.job.data.crawl_id) {
       await pushCrawlConcurrencyLimitActiveJob(
         nextJob.job.data.crawl_id,
@@ -284,7 +348,7 @@ async function drainQueue(
       else crawlCount++;
       jobsPromoted++;
     } else {
-      await removeConcurrencyLimitActiveJob(ownerId, nextJob.job.id);
+      await removeConcurrencyLimitActiveJob(teamId, nextJob.job.id);
       if (nextJob.job.data.crawl_id) {
         await removeCrawlConcurrencyLimitActiveJob(
           nextJob.job.data.crawl_id,
@@ -313,9 +377,14 @@ export async function reconcileConcurrencyQueue(
     scopedTeamId: options.teamId,
   });
 
-  let ownerIds: string[];
+  let teamScopes: { ownerId: string; teamId: string }[];
   if (options.teamId) {
-    ownerIds = [options.teamId];
+    teamScopes = [
+      {
+        ownerId: normalizeOwnerId(options.teamId) ?? options.teamId,
+        teamId: options.teamId,
+      },
+    ];
   } else {
     const backlogOwners = (
       await scrapeQueue.getBackloggedOwnerIDs(logger)
@@ -323,31 +392,53 @@ export async function reconcileConcurrencyQueue(
     const queueKeys = await getRedisConnection().smembers(
       "concurrency-limit-queues",
     );
-    const queueOwners = queueKeys
-      .map(k => k.replace("concurrency-limit-queue:", ""))
-      .filter(id => id.length > 0 && isUUID(id));
-    ownerIds = [...new Set([...backlogOwners, ...queueOwners])];
+    const scopesByTeamId = new Map<
+      string,
+      { ownerId: string; teamId: string }
+    >();
+    const queuePrefix = "concurrency-limit-queue:";
+    for (const key of queueKeys) {
+      if (!key.startsWith(queuePrefix)) continue;
+      const teamId = key.slice(queuePrefix.length);
+      const ownerId = normalizeOwnerId(teamId);
+      if (ownerId) scopesByTeamId.set(teamId, { ownerId, teamId });
+    }
+    const ownersWithQueue = new Set(
+      [...scopesByTeamId.values()].map(scope => scope.ownerId),
+    );
+    for (const ownerId of backlogOwners) {
+      if (!ownersWithQueue.has(ownerId)) {
+        scopesByTeamId.set(ownerId, { ownerId, teamId: ownerId });
+      }
+    }
+    teamScopes = [...scopesByTeamId.values()];
   }
 
   const result: ReconcileResult = {
-    teamsScanned: ownerIds.length,
+    teamsScanned: teamScopes.length,
     teamsWithDrift: 0,
     jobsRequeued: 0,
     jobsStarted: 0,
   };
 
-  for (const ownerId of ownerIds) {
+  for (const { ownerId, teamId } of teamScopes) {
     const teamLogger = logger.child({ teamId: ownerId });
 
     try {
-      const teamResult = await reconcileTeam(ownerId, teamLogger);
+      const teamResult = await reconcileTeam(ownerId, teamId, teamLogger);
+      let effectiveTeamId = teamId;
       if (teamResult !== null) {
-        result.teamsWithDrift++;
+        effectiveTeamId = teamResult.teamId;
+        if (teamResult.hasDrift) result.teamsWithDrift++;
         result.jobsStarted += teamResult.jobsStarted;
         result.jobsRequeued += teamResult.jobsRequeued;
       }
 
-      const drainResult = await drainQueue(ownerId, teamLogger);
+      const drainResult = await drainQueue(
+        ownerId,
+        effectiveTeamId,
+        teamLogger,
+      );
       if (drainResult.jobsPromoted > 0 || drainResult.staleSkipped > 0) {
         result.jobsStarted += drainResult.jobsPromoted;
         teamLogger.info("Queue drain promoted jobs", {

@@ -722,6 +722,30 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
+  public async getBackloggedTeamIdOfOwner(
+    ownerId: string,
+    _logger: Logger = logger,
+  ): Promise<string | null> {
+    const start = Date.now();
+    try {
+      return (
+        (
+          await nuqPool.query(
+            `SELECT data->>'team_id' AS team_id FROM ${this.queueName}_backlog WHERE owner_id = $1 AND data->>'team_id' IS NOT NULL LIMIT 1;`,
+            [ownerId],
+          )
+        ).rows[0]?.team_id ?? null
+      );
+    } finally {
+      _logger.info("nuqGetBackloggedTeamIdOfOwner metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetBackloggedTeamIdOfOwner",
+        duration: Date.now() - start,
+        ownerId,
+      });
+    }
+  }
+
   public async getGroupJobs(
     groupId: string,
     status: "completed" | "failed",
