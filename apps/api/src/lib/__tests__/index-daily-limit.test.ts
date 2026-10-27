@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const OVERRIDDEN_TEAM = "00000000-0000-4000-8000-000000000001";
 const OTHER_TEAM = "00000000-0000-4000-8000-000000000002";
+const RESEARCH_TEAM = "00000000-0000-4000-8000-000000000003";
 
 // config parses the overrides at import, so set them first.
 const { redis } = vi.hoisted(() => {
   process.env.GOV_INDEX_CALLS_PER_DAY_OVERRIDES =
     " 00000000-0000-4000-8000-000000000001:20000 ,";
+  process.env.RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES =
+    "00000000-0000-4000-8000-000000000003:10000";
   return { redis: { eval: vi.fn() } };
 });
 
@@ -66,5 +69,48 @@ describe("Government Index per-team overrides", () => {
     const refusal = indexDailyLimitRefusal("gov", OVERRIDDEN_TEAM, reservation);
     expect(refusal.limit).toBe(20000);
     expect(refusal.error).toContain("19,990 of its 20,000 calls today");
+  });
+});
+
+describe("Research Index per-team overrides", () => {
+  it("parses the configured list", () => {
+    expect(config.RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES).toEqual({
+      [RESEARCH_TEAM]: 10000,
+    });
+  });
+
+  it("uses the override for a listed team", async () => {
+    await reserveIndexCalls("research", RESEARCH_TEAM, 1, 1, NOW);
+    expect(limitPassedToRedis()).toBe(10000);
+  });
+
+  it("keeps the plan limit for other teams", async () => {
+    await reserveIndexCalls("research", OTHER_TEAM, 1, 1, NOW);
+    expect(limitPassedToRedis()).toBe(1000);
+  });
+
+  it("does not apply to the Government Index", async () => {
+    await reserveIndexCalls("gov", RESEARCH_TEAM, 1, 1, NOW);
+    expect(limitPassedToRedis()).toBe(1000);
+  });
+
+  it("reports the override in the refusal", async () => {
+    redis.eval.mockResolvedValue([0, 10000]);
+    const reservation = await reserveIndexCalls(
+      "research",
+      RESEARCH_TEAM,
+      1,
+      1,
+      NOW,
+    );
+    expect(reservation.ok).toBe(false);
+    if (reservation.ok) return;
+    const refusal = indexDailyLimitRefusal(
+      "research",
+      RESEARCH_TEAM,
+      reservation,
+    );
+    expect(refusal.limit).toBe(10000);
+    expect(refusal.error).toContain("10,000 of its 10,000 calls today");
   });
 });

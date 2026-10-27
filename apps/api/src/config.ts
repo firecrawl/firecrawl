@@ -138,9 +138,10 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
-  // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
-  // listed team's limit replaces its plan limit.
+  // Per-team Government Index and Research Index daily limits as
+  // teamId:limit,teamId:limit. A listed team's limit replaces its plan limit.
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
+  RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
 

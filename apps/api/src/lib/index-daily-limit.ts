@@ -70,10 +70,11 @@ export async function reserveIndexCalls(
   calls: number,
   now = new Date(),
 ): Promise<IndexDailyReservation> {
-  const limit =
-    (index === "gov"
-      ? config.GOV_INDEX_CALLS_PER_DAY_OVERRIDES?.[teamId]
-      : undefined) ?? indexCallsPerDay(rateLimitMultiplier);
+  const overrides =
+    index === "gov"
+      ? config.GOV_INDEX_CALLS_PER_DAY_OVERRIDES
+      : config.RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES;
+  const limit = overrides?.[teamId] ?? indexCallsPerDay(rateLimitMultiplier);
   if (calls <= 0 || limit === null)
     return { ok: true, release: async () => {} };
 
