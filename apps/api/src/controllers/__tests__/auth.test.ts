@@ -883,11 +883,24 @@ describe("authenticateUser", () => {
     );
   });
 
-  it("rejects a managed OAuth credential on the public REST token path", async () => {
+  it("looks up a REST-audience grant key as a managed credential", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
     config.OAUTH_INTROSPECT_SECRET = "secret";
     vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "11111111-1111-1111-8111-111111111111",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    mockMultiplier(1);
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({
+      consume: vi.fn().mockResolvedValue(undefined),
+    } as never);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -916,9 +929,52 @@ describe("authenticateUser", () => {
       RateLimiterMode.Scrape,
     );
 
+    expect(auth).toEqual(
+      expect.objectContaining({ success: true, team_id: "team-1" }),
+    );
+    expect(authCreditUsageChunk).toHaveBeenCalledWith(
+      expect.anything(),
+      "11111111-1111-1111-8111-111111111111",
+      "hosted_mcp_oauth",
+    );
+  });
+
+  it("rejects a grant key whose audience is hosted MCP", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+    config.OAUTH_INTROSPECT_SECRET = "secret";
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            active: true,
+            api_key: "fc-11111111111111118111111111111111",
+            scope: "firecrawl:global",
+            client_id: "client-1",
+            team_id: "team-1",
+            exp: Math.floor(Date.now() / 1000) + 60,
+            aud: "https://mcp.firecrawl.dev/v2/mcp",
+            credential_purpose: "hosted_mcp_oauth",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: "Bearer fco_managed_token" },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
     expect(auth).toEqual({
       success: false,
-      error: "Unauthorized: Invalid token",
+      error: "Unauthorized: Invalid or expired OAuth token",
       status: 401,
     });
     expect(authCreditUsageChunk).not.toHaveBeenCalled();

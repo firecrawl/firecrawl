@@ -974,10 +974,11 @@ async function supaAuthenticateUser(
         status: 401,
       });
     }
-    if (
-      introspection.credential_purpose !== undefined &&
-      introspection.credential_purpose !== "general"
-    ) {
+    const credentialPurpose = introspection.credential_purpose ?? "general";
+    const isRestGrantKey =
+      credentialPurpose === "hosted_mcp_oauth" &&
+      introspection.aud === FIRECRAWL_REST_RESOURCE;
+    if (credentialPurpose !== "general" && !isRestGrantKey) {
       return denied(req, "oauth_purpose_mismatch", {
         success: false,
         error: "Unauthorized: Invalid token",
@@ -985,14 +986,13 @@ async function supaAuthenticateUser(
       });
     }
 
-    // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
     chunk = await getACUC(
       resolvedApi,
       false,
       true,
       RateLimiterMode.Scrape,
-      "general",
+      credentialPurpose,
     );
 
     if (chunk === null) {
