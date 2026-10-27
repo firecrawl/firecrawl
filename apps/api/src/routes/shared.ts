@@ -19,6 +19,7 @@ import {
   getRoutePattern,
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
+import { upgradeLink } from "../lib/upgrade-link";
 import * as geoip from "geoip-country";
 import { isSelfHosted } from "../lib/deployment";
 import { validate as isUuid } from "uuid";
@@ -257,7 +258,8 @@ export function checkCreditsMiddleware(
               currencyName +
               ", you can upgrade your plan at " +
               (currencyName === "credits"
-                ? "https://firecrawl.dev/pricing or try changing the request limit to a lower value"
+                ? upgradeLink(req.auth.team_id, req.acuc) +
+                  " or try changing the request limit to a lower value"
                 : "https://www.firecrawl.dev/extract#pricing") +
               ".",
           });

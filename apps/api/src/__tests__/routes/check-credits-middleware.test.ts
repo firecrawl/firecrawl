@@ -124,6 +124,43 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     );
   });
 
+  it.each([
+    [
+      "a free-plan team gets the Hobby checkout link",
+      false,
+      "https://www.firecrawl.dev/billing/checkout/hobby?team=3f2c8a1e-5b7d-4c90-9e21-6a4b8d0f1c37",
+    ],
+    [
+      "a paid team keeps the pricing link",
+      true,
+      "https://firecrawl.dev/pricing",
+    ],
+    [
+      "an unknown plan keeps the pricing link",
+      undefined,
+      "https://firecrawl.dev/pricing",
+    ],
+  ])("402: %s", async (_label, isPaidPlan, link) => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+
+    const req = buildReq({
+      auth: {
+        team_id: "3f2c8a1e-5b7d-4c90-9e21-6a4b8d0f1c37",
+        org_id: "org_test",
+      },
+      acuc: { is_paid_plan: isPaidPlan },
+    });
+    const { res } = await runMiddleware(req);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    const { error } = res.json.mock.calls[0][0];
+    expect(error).toBe(
+      `Insufficient credits to perform this request. For more credits, you can upgrade your plan at ${link} or try changing the request limit to a lower value.`,
+    );
+    if (isPaidPlan !== false)
+      expect(error).not.toContain("/billing/checkout/hobby");
+  });
+
   it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
     checkCreditsMock
       .mockResolvedValueOnce({ allowed: false, remaining: 5 })
