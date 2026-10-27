@@ -20,9 +20,6 @@ jobs:
         search: ['searxng'] # disabled google for now, should be fine with just Searxng
         ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
         nuq: ['postgres']
-        include:
-          # Exercise the self-hosted API/harness path through the FDB NuQ router
-          # without doubling the expensive Playwright/proxy matrix.
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
