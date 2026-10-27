@@ -55,11 +55,47 @@ export function colorDistance(a?: string | null, b?: string | null): number {
  * Nearly white, whatever its tint (#E5EDF5, #F2E8E1): on a light page that is
  * a section background, not a brand color.
  */
-function isPale(hex: string): boolean {
+export function isPale(hex: string): boolean {
   const h = hex.replace("#", "");
   if (h.length < 6) return false;
   const channels = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
   return (Math.max(...channels) + Math.min(...channels)) / 2 / 255 > 0.9;
+}
+
+/** A light color on a light page, a dark one on a dark page: what a page background can be. */
+export function fitsColorScheme(
+  hex: string,
+  colorScheme?: "light" | "dark",
+): boolean {
+  const luma = contrastYIQ(hex);
+  return colorScheme === "dark" ? luma < 128 : luma >= 128;
+}
+
+/**
+ * Able to call attention to a button or link: a monochrome brand's black (white
+ * on a dark page), or a color with real chroma that isn't a pale tint on a
+ * light page. Grays and slates (#A2A9B1, #4A5565) are chrome.
+ */
+export function isUsableAccent(
+  hex: string,
+  colorScheme?: "light" | "dark",
+): boolean {
+  if (colorScheme === "dark" ? contrastYIQ(hex) > 200 : isNearBlack(hex)) {
+    return hex.replace("#", "").length >= 6;
+  }
+  return isChromaticAccent(hex, colorScheme);
+}
+
+/** A color with real chroma that isn't a pale tint on a light page: what the page's own colored elements can offer as an accent. Grays, slates (#4A5565), black and white are not it. */
+export function isChromaticAccent(
+  hex: string,
+  colorScheme?: "light" | "dark",
+): boolean {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return false;
+  const channels = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+  if (Math.max(...channels) - Math.min(...channels) < 30) return false;
+  return colorScheme === "dark" || !isPale(hex);
 }
 
 /** Chromatic brand color — not gray chrome, and not near-black or near-white chrome on light pages. */
