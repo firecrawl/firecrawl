@@ -1,0 +1,20 @@
+apps/api/pnpm-lock.yaml
+  h_b58237c6fffd77 23,6519,6975,7095,7277,8455,8471
+apps/api/pnpm-workspace.yaml
+  h_b58237c6fffd77 36-37
+apps/playwright-service-ts/pnpm-lock.yaml
+  h_b58237c6fffd77 10,854,1060,1067
+apps/playwright-service-ts/pnpm-workspace.yaml
+  h_b58237c6fffd77 10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f6d8fdd145d983b3d8848f32583b6c540735317",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
