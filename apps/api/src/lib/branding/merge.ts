@@ -23,6 +23,11 @@ export function mergeBrandingResults(
   logoCandidates?: LogoCandidate[],
 ): BrandingProfile {
   const merged: BrandingProfile = { ...js };
+  // The heuristic link is the accent's stand-in when the page's links gave
+  // no color of their own; such a link follows the accent through every
+  // change below. One measured on the page's links is the brand's and stays.
+  const linkFollowsAccent =
+    !!js.colors?.link && js.colors.link === js.colors.accent;
 
   // Handle logo selection only when we had logo candidates; ignore logoSelection when there were none
   const hasLogoCandidates = !!(logoCandidates && logoCandidates.length > 0);
@@ -328,6 +333,7 @@ export function mergeBrandingResults(
         ? merged.colors?.textPrimary
         : llmText || merged.colors?.textPrimary,
     };
+    if (linkFollowsAccent) merged.colors.link = merged.colors.accent;
 
     // When the LLM omits secondaryColor, remove the JS-heuristic secondary
     // to avoid propagating spurious colors from CSS presets (e.g. WordPress themes).
@@ -384,6 +390,7 @@ export function mergeBrandingResults(
     buttonSnapshots,
     logoCandidates,
     displaced,
+    linkFollowsAccent,
   );
 
   if (llm.personality) {
@@ -498,6 +505,7 @@ function applyLogoAndMonochromeColors(
   buttonSnapshots: ButtonSnapshot[],
   logoCandidates: LogoCandidate[] | undefined,
   displaced: string | undefined,
+  linkFollowsAccent: boolean,
 ): void {
   if (!merged.colors) return;
   const scheme = merged.colorScheme;
@@ -546,11 +554,8 @@ function applyLogoAndMonochromeColors(
     return !!hex && hex !== displaced && !isNeutral(hex) && !onButton(hex);
   };
   const colors = { ...merged.colors, primary: neutral };
-  // A link color that merely mirrored the accent follows it; one measured
-  // on the page's links is the brand's link color and stays.
-  const linkMirroredAccent = colors.link === colors.accent;
   if (incidental(colors.accent)) colors.accent = neutral;
-  if (linkMirroredAccent) colors.link = colors.accent;
+  if (linkFollowsAccent) colors.link = colors.accent;
   if (incidental(colors.secondary)) delete colors.secondary;
   merged.colors = colors;
 }

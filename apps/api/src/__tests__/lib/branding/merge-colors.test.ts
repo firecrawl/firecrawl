@@ -69,4 +69,17 @@ describe("merging the model's color roles", () => {
         .colors?.background,
     ).toBe("#FAFAFA");
   });
+
+  it("keeps a link that only stood in for the accent following the accent", () => {
+    const js = page();
+    js.colors!.link = js.colors!.accent;
+    const merged = mergeBrandingResults(js, roles({ accentColor: "#FC6D26" }), []);
+    expect(merged.colors?.accent).toBe("#FC6D26");
+    expect(merged.colors?.link).toBe("#FC6D26");
+  });
+
+  it("keeps a measured link color when the model changes the accent", () => {
+    const merged = mergeBrandingResults(page(), roles({ accentColor: "#FC6D26" }), []);
+    expect(merged.colors?.link).toBe("#0044AF");
+  });
 });
