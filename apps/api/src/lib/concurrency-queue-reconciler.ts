@@ -143,7 +143,7 @@ async function reconcileTeam(
   const maxExtractConcurrency = teamConcurrency;
 
   // Split active count by type so one type's active jobs don't gate the other
-  const activeJobIds = await getConcurrencyLimitActiveJobs(ownerId);
+  const activeJobIds = await getConcurrencyLimitActiveJobs(backlogTeamId);
   const activeJobs = await scrapeQueue.getJobs(activeJobIds, teamLogger);
   let activeCrawlCount = 0;
   let activeExtractCount = 0;

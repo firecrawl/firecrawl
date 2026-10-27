@@ -127,4 +127,35 @@ describe("reconcileConcurrencyQueue", () => {
       jobsRequeued: 2,
     });
   });
+
+  it("counts existing team jobs under the raw ID before recovering backlog jobs", async () => {
+    mocks.getBackloggedJobIDsOfOwner.mockResolvedValue(["job-1"]);
+    mocks.getBackloggedTeamIdOfOwner.mockResolvedValue("bypass");
+    mocks.getJobsFromBacklog.mockResolvedValue([
+      { id: "job-1", data: { team_id: "bypass" } },
+    ]);
+    mocks.getACUCTeam.mockResolvedValue({ concurrency_limit: 1 });
+    mocks.getConcurrencyLimitActiveJobs.mockImplementation(async teamId =>
+      teamId === "bypass" ? ["active-job"] : [],
+    );
+    mocks.getJobs.mockImplementation(async ids =>
+      ids.includes("active-job")
+        ? [{ id: "active-job", data: { team_id: "bypass" } }]
+        : [],
+    );
+
+    const result = await reconcileConcurrencyQueue();
+
+    expect(mocks.getConcurrencyLimitActiveJobs).toHaveBeenNthCalledWith(
+      1,
+      "bypass",
+    );
+    expect(mocks.promoteJobFromBacklogOrAdd).not.toHaveBeenCalled();
+    expect(mocks.pushConcurrencyLimitedJob).toHaveBeenCalledWith(
+      "bypass",
+      expect.objectContaining({ id: "job-1" }),
+      expect.any(Number),
+    );
+    expect(result).toMatchObject({ jobsStarted: 0, jobsRequeued: 1 });
+  });
 });
