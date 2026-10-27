@@ -20,7 +20,7 @@ overrides:
   glob@>=10.2.0 <10.5.0: '>=10.5.0'
   js-yaml@>=3.0.0 <3.15.2: 3.15.2
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
-  qs@<6.16.0: '>=6.16.0 <7.0.0'
+  qs@<6.16.1: '>=6.16.1 <7.0.0'
   minimatch@<10.2.3: '>=10.2.3'
   bn.js@<5.2.3: '>=5.2.3'
   '@tootallnate/once@<3.0.1': '>=3.0.1'
@@ -4046,10 +4046,6 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  qs@6.16.0:
-    resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
-    engines: {node: '>=0.6'}
-
   qs@6.16.1:
     resolution: {integrity: sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==}
     engines: {node: '>=0.6'}
@@ -6520,7 +6516,7 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.4.24
       on-finished: 2.4.1
-      qs: 6.16.0
+      qs: 6.16.1
       raw-body: 2.5.3
       type-is: 1.6.18
       unpipe: 1.0.0
@@ -6976,7 +6972,7 @@ snapshots:
       once: 1.4.0
       parseurl: 1.3.3
       proxy-addr: 2.0.8
-      qs: 6.16.0
+      qs: 6.16.1
       range-parser: 1.2.1
       router: 2.2.0
       send: 1.2.1
@@ -7096,7 +7092,7 @@ snapshots:
       '@paralleldrive/cuid2': 2.2.2
       dezalgo: 1.0.4
       once: 1.4.0
-      qs: 6.16.0
+      qs: 6.16.1
 
   forwarded@0.2.0: {}
 
@@ -7278,7 +7274,7 @@ snapshots:
       gaxios: 7.1.3
       google-auth-library: 10.5.0
       google-logging-utils: 1.1.3
-      qs: 6.16.0
+      qs: 6.16.1
       url-template: 2.0.8
     transitivePeerDependencies:
       - supports-color
@@ -8101,11 +8097,6 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  qs@6.16.0:
-    dependencies:
-      es-define-property: 1.0.1
-      side-channel: 1.1.1
-
   qs@6.16.1:
     dependencies:
       es-define-property: 1.0.1
@@ -8461,7 +8452,7 @@ snapshots:
   stripe@16.1.0:
     dependencies:
       '@types/node': 24.10.1
-      qs: 6.16.0
+      qs: 6.16.1
 
   strnum@2.2.3: {}
 
@@ -8477,7 +8468,7 @@ snapshots:
       formidable: 2.1.5
       methods: 1.1.2
       mime: 2.6.0
-      qs: 6.16.0
+      qs: 6.16.1
       semver: 7.8.5
     transitivePeerDependencies:
       - supports-color
