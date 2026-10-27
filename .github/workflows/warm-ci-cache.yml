@@ -35,6 +35,8 @@ jobs:
     name: Warm Server Test Suite caches
     # Keys and paths must match test-server.yml exactly, on the same runner.
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      FDB_VERSION: 7.3.63
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -43,6 +45,12 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 11.4.0
+
+      - name: Install FoundationDB client library
+        run: |
+          curl -fsSL -o /tmp/fdb-clients.deb \
+            "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
+          sudo dpkg -i /tmp/fdb-clients.deb
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
