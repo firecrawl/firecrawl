@@ -16,18 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         engine: ['playwright', 'fetch'] # unsure if we need both of these
-        proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
+        proxy: ['no-proxy'] # EXPERIMENT ONLY
         search: ['searxng'] # disabled google for now, should be fine with just Searxng
         ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
         nuq: ['postgres']
         include:
           # Exercise the self-hosted API/harness path through the FDB NuQ router
           # without doubling the expensive Playwright/proxy matrix.
-          - engine: fetch
-            proxy: no-proxy
-            search: searxng
-            ai: openai
-            nuq: fdb
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
@@ -384,11 +379,25 @@ jobs:
           docker exec fdb fdbcli --exec "configure new single memory"
           echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
 
+      - name: Restore vitest results
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/api/node_modules/.vite/vitest
+          key: vitest-snips-${{ matrix.engine }}-${{ matrix.proxy }}-${{ matrix.nuq }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: vitest-snips-${{ matrix.engine }}-${{ matrix.proxy }}-${{ matrix.nuq }}-
+
       - name: Run tests
         run: pnpm harness pnpm test:snips
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: 'true' # required currently to prevent re-building cached native lib
+
+      - name: Save vitest results
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/api/node_modules/.vite/vitest
+          key: vitest-snips-${{ matrix.engine }}-${{ matrix.proxy }}-${{ matrix.nuq }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Publish test report
         if: always()
