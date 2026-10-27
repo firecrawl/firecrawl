@@ -80,12 +80,20 @@ export function isUsableAccent(
   hex: string,
   colorScheme?: "light" | "dark",
 ): boolean {
+  if (colorScheme === "dark" ? contrastYIQ(hex) > 200 : isNearBlack(hex)) {
+    return hex.replace("#", "").length >= 6;
+  }
+  return isChromaticAccent(hex, colorScheme);
+}
+
+/** A color with real chroma that isn't a pale tint on a light page: what the page's own colored elements can offer as an accent. Grays, slates (#4A5565), black and white are not it. */
+export function isChromaticAccent(
+  hex: string,
+  colorScheme?: "light" | "dark",
+): boolean {
   const h = hex.replace("#", "");
   if (h.length < 6) return false;
   const channels = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
-  if (colorScheme === "dark" ? contrastYIQ(hex) > 200 : isNearBlack(hex)) {
-    return true;
-  }
   if (Math.max(...channels) - Math.min(...channels) < 30) return false;
   return colorScheme === "dark" || !isPale(hex);
 }

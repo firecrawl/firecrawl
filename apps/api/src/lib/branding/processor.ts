@@ -5,7 +5,7 @@ import {
   isBrowserLinkColor,
   isGrayish,
   isNearBlack,
-  isUsableAccent,
+  isChromaticAccent,
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
@@ -252,11 +252,13 @@ function inferPalette(
       h => h !== primary && !/^#FFFFFF$/i.test(h) && contrastYIQ(h) < 160,
     ) ||
     (colorScheme === "dark" ? "#FFFFFF" : "#111111");
+  // Measured colors offer an accent only with real chroma: white body text
+  // on a dark page is not one, however often it appears.
   const accent =
     ranked.find(
       h =>
         h !== primary &&
-        isUsableAccent(h, colorScheme) &&
+        isChromaticAccent(h, colorScheme) &&
         !(colorScheme !== "dark" && isNearBlack(h)),
     ) || primary;
 
@@ -275,7 +277,7 @@ function inferPalette(
       if (
         hex &&
         !isBrowserLinkColor(hex) &&
-        isUsableAccent(hex, colorScheme) &&
+        isChromaticAccent(hex, colorScheme) &&
         !(colorScheme !== "dark" && isNearBlack(hex)) &&
         Math.abs(contrastYIQ(hex) - contrastYIQ(background)) > 60
       ) {

@@ -159,6 +159,26 @@ describe("link color", () => {
     expect(profile.colors?.link).toBe(profile.colors?.accent);
   });
 
+  it("does not make white body text the accent on a dark page", () => {
+    const profile = processRawBranding(
+      raw(
+        [
+          ...Array.from({ length: 12 }, (_, i) =>
+            snap({ text: `Paragraph ${i}`, textColor: "rgb(255, 255, 255)" }),
+          ),
+          snap({ text: "Get started", textColor: "rgb(255, 255, 255)", background: "rgb(0, 97, 254)", isButton: true }),
+          snap({ tag: "a", text: "Docs", textColor: "rgb(255, 255, 255)", isLink: true }),
+        ],
+        {
+          scheme: "dark",
+          backgrounds: [{ color: "rgb(17, 17, 17)", source: "body", priority: 10 }],
+        },
+      ),
+    );
+    expect(profile.colors?.accent).not.toBe("#FFFFFF");
+    expect(profile.colors?.link).not.toBe("#FFFFFF");
+  });
+
   it("does not blend an overlay into gray when nothing measured can be the page", () => {
     const profile = processRawBranding(
       raw(paragraphs, {
