@@ -126,6 +126,7 @@ import {
   SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { loadFirstScreen } from "../../lib/branding/jev";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -162,6 +163,12 @@ export type BrowserCookie = {
 };
 
 export type Meta = {
+  /** URL of the page's first screen captured for Jev's branding call (see
+   * the branding format's __experimental_screenshot and
+   * BRANDING_JEV_SCREENSHOT_PERCENT). Internal: never part of the document. */
+  brandingScreenshot?: string;
+  /** That screen's download, started as soon as the engine returns. */
+  brandingScreenshotImage?: ReturnType<typeof loadFirstScreen>;
   id: string;
   url: string;
   rewrittenUrl?: string;
@@ -611,7 +618,9 @@ export type InternalOptions = {
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
-  teamFlags?: TeamFlags;
+  /** null: the team has no flags. Absent: not snapshotted, so a check that
+   * must fail closed treats the org as unresolved. */
+  teamFlags?: TeamFlags | null;
   /** Team's org, snapshotted from the request ACUC at acceptance (same
    * pattern as teamFlags). Rides the job payload so org-scoped blocklist
    * checks work without re-fetching the chunk. Required so a payload
@@ -1222,6 +1231,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           : warning;
     }
 
+    meta.brandingScreenshot = engineResult.brandingScreenshot;
+    // Download it while the transformers before branding run. It never
+    // rejects: an unreadable screen leaves Jev answering from page data.
+    meta.brandingScreenshotImage = engineResult.brandingScreenshot
+      ? loadFirstScreen(engineResult.brandingScreenshot, meta.logger)
+      : undefined;
     document = await executeTransformers(meta, document);
 
     // Set final span attributes

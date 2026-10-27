@@ -311,7 +311,7 @@ const actionSchema = z.union([
   }),
   z.object({
     type: z.literal("scroll"),
-    direction: z.enum(["up", "down"]).optional().prefault("down"),
+    direction: z.enum(["up", "down"]).prefault("down"),
     selector: z.string().optional(),
   }),
   z.object({
@@ -413,7 +413,7 @@ const changeTrackingFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     })
     .superRefine(addStrictSchemaIssue),
-  modes: z.enum(["json", "git-diff"]).array().optional().prefault([]),
+  modes: z.enum(["json", "git-diff"]).array().prefault([]),
   tag: z.string().or(z.null()).prefault(null),
 });
 
@@ -476,11 +476,13 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
-// Accepted for compatibility and ignored: the same engine answers every
-// branding request (lib/branding/jev.ts).
+// `mode` is accepted for compatibility and ignored: the same engine answers
+// every branding request (lib/branding/jev.ts). `__experimental_screenshot`
+// also shows Jev the page's first screen (an extra screenshot action).
 const brandingFormatWithOptions = z.strictObject({
   type: z.literal("branding"),
   mode: z.enum(["auto", "fast", "standard"]).optional(),
+  __experimental_screenshot: z.boolean().optional(),
 });
 
 export type FormatObject =
@@ -812,7 +814,6 @@ const scrapeOptionFields = z.strictObject({
           z.strictObject({ type: z.literal("video") }),
         ])
         .array()
-        .optional()
         .prefault([{ type: "markdown" }]),
     )
     .refine(x => {
@@ -1087,7 +1088,7 @@ const extractOptions = z
     allowExternalLinks: z.boolean().prefault(false),
     enableWebSearch: z.boolean().prefault(false),
     scrapeOptions: baseScrapeOptions.optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     urlTrace: z.boolean().prefault(false),
     timeout: z.int().positive().min(1000).optional(),
@@ -1192,7 +1193,7 @@ export const agentRequestSchema = z
           });
         }
       }),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     maxCredits: z.number().optional(),
     strictConstrainToURLs: z.boolean().optional(),
@@ -1226,7 +1227,7 @@ export type AgentRequest = z.infer<typeof agentRequestSchema>;
 
 const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   url: URL,
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   domainTools: z.boolean().optional(),
@@ -1285,7 +1286,7 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
 );
 
 const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   __agentInterop: z
@@ -1318,7 +1319,7 @@ export type ParseRequestInput = z.input<typeof parseRequestSchemaBase>;
 
 const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   urls: URL.array().min(1),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   webhook: webhookSchema.optional(),
   appendToId: z.uuid().optional(),
@@ -1343,7 +1344,7 @@ export const batchScrapeRequestSchema = strictWithMessage(
 const batchScrapeRequestSchemaNoURLValidationBase =
   baseScrapeOptions.safeExtend({
     urls: z.string().array().min(1),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.uuid().optional(),
@@ -1422,7 +1423,7 @@ type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url: URL,
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
@@ -1467,7 +1468,7 @@ const mapRequestSchemaBase = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
   .extend({
     url: URL,
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     includeSubdomains: z.boolean().prefault(true),
     ignoreQueryParameters: z.boolean().prefault(true),
@@ -2171,6 +2172,9 @@ export type TeamFlags = {
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
   dpaRestricted?: boolean;
+  // The org's contract bars training on its data: FirePDF never captures its
+  // documents (buildFirePdfTrainingCapture).
+  trainingRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -2581,7 +2585,7 @@ const searchDomainSchema = z
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
-    limit: z.int().positive().finite().max(100).optional().prefault(10),
+    limit: z.int().positive().finite().max(100).prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z
@@ -2600,7 +2604,6 @@ export const searchRequestSchema = z
           ]),
         ),
       ])
-      .optional()
       .prefault(["web"]),
     categories: z
       .preprocess(
@@ -2621,16 +2624,16 @@ export const searchRequestSchema = z
       .optional(),
     includeDomains: z.array(searchDomainSchema).optional(),
     excludeDomains: z.array(searchDomainSchema).optional(),
-    lang: z.string().optional().prefault("en"),
+    lang: z.string().prefault("en"),
     safe: z.boolean().optional(),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
     location: z.string().optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().finite().prefault(60000),
-    ignoreInvalidURLs: z.boolean().optional().prefault(false),
-    asyncScraping: z.boolean().optional().prefault(false),
+    ignoreInvalidURLs: z.boolean().prefault(false),
+    asyncScraping: z.boolean().prefault(false),
     // Replace each result's snippet with query-relevant highlights pulled from
     // our index. When omitted, the caller integration and rollout cohort decide
     // whether generated highlights are returned or only run in shadow mode.
@@ -2669,7 +2672,6 @@ export const searchRequestSchema = z
                 screenshotFormatWithOptions,
               ])
               .array()
-              .optional()
               .prefault([]),
           )
           .refine(x => {
@@ -2917,7 +2919,7 @@ export const searchFeedbackSchema = z
     valuableResults: valuableResultsSchema.optional(),
     missingContent: z.array(missingContentEntrySchema).max(20).optional(),
     querySuggestions: z.string().trim().max(2000).optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
   .refine(data => hasSubstantiveSearchFeedback(data), {
@@ -3009,7 +3011,7 @@ export const endpointFeedbackSchema = z
     url: searchFeedbackUrlSchema.optional(),
     pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
     metadata: feedbackMetadataSchema.optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
   .refine(

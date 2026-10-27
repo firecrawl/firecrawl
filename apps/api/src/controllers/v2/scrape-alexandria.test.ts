@@ -353,6 +353,82 @@ it("executes with supplied arguments but stores only tool identifiers in activit
   );
   expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
   expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+    alexandria: [
+      {
+        provider: call.provider,
+        capability: call.capability,
+        code: null,
+        creditsCost: 0,
+      },
+    ],
+  });
+});
+
+it("logs each call's own outcome code and credits in request order", async () => {
+  const other = { provider: "sec", capability: "filings/search", options: {} };
+  const answer = result([
+    { ...call, creditsCost: 3, data: {} },
+    { error: { code: "not_found", message: "No such filing.", status: 404 } },
+    {
+      ...call,
+      creditsCost: 0,
+      error: { code: "rate_limited", message: "Slow down.", status: 429 },
+    },
+  ]);
+  mocks.retrieve.mockResolvedValue({
+    ...answer,
+    body: { ...answer.body, creditsCost: 3 },
+  });
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, other, call] });
+  expect(response.status).toBe(200);
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  const logged = mocks.scrapeLog.mock.calls[0][0];
+  expect(logged.options).toEqual({
+    alexandria: [
+      {
+        provider: call.provider,
+        capability: call.capability,
+        code: null,
+        creditsCost: 3,
+      },
+      {
+        provider: other.provider,
+        capability: other.capability,
+        code: "not_found",
+        creditsCost: 0,
+      },
+      {
+        provider: call.provider,
+        capability: call.capability,
+        code: "rate_limited",
+        creditsCost: 0,
+      },
+    ],
+  });
+  expect(logged).toEqual(
+    expect.objectContaining({
+      is_successful: false,
+      error: "No such filing.",
+      credits_cost: 3,
+    }),
+  );
+});
+
+it("keeps identifier-only options when the answer does not parse", async () => {
+  mocks.retrieve.mockResolvedValue({
+    executed: true,
+    scrapeId: "failed-1",
+    status: 402,
+    body: { success: false, error: "Insufficient credits." },
+  });
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(402);
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
     alexandria: [{ provider: call.provider, capability: call.capability }],
   });
 });
@@ -472,6 +548,8 @@ it("logs find-tools options and result size, and remembers the tools it showed",
       {
         provider: "firecrawl",
         capability: "find-tools",
+        code: null,
+        creditsCost: 0,
         options: {
           query: "podcast sponsors",
           providers: ["particle"],
@@ -498,6 +576,8 @@ it("attributes each provider call to the discovery that showed it", async () => 
       {
         provider: call.provider,
         capability: call.capability,
+        code: null,
+        creditsCost: 0,
         discovery: {
           search: { id: "search-1", secondsBefore: 40 },
           find_tools: { id: "scrape-0", secondsBefore: 12 },
@@ -512,7 +592,14 @@ it("still logs the call when the discovery lookup fails", async () => {
   await request(app).post("/v2/scrape").send({ alexandria: call });
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
-    alexandria: [{ provider: call.provider, capability: call.capability }],
+    alexandria: [
+      {
+        provider: call.provider,
+        capability: call.capability,
+        code: null,
+        creditsCost: 0,
+      },
+    ],
   });
 });
 

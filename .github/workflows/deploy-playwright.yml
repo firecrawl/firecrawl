@@ -9,9 +9,14 @@ on:
       - .github/workflows/deploy-playwright.yml
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build:
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -64,6 +69,8 @@ jobs:
   manifest:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: build
+    permissions:
+      packages: write
     steps:
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

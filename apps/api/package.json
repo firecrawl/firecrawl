@@ -94,7 +94,7 @@
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@types/ws": "^8.5.12",
-    "@typesafe-ai/sdk": "^0.6.0",
+    "@typesafe-ai/sdk": "^0.7.0",
     "ai": "6.0.86",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
@@ -129,7 +129,7 @@
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",
     "marked": "^14.1.2",
-    "multer": "^2.4.0",
+    "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^3.6.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
@@ -153,7 +153,7 @@
     "winston": "^3.14.2",
     "ws": "^8.21.0",
     "xml2js": "^0.6.2",
-    "zod": "4.1.12"
+    "zod": "4.6.7"
   },
   "nodemonConfig": {
     "ignore": [
