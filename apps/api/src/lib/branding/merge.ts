@@ -1,10 +1,12 @@
 import { BrandingProfile } from "../../types/branding";
 import {
   colorDistance,
+  fitsColorScheme,
   isBrowserLinkColor,
   isGrayish,
   isNearBlack,
   isNeutralDark,
+  isUsableAccent,
   isUsableBrandPrimary,
   normalizeRoleHex,
   shouldApplyLlmColorRoles,
@@ -291,12 +293,21 @@ export function mergeBrandingResults(
     const llmPrimary = brandHex(llm.colorRoles.primaryColor);
     const llmSecondary = brandHex(llm.colorRoles.secondaryColor);
     const llmAccent = brandHex(llm.colorRoles.accentColor);
-    const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
+    // A dark background on a light page is a hero or a footer, not the page.
+    const llmBackgroundHex = normalizeRoleHex(llm.colorRoles.backgroundColor);
+    const llmBackground =
+      llmBackgroundHex && fitsColorScheme(llmBackgroundHex, merged.colorScheme)
+        ? llmBackgroundHex
+        : undefined;
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
     const usablePrimary =
       llmPrimary && isUsableBrandPrimary(llmPrimary, merged.colorScheme)
         ? llmPrimary
         : undefined;
+    // A pale tint or a gray can't call attention to anything: the measured
+    // accent stays, or the primary when that is pale too.
+    const usableAccent = (hex?: string) =>
+      hex && isUsableAccent(hex, merged.colorScheme) ? hex : undefined;
     const rawSecondary = llm.colorRoles.secondaryColor;
     const omittedSecondary =
       rawSecondary == null || String(rawSecondary).trim() === "";
@@ -305,7 +316,11 @@ export function mergeBrandingResults(
       ...merged.colors,
       primary: usablePrimary || merged.colors?.primary,
       ...(llmSecondary ? { secondary: llmSecondary } : {}),
-      accent: llmAccent || merged.colors?.accent,
+      accent:
+        usableAccent(llmAccent) ||
+        usableAccent(merged.colors?.accent) ||
+        usablePrimary ||
+        merged.colors?.primary,
       background: llmBackground || merged.colors?.background,
       // Body text is written in a neutral; a saturated pick is usually the
       // link color, so the measured neutral text color stays.
@@ -531,8 +546,11 @@ function applyLogoAndMonochromeColors(
     return !!hex && hex !== displaced && !isNeutral(hex) && !onButton(hex);
   };
   const colors = { ...merged.colors, primary: neutral };
+  // A link color that merely mirrored the accent follows it; one measured
+  // on the page's links is the brand's link color and stays.
+  const linkMirroredAccent = colors.link === colors.accent;
   if (incidental(colors.accent)) colors.accent = neutral;
-  if (incidental(colors.link)) colors.link = colors.accent;
+  if (linkMirroredAccent) colors.link = colors.accent;
   if (incidental(colors.secondary)) delete colors.secondary;
   merged.colors = colors;
 }

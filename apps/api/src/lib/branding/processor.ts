@@ -1,9 +1,11 @@
 import { BrandingProfile } from "../../types/branding";
 import {
   contrastYIQ,
+  fitsColorScheme,
   isBrowserLinkColor,
   isGrayish,
   isNearBlack,
+  isUsableAccent,
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
@@ -109,13 +111,49 @@ function calculateRepresentativeBorderRadius(borderRadius?: {
   return maxCorner > 0 ? `${maxCorner}px` : "0px";
 }
 
+// Below this a background is see-through: a modal backdrop or a tinted
+// overlay, not the page.
+const OPAQUE_BACKGROUND_ALPHA = 0.9;
+
+/**
+ * The page background from what the scan measured, most trusted candidate
+ * first. A translucent color is an overlay (a cookie dialog's backdrop covers
+ * more of the page than anything else), and a dark color on a light page is a
+ * hero or a footer, so neither can be the page.
+ */
+export function pickPageBackground(
+  candidates: BrandingScriptReturn["backgroundCandidates"],
+  colorScheme?: "light" | "dark",
+): string | null {
+  const ranked = [...(candidates ?? [])].sort(
+    (a, b) => b.priority - a.priority,
+  );
+  for (const candidate of ranked) {
+    const parsed = parse(candidate.color);
+    if (!parsed || (parsed.alpha ?? 1) < OPAQUE_BACKGROUND_ALPHA) continue;
+    const hex = hexify(candidate.color);
+    if (hex && fitsColorScheme(hex, colorScheme)) return hex;
+  }
+  return null;
+}
+
 // Infer color palette from snapshots
 function inferPalette(
   snapshots: BrandingScriptReturn["snapshots"],
   cssColors: string[],
   colorScheme?: "light" | "dark",
   pageBackground?: string | null,
+  backgroundCandidates?: BrandingScriptReturn["backgroundCandidates"],
 ) {
+  // Translucent colors blend against the page, so settle it before voting.
+  // When nothing measured can be the page (only an overlay was seen), the
+  // ranked colors decide below rather than the overlay blended into gray.
+  const measuredBackground = pickPageBackground(
+    backgroundCandidates,
+    colorScheme,
+  );
+  if (measuredBackground) pageBackground = measuredBackground;
+  else if (backgroundCandidates?.length) pageBackground = null;
   const freq = new Map<string, number>();
   const bump = (hex: string | null, weight = 1) => {
     if (!hex || isBrowserLinkColor(hex)) return;
@@ -218,9 +256,39 @@ function inferPalette(
     ranked.find(
       h =>
         h !== primary &&
-        !isGrayish(h) &&
+        isUsableAccent(h, colorScheme) &&
         !(colorScheme !== "dark" && isNearBlack(h)),
     ) || primary;
+
+  // Links are written in their own color when the brand gives them one: the
+  // most common colored, readable one on links in the content, or in the
+  // navigation when that is all the page links. Links in the body text's
+  // black, a dark header's white or the browser's default blue say nothing,
+  // and then the accent stands in, as it does for calls to action.
+  const voteLinks = (navigation: boolean) => {
+    const votes = new Map<string, number>();
+    for (const s of snapshots) {
+      if (!(s.isLink || s.tag === "a") || s.isButton) continue;
+      if (s.visible === false || !s.text?.trim()) continue;
+      if (!navigation && s.isNavigation) continue;
+      const hex = hexify(s.colors.text, pageBackground);
+      if (
+        hex &&
+        !isBrowserLinkColor(hex) &&
+        isUsableAccent(hex, colorScheme) &&
+        !(colorScheme !== "dark" && isNearBlack(hex)) &&
+        Math.abs(contrastYIQ(hex) - contrastYIQ(background)) > 60
+      ) {
+        votes.set(hex, (votes.get(hex) || 0) + 1);
+      }
+    }
+    return votes;
+  };
+  const contentLinks = voteLinks(false);
+  const linkVotes = contentLinks.size > 0 ? contentLinks : voteLinks(true);
+  const link =
+    Array.from(linkVotes.entries()).sort((x, y) => y[1] - x[1])[0]?.[0] ||
+    accent;
 
   // Collect all detected colors with their frequencies for debugging
   const allDetectedColors = Array.from(freq.entries())
@@ -244,7 +312,7 @@ function inferPalette(
     accent,
     background,
     textPrimary: textPrimary,
-    link: accent,
+    link,
   };
 
   return paletteResult;
@@ -311,6 +379,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     raw.cssData.colors,
     raw.colorScheme,
     raw.pageBackground,
+    raw.backgroundCandidates,
   );
 
   // Typography

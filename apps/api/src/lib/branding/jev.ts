@@ -863,7 +863,7 @@ export function buildJevRequest(
     questions.accent_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the accent color used for calls to action, highlights and links?",
+        "Which entry in `colors` is the accent color: the saturated color used for calls to action, highlights and links, standing out against the page background? A pale tint, a gray or the background itself is not an accent; when the brand uses a single color, answer the main color.",
       criteria: options(colorIds),
     };
     questions.secondary_color = {
@@ -875,7 +875,7 @@ export function buildJevRequest(
     questions.background_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the main page background color?",
+        "Which entry in `colors` is the main page background color, the one behind most of the body text? A hero, a footer or a dialog's backdrop is not the page background.",
       criteria: options(colorIds),
     };
     questions.text_color = {
