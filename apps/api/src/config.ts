@@ -85,7 +85,7 @@ const teamDailyLimits = z.preprocess(
       : typeof value === "string"
         ? value
             .split(",")
-            .map(entry => entry.trim())
+            .map(entry => entry.trim().toLowerCase())
             .filter(Boolean)
             .map(entry => entry.split(":").map(part => part.trim()))
         : value,
