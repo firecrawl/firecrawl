@@ -7,7 +7,7 @@ require "uri"
 
 module Firecrawl
   # Internal HTTP client for making authenticated requests to the Firecrawl API.
-  # Handles retry logic with exponential backoff.
+  # Retries reads with exponential backoff; never replays ambiguous writes.
   #
   # @api private
   class HttpClient
@@ -117,6 +117,10 @@ module Firecrawl
 
     def execute_with_retry(uri, request, request_builder: nil)
       attempt = 0
+      # A gateway or network failure can arrive after the server accepted a
+      # POST/PATCH/DELETE. Only GET is safe to replay without a server-side
+      # idempotency guarantee.
+      max_retries = request.is_a?(Net::HTTP::Get) ? @max_retries : 0
       loop do
         response = perform_request(uri, request)
         code = response.code.to_i
@@ -141,7 +145,7 @@ module Firecrawl
         end
 
         # Retryable errors: 408, 409, 502, 5xx
-        if attempt < @max_retries
+        if attempt < max_retries
           attempt += 1
           sleep_with_backoff(attempt)
           request = request_builder.call if request_builder
@@ -151,7 +155,7 @@ module Firecrawl
         raise FirecrawlError.new(error_message, status_code: code, error_code: error_code)
       rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::ETIMEDOUT,
              Net::OpenTimeout, Net::ReadTimeout, IOError => e
-        if attempt < @max_retries
+        if attempt < max_retries
           attempt += 1
           sleep_with_backoff(attempt)
           request = request_builder.call if request_builder
