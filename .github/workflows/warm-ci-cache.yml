@@ -1,0 +1,131 @@
+name: Warm CI caches
+
+# Builds the caches the Server Test Suite restores, on main, so pull requests can
+# read them. A pull request can only read caches saved on its own ref or on main.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/api/pnpm-lock.yaml
+      - apps/test-site/pnpm-lock.yaml
+      - apps/playwright-service-ts/pnpm-lock.yaml
+      - apps/playwright-service-ts/package.json
+      - apps/api/native/**
+      - apps/api/sharedLibs/go-html-to-md/**
+      - .github/workflows/warm-ci-cache.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/warm-ci-cache.yml
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-ci-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: Warm Server Test Suite caches
+    # Keys and paths must match test-server.yml exactly, on the same runner.
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 11.4.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            apps/api/pnpm-lock.yaml
+            apps/test-site/pnpm-lock.yaml
+            apps/playwright-service-ts/pnpm-lock.yaml
+
+      - run: pnpm fetch
+        working-directory: apps/api
+      - run: pnpm fetch
+        working-directory: apps/test-site
+      - run: pnpm fetch
+        working-directory: apps/playwright-service-ts
+
+      - name: Restore native lib
+        id: napi_restore
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+
+      - name: Build native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        run: pnpm install
+        working-directory: apps/api/native
+
+      - name: Cache native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ steps.napi_restore.outputs.cache-primary-key }}
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26
+          cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
+
+      - name: Restore Go lib
+        id: golib_restore
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+
+      - name: Build go-html-to-md
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        run: go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
+        working-directory: apps/api/sharedLibs/go-html-to-md
+
+      - name: Cache Go lib
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ steps.golib_restore.outputs.cache-primary-key }}
+
+      - name: Restore Playwright cache
+        id: pw_cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-pw-chromium-${{ hashFiles('apps/playwright-service-ts/pnpm-lock.yaml', 'apps/playwright-service-ts/package.json') }}
+
+      - name: Install Playwright Chromium
+        if: steps.pw_cache.outputs.cache-hit != 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium
+        working-directory: apps/playwright-service-ts
+
+      - name: Cache Playwright
+        if: steps.pw_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.pw_cache.outputs.cache-primary-key }}
