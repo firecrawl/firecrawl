@@ -213,7 +213,9 @@ class AsyncFirecrawlClient:
         language: Literal["python", "node", "bash"] = "node",
         timeout: Optional[int] = None,
         origin: Optional[str] = None,
+        url: Optional[str] = None,
     ):
+        """Interact with a scrape, using ``url`` if its replay context is unavailable."""
         return await async_scrape.interact(
             self.async_http_client,
             job_id,
@@ -222,6 +224,7 @@ class AsyncFirecrawlClient:
             language=language,
             timeout=timeout,
             origin=origin,
+            url=url,
         )
 
     async def stop_interaction(self, job_id: str):
@@ -243,6 +246,7 @@ class AsyncFirecrawlClient:
         language: Literal["python", "node", "bash"] = "node",
         timeout: Optional[int] = None,
         origin: Optional[str] = None,
+        url: Optional[str] = None,
     ):
         """Deprecated alias for interact()."""
         return await self.interact(
@@ -252,6 +256,7 @@ class AsyncFirecrawlClient:
             language=language,
             timeout=timeout,
             origin=origin,
+            url=url,
         )
 
     async def delete_scrape_browser(self, job_id: str):
