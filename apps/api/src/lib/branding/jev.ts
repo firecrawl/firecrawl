@@ -390,16 +390,30 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
 // ---------------------------------------------------------------------------
 // State + questions
 
+/** The site's own marks that the scan didn't see rendered: JSON-LD logo, apple-touch icon. */
+const DECLARED_SOURCES = new Set(["logo-jsonld", "apple-touch-icon"]);
+
+/**
+ * Where a candidate's link goes, read from the link itself: a `/home` or
+ * `/cart` path is named rather than trusted as the homepage, so a nav glyph
+ * labelled "home" doesn't read like the logo. `home` only decides links the
+ * scan resolved and we can't.
+ */
 function hrefKind(href: string | undefined, pageUrl: string, home: boolean) {
   if (!href?.trim()) return "no link";
-  if (home) return "links to the homepage";
   try {
     const target = new URL(href, pageUrl);
-    return target.hostname === new URL(pageUrl).hostname
-      ? "links to another page on this site"
-      : "links to another website";
+    const host = (url: URL) => url.hostname.replace(/^www\./, "");
+    if (host(target) !== host(new URL(pageUrl))) {
+      return `links to another website (${host(target)})`;
+    }
+    const path = target.pathname.replace(/\/+$/, "") || "/";
+    if (path === "/" || /^\/index(?:\.html?)?$/i.test(path)) {
+      return "links to the homepage";
+    }
+    return `links to ${clip(path, 60)} on this site`;
   } catch {
-    return "unknown link";
+    return home ? "links to the homepage" : "unknown link";
   }
 }
 
@@ -704,21 +718,29 @@ export function buildJevRequest(
       logos.map((logo, i) => {
         const width = Math.round(logo.position?.width ?? 0);
         const height = Math.round(logo.position?.height ?? 0);
+        // A declared mark was never rendered: say so instead of the
+        // placeholder geometry the heuristic ranks it with.
+        const rendered = !DECLARED_SOURCES.has(logo.source);
         return [
           `logo_${i}`,
           {
-            where: logo.location,
-            visible: logo.isVisible,
-            size: `${width}x${height} px (${sizeLabel(width, height)})`,
-            shape:
-              width && height && width / height >= 3
+            where: rendered ? logo.location : "page metadata, not rendered",
+            visible: rendered && logo.isVisible,
+            size: rendered
+              ? `${width}x${height} px (${sizeLabel(width, height)})`
+              : "unknown",
+            shape: rendered
+              ? width && height && width / height >= 3
                 ? "wide, wordmark-shaped"
-                : "compact",
+                : "compact"
+              : "unknown",
             kind: logo.isSvg ? "SVG" : "image",
             alt: clip(logo.alt, 100),
             aria_label: clip(logo.ariaLabel, 100),
             title: clip(logo.title, 100),
-            link: hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch),
+            link: rendered
+              ? hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch)
+              : "no link",
             file: fileName(logo.src),
             found_via: logo.source,
             heuristic_pick: i === heuristic,
@@ -795,7 +817,7 @@ export function buildJevRequest(
     questions.logo = {
       type: "choice",
       instructions:
-        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, social, partner, customer and payment icons are not the brand logo." +
+        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, search, cart, account, social, partner, customer and payment icons are not the brand logo, nor are flags, maps and country or language selectors. A candidate found via `logo-jsonld` is the logo the site declares for itself; one found via `apple-touch-icon` is only its app icon, the answer only when no rendered candidate shows the brand's mark." +
         look(
           "the brand logo is the mark it shows for this site, usually top left.",
         ),

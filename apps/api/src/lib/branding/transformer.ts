@@ -73,10 +73,7 @@ export async function brandingTransformer(
   const logoCandidates = [...(rawBranding.logoCandidates || [])];
   const brandName = rawBranding.brandName?.trim() || undefined;
   const declared = pickDeclaredLogo(rawBranding.images);
-  if (
-    declared &&
-    shouldAddDeclaredLogoCandidate(logoCandidates, declared.src)
-  ) {
+  if (declared && shouldAddDeclaredLogoCandidate(logoCandidates, declared)) {
     logoCandidates.push(
       declaredLogoCandidate(declared.src, declared.source, brandName),
     );
