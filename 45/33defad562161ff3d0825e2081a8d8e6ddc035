@@ -1,0 +1,26 @@
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_284ce89f7cba0d 385,644
+  s_3002048a2ce37a::t_23dcbe6bf3d000 295-298,325,643
+apps/api/src/__tests__/lib/branding/merge-colors.test.ts
+  s_3002048a2ce37a::t_284ce89f7cba0d 7-18,78,84-94
+apps/api/src/__tests__/lib/branding/processor-background.test.ts
+  s_3002048a2ce37a::t_284ce89f7cba0d 128,145
+apps/api/src/lib/branding/merge.ts
+  s_3002048a2ce37a::t_284ce89f7cba0d 28-29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4533defad562161ff3d0825e2081a8d8e6ddc035",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
