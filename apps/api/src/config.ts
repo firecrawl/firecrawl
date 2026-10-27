@@ -78,6 +78,26 @@ const researchKeylessDisabled = z.preprocess(
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
+const teamDailyLimits = z.preprocess(
+  value =>
+    value === undefined
+      ? []
+      : typeof value === "string"
+        ? value
+            .split(",")
+            .map(entry => entry.trim().toLowerCase())
+            .filter(Boolean)
+            .map(entry => entry.split(":").map(part => part.trim()))
+        : value,
+  z
+    .array(z.tuple([z.uuid(), z.coerce.number().int().positive()]))
+    .refine(
+      pairs => new Set(pairs.map(([teamId]) => teamId)).size === pairs.length,
+      "each team id may appear only once",
+    )
+    .transform(pairs => Object.fromEntries(pairs)),
+);
+
 const containsLoneSurrogate = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
     const codeUnit = value.charCodeAt(index);
@@ -118,6 +138,9 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
+  // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
+  // listed team's limit replaces its plan limit.
+  GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
 
