@@ -694,6 +694,23 @@ describe("logRequest", () => {
     );
   });
 
+  it("records an agent run's ZDR retention on its job access row", async () => {
+    await logRequest({
+      ...makeRequest(null),
+      kind: "agent",
+      zeroDataRetention: true,
+      jobAccessZeroDataRetentionMinutes: 15,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "agent",
+        zeroDataRetention: true,
+        zeroDataRetentionMinutes: 15,
+      }),
+    );
+  });
+
   it("holds the caller until the publish is acknowledged", async () => {
     const publication = deferred<string>();
     publishMessage.mockReturnValueOnce(publication.promise);

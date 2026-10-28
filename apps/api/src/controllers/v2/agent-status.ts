@@ -8,6 +8,7 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
+import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
 import {
   ExtractV3AgentStatusError,
   getExtractV3AgentStatus,
@@ -88,6 +89,15 @@ export async function agentStatusController(
     });
   }
 
+  const expiry = agentJobExpiry(access, agent);
+  if (expiry.zeroDataRetentionExpired) {
+    return res.status(410).json({
+      success: false,
+      code: "zdr_expired",
+      error: ZDR_EXPIRED_ERROR,
+    });
+  }
+
   let model: "spark-1-pro" | "spark-1-mini" | "spark-2" =
     agent.model ?? "spark-1-pro";
   // The agent service persists the effort of a run that used it. Older rows
@@ -130,7 +140,7 @@ export async function agentStatusController(
     suggestions: agent.suggestions as AgentSuggestion[] | undefined,
     pendingApproval: agent.pendingApproval as AgentPendingApproval | undefined,
     exchange: agent.exchange as AgentExchangeSummary | undefined,
-    expiresAt: new Date(access.expiresAtMs).toISOString(),
+    expiresAt: new Date(expiry.expiresAtMs).toISOString(),
     creditsUsed: agent.creditsUsed,
   });
 }

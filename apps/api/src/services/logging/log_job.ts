@@ -440,6 +440,8 @@ type LoggedRequest = {
   external_request_id?: string | null;
   jobAccess?: boolean;
   jobAccessExpiresAt?: Date;
+  /** An agent run's ZDR retention, recorded on its job access row. */
+  jobAccessZeroDataRetentionMinutes?: number;
   creditsShards?: number;
 };
 
@@ -528,6 +530,7 @@ async function logRequestInternal(request: LoggedRequest) {
           new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
         clientOrigin: sanitizedOrigin,
         zeroDataRetention: request.zeroDataRetention,
+        zeroDataRetentionMinutes: request.jobAccessZeroDataRetentionMinutes,
       });
     } catch (error) {
       logger.error("Failed to write API job access to Bigtable", {

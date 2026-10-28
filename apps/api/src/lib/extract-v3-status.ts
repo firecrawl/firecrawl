@@ -21,6 +21,8 @@ type ExtractV3AgentStatus = {
   pendingApproval?: unknown;
   exchange?: unknown;
   creditsUsed?: number;
+  /** When a finished run reached its terminal state. */
+  completedAt?: string;
 };
 
 /**
