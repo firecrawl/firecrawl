@@ -12,6 +12,7 @@ vi.mock("ioredis", () => ({
 }));
 
 import {
+  getAgentSurfaceRateLimiter,
   getAutumnRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
@@ -486,6 +487,79 @@ describe("getAutumnRateLimiter", () => {
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
         ),
       ).toBe(false);
+    });
+  });
+
+  describe("MCP and CLI minimum", () => {
+    it("raises free, hobby and standard to 600 in a bucket of its own", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        for (const multiplier of [1, 10, 50, 59]) {
+          const limiter = getAgentSurfaceRateLimiter(mode, multiplier);
+          expect(limiter?.points).toBe(600);
+          expect(limiter?.keyPrefix).toBe(`agentSurface:${mode}`);
+        }
+      }
+    });
+
+    it("leaves plans already at 600 or above on their normal limiter", () => {
+      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 60)).toBe(
+        undefined,
+      );
+      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Search, 500)).toBe(
+        undefined,
+      );
+      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 1000)).toBe(
+        undefined,
+      );
+    });
+
+    it("compares against the treatment limit for treatment orgs", () => {
+      expect(
+        getAgentSurfaceRateLimiter(
+          RateLimiterMode.Scrape,
+          10,
+          undefined,
+          "treatment",
+        )?.points,
+      ).toBe(600);
+      // Standard treatment is already 1,000/min.
+      expect(
+        getAgentSurfaceRateLimiter(
+          RateLimiterMode.Scrape,
+          50,
+          undefined,
+          "treatment",
+        ),
+      ).toBe(undefined);
+    });
+
+    it("leaves other modes and overridden modes alone", () => {
+      for (const mode of [
+        RateLimiterMode.Map,
+        RateLimiterMode.Crawl,
+        RateLimiterMode.Extract,
+        RateLimiterMode.Browser,
+        RateLimiterMode.ExchangeDiscover,
+      ]) {
+        expect(getAgentSurfaceRateLimiter(mode, 1)).toBe(undefined);
+      }
+      expect(
+        getAgentSurfaceRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(undefined);
+    });
+
+    it("treats a multiplier of zero or below as ×1", () => {
+      expect(
+        getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 0)?.points,
+      ).toBe(600);
     });
   });
 

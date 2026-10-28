@@ -8,6 +8,7 @@ import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
   getRateLimiter,
+  getAgentSurfaceRateLimiter,
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
@@ -1139,22 +1140,32 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-    if (
-      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
-      (await getRateLimitExperimentVariant({
-        orgId: chunk.org_id,
-        teamId: chunk.team_id,
-        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
-        rateLimitMultiplier: chunk.rate_limit_multiplier,
-        isPaidPlan: chunk.is_paid_plan,
-      })) === "treatment"
-    ) {
+    const variant = rateLimitExperimentApplies(mode, multiplier, chunk.flags)
+      ? await getRateLimitExperimentVariant({
+          orgId: chunk.org_id,
+          teamId: chunk.team_id,
+          apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+          rateLimitMultiplier: chunk.rate_limit_multiplier,
+          isPaidPlan: chunk.is_paid_plan,
+        })
+      : undefined;
+    if (variant === "treatment") {
       rateLimiter = getAutumnRateLimiter(
         mode,
         multiplier,
         chunk.flags,
         "treatment",
       );
+    }
+
+    // MCP and CLI calls get a raised per-minute minimum. A signed hosted MCP
+    // credential always counts; otherwise the surface comes from the
+    // client-set origin and integration fields, the same signals as the
+    // warehouse usage source.
+    if (token.startsWith("fcmcp_") || keylessSignupSurface(req) !== "api") {
+      rateLimiter =
+        getAgentSurfaceRateLimiter(mode, multiplier, chunk.flags, variant) ??
+        rateLimiter;
     }
   }
 

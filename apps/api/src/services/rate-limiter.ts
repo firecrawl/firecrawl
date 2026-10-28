@@ -124,21 +124,69 @@ export function getAutumnRateLimiter(
   }
 
   const base = BASE_RATE_LIMITS[mode];
-  let rateLimit: number;
-  if (base !== undefined) {
-    const safeMultiplier = multiplier > 0 ? multiplier : 1;
-    rateLimit =
-      variant === "treatment"
-        ? Math.max(
-            base * safeMultiplier,
-            treatmentMinimum(mode, safeMultiplier),
-          )
-        : base * safeMultiplier;
-  } else {
-    rateLimit = fallbackRateLimits?.[mode] ?? 500;
-  }
+  const rateLimit =
+    base !== undefined
+      ? planRateLimit(mode, base, multiplier, variant)
+      : (fallbackRateLimits?.[mode] ?? 500);
 
   return createRateLimiter(`${mode}`, rateLimit);
+}
+
+/**
+ * `base × multiplier`, raised to the treatment minimum for the "treatment"
+ * variant. A multiplier of zero or below counts as ×1.
+ */
+function planRateLimit(
+  mode: RateLimiterMode,
+  base: number,
+  multiplier: number,
+  variant?: RateLimitExperimentVariant,
+): number {
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  return variant === "treatment"
+    ? Math.max(base * safeMultiplier, treatmentMinimum(mode, safeMultiplier))
+    : base * safeMultiplier;
+}
+
+/**
+ * Per-minute minimum for scrape, search and exchange calls that come through
+ * MCP or the CLI: 10 per second. These clients send calls in bursts, so the
+ * plan limits refused valid agent work on teams that still had credits.
+ */
+const AGENT_SURFACE_MIN_RATE_LIMIT = 600;
+
+/**
+ * The limiter for a call made through MCP or the CLI, or undefined when the
+ * team's normal limit (see getAutumnRateLimiter) is already at least
+ * AGENT_SURFACE_MIN_RATE_LIMIT, so growth and above are unchanged. Also
+ * undefined under an org override for the mode and for modes outside
+ * RAISED_MINIMUM_MODES.
+ *
+ * The raised limit counts in its own bucket, so agent calls never use up the
+ * team's API budget for the mode and API calls never use up the agent one.
+ */
+export function getAgentSurfaceRateLimiter(
+  mode: RateLimiterMode,
+  multiplier: number = 1,
+  flags?: TeamFlags,
+  variant?: RateLimitExperimentVariant,
+): RateLimiterRedis | undefined {
+  if (!RAISED_MINIMUM_MODES.has(mode)) return undefined;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    return undefined;
+  }
+  const base = BASE_RATE_LIMITS[mode];
+  if (base === undefined) return undefined;
+  if (
+    planRateLimit(mode, base, multiplier, variant) >=
+    AGENT_SURFACE_MIN_RATE_LIMIT
+  ) {
+    return undefined;
+  }
+  return createRateLimiter(
+    `agentSurface:${mode}`,
+    AGENT_SURFACE_MIN_RATE_LIMIT,
+  );
 }
 
 /**
@@ -153,11 +201,11 @@ export function getAutumnRateLimiter(
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
 
 /**
- * Modes that get the treatment minimum. Agent traffic is bursty, so the scrape
- * and search limits refused valid calls. Exchange keeps parity with Scrape, as
- * in the base table.
+ * Modes that get the treatment minimum and the agent-surface minimum. Agent
+ * traffic is bursty, so the scrape and search limits refused valid calls.
+ * Exchange keeps parity with Scrape, as in the base table.
  */
-const TREATMENT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
+const RAISED_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
   RateLimiterMode.Scrape,
   RateLimiterMode.Exchange,
   RateLimiterMode.Search,
@@ -179,7 +227,7 @@ const TREATMENT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
 
 /** The treatment minimum for a mode and multiplier, or 0 when there is none. */
 function treatmentMinimum(mode: RateLimiterMode, multiplier: number): number {
-  if (!TREATMENT_MINIMUM_MODES.has(mode)) return 0;
+  if (!RAISED_MINIMUM_MODES.has(mode)) return 0;
   let minimum = 0;
   for (const tier of TREATMENT_MINIMUM_TIERS) {
     if (multiplier >= tier.minMultiplier) minimum = tier.limit;
