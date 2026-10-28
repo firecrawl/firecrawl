@@ -10,8 +10,8 @@ import {
 import { redlock } from "../../services/redlock";
 import { deleteKey, getValue, setValue } from "../../services/redis";
 import {
-  getAgentSurfaceRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   getRateLimiter,
   HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../../services/rate-limiter";
@@ -77,7 +77,7 @@ vi.mock("../../services/rate-limiter", async importOriginal => {
   return {
     ...actual,
     getRateLimiter: vi.fn(),
-    getAgentSurfaceRateLimiter: vi.fn(),
+    getHostedMcpRateLimiter: vi.fn(),
     getAutumnRateLimiter: vi.fn(),
   };
 });
@@ -1190,19 +1190,25 @@ describe("authenticateUser", () => {
     });
   });
 
-  describe("MCP and CLI rate-limit minimum", () => {
+  describe("hosted MCP rate-limit minimum", () => {
+    const API_KEY = "Bearer 00000000-0000-4000-8000-000000000000";
     const requestWith = (
-      body?: Record<string, unknown>,
-      authorization = "Bearer 00000000-0000-4000-8000-000000000000",
+      authorization: string,
+      extra: {
+        body?: Record<string, unknown>;
+        headers?: Record<string, string>;
+      } = {},
     ) => ({
-      headers: { authorization },
+      headers: { authorization, ...extra.headers },
       socket: { remoteAddress: "127.0.0.1" },
-      body,
+      body: extra.body,
     });
-    const agentConsume = vi.fn().mockResolvedValue(undefined);
+    const planConsume = vi.fn().mockResolvedValue(undefined);
+    const hostedMcpConsume = vi.fn().mockResolvedValue(undefined);
 
     beforeEach(() => {
       config.USE_DB_AUTHENTICATION = true;
+      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
       vi.mocked(getValue).mockResolvedValue(null);
       vi.mocked(authCreditUsageChunk).mockResolvedValue([
         {
@@ -1216,49 +1222,34 @@ describe("authenticateUser", () => {
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
-      vi.mocked(getAgentSurfaceRateLimiter).mockReturnValue({
-        consume: agentConsume,
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({
+        consume: planConsume,
+      } as never);
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue({
+        consume: hostedMcpConsume,
       } as never);
     });
 
-    it.each([
-      ["an MCP origin", { origin: "mcp-ua-claude-user" }],
-      ["the CLI integration", { origin: "api", integration: "cli" }],
-    ])("uses the raised limit for %s", async (_label, body) => {
-      const auth = await authenticateUser(
-        requestWith(body),
-        {},
-        RateLimiterMode.Scrape,
-      );
+    it.each([RateLimiterMode.Scrape, RateLimiterMode.Search])(
+      "uses only the raised limiter for a verified hosted MCP credential (%s)",
+      async mode => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          mode,
+        );
 
-      expect(auth.success).toBe(true);
-      expect(getAgentSurfaceRateLimiter).toHaveBeenCalledExactlyOnceWith(
-        RateLimiterMode.Scrape,
-        1,
-        {},
-        undefined,
-      );
-      expect(agentConsume).toHaveBeenCalledExactlyOnceWith("team-1");
-    });
-
-    it("uses the raised limit for a signed hosted MCP credential", async () => {
-      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
-
-      const auth = await authenticateUser(
-        requestWith(undefined, `Bearer ${signDelegation()}`),
-        {},
-        RateLimiterMode.Search,
-      );
-
-      expect(auth.success).toBe(true);
-      expect(getAgentSurfaceRateLimiter).toHaveBeenCalledExactlyOnceWith(
-        RateLimiterMode.Search,
-        1,
-        {},
-        undefined,
-      );
-      expect(agentConsume).toHaveBeenCalledExactlyOnceWith("team-1");
-    });
+        expect(auth.success).toBe(true);
+        expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          mode,
+          1,
+          {},
+          undefined,
+        );
+        expect(hostedMcpConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+        expect(planConsume).not.toHaveBeenCalled();
+      },
+    );
 
     it("passes the experiment variant through", async () => {
       vi.mocked(getRateLimitExperimentVariant).mockResolvedValueOnce(
@@ -1266,12 +1257,12 @@ describe("authenticateUser", () => {
       );
 
       await authenticateUser(
-        requestWith({ origin: "mcp" }),
+        requestWith(`Bearer ${signDelegation()}`),
         {},
         RateLimiterMode.Scrape,
       );
 
-      expect(getAgentSurfaceRateLimiter).toHaveBeenCalledWith(
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
         RateLimiterMode.Scrape,
         1,
         {},
@@ -1279,31 +1270,48 @@ describe("authenticateUser", () => {
       );
     });
 
-    it("keeps the plan limit for API traffic", async () => {
-      for (const body of [undefined, { origin: "api" }, { origin: "js-sdk" }]) {
-        await authenticateUser(requestWith(body), {}, RateLimiterMode.Scrape);
-      }
+    it.each([
+      ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
+      ["an MCP X-Origin header", { headers: { "x-origin": "mcp" } }],
+      ["the CLI integration", { body: { origin: "api", integration: "cli" } }],
+      ["no origin", {}],
+    ])("keeps the plan limit for an API key with %s", async (_label, extra) => {
+      const auth = await authenticateUser(
+        requestWith(API_KEY, extra),
+        {},
+        RateLimiterMode.Scrape,
+      );
 
-      expect(getAgentSurfaceRateLimiter).not.toHaveBeenCalled();
-      expect(agentConsume).not.toHaveBeenCalled();
+      expect(auth.success).toBe(true);
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
+    });
+
+    it("does not raise the limit for a credential that fails verification", async () => {
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation({}, "wrong-secret")}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(false);
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
     });
 
     it("keeps the plan limiter when the minimum does not raise it", async () => {
-      const planConsume = vi.fn().mockResolvedValue(undefined);
-      vi.mocked(getAutumnRateLimiter).mockReturnValue({
-        consume: planConsume,
-      } as never);
-      vi.mocked(getAgentSurfaceRateLimiter).mockReturnValue(undefined);
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue(undefined);
 
       const auth = await authenticateUser(
-        requestWith({ origin: "mcp" }),
+        requestWith(`Bearer ${signDelegation()}`),
         {},
         RateLimiterMode.Scrape,
       );
 
       expect(auth.success).toBe(true);
       expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
-      expect(agentConsume).not.toHaveBeenCalled();
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
     });
   });
 

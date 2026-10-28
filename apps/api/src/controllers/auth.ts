@@ -8,8 +8,8 @@ import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
   getRateLimiter,
-  getAgentSurfaceRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
   rateLimitExperimentApplies,
@@ -903,6 +903,9 @@ async function supaAuthenticateUser(
 
   let teamId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
+  // Set only once a hosted MCP delegated credential has verified, so the
+  // client never decides it.
+  let hostedMcpDelegation = false;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
@@ -948,6 +951,7 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
+    hostedMcpDelegation = true;
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,
@@ -1158,13 +1162,12 @@ async function supaAuthenticateUser(
       );
     }
 
-    // MCP and CLI calls get a raised per-minute minimum. A signed hosted MCP
-    // credential always counts; otherwise the surface comes from the
-    // client-set origin and integration fields, the same signals as the
-    // warehouse usage source.
-    if (token.startsWith("fcmcp_") || keylessSignupSurface(req) !== "api") {
+    // Calls the hosted MCP makes for a managed OAuth grant get a raised
+    // per-minute minimum. Only the verified delegated credential qualifies:
+    // origin and integration are client-set, so they never change the limit.
+    if (hostedMcpDelegation) {
       rateLimiter =
-        getAgentSurfaceRateLimiter(mode, multiplier, chunk.flags, variant) ??
+        getHostedMcpRateLimiter(mode, multiplier, chunk.flags, variant) ??
         rateLimiter;
     }
   }

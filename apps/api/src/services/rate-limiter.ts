@@ -149,23 +149,26 @@ function planRateLimit(
 }
 
 /**
- * Per-minute minimum for scrape, search and exchange calls that come through
- * MCP or the CLI: 10 per second. These clients send calls in bursts, so the
- * plan limits refused valid agent work on teams that still had credits.
+ * Per-minute minimum for scrape, search and exchange calls that the hosted MCP
+ * makes for a managed OAuth grant: 10 per second. Agent clients send these
+ * calls in bursts, so the plan limits refused valid agent work on teams that
+ * still had credits.
  */
-const AGENT_SURFACE_MIN_RATE_LIMIT = 600;
+const HOSTED_MCP_MIN_RATE_LIMIT = 600;
 
 /**
- * The limiter for a call made through MCP or the CLI, or undefined when the
- * team's normal limit (see getAutumnRateLimiter) is already at least
- * AGENT_SURFACE_MIN_RATE_LIMIT, so growth and above are unchanged. Also
+ * The limiter for a call authenticated with a hosted MCP delegated credential
+ * (`fcmcp_`, signed by the hosted MCP and verified in controllers/auth.ts), or
+ * undefined when the team's normal limit (see getAutumnRateLimiter) is already
+ * at least HOSTED_MCP_MIN_RATE_LIMIT, so growth and above are unchanged. Also
  * undefined under an org override for the mode and for modes outside
  * RAISED_MINIMUM_MODES.
  *
- * The raised limit counts in its own bucket, so agent calls never use up the
- * team's API budget for the mode and API calls never use up the agent one.
+ * The raised limit counts in its own bucket, so hosted MCP calls never use up
+ * the team's API budget for the mode and API calls never use up the hosted
+ * MCP one.
  */
-export function getAgentSurfaceRateLimiter(
+export function getHostedMcpRateLimiter(
   mode: RateLimiterMode,
   multiplier: number = 1,
   flags?: TeamFlags,
@@ -178,15 +181,11 @@ export function getAgentSurfaceRateLimiter(
   const base = BASE_RATE_LIMITS[mode];
   if (base === undefined) return undefined;
   if (
-    planRateLimit(mode, base, multiplier, variant) >=
-    AGENT_SURFACE_MIN_RATE_LIMIT
+    planRateLimit(mode, base, multiplier, variant) >= HOSTED_MCP_MIN_RATE_LIMIT
   ) {
     return undefined;
   }
-  return createRateLimiter(
-    `agentSurface:${mode}`,
-    AGENT_SURFACE_MIN_RATE_LIMIT,
-  );
+  return createRateLimiter(`hostedMcp:${mode}`, HOSTED_MCP_MIN_RATE_LIMIT);
 }
 
 /**
@@ -201,7 +200,7 @@ export function getAgentSurfaceRateLimiter(
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
 
 /**
- * Modes that get the treatment minimum and the agent-surface minimum. Agent
+ * Modes that get the treatment minimum and the hosted MCP minimum. Agent
  * traffic is bursty, so the scrape and search limits refused valid calls.
  * Exchange keeps parity with Scrape, as in the base table.
  */

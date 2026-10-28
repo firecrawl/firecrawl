@@ -12,8 +12,8 @@ vi.mock("ioredis", () => ({
 }));
 
 import {
-  getAgentSurfaceRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
 
@@ -490,7 +490,7 @@ describe("getAutumnRateLimiter", () => {
     });
   });
 
-  describe("MCP and CLI minimum", () => {
+  describe("hosted MCP minimum", () => {
     it("raises free, hobby and standard to 600 in a bucket of its own", () => {
       for (const mode of [
         RateLimiterMode.Scrape,
@@ -498,28 +498,28 @@ describe("getAutumnRateLimiter", () => {
         RateLimiterMode.Exchange,
       ]) {
         for (const multiplier of [1, 10, 50, 59]) {
-          const limiter = getAgentSurfaceRateLimiter(mode, multiplier);
+          const limiter = getHostedMcpRateLimiter(mode, multiplier);
           expect(limiter?.points).toBe(600);
-          expect(limiter?.keyPrefix).toBe(`agentSurface:${mode}`);
+          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
         }
       }
     });
 
     it("leaves plans already at 600 or above on their normal limiter", () => {
-      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 60)).toBe(
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 60)).toBe(
         undefined,
       );
-      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Search, 500)).toBe(
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Search, 500)).toBe(
         undefined,
       );
-      expect(getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 1000)).toBe(
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 1000)).toBe(
         undefined,
       );
     });
 
     it("compares against the treatment limit for treatment orgs", () => {
       expect(
-        getAgentSurfaceRateLimiter(
+        getHostedMcpRateLimiter(
           RateLimiterMode.Scrape,
           10,
           undefined,
@@ -528,7 +528,7 @@ describe("getAutumnRateLimiter", () => {
       ).toBe(600);
       // Standard treatment is already 1,000/min.
       expect(
-        getAgentSurfaceRateLimiter(
+        getHostedMcpRateLimiter(
           RateLimiterMode.Scrape,
           50,
           undefined,
@@ -545,10 +545,10 @@ describe("getAutumnRateLimiter", () => {
         RateLimiterMode.Browser,
         RateLimiterMode.ExchangeDiscover,
       ]) {
-        expect(getAgentSurfaceRateLimiter(mode, 1)).toBe(undefined);
+        expect(getHostedMcpRateLimiter(mode, 1)).toBe(undefined);
       }
       expect(
-        getAgentSurfaceRateLimiter(
+        getHostedMcpRateLimiter(
           RateLimiterMode.Scrape,
           1,
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
@@ -557,9 +557,9 @@ describe("getAutumnRateLimiter", () => {
     });
 
     it("treats a multiplier of zero or below as ×1", () => {
-      expect(
-        getAgentSurfaceRateLimiter(RateLimiterMode.Scrape, 0)?.points,
-      ).toBe(600);
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
+        600,
+      );
     });
   });
 
