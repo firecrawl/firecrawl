@@ -69,9 +69,9 @@ const providerList: Record<Provider, any> = {
 // Deployments with real OpenAI credentials keep using OpenAI.
 export function resolveProvider(provider: Provider): Provider {
   const ollamaOnly =
-    !!config.OLLAMA_BASE_URL &&
-    !config.OPENAI_API_KEY &&
-    !config.OPENAI_BASE_URL;
+    !!config.OLLAMA_BASE_URL?.trim() &&
+    !config.OPENAI_API_KEY?.trim() &&
+    !config.OPENAI_BASE_URL?.trim();
   return provider === "openai" && ollamaOnly ? "ollama" : provider;
 }
 
