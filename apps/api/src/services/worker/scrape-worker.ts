@@ -1263,6 +1263,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           ? error
           : (error.message ??
             "Something went wrong... Contact help@mendable.ai"),
+      error_code: error instanceof TransportableError ? error.code : undefined,
       time_taken: timeTakenInSeconds,
       team_id: job.data.team_id,
       options: job.data.scrapeOptions,
