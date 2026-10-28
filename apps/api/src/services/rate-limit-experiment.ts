@@ -14,8 +14,13 @@ import type { RateLimitExperimentVariant } from "./rate-limiter";
  * `control` and `treatment` variants and no targeting conditions. PostHog
  * assigns the variant; eligibility (a limit the variant can change) lives in
  * code, so the flag is only read for eligible requests.
+ *
+ * The flag key is part of every Redis key below, so moving to a new flag
+ * starts from no stored assignments or exposure markers. A flag's stored
+ * variant is never served for another flag, and an org exposed under an
+ * earlier flag is exposed again under the new one.
  */
-const RATE_LIMIT_EXPERIMENT_FLAG = "higher-rate-limits";
+const RATE_LIMIT_EXPERIMENT_FLAG = "raised-rate-limits";
 
 const VARIANTS: ReadonlySet<string> = new Set(["control", "treatment"]);
 
@@ -76,7 +81,7 @@ const skipExposureUntil = new Map<string, number>();
 const pendingExposures = new Set<string>();
 
 const assignmentKey = (orgId: string) =>
-  `firecrawl:rate_limit_experiment:${orgId}`;
+  `firecrawl:rate_limit_experiment:${RATE_LIMIT_EXPERIMENT_FLAG}:${orgId}`;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -248,7 +253,7 @@ function trackExposure(
 
   void (async () => {
     try {
-      const key = `firecrawl:rate_limit_experiment_exposure:${marker}`;
+      const key = `firecrawl:rate_limit_experiment_exposure:${RATE_LIMIT_EXPERIMENT_FLAG}:${marker}`;
       const isFirst = await redisEvictConnection.set(
         key,
         "1",

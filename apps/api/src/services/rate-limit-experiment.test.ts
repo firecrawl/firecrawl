@@ -41,7 +41,7 @@ const caller = (orgId: string) => ({
   isPaidPlan: true,
 });
 const assignmentKey = (orgId: string) =>
-  `firecrawl:rate_limit_experiment:${orgId}`;
+  `firecrawl:rate_limit_experiment:raised-rate-limits:${orgId}`;
 
 beforeEach(() => {
   mocks.store.clear();
@@ -82,7 +82,7 @@ describe("getRateLimitExperimentVariant", () => {
 
     // The flag buckets on the org, so the read needs no DB lookup.
     expect(mocks.evaluate).toHaveBeenCalledExactlyOnceWith(
-      "higher-rate-limits",
+      "raised-rate-limits",
       "org-new",
       { company: "org-new" },
     );
@@ -95,7 +95,7 @@ describe("getRateLimitExperimentVariant", () => {
       "$feature_flag_called",
       "owner@example.com",
       {
-        $feature_flag: "higher-rate-limits",
+        $feature_flag: "raised-rate-limits",
         $feature_flag_response: "treatment",
         team_id: "team-1",
         rate_limit_multiplier: 10,
@@ -106,14 +106,14 @@ describe("getRateLimitExperimentVariant", () => {
 
     // The marker is short-lived until PostHog accepts the event.
     expect(mocks.set).toHaveBeenCalledWith(
-      "firecrawl:rate_limit_experiment_exposure:org-new:treatment",
+      "firecrawl:rate_limit_experiment_exposure:raised-rate-limits:org-new:treatment",
       "1",
       "EX",
       5 * 60,
       "NX",
     );
     expect(mocks.expire).toHaveBeenCalledExactlyOnceWith(
-      "firecrawl:rate_limit_experiment_exposure:org-new:treatment",
+      "firecrawl:rate_limit_experiment_exposure:raised-rate-limits:org-new:treatment",
       30 * 24 * 60 * 60,
     );
 
@@ -121,6 +121,37 @@ describe("getRateLimitExperimentVariant", () => {
     await settle();
     expect(mocks.evaluate).toHaveBeenCalledTimes(1);
     expect(mocks.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores the assignment and exposure marker another flag left behind", async () => {
+    // Keys written before the flag key was part of them.
+    mocks.store.set(
+      "firecrawl:rate_limit_experiment:org-moved",
+      JSON.stringify({ variant: "control", checkedAt: Date.now() }),
+    );
+    mocks.store.set(
+      "firecrawl:rate_limit_experiment_exposure:org-moved:treatment",
+      "1",
+    );
+
+    await expect(
+      getRateLimitExperimentVariant(caller("org-moved")),
+    ).resolves.toBe("treatment");
+    await settle();
+
+    expect(mocks.evaluate).toHaveBeenCalledExactlyOnceWith(
+      "raised-rate-limits",
+      "org-moved",
+      { company: "org-moved" },
+    );
+    expect(mocks.capture).toHaveBeenCalledExactlyOnceWith(
+      "$feature_flag_called",
+      "owner@example.com",
+      expect.objectContaining({
+        $feature_flag: "raised-rate-limits",
+        $feature_flag_response: "treatment",
+      }),
+    );
   });
 
   it("reads a fresh stored assignment without asking PostHog", async () => {
@@ -237,7 +268,7 @@ describe("getRateLimitExperimentVariant", () => {
   it("does not resend an exposure another process holds, but checks again once its marker could expire", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const marker =
-      "firecrawl:rate_limit_experiment_exposure:org-elsewhere:treatment";
+      "firecrawl:rate_limit_experiment_exposure:raised-rate-limits:org-elsewhere:treatment";
     mocks.store.set(marker, "1");
 
     await getRateLimitExperimentVariant(caller("org-elsewhere"));
@@ -320,7 +351,8 @@ describe("getRateLimitExperimentVariant", () => {
       assignmentKey("org-retry"),
       JSON.stringify({ variant: "control", checkedAt: Date.now() }),
     );
-    const marker = "firecrawl:rate_limit_experiment_exposure:org-retry:control";
+    const marker =
+      "firecrawl:rate_limit_experiment_exposure:raised-rate-limits:org-retry:control";
 
     await getRateLimitExperimentVariant(caller("org-retry"));
     await settle();
