@@ -16,6 +16,10 @@ import {
 } from "../../../../../lib/otel-tracer";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import type { PDFProcessorResult } from "../types";
+import {
+  refreshOptionsForVariant,
+  submitBackgroundRefresh,
+} from "./background-refresh";
 import { firePdfCacheEventsTotal } from "./metrics";
 import { recordRefreshDecision } from "./refresh-budget";
 import { type FirePdfSourceKind, firePdfRequestKind } from "./request-metadata";
@@ -72,6 +76,9 @@ const lookupOutcomeSchema = z.discriminatedUnion("outcome", [
     generation: z.string().optional(),
     campaign: z.string(),
     capped: z.boolean().optional(),
+    // Only with `background_refresh` on the lookup: the service granted a
+    // refresh and expects this client, which holds the bytes, to submit it.
+    refresh_requested: z.boolean().optional(),
     result: cachedResultSchema,
   }),
   z.object({
@@ -184,6 +191,14 @@ async function lookupWithinSpan(
   } = args;
   // An already-cancelled scrape sends nothing.
   meta.abort.throwIfAborted();
+  // Background refresh is only offered when this client could act on a
+  // grant: it needs the bytes (inline, not by reference) of a PDF (images
+  // are only parsed through the sync endpoint), outside zero data retention.
+  const canRefreshInBackground =
+    config.FIRE_PDF_CACHE_BACKGROUND_REFRESH === true &&
+    typeof input === "string" &&
+    sourceKind === "pdf" &&
+    meta.internalOptions.zeroDataRetention !== true;
   const keys = await cacheLookupKeys(input);
   if (
     sourceKind === "pdf" &&
@@ -213,6 +228,7 @@ async function lookupWithinSpan(
         refresh,
         source_kind: sourceKind,
         scrape_id: meta.id,
+        ...(canRefreshInBackground && { background_refresh: true }),
       },
       schema: lookupOutcomeSchema,
       logger: meta.logger,
@@ -302,6 +318,17 @@ async function lookupWithinSpan(
     outcome: answer.outcome,
     ...(answer.outcome === "stale" && { campaign: answer.campaign }),
   });
+  // Never awaited: the stale entry is served now, the refresh lands later.
+  if (
+    canRefreshInBackground &&
+    answer.outcome === "stale" &&
+    answer.refresh_requested === true
+  ) {
+    void submitBackgroundRefresh(meta, input, {
+      ...refreshOptionsForVariant(answer.variant, mode),
+      sourceKind,
+    });
+  }
   // The entry carries markdown only; html is rendered here as on a fresh parse.
   return {
     markdown: result.markdown,

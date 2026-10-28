@@ -15,6 +15,8 @@ defaults:
   run:
     working-directory: ./apps/elixir-sdk
 
+permissions: {}
+
 jobs:
   regenerate:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -142,12 +144,17 @@ jobs:
             --base main
 
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up Elixir
         uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1

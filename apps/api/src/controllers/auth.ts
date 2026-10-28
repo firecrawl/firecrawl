@@ -2,6 +2,7 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
+import { timingSafeSecretEqual } from "../lib/secret-compare";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
@@ -10,7 +11,9 @@ import {
   getAutumnRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
+  rateLimitExperimentApplies,
 } from "../services/rate-limiter";
+import { getRateLimitExperimentVariant } from "../services/rate-limit-experiment";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
@@ -218,7 +221,7 @@ async function getACUC(
     mode === RateLimiterMode.ExtractStatus ||
     mode === RateLimiterMode.ExtractAgentPreview;
 
-  if (api_key === config.PREVIEW_TOKEN) {
+  if (timingSafeSecretEqual(api_key, config.PREVIEW_TOKEN)) {
     const acuc = mockPreviewACUC(api_key, isExtract);
     acuc.is_extract = isExtract;
     return acuc;
@@ -567,8 +570,10 @@ function keylessSuspiciousIpMessage(signupUrl: string): string {
 export function keylessClientIp(req): string {
   let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
   if (
-    config.KEYLESS_PROXY_SECRET &&
-    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
+    timingSafeSecretEqual(
+      req.headers["x-firecrawl-keyless-secret"],
+      config.KEYLESS_PROXY_SECRET,
+    )
   ) {
     const forwarded = req.headers["x-firecrawl-keyless-ip"];
     if (typeof forwarded === "string" && forwarded.trim()) {
@@ -812,27 +817,39 @@ export async function authenticateUser(
  * on to getAutumnRateLimiter, which stays the only place deciding the final
  * limit. An override makes the multiplier irrelevant, so we skip fetching it
  * from Autumn in that case rather than paying for a value that is discarded.
- *
- * `minMultiplier` floors the Autumn multiplier (trusted agent traffic passes
- * the hobby multiplier). It never applies on top of an override, which already
- * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
   chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
-  const flags = chunk.flags;
-  let multiplier: number;
-  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
-    multiplier = 1;
-  } else {
-    multiplier = chunk.rate_limit_multiplier;
-    if (minMultiplier !== undefined) {
-      multiplier = Math.max(multiplier, minMultiplier);
-    }
+  return getAutumnRateLimiter(
+    mode,
+    authenticatedRateLimitMultiplier(chunk, mode, minMultiplier),
+    chunk.flags,
+  );
+}
+
+/**
+ * The multiplier an authenticated team's limiter uses for a mode: a neutral 1
+ * under an override, otherwise the Autumn multiplier floored at
+ * `minMultiplier` (trusted agent traffic passes the hobby multiplier). The
+ * floor never applies on top of an override, which already replaces the whole
+ * computation.
+ */
+function authenticatedRateLimitMultiplier(
+  chunk: AuthCreditUsageChunk,
+  mode: RateLimiterMode,
+  minMultiplier?: number,
+): number {
+  if (
+    getRateLimitOverride(mode, chunk.flags?.rateLimitOverrides) !== undefined
+  ) {
+    return 1;
   }
-  return getAutumnRateLimiter(mode, multiplier, flags);
+  return minMultiplier !== undefined
+    ? Math.max(chunk.rate_limit_multiplier, minMultiplier)
+    : chunk.rate_limit_multiplier;
 }
 
 type AuthenticateOptions = {
@@ -890,7 +907,7 @@ async function supaAuthenticateUser(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
     );
   }
-  if (token == config.PREVIEW_TOKEN) {
+  if (timingSafeSecretEqual(token, config.PREVIEW_TOKEN)) {
     if (mode == RateLimiterMode.CrawlStatus) {
       rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus);
     } else if (mode == RateLimiterMode.ExtractStatus) {
@@ -957,10 +974,11 @@ async function supaAuthenticateUser(
         status: 401,
       });
     }
-    if (
-      introspection.credential_purpose !== undefined &&
-      introspection.credential_purpose !== "general"
-    ) {
+    const credentialPurpose = introspection.credential_purpose ?? "general";
+    const isRestGrantKey =
+      credentialPurpose === "hosted_mcp_oauth" &&
+      introspection.aud === FIRECRAWL_REST_RESOURCE;
+    if (credentialPurpose !== "general" && !isRestGrantKey) {
       return denied(req, "oauth_purpose_mismatch", {
         success: false,
         error: "Unauthorized: Invalid token",
@@ -968,14 +986,13 @@ async function supaAuthenticateUser(
       });
     }
 
-    // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
     chunk = await getACUC(
       resolvedApi,
       false,
       true,
       RateLimiterMode.Scrape,
-      "general",
+      credentialPurpose,
     );
 
     if (chunk === null) {
@@ -1114,7 +1131,36 @@ async function supaAuthenticateUser(
     }
   }
 
-  const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
+  // The rate-limit experiment runs after the ban and restriction checks, so
+  // only requests that reach the limiter enroll an org or count as exposed.
+  if (chunk !== null) {
+    const multiplier = authenticatedRateLimitMultiplier(
+      chunk,
+      mode,
+      minRateMultiplier,
+    );
+    if (
+      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
+      (await getRateLimitExperimentVariant({
+        orgId: chunk.org_id,
+        teamId: chunk.team_id,
+        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+        rateLimitMultiplier: chunk.rate_limit_multiplier,
+        isPaidPlan: chunk.is_paid_plan,
+      })) === "treatment"
+    ) {
+      rateLimiter = getAutumnRateLimiter(
+        mode,
+        multiplier,
+        chunk.flags,
+        "treatment",
+      );
+    }
+  }
+
+  const team_endpoint_token = timingSafeSecretEqual(token, config.PREVIEW_TOKEN)
+    ? iptoken
+    : teamId;
 
   try {
     await rateLimiter.consume(team_endpoint_token);
@@ -1144,7 +1190,7 @@ async function supaAuthenticateUser(
   }
 
   if (
-    token === config.PREVIEW_TOKEN &&
+    timingSafeSecretEqual(token, config.PREVIEW_TOKEN) &&
     (mode === RateLimiterMode.Scrape ||
       mode === RateLimiterMode.Preview ||
       mode === RateLimiterMode.Map ||

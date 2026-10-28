@@ -125,6 +125,22 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
+    it("should accept the experimental first-screen flag on branding only as a boolean", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [{ type: "branding", __experimental_screenshot: true }],
+      };
+      expect(scrapeRequestSchema.parse(input).formats).toEqual([
+        { type: "branding", __experimental_screenshot: true },
+      ]);
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: [{ type: "branding", __experimental_screenshot: "yes" }],
+        }),
+      ).toThrow();
+    });
+
     it("should accept valid scrape request with json format options", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

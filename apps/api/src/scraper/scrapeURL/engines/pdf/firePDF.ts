@@ -14,6 +14,7 @@ import {
 import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
 import {
   buildFirePdfRequestMetadata,
+  buildFirePdfTrainingCapture,
   firePdfTableFormat,
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
@@ -154,6 +155,7 @@ export async function scrapePDFWithFirePDF(
       pdf_sha256: pdfSha256,
       source: "firecrawl",
       zdr,
+      training_capture: buildFirePdfTrainingCapture(meta),
       ...deadlineFields,
     },
     logger,

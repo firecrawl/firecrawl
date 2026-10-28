@@ -73,10 +73,9 @@ export async function brandingTransformer(
   const logoCandidates = [...(rawBranding.logoCandidates || [])];
   const brandName = rawBranding.brandName?.trim() || undefined;
   const declared = pickDeclaredLogo(rawBranding.images);
-  if (
-    declared &&
-    shouldAddDeclaredLogoCandidate(logoCandidates, declared.src)
-  ) {
+  const declaredEligible =
+    !!declared && shouldAddDeclaredLogoCandidate(logoCandidates, declared);
+  if (declared && declaredEligible) {
     logoCandidates.push(
       declaredLogoCandidate(declared.src, declared.source, brandName),
     );
@@ -231,6 +230,8 @@ export async function brandingTransformer(
       backgroundCandidates:
         backgroundCandidates.length > 0 ? backgroundCandidates : undefined,
       screenshot: document.screenshot,
+      firstScreen: meta.brandingScreenshot,
+      firstScreenImage: meta.brandingScreenshotImage,
       url: finalUrl || "",
       headerHtmlChunk: headerHtmlChunk || undefined,
       favicon: brandingProfile.images?.favicon ?? undefined,
@@ -473,8 +474,10 @@ export async function brandingTransformer(
 
   // Last-resort fallback: when the candidate → heuristic → LLM pipeline ended
   // with no logo (no candidates, LLM rejection, or LLM failure), use the
-  // site-declared brand mark. Never overrides a selected logo.
-  if (!brandingProfile.images?.logo && declared) {
+  // site-declared brand mark, under the same gate as above: an app icon
+  // doesn't stand in for a rendered logo the model turned down. Never
+  // overrides a selected logo.
+  if (!brandingProfile.images?.logo && declared && declaredEligible) {
     brandingProfile.images = {
       ...(brandingProfile.images ?? {}),
       logo: declared.src,

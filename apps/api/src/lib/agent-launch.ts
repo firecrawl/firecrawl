@@ -25,6 +25,8 @@ export async function launchAgentJob(params: {
   externalRequestId?: string | null;
   request: AgentRequest;
   zeroDataRetention?: boolean;
+  // The team's agent ZDR retention tier, forwarded only for ZDR runs.
+  zeroDataRetentionMinutes?: number | null;
 }): Promise<LaunchAgentJobResult> {
   const { agentId, teamId, request } = params;
   const zeroDataRetention = params.zeroDataRetention === true;
@@ -114,6 +116,11 @@ export async function launchAgentJob(params: {
         exchange: request.exchange,
         location: request.location,
         ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
+        ...(zeroDataRetention &&
+        params.zeroDataRetentionMinutes !== undefined &&
+        params.zeroDataRetentionMinutes !== null
+          ? { zeroDataRetentionMinutes: params.zeroDataRetentionMinutes }
+          : {}),
       }),
     },
   );

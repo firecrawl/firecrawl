@@ -78,6 +78,26 @@ const researchKeylessDisabled = z.preprocess(
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
+const teamDailyLimits = z.preprocess(
+  value =>
+    value === undefined
+      ? []
+      : typeof value === "string"
+        ? value
+            .split(",")
+            .map(entry => entry.trim().toLowerCase())
+            .filter(Boolean)
+            .map(entry => entry.split(":").map(part => part.trim()))
+        : value,
+  z
+    .array(z.tuple([z.uuid(), z.coerce.number().int().positive()]))
+    .refine(
+      pairs => new Set(pairs.map(([teamId]) => teamId)).size === pairs.length,
+      "each team id may appear only once",
+    )
+    .transform(pairs => Object.fromEntries(pairs)),
+);
+
 const containsLoneSurrogate = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
     const codeUnit = value.charCodeAt(index);
@@ -118,6 +138,9 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
+  // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
+  // listed team's limit replaces its plan limit.
+  GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
 
@@ -231,6 +254,12 @@ const configSchema = z.object({
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
+  BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
+  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(z.stringbool().default(true)),
+  ADMIN_INTERNAL_PORT: emptyStringAsUndefined(
+    z.coerce.number().int().positive().max(65535),
+  ),
+  ADMIN_INTERNAL_HOST: emptyStringAsDefault(z.string().default("localhost")),
   S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
     z.string().trim().min(1),
   ),
@@ -500,6 +529,13 @@ const configSchema = z.object({
   // cache service when one is configured; beyond the budget the request is
   // served normally. 0 disables the option.
   FIRE_PDF_CACHE_REFRESH_PER_MINUTE: z.coerce.number().int().min(0).default(10),
+  // Opt in to background refresh: lookups carry `background_refresh: true`,
+  // so the cache service can answer a refresh-campaign match with the stale
+  // entry instead of a miss. When it grants a refresh (`refresh_requested`),
+  // the stale result is served and the bytes are submitted to fire-pdf's bulk
+  // queue for a fresh parse, which fire-pdf writes back to the cache. Needs
+  // FIRE_PDF_CACHE_BASE_URL and FIRE_PDF_BASE_URL.
+  FIRE_PDF_CACHE_BACKGROUND_REFRESH: z.stringbool().default(false),
   // /v2/parse sends every PDF (auto/ocr mode) to FirePDF: no direct
   // text-layer extraction, no FIRE_PDF_PERCENT sampling, no MinerU
   // diversion. Explicit `mode: "fast"` keeps direct extraction. FirePDF
@@ -609,7 +645,8 @@ const configSchema = z.object({
   // https://api.firecrawl.dev/v2/slack/oauth/callback).
   SLACK_OAUTH_REDIRECT_URL: z.string().optional(),
   // 32-byte key (hex or base64) used to AES-256-GCM encrypt stored bot tokens.
-  // If unset, tokens are stored with a `plain:` prefix (self-hosted only).
+  // Required when ENV=production. Elsewhere, if unset, tokens are stored with a
+  // `plain:` prefix.
   SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   // Answer @-mentions and DMs to the bot with an agent run billed to the
   // linked team. Also requests the extra scopes this needs at install time, so
@@ -631,6 +668,10 @@ const configSchema = z.object({
   // (lib/branding/jev.ts), with the LLM as fallback. BRANDING_JEV=false sends
   // every branding request to the LLM instead.
   BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
+  // Share of teams (0-100, stable per team) whose branding scrapes also
+  // capture the page's first screen for Jev, as if they had asked for it with
+  // the branding format's __experimental_screenshot. Never for ZDR scrapes.
+  BRANDING_JEV_SCREENSHOT_PERCENT: z.coerce.number().min(0).max(100).default(0),
   BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
     z.coerce.number().int().positive(),
   ),

@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  zod@<4.6.6: 4.6.7
   axios@>=1.0.0 <1.20.0: 1.20.0
   diff@>=4.0.0 <4.0.4: '>=4.0.4 <5.0.0'
   follow-redirects@<1.16.1: '>=1.16.1 <2.0.0'
@@ -25,8 +26,8 @@ importers:
         specifier: ^14.0.0
         version: 14.0.0
       zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^24.3.0
@@ -428,10 +429,10 @@ packages:
   zod-to-json-schema@3.24.6:
     resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
     peerDependencies:
-      zod: ^3.24.1
+      zod: 4.6.7
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -637,8 +638,8 @@ snapshots:
     dependencies:
       axios: 1.20.0
       typescript-event-target: 1.1.1
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
+      zod: 4.6.7
+      zod-to-json-schema: 3.24.6(zod@4.6.7)
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -752,8 +753,8 @@ snapshots:
 
   yn@3.1.1: {}
 
-  zod-to-json-schema@3.24.6(zod@3.25.76):
+  zod-to-json-schema@3.24.6(zod@4.6.7):
     dependencies:
-      zod: 3.25.76
+      zod: 4.6.7
 
-  zod@3.25.76: {}
+  zod@4.6.7: {}

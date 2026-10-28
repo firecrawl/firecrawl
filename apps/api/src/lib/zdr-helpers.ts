@@ -88,6 +88,24 @@ export function getCustomRobotsAgent(
   return "disabled";
 }
 
+/** The agent ZDR result retentions an org can be given, in minutes. */
+const AGENT_ZDR_RETENTION_TIERS_MINUTES = [15, 30, 60, 360, 1440];
+
+/**
+ * The agent ZDR result retention from team flags: a tier in minutes, null
+ * when unset (the agent service's default), or "invalid" for any other value,
+ * which must never fall back to a longer retention.
+ */
+export function getAgentZdrRetentionMinutes(
+  flags: TeamFlags | undefined,
+): number | null | "invalid" {
+  const minutes = flags?.agentZdrRetentionMinutes;
+  if (minutes === undefined || minutes === null) return null;
+  return AGENT_ZDR_RETENTION_TIERS_MINUTES.includes(minutes)
+    ? minutes
+    : "invalid";
+}
+
 /**
  * Whether the org's DPA (or partner amendment) restricts how its data may be
  * handled. Absent or any non-`true` value reads as unrestricted.

@@ -3,6 +3,7 @@ import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import {
+  buildFirePdfJobTrainingCapture,
   buildFirePdfRequestMetadata,
   firePdfTableFormat,
 } from "./request-metadata";
@@ -161,6 +162,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       includeBlocks,
       pageMarkers,
       tableFormat: firePdfTableFormat(meta),
+      trainingCapture: buildFirePdfJobTrainingCapture(meta),
     }),
   };
 

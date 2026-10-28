@@ -264,6 +264,12 @@ export async function providerScrapeController(
             ({ provider, capability, options }, i) => ({
               provider,
               capability,
+              ...(served.success && served.data.results[i]
+                ? {
+                    code: served.data.results[i].error?.code ?? null,
+                    creditsCost: served.data.results[i].creditsCost ?? 0,
+                  }
+                : {}),
               ...(isFindTools({ provider, capability })
                 ? {
                     options: {

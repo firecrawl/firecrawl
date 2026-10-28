@@ -174,6 +174,10 @@ export type EngineScrapeResult = {
   };
 
   branding?: BrandingProfile;
+  /** First-screen screenshot taken for Jev's branding call; internal, never
+   * returned (see the branding format's __experimental_screenshot and
+   * BRANDING_JEV_SCREENSHOT_PERCENT). */
+  brandingScreenshot?: string;
 
   pdfMetadata?: PdfMetadata;
 
