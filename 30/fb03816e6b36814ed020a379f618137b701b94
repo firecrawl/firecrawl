@@ -1,0 +1,23 @@
+apps/api/src/__tests__/lib/branding/branding-script-no-body.test.ts
+  s_05b682766b7af4::t_478b5f61f451c1 1-51
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/helpers.ts
+  s_05b682766b7af4::t_64f7f74a25d63f 83-96,102,117-119,123,126
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/brand-utils.ts
+  s_05b682766b7af4::t_64f7f74a25d63f 75-85,88-91,94-97,135-136,293-298,340-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30fb03816e6b36814ed020a379f618137b701b94",
+  "prompts": {},
+  "sessions": {
+    "s_05b682766b7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b6ed0a7e-8253-438a-9eff-9d9f6c5121a6",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
