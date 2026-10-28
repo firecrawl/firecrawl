@@ -716,7 +716,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         : scrape.url,
       is_successful: scrape.is_successful,
       error: scrape.zeroDataRetention
-        ? scrape.error === undefined
+        ? scrape.is_successful
           ? null
           : (scrape.error_code ?? "<redacted due to zero data retention>")
         : (scrape.error ?? null),
