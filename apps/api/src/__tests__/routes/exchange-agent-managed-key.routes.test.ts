@@ -255,7 +255,11 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
     expect(mocks.upstreamFetch).toHaveBeenCalledTimes(2);
   });
 
-  it.each([{ scrapeZDR: "forced" }, { searchZDR: "forced-zdr" }])(
+  it.each([
+    { scrapeZDR: "forced" },
+    { searchZDR: "forced-zdr" },
+    { searchZDR: "forced-anon" },
+  ])(
     "refuses discover before any upstream call for a team with %o",
     async flags => {
       keyResolvesAs(flags);

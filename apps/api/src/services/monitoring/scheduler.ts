@@ -10,7 +10,7 @@ import {
   deferMonitorClaim,
   dispatchScheduledMonitorCheck,
   getMonitorCheckForUpdate,
-  pauseMonitor,
+  updateMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
@@ -92,11 +92,14 @@ export async function enqueueDueMonitorChecks(
           finished_at: new Date().toISOString(),
           error: MONITOR_ZDR_PAUSED_ERROR,
         });
-        await pauseMonitor(monitor.id);
-        await advanceMonitorAfterSkippedCheck({
-          monitor: { ...monitor, status: "paused" },
-          check: finished,
+        await updateMonitor({
+          teamId: monitor.team_id,
+          monitorId: monitor.id,
+          input: { status: "paused" },
         });
+        // Advanced as active so next_run_at stays set and a resume by status
+        // alone schedules it again, as for a monitor its owner paused.
+        await advanceMonitorAfterSkippedCheck({ monitor, check: finished });
         logger.warn("Paused monitor: its team requires zero data retention", {
           monitorId: monitor.id,
           checkId: finished.id,

@@ -9,7 +9,7 @@ import {
   createMonitorCheck,
   dispatchScheduledMonitorCheck,
   getMonitorCheckForUpdate,
-  pauseMonitor,
+  updateMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
@@ -30,7 +30,7 @@ vi.mock("./store", () => ({
   createMonitorCheck: vi.fn(),
   dispatchScheduledMonitorCheck: vi.fn(),
   getMonitorCheckForUpdate: vi.fn(),
-  pauseMonitor: vi.fn(),
+  updateMonitor: vi.fn(),
   updateMonitorCheck: vi.fn(),
   updateMonitorCheckIfStatus: vi.fn(),
   updateMonitorScheduleAfterRun: vi.fn(),
@@ -83,7 +83,7 @@ const mockUpdateMonitorScheduleAfterRun =
     typeof updateMonitorScheduleAfterRun
   >;
 const mockGetACUCTeam = getACUCTeam as MockedFunction<typeof getACUCTeam>;
-const mockPauseMonitor = pauseMonitor as MockedFunction<typeof pauseMonitor>;
+const mockUpdateMonitor = updateMonitor as MockedFunction<typeof updateMonitor>;
 
 describe("monitoring scheduler", () => {
   const monitor = {
@@ -116,7 +116,7 @@ describe("monitoring scheduler", () => {
     mockIsMonitorCheckStale.mockReturnValue(false);
     mockFinalizeCreditsLock.mockResolvedValue(true);
     mockGetACUCTeam.mockResolvedValue(null);
-    mockPauseMonitor.mockResolvedValue(undefined);
+    mockUpdateMonitor.mockResolvedValue(null);
   });
 
   it("dispatches and advances a scheduled monitor before enqueueing its job", async () => {
@@ -188,11 +188,18 @@ describe("monitoring scheduler", () => {
       finished_at: expect.any(String),
       error: MONITOR_ZDR_PAUSED_ERROR,
     });
-    expect(mockPauseMonitor).toHaveBeenCalledWith(monitor.id);
+    expect(mockUpdateMonitor).toHaveBeenCalledWith({
+      teamId: monitor.team_id,
+      monitorId: monitor.id,
+      input: { status: "paused" },
+    });
     expect(mockAdvanceMonitorAfterSkippedCheck).toHaveBeenCalledWith({
-      monitor: { ...monitor, status: "paused" },
+      monitor,
       check: refused,
     });
+    expect(mockUpdateMonitor.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAdvanceMonitorAfterSkippedCheck.mock.invocationCallOrder[0],
+    );
     expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
     expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
