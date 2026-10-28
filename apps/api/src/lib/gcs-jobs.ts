@@ -49,7 +49,7 @@ type GCSOperationAttempt = {
  * @param id Job ID to convert to a filename
  * @returns Filename for the job in GCS
  */
-function idToFilename(id: string): string {
+export function idToFilename(id: string): string {
   if (
     id.match(
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/,
@@ -114,6 +114,11 @@ async function saveJobToGCS(params: {
       let backoffUsed = BACKOFF_PARAMS;
 
       const data = JSON.stringify(params.data);
+      // Lets a daysSinceCustomTime lifecycle rule delete ZDR results that
+      // zdrcleaner misses.
+      const customTime = params.zeroDataRetention
+        ? new Date().toISOString()
+        : undefined;
 
       // Save job docs with retry
       // Due to retries and resumable uploads, this is:
@@ -131,6 +136,7 @@ async function saveJobToGCS(params: {
             metadata: {
               contentType: "application/json",
               metadata: params.metadata,
+              ...(customTime ? { customTime } : {}),
             },
             resumable: data.length > 3 * 1024 * 1024, // 3MB, 5MB official limit
           });
