@@ -28,6 +28,9 @@ const RATE_LIMIT_RETRY_OUTCOMES = [
   "not_retryable",
 ] as const;
 const DURATION_MS_MAX = 2_147_483_647;
+const LINEAGE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const SESSION_SOURCES = ["token", "trace", "sse"] as const;
+const THREAD_SOURCES = ["argument", "session", "minted"] as const;
 const INVALID_ARGUMENTS_MAX = 10;
 const INVALID_ARGUMENT_PATTERN =
   /^(?:\(root\)|\*|[A-Za-z0-9_.-]{1,64}):[a-z_]{1,40}$/;
@@ -56,6 +59,10 @@ const ALLOWED_FIELDS = new Set([
   "duration_ms",
   "invalid_arguments",
   "rate_limit_retry",
+  "session_id",
+  "session_source",
+  "thread_id",
+  "thread_source",
 ]);
 
 export class McpActionLogValidationError extends Error {}
@@ -161,6 +168,31 @@ function invalidArguments(value: unknown) {
   return value as string[];
 }
 
+function lineage<T extends string>(
+  payload: Record<string, unknown>,
+  kind: "session" | "thread",
+  values: readonly T[],
+): { id: string | null; source: T | null } {
+  const id = payload[`${kind}_id`];
+  const source = payload[`${kind}_source`];
+  const hasId = id != null && id !== "";
+  const hasSource = source != null && source !== "";
+  if (hasId && (typeof id !== "string" || !LINEAGE_ID_PATTERN.test(id))) {
+    invalid(
+      `${kind}_id must be 1-128 letters, digits, dots, underscores, colons or hyphens`,
+    );
+  }
+  if (hasSource && !values.includes(source as T)) {
+    invalid(`${kind}_source must be one of ${values.join(", ")}`);
+  }
+  if (hasSource && !hasId) invalid(`${kind}_source requires ${kind}_id`);
+  const usable = hasId && !SECRET_PATTERN.test(id as string);
+  return {
+    id: usable ? (id as string) : null,
+    source: usable && hasSource ? (source as T) : null,
+  };
+}
+
 type McpActionLogInput = {
   team_id: string;
   user_id: string | null;
@@ -184,6 +216,10 @@ type McpActionLogInput = {
   duration_ms: number | null;
   invalid_arguments: string[];
   rate_limit_retry: (typeof RATE_LIMIT_RETRY_OUTCOMES)[number] | null;
+  session_id: string | null;
+  session_source: (typeof SESSION_SOURCES)[number] | null;
+  thread_id: string | null;
+  thread_source: (typeof THREAD_SOURCES)[number] | null;
 };
 
 type McpActionLogRow = {
@@ -255,6 +291,8 @@ export function normalizeMcpActionLogInput(
   if (!RESOURCES.has(resource)) {
     invalid("resource must be a canonical hosted MCP URL");
   }
+  const session = lineage(payload, "session", SESSION_SOURCES);
+  const thread = lineage(payload, "thread", THREAD_SOURCES);
   return {
     team_id: uuid(payload.team_id, "team_id")!,
     user_id: userId,
@@ -279,6 +317,10 @@ export function normalizeMcpActionLogInput(
     duration_ms: durationMs(payload.duration_ms),
     invalid_arguments: invalidArguments(payload.invalid_arguments),
     rate_limit_retry: rateLimitRetry as McpActionLogInput["rate_limit_retry"],
+    session_id: session.id,
+    session_source: session.source,
+    thread_id: thread.id,
+    thread_source: thread.source,
   };
 }
 
