@@ -12,7 +12,11 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
-import { getScrapeZDR, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  getAgentZdrRetentionMinutes,
+  getScrapeZDR,
+  getSearchZDR,
+} from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -76,6 +80,22 @@ export async function agentController(
       code: "zdr_threads_unsupported",
       error:
         "Agent threads are not supported with zero data retention. Remove threadId to start a new run.",
+    });
+  }
+
+  // Read once, here: the agent service keeps the run's retention from start.
+  const zeroDataRetentionMinutes = zeroDataRetention
+    ? getAgentZdrRetentionMinutes(req.acuc?.flags)
+    : null;
+  if (zeroDataRetentionMinutes === "invalid") {
+    logger.error("Invalid agentZdrRetentionMinutes team flag", {
+      agentZdrRetentionMinutes: req.acuc?.flags?.agentZdrRetentionMinutes,
+    });
+    return res.status(500).json({
+      success: false,
+      code: "zdr_retention_misconfigured",
+      error:
+        "Zero Data Retention is misconfigured for your team. Contact support@firecrawl.com.",
     });
   }
 
@@ -290,6 +310,9 @@ export async function agentController(
         exchange: req.body.exchange,
         location: req.body.location,
         ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
+        ...(zeroDataRetentionMinutes !== null
+          ? { zeroDataRetentionMinutes }
+          : {}),
       }),
     },
   );
