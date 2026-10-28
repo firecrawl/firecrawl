@@ -6,6 +6,7 @@ import {
   Route,
   Request as PlaywrightRequest,
   Page,
+  Response as PlaywrightResponse,
 } from 'playwright';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
@@ -268,60 +269,76 @@ const scrapePage = async (
   console.log(
     `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
   );
-  let response;
-  try {
-    response = await page.goto(url, { waitUntil, timeout });
-  } catch (error) {
-    if (securityState.blockedNavigationRequestUrl) {
-      throw new InsecureConnectionError(
-        securityState.blockedNavigationRequestUrl,
-        'navigation to private/internal resource is not allowed',
-      );
-    }
-    throw error;
-  }
-
-  if (waitAfterLoad > 0) {
-    await page.waitForTimeout(waitAfterLoad);
-  }
-
-  if (checkSelector) {
-    try {
-      await page.waitForSelector(checkSelector, { timeout });
-    } catch (error) {
-      throw new Error('Required selector not found');
-    }
-  }
-
-  let headers = null,
-    content = await page.content(),
-    landedUrl = page.url();
-  let ct: string | undefined = undefined;
-  if (response) {
-    headers = await response.allHeaders();
-    ct = Object.entries(headers).find(
-      ([key]) => key.toLowerCase() === 'content-type',
-    )?.[1];
+  const mainDocument: { response: PlaywrightResponse | null } = { response: null };
+  const trackDocumentResponse = (response: PlaywrightResponse) => {
     if (
-      ct &&
-      (ct.toLowerCase().includes('application/json') ||
-        ct.toLowerCase().includes('text/plain'))
+      response.request().isNavigationRequest() &&
+      response.frame() === page.mainFrame()
     ) {
-      content = (await response.body()).toString('utf8'); // TODO: determine real encoding
-      landedUrl = response.url();
+      mainDocument.response = response;
     }
-  }
-
-  return {
-    content,
-    // Where the returned content came from: page.url() for rendered HTML
-    // (covers HTTP 3xx and client-side redirects), response.url() for raw
-    // JSON/text bodies, which come from the page.goto response.
-    url: landedUrl,
-    status: response ? response.status() : null,
-    headers,
-    contentType: ct,
   };
+  // Keep metadata in sync with navigations that occur during the extra wait.
+  // Subresources and child frames must not overwrite the main document.
+  page.on('response', trackDocumentResponse);
+  try {
+    try {
+      await page.goto(url, { waitUntil, timeout });
+    } catch (error) {
+      if (securityState.blockedNavigationRequestUrl) {
+        throw new InsecureConnectionError(
+          securityState.blockedNavigationRequestUrl,
+          'navigation to private/internal resource is not allowed',
+        );
+      }
+      throw error;
+    }
+
+    if (waitAfterLoad > 0) {
+      await page.waitForTimeout(waitAfterLoad);
+    }
+
+    if (checkSelector) {
+      try {
+        await page.waitForSelector(checkSelector, { timeout });
+      } catch (error) {
+        throw new Error('Required selector not found');
+      }
+    }
+
+    const response = mainDocument.response;
+    let headers = null,
+      content = await page.content(),
+      landedUrl = page.url();
+    let ct: string | undefined = undefined;
+    if (response) {
+      headers = await response.allHeaders();
+      ct = Object.entries(headers).find(
+        ([key]) => key.toLowerCase() === 'content-type',
+      )?.[1];
+      if (
+        ct &&
+        (ct.toLowerCase().includes('application/json') ||
+          ct.toLowerCase().includes('text/plain'))
+      ) {
+        content = (await response.body()).toString('utf8'); // TODO: determine real encoding
+        landedUrl = response.url();
+      }
+    }
+
+    return {
+      content,
+      // Where the returned content came from: page.url() for rendered HTML
+      // (covers HTTP 3xx and client-side redirects), response.url() for raw
+      // JSON/text bodies, which come from the final main-document response.
+      url: landedUrl,
+      status: response ? response.status() : null,
+      headers,
+      contentType: ct,
+    };
+  } finally {
+    page.off('response', trackDocumentResponse);
+  }
 };
 
 app.get('/health', async (req: Request, res: Response) => {
