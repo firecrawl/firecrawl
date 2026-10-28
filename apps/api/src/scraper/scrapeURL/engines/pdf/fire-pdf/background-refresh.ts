@@ -9,6 +9,7 @@ import {
   firePdfCacheBackgroundRefreshTotal,
 } from "./metrics";
 import {
+  buildFirePdfJobTrainingCapture,
   buildFirePdfRequestMetadata,
   type FirePdfSourceKind,
 } from "./request-metadata";
@@ -137,6 +138,7 @@ async function submit(
           pageMarkers: args.pageMarkers,
           // The cache is only consulted without an explicit table format.
           tableFormat: undefined,
+          trainingCapture: buildFirePdfJobTrainingCapture(meta),
         }),
         refresh: true,
       },
