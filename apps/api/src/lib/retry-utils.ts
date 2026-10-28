@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { fireEngineHeaders } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 
 const RETRY_DELAYS = [500, 1500, 3000] as const;
 const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
@@ -18,6 +19,7 @@ export async function attemptRequest<T>(
       headers: {
         "Content-Type": "application/json",
         "X-Disable-Cache": "true",
+        ...fireEngineHeaders,
         ...(requestId ? { "X-Request-ID": requestId } : {}),
       },
       body: data,

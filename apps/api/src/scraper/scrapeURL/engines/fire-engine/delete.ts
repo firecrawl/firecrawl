@@ -2,7 +2,7 @@ import { Logger } from "winston";
 
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
-import { fireEngineURL } from "./scrape";
+import { fireEngineHeaders, fireEngineURL } from "./scrape";
 
 export async function fireEngineDelete(
   logger: Logger,
@@ -20,7 +20,7 @@ export async function fireEngineDelete(
   await robustFetch({
     url: `${baseUrl}/scrape/${jobId}`,
     method: "DELETE",
-    headers: {},
+    headers: fireEngineHeaders,
     logger: logger.child({ method: "fireEngineDelete/robustFetch", jobId }),
     mock,
     abort,

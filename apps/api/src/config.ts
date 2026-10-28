@@ -437,6 +437,7 @@ const configSchema = z.object({
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
+  FIRE_ENGINE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   FIRE_ENGINE_STAGING_URL: z.string().optional(),
   FIRE_ENGINE_AB_URL: z.string().optional(),
   FIRE_ENGINE_AB_RATE: z.coerce.number().optional(),

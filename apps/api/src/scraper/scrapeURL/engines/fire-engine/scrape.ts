@@ -214,6 +214,12 @@ export const fireEngineURL =
 export const fireEngineStagingURL =
   config.FIRE_ENGINE_STAGING_URL ?? "<mock-fire-engine-url>";
 
+/** Headers for every request to Fire Engine; empty when no key is configured. */
+export const fireEngineHeaders: Record<string, string> =
+  config.FIRE_ENGINE_API_KEY
+    ? { "X-Fire-Engine-Api-Key": config.FIRE_ENGINE_API_KEY }
+    : {};
+
 export async function fireEngineScrape<
   Engine extends
     | FireEngineScrapeRequestChromeCDP
@@ -229,7 +235,7 @@ export async function fireEngineScrape<
   let status = await robustFetch({
     url: `${baseUrl}/scrape`,
     method: "POST",
-    headers: {},
+    headers: fireEngineHeaders,
     body: request,
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
     tryCount: 3,

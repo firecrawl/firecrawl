@@ -6,6 +6,7 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
+  fireEngineHeaders,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 import { getDocFromGCS } from "../lib/gcs-jobs";
 import { MirrorResult, FireEngineResponse } from "./ab-test-comparison";
@@ -117,6 +118,7 @@ export function abTestFireEngine(
       let response = await robustFetch({
         url: `${config.FIRE_ENGINE_AB_URL}/scrape`,
         method: "POST",
+        headers: fireEngineHeaders,
         body: feRequest,
         logger: abLogger,
         tryCount: 1,
@@ -172,7 +174,7 @@ export function abTestFireEngine(
         robustFetch({
           url: `${config.FIRE_ENGINE_AB_URL}/scrape/${jobId}`,
           method: "DELETE",
-          headers: {},
+          headers: fireEngineHeaders,
           logger: abLogger.child({ method: "abTestFireEngine/delete", jobId }),
           mock: null,
         }).catch(e => {

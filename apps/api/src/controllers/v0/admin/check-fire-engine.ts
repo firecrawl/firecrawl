@@ -1,6 +1,7 @@
 import { logger } from "../../../lib/logger";
 import { config } from "../../../config";
 import { Request, Response } from "express";
+import { fireEngineHeaders } from "../../../scraper/scrapeURL/engines/fire-engine/scrape";
 
 export async function checkFireEngine(req: Request, res: Response) {
   try {
@@ -28,6 +29,7 @@ export async function checkFireEngine(req: Request, res: Response) {
           headers: {
             "Content-Type": "application/json",
             "X-Disable-Cache": "true",
+            ...fireEngineHeaders,
           },
           body: JSON.stringify({
             url,

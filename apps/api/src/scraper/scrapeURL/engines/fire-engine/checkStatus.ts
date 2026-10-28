@@ -15,7 +15,7 @@ import {
   SiteRestrictionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
-import { fireEngineURL } from "./scrape";
+import { fireEngineHeaders, fireEngineURL } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
@@ -158,7 +158,7 @@ export async function fireEngineCheckStatus(
     url: `${baseUrl}/scrape/${jobId}`,
     method: "GET",
     logger: logger.child({ method: "fireEngineCheckStatus/robustFetch" }),
-    headers: {},
+    headers: fireEngineHeaders,
     mock,
     abort,
   });
