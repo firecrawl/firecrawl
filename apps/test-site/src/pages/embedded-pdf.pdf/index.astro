@@ -1,0 +1,21 @@
+---
+// Fixture for a PDF-looking URL that serves an HTML viewer page (issue
+// #839): the path contains ".pdf/", so the API routes it to the PDF engine
+// first, but the response is text/html with the real PDF embedded in an
+// iframe. The scrape must fall back to the HTML engines and return this
+// page instead of failing to parse it as a PDF.
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Embedded PDF Viewer</title>
+	</head>
+	<body>
+		<h1>Embedded PDF Viewer</h1>
+		<p>Firecrawl embedded PDF viewer fixture.</p>
+		<a href="/example.pdf">Download</a>
+		<iframe src="/example.pdf" title="Embedded PDF"></iframe>
+	</body>
+</html>
