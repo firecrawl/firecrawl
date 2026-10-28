@@ -124,28 +124,21 @@ export function getAutumnRateLimiter(
   }
 
   const base = BASE_RATE_LIMITS[mode];
-  const rateLimit =
-    base !== undefined
-      ? planRateLimit(mode, base, multiplier, variant)
-      : (fallbackRateLimits?.[mode] ?? 500);
+  let rateLimit: number;
+  if (base !== undefined) {
+    const safeMultiplier = multiplier > 0 ? multiplier : 1;
+    rateLimit =
+      variant === "treatment"
+        ? Math.max(
+            base * safeMultiplier,
+            treatmentMinimum(mode, safeMultiplier),
+          )
+        : base * safeMultiplier;
+  } else {
+    rateLimit = fallbackRateLimits?.[mode] ?? 500;
+  }
 
   return createRateLimiter(`${mode}`, rateLimit);
-}
-
-/**
- * `base × multiplier`, raised to the treatment minimum for the "treatment"
- * variant. A multiplier of zero or below counts as ×1.
- */
-function planRateLimit(
-  mode: RateLimiterMode,
-  base: number,
-  multiplier: number,
-  variant?: RateLimitExperimentVariant,
-): number {
-  const safeMultiplier = multiplier > 0 ? multiplier : 1;
-  return variant === "treatment"
-    ? Math.max(base * safeMultiplier, treatmentMinimum(mode, safeMultiplier))
-    : base * safeMultiplier;
 }
 
 /**
@@ -170,7 +163,6 @@ export function getHostedMcpRateLimiter(
   mode: RateLimiterMode,
   multiplier: number = 1,
   flags?: TeamFlags,
-  variant?: RateLimitExperimentVariant,
 ): RateLimiterRedis | undefined {
   if (!RAISED_MINIMUM_MODES.has(mode)) return undefined;
   if (multiplier > HOBBY_RATE_LIMIT_MULTIPLIER) return undefined;
@@ -179,11 +171,8 @@ export function getHostedMcpRateLimiter(
   }
   const base = BASE_RATE_LIMITS[mode];
   if (base === undefined) return undefined;
-  if (
-    planRateLimit(mode, base, multiplier, variant) >= HOSTED_MCP_MIN_RATE_LIMIT
-  ) {
-    return undefined;
-  }
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  if (base * safeMultiplier >= HOSTED_MCP_MIN_RATE_LIMIT) return undefined;
   return createRateLimiter(`hostedMcp:${mode}`, HOSTED_MCP_MIN_RATE_LIMIT);
 }
 

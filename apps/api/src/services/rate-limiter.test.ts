@@ -514,25 +514,6 @@ describe("getAutumnRateLimiter", () => {
       }
     });
 
-    it("compares against the treatment limit for treatment orgs", () => {
-      expect(
-        getHostedMcpRateLimiter(
-          RateLimiterMode.Scrape,
-          10,
-          undefined,
-          "treatment",
-        )?.points,
-      ).toBe(600);
-      expect(
-        getHostedMcpRateLimiter(
-          RateLimiterMode.Search,
-          1,
-          undefined,
-          "treatment",
-        )?.points,
-      ).toBe(600);
-    });
-
     it("leaves other modes and overridden modes alone", () => {
       for (const mode of [
         RateLimiterMode.Map,

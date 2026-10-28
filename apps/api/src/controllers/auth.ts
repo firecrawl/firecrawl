@@ -1144,39 +1144,40 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-    const variant = rateLimitExperimentApplies(mode, multiplier, chunk.flags)
-      ? await getRateLimitExperimentVariant({
-          orgId: chunk.org_id,
-          teamId: chunk.team_id,
-          apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
-          rateLimitMultiplier: chunk.rate_limit_multiplier,
-          isPaidPlan: chunk.is_paid_plan,
-        })
-      : undefined;
-    if (variant === "treatment") {
+    // Calls the hosted MCP makes get a raised per-minute minimum. Two signals
+    // prove the hosted MCP made the call: a verified delegated credential
+    // (OAuth sessions) or the proxy secret it shares with the API (API-key
+    // sessions). `fco_` tokens never qualify: the hosted MCP keeps those for
+    // the issuer, so a REST call carrying one comes from the client itself.
+    // Origin and integration are client-set, so they never change the limit.
+    const hostedMcpLimiter =
+      hostedMcpDelegation ||
+      timingSafeSecretEqual(
+        req.headers["x-firecrawl-keyless-secret"],
+        config.KEYLESS_PROXY_SECRET,
+      )
+        ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
+        : undefined;
+    if (hostedMcpLimiter) {
+      // Above every treatment minimum it overlaps, so the experiment cannot
+      // change this call's limit and does not enroll the org through it.
+      rateLimiter = hostedMcpLimiter;
+    } else if (
+      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
+      (await getRateLimitExperimentVariant({
+        orgId: chunk.org_id,
+        teamId: chunk.team_id,
+        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+        rateLimitMultiplier: chunk.rate_limit_multiplier,
+        isPaidPlan: chunk.is_paid_plan,
+      })) === "treatment"
+    ) {
       rateLimiter = getAutumnRateLimiter(
         mode,
         multiplier,
         chunk.flags,
         "treatment",
       );
-    }
-
-    // Calls the hosted MCP makes get a raised per-minute minimum. Two signals
-    // prove the hosted MCP made the call: a verified delegated credential
-    // (OAuth sessions) or the proxy secret it shares with the API (API-key
-    // sessions). Origin and integration are client-set, so they never change
-    // the limit.
-    if (
-      hostedMcpDelegation ||
-      timingSafeSecretEqual(
-        req.headers["x-firecrawl-keyless-secret"],
-        config.KEYLESS_PROXY_SECRET,
-      )
-    ) {
-      rateLimiter =
-        getHostedMcpRateLimiter(mode, multiplier, chunk.flags, variant) ??
-        rateLimiter;
     }
   }
 
