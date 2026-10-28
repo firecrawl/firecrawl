@@ -1,11 +1,3 @@
----
-// Fixture for a PDF-looking URL that serves an HTML viewer page (issue
-// #839): the path contains ".pdf/", so the API routes it to the PDF engine
-// first, but the response is text/html with the real PDF embedded in an
-// iframe. The scrape must fall back to the HTML engines and return this
-// page instead of failing to parse it as a PDF.
----
-
 <!doctype html>
 <html lang="en">
 	<head>

@@ -95,11 +95,6 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
   },
 );
 
-// A ".pdf" URL routes to the PDF engine first, but some sites serve an HTML
-// viewer page there with the real PDF embedded (issue #839). The PDF engine
-// rejects bytes without the %PDF signature and the retry drops the pdf flag,
-// so the scrape falls back to the HTML engines. No handoff is involved, so
-// this runs with and without fire-engine.
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("PDF URL serving HTML", () => {
   it(
     "scrapes the HTML viewer page served at a .pdf URL",
