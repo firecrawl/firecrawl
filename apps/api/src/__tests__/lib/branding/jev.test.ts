@@ -1346,3 +1346,71 @@ describe("branding metrics", () => {
     expect(mocks.systemOne).not.toHaveBeenCalled();
   });
 });
+
+describe("logo candidates as Jev sees them", () => {
+  const candidates = (input: BrandingLLMInput) =>
+    buildJevRequest(input).state.logo_candidates as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+  it("names a link's path instead of trusting the scan's homepage flag", () => {
+    const input = baseInput(new CostTracking());
+    input.pageUrl = "https://acme.test/";
+    input.logoCandidates = [
+      LOGO,
+      { ...LOGO, src: "https://acme.test/home.svg", alt: "home", href: "/home/" },
+      { ...LOGO, src: "https://acme.test/cart.svg", alt: "", href: "/cart" },
+      { ...LOGO, src: "https://acme.test/www.svg", href: "https://www.acme.test/?ref=nav" },
+      { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
+      { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
+      // The scan resolved these as the home link; we can't tell from the href.
+      { ...LOGO, src: "https://acme.test/sibling.svg", href: "https://acme.io/" },
+      { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
+      { ...LOGO, src: "https://acme.test/mail.svg", href: "mailto:hi@acme.test", indicators: { ...LOGO.indicators, hrefMatch: false } },
+      { ...LOGO, src: "https://acme.test/other.svg", href: "https://acme.io/pricing", indicators: { ...LOGO.indicators, hrefMatch: false } },
+    ];
+    expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
+      "links to the homepage",
+      "links to /home on this site",
+      "links to /cart on this site",
+      "links to the homepage",
+      "links to another website (x.com)",
+      "no link",
+      "links to the homepage",
+      "links to the homepage",
+      "mailto: link",
+      "links to another website (acme.io)",
+    ]);
+  });
+
+  it("shows a declared mark as metadata, not as a rendered header logo", () => {
+    const input = baseInput(new CostTracking());
+    input.logoCandidates = [
+      LOGO,
+      {
+        ...LOGO,
+        src: "https://acme.test/apple-touch-icon.png",
+        isSvg: false,
+        position: { top: 0, left: 0, width: 180, height: 180 },
+        href: undefined,
+        source: "apple-touch-icon",
+      },
+    ];
+    const [rendered, declared] = Object.values(candidates(input));
+    expect(rendered).toMatchObject({
+      where: "header",
+      visible: true,
+      link: "links to the homepage",
+    });
+    expect(declared).toMatchObject({
+      where: "page metadata, not rendered",
+      visible: false,
+      size: "unknown",
+      shape: "unknown",
+      link: "no link",
+      found_via: "apple-touch-icon",
+    });
+  });
+});
+
