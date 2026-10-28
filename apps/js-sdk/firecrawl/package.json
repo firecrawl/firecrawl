@@ -13,7 +13,8 @@
   },
   "type": "module",
   "scripts": {
-    "build": "tsup",
+    "build": "tsc --noEmit && tsup",
+    "typecheck": "tsc --noEmit",
     "build-and-publish": "pnpm run build && pnpm publish --access public",
     "publish-beta": "pnpm run build && pnpm publish --access public --tag beta",
     "test": "vitest run --reporter=verbose src/__tests__/e2e/v2",
