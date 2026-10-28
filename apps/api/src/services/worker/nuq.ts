@@ -1,12 +1,13 @@
 import { Logger } from "winston";
 import { logger } from "../../lib/logger";
-import { Client, Pool } from "pg";
+import { Client, Pool, type PoolClient } from "pg";
 import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
 import { nuqRedis } from "./redis";
+import { GroupNotActiveError } from "./nuq-group-error";
 
 // === Basics
 
@@ -47,6 +48,7 @@ type NuQJobOptions = {
   groupId?: string;
   backlogged?: boolean;
   backloggedTimesOutAt?: Date;
+  requireActiveGroup?: boolean;
 };
 
 type NuQOptions = {
@@ -956,7 +958,32 @@ class NuQ<JobData = any, JobReturnValue = any> {
         }
 
         const start = Date.now();
+        let client: PoolClient | undefined;
+        let discardClient = false;
         try {
+          const guardedGroups = [
+            ...new Set(
+              jobs
+                .filter(job => job.options.requireActiveGroup)
+                .map(job => job.options.groupId!),
+            ),
+          ].sort();
+          if (guardedGroups.length > 0) {
+            client = await nuqPool.connect();
+            await client.query("BEGIN");
+            for (const groupId of guardedGroups) {
+              // Also advance xmin: a finisher with an older snapshot must
+              // reject its candidate after waiting for this transaction.
+              const group = await client.query(
+                "UPDATE nuq.group_crawl SET status = status WHERE id = $1 AND status = 'active' RETURNING id",
+                [groupId],
+              );
+              if (group.rowCount !== 1) {
+                throw new GroupNotActiveError(groupId);
+              }
+            }
+          }
+
           // Separate jobs into backlogged and non-backlogged groups
           const regularJobs: typeof jobs = [];
           const backloggedJobs: typeof jobs = [];
@@ -1036,7 +1063,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
               const query = `INSERT INTO ${this.queueName}${tableSuffix} (${columns.join(", ")}) VALUES ${valuesPlaceholders.join(", ")} RETURNING ${(tableSuffix === "_backlog" ? this.jobBacklogReturning : this.jobReturning).join(", ")};`;
 
-              const result = await nuqPool.query(query, params);
+              const result = await (client ?? nuqPool).query(query, params);
 
               // Convert rows to jobs and maintain order
               const jobMap = new Map(
@@ -1061,6 +1088,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
           // Insert backlogged jobs
           await bulkInsert(backloggedJobs, "_backlog");
 
+          if (client) await client.query("COMMIT");
+
           setSpanAttributes(span, {
             "nuq.jobs_created": results.length,
             "nuq.regular_jobs_count": regularJobs.length,
@@ -1068,7 +1097,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
           });
 
           return results;
+        } catch (error) {
+          if (client) {
+            try {
+              await client.query("ROLLBACK");
+            } catch (rollbackError) {
+              discardClient = true;
+              logger.warn("NuQ enqueue rollback failed", {
+                error: rollbackError,
+                module: "nuq",
+              });
+            }
+          }
+          throw error;
         } finally {
+          client?.release(discardClient);
           const duration = Date.now() - start;
           setSpanAttributes(span, {
             "nuq.duration_ms": duration,

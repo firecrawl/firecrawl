@@ -10,6 +10,7 @@ import {
   getFdb,
 } from "../../services/worker/nuq-fdb/client";
 import { encodeI64, encodeJson } from "../../services/worker/nuq-fdb/keyspace";
+import { GroupNotActiveError } from "../../services/worker/nuq-group-error";
 
 // These tests exercise the FDB queue core directly against a real FoundationDB
 // cluster (no API server needed). They are skipped when FDB is not configured.
@@ -75,6 +76,126 @@ const gate = (limit: number, cap: number = 1_000_000) => ({
 });
 
 describeIf("NuQ FDB core", () => {
+  test.each(["completed", "cancelled", "missing"])(
+    "rejects append to a %s group",
+    async status => {
+      const { queue, group } = await makeCtx(`append-${status}`);
+      const gid = randomUUID();
+      const owner = freshOwner();
+      if (status !== "missing") {
+        await group.addGroup(gid, owner);
+        if (status === "cancelled") {
+          await group.cancelGroup(gid);
+        } else {
+          await queue.addJob(
+            randomUUID(),
+            scrapeData(),
+            { groupId: gid, ownerId: owner },
+            UNLIMITED,
+          );
+          const [last] = await takeAll(queue, 1);
+          await queue.jobFinish(last.id, last.lock!, null);
+        }
+      }
+      const id = randomUUID();
+      await expect(
+        queue.addJob(
+          id,
+          scrapeData(),
+          { groupId: gid, ownerId: owner, requireActiveGroup: true },
+          UNLIMITED,
+        ),
+      ).rejects.toBeInstanceOf(GroupNotActiveError);
+      expect(await queue.getJob(id)).toBeNull();
+    },
+  );
+
+  test("retries an append against completion without orphaning a job", async () => {
+    const { queue, group } = await makeCtx("append-conflict");
+    const gid = randomUUID();
+    const owner = freshOwner();
+    await group.addGroup(gid, owner);
+    await queue.addJob(
+      randomUUID(),
+      scrapeData(),
+      { groupId: gid, ownerId: owner },
+      UNLIMITED,
+    );
+    const [last] = await takeAll(queue, 1);
+    const db = getNuqFdbDatabase();
+    const original = db.doTn.bind(db);
+    let entered!: () => void;
+    let release!: () => void;
+    const paused = new Promise<void>(resolve => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const spy = vi.spyOn(db, "doTn").mockImplementationOnce(callback => {
+      let first = true;
+      return original(async tn => {
+        const value = await callback(tn);
+        if (first) {
+          first = false;
+          entered();
+          await resume;
+        }
+        return value;
+      });
+    });
+    const id = randomUUID();
+    const result = queue
+      .addJob(
+        id,
+        scrapeData(),
+        { groupId: gid, ownerId: owner, requireActiveGroup: true },
+        UNLIMITED,
+      )
+      .then(
+        value => ({ value }),
+        error => ({ error }),
+      );
+    try {
+      await paused;
+      await queue.jobFinish(last.id, last.lock!, null);
+      expect((await group.getGroup(gid))?.status).toBe("completed");
+      release();
+      expect(await result).toMatchObject({
+        error: expect.any(GroupNotActiveError),
+      });
+      expect(await queue.getJob(id)).toBeNull();
+    } finally {
+      release();
+      await result;
+      spy.mockRestore();
+    }
+  });
+
+  test("keeps an active group open until appended jobs finish", async () => {
+    const { queue, group } = await makeCtx("append-active");
+    const gid = randomUUID();
+    const owner = freshOwner();
+    await group.addGroup(gid, owner);
+    await queue.addJob(
+      randomUUID(),
+      scrapeData(),
+      { groupId: gid, ownerId: owner, requireActiveGroup: true },
+      UNLIMITED,
+    );
+    await queue.addJob(
+      randomUUID(),
+      scrapeData(),
+      { groupId: gid, ownerId: owner, requireActiveGroup: true },
+      UNLIMITED,
+    );
+    const [first, second] = await takeAll(queue, 2);
+    await queue.jobFinish(first.id, first.lock!, null);
+    expect((await group.getGroup(gid))?.status).toBe("active");
+    await queue.jobFinish(second.id, second.lock!, null);
+    expect((await group.getGroup(gid))?.status).toBe("completed");
+  });
+
   afterAll(async () => {
     const fdb = getFdb();
     const db = getNuqFdbDatabase();
