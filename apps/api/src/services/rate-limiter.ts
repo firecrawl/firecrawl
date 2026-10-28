@@ -172,7 +172,7 @@ const TREATMENT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
  * and above, unchanged.
  */
 const TREATMENT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
-  { minMultiplier: 1, limit: 600 }, // free: 10 per second
+  { minMultiplier: 1, limit: 600 }, // free: 600 per minute, bursts allowed
   { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 600 }, // hobby
   { minMultiplier: 50, limit: 1000 }, // standard
 ];
