@@ -170,6 +170,22 @@ def test_unrelated_403_action_is_not_provider_terms(code):
         handle_response_error(response(403, body), "scrape")
 
 
+def test_alexandria_async_is_forwarded_and_unknown_keys_are_rejected():
+    from pydantic import ValidationError
+    from firecrawl.v2.methods.scrape import _prepare_scrape_alexandria_request
+
+    enabled = _prepare_scrape_alexandria_request([{**NEXT, "async": True}])
+    assert enabled["alexandria"] == [{**NEXT, "async": True}]
+    disabled = _prepare_scrape_alexandria_request([{**NEXT, "async": False}])
+    assert disabled["alexandria"][0]["async"] is False
+    omitted = _prepare_scrape_alexandria_request([NEXT])
+    assert "async" not in omitted["alexandria"][0]
+    with pytest.raises(ValidationError):
+        _prepare_scrape_alexandria_request([{**NEXT, "extra": True}])
+    with pytest.raises(ValidationError):
+        _prepare_scrape_alexandria_request([{**NEXT, "async": "yes"}])
+
+
 @pytest.mark.parametrize("timeout", [True, False, 1.5, "100", 0, -1])
 def test_alexandria_rejects_invalid_timeout(timeout):
     from firecrawl.v2.methods.scrape import _prepare_scrape_alexandria_request

@@ -25,3 +25,15 @@ it.each(["0.0.0", "1.2.3-rc.1+build.7", "1.2.3+001", "1.2.3-0", "1.2.3-01a"])(
     expect(callSchema.parse({ ...call, version }).version).toBe(version);
   },
 );
+
+it("accepts optional async and still rejects an unknown key", () => {
+  expect(callSchema.parse(call)).toEqual(call);
+  expect(callSchema.parse({ ...call, async: true })).toEqual({
+    ...call,
+    async: true,
+  });
+  expect(callSchema.parse({ ...call, async: false }).async).toBe(false);
+  expect(callSchema.safeParse({ ...call, async: "yes" }).success).toBe(false);
+  expect(callSchema.safeParse({ ...call, async: 1 }).success).toBe(false);
+  expect(callSchema.safeParse({ ...call, extra: true }).success).toBe(false);
+});

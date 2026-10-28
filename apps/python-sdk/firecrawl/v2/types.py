@@ -16,6 +16,7 @@ import logging
 from pydantic import (
     BaseModel,
     Field,
+    StrictBool,
     field_validator,
     ValidationError,
     model_serializer,
@@ -1125,10 +1126,12 @@ class FindToolsData(BaseModel):
 
 
 class AlexandriaCall(BaseModel):
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "populate_by_name": True}
     provider: str
     capability: str
     options: Optional[Dict[str, Any]] = None
+    # Opt into Exchange async retrieve. Omitted calls stay synchronous.
+    async_: Optional[StrictBool] = Field(default=None, alias="async")
 
 
 class AlexandriaError(BaseModel):

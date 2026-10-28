@@ -75,6 +75,7 @@ async fn unified_contracts_and_execution_identity() {
                 provider: "benzinga".into(),
                 capability: "calendar/ratings".into(),
                 options: None,
+                r#async: None,
             }],
             AlexandriaOptions {
                 request_id: Some("terms-1".into()),
@@ -126,6 +127,7 @@ async fn unified_contracts_and_execution_identity() {
                 provider: "p".into(),
                 capability: "a".into(),
                 options: None,
+                r#async: None,
             }],
             AlexandriaOptions {
                 request_id: Some("denied-1".into()),

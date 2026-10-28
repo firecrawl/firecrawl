@@ -686,6 +686,8 @@ type AlexandriaCall struct {
 	Provider   string                 `json:"provider"`
 	Capability string                 `json:"capability"`
 	Options    map[string]interface{} `json:"options,omitempty"`
+	// Async opts into Exchange async retrieve. Nil stays synchronous.
+	Async *bool `json:"async,omitempty"`
 }
 
 type AlexandriaOptions struct {

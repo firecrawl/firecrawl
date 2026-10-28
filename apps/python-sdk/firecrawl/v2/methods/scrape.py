@@ -126,6 +126,8 @@ def _prepare_scrape_alexandria_request(
         if not capability:
             raise ValueError("Alexandria call capability cannot be empty")
         item: Dict[str, Any] = {"provider": provider, "capability": capability}
+        if call.async_ is not None:
+            item["async"] = call.async_
         if call.options is not None:
             item["options"] = call.options
         items.append(item)

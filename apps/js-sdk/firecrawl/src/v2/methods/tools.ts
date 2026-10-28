@@ -38,14 +38,18 @@ function prepareAlexandriaPayload(
     }
     if (
       Object.keys(call).some(
-        (key) => !["provider", "capability", "options"].includes(key),
+        (key) => !["provider", "capability", "options", "async"].includes(key),
       )
     )
       throw new Error("Unknown alexandria call option");
+    if ("async" in call && typeof call.async !== "boolean") {
+      throw new Error(`alexandria[${index}].async must be a boolean`);
+    }
     const item: Record<string, unknown> = {
       provider: call.provider.trim(),
       capability: call.capability.trim(),
     };
+    if (typeof call.async === "boolean") item.async = call.async;
     if (call.options != null) {
       if (typeof call.options !== "object" || Array.isArray(call.options)) {
         throw new Error(`alexandria[${index}].options must be an object`);

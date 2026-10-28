@@ -271,6 +271,56 @@ describe("Alexandria contracts and execution", () => {
   });
 });
 
+test("forwards async and rejects an unknown call key", async () => {
+  const http = {
+    post: vi.fn(async () => ({
+      status: 200,
+      data: {
+        success: true,
+        scrape_id: "scrape-1",
+        data: {
+          alexandria: [
+            { provider: "p", capability: "a", creditsCost: 0, data: {} },
+          ],
+          creditsCost: 0,
+        },
+      },
+    })),
+  };
+  await scrapeAlexandria(http as any, [
+    { provider: "p", capability: "a", async: false },
+  ]);
+  await scrapeAlexandria(http as any, [
+    { provider: "p", capability: "a", async: true, options: { q: "gdp" } },
+  ]);
+  expect(http.post).toHaveBeenNthCalledWith(
+    1,
+    "/v2/scrape",
+    { alexandria: [{ provider: "p", capability: "a", async: false }] },
+    expect.anything(),
+  );
+  expect(http.post).toHaveBeenNthCalledWith(
+    2,
+    "/v2/scrape",
+    {
+      alexandria: [
+        { provider: "p", capability: "a", async: true, options: { q: "gdp" } },
+      ],
+    },
+    expect.anything(),
+  );
+  await expect(
+    scrapeAlexandria(http as any, [
+      { provider: "p", capability: "a", extra: true } as any,
+    ]),
+  ).rejects.toThrow("Unknown alexandria call option");
+  await expect(
+    scrapeAlexandria(http as any, [
+      { provider: "p", capability: "a", async: "yes" } as any,
+    ]),
+  ).rejects.toThrow("async must be a boolean");
+});
+
 test.each([
   [undefined, 150000],
   [1000, 31000],

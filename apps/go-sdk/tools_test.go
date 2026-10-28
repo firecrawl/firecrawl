@@ -99,6 +99,44 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 	}
 }
 
+func TestAlexandriaCallAsync(t *testing.T) {
+	enabled := true
+	disabled := false
+	withAsync, err := json.Marshal(AlexandriaCall{Provider: "p", Capability: "a", Async: &enabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent map[string]interface{}
+	if err := json.Unmarshal(withAsync, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent["async"] != true {
+		t.Fatalf("async was not forwarded: %s", withAsync)
+	}
+	withFalse, err := json.Marshal(AlexandriaCall{Provider: "p", Capability: "a", Async: &disabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent = nil
+	if err := json.Unmarshal(withFalse, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent["async"] != false {
+		t.Fatalf("async false was dropped: %s", withFalse)
+	}
+	plain, err := json.Marshal(AlexandriaCall{Provider: "p", Capability: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent = nil
+	if err := json.Unmarshal(plain, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := sent["async"]; ok {
+		t.Fatalf("async leaked into a synchronous call: %s", plain)
+	}
+}
+
 func TestAlexandriaTransportTimeout(t *testing.T) {
 	ms := func(v int) *int { return &v }
 	cases := []struct {

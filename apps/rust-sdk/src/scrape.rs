@@ -183,6 +183,9 @@ pub struct AlexandriaCall {
     pub provider: String,
     pub capability: String,
     pub options: Option<serde_json::Map<String, Value>>,
+    /// Opt into Exchange async retrieve. Absent stays synchronous.
+    #[serde(default)]
+    pub r#async: Option<bool>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -675,6 +678,37 @@ mod tests {
     use super::*;
     use crate::{HighlightsFormat, QueryFormat, QueryFormatMode, QuestionFormat};
     use serde_json::json;
+
+    #[test]
+    fn test_alexandria_call_forwards_async() {
+        let synchronous = AlexandriaCall {
+            provider: "p".into(),
+            capability: "a".into(),
+            ..Default::default()
+        };
+        let payload = serde_json::to_value(&synchronous).unwrap();
+        assert_eq!(payload, json!({"provider": "p", "capability": "a"}));
+
+        let mut async_call = synchronous.clone();
+        async_call.r#async = Some(true);
+        assert_eq!(
+            serde_json::to_value(&async_call).unwrap(),
+            json!({"provider": "p", "capability": "a", "async": true})
+        );
+        async_call.r#async = Some(false);
+        assert_eq!(
+            serde_json::to_value(&async_call).unwrap()["async"],
+            json!(false)
+        );
+
+        let parsed: AlexandriaCall =
+            serde_json::from_value(json!({"provider": "p", "capability": "a", "async": true}))
+                .unwrap();
+        assert_eq!(parsed.r#async, Some(true));
+        let omitted: AlexandriaCall =
+            serde_json::from_value(json!({"provider": "p", "capability": "a"})).unwrap();
+        assert_eq!(omitted.r#async, None);
+    }
 
     #[test]
     fn test_alexandria_transport_timeout() {

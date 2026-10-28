@@ -1,5 +1,6 @@
 import express from "express";
 import request from "supertest";
+import { ZodError } from "zod";
 
 vi.mock("../../lib/billing-country", () => ({
   billingCountryForTeam: vi.fn(async () => undefined),
@@ -62,6 +63,13 @@ app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
+app.use((error: unknown, _req, res, next) => {
+  if (error instanceof ZodError) {
+    res.status(400).json({ success: false, error: "Bad Request" });
+    return;
+  }
+  next(error);
+});
 const result = (results: unknown[], executed = true) => ({
   status: 200,
   body: { success: true, creditsCost: 0, results },
@@ -601,6 +609,110 @@ it("still logs the call when the discovery lookup fails", async () => {
       },
     ],
   });
+});
+
+it("accepts async on scrape and legacy calls and forwards it", async () => {
+  const enabled = { ...call, async: true };
+  const disabled = { ...call, async: false };
+  const scrape = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: enabled });
+  expect(scrape.status).toBe(200);
+  const legacy = await request(app).post("/exchange/retrieve").send(disabled);
+  expect(legacy.status).toBe(200);
+  const batch = await request(app)
+    .post("/exchange/retrieve")
+    .send({ requests: [enabled] });
+  expect(batch.status).toBe(200);
+  expect(mocks.retrieve.mock.calls.map(([arg]) => arg.calls)).toEqual([
+    [enabled],
+    [disabled],
+    [enabled],
+  ]);
+});
+
+it("rejects an unknown key on an alexandria call", async () => {
+  const bodies = [
+    ["/v2/scrape", { alexandria: { ...call, extra: true } }],
+    ["/exchange/retrieve", { ...call, extra: true }],
+    ["/exchange/retrieve", { requests: [{ ...call, extra: true }] }],
+  ] as const;
+  for (const [path, body] of bodies) {
+    const response = await request(app).post(path).send(body);
+    expect(response.status).toBe(400);
+  }
+  expect(mocks.retrieve).not.toHaveBeenCalled();
+});
+
+it("sets Retry-After to the smallest rate-limit wait when every item failed that way", async () => {
+  const rateLimit = (retryAfterSeconds: number, code = "rate_limited") => ({
+    ...call,
+    creditsCost: 0,
+    error: { code, message: "Slow down.", status: 429, retryAfterSeconds },
+  });
+  mocks.retrieve.mockResolvedValue(
+    result([rateLimit(30), rateLimit(12, "rate_limit")]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call] });
+  expect(response.status).toBe(200);
+  expect(response.headers["retry-after"]).toBe("12");
+  expect(response.body.data.alexandria[1].error.retryAfterSeconds).toBe(12);
+});
+
+it("omits Retry-After unless every item is a rate limit with retryAfterSeconds", async () => {
+  const rateLimit = {
+    ...call,
+    creditsCost: 0,
+    error: {
+      code: "rate_limited",
+      message: "Slow down.",
+      status: 429,
+      retryAfterSeconds: 30,
+    },
+  };
+  mocks.retrieve.mockResolvedValue(
+    result([rateLimit, { ...call, creditsCost: 0, data: {} }]),
+  );
+  const mixed = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call] });
+  expect(mixed.status).toBe(200);
+  expect(mixed.headers["retry-after"]).toBeUndefined();
+
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: { code: "rate_limited", message: "Slow down.", status: 429 },
+      },
+    ]),
+  );
+  const missing = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(missing.headers["retry-after"]).toBeUndefined();
+
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: {
+          code: "unavailable",
+          message: "Down.",
+          status: 503,
+          retryAfterSeconds: 5,
+        },
+      },
+    ]),
+  );
+  const other = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(other.headers["retry-after"]).toBeUndefined();
 });
 
 it("neither reads nor records discovery under zero data retention", async () => {

@@ -27,6 +27,17 @@ URL matching only.
 }
 ```
 
+`async` is an optional boolean on each call. It is part of the idempotency
+fingerprint and is forwarded unchanged in `requests` to both
+`/v1/retrieve/quote` and `/v1/retrieve`. Exchange's opt-in async retrieve
+returns a job id with `creditsCost` 0 from the submit; the result is billed
+when it is collected through the unlisted `firecrawl/job-status` tool. Any
+other unknown call key is still rejected.
+
+When every item in `data.alexandria` failed as a rate limit (status 429, or
+code `rate_limit` / `rate_limited`) carrying an integer `retryAfterSeconds`,
+the response sets `Retry-After` to the smallest of those values.
+
 An ordinary URL scrape accepts `domainTools: true` (default off) and adds
 `data.tools` matched to the page's domain in the same shape as Search. It
 requires authentication and no zero data retention, refused with the same 403
@@ -58,8 +69,9 @@ queue, or migration is needed.
 ## Idempotency
 
 The charge id is `sha256(teamId, x-request-id)`; send `x-request-id` on every
-paid request or a retry is a new charge. One Redis record per charge id lives
-seven days:
+paid request or a retry is a new charge. The fingerprint hashes the calls
+whole, so an optional `async` flag is part of the payload and must be repeated
+on retry. One Redis record per charge id lives seven days:
 
 - completed: replays the response and its `scrape_id`, no second execution
 - same id, different payload: 409 `duplicate_request`

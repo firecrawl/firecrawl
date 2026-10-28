@@ -42,6 +42,38 @@ const FIND_TOOLS_LOGGED_OPTIONS = [
 const isFindTools = (call: { provider?: string; capability?: string }) =>
   call.provider === "firecrawl" && call.capability === "find-tools";
 
+// A batch the caller can only retry: every item failed as a rate limit that
+// names its own wait. Partial success stays header-free so a retry does not
+// repeat work that already completed.
+const smallestRateLimitRetryAfter = (
+  results: readonly unknown[],
+): number | undefined => {
+  if (results.length === 0) return undefined;
+  const waits: number[] = [];
+  for (const item of results) {
+    if (!item || typeof item !== "object" || !("error" in item))
+      return undefined;
+    const error = (item as { error?: unknown }).error;
+    if (!error || typeof error !== "object") return undefined;
+    const { code, status, retryAfterSeconds } = error as {
+      code?: unknown;
+      status?: unknown;
+      retryAfterSeconds?: unknown;
+    };
+    const rateLimited =
+      status === 429 || code === "rate_limit" || code === "rate_limited";
+    if (
+      !rateLimited ||
+      typeof retryAfterSeconds !== "number" ||
+      !Number.isSafeInteger(retryAfterSeconds) ||
+      retryAfterSeconds < 0
+    )
+      return undefined;
+    waits.push(retryAfterSeconds);
+  }
+  return Math.min(...waits);
+};
+
 const findToolsItems = (data: unknown): unknown[] => {
   const items = (data as { items?: unknown } | null)?.items;
   return Array.isArray(items) ? items : [];
@@ -330,6 +362,9 @@ export async function providerScrapeController(
     return res.status(result.status).json(result.body);
   }
   const answer = answerSchema.parse(result.body);
+  const retryAfter = smallestRateLimitRetryAfter(answer.results);
+  if (retryAfter !== undefined)
+    res.setHeader("Retry-After", String(retryAfter));
   if (legacy) {
     if (legacyBody && "requests" in legacyBody) return res.json(answer);
     const first = answer.results[0];

@@ -150,6 +150,33 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
   expect(mocks.billAdd).toHaveBeenCalledTimes(1);
 });
 
+it("forwards async on quote and retrieve and fingerprints it", async () => {
+  const asyncCall = { ...call, async: true };
+  await run({ calls: [asyncCall], requestId: "async-1" });
+  const sent = mocks.request.mock.calls.map(([arg]) => arg);
+  expect(sent.map(arg => arg.path).sort()).toEqual([
+    "/v1/retrieve",
+    "/v1/retrieve/quote",
+  ]);
+  for (const arg of sent) expect(arg.body).toEqual({ requests: [asyncCall] });
+
+  mocks.request.mockClear();
+  const replay = await run({
+    calls: [asyncCall],
+    requestId: "async-1",
+    scrapeId: "scrape-2",
+  });
+  expect(replay).toMatchObject({ status: 200, executed: false });
+  expect(mocks.request).not.toHaveBeenCalled();
+
+  const changed = await run({ calls: [call], requestId: "async-1" });
+  expect(changed.status).toBe(409);
+  expect(changed.body).toEqual(
+    expect.objectContaining({ code: "duplicate_request" }),
+  );
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+
 it("refuses a different payload under the same x-request-id", async () => {
   await run();
   const other = await run({

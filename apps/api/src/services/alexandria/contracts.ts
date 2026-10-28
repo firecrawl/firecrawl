@@ -11,6 +11,9 @@ export const callSchema = z.strictObject({
       /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
     )
     .optional(),
+  // Opt-in Exchange async retrieve. Omitted calls stay synchronous, and the
+  // flag is forwarded on the call rather than interpreted here.
+  async: z.boolean().optional(),
   options: z.record(z.string(), z.unknown()).default({}),
 });
 export const callsSchema = z.array(callSchema).min(1).max(10);

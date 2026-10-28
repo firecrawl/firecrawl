@@ -36,6 +36,7 @@ impl Client {
                     provider: "firecrawl".into(),
                     capability: "find-tools".into(),
                     options: options.as_object().cloned(),
+                    r#async: None,
                 }],
                 None,
             )

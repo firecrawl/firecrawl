@@ -975,6 +975,8 @@ export interface AlexandriaCall {
   provider: string;
   capability: string;
   options?: Record<string, unknown>;
+  /** Opt into Exchange async retrieve. Omitted calls stay synchronous. */
+  async?: boolean;
 }
 
 export interface AlexandriaScrapeError {

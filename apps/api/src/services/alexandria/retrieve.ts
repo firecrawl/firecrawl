@@ -184,7 +184,9 @@ export async function retrieveProviders(input: {
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
-  // Appended only when set so existing non-ZDR fingerprints stay stable.
+  // Calls are hashed whole, so optional async is part of the fingerprint when
+  // present and absent calls stay stable. ZDR is appended only when set so
+  // existing non-ZDR fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
       ? [input.calls, billable, termsIdentity ?? null]
