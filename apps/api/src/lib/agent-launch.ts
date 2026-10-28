@@ -7,6 +7,7 @@ import {
   gateAgentCredits,
 } from "../controllers/v2/agent-credit-gate";
 import { AGENT_REQUEST_CREDITS_SHARDS } from "./request-credits-store";
+import { AGENT_ZDR_DEFAULT_RETENTION_MINUTES } from "./zdr-helpers";
 
 type LaunchAgentJobResult =
   | { ok: true; threadId?: string; threadTurn?: number }
@@ -85,6 +86,13 @@ export async function launchAgentJob(params: {
     zeroDataRetention,
     api_key_id: params.apiKeyId,
     creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+    ...(zeroDataRetention
+      ? {
+          jobAccessZeroDataRetentionMinutes:
+            params.zeroDataRetentionMinutes ??
+            AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+        }
+      : {}),
   });
 
   const passthrough = await fetch(
