@@ -124,21 +124,67 @@ export function getAutumnRateLimiter(
   }
 
   const base = BASE_RATE_LIMITS[mode];
-  let rateLimit: number;
-  if (base !== undefined) {
-    const safeMultiplier = multiplier > 0 ? multiplier : 1;
-    rateLimit =
-      variant === "treatment"
-        ? Math.max(
-            base * safeMultiplier,
-            treatmentMinimum(mode, safeMultiplier),
-          )
-        : base * safeMultiplier;
-  } else {
-    rateLimit = fallbackRateLimits?.[mode] ?? 500;
-  }
+  const rateLimit =
+    base !== undefined
+      ? planRateLimit(mode, base, multiplier, variant)
+      : (fallbackRateLimits?.[mode] ?? 500);
 
   return createRateLimiter(`${mode}`, rateLimit);
+}
+
+/**
+ * `base × multiplier`, raised to the treatment minimum for the "treatment"
+ * variant. A multiplier of zero or below counts as ×1.
+ */
+function planRateLimit(
+  mode: RateLimiterMode,
+  base: number,
+  multiplier: number,
+  variant?: RateLimitExperimentVariant,
+): number {
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  return variant === "treatment"
+    ? Math.max(base * safeMultiplier, treatmentMinimum(mode, safeMultiplier))
+    : base * safeMultiplier;
+}
+
+/**
+ * Per-minute minimum for scrape, search and exchange calls the hosted MCP makes
+ * for a free or hobby team. Agent clients send these calls in bursts, so the
+ * plan limits refused valid agent work on teams that still had credits.
+ */
+const HOSTED_MCP_MIN_RATE_LIMIT = 600;
+
+/**
+ * The limiter for a call the hosted MCP made (verified in controllers/auth.ts),
+ * or undefined when the team is above hobby (multiplier over
+ * HOBBY_RATE_LIMIT_MULTIPLIER), when its normal limit (see getAutumnRateLimiter)
+ * is already at least HOSTED_MCP_MIN_RATE_LIMIT, under an org override for the
+ * mode, and for modes outside RAISED_MINIMUM_MODES.
+ *
+ * The raised limit counts in its own bucket, so hosted MCP calls never use up
+ * the team's API budget for the mode and API calls never use up the hosted
+ * MCP one.
+ */
+export function getHostedMcpRateLimiter(
+  mode: RateLimiterMode,
+  multiplier: number = 1,
+  flags?: TeamFlags,
+  variant?: RateLimitExperimentVariant,
+): RateLimiterRedis | undefined {
+  if (!RAISED_MINIMUM_MODES.has(mode)) return undefined;
+  if (multiplier > HOBBY_RATE_LIMIT_MULTIPLIER) return undefined;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    return undefined;
+  }
+  const base = BASE_RATE_LIMITS[mode];
+  if (base === undefined) return undefined;
+  if (
+    planRateLimit(mode, base, multiplier, variant) >= HOSTED_MCP_MIN_RATE_LIMIT
+  ) {
+    return undefined;
+  }
+  return createRateLimiter(`hostedMcp:${mode}`, HOSTED_MCP_MIN_RATE_LIMIT);
 }
 
 /**
@@ -153,11 +199,11 @@ export function getAutumnRateLimiter(
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
 
 /**
- * Modes that get the treatment minimum. Agent traffic is bursty, so the scrape
- * and search limits refused valid calls. Exchange keeps parity with Scrape, as
- * in the base table.
+ * Modes that get the treatment minimum and the hosted MCP minimum. Agent
+ * traffic is bursty, so the scrape and search limits refused valid calls.
+ * Exchange keeps parity with Scrape, as in the base table.
  */
-const TREATMENT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
+const RAISED_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
   RateLimiterMode.Scrape,
   RateLimiterMode.Exchange,
   RateLimiterMode.Search,
@@ -172,14 +218,14 @@ const TREATMENT_MINIMUM_MODES: ReadonlySet<RateLimiterMode> = new Set([
  * and above, unchanged.
  */
 const TREATMENT_MINIMUM_TIERS: { minMultiplier: number; limit: number }[] = [
-  { minMultiplier: 1, limit: 600 }, // free: 600 per minute, bursts allowed
-  { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 600 }, // hobby
+  { minMultiplier: 1, limit: 50 }, // free
+  { minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER, limit: 500 }, // hobby
   { minMultiplier: 50, limit: 1000 }, // standard
 ];
 
 /** The treatment minimum for a mode and multiplier, or 0 when there is none. */
 function treatmentMinimum(mode: RateLimiterMode, multiplier: number): number {
-  if (!TREATMENT_MINIMUM_MODES.has(mode)) return 0;
+  if (!RAISED_MINIMUM_MODES.has(mode)) return 0;
   let minimum = 0;
   for (const tier of TREATMENT_MINIMUM_TIERS) {
     if (multiplier >= tier.minMultiplier) minimum = tier.limit;

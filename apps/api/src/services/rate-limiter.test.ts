@@ -13,6 +13,7 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
 
@@ -433,8 +434,8 @@ describe("getAutumnRateLimiter", () => {
         RateLimiterMode.Search,
         RateLimiterMode.Exchange,
       ]) {
-        expect(limit(mode, 1, "treatment")).toBe(600);
-        expect(limit(mode, 10, "treatment")).toBe(600);
+        expect(limit(mode, 1, "treatment")).toBe(50);
+        expect(limit(mode, 10, "treatment")).toBe(500);
         expect(limit(mode, 50, "treatment")).toBe(1000);
         expect(limit(mode, 500, "treatment")).toBe(5000);
       }
@@ -447,10 +448,9 @@ describe("getAutumnRateLimiter", () => {
     });
 
     it("rounds an off-tier multiplier down to the tier below it", () => {
-      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(600);
-      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(600);
-      expect(limit(RateLimiterMode.Scrape, 49, "treatment")).toBe(600);
-      expect(limit(RateLimiterMode.Scrape, 60, "treatment")).toBe(1000);
+      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(50);
+      expect(limit(RateLimiterMode.Scrape, 6, "treatment")).toBe(60);
+      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(500);
       expect(limit(RateLimiterMode.Scrape, 200, "treatment")).toBe(2000);
     });
 
@@ -473,12 +473,9 @@ describe("getAutumnRateLimiter", () => {
       expect(rateLimitExperimentApplies(RateLimiterMode.Exchange, 50)).toBe(
         true,
       );
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(true);
       expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 20)).toBe(true);
-      // 1,000/min in both variants, or above every minimum.
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 100)).toBe(
-        false,
-      );
+      // 50/min in both variants, or above every minimum.
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(false);
       expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 500)).toBe(
         false,
       );
@@ -490,6 +487,75 @@ describe("getAutumnRateLimiter", () => {
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
         ),
       ).toBe(false);
+    });
+  });
+
+  describe("hosted MCP minimum", () => {
+    it("raises free and hobby to 600 in a bucket of its own", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        for (const multiplier of [1, 5, 10]) {
+          const limiter = getHostedMcpRateLimiter(mode, multiplier);
+          expect(limiter?.points).toBe(600);
+          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        }
+      }
+    });
+
+    it("leaves every plan above hobby on its normal limiter", () => {
+      // ×11 and ×25 plan variants, standard, growth and scale.
+      for (const multiplier of [11, 25, 50, 500, 1000]) {
+        expect(
+          getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
+        ).toBe(undefined);
+      }
+    });
+
+    it("compares against the treatment limit for treatment orgs", () => {
+      expect(
+        getHostedMcpRateLimiter(
+          RateLimiterMode.Scrape,
+          10,
+          undefined,
+          "treatment",
+        )?.points,
+      ).toBe(600);
+      expect(
+        getHostedMcpRateLimiter(
+          RateLimiterMode.Search,
+          1,
+          undefined,
+          "treatment",
+        )?.points,
+      ).toBe(600);
+    });
+
+    it("leaves other modes and overridden modes alone", () => {
+      for (const mode of [
+        RateLimiterMode.Map,
+        RateLimiterMode.Crawl,
+        RateLimiterMode.Extract,
+        RateLimiterMode.Browser,
+        RateLimiterMode.ExchangeDiscover,
+      ]) {
+        expect(getHostedMcpRateLimiter(mode, 1)).toBe(undefined);
+      }
+      expect(
+        getHostedMcpRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(undefined);
+    });
+
+    it("treats a multiplier of zero or below as ×1", () => {
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
+        600,
+      );
     });
   });
 

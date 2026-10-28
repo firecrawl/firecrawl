@@ -9,6 +9,7 @@ import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
   getRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
   rateLimitExperimentApplies,
@@ -902,6 +903,9 @@ async function supaAuthenticateUser(
 
   let teamId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
+  // Set only once a hosted MCP delegated credential has verified, so the
+  // client never decides it.
+  let hostedMcpDelegation = false;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
@@ -947,6 +951,7 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
+    hostedMcpDelegation = true;
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,
@@ -1139,22 +1144,39 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-    if (
-      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
-      (await getRateLimitExperimentVariant({
-        orgId: chunk.org_id,
-        teamId: chunk.team_id,
-        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
-        rateLimitMultiplier: chunk.rate_limit_multiplier,
-        isPaidPlan: chunk.is_paid_plan,
-      })) === "treatment"
-    ) {
+    const variant = rateLimitExperimentApplies(mode, multiplier, chunk.flags)
+      ? await getRateLimitExperimentVariant({
+          orgId: chunk.org_id,
+          teamId: chunk.team_id,
+          apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
+          rateLimitMultiplier: chunk.rate_limit_multiplier,
+          isPaidPlan: chunk.is_paid_plan,
+        })
+      : undefined;
+    if (variant === "treatment") {
       rateLimiter = getAutumnRateLimiter(
         mode,
         multiplier,
         chunk.flags,
         "treatment",
       );
+    }
+
+    // Calls the hosted MCP makes get a raised per-minute minimum. Two signals
+    // prove the hosted MCP made the call: a verified delegated credential
+    // (OAuth sessions) or the proxy secret it shares with the API (API-key
+    // sessions). Origin and integration are client-set, so they never change
+    // the limit.
+    if (
+      hostedMcpDelegation ||
+      timingSafeSecretEqual(
+        req.headers["x-firecrawl-keyless-secret"],
+        config.KEYLESS_PROXY_SECRET,
+      )
+    ) {
+      rateLimiter =
+        getHostedMcpRateLimiter(mode, multiplier, chunk.flags, variant) ??
+        rateLimiter;
     }
   }
 
