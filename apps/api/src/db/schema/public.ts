@@ -118,6 +118,8 @@ export const browser_sessions = pgTable("browser_sessions", {
   id: uuid("id").notNull(),
   zero_data_retention: boolean("zero_data_retention").notNull().default(false),
   team_id: text("team_id").notNull(),
+  // team_id as scrapes.team_id stores it; team_id stays raw for settlement.
+  persisted_team_id: uuid("persisted_team_id"),
   request_id: uuid("request_id"),
   should_bill: boolean("should_bill").notNull().default(true),
   browser_id: text("browser_id").notNull(),
