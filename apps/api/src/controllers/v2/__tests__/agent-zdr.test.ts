@@ -151,6 +151,40 @@ describe("agentController zero data retention", () => {
     expect(logRequest).not.toHaveBeenCalled();
   });
 
+  const zdrFlags = { scrapeZDR: "forced", searchZDR: "forced-zdr" };
+
+  it("forwards the team's ZDR retention tier", async () => {
+    const res = await run({}, { ...zdrFlags, agentZdrRetentionMinutes: 30 });
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(forwardedBody()).toMatchObject({
+      zeroDataRetention: true,
+      zeroDataRetentionMinutes: 30,
+    });
+  });
+
+  it("leaves the retention to the agent service's default when the flag is unset", async () => {
+    await run({}, zdrFlags);
+
+    expect(forwardedBody()).not.toHaveProperty("zeroDataRetentionMinutes");
+  });
+
+  it("does not forward a retention for a run without ZDR", async () => {
+    await run({}, { agentZdrRetentionMinutes: 30 });
+
+    expect(forwardedBody()).not.toHaveProperty("zeroDataRetentionMinutes");
+  });
+
+  it("refuses a ZDR run whose retention flag is not a tier, rather than keep it longer", async () => {
+    const res = await run({}, { ...zdrFlags, agentZdrRetentionMinutes: 45 });
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "zdr_retention_misconfigured" }),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("leaves a run that does not ask for ZDR alone, whatever the search flag", async () => {
     const res = await run({}, { scrapeZDR: "allowed" });
 
