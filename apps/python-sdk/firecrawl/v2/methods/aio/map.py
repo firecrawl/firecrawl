@@ -70,4 +70,9 @@ async def map(client: AsyncHttpClient, url: str, options: Optional[MapOptions] =
         elif isinstance(item, str):
             result_links.append(LinkResult(url=item))
 
-    return MapData(links=result_links, **agent_hint_metadata(body))
+    return MapData(
+        id=body.get("id"),
+        warning=body.get("warning"),
+        links=result_links,
+        **agent_hint_metadata(body),
+    )
