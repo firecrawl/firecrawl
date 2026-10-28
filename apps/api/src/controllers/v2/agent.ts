@@ -1,5 +1,4 @@
 import { v7 as uuidv7 } from "uuid";
-import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -8,12 +7,9 @@ import {
   agentRequestSchema,
 } from "./types";
 import { logger as _logger } from "../../lib/logger";
-import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
-import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
 import {
-  AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
   getAgentZdrRetentionMinutes,
   getScrapeZDR,
   getSearchZDR,
@@ -27,10 +23,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
-import {
-  AGENT_DEFAULT_MAX_CREDITS,
-  gateAgentCredits,
-} from "./agent-credit-gate";
+import { launchAgentJob } from "../../lib/agent-launch";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -228,108 +221,32 @@ export async function agentController(
     }
   }
 
-  // A request above the free cap is always paid. Otherwise a free request is
-  // consumed atomically here, and only a consumed one skips the credit gate.
-  const highCreditRequest =
-    req.body.maxCredits !== undefined &&
-    req.body.maxCredits > AGENT_DEFAULT_MAX_CREDITS;
-
-  let freeRequest: any;
-
-  if (config.USE_DB_AUTHENTICATION && !highCreditRequest) {
-    freeRequest = await agentConsumeFreeRequestIfLeft(req.auth.team_id);
-  }
-
-  const isFreeRequest = highCreditRequest
-    ? false
-    : config.USE_DB_AUTHENTICATION
-      ? !!freeRequest?.[0]?.consumed
-      : true;
-
-  let maxCredits = req.body.maxCredits;
-  let stopOnInsufficientCredits = false;
-  if (!isFreeRequest) {
-    const gate = await gateAgentCredits({
-      teamId: req.auth.team_id,
-      orgId: req.auth.org_id,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-      requestedMaxCredits: req.body.maxCredits,
-    });
-    if (!gate.allowed) {
-      logger.warn("Insufficient credits to start agent run", {
-        balance: gate.balance,
-      });
-      return res.status(402).json({
-        success: false,
-        error: `Insufficient credits to start an agent run. Your team's credit balance is ${gate.balance} credits. Add credits at https://firecrawl.dev/pricing to continue.`,
-      });
-    }
-    maxCredits = gate.maxCredits;
-    stopOnInsufficientCredits = gate.stopOnInsufficientCredits;
-  }
-
-  await logRequest({
-    id: agentId,
-    kind: "agent",
-    api_version: "v2",
-    external_request_id: externalRequestId(req),
-    team_id: req.auth.team_id,
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
+  const launched = await launchAgentJob({
+    agentId,
+    teamId: req.auth.team_id,
+    apiKey: req.acuc!.api_key,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    orgId: req.auth.org_id,
+    externalRequestId: externalRequestId(req),
+    request: req.body,
     zeroDataRetention,
-    api_key_id: req.acuc?.api_key_id ?? null,
-    creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
-    ...(zeroDataRetention
-      ? {
-          jobAccessZeroDataRetentionMinutes:
-            zeroDataRetentionMinutes ?? AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
-        }
-      : {}),
+    zeroDataRetentionMinutes,
   });
 
-  const passthrough = await fetch(
-    config.EXTRACT_V3_BETA_URL + "/internal/extracts",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
-      },
-      body: JSON.stringify({
-        id: agentId,
-        urls: req.body.urls,
-        schema: req.body.schema,
-        prompt: req.body.prompt,
-        apiKey: req.acuc!.api_key,
-        apiKeyId: req.acuc!.api_key_id ?? undefined,
-        teamId: req.auth.team_id,
-        isFreeRequest,
-        maxCredits: maxCredits ?? undefined,
-        stopOnInsufficientCredits: stopOnInsufficientCredits || undefined,
-        strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
-        webhook: req.body.webhook ?? undefined,
-        model: req.body.model,
-        effort: req.body.effort,
-        auditMetadata: req.body.auditMetadata,
-        threadId: req.body.threadId,
-        mode: req.body.mode,
-        exchange: req.body.exchange,
-        location: req.body.location,
-        ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
-        ...(zeroDataRetentionMinutes !== null
-          ? { zeroDataRetentionMinutes }
-          : {}),
-      }),
-    },
-  );
+  if (!launched.ok && launched.reason === "insufficient_credits") {
+    logger.warn("Insufficient credits to start agent run", {
+      balance: launched.balance,
+    });
+    return res.status(402).json({
+      success: false,
+      error: `Insufficient credits to start an agent run. Your team's credit balance is ${launched.balance} credits. Add credits at https://firecrawl.dev/pricing to continue.`,
+    });
+  }
 
-  if (passthrough.status !== 200) {
-    const text = await passthrough.text();
-
+  if (!launched.ok) {
     logger.error("Failed to passthrough agent request.", {
-      status: passthrough.status,
-      text,
+      status: launched.status,
+      text: launched.text,
     });
 
     // TODO: should we try to insert a failed agent row here, since a request is already created? - Mogery
@@ -340,21 +257,12 @@ export async function agentController(
     });
   }
 
-  // The agent service mints the thread id, so the response body is the only
-  // place it exists at this point.
-  const result = (await passthrough.json().catch(() => null)) as {
-    threadId?: unknown;
-    threadTurn?: unknown;
-  } | null;
-
   return res.status(200).json({
     success: true,
     id: agentId,
-    ...(typeof result?.threadId === "string"
-      ? { threadId: result.threadId }
-      : {}),
-    ...(typeof result?.threadTurn === "number"
-      ? { threadTurn: result.threadTurn }
+    ...(launched.threadId !== undefined ? { threadId: launched.threadId } : {}),
+    ...(launched.threadTurn !== undefined
+      ? { threadTurn: launched.threadTurn }
       : {}),
   });
 }

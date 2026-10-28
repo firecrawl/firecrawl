@@ -304,9 +304,7 @@ const TOKEN_REJECTIONS = [
  * Validates a World ID ID token and returns its subject hash, or null when the
  * token is rejected. Throws when the issuer's keys can't be fetched.
  */
-async function verifyWorldIdIdToken(
-  idToken: string,
-): Promise<string | null> {
+async function verifyWorldIdIdToken(idToken: string): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(idToken, issuerJwks(), {
       issuer: issuer(),

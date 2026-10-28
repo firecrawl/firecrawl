@@ -24,6 +24,10 @@ import {
   handleFirecrawlCommand,
   handleSlashCommand,
 } from "../../services/integrations/slack/commands";
+import {
+  handleSlackAgentEvent,
+  isSlackAgentEventType,
+} from "../../services/integrations/slack/agent";
 import type { SlackConnectionStatus } from "../../services/integrations/slack/types";
 
 const logger = _logger.child({ module: "slack-controller" });
@@ -36,7 +40,10 @@ const startBodySchema = z.object({
 });
 
 // Builds an absolute dashboard URL for post-OAuth browser redirects.
-function dashboardRedirect(path: string, params: Record<string, string>): string {
+function dashboardRedirect(
+  path: string,
+  params: Record<string, string>,
+): string {
   const url = new URL(path, config.FIRECRAWL_DASHBOARD_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
@@ -75,7 +82,10 @@ export async function slackOAuthStartController(
 
 // GET /v2/slack/oauth/callback (public) — Slack redirects here after the user
 // approves. We exchange the code and bounce the browser back to the dashboard.
-export async function slackOAuthCallbackController(req: Request, res: Response) {
+export async function slackOAuthCallbackController(
+  req: Request,
+  res: Response,
+) {
   const code = typeof req.query.code === "string" ? req.query.code : undefined;
   const state =
     typeof req.query.state === "string" ? req.query.state : undefined;
@@ -84,7 +94,10 @@ export async function slackOAuthCallbackController(req: Request, res: Response) 
 
   if (slackError) {
     return res.redirect(
-      dashboardRedirect("/app/monitoring", { slack: "error", reason: slackError }),
+      dashboardRedirect("/app/monitoring", {
+        slack: "error",
+        reason: slackError,
+      }),
     );
   }
 
@@ -288,7 +301,8 @@ export async function slackCommandsController(req: Request, res: Response) {
 }
 
 // POST /v2/slack/events (public, signature-verified) — URL verification during
-// setup + lifecycle events (uninstall / token revocation) for cleanup.
+// setup, lifecycle events (uninstall / token revocation) for cleanup, and
+// @-mentions / DMs answered by the agent when SLACK_AGENT_ENABLED is set.
 export async function slackEventsController(req: Request, res: Response) {
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
   const body = (req.body ?? {}) as Record<string, any>;
@@ -307,6 +321,33 @@ export async function slackEventsController(req: Request, res: Response) {
     return res.status(200).json({ challenge: body.challenge });
   }
 
+  if (
+    config.SLACK_AGENT_ENABLED &&
+    body.type === "event_callback" &&
+    isSlackAgentEventType(body.event)
+  ) {
+    // Ack first: Slack retries after 3 seconds, and an agent run takes much
+    // longer. A retry means the first delivery already reached us, so skip it.
+    res.status(200).send("");
+    const slackTeamId = body.team_id as string | undefined;
+    if (req.headers["x-slack-retry-num"] || !slackTeamId) return;
+
+    void (async () => {
+      try {
+        const installation = await getSlackInstallationBySlackTeam(slackTeamId);
+        if (!installation) return;
+        await handleSlackAgentEvent({
+          installation,
+          eventId: body.event_id,
+          event: body.event,
+        });
+      } catch (error) {
+        logger.error("Slack agent event failed", { error, slackTeamId });
+      }
+    })();
+    return;
+  }
+
   if (body.type === "event_callback" && body.event?.type) {
     const event = body.event as {
       type?: string;
@@ -323,8 +364,7 @@ export async function slackEventsController(req: Request, res: Response) {
       eventType === "tokens_revoked" &&
       Array.isArray(event.tokens?.bot) &&
       event.tokens.bot.length > 0;
-    const shouldDisconnect =
-      eventType === "app_uninstalled" || botTokenRevoked;
+    const shouldDisconnect = eventType === "app_uninstalled" || botTokenRevoked;
 
     if (shouldDisconnect && slackTeamId) {
       try {

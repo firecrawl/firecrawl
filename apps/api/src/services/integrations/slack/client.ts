@@ -104,6 +104,22 @@ export async function postSlackMessage(params: {
   return { ok: res.ok, error: res.error, ts: res.ts };
 }
 
+export async function updateSlackMessage(params: {
+  token: string;
+  channel: string;
+  ts: string;
+  text: string;
+  blocks?: unknown[];
+}): Promise<{ ok: boolean; error?: string }> {
+  const res = await slackPost<SlackApiResponse>("chat.update", params.token, {
+    channel: params.channel,
+    ts: params.ts,
+    text: params.text,
+    blocks: params.blocks,
+  });
+  return { ok: res.ok, error: res.error };
+}
+
 // Delivers a delayed slash-command result via the response_url Slack includes
 // in the payload (valid ~30 minutes). Used so the command endpoint can ack
 // within Slack's 3-second deadline and do the real work asynchronously.
