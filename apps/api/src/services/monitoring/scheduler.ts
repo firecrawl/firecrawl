@@ -28,6 +28,9 @@ const logger = _logger.child({ module: "monitoring-scheduler" });
 export const MONITOR_ZDR_PAUSED_ERROR =
   "Monitoring is not supported for zero data retention teams, so this monitor was paused.";
 
+export const MONITOR_ZDR_REFUSED_ERROR =
+  "Monitoring requires retained snapshots and diffs, and is not supported for zero data retention teams.";
+
 // Search monitors route to a dedicated check queue (see queue.ts).
 export function monitorIsSearch(monitor: MonitorRow): boolean {
   return (monitor.targets ?? []).some(target => target.type === "search");

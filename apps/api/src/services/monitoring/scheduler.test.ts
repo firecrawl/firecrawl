@@ -1,7 +1,12 @@
 import type { MockedFunction } from "vitest";
 import { getACUCTeam } from "../../controllers/auth";
+import type { TeamFlags } from "../../controllers/v2/types";
 import { addMonitorCheckJob } from "./queue";
-import { enqueueDueMonitorChecks, MONITOR_ZDR_PAUSED_ERROR } from "./scheduler";
+import {
+  enqueueDueMonitorChecks,
+  MONITOR_ZDR_PAUSED_ERROR,
+  monitorRefusedForZdr,
+} from "./scheduler";
 import { isMonitorCheckStale } from "./stale";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -84,6 +89,43 @@ const mockUpdateMonitorScheduleAfterRun =
   >;
 const mockGetACUCTeam = getACUCTeam as MockedFunction<typeof getACUCTeam>;
 const mockUpdateMonitor = updateMonitor as MockedFunction<typeof updateMonitor>;
+
+describe("monitorRefusedForZdr", () => {
+  const scrape = [{ type: "scrape" }];
+  const search = [{ type: "scrape" }, { type: "search" }];
+
+  it.each<[string, TeamFlags | undefined, { type: string }[], boolean]>([
+    ["no ZDR flags", undefined, search, false],
+    ["scrapeZDR forced, scrape targets", { scrapeZDR: "forced" }, scrape, true],
+    ["searchZDR forced, search target", { searchZDR: "forced" }, search, true],
+    [
+      "searchZDR forced-zdr, search target",
+      { searchZDR: "forced-zdr" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-anon, search target",
+      { searchZDR: "forced-anon" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-zdr, scrape targets only",
+      { searchZDR: "forced-zdr" },
+      scrape,
+      false,
+    ],
+    [
+      "searchZDR allowed, search target",
+      { searchZDR: "allowed" },
+      search,
+      false,
+    ],
+  ])("%s", (_label, flags, targets, refused) => {
+    expect(monitorRefusedForZdr(flags, targets)).toBe(refused);
+  });
+});
 
 describe("monitoring scheduler", () => {
   const monitor = {

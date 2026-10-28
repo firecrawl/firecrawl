@@ -27,6 +27,7 @@ import {
 } from "../../services/monitoring/store";
 import {
   enqueueMonitorCheck,
+  MONITOR_ZDR_REFUSED_ERROR,
   monitorIsSearch,
   monitorRefusedForZdr,
 } from "../../services/monitoring/scheduler";
@@ -69,11 +70,7 @@ function rejectZdr(
   targets: { type: string }[],
 ): boolean {
   if (monitorRefusedForZdr(req.acuc?.flags, targets)) {
-    res.status(400).json({
-      success: false,
-      error:
-        "Monitoring requires retained snapshots and diffs, and is not supported for zero data retention teams.",
-    });
+    res.status(400).json({ success: false, error: MONITOR_ZDR_REFUSED_ERROR });
     return true;
   }
   return false;

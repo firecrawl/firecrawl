@@ -156,7 +156,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
       expect(create.body.error).toContain("zero data retention");
     });
 
-    it("still creates a scrape monitor", async () => {
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
       const create = await monitorCreateRaw(
         {
           name: "scrape monitor on a search zdr team",
@@ -172,9 +172,31 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         },
         searchZdr,
       );
-
       expect(create.statusCode).toBe(200);
-      await monitorDeleteRaw(create.body.data.id, searchZdr);
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          searchZdr,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+
+        const pause = await monitorPatchRaw(
+          id,
+          { status: "paused" },
+          searchZdr,
+        );
+        expect(pause.statusCode).toBe(200);
+        expect(pause.body.data.status).toBe("paused");
+      } finally {
+        await monitorDeleteRaw(id, searchZdr);
+      }
     });
   });
 
