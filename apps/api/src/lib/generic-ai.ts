@@ -63,11 +63,24 @@ const providerList: Record<Provider, any> = {
   }),
 };
 
+// Many call sites hardcode provider "openai". On an Ollama-only self-host
+// (no OpenAI key or base URL), those calls would hit the Responses API at a
+// relative "/responses" URL and throw ERR_INVALID_URL, so send them to Ollama.
+// Deployments with real OpenAI credentials keep using OpenAI.
+export function resolveProvider(provider: Provider): Provider {
+  const ollamaOnly =
+    !!config.OLLAMA_BASE_URL &&
+    !config.OPENAI_API_KEY &&
+    !config.OPENAI_BASE_URL;
+  return provider === "openai" && ollamaOnly ? "ollama" : provider;
+}
+
 export function getModel(
   name: string,
   provider: Provider = defaultProvider,
   options?: { ignoreModelOverride?: boolean },
 ) {
+  provider = resolveProvider(provider);
   if (name === "gemini-2.5-pro") {
     name = "gemini-2.5-pro";
   }
