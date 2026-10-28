@@ -128,6 +128,56 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     expect(del.body.success).toBe(true);
   });
 
+  describe("when the team requires zero data retention for search", () => {
+    let searchZdr: Identity;
+
+    beforeAll(async () => {
+      searchZdr = await idmux({
+        name: "monitor/search-zdr",
+        credits: 10000,
+        flags: { searchZDR: "forced-zdr" },
+      });
+    }, 10000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "search zdr monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("still creates a scrape monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a search zdr team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+
+      expect(create.statusCode).toBe(200);
+      await monitorDeleteRaw(create.body.data.id, searchZdr);
+    });
+  });
+
   it("accepts an origin field in the create body", async () => {
     const create = await monitorCreateRaw(
       {

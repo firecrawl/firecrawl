@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { getACUCTeam } from "../../controllers/auth";
 import { logger as _logger } from "../../lib/logger";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "../../lib/zdr-helpers";
+import type { TeamFlags } from "../../controllers/v2/types";
 import { addMonitorCheckJob } from "./queue";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -30,6 +31,18 @@ export const MONITOR_ZDR_PAUSED_ERROR =
 // Search monitors route to a dedicated check queue (see queue.ts).
 export function monitorIsSearch(monitor: MonitorRow): boolean {
   return (monitor.targets ?? []).some(target => target.type === "search");
+}
+
+/** Monitors run without zero data retention, so a team that requires it for scrape, or for search when a target is a search, cannot run one. */
+export function monitorRefusedForZdr(
+  flags: TeamFlags | undefined,
+  targets: { type: string }[],
+): boolean {
+  return (
+    getScrapeZDR(flags) === "forced" ||
+    (getSearchForcedKind(flags) !== null &&
+      targets.some(target => target.type === "search"))
+  );
 }
 
 export async function enqueueMonitorCheck(params: {
@@ -80,7 +93,9 @@ export async function enqueueDueMonitorChecks(
       // A monitor created before its team required zero data retention would
       // otherwise keep running without it.
       const acuc = await getACUCTeam(monitor.team_id);
-      if (getScrapeZDR(acuc?.flags ?? undefined) === "forced") {
+      if (
+        monitorRefusedForZdr(acuc?.flags ?? undefined, monitor.targets ?? [])
+      ) {
         const refused = await createMonitorCheck({
           monitor,
           trigger: "scheduled",

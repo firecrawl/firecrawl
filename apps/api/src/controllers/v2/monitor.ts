@@ -3,7 +3,6 @@ import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
 import {
   createMonitorSchema,
@@ -29,6 +28,7 @@ import {
 import {
   enqueueMonitorCheck,
   monitorIsSearch,
+  monitorRefusedForZdr,
 } from "../../services/monitoring/scheduler";
 import {
   estimateRunsPerMonth,
@@ -66,8 +66,9 @@ const monitorCheckParamsSchema = monitorParamsSchema.extend({
 function rejectZdr(
   req: RequestWithAuth<any, any, any>,
   res: Response,
+  targets: { type: string }[],
 ): boolean {
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (monitorRefusedForZdr(req.acuc?.flags, targets)) {
     res.status(400).json({
       success: false,
       error:
@@ -191,9 +192,8 @@ export async function createMonitorController(
   req: RequestWithAuth<{}, any, unknown>,
   res: Response,
 ) {
-  if (rejectZdr(req, res)) return;
-
   const input = createMonitorSchema.parse(req.body);
+  if (rejectZdr(req, res, input.targets)) return;
   let schedule;
   try {
     schedule = validateMonitorCron(
@@ -290,8 +290,6 @@ export async function updateMonitorController(
   req: RequestWithAuth<{ monitorId: string }, any, unknown>,
   res: Response,
 ) {
-  if (rejectZdr(req, res)) return;
-
   const { monitorId } = monitorParamsSchema.parse(req.params);
   const existing = await getMonitorForUpdate(req.auth.team_id, monitorId);
   if (!existing) {
@@ -301,6 +299,7 @@ export async function updateMonitorController(
   const input = updateMonitorSchema.parse(req.body);
 
   const mergedTargets = input.targets ?? existing.targets;
+  if (rejectZdr(req, res, mergedTargets)) return;
   const mergedGoal = input.goal !== undefined ? input.goal : existing.goal;
   const mergedJudgeEnabled =
     input.judgeEnabled !== undefined
@@ -438,13 +437,12 @@ export async function runMonitorController(
   req: RequestWithAuth<{ monitorId: string }, any, unknown>,
   res: Response,
 ) {
-  if (rejectZdr(req, res)) return;
-
   const { monitorId } = monitorParamsSchema.parse(req.params);
   const monitor = await getMonitorForUpdate(req.auth.team_id, monitorId);
   if (!monitor) {
     return res.status(404).json({ success: false, error: "Monitor not found" });
   }
+  if (rejectZdr(req, res, monitor.targets)) return;
   if (monitor.status === "paused") {
     return res.status(409).json({
       success: false,

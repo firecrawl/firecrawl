@@ -204,6 +204,54 @@ describe("monitoring scheduler", () => {
     expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
 
+  it("pauses a search monitor whose team requires zero data retention for search", async () => {
+    const searchMonitor = {
+      ...monitor,
+      targets: [{ id: "t-1", type: "search" }],
+    } as any;
+    mockClaimDueMonitors.mockResolvedValue([searchMonitor]);
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-zdr" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(0);
+
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor: searchMonitor,
+      trigger: "scheduled",
+      scheduledFor: searchMonitor.next_run_at,
+      status: "failed",
+    });
+    expect(mockUpdateMonitor).toHaveBeenCalledWith({
+      teamId: searchMonitor.team_id,
+      monitorId: searchMonitor.id,
+      input: { status: "paused" },
+    });
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps running a scrape monitor when only search requires zero data retention", async () => {
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-anon" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(1);
+
+    expect(mockUpdateMonitor).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith(
+      {
+        monitorId: monitor.id,
+        checkId: check.id,
+        teamId: monitor.team_id,
+      },
+      { search: false },
+    );
+  });
+
   it("fails and clears a dispatched check when enqueueing fails", async () => {
     const error = new Error("queue unavailable");
     const failed = { id: check.id, status: "failed" } as any;
