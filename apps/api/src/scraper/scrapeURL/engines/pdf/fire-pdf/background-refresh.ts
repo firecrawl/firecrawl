@@ -137,6 +137,8 @@ async function submit(
           pageMarkers: args.pageMarkers,
           // The cache is only consulted without an explicit table format.
           tableFormat: undefined,
+          // Internal work under no team: never offered for training capture.
+          trainingCapture: undefined,
         }),
         refresh: true,
       },
