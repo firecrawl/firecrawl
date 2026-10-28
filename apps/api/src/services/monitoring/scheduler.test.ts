@@ -1,6 +1,7 @@
 import type { MockedFunction } from "vitest";
+import { getACUCTeam } from "../../controllers/auth";
 import { addMonitorCheckJob } from "./queue";
-import { enqueueDueMonitorChecks } from "./scheduler";
+import { enqueueDueMonitorChecks, MONITOR_ZDR_PAUSED_ERROR } from "./scheduler";
 import { isMonitorCheckStale } from "./stale";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -8,11 +9,16 @@ import {
   createMonitorCheck,
   dispatchScheduledMonitorCheck,
   getMonitorCheckForUpdate,
+  pauseMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
 } from "./store";
 import { autumnService } from "../autumn/autumn.service";
+
+vi.mock("../../controllers/auth", () => ({
+  getACUCTeam: vi.fn(),
+}));
 
 vi.mock("./queue", () => ({
   addMonitorCheckJob: vi.fn(),
@@ -24,6 +30,7 @@ vi.mock("./store", () => ({
   createMonitorCheck: vi.fn(),
   dispatchScheduledMonitorCheck: vi.fn(),
   getMonitorCheckForUpdate: vi.fn(),
+  pauseMonitor: vi.fn(),
   updateMonitorCheck: vi.fn(),
   updateMonitorCheckIfStatus: vi.fn(),
   updateMonitorScheduleAfterRun: vi.fn(),
@@ -75,6 +82,8 @@ const mockUpdateMonitorScheduleAfterRun =
   updateMonitorScheduleAfterRun as MockedFunction<
     typeof updateMonitorScheduleAfterRun
   >;
+const mockGetACUCTeam = getACUCTeam as MockedFunction<typeof getACUCTeam>;
+const mockPauseMonitor = pauseMonitor as MockedFunction<typeof pauseMonitor>;
 
 describe("monitoring scheduler", () => {
   const monitor = {
@@ -106,6 +115,8 @@ describe("monitoring scheduler", () => {
     mockGetMonitorCheckForUpdate.mockResolvedValue(null);
     mockIsMonitorCheckStale.mockReturnValue(false);
     mockFinalizeCreditsLock.mockResolvedValue(true);
+    mockGetACUCTeam.mockResolvedValue(null);
+    mockPauseMonitor.mockResolvedValue(undefined);
   });
 
   it("dispatches and advances a scheduled monitor before enqueueing its job", async () => {
@@ -152,6 +163,38 @@ describe("monitoring scheduler", () => {
       },
       { search: true },
     );
+  });
+
+  it("pauses a monitor whose team requires zero data retention instead of running it", async () => {
+    const refused = { id: check.id, status: "failed" } as any;
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { scrapeZDR: "forced" },
+    } as any);
+    mockUpdateMonitorCheck.mockResolvedValue(refused);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(0);
+
+    expect(mockGetACUCTeam).toHaveBeenCalledWith(monitor.team_id);
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor,
+      trigger: "scheduled",
+      scheduledFor: monitor.next_run_at,
+      status: "failed",
+    });
+    expect(mockUpdateMonitorCheck).toHaveBeenCalledWith(check.id, {
+      status: "failed",
+      finished_at: expect.any(String),
+      error: MONITOR_ZDR_PAUSED_ERROR,
+    });
+    expect(mockPauseMonitor).toHaveBeenCalledWith(monitor.id);
+    expect(mockAdvanceMonitorAfterSkippedCheck).toHaveBeenCalledWith({
+      monitor: { ...monitor, status: "paused" },
+      check: refused,
+    });
+    expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
 
   it("fails and clears a dispatched check when enqueueing fails", async () => {

@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
+import { getACUCTeam } from "../../controllers/auth";
 import { logger as _logger } from "../../lib/logger";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { addMonitorCheckJob } from "./queue";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -8,6 +10,7 @@ import {
   deferMonitorClaim,
   dispatchScheduledMonitorCheck,
   getMonitorCheckForUpdate,
+  pauseMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
@@ -20,6 +23,9 @@ import { monitorJitterOffsetMs } from "./jitter";
 import type { MonitorRow } from "./types";
 
 const logger = _logger.child({ module: "monitoring-scheduler" });
+
+export const MONITOR_ZDR_PAUSED_ERROR =
+  "Monitoring is not supported for zero data retention teams, so this monitor was paused.";
 
 // Search monitors route to a dedicated check queue (see queue.ts).
 export function monitorIsSearch(monitor: MonitorRow): boolean {
@@ -69,6 +75,34 @@ export async function enqueueDueMonitorChecks(
         if (resolution === "cleared") {
           monitor = { ...monitor, current_check_id: null };
         }
+      }
+
+      // A monitor created before its team required zero data retention would
+      // otherwise keep running without it.
+      const acuc = await getACUCTeam(monitor.team_id);
+      if (getScrapeZDR(acuc?.flags ?? undefined) === "forced") {
+        const refused = await createMonitorCheck({
+          monitor,
+          trigger: "scheduled",
+          scheduledFor: monitor.next_run_at,
+          status: "failed",
+        });
+        const finished = await updateMonitorCheck(refused.id, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: MONITOR_ZDR_PAUSED_ERROR,
+        });
+        await pauseMonitor(monitor.id);
+        await advanceMonitorAfterSkippedCheck({
+          monitor: { ...monitor, status: "paused" },
+          check: finished,
+        });
+        logger.warn("Paused monitor: its team requires zero data retention", {
+          monitorId: monitor.id,
+          checkId: finished.id,
+          teamId: monitor.team_id,
+        });
+        continue;
       }
 
       if (monitor.current_check_id) {
