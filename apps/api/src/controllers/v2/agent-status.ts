@@ -89,7 +89,7 @@ export async function agentStatusController(
     });
   }
 
-  const expiry = agentJobExpiry(access, agent.completedAt);
+  const expiry = agentJobExpiry(access, agent);
   if (expiry.zeroDataRetentionExpired) {
     return res.status(410).json({
       success: false,

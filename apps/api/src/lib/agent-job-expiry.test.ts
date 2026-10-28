@@ -11,7 +11,7 @@ describe("agentJobExpiry", () => {
     expect(
       agentJobExpiry(
         { expiresAtMs: ROW_EXPIRES_AT_MS, zeroDataRetentionMinutes: 15 },
-        COMPLETED_AT,
+        { status: "success", completedAt: COMPLETED_AT },
         COMPLETED_AT_MS + MINUTE,
       ),
     ).toEqual({
@@ -24,7 +24,7 @@ describe("agentJobExpiry", () => {
     expect(
       agentJobExpiry(
         { expiresAtMs: ROW_EXPIRES_AT_MS, zeroDataRetentionMinutes: 15 },
-        COMPLETED_AT,
+        { status: "success", completedAt: COMPLETED_AT },
         COMPLETED_AT_MS + 15 * MINUTE,
       ).zeroDataRetentionExpired,
     ).toBe(true);
@@ -34,7 +34,7 @@ describe("agentJobExpiry", () => {
     expect(
       agentJobExpiry(
         { expiresAtMs: ROW_EXPIRES_AT_MS, zeroDataRetentionMinutes: 24 * 60 },
-        COMPLETED_AT,
+        { status: "success", completedAt: COMPLETED_AT },
         COMPLETED_AT_MS + MINUTE,
       ),
     ).toEqual({
@@ -48,7 +48,7 @@ describe("agentJobExpiry", () => {
     expect(
       agentJobExpiry(
         { expiresAtMs: ROW_EXPIRES_AT_MS, zeroDataRetentionMinutes: 15 },
-        undefined,
+        { status: "processing" },
         now,
       ),
     ).toEqual({
@@ -57,11 +57,27 @@ describe("agentJobExpiry", () => {
     });
   });
 
+  it("counts from the start for a finished run with no completion time", () => {
+    const later = STARTED_AT + 60 * MINUTE;
+    for (const completedAt of [undefined, "not a date"]) {
+      expect(
+        agentJobExpiry(
+          { expiresAtMs: ROW_EXPIRES_AT_MS, zeroDataRetentionMinutes: 15 },
+          { status: "failed", completedAt },
+          later,
+        ),
+      ).toEqual({
+        expiresAtMs: STARTED_AT + 15 * MINUTE,
+        zeroDataRetentionExpired: false,
+      });
+    }
+  });
+
   it("keeps the row's expiry for a legacy row with no retention", () => {
     expect(
       agentJobExpiry(
         { expiresAtMs: ROW_EXPIRES_AT_MS },
-        COMPLETED_AT,
+        { status: "success", completedAt: COMPLETED_AT },
         ROW_EXPIRES_AT_MS - MINUTE,
       ),
     ).toEqual({
