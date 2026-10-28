@@ -2,6 +2,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   itIf,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { config } from "../../../config";
@@ -131,6 +132,23 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("PDF URL serving HTML", () => {
 
       expect(response.metadata.statusCode).toBe(404);
       expect(response.metadata.numPages).toBeUndefined();
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_SELF_HOST)(
+    "fails a corrupt PDF without falling back to the HTML engines",
+    async () => {
+      const response = await scrapeWithFailure(
+        {
+          url: `${TEST_SUITE_WEBSITE}/corrupt.pdf`,
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.error).toContain("All scraping engines failed");
+      expect(response.error).toContain("Engines tried: [pdf]");
     },
     scrapeTimeout,
   );
