@@ -114,6 +114,26 @@ describe("operational Bigtable stores", () => {
     });
   });
 
+  it("records a ZDR agent run's retention on its job access row", async () => {
+    const expiresAt = new Date("2026-09-16T12:00:00.000Z");
+    await writeApiJobAccess({
+      id: JOB_ID,
+      teamId: "team-id",
+      kind: "agent",
+      expiresAt,
+      zeroDataRetention: true,
+      zeroDataRetentionMinutes: 15,
+    });
+
+    expect(writtenValue()).toEqual({
+      version: 1,
+      teamId: "team-id",
+      kind: "agent",
+      expiresAtMs: expiresAt.getTime(),
+      zeroDataRetentionMinutes: 15,
+    });
+  });
+
   it("reads a job access row", async () => {
     getRows.mockResolvedValueOnce([
       [

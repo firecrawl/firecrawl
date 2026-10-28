@@ -13,6 +13,7 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
 import {
+  AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
   getAgentZdrRetentionMinutes,
   getScrapeZDR,
   getSearchZDR,
@@ -279,6 +280,12 @@ export async function agentController(
     zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
     creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+    ...(zeroDataRetention
+      ? {
+          jobAccessZeroDataRetentionMinutes:
+            zeroDataRetentionMinutes ?? AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+        }
+      : {}),
   });
 
   const passthrough = await fetch(

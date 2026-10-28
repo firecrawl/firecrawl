@@ -254,6 +254,35 @@ describe("agentController zero data retention", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["the team's tier", { agentZdrRetentionMinutes: 15 }, 15],
+    ["24 hours when the flag is unset", {}, 24 * 60],
+  ])(
+    "records %s on the job access row",
+    async (_name, retentionFlags, minutes) => {
+      const res = await run(
+        {},
+        { scrapeZDR: "forced", searchZDR: "forced-zdr", ...retentionFlags },
+      );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          zeroDataRetention: true,
+          jobAccessZeroDataRetentionMinutes: minutes,
+        }),
+      );
+    },
+  );
+
+  it("records no retention for a run without ZDR", async () => {
+    await run({}, { agentZdrRetentionMinutes: 15 });
+
+    expect(vi.mocked(logRequest).mock.calls[0][0]).not.toHaveProperty(
+      "jobAccessZeroDataRetentionMinutes",
+    );
+  });
+
   it("forwards exchange options unchanged without ZDR", async () => {
     const exchange = { enabled: true };
     const res = await run({ exchange }, {});

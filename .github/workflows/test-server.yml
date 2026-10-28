@@ -323,6 +323,9 @@ jobs:
           src/controllers/v2/__tests__/agent-rollout.test.ts
           src/controllers/v2/__tests__/agent-list.test.ts
           src/controllers/v2/__tests__/agent-status.test.ts
+          src/lib/agent-job-expiry.test.ts
+          src/lib/job-operational-stores.test.ts
+          src/services/logging/log_job.test.ts
           --reporter=default
         working-directory: apps/api
 
