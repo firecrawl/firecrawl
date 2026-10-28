@@ -55,7 +55,7 @@ export function colorDistance(a?: string | null, b?: string | null): number {
  * Nearly white, whatever its tint (#E5EDF5, #F2E8E1): on a light page that is
  * a section background, not a brand color.
  */
-export function isPale(hex: string): boolean {
+function isPale(hex: string): boolean {
   const h = hex.replace("#", "");
   if (h.length < 6) return false;
   const channels = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
