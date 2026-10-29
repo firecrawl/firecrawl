@@ -273,6 +273,7 @@ export function authMiddleware(
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
     allowAgentManagedKey?: boolean;
+    hostedMcpRateLimit?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {

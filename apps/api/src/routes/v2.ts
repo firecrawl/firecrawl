@@ -204,6 +204,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Search, {
     allowKeyless: true,
     allowAgentManagedKey: true,
+    hostedMcpRateLimit: true,
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
@@ -262,6 +263,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, {
     allowKeyless: true,
     allowAgentManagedKey: true,
+    hostedMcpRateLimit: true,
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
