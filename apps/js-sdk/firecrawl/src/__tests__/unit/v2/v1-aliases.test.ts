@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
+import { mockFetch } from "../helpers/mockFetch";
 
 const ALIAS_MAP: Record<string, string> = {
   scrapeUrl: "scrape",
@@ -59,14 +59,7 @@ describe("V1 deprecated aliases", () => {
 
   it("v2 methods return results without success", async () => {
     const client = new FirecrawlClient({ apiKey: "fc-test", apiUrl: "http://localhost:9" });
-    const adapter: AxiosAdapter = async config => ({
-      data: { success: true, data: { markdown: "# hi" } },
-      status: 200,
-      statusText: "OK",
-      headers: {},
-      config,
-    });
-    (client as any).http.instance.defaults.adapter = adapter;
+    mockFetch(() => ({ data: { success: true, data: { markdown: "# hi" } } }));
     const result = await client.scrape("https://example.com", { formats: ["markdown"] });
     expect(result).toEqual({ markdown: "# hi" });
     expect("success" in result).toBe(false);
@@ -102,14 +95,7 @@ describe("V1 deprecation warning", () => {
 
   it("is not emitted by v2 methods", async () => {
     const { app, v1Warnings } = await freshClient();
-    const adapter: AxiosAdapter = async config => ({
-      data: { success: true, data: { markdown: "# hi" } },
-      status: 200,
-      statusText: "OK",
-      headers: {},
-      config,
-    });
-    (app as any).http.instance.defaults.adapter = adapter;
+    mockFetch(() => ({ data: { success: true, data: { markdown: "# hi" } } }));
 
     await app.scrape("https://example.com", { formats: ["markdown"] });
 

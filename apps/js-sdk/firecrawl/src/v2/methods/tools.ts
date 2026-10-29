@@ -9,7 +9,7 @@ import type {
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
 } from "../utils/errorHandler";
 
@@ -113,7 +113,7 @@ export async function scrapeAlexandria(
     };
   } catch (err: any) {
     try {
-      if (err?.isAxiosError) normalizeAxiosError(err, "alexandria");
+      if (err?.isHttpError) normalizeHttpError(err, "alexandria");
       throw err;
     } catch (error) {
       if (error && typeof error === "object")

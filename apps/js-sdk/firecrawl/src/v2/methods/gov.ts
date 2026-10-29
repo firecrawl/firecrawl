@@ -1,7 +1,7 @@
 import type { GovSearchOptions, GovSearchResponse } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
 } from "../utils/errorHandler";
 
@@ -35,8 +35,8 @@ export async function govSearch(
     }
     return response.data;
   } catch (error: any) {
-    if (error?.isAxiosError) {
-      return normalizeAxiosError(error, "search the Government Index");
+    if (error?.isHttpError) {
+      return normalizeHttpError(error, "search the Government Index");
     }
     throw error;
   }

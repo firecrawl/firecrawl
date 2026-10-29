@@ -1,7 +1,7 @@
 import { type ExtractResponse, type ScrapeOptions, type AgentOptions, type ThreatProtectionOptions, type WebhookConfig } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
-import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
+import { normalizeHttpError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
 import type { ZodTypeAny } from "zod";
 
@@ -57,7 +57,7 @@ export async function startExtract(http: HttpClient, args: Parameters<typeof pre
     if (res.status !== 200) throwForBadResponse(res, "extract");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "extract");
+    if (err?.isHttpError) return normalizeHttpError(err, "extract");
     throw err;
   }
 }
@@ -72,7 +72,7 @@ export async function getExtractStatus(http: HttpClient, jobId: string): Promise
     if (res.status !== 200) throwForBadResponse(res, "extract status");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "extract status");
+    if (err?.isHttpError) return normalizeHttpError(err, "extract status");
     throw err;
   }
 }

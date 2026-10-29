@@ -12,7 +12,7 @@ import { agentHintMetadata } from "../utils/agentHints";
 import { ensureNoV1Options, ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
-  normalizeAxiosError,
+  normalizeHttpError,
 } from "../utils/errorHandler";
 
 function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
@@ -131,7 +131,7 @@ export async function search(
     });
     return out;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "search");
+    if (err?.isHttpError) return normalizeHttpError(err, "search");
     throw err;
   }
 }
