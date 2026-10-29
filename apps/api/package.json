@@ -142,7 +142,7 @@
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
     "stripe": "^16.1.0",
-    "systeminformation": "^5.31.17",
+    "systeminformation": "^5.33.18",
     "tldts": "^7.4.10",
     "tough-cookie": "^4.1.4",
     "turndown": "^7.1.3",
