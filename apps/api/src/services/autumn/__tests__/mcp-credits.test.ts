@@ -342,6 +342,21 @@ describe("hosted MCP charge retries", () => {
     expect(redis.set).not.toHaveBeenCalled();
   });
 
+  it("works the split out afresh when Redis hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      mcpBalance(3);
+      redis.get.mockReturnValueOnce(new Promise<string | null>(() => {}));
+
+      const result = new AutumnService().trackHostedMcpCredits(charge);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await result).toEqual({ tracked: true, mcpCredits: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("works the split out afresh when Redis can't answer", async () => {
     mcpBalance(3);
     redis.get.mockRejectedValueOnce(new Error("redis down"));

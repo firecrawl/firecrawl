@@ -609,13 +609,32 @@ export class AutumnService {
    * records it, so a retry under the same key (a stalled job re-running its
    * charge) splits the charge the same way and each part dedupes against its
    * first track, even after that first track used the MCP credits up. Without
-   * a key, or when Redis can't answer, it is worked out afresh.
+   * a key, or when Redis doesn't answer within a second, it is worked out
+   * afresh. The shared connection queues commands while Redis is down rather
+   * than failing them, hence the bound.
    */
   private async hostedMcpAllocation(params: TrackCreditsParams) {
     if (!params.idempotencyKey) return this.mcpCreditsAvailable(params);
     const key = `fc:mcp-credits:allocation:${params.idempotencyKey}`;
+    const redis = getRedisConnection();
+    const bounded = async <T>(command: Promise<T>): Promise<T> => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          command,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Redis did not answer in time")),
+              1000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     try {
-      const recorded = await getRedisConnection().get(key);
+      const recorded = await bounded(redis.get(key));
       if (recorded !== null) return Number(recorded);
     } catch (error) {
       logger.warn("Failed to read a hosted MCP charge's allocation", {
@@ -626,12 +645,12 @@ export class AutumnService {
     }
     const mcpCredits = await this.mcpCreditsAvailable(params);
     try {
-      const redis = getRedisConnection();
       if (
-        (await redis.set(key, mcpCredits, "EX", 7 * 24 * 60 * 60, "NX")) ===
-        null
+        (await bounded(
+          redis.set(key, mcpCredits, "EX", 7 * 24 * 60 * 60, "NX"),
+        )) === null
       ) {
-        const recorded = await redis.get(key);
+        const recorded = await bounded(redis.get(key));
         if (recorded !== null) return Number(recorded);
       }
     } catch (error) {
