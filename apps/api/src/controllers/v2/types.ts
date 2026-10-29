@@ -1212,6 +1212,7 @@ export const agentRequestSchema = z
     mode: z.enum(["extract", "chat"]).optional(),
     exchange: agentExchangeSchema.optional(),
     location: countryLocationSchema.optional(),
+    safe: z.boolean().optional(),
     zeroDataRetention: z.boolean().optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
@@ -1731,6 +1732,7 @@ export type AgentListResponse =
           // type release.
           model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
           effort?: "low" | "medium" | "high";
+          safe?: boolean;
           threadId?: string;
           threadTurn?: number;
           zeroDataRetention?: boolean;
@@ -1891,6 +1893,7 @@ export type AgentStatusResponse =
       stopReason?: "credit_limit_reached";
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
       effort?: "low" | "medium" | "high";
+      safe?: boolean;
       expiresAt: string;
       creditsUsed?: number;
       threadId?: string;
@@ -1910,6 +1913,7 @@ type AgentThreadRun = {
   urls?: string[];
   schema?: unknown;
   effort?: "low" | "medium" | "high";
+  safe?: boolean;
   status:
     | "processing"
     | "succeeded"
@@ -2156,6 +2160,8 @@ export type TeamFlags = {
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
+  /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
+  agentZdrRetentionMinutes?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
