@@ -15,6 +15,25 @@ import { indexDocumentIfEnabled } from "../../../lib/search-index-client";
 import { logger as _logger } from "../../../lib/logger";
 import { Meta } from "..";
 
+// Header names are case-insensitive, so a credential can arrive under any
+// spelling; compare lowercased.
+const CREDENTIAL_HEADERS = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "x-api-key",
+];
+
+function hasCredentialHeader(
+  headers: Record<string, string> | undefined,
+): boolean {
+  if (!headers) return false;
+  return Object.entries(headers).some(
+    ([name, value]) =>
+      CREDENTIAL_HEADERS.includes(name.toLowerCase()) && Boolean(value),
+  );
+}
+
 /**
  * Check if document should be indexed for search
  */
@@ -49,10 +68,7 @@ function shouldIndexForSearch(meta: Meta, document: Document): boolean {
   }
 
   // Don't index if has auth headers (private content)
-  if (
-    meta.options.headers &&
-    (meta.options.headers["Authorization"] || meta.options.headers["Cookie"])
-  ) {
+  if (hasCredentialHeader(meta.options.headers)) {
     return false;
   }
 
