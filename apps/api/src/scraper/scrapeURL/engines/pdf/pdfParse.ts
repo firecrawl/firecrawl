@@ -47,6 +47,7 @@ export async function scrapePDFWithParsePDF(
     return {
       markdown: escaped,
       html: escaped,
+      pagesProcessed: Math.min(result.numpages, max),
     };
   } catch (error) {
     meta.logger.error("pdfParse failed", { error });
