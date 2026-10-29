@@ -213,7 +213,9 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
+    mcpCredits: true,
+  }),
   blocklistMiddleware,
   wrap(searchController),
 );
@@ -257,7 +259,7 @@ v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   parsePayloadMiddleware,
   inferIntegrationMiddleware,
   wrap(parseController),
@@ -271,7 +273,7 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
@@ -304,7 +306,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(batchScrapeController),
 );
@@ -313,7 +315,7 @@ v2Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
   inferIntegrationMiddleware,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(mapController),
 );
@@ -323,7 +325,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Crawl),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),

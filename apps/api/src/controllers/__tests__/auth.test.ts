@@ -1245,6 +1245,71 @@ describe("authenticateUser", () => {
       expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
     });
 
+    it("marks the verified hosted MCP calls on the auth result, and no others", async () => {
+      const delegated = await authenticateUser(
+        requestWith("Bearer " + signDelegation()),
+        {},
+        RateLimiterMode.Scrape,
+      );
+      const relayed = await authenticateUser(
+        requestWith(API_KEY, {
+          headers: { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+        }),
+        {},
+        RateLimiterMode.Crawl,
+      );
+      const selfDeclared = await authenticateUser(
+        requestWith(API_KEY, {
+          body: { origin: "mcp-fastmcp" },
+          headers: {
+            "x-origin": "mcp-fastmcp",
+            "x-firecrawl-keyless-secret": "not-the-secret",
+          },
+        }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(delegated).toMatchObject({ success: true, hostedMcp: true });
+      expect(relayed).toMatchObject({ success: true, hostedMcp: true });
+      expect(selfDeclared.success).toBe(true);
+      expect(selfDeclared).not.toHaveProperty("hostedMcp");
+    });
+
+    it("never marks an OAuth access token as a hosted MCP call, even with the proxy secret", async () => {
+      config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+      config.OAUTH_INTROSPECT_SECRET = "secret";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              active: true,
+              api_key: "fc-00000000000000004000800000000000",
+              scope: "firecrawl:global",
+              client_id: "client-1",
+              team_id: "team-1",
+              exp: Math.floor(Date.now() / 1000) + 60,
+              aud: "https://api.firecrawl.dev/",
+              credential_purpose: "hosted_mcp_oauth",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      );
+
+      const auth = await authenticateUser(
+        requestWith("Bearer fco_rest_grant_token", {
+          headers: { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+        }),
+        {},
+        RateLimiterMode.Crawl,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(auth).not.toHaveProperty("hostedMcp");
+    });
+
     it.each([
       ["", {}],
       [

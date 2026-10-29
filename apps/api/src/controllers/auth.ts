@@ -1139,6 +1139,7 @@ async function supaAuthenticateUser(
     }
   }
 
+  let hostedMcpCall = false;
   if (chunk !== null) {
     // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
     // raised per-minute minimum, and scrape calls a raised concurrency
@@ -1148,14 +1149,15 @@ async function supaAuthenticateUser(
     // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
     // so a REST call carrying one comes from the client itself. Origin and
     // integration are client-set, so they never change the limit.
+    hostedMcpCall =
+      hostedMcpDelegation ||
+      (!token.startsWith("fco_") &&
+        timingSafeSecretEqual(
+          req.headers["x-firecrawl-keyless-secret"],
+          config.KEYLESS_PROXY_SECRET,
+        ));
     const hostedMcpRaise =
-      options?.hostedMcpRateLimit === true &&
-      (hostedMcpDelegation ||
-        (!token.startsWith("fco_") &&
-          timingSafeSecretEqual(
-            req.headers["x-firecrawl-keyless-secret"],
-            config.KEYLESS_PROXY_SECRET,
-          )));
+      options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not the one trusted
     // agent traffic floors at hobby, so a free team never gets the hobby tier.
     const hostedMcpLimiter = hostedMcpRaise
@@ -1264,5 +1266,6 @@ async function supaAuthenticateUser(
     team_id: teamId ?? undefined,
     org_id: chunk?.org_id ?? null,
     chunk,
+    ...(hostedMcpCall ? { hostedMcp: true } : {}),
   };
 }

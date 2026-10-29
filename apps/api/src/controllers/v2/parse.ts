@@ -375,6 +375,7 @@ export async function parseController(
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       };
 
       if (

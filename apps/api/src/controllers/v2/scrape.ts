@@ -225,6 +225,7 @@ export async function scrapeController(
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       };
 
       if (

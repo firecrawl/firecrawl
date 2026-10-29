@@ -39,6 +39,19 @@ export type BillingMetadata = {
    * Unset when the caller sent no header or the charge has no request.
    */
   externalRequestId?: string | null;
+  /**
+   * The hosted MCP made the request, as verified at authentication (see
+   * `AuthObject.hostedMcp`). Its charges spend the team's MCP credits first
+   * (see AutumnService.trackHostedMcpCredits). Rides the job payload like the
+   * rest of this metadata, so a crawl's pages carry it too.
+   */
+  hostedMcp?: boolean;
+  /**
+   * Credits of this charge the team's MCP credits paid, set by the charge that
+   * tracks them to Autumn (billTeam or billScrapeJob). The ledger records them as their own row, tagged apart from
+   * regular credits used (see queueBillingOperation).
+   */
+  mcpCredits?: number;
 };
 
 export function resolveBillingMetadata({
