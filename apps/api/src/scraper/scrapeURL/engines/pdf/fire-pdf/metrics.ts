@@ -12,6 +12,19 @@ export const firePdfCacheRefusedWritesTotal = new Counter({
   labelNames: ["reason"],
 });
 
+export const firePdfCacheBackgroundRefreshTotal = new Counter({
+  name: "firecrawl_fire_pdf_cache_background_refresh_total",
+  help: "Background refreshes the fire-pdf cache service granted on a stale answer, by result: submitted, submit_failed, skipped_by_reference, skipped_zdr, skipped_image",
+  labelNames: ["result"],
+});
+
+export type BackgroundRefreshResult =
+  | "submitted"
+  | "submit_failed"
+  | "skipped_by_reference"
+  | "skipped_zdr"
+  | "skipped_image";
+
 export type CacheRefusedReason =
   | "failed_pages"
   | "degraded_pages"

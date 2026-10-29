@@ -9,6 +9,12 @@ minimumReleaseAgeExclude:
   - "ip-address@10.7.4"
   - fast-xml-parser
   - follow-redirects
+  # GHSA-27r3-jxmh-p828: body-parser 1.20.9 and 2.4.0 were published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - body-parser
+  # GHSA-q7qp-rjg7-q26m / CVE-2026-113872: multer 2.5.0 was published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - multer
   # TypeScript 7 resolves its native platform binaries (e.g.
   # @typescript/typescript-darwin-arm64) as transitive optional deps, which
   # the age gate would otherwise silently skip, leaving tsc unable to run.
