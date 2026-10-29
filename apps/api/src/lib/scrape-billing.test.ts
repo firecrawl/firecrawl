@@ -687,4 +687,23 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
       }),
     ).toBe(2);
   });
+
+  it.each(["fire-1", "FIRE-1", "Fire-1"])(
+    "bills a successful %s agent scrape from its LLM cost",
+    async model => {
+      const credits = await calculateCreditsToBeBilled(
+        { formats: [{ type: "markdown" }] } as any,
+        {
+          teamId: "team-id",
+          orgId: null,
+          v1Agent: { model, prompt: "find the pricing page" },
+        } as any,
+        { metadata: { statusCode: 200, proxyUsed: "basic" } } as any,
+        { totalCost: 0.05, calls: [] } as any,
+        {} as any,
+      );
+
+      expect(credits).toBe(90);
+    },
+  );
 });
