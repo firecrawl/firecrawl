@@ -22,6 +22,7 @@ const CREDENTIAL_HEADERS = [
   "cookie",
   "proxy-authorization",
   "x-api-key",
+  "api-key",
 ];
 
 function hasCredentialHeader(
