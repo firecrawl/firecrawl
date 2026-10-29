@@ -34,6 +34,7 @@ describe("scrapePDFWithParsePDF", () => {
     const result = await scrapePDFWithParsePDF(meta(), filePath, 7);
 
     expect(result.markdown).toBe("hello");
+    expect(result.pagesProcessed).toBe(3);
     expect(mocks.pdfParse).toHaveBeenCalledTimes(1);
     expect(mocks.pdfParse.mock.calls[0][1]).toEqual({ max: 7 });
   });
@@ -50,8 +51,9 @@ describe("scrapePDFWithParsePDF", () => {
     mocks.pdfParse.mockResolvedValue({ text: "x", numpages: 5_000_000 });
     const m = meta();
 
-    await scrapePDFWithParsePDF(m, filePath, 10);
+    const result = await scrapePDFWithParsePDF(m, filePath, 10);
 
+    expect(result.pagesProcessed).toBe(10);
     expect(m.logger.info).toHaveBeenCalledWith(
       "pdfParse succeeded",
       expect.objectContaining({ numPages: 5_000_000, truncatedToPages: 10 }),
