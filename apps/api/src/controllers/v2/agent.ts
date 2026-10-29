@@ -316,6 +316,7 @@ export async function agentController(
         mode: req.body.mode,
         exchange: req.body.exchange,
         location: req.body.location,
+        safe: req.body.safe,
         ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
         ...(zeroDataRetentionMinutes !== null
           ? { zeroDataRetentionMinutes }
