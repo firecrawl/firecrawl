@@ -1,13 +1,20 @@
 import { Response } from "express";
 import { ErrorResponse, RequestWithAuth } from "./types";
-import { supabase_rr_service } from "../../services/supabase";
+import {
+  getTeamHistoricalUsage,
+  getTeamHistoricalUsageByApiKey,
+  getTeamHistoricalUsageByEndpoint,
+  HistoricalBin,
+} from "../../services/autumn/usage";
 
 interface CreditUsageHistoricalResponse {
   success: true;
+  bin?: HistoricalBin;
   periods: {
     startDate: string | null;
     endDate: string | null;
     apiKey?: string;
+    endpoint?: string;
     creditsUsed: number;
   }[];
 }
@@ -17,49 +24,52 @@ export async function creditUsageHistoricalController(
   res: Response<CreditUsageHistoricalResponse | ErrorResponse>,
 ): Promise<void> {
   const byApiKey = req.query.byApiKey === "true";
+  const byEndpoint = req.query.byEndpoint === "true";
+  const requestedBin = req.query.bin;
 
-  const { data, error } = await supabase_rr_service.rpc(
-    "get_historical_credit_usage_by_api_key_1",
-    {
-      v_team_id: req.auth.team_id,
-      v_is_extract: false,
-    },
-    { get: true },
-  );
-
-  if (error || !data) {
-    throw error ?? new Error("Failed to get historical credit usage");
+  if (
+    requestedBin !== undefined &&
+    requestedBin !== "month" &&
+    requestedBin !== "day"
+  ) {
+    res.status(400).json({
+      success: false,
+      error: 'bin must be "month" or "day".',
+    });
+    return;
   }
 
-  let periods = data.map(period => ({
-    startDate: period.start_ts,
-    endDate: period.end_ts,
-    apiKey: period.api_key_name,
-    creditsUsed: period.amount,
-  }));
-
-  if (!byApiKey) {
-    periods = periods.reduce((acc, period) => {
-      let preexisting = acc.find(
-        p => p.startDate === period.startDate && p.endDate === period.endDate,
-      );
-      if (preexisting) {
-        preexisting.creditsUsed += period.creditsUsed;
-      } else {
-        let newPeriod = { ...period };
-        delete newPeriod.apiKey;
-        acc.push(newPeriod);
-      }
-      return acc;
-    }, []);
+  if (byApiKey && byEndpoint) {
+    res.status(400).json({
+      success: false,
+      error: "byApiKey and byEndpoint cannot be combined.",
+    });
+    return;
   }
 
-  periods.sort(
-    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
-  );
+  const bin: HistoricalBin = requestedBin ?? "month";
+  const periods: CreditUsageHistoricalResponse["periods"] = byEndpoint
+    ? await getTeamHistoricalUsageByEndpoint(req.auth.team_id, bin)
+    : byApiKey
+      ? await getTeamHistoricalUsageByApiKey(req.auth.team_id, bin)
+      : await getTeamHistoricalUsage(req.auth.team_id, bin);
 
-  res.json({
-    success: true,
-    periods,
+  periods.sort((a, b) => {
+    const aTime = a.startDate ? Date.parse(a.startDate) : NaN;
+    const bTime = b.startDate ? Date.parse(b.startDate) : NaN;
+    const aNaN = Number.isNaN(aTime);
+    const bNaN = Number.isNaN(bTime);
+    if (aNaN && bNaN) return 0;
+    if (aNaN) return 1;
+    if (bNaN) return -1;
+    return aTime - bTime;
   });
+
+  // `bin` is echoed only when it was asked for, so a caller can tell that this
+  // API honoured it and the response without it stays as it was.
+  res.json(
+    requestedBin === undefined
+      ? { success: true, periods }
+      : { success: true, bin, periods },
+  );
 }

@@ -1,4 +1,6 @@
-import { supabase_rr_service } from "../supabase";
+import { eq } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { WebhookConfig } from "./types";
 
 import { config } from "../../config";
@@ -39,14 +41,13 @@ async function getHmacSecret(teamId: string): Promise<string | undefined> {
   }
 
   try {
-    const { data, error } = await supabase_rr_service
-      .from("teams")
-      .select("hmac_secret")
-      .eq("id", teamId)
-      .limit(1)
-      .single();
+    const [data] = await dbRr
+      .select({ hmac_secret: schema.teams.hmac_secret })
+      .from(schema.teams)
+      .where(eq(schema.teams.id, teamId))
+      .limit(1);
 
-    return error ? undefined : data?.hmac_secret;
+    return data?.hmac_secret ?? undefined;
   } catch {
     return undefined;
   }

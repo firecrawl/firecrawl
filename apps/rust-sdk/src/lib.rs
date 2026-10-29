@@ -1,27 +1,12 @@
 //! Firecrawl Rust SDK
 //!
-//! This SDK provides access to the Firecrawl API for web scraping and crawling.
+//! This SDK provides access to the Firecrawl v2 API for web scraping, crawling,
+//! searching, mapping, batch scraping, and agent operations.
 //!
 //! # Quick Start
 //!
-//! ## v1 API (existing)
-//!
 //! ```no_run
-//! use firecrawl::FirecrawlApp;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let app = FirecrawlApp::new("your-api-key")?;
-//!     let document = app.scrape_url("https://example.com", None).await?;
-//!     println!("{:?}", document.markdown);
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## v2 API (new)
-//!
-//! ```no_run
-//! use firecrawl::v2::Client;
+//! use firecrawl::Client;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,130 +17,35 @@
 //! }
 //! ```
 
-use reqwest::{Client, Response};
-use serde::de::DeserializeOwned;
-use serde_json::Value;
-
-// v1 modules (existing API)
-pub mod batch_scrape;
-pub mod crawl;
-pub mod document;
 pub mod error;
-pub mod extract;
-pub mod llmstxt;
-pub mod map;
-pub mod scrape;
-pub mod search;
 pub(crate) mod serde_helpers;
 
-// v2 module (new API)
-pub mod v2;
+mod agent;
+mod audit_metadata;
+mod batch_scrape;
+mod client;
+mod crawl;
+mod map;
+mod monitor;
+mod parse;
+mod research;
+mod scrape;
+mod search;
+mod types;
 
-use error::FirecrawlAPIError;
-pub use error::FirecrawlError;
+pub use agent::*;
+pub use audit_metadata::*;
+pub use batch_scrape::*;
+pub use client::Client;
+pub use crawl::*;
+pub use error::{FirecrawlAPIError, FirecrawlError, RequiresAction};
+pub use map::*;
+pub use monitor::*;
+pub use parse::*;
+pub use research::*;
+pub use scrape::*;
+pub use search::*;
+pub use types::*;
 
-#[derive(Clone, Debug)]
-pub struct FirecrawlApp {
-    api_key: Option<String>,
-    api_url: String,
-    client: Client,
-}
-
-pub(crate) const API_VERSION: &str = "/v1";
-const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
-
-impl FirecrawlApp {
-    pub fn new(api_key: impl AsRef<str>) -> Result<Self, FirecrawlError> {
-        FirecrawlApp::new_selfhosted(CLOUD_API_URL, Some(api_key))
-    }
-
-    pub fn new_selfhosted(
-        api_url: impl AsRef<str>,
-        api_key: Option<impl AsRef<str>>,
-    ) -> Result<Self, FirecrawlError> {
-        let url = api_url.as_ref().to_string();
-
-        if url == CLOUD_API_URL && api_key.is_none() {
-            return Err(FirecrawlError::APIError(
-                "Configuration".to_string(),
-                FirecrawlAPIError {
-                    success: false,
-                    error: "API key is required for cloud service".to_string(),
-                    details: None,
-                },
-            ));
-        }
-
-        Ok(FirecrawlApp {
-            api_key: api_key.map(|x| x.as_ref().to_string()),
-            api_url: url,
-            client: Client::new(),
-        })
-    }
-
-    fn prepare_headers(&self, idempotency_key: Option<&String>) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("Content-Type", "application/json".parse().unwrap());
-        if let Some(api_key) = self.api_key.as_ref() {
-            headers.insert(
-                "Authorization",
-                format!("Bearer {}", api_key).parse().unwrap(),
-            );
-        }
-        if let Some(key) = idempotency_key {
-            headers.insert("x-idempotency-key", key.parse().unwrap());
-        }
-        headers
-    }
-
-    async fn handle_response<'a, T: DeserializeOwned>(
-        &self,
-        response: Response,
-        action: impl AsRef<str>,
-    ) -> Result<T, FirecrawlError> {
-        let (is_success, status) = (response.status().is_success(), response.status());
-
-        let response = response
-            .text()
-            .await
-            .map_err(|e| FirecrawlError::ResponseParseErrorText(e))
-            .and_then(|response_json| {
-                serde_json::from_str::<Value>(&response_json)
-                    .map_err(|e| FirecrawlError::ResponseParseError(e))
-                    .inspect(|data| {
-                        tracing::debug!("Response JSON: {:#?}", data);
-                    })
-            })
-            .and_then(|response_value| {
-                if action.as_ref().starts_with("crawl_") // no success in check/cancel crawl responses
-                    || response_value["success"].as_bool().unwrap_or(false)
-                {
-                    Ok(serde_json::from_value::<T>(response_value)
-                        .map_err(|e| FirecrawlError::ResponseParseError(e))?)
-                } else {
-                    Err(FirecrawlError::APIError(
-                        action.as_ref().to_string(),
-                        serde_json::from_value(response_value)
-                            .map_err(|e| FirecrawlError::ResponseParseError(e))?,
-                    ))
-                }
-            });
-
-        match &response {
-            Ok(_) => response,
-            Err(FirecrawlError::ResponseParseError(_))
-            | Err(FirecrawlError::ResponseParseErrorText(_)) => {
-                if is_success {
-                    response
-                } else {
-                    Err(FirecrawlError::HttpRequestFailed(
-                        action.as_ref().to_string(),
-                        status.as_u16(),
-                        status.as_str().to_string(),
-                    ))
-                }
-            }
-            Err(_) => response,
-        }
-    }
-}
+mod tools;
+pub use tools::*;

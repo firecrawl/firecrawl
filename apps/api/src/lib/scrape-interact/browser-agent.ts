@@ -1,14 +1,17 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { generateText, tool, stepCountIs } from "ai";
+import { tool, stepCountIs, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
-import {
-  browserServiceRequest,
-  BrowserServiceExecResponse,
-} from "./browser-service-client";
+import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
+import {
+  generateText,
+  buildLangSmithProviderOptions,
+  traceInteract,
+  InteractTraceMetadata,
+} from "./langsmith";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -17,6 +20,13 @@ import { config } from "../../config";
 const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
+
+// Vertex is the preferred provider so usage is traceable via Vertex billing
+// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
+// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+function hasVertex(): boolean {
+  return Boolean(config.VERTEX_CREDENTIALS);
+}
 
 // ---------------------------------------------------------------------------
 // Debug log
@@ -34,8 +44,8 @@ class AgentDebugLog {
   private lines: string[] = [];
   private enabled: boolean;
 
-  constructor(browserId: string) {
-    this.enabled = !IS_PRODUCTION;
+  constructor(browserId: string, zeroDataRetention = false) {
+    this.enabled = !IS_PRODUCTION && !zeroDataRetention;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     this.filePath = path.join(AGENT_LOG_DIR, `${ts}_${browserId}.log`);
   }
@@ -130,7 +140,7 @@ Your final text response is what the user sees. It MUST be a clean, human-readab
 // Helpers
 // ---------------------------------------------------------------------------
 
-export interface AgentResult extends BrowserServiceExecResponse {
+export interface AgentResult extends BrowserExecutionResult {
   output: string;
 }
 
@@ -138,13 +148,12 @@ async function execInBrowser(
   browserId: string,
   code: string,
   timeout: number,
-  origin: string,
-): Promise<BrowserServiceExecResponse> {
-  return browserServiceRequest<BrowserServiceExecResponse>(
-    "POST",
-    `/browsers/${browserId}/exec`,
-    { code, language: "bash", timeout, origin },
-  );
+): Promise<BrowserExecutionResult> {
+  return executeHangarBrowser(browserId, {
+    code,
+    language: "bash",
+    timeout,
+  });
 }
 
 async function getCurrentUrl(browserId: string): Promise<string> {
@@ -153,7 +162,6 @@ async function getCurrentUrl(browserId: string): Promise<string> {
       browserId,
       "agent-browser get url",
       SNAPSHOT_TIMEOUT,
-      "agent_get_url",
     );
     return (result.stdout || result.result || "").trim();
   } catch {
@@ -167,7 +175,6 @@ async function takeSnapshot(browserId: string): Promise<string> {
       browserId,
       "agent-browser snapshot -i",
       SNAPSHOT_TIMEOUT,
-      "agent_snapshot",
     );
     return (result.stdout || result.result || "").slice(0, SNAPSHOT_MAX_CHARS);
   } catch {
@@ -175,22 +182,75 @@ async function takeSnapshot(browserId: string): Promise<string> {
   }
 }
 
+/** Align the CLI with the replay's page without discarding the user's other tabs. */
+export async function selectBrowserAgentTab(browserId: string): Promise<void> {
+  const target = await executeHangarBrowser(browserId, {
+    code: `await (async () => {
+      for (const candidate of [page, ...context.pages().filter(p => p !== page)]) {
+        if (await candidate.evaluate(() => document.visibilityState === 'visible').catch(() => false)) {
+          page = candidate;
+          break;
+        }
+      }
+      await page.bringToFront();
+      const cdp = await context.newCDPSession(page);
+      try {
+        const { targetInfo } = await cdp.send('Target.getTargetInfo');
+        console.log(targetInfo.targetId);
+      } finally { await cdp.detach(); }
+    })()`,
+    language: "node",
+    timeout: 10,
+  });
+  const targetId = (target.stdout || target.result || "").trim();
+  if (
+    target.exitCode !== 0 ||
+    target.killed ||
+    !/^[a-f0-9]{32}$/i.test(targetId)
+  )
+    throw new Error("Could not identify the replay browser tab.");
+  const selected = await execInBrowser(
+    browserId,
+    `agent-browser tab ${targetId}`,
+    10,
+  );
+  if (selected.exitCode !== 0 || selected.killed)
+    throw new Error("Could not select the replay browser tab.");
+}
+
 // ---------------------------------------------------------------------------
 // Main agent — tool-calling loop via AI SDK
 // ---------------------------------------------------------------------------
+
+interface BrowserAgentTraceContext {
+  sessionId: string;
+  scrapeId: string;
+  teamId: string;
+  orgId?: string;
+  zeroDataRetention?: boolean;
+  scrapeUrl?: string;
+  targetUrl?: string;
+  scrapeWaitForMs?: number;
+  scrapeActions?: number;
+  scrapeOrigin?: string;
+}
 
 export async function executePromptViaBrowserAgent(
   prompt: string,
   browserId: string,
   stepTimeout: number,
   logger: typeof _logger,
+  trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
-  const debugLog = new AgentDebugLog(browserId);
+  const zeroDataRetention = trace?.zeroDataRetention === true;
+  const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
   debugLog.add(`=== AGENT RUN ===`);
   debugLog.add(`Time:    ${new Date().toISOString()}`);
   debugLog.add(`Browser: ${browserId}`);
   debugLog.add(`Prompt:  ${prompt}\n`);
   logger.info("Agent debug log", { path: debugLog.getPath() });
+
+  await selectBrowserAgentTab(browserId);
 
   const [initialSnapshot, initialUrl] = await Promise.all([
     takeSnapshot(browserId),
@@ -228,32 +288,10 @@ export async function executePromptViaBrowserAgent(
       }
 
       try {
-        const result = await execInBrowser(
-          browserId,
-          code,
-          stepTimeout,
-          "agent_action",
-        );
+        const result = await execInBrowser(browserId, code, stepTimeout);
         const output = (result.stdout || result.result || "").trim();
 
-        // Ensure only one tab exists and it's in the foreground for live view
-        try {
-          await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
-            code: [
-              `const ctx = page.context();`,
-              `const pages = ctx.pages();`,
-              `if (pages.length > 1) {`,
-              `  const target = pages.find(p => { const u = p.url(); return u && u !== 'about:blank'; }) || pages[pages.length - 1];`,
-              `  for (const p of pages) { if (p !== target) await p.close().catch(() => {}); }`,
-              `  page = target;`,
-              `}`,
-              `await page.bringToFront();`,
-            ].join("\n"),
-            language: "node",
-            timeout: 5,
-            origin: "tab_sync",
-          });
-        } catch {}
+        await selectBrowserAgentTab(browserId);
 
         const elapsed = Date.now() - start;
 
@@ -293,9 +331,39 @@ export async function executePromptViaBrowserAgent(
     },
   });
 
+  const langsmith = trace
+    ? buildLangSmithProviderOptions(
+        {
+          thread_id: trace.sessionId,
+          session_id: trace.sessionId,
+          scrape_id: trace.scrapeId,
+          team_id: trace.teamId,
+          org_id: trace.orgId,
+          browser_id: browserId,
+          mode: "prompt",
+          zeroDataRetention: trace.zeroDataRetention,
+          scrape_url: trace.scrapeUrl,
+          target_url: trace.targetUrl,
+          scrape_wait_for_ms: trace.scrapeWaitForMs,
+          scrape_actions: trace.scrapeActions,
+          scrape_origin: trace.scrapeOrigin,
+        } satisfies InteractTraceMetadata,
+        {
+          name: "interact:prompt",
+          extra: { prompt_length: prompt.length },
+        },
+      )
+    : undefined;
+
   try {
-    const result = await generateText({
-      model: getModel("gemini-2.5-flash", "google"),
+    // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
+    // is enabled globally. Use the same provider as ZDR JSON extraction.
+    const generate = zeroDataRetention ? untracedGenerateText : generateText;
+    const result = await generate({
+      model: zeroDataRetention
+        ? getModel("gpt-6-luna", "openai", { ignoreModelOverride: true })
+        : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
+      experimental_telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -310,7 +378,22 @@ export async function executePromptViaBrowserAgent(
       ],
       tools: { browser: browserTool },
       stopWhen: stepCountIs(MAX_STEPS),
-      temperature: 0,
+      temperature: zeroDataRetention ? undefined : 0,
+      // LangSmith's provider-options object is recognized by wrapAISDK but
+      // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
+      // local cast keeps the rest of the type surface strict.
+      ...(zeroDataRetention
+        ? {
+            providerOptions: {
+              openai: {
+                store: false,
+                reasoningEffort: "medium",
+              },
+            },
+          }
+        : langsmith
+          ? { providerOptions: { langsmith } as Record<string, any> }
+          : {}),
       prepareStep: async ({ stepNumber, messages }) => {
         if (actionLog.length === 0) return {};
         return {
@@ -362,4 +445,54 @@ export async function executePromptViaBrowserAgent(
       killed: false,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Code path — direct exec wrapped with the same trace metadata shape as the
+// prompt path, so tracing details don't have to live in the controller.
+// ---------------------------------------------------------------------------
+
+export async function executeCodeViaBrowserSession(
+  browserId: string,
+  params: {
+    code: string;
+    language: string;
+    timeout: number;
+    origin?: string;
+  },
+  trace?: BrowserAgentTraceContext,
+): Promise<BrowserExecutionResult> {
+  // Arg must be named so langsmith's traceable sees the exec params as the
+  // run's `inputs`; a zero-arg closure would record `{}` and strip the code,
+  // language, timeout, and origin from every trace.
+  const run = async (execParams: typeof params) =>
+    executeHangarBrowser(browserId, {
+      code: execParams.code,
+      language: execParams.language,
+      timeout: execParams.timeout,
+    });
+
+  if (!trace) return run(params);
+
+  const traced = traceInteract(
+    run,
+    {
+      thread_id: trace.sessionId,
+      session_id: trace.sessionId,
+      scrape_id: trace.scrapeId,
+      team_id: trace.teamId,
+      org_id: trace.orgId,
+      browser_id: browserId,
+      mode: "code",
+      zeroDataRetention: trace.zeroDataRetention,
+      scrape_url: trace.scrapeUrl,
+      target_url: trace.targetUrl,
+      scrape_wait_for_ms: trace.scrapeWaitForMs,
+      scrape_actions: trace.scrapeActions,
+      scrape_origin: trace.scrapeOrigin,
+    } satisfies InteractTraceMetadata,
+    { name: "interact:code" },
+  );
+
+  return traced(params);
 }

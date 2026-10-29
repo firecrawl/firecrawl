@@ -1,4 +1,4 @@
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect } from "vitest";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -109,6 +109,56 @@ describe("Search Query Builder", () => {
       const result = buildSearchQuery("test", [{ type: "invalid" as any }]);
       expect(result.query).toBe("test");
       expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should add include domain filters without a parenthesized group", () => {
+      // Bare `site:` operators (no wrapping parens): some search backends drop
+      // a parenthesized `(site:...)` group, which would leak off-domain results.
+      const result = buildSearchQuery("web scraping", undefined, {
+        includeDomains: ["firecrawl.dev", "docs.firecrawl.dev"],
+      });
+      expect(result.query).toBe(
+        "web scraping site:firecrawl.dev OR site:docs.firecrawl.dev",
+      );
+      expect(result.query).not.toContain("(");
+      expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should add a single include domain filter without parens or OR", () => {
+      const result = buildSearchQuery("web scraping", undefined, {
+        includeDomains: ["linkedin.com"],
+      });
+      expect(result.query).toBe("web scraping site:linkedin.com");
+      expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should add exclude domain filters", () => {
+      const result = buildSearchQuery("web scraping", undefined, {
+        excludeDomains: ["example.com", "spam.example.com"],
+      });
+      expect(result.query).toBe(
+        "web scraping -site:example.com -site:spam.example.com",
+      );
+      expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should ignore empty domain filter arrays", () => {
+      const result = buildSearchQuery("web scraping", undefined, {
+        includeDomains: [],
+        excludeDomains: [],
+      });
+      expect(result.query).toBe("web scraping");
+      expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should combine categories with domain filters", () => {
+      const result = buildSearchQuery("web scraping", ["github"], {
+        includeDomains: ["firecrawl.dev"],
+      });
+      expect(result.query).toBe(
+        "web scraping (site:github.com) site:firecrawl.dev",
+      );
+      expect(result.categoryMap.get("github.com")).toBe("github");
     });
   });
 

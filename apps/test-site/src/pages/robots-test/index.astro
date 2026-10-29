@@ -1,0 +1,18 @@
+---
+// Fixture for crawl robots.txt reporting. robots.txt disallows
+// /robots-test/blocked/, and the sitemap leaves out /robots-test/, so only
+// crawls that start here see these pages.
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Robots Test</title>
+	</head>
+	<body>
+		<h1>Robots Test</h1>
+		<p>This page is allowed by robots.txt.</p>
+		<p><a href="/robots-test/blocked/">This link goes to a page that robots.txt disallows.</a></p>
+	</body>
+</html>

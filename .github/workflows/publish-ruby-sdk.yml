@@ -1,0 +1,60 @@
+name: Publish Ruby SDK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ruby-sdk/**'
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish to RubyGems
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.x'
+
+      - name: Install version check dependencies
+        run: |
+          python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
+          pip install requests packaging
+
+      - name: Run version check script
+        id: version_check
+        run: |
+          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl-sdk)
+          echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
+
+      - name: Set up Ruby
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+        with:
+          ruby-version: '3.3'
+          working-directory: ./apps/ruby-sdk
+
+      - name: Build gem
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/ruby-sdk
+        run: gem build firecrawl-sdk.gemspec
+
+      - name: Publish to RubyGems
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/ruby-sdk
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: gem push firecrawl-*.gem

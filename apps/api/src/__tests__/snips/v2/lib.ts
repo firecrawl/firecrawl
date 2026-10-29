@@ -13,6 +13,10 @@ import {
   MapRequestInput,
   BatchScrapeRequestInput,
   SearchRequestInput,
+  SearchFeedbackRequestInput,
+  EndpointFeedbackRequestInput,
+  EndpointFeedbackResponse,
+  ParseRequestInput,
 } from "../../../controllers/v2/types";
 import request from "supertest";
 import {
@@ -84,6 +88,211 @@ export async function scrapeWithFailure(
   return raw.body;
 }
 
+// =========================================
+// Monitor API
+// =========================================
+
+export type MonitorCreateInput = {
+  name: string;
+  schedule: { cron: string; timezone?: string };
+  webhook?: { url: string; headers?: Record<string, string> };
+  notification?: {
+    email?: {
+      enabled?: boolean;
+      recipients?: string[];
+      includeDiffs?: boolean;
+    };
+  };
+  targets: Array<
+    | {
+        type: "scrape";
+        urls: string[];
+        scrapeOptions?: Record<string, unknown>;
+      }
+    | {
+        type: "crawl";
+        url: string;
+        crawlOptions?: Record<string, unknown>;
+        scrapeOptions?: Record<string, unknown>;
+      }
+  >;
+  retentionDays?: number;
+  goal?: string;
+  judgeEnabled?: boolean;
+  origin?: string;
+};
+
+export async function monitorCreateRaw(
+  body: MonitorCreateInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorListRaw(identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorGetRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorPatchRaw(
+  id: string,
+  body: Partial<MonitorCreateInput> & { status?: "active" | "paused" },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .patch(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorDeleteRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorRunRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/${id}/run`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorCheckRaw(
+  monitorId: string,
+  checkId: string,
+  identity: Identity,
+  query?: Record<string, string | number>,
+) {
+  const req = request(TEST_API_URL)
+    .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+  return query ? req.query(query) : req;
+}
+
+export async function monitorEmailConfirmRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailUnsubscribeRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/unsubscribe`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailConfirmRawViaQuery(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .query({ token });
+}
+
+export async function parseRaw(
+  body: {
+    options?: Omit<ParseRequestInput, "file">;
+    file: {
+      content: Buffer | string;
+      filename: string;
+      contentType?: string;
+    };
+  },
+  identity: Identity,
+) {
+  const fileContent =
+    typeof body.file.content === "string"
+      ? Buffer.from(body.file.content)
+      : body.file.content;
+
+  const req = request(TEST_API_URL)
+    .post("/v2/parse")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .attach("file", fileContent, {
+      filename: body.file.filename,
+      contentType: body.file.contentType,
+    });
+
+  if (body.options !== undefined) {
+    req.field("options", JSON.stringify(body.options));
+  }
+
+  return await req;
+}
+
+export async function parse(
+  body: {
+    options?: Omit<ParseRequestInput, "file">;
+    file: {
+      content: Buffer | string;
+      filename: string;
+      contentType?: string;
+    };
+  },
+  identity: Identity,
+): Promise<Document> {
+  const raw = await parseRaw(body, identity);
+  expectScrapeToSucceed(raw);
+  return raw.body.data;
+}
+
+export async function parseWithFailure(
+  body: {
+    options?: Omit<ParseRequestInput, "file">;
+    file?: {
+      content: Buffer | string;
+      filename: string;
+      contentType?: string;
+    };
+    rawOptions?: string;
+  },
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  code?: string;
+}> {
+  const req = request(TEST_API_URL)
+    .post("/v2/parse")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+
+  if (body.file) {
+    const fileContent =
+      typeof body.file.content === "string"
+        ? Buffer.from(body.file.content)
+        : body.file.content;
+
+    req.attach("file", fileContent, {
+      filename: body.file.filename,
+      contentType: body.file.contentType,
+    });
+  }
+
+  if (body.rawOptions !== undefined) {
+    req.field("options", body.rawOptions);
+  } else if (body.options !== undefined) {
+    req.field("options", JSON.stringify(body.options));
+  }
+
+  const raw = await req;
+  expect(raw.statusCode).not.toBe(200);
+  expect(raw.body.success).toBe(false);
+  expect(typeof raw.body.error).toBe("string");
+  return raw.body;
+}
+
 export async function scrapeStatusRaw(jobId: string, identity: Identity) {
   return await request(TEST_API_URL)
     .get("/v2/scrape/" + encodeURIComponent(jobId))
@@ -127,6 +336,71 @@ export async function scrapeStopInteractiveBrowserRaw(
 ) {
   return await request(TEST_API_URL)
     .delete("/v2/scrape/" + encodeURIComponent(jobId) + "/interact")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+// =========================================
+// Interact (standalone browser sessions)
+// =========================================
+
+export async function browserCreateRaw(
+  body: {
+    ttl?: number;
+    activityTtl?: number;
+    recordSession?: boolean;
+    streamWebView?: boolean;
+    profile?: { name: string; saveChanges?: boolean };
+    location?: Record<string, unknown>;
+  },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/interact")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function browserExecuteRaw(
+  sessionId: string,
+  body: {
+    code: string;
+    language?: "python" | "node" | "bash";
+    timeout?: number;
+  },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/interact/" + encodeURIComponent(sessionId) + "/execute")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function browserDeleteRaw(sessionId: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete("/v2/interact/" + encodeURIComponent(sessionId))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+export async function browserReplayRaw(sessionId: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/interact/" + encodeURIComponent(sessionId) + "/replay")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+export async function browserReplayPageRaw(
+  sessionId: string,
+  pageId: string,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .get(
+      `/v2/interact/${encodeURIComponent(sessionId)}/replay/${encodeURIComponent(pageId)}`,
+    )
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
 }
@@ -230,7 +504,7 @@ export async function asyncCrawlWaitForFinish(
   return x.body;
 }
 
-async function crawlErrors(
+export async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {
@@ -385,7 +659,7 @@ export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
 // Search API
 // =========================================
 
-async function searchRaw(body: SearchRequestInput, identity: Identity) {
+export async function searchRaw(body: SearchRequestInput, identity: Identity) {
   return await request(TEST_API_URL)
     .post("/v2/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -401,6 +675,12 @@ function expectSearchToSucceed(
   expect(typeof response.body.data).toBe("object");
 }
 
+function expectSearchToFail(response: Awaited<ReturnType<typeof searchRaw>>) {
+  expect(response.statusCode).not.toBe(200);
+  expect(response.body.success).toBe(false);
+  expect(typeof response.body.error).toBe("string");
+}
+
 export async function search(
   body: SearchRequestInput,
   identity: Identity,
@@ -408,6 +688,168 @@ export async function search(
   const raw = await searchRaw(body, identity);
   expectSearchToSucceed(raw);
   return raw.body.data;
+}
+
+export async function searchWithFailure(
+  body: SearchRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchRaw(body, identity);
+  expectSearchToFail(raw);
+  return raw.body;
+}
+
+export async function researchRaw(
+  path: string,
+  query: Record<string, string | number | boolean | string[]> | undefined,
+  identity?: Identity,
+  headers?: Record<string, string>,
+) {
+  const req = request(TEST_API_URL)
+    .get(path)
+    .set("Content-Type", "application/json");
+  if (identity) {
+    req.set("Authorization", `Bearer ${identity.apiKey}`);
+  }
+  if (headers) {
+    for (const [key, value] of Object.entries(headers)) {
+      req.set(key, value);
+    }
+  }
+  return query ? req.query(query) : req;
+}
+
+export async function researchPostRaw(
+  path: string,
+  body: Record<string, unknown>,
+  identity?: Identity,
+) {
+  const req = request(TEST_API_URL)
+    .post(path)
+    .set("Content-Type", "application/json");
+  if (identity) {
+    req.set("Authorization", `Bearer ${identity.apiKey}`);
+  }
+  return req.send(body);
+}
+
+export async function searchRawFull(
+  body: SearchRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedbackRaw(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search/" + encodeURIComponent(searchId) + "/feedback")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedback(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  dailyCapReached?: boolean;
+  alreadySubmitted?: boolean;
+  warning?: string;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  if (raw.statusCode !== 200) {
+    console.warn(
+      "Search feedback did not succeed",
+      JSON.stringify(raw.body, null, 2),
+    );
+  }
+  expect(raw.statusCode).toBe(200);
+  expect(raw.body.success).toBe(true);
+  expect(typeof raw.body.feedbackId).toBe("string");
+  expect(typeof raw.body.creditsRefunded).toBe("number");
+  return raw.body;
+}
+
+export async function searchFeedbackWithFailure(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  expect(raw.statusCode).not.toBe(200);
+  expect(raw.body.success).toBe(false);
+  expect(typeof raw.body.error).toBe("string");
+  return raw.body;
+}
+
+// =========================================
+// Generic Feedback API
+// =========================================
+
+export async function endpointFeedbackRaw(
+  body: EndpointFeedbackRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/feedback")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function endpointFeedback(
+  body: EndpointFeedbackRequestInput,
+  identity: Identity,
+): Promise<Exclude<EndpointFeedbackResponse, ErrorResponse>> {
+  const raw = await endpointFeedbackRaw(body, identity);
+  if (raw.statusCode !== 200) {
+    console.warn(
+      "Endpoint feedback did not succeed",
+      JSON.stringify(raw.body, null, 2),
+    );
+  }
+  expect(raw.statusCode).toBe(200);
+  expect(raw.body.success).toBe(true);
+  expect(typeof raw.body.feedbackId).toBe("string");
+  expect(typeof raw.body.creditsRefunded).toBe("number");
+  return raw.body;
+}
+
+export async function endpointFeedbackWithFailure(
+  body: EndpointFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await endpointFeedbackRaw(body, identity);
+  expect(raw.statusCode).not.toBe(200);
+  expect(raw.body.success).toBe(false);
+  expect(typeof raw.body.error).toBe("string");
+  return raw.body;
 }
 
 // =========================================
@@ -427,6 +869,51 @@ export async function creditUsage(
   }
 
   return req.body.data;
+}
+
+export async function creditUsageHistorical(
+  identity: Identity,
+  options: { byApiKey?: boolean } = {},
+): Promise<{
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    apiKey?: string;
+    creditsUsed: number;
+  }[];
+}> {
+  const req = await request(TEST_API_URL)
+    .get("/v2/team/credit-usage/historical")
+    .query(options.byApiKey ? { byApiKey: "true" } : {})
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json");
+
+  if (req.status !== 200) {
+    throw req.body;
+  }
+
+  return req.body;
+}
+
+export async function tokenUsageHistorical(identity: Identity): Promise<{
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    tokensUsed: number;
+  }[];
+}> {
+  const req = await request(TEST_API_URL)
+    .get("/v2/team/token-usage/historical")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json");
+
+  if (req.status !== 200) {
+    throw req.body;
+  }
+
+  return req.body;
 }
 
 // =========================================

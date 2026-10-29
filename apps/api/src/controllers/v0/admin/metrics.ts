@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import { getRedisConnection } from "../../../services/queue-service";
-import { nuqGetLocalMetrics, scrapeQueue } from "../../../services/worker/nuq";
+import { getDbPoolMetrics } from "../../../db/connection";
+import { nuqFdbGetMetrics } from "../../../services/worker/nuq-fdb";
+import { nuqGetLocalMetrics } from "../../../services/worker/nuq";
+import { scrapeQueue } from "../../../services/worker/nuq-router";
 import { teamConcurrencySemaphore } from "../../../services/worker/team-semaphore";
 
 export async function metricsController(_: Request, res: Response) {
@@ -39,14 +42,15 @@ concurrency_limit_queue_job_count_total ${totalJobCount}
 # TYPE concurrency_limit_queue_team_count gauge
 concurrency_limit_queue_team_count ${teamCount}
 
-# HELP billed_teams_count The number of teams that have been billed but not yet tallied
-# TYPE billed_teams_count gauge
-billed_teams_count ${await getRedisConnection().scard("billed_teams")}
-
 ${nuqGetLocalMetrics()}
-${semaphoreMetrics}`);
+${semaphoreMetrics}
+${getDbPoolMetrics()}`);
 }
 
 export async function nuqMetricsController(_: Request, res: Response) {
   res.contentType("text/plain").send(await scrapeQueue.getMetrics());
+}
+
+export async function nuqFdbMetricsController(_: Request, res: Response) {
+  res.contentType("text/plain").send(await nuqFdbGetMetrics());
 }

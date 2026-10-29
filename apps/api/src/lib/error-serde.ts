@@ -1,5 +1,6 @@
 import {
   ActionsNotSupportedError,
+  ConcurrencyQueueTimeoutError,
   CrawlDenialError,
   ErrorCodes,
   MapFailedError,
@@ -9,6 +10,7 @@ import {
   SitemapError,
   TransportableError,
   UnknownError,
+  UnsupportedSiteError,
 } from "./error";
 import {
   ActionError,
@@ -16,6 +18,8 @@ import {
   UnsupportedFileError,
   PDFAntibotError,
   DocumentAntibotError,
+  PDFFetchProxyError,
+  DocumentFetchProxyError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
   NoEnginesLeftError,
@@ -23,18 +27,39 @@ import {
   PDFPrefetchFailed,
   DocumentPrefetchFailed,
   SiteError,
+  SiteRestrictionError,
   SSLError,
   ProxySelectionError,
   AgentIndexOnlyError,
   NoCachedDataError,
+  LockdownMissError,
   ScrapeJobCancelledError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   AudioUnsupportedUrlError,
+  VideoUnsupportedUrlError,
+  MediaAccessDeniedError,
+  PromptInjectionDetectedError,
+  JsonExtractionContentTooLargeError,
+  XTwitterConfigurationError,
+  ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
+import { UnsafeDomainBlockedError } from "./threat-protection/error";
+import {
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "./exchange";
 
 // TODO: figure out correct typing for this
 const errorMap: Record<ErrorCodes, any> = {
+  THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
+  THIRD_PARTY_DATA_NOT_FOUND: ExchangeRefusedError,
+  THIRD_PARTY_DATA_UNSUPPORTED_URL: ExchangeRefusedError,
+  THIRD_PARTY_DATA_UNSUPPORTED_OPTION: ThirdPartyDataUnsupportedOptionError,
+  THIRD_PARTY_DATA_NOT_ENABLED: ExchangeRefusedError,
+  THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: ExchangeRefusedError,
+  SAFE_MODE_BLOCKED: null,
+  SCRAPE_SITE_RESTRICTION_BLOCKED: SiteRestrictionError,
   SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
   MAP_TIMEOUT: MapTimeoutError,
   UNKNOWN_ERROR: UnknownError,
@@ -50,10 +75,13 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
   SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
   SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
+  SCRAPE_PDF_FETCH_PROXY_ERROR: PDFFetchProxyError,
   SCRAPE_PDF_OCR_REQUIRED: PDFOCRRequiredError,
   SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
+  SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: DocumentFetchProxyError,
   SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
   SCRAPE_NO_CACHED_DATA: NoCachedDataError,
+  SCRAPE_LOCKDOWN_CACHE_MISS: LockdownMissError,
   SCRAPE_ACTION_ERROR: ActionError,
   SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
   SCRAPE_BRANDING_NOT_SUPPORTED: BrandingNotSupportedError,
@@ -61,12 +89,37 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,
+  UNSUPPORTED_SITE: UnsupportedSiteError,
   SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
+  SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
+  SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
+  SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
+  SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
+  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   MAP_FAILED: MapFailedError,
+  CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
+  unsafe_domain_blocked: UnsafeDomainBlockedError,
 
   // Zod errors
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
+  INDEX_DAILY_LIMIT: null,
+  TOOL_DISCOVERY_UNAVAILABLE: null,
+  PARSE_UNSUPPORTED_OPTIONS: null,
+
+  // Agent thread rejections are API-level, never transported through workers.
+  thread_not_found: null,
+  thread_busy: null,
+  thread_expired: null,
+  threads_disabled: null,
+  exchange_not_enabled: null,
+
+  // Agent zero data retention rejections are API-level too.
+  zdr_threads_unsupported: null,
+  zdr_expired: null,
+  zdr_no_snapshots: null,
+  zdr_not_enabled: null,
+  zdr_retention_misconfigured: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {

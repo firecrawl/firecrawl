@@ -5,21 +5,23 @@ on:
   pull_request:
     types: [opened]
 
+permissions: {}
+
 jobs:
   quality-eval:
     if: |
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
-       (contains(github.event.comment.body, '#scrape-quality-eval') ||
-        contains(github.event.issue.title, '#scrape-quality-eval'))) ||
+       contains(github.event.comment.body, '#scrape-quality-eval')) ||
       (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
        (contains(github.event.pull_request.body, '#scrape-quality-eval') ||
         contains(github.event.pull_request.title, '#scrape-quality-eval')))
     runs-on: ubuntu-latest
     steps:
       - name: Check org membership
         id: check-member
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
@@ -35,36 +37,36 @@ jobs:
 
       - name: Dispatch quality eval
         if: steps.check-member.outputs.result == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
-            let prNumber, prBranch, commitSha, headRepo;
-            if (context.eventName === 'pull_request') {
-              prNumber = context.payload.pull_request.number;
-              prBranch = context.payload.pull_request.head.ref;
-              commitSha = context.payload.pull_request.head.sha;
-              headRepo = context.payload.pull_request.head.repo.full_name;
-            } else {
-              const pr = await github.rest.pulls.get({
+            let pr = context.payload.pull_request;
+            if (context.eventName !== 'pull_request') {
+              ({ data: pr } = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
-              });
-              prNumber = pr.data.number;
-              prBranch = pr.data.head.ref;
-              commitSha = pr.data.head.sha;
-              headRepo = pr.data.head.repo.full_name;
+              }));
+            }
+            const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
+            if (pr.head.repo?.full_name !== thisRepo) {
+              core.setFailed('Evals only run for branches in this repository.');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,254}$/.test(pr.head.ref) || !/^[0-9a-f]{40}$/.test(pr.head.sha)) {
+              core.setFailed('Unsupported branch name or commit SHA.');
+              return;
             }
             await github.rest.repos.createDispatchEvent({
               owner: 'firecrawl',
               repo: 'scrape-evals',
               event_type: 'firecrawl-pr-eval',
               client_payload: {
-                pr_number: prNumber,
-                pr_branch: prBranch,
-                commit_sha: commitSha,
-                repo: headRepo,
+                pr_number: pr.number,
+                pr_branch: pr.head.ref,
+                commit_sha: pr.head.sha,
+                repo: thisRepo,
               },
             });
 
@@ -72,16 +74,16 @@ jobs:
     if: |
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
-       (contains(github.event.comment.body, '#scrape-ocr-eval') ||
-        contains(github.event.issue.title, '#scrape-ocr-eval'))) ||
+       contains(github.event.comment.body, '#scrape-ocr-eval')) ||
       (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
        (contains(github.event.pull_request.body, '#scrape-ocr-eval') ||
         contains(github.event.pull_request.title, '#scrape-ocr-eval')))
     runs-on: ubuntu-latest
     steps:
       - name: Check org membership
         id: check-member
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
@@ -97,35 +99,35 @@ jobs:
 
       - name: Dispatch OCR eval
         if: steps.check-member.outputs.result == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
-            let prNumber, prBranch, commitSha, headRepo;
-            if (context.eventName === 'pull_request') {
-              prNumber = context.payload.pull_request.number;
-              prBranch = context.payload.pull_request.head.ref;
-              commitSha = context.payload.pull_request.head.sha;
-              headRepo = context.payload.pull_request.head.repo.full_name;
-            } else {
-              const pr = await github.rest.pulls.get({
+            let pr = context.payload.pull_request;
+            if (context.eventName !== 'pull_request') {
+              ({ data: pr } = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
-              });
-              prNumber = pr.data.number;
-              prBranch = pr.data.head.ref;
-              commitSha = pr.data.head.sha;
-              headRepo = pr.data.head.repo.full_name;
+              }));
+            }
+            const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
+            if (pr.head.repo?.full_name !== thisRepo) {
+              core.setFailed('Evals only run for branches in this repository.');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,254}$/.test(pr.head.ref) || !/^[0-9a-f]{40}$/.test(pr.head.sha)) {
+              core.setFailed('Unsupported branch name or commit SHA.');
+              return;
             }
             await github.rest.repos.createDispatchEvent({
               owner: 'firecrawl',
               repo: 'scrape-evals',
               event_type: 'firecrawl-ocr-eval',
               client_payload: {
-                pr_number: prNumber,
-                pr_branch: prBranch,
-                commit_sha: commitSha,
-                repo: headRepo,
+                pr_number: pr.number,
+                pr_branch: pr.head.ref,
+                commit_sha: pr.head.sha,
+                repo: thisRepo,
               },
             });

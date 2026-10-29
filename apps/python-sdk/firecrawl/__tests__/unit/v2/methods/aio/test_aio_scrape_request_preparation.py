@@ -67,6 +67,7 @@ class TestAsyncScrapeRequestPreparation:
             proxy="basic",
             max_age=1000,
             store_in_cache=False,
+            lockdown=True,
         )
         payload = await _prepare_scrape_request("https://example.com", opts)
         assert payload["url"] == "https://example.com"
@@ -85,6 +86,7 @@ class TestAsyncScrapeRequestPreparation:
         assert payload["proxy"] == "basic"
         assert payload["maxAge"] == 1000
         assert payload["storeInCache"] is False
+        assert payload["lockdown"] is True
 
     @pytest.mark.asyncio
     async def test_interact_request_and_response_normalization(self):
@@ -125,6 +127,7 @@ class TestAsyncScrapeRequestPreparation:
                 {
                     "success": True,
                     "output": "Clicked the button",
+                    "cdpUrl": "wss://browser.example.com/cdp",
                     "liveViewUrl": "https://live.example.com/view",
                     "interactiveLiveViewUrl": "https://live.example.com/interactive",
                     "stdout": "",
@@ -146,6 +149,7 @@ class TestAsyncScrapeRequestPreparation:
         }
         assert response.success is True
         assert response.output == "Clicked the button"
+        assert response.cdp_url == "wss://browser.example.com/cdp"
         assert response.live_view_url == "https://live.example.com/view"
         assert response.interactive_live_view_url == "https://live.example.com/interactive"
 

@@ -1,0 +1,1104 @@
+package firecrawl
+
+import "encoding/json"
+
+// Document represents a scraped web page.
+type Document struct {
+	Markdown       string                   `json:"markdown,omitempty"`
+	HTML           string                   `json:"html,omitempty"`
+	RawHTML        string                   `json:"rawHtml,omitempty"`
+	JSON           interface{}              `json:"json,omitempty"`
+	Summary        string                   `json:"summary,omitempty"`
+	Metadata       map[string]interface{}   `json:"metadata,omitempty"`
+	Links          []string                 `json:"links,omitempty"`
+	Images         []string                 `json:"images,omitempty"`
+	Screenshot     string                   `json:"screenshot,omitempty"`
+	Audio          string                   `json:"audio,omitempty"`
+	Video          string                   `json:"video,omitempty"`
+	Attributes     []map[string]interface{} `json:"attributes,omitempty"`
+	Actions        map[string]interface{}   `json:"actions,omitempty"`
+	Answer         string                   `json:"answer,omitempty"`
+	Highlights     string                   `json:"highlights,omitempty"`
+	Warning        string                   `json:"warning,omitempty"`
+	ChangeTracking map[string]interface{}   `json:"changeTracking,omitempty"`
+	Branding       map[string]interface{}   `json:"branding,omitempty"`
+	Product        *ProductProfile          `json:"product,omitempty"`
+	Menu           *MenuProfile             `json:"menu,omitempty"`
+	// Pages is per-page PDF markdown, present only when parsers[].pages is true.
+	Pages []PdfPage `json:"pages,omitempty"`
+	// Blocks is typed PDF layout data, present only when parsers[].blocks is true.
+	Blocks []PdfPageBlocks `json:"blocks,omitempty"`
+	// Tools contains domain tools discovered during the scrape, present only
+	// when domainTools is enabled.
+	Tools []DiscoveredTool `json:"tools,omitempty"`
+}
+
+// PDFParser configures PDF parsing. Use in ScrapeOptions.Parsers / ParseOptions.Parsers.
+type PDFParser struct {
+	Type     string `json:"type"`
+	Mode     string `json:"mode,omitempty"`
+	MaxPages *int   `json:"maxPages,omitempty"`
+	Pages    *bool  `json:"pages,omitempty"`
+	Blocks   *bool  `json:"blocks,omitempty"`
+	// PageMarkers joins PDF pages in document.markdown with
+	// `\n\n---\n\n<!-- page N -->\n\n`. Markers appear between pages only;
+	// numbering may skip pages merged by cross-page stitching — use Pages
+	// when every physical page is needed. No new response field.
+	PageMarkers *bool `json:"pageMarkers,omitempty"`
+}
+
+// PdfPage is physical markdown for a single PDF page.
+type PdfPage struct {
+	PageNumber int    `json:"pageNumber"`
+	Markdown   string `json:"markdown"`
+}
+
+// PdfBlockConfidence is layout and OCR confidence for a PDF block.
+type PdfBlockConfidence struct {
+	Layout *float64 `json:"layout"`
+	OCR    *float64 `json:"ocr"`
+}
+
+// PdfBlockItem is a typed PDF layout block.
+type PdfBlockItem struct {
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	Label        *string            `json:"label"`
+	BBox         []float64          `json:"bbox"`
+	Content      string             `json:"content"`
+	MarkdownSpan []int              `json:"markdownSpan"`
+	ReadingOrder int                `json:"readingOrder"`
+	Source       *string            `json:"source"`
+	Confidence   PdfBlockConfidence `json:"confidence"`
+}
+
+// PdfPageBlocks is the typed layout for a single PDF page.
+type PdfPageBlocks struct {
+	PageNumber int            `json:"pageNumber"`
+	Width      *float64       `json:"width"`
+	Height     *float64       `json:"height"`
+	Status     string         `json:"status"`
+	Items      []PdfBlockItem `json:"items"`
+}
+
+// ProductProfile represents structured product data extracted from a page
+// via the `product` scrape format.
+type ProductProfile struct {
+	Title       string           `json:"title"`
+	Brand       string           `json:"brand,omitempty"`
+	Category    string           `json:"category,omitempty"`
+	URL         string           `json:"url"`
+	Description string           `json:"description,omitempty"`
+	Variants    []ProductVariant `json:"variants,omitempty"`
+}
+
+// ProductImage is a single product image.
+type ProductImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// ProductPrice represents a price for a product or variant.
+type ProductPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// ProductAvailability represents stock availability for a product or variant.
+type ProductAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// ProductSale represents sale information for a product variant.
+type ProductSale struct {
+	OriginalPrice ProductPrice `json:"originalPrice"`
+}
+
+// ProductVariant represents a single purchasable variant of a product.
+type ProductVariant struct {
+	ID           string              `json:"id,omitempty"`
+	SKU          string              `json:"sku,omitempty"`
+	Title        string              `json:"title,omitempty"`
+	Values       map[string]any      `json:"values,omitempty"`
+	Price        *ProductPrice       `json:"price,omitempty"`
+	Sale         *ProductSale        `json:"sale,omitempty"`
+	Availability ProductAvailability `json:"availability"`
+	Images       []ProductImage      `json:"images,omitempty"`
+}
+
+// MenuProfile represents structured menu data extracted from a page
+// via the `menu` scrape format.
+type MenuProfile struct {
+	IsMenu     bool          `json:"isMenu"`
+	Confidence float64       `json:"confidence"`
+	Merchant   MenuMerchant  `json:"merchant"`
+	Currency   string        `json:"currency,omitempty"`
+	Sections   []MenuSection `json:"sections,omitempty"`
+	SourceURL  string        `json:"sourceUrl"`
+}
+
+// MenuMerchant represents the merchant a menu belongs to.
+type MenuMerchant struct {
+	Name     string      `json:"name"`
+	Type     string      `json:"type,omitempty"`
+	Location interface{} `json:"location,omitempty"`
+}
+
+// MenuSection represents an ordered grouping of menu items.
+type MenuSection struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Items       []MenuItem `json:"items,omitempty"`
+}
+
+// MenuItem represents a single item on a menu.
+type MenuItem struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	Images       []MenuImage         `json:"images,omitempty"`
+	Price        *MenuPrice          `json:"price,omitempty"`
+	Availability MenuAvailability    `json:"availability"`
+	Dietary      []string            `json:"dietary,omitempty"`
+	Calories     *float64            `json:"calories,omitempty"`
+	OptionGroups []interface{}       `json:"optionGroups,omitempty"`
+	Identifiers  MenuItemIdentifiers `json:"identifiers"`
+	URL          string              `json:"url,omitempty"`
+	SourceURL    string              `json:"sourceUrl"`
+}
+
+// MenuImage is a single menu item image.
+type MenuImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// MenuPrice represents a price for a menu item.
+type MenuPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// MenuAvailability represents stock availability for a menu item.
+type MenuAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// MenuItemIdentifiers holds merchant-specific identifiers for a menu item.
+type MenuItemIdentifiers struct {
+	MerchantItemID string `json:"merchantItemId,omitempty"`
+}
+
+// PaperResult represents a ranked research paper result.
+type PaperResult struct {
+	PaperID   string                 `json:"paperId"`
+	PrimaryID string                 `json:"primaryId,omitempty"`
+	IDs       map[string]interface{} `json:"ids,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	Abstract  string                 `json:"abstract,omitempty"`
+	Score     *float64               `json:"score,omitempty"`
+	Year      *int                   `json:"year,omitempty"`
+	Authors   []string               `json:"authors,omitempty"`
+	Venue     string                 `json:"venue,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	Signals   map[string]interface{} `json:"signals,omitempty"`
+}
+
+// PaperMetadata represents paper metadata returned by inspect/read endpoints.
+type PaperMetadata struct {
+	PaperID     string                 `json:"paperId,omitempty"`
+	IDs         map[string]interface{} `json:"ids,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Abstract    string                 `json:"abstract,omitempty"`
+	Authors     string                 `json:"authors,omitempty"`
+	Categories  []string               `json:"categories,omitempty"`
+	CreatedDate string                 `json:"createdDate,omitempty"`
+	UpdateDate  string                 `json:"updateDate,omitempty"`
+}
+
+// Passage is a relevant paper passage.
+type Passage struct {
+	Text     string                 `json:"text,omitempty"`
+	Section  string                 `json:"section,omitempty"`
+	Page     *int                   `json:"page,omitempty"`
+	Score    *float64               `json:"score,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// SearchPapersResponse is returned by SearchPapers.
+type SearchPapersResponse struct {
+	Success bool          `json:"success"`
+	Results []PaperResult `json:"results"`
+}
+
+// PaperMetadataResponse is returned by InspectPaper.
+type PaperMetadataResponse struct {
+	Success bool          `json:"success"`
+	Paper   PaperMetadata `json:"paper"`
+}
+
+// ReadPaperResponse is returned by ReadPaper.
+type ReadPaperResponse struct {
+	Success  bool          `json:"success"`
+	Paper    PaperMetadata `json:"paper"`
+	PaperID  string        `json:"paperId,omitempty"`
+	Query    string        `json:"query,omitempty"`
+	Passages []Passage     `json:"passages,omitempty"`
+}
+
+// SimilarPapersResponse is returned by RelatedPapers.
+type SimilarPapersResponse struct {
+	Success   bool          `json:"success"`
+	Results   []PaperResult `json:"results"`
+	PoolSize  *int          `json:"poolSize,omitempty"`
+	Truncated bool          `json:"truncated"`
+	Note      *string       `json:"note,omitempty"`
+}
+
+// GitHubSearchItem represents a GitHub research search result.
+type GitHubSearchItem struct {
+	ResultType   string                 `json:"resultType,omitempty"`
+	Repo         string                 `json:"repo,omitempty"`
+	URL          string                 `json:"url,omitempty"`
+	PageType     string                 `json:"pageType,omitempty"`
+	Number       *int                   `json:"number,omitempty"`
+	SegmentCount *int                   `json:"segmentCount,omitempty"`
+	ReadmeURL    string                 `json:"readmeUrl,omitempty"`
+	Title        string                 `json:"title,omitempty"`
+	Snippet      string                 `json:"snippet,omitempty"`
+	ContentMD    string                 `json:"contentMd,omitempty"`
+	Scores       map[string]interface{} `json:"scores,omitempty"`
+}
+
+// GitHubSearchResponse is returned by SearchGitHub.
+type GitHubSearchResponse struct {
+	Success bool               `json:"success"`
+	Results []GitHubSearchItem `json:"results"`
+}
+
+// Research options for search-like endpoints.
+type SearchPapersOptions struct {
+	K          *int     `json:"k,omitempty"`
+	Authors    []string `json:"authors,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         string   `json:"to,omitempty"`
+}
+
+// ReadPaperOptions configures ReadPaper.
+type ReadPaperOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
+// RelatedPapersOptions configures RelatedPapers.
+type RelatedPapersOptions struct {
+	Mode   string   `json:"mode,omitempty"`
+	K      *int     `json:"k,omitempty"`
+	Rerank *bool    `json:"rerank,omitempty"`
+	Anchor []string `json:"anchor,omitempty"`
+}
+
+// SearchGitHubOptions configures SearchGitHub.
+type SearchGitHubOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
+// DeveloperSearchOptions configures DeveloperSearch.
+type DeveloperSearchOptions struct {
+	// K is the total number of ranked results, 1 to 100 (default 10).
+	K *int `json:"k,omitempty"`
+	// Passages is the number of passages per result, 1 to 5 (default 1).
+	Passages *int `json:"passages,omitempty"`
+	// Types limits result kinds: "doc", "issue", "pull_request", "readme".
+	Types []string `json:"types,omitempty"`
+	// Repos filters by GitHub owner/name, at most 20.
+	Repos []string `json:"repos,omitempty"`
+	// Sources filters by developer documentation source ID, at most 20.
+	Sources []string `json:"sources,omitempty"`
+	// Language is one case-insensitive GitHub Linguist primary language.
+	Language string `json:"language,omitempty"`
+	// Topic lists repository topics that must all match, at most 8.
+	Topic []string `json:"topic,omitempty"`
+	// License is one case-insensitive SPDX repository license identifier.
+	License  string `json:"license,omitempty"`
+	MinStars *int   `json:"min_stars,omitempty"`
+	MaxStars *int   `json:"max_stars,omitempty"`
+	Archived *bool  `json:"archived,omitempty"`
+	Fork     *bool  `json:"fork,omitempty"`
+	// Skills set to "only" returns packaged agent-skill evidence only.
+	Skills string `json:"skills,omitempty"`
+}
+
+// DeveloperSearchPassage is one matched passage of a developer search result.
+type DeveloperSearchPassage struct {
+	Text        string `json:"text"`
+	CitationURL string `json:"citation_url,omitempty"`
+}
+
+// DeveloperSearchResult is one ranked developer search result. License is
+// either an SPDX string or a disclosure object, so it is kept raw.
+type DeveloperSearchResult struct {
+	ID       string                   `json:"id"`
+	URL      string                   `json:"url"`
+	Title    string                   `json:"title,omitempty"`
+	Passages []DeveloperSearchPassage `json:"passages"`
+	License  json.RawMessage          `json:"license,omitempty"`
+}
+
+// DeveloperSearchRepoStatus reports whether a requested repository is indexed.
+type DeveloperSearchRepoStatus struct {
+	Repo    string `json:"repo"`
+	Indexed bool   `json:"indexed"`
+	Types   struct {
+		Issue       bool `json:"issue"`
+		PullRequest bool `json:"pullRequest"`
+		Readme      bool `json:"readme"`
+	} `json:"types"`
+}
+
+// DeveloperSearchSourceStatus reports whether a requested source is indexed.
+type DeveloperSearchSourceStatus struct {
+	Source  string `json:"source"`
+	Indexed bool   `json:"indexed"`
+}
+
+// DeveloperSearchResponse is returned by DeveloperSearch. Repos and Sources
+// are present only when those filters were requested.
+type DeveloperSearchResponse struct {
+	Success bool                          `json:"success"`
+	Results []DeveloperSearchResult       `json:"results"`
+	Repos   []DeveloperSearchRepoStatus   `json:"repos,omitempty"`
+	Sources []DeveloperSearchSourceStatus `json:"sources,omitempty"`
+}
+
+// CrawlResponse is returned when starting an async crawl.
+type CrawlResponse struct {
+	ID  string `json:"id"`
+	URL string `json:"url,omitempty"`
+}
+
+// CrawlJob represents the status and results of a crawl job.
+type CrawlJob struct {
+	ID          string     `json:"id,omitempty"`
+	Status      string     `json:"status"`
+	Total       int        `json:"total"`
+	Completed   int        `json:"completed"`
+	CreditsUsed *int       `json:"creditsUsed,omitempty"`
+	ExpiresAt   string     `json:"expiresAt,omitempty"`
+	Next        string     `json:"next,omitempty"`
+	Data        []Document `json:"data,omitempty"`
+}
+
+// IsDone returns true if the crawl job has finished (completed, failed, or cancelled).
+func (c *CrawlJob) IsDone() bool {
+	return c.Status == "completed" || c.Status == "failed" || c.Status == "cancelled"
+}
+
+// BatchScrapeResponse is returned when starting an async batch scrape.
+type BatchScrapeResponse struct {
+	ID          string   `json:"id"`
+	URL         string   `json:"url,omitempty"`
+	InvalidURLs []string `json:"invalidURLs,omitempty"`
+}
+
+// BatchScrapeJob represents the status and results of a batch scrape job.
+type BatchScrapeJob struct {
+	ID          string     `json:"id,omitempty"`
+	Status      string     `json:"status"`
+	Total       int        `json:"total"`
+	Completed   int        `json:"completed"`
+	CreditsUsed *int       `json:"creditsUsed,omitempty"`
+	ExpiresAt   string     `json:"expiresAt,omitempty"`
+	Next        string     `json:"next,omitempty"`
+	Data        []Document `json:"data,omitempty"`
+}
+
+// IsDone returns true if the batch scrape job has finished.
+func (b *BatchScrapeJob) IsDone() bool {
+	return b.Status == "completed" || b.Status == "failed" || b.Status == "cancelled"
+}
+
+// LinkResult represents a discovered URL from a map request.
+// The API may return links as plain strings or as objects with url/title/description.
+type LinkResult struct {
+	URL         string `json:"url,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// UnmarshalJSON handles both string and object link elements from the API.
+func (l *LinkResult) UnmarshalJSON(data []byte) error {
+	// Try as a plain string first.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		l.URL = s
+		return nil
+	}
+
+	// Otherwise unmarshal as an object.
+	type linkAlias LinkResult
+	var alias linkAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*l = LinkResult(alias)
+	return nil
+}
+
+// MapData represents the result of a map (URL discovery) request.
+type MapData struct {
+	Links []LinkResult `json:"links,omitempty"`
+}
+
+// MonitorSchedule configures when a monitor runs.
+type MonitorSchedule struct {
+	Cron     string `json:"cron"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
+// MonitorSearchTarget is a search monitor target. It is one variant of the
+// monitor target union (alongside scrape and crawl targets) used in the
+// Targets field of monitor requests and the Monitor struct.
+type MonitorSearchTarget struct {
+	ID             string   `json:"id,omitempty"`
+	Type           string   `json:"type"`
+	Queries        []string `json:"queries"`
+	SearchWindow   string   `json:"searchWindow,omitempty"`
+	IncludeDomains []string `json:"includeDomains,omitempty"`
+	ExcludeDomains []string `json:"excludeDomains,omitempty"`
+	MaxResults     *int     `json:"maxResults,omitempty"`
+}
+
+// MonitorSearchTargetResult is the per-target result for a search target on a
+// monitor check. It is one variant of the monitor target-result union
+// (alongside scrape and crawl results) found in a check's TargetResults.
+type MonitorSearchTargetResult struct {
+	TargetID        string   `json:"targetId"`
+	Type            string   `json:"type"`
+	SearchCompleted *bool    `json:"searchCompleted,omitempty"`
+	ResultCount     *int     `json:"resultCount,omitempty"`
+	Matches         *int     `json:"matches,omitempty"`
+	Summary         string   `json:"summary,omitempty"`
+	JudgeDegraded   *bool    `json:"judgeDegraded,omitempty"`
+	DegradedReason  *string  `json:"degradedReason,omitempty"`
+	SearchCredits   *float64 `json:"searchCredits,omitempty"`
+	JudgeCredits    *float64 `json:"judgeCredits,omitempty"`
+	ResultsJudged   *int     `json:"resultsJudged,omitempty"`
+}
+
+// MonitorCreateRequest creates a scheduled monitor.
+//
+// Goal is an optional natural-language description of what the monitor is
+// watching for (max 2000 chars). When set with JudgeEnabled left nil, the
+// API auto-enables judging for this monitor.
+type MonitorCreateRequest struct {
+	Name          string                   `json:"name"`
+	Schedule      MonitorSchedule          `json:"schedule"`
+	Targets       []map[string]interface{} `json:"targets"`
+	Webhook       map[string]interface{}   `json:"webhook,omitempty"`
+	Notification  map[string]interface{}   `json:"notification,omitempty"`
+	RetentionDays *int                     `json:"retentionDays,omitempty"`
+	Goal          *string                  `json:"goal,omitempty"`
+	JudgeEnabled  *bool                    `json:"judgeEnabled,omitempty"`
+}
+
+// MonitorUpdateRequest updates a scheduled monitor.
+//
+// Goal and JudgeEnabled follow the same semantics as MonitorCreateRequest;
+// leave them nil to keep the existing values.
+type MonitorUpdateRequest struct {
+	Name          string                   `json:"name,omitempty"`
+	Status        string                   `json:"status,omitempty"`
+	Schedule      *MonitorSchedule         `json:"schedule,omitempty"`
+	Targets       []map[string]interface{} `json:"targets,omitempty"`
+	Webhook       map[string]interface{}   `json:"webhook,omitempty"`
+	Notification  map[string]interface{}   `json:"notification,omitempty"`
+	RetentionDays *int                     `json:"retentionDays,omitempty"`
+	Goal          *string                  `json:"goal,omitempty"`
+	JudgeEnabled  *bool                    `json:"judgeEnabled,omitempty"`
+}
+
+// Monitor represents a scheduled monitor.
+type Monitor struct {
+	ID                       string                   `json:"id"`
+	Name                     string                   `json:"name"`
+	Status                   string                   `json:"status"`
+	Schedule                 MonitorSchedule          `json:"schedule"`
+	NextRunAt                string                   `json:"nextRunAt,omitempty"`
+	LastRunAt                string                   `json:"lastRunAt,omitempty"`
+	CurrentCheckID           string                   `json:"currentCheckId,omitempty"`
+	Targets                  []map[string]interface{} `json:"targets,omitempty"`
+	Webhook                  map[string]interface{}   `json:"webhook,omitempty"`
+	Notification             map[string]interface{}   `json:"notification,omitempty"`
+	RetentionDays            int                      `json:"retentionDays"`
+	EstimatedCreditsPerMonth *int                     `json:"estimatedCreditsPerMonth,omitempty"`
+	LastCheckSummary         *MonitorSummary          `json:"lastCheckSummary,omitempty"`
+	Goal                     *string                  `json:"goal,omitempty"`
+	JudgeEnabled             bool                     `json:"judgeEnabled"`
+	CreatedAt                string                   `json:"createdAt,omitempty"`
+	UpdatedAt                string                   `json:"updatedAt,omitempty"`
+}
+
+// MonitorSummary summarizes page statuses in a check.
+type MonitorSummary struct {
+	TotalPages int `json:"totalPages"`
+	Same       int `json:"same"`
+	Changed    int `json:"changed"`
+	New        int `json:"new"`
+	Removed    int `json:"removed"`
+	Error      int `json:"error"`
+}
+
+// MonitorCheck represents a single monitor run.
+type MonitorCheck struct {
+	ID                 string         `json:"id"`
+	MonitorID          string         `json:"monitorId"`
+	Status             string         `json:"status"`
+	Trigger            string         `json:"trigger"`
+	ScheduledFor       string         `json:"scheduledFor,omitempty"`
+	StartedAt          string         `json:"startedAt,omitempty"`
+	FinishedAt         string         `json:"finishedAt,omitempty"`
+	EstimatedCredits   *int           `json:"estimatedCredits,omitempty"`
+	ReservedCredits    *int           `json:"reservedCredits,omitempty"`
+	ActualCredits      *int           `json:"actualCredits,omitempty"`
+	BillingStatus      string         `json:"billingStatus,omitempty"`
+	Summary            MonitorSummary `json:"summary"`
+	TargetResults      interface{}    `json:"targetResults,omitempty"`
+	NotificationStatus interface{}    `json:"notificationStatus,omitempty"`
+	Error              string         `json:"error,omitempty"`
+	CreatedAt          string         `json:"createdAt,omitempty"`
+	UpdatedAt          string         `json:"updatedAt,omitempty"`
+}
+
+// MonitorJsonFieldDiff is a single field-level diff returned for monitors
+// that requested JSON extraction. Keys are field paths in the extracted
+// JSON; values describe what changed between the previous and current run.
+type MonitorJsonFieldDiff struct {
+	Previous interface{} `json:"previous"`
+	Current  interface{} `json:"current"`
+}
+
+// MonitorPageDiff is the diff payload returned alongside a monitor page
+// when its scrape produced a change. The shape depends on what the
+// monitor's formats asked for:
+//
+//   - markdown-only monitors  → Text holds the unified diff and JSON
+//     holds the parseDiff AST (a {"files": [...]} object).
+//   - JSON-extraction monitors → JSON holds the per-field
+//     map[string]MonitorJsonFieldDiff and Text is empty.
+//   - mixed (JSON + git-diff) monitors → both fields are populated:
+//     JSON is the per-field diff and Text is the markdown sidecar.
+//
+// JSON is left as interface{} so callers can decode into either of the
+// two possible shapes; use json.Unmarshal with a concrete target when
+// the monitor's mode is known.
+type MonitorPageDiff struct {
+	Text string      `json:"text,omitempty"`
+	JSON interface{} `json:"json,omitempty"`
+}
+
+// MonitorPageSnapshot is the snapshot of the current JSON extraction at
+// this run. It is present on JSON and mixed-mode monitors and absent
+// for markdown-only monitors.
+type MonitorPageSnapshot struct {
+	JSON map[string]interface{} `json:"json,omitempty"`
+}
+
+// MonitorMeaningfulChange is a single goal-relevant change selected by the
+// monitor judge.
+type MonitorMeaningfulChange struct {
+	Type   string  `json:"type"`
+	Before *string `json:"before"`
+	After  *string `json:"after"`
+	Reason string  `json:"reason"`
+}
+
+// MonitorPageJudgment is the judge's verdict on whether a page change is
+// meaningful. Populated on monitor check pages when the monitor has a
+// goal set and judging is enabled.
+type MonitorPageJudgment struct {
+	Meaningful        bool                      `json:"meaningful"`
+	Confidence        string                    `json:"confidence"`
+	Reason            string                    `json:"reason"`
+	MeaningfulChanges []MonitorMeaningfulChange `json:"meaningfulChanges"`
+}
+
+// MonitorCheckPage is a single page result in a monitor check.
+type MonitorCheckPage struct {
+	ID               string               `json:"id"`
+	TargetID         string               `json:"targetId"`
+	URL              string               `json:"url"`
+	Status           string               `json:"status"`
+	PreviousScrapeID string               `json:"previousScrapeId,omitempty"`
+	CurrentScrapeID  string               `json:"currentScrapeId,omitempty"`
+	StatusCode       *int                 `json:"statusCode,omitempty"`
+	Error            string               `json:"error,omitempty"`
+	Metadata         interface{}          `json:"metadata,omitempty"`
+	Diff             *MonitorPageDiff     `json:"diff,omitempty"`
+	Snapshot         *MonitorPageSnapshot `json:"snapshot,omitempty"`
+	Judgment         *MonitorPageJudgment `json:"judgment,omitempty"`
+	CreatedAt        string               `json:"createdAt,omitempty"`
+}
+
+// MonitorCheckDetail includes paginated page results and inline diffs.
+type MonitorCheckDetail struct {
+	MonitorCheck
+	Pages []MonitorCheckPage `json:"pages,omitempty"`
+	Next  string             `json:"next,omitempty"`
+}
+
+// ListMonitorsOptions controls monitor list pagination.
+type ListMonitorsOptions struct {
+	Limit  *int
+	Offset *int
+}
+
+// ListMonitorChecksOptions controls monitor check pagination/filtering.
+type ListMonitorChecksOptions struct {
+	Limit  *int
+	Offset *int
+	Status string
+}
+
+// GetMonitorCheckOptions controls monitor check page pagination/filtering.
+type GetMonitorCheckOptions struct {
+	Limit        *int
+	Skip         *int
+	Status       string
+	AutoPaginate *bool
+}
+
+// SearchData represents the result of a search request.
+type SearchData struct {
+	Warning string                   `json:"warning,omitempty"`
+	Web     []map[string]interface{} `json:"web,omitempty"`
+	News    []map[string]interface{} `json:"news,omitempty"`
+	Images  []map[string]interface{} `json:"images,omitempty"`
+	Tools   []DiscoveredTool         `json:"tools,omitempty"`
+}
+
+type AlexandriaCall struct {
+	Provider   string                 `json:"provider"`
+	Capability string                 `json:"capability"`
+	Options    map[string]interface{} `json:"options,omitempty"`
+}
+
+type AlexandriaOptions struct {
+	RequestID   string  `json:"-"`
+	Timeout     *int    `json:"timeout,omitempty"`
+	Integration *string `json:"integration,omitempty"`
+	Origin      *string `json:"origin,omitempty"`
+}
+
+type AlexandriaScrapeError struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Status   *int   `json:"status,omitempty"`
+	ChargeID string `json:"chargeId,omitempty"`
+}
+
+type AlexandriaScrapeResult struct {
+	Provider       string                 `json:"provider,omitempty"`
+	Capability     string                 `json:"capability,omitempty"`
+	CreditsCost    *int                   `json:"creditsCost,omitempty"`
+	Data           interface{}            `json:"data,omitempty"`
+	Records        *int                   `json:"records,omitempty"`
+	UpstreamStatus *int                   `json:"upstreamStatus,omitempty"`
+	RecordedAt     string                 `json:"recordedAt,omitempty"`
+	Error          *AlexandriaScrapeError `json:"error,omitempty"`
+}
+
+func (r *AlexandriaScrapeResult) Failed() bool {
+	return r.Error != nil
+}
+
+type AlexandriaScrapeData struct {
+	RequestID   string                   `json:"requestId"`
+	ScrapeID    string                   `json:"scrapeId"`
+	Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
+	CreditsCost int                      `json:"creditsCost"`
+}
+
+// AgentResponse is returned when starting an async agent task.
+type AgentResponse struct {
+	Success bool   `json:"success"`
+	ID      string `json:"id,omitempty"`
+	Error   string `json:"error,omitempty"`
+	// ThreadID is the thread this run belongs to. Pass it back in
+	// AgentOptions.ThreadID to continue the conversation.
+	ThreadID string `json:"threadId,omitempty"`
+	// ThreadTurn is the 1-based position of this run in its thread.
+	ThreadTurn int `json:"threadTurn,omitempty"`
+}
+
+// AgentStatusResponse represents the status and results of an agent task.
+type AgentStatusResponse struct {
+	Success     bool        `json:"success"`
+	Status      string      `json:"status"`
+	Error       string      `json:"error,omitempty"`
+	Data        interface{} `json:"data,omitempty"`
+	Model       string      `json:"model,omitempty"`
+	Effort      string      `json:"effort,omitempty"`
+	ExpiresAt   string      `json:"expiresAt,omitempty"`
+	CreditsUsed *int        `json:"creditsUsed,omitempty"`
+	ThreadID    string      `json:"threadId,omitempty"`
+	ThreadTurn  int         `json:"threadTurn,omitempty"`
+	Mode        string      `json:"mode,omitempty"`
+	// Message is the text reply. Chat-mode runs answer here instead of in Data.
+	Message         string                `json:"message,omitempty"`
+	Suggestions     []AgentSuggestion     `json:"suggestions,omitempty"`
+	PendingApproval *AgentPendingApproval `json:"pendingApproval,omitempty"`
+	Exchange        *AgentExchangeSummary `json:"exchange,omitempty"`
+}
+
+// IsDone returns true if the agent task has finished.
+func (a *AgentStatusResponse) IsDone() bool {
+	return a.Status == "completed" || a.Status == "failed" || a.Status == "cancelled"
+}
+
+// AgentSuggestion is a follow-up the agent offers for the next turn.
+type AgentSuggestion struct {
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
+}
+
+// AgentExchangeSummary reports what a run did with Exchange. Toolkits and
+// RequireApproval are what the run resolved to after thread inheritance.
+type AgentExchangeSummary struct {
+	Enabled         bool     `json:"enabled"`
+	Toolkits        []string `json:"toolkits,omitempty"`
+	RequireApproval bool     `json:"requireApproval,omitempty"`
+	OnTermsRequired string   `json:"onTermsRequired,omitempty"`
+	PaidCalls       int      `json:"paidCalls"`
+	// CreditsUsed is nil when unknown.
+	CreditsUsed *int `json:"creditsUsed"`
+	// SkippedProviders lists providers that would have helped but were not
+	// used because their data terms are not accepted.
+	SkippedProviders []AgentSkippedProvider `json:"skippedProviders,omitempty"`
+	// RequiresAction is set in "ask" mode when a terms offer ended the turn.
+	RequiresAction *AgentTermsRequiredAction `json:"requiresAction,omitempty"`
+}
+
+// AgentSkippedProvider is a provider a run did not use because its data terms
+// are not accepted.
+type AgentSkippedProvider struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Reason     string `json:"reason"`
+	Version    string `json:"version"`
+	TermsURL   string `json:"termsUrl"`
+}
+
+// AgentTermsRequiredAction lists the Exchange calls that show and accept
+// providers' data terms. Run Accept with ScrapeAlexandria only after the user
+// has explicitly agreed, then continue the thread with Exchange.Approve.
+type AgentTermsRequiredAction struct {
+	Type       string                     `json:"type"`
+	ApprovalID string                     `json:"approvalId"`
+	Providers  []AgentTermsActionProvider `json:"providers"`
+}
+
+// AgentTermsActionProvider is one provider whose data terms can be accepted.
+type AgentTermsActionProvider struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Version    string `json:"version"`
+	// Digest is empty when the catalog published none; Show returns it.
+	Digest string         `json:"digest"`
+	URL    string         `json:"url"`
+	Show   AlexandriaCall `json:"show"`
+	Accept AlexandriaCall `json:"accept"`
+}
+
+// AgentPendingApproval is set when a turn ended waiting for the caller. Kind
+// "terms" asks to accept the providers in Terms and leaves Calls empty; any
+// other Kind, including empty, asks to allow or refuse Calls.
+type AgentPendingApproval struct {
+	ID         string                          `json:"id"`
+	Kind       string                          `json:"kind,omitempty"`
+	Reason     string                          `json:"reason"`
+	Calls      []AgentPendingApprovalCall      `json:"calls"`
+	Terms      []AgentTermsGate                `json:"terms,omitempty"`
+	Resolution *AgentPendingApprovalResolution `json:"resolution"`
+}
+
+// AgentPendingApprovalCall is a paid provider call held back for approval.
+type AgentPendingApprovalCall struct {
+	ID              string                   `json:"id"`
+	Provider        string                   `json:"provider"`
+	Capability      string                   `json:"capability"`
+	Input           map[string]interface{}   `json:"input"`
+	More            []map[string]interface{} `json:"more,omitempty"`
+	CreditsEstimate *int                     `json:"creditsEstimate"`
+}
+
+// AgentTermsGate is a provider in a terms pending approval.
+type AgentTermsGate struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Logo       string `json:"logo,omitempty"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Version    string `json:"version"`
+	// Digest is empty when the catalog published none.
+	Digest string `json:"digest"`
+	URL    string `json:"url"`
+}
+
+// AgentPendingApprovalResolution records how a later turn answered a pending
+// approval.
+type AgentPendingApprovalResolution struct {
+	Approved bool     `json:"approved"`
+	CallIDs  []string `json:"callIds"`
+	Always   bool     `json:"always"`
+	ByRunID  string   `json:"byRunId"`
+}
+
+// AgentTraceResponse is returned when fetching the event trace of an agent task.
+type AgentTraceResponse struct {
+	Success               bool                             `json:"success"`
+	ID                    string                           `json:"id,omitempty"`
+	Events                []AgentTraceEvent                `json:"events,omitempty"`
+	CreditsUsed           *int                             `json:"creditsUsed,omitempty"`
+	ActiveBrowserSessions []AgentTraceActiveBrowserSession `json:"activeBrowserSessions,omitempty"`
+	Error                 string                           `json:"error,omitempty"`
+}
+
+// AgentTraceActiveBrowserSession represents a live browser session attached to
+// an agent run.
+type AgentTraceActiveBrowserSession struct {
+	ID          string             `json:"id"`
+	LiveViewURL string             `json:"liveViewUrl,omitempty"`
+	Viewport    AgentTraceViewport `json:"viewport,omitempty"`
+}
+
+// AgentTraceViewport represents the viewport dimensions of a live browser session.
+type AgentTraceViewport struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// AgentTraceEvent represents a single event in an agent run trace. The Type
+// field discriminates the event kind (e.g. "run.started", "tool_call.finished",
+// "artifact.updated"); only the fields relevant to that kind are set.
+type AgentTraceEvent struct {
+	Type             string                    `json:"type"`
+	SchemaVersion    int                       `json:"schemaVersion"`
+	EventID          string                    `json:"eventId"`
+	RunID            string                    `json:"runId"`
+	OccurredAt       string                    `json:"occurredAt"`
+	ProducerSequence int                       `json:"producerSequence"`
+	Agent            AgentTraceAgentIdentity   `json:"agent"`
+	Reason           string                    `json:"reason,omitempty"`
+	Outcome          string                    `json:"outcome,omitempty"`
+	Error            *AgentTraceError          `json:"error,omitempty"`
+	DurationMs       *int64                    `json:"durationMs,omitempty"`
+	SessionID        string                    `json:"sessionId,omitempty"`
+	Phase            string                    `json:"phase,omitempty"`
+	Message          string                    `json:"message,omitempty"`
+	Text             string                    `json:"text,omitempty"`
+	ToolCallID       string                    `json:"toolCallId,omitempty"`
+	ToolName         string                    `json:"toolName,omitempty"`
+	Parameters       interface{}               `json:"parameters,omitempty"`
+	Result           interface{}               `json:"result,omitempty"`
+	Artifact         *AgentTraceArtifactChange `json:"artifact,omitempty"`
+}
+
+// AgentTraceAgentIdentity identifies the agent that produced a trace event.
+type AgentTraceAgentIdentity struct {
+	ID       string `json:"id"`
+	Role     string `json:"role"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId,omitempty"`
+}
+
+// AgentTraceError represents an error attached to a trace event.
+type AgentTraceError struct {
+	Code      string `json:"code"`
+	Source    string `json:"source"`
+	Retryable bool   `json:"retryable"`
+	Message   string `json:"message"`
+}
+
+// AgentTraceArtifactChange describes the artifact mutation reported by an
+// "artifact.updated" trace event.
+type AgentTraceArtifactChange struct {
+	Kind             string   `json:"kind"`
+	ArtifactID       string   `json:"artifactId"`
+	Path             string   `json:"path,omitempty"`
+	SnapshotID       string   `json:"snapshotId"`
+	Change           string   `json:"change"`
+	ChangedFields    []string `json:"changedFields,omitempty"`
+	ItemCount        *int     `json:"itemCount,omitempty"`
+	SourceToolCallID string   `json:"sourceToolCallId,omitempty"`
+}
+
+// AgentSnapshotResponse is returned when fetching a snapshot of an agent task.
+type AgentSnapshotResponse struct {
+	Success    bool   `json:"success"`
+	ID         string `json:"id,omitempty"`
+	SnapshotID string `json:"snapshotId,omitempty"`
+	Snapshot   string `json:"snapshot,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// ListAgentsOptions controls agent list pagination.
+type ListAgentsOptions struct {
+	// Before only returns agent runs created before this unix millisecond
+	// timestamp.
+	Before *int64
+}
+
+// AgentListItemSettings represents per-session settings attached to an agent
+// run.
+type AgentListItemSettings struct {
+	Hidden  bool   `json:"hidden"`
+	Starred bool   `json:"starred"`
+	Label   string `json:"label,omitempty"`
+}
+
+// AgentListItemOptions represents the options an agent run was started with.
+type AgentListItemOptions struct {
+	URLs   []string               `json:"urls,omitempty"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	Model  string                 `json:"model,omitempty"`
+	Effort string                 `json:"effort,omitempty"`
+}
+
+// AgentListItem represents a single agent run in the agent list.
+type AgentListItem struct {
+	ID          string                `json:"id"`
+	CreatedAt   string                `json:"createdAt"`
+	TargetHint  string                `json:"targetHint"`
+	Origin      string                `json:"origin"`
+	Integration string                `json:"integration,omitempty"`
+	Settings    AgentListItemSettings `json:"settings"`
+	Status      string                `json:"status"`
+	Options     *AgentListItemOptions `json:"options,omitempty"`
+}
+
+// AgentListResponse is returned when listing agent runs.
+type AgentListResponse struct {
+	Success bool            `json:"success"`
+	Agents  []AgentListItem `json:"agents,omitempty"`
+	// Next is the absolute URL of the next page, only present when more pages
+	// exist.
+	Next  string `json:"next,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// BrowserCreateResponse is returned when creating a browser session.
+type BrowserCreateResponse struct {
+	Success     bool   `json:"success"`
+	ID          string `json:"id,omitempty"`
+	CDPUrl      string `json:"cdpUrl,omitempty"`
+	LiveViewURL string `json:"liveViewUrl,omitempty"`
+	ExpiresAt   string `json:"expiresAt,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// BrowserExecuteResponse is returned when executing code in a browser session.
+type BrowserExecuteResponse struct {
+	Success  bool   `json:"success"`
+	Stdout   string `json:"stdout,omitempty"`
+	Result   string `json:"result,omitempty"`
+	Stderr   string `json:"stderr,omitempty"`
+	ExitCode *int   `json:"exitCode,omitempty"`
+	Killed   *bool  `json:"killed,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// BrowserDeleteResponse is returned when deleting a browser session.
+type BrowserDeleteResponse struct {
+	Success           bool   `json:"success"`
+	SessionDurationMs *int64 `json:"sessionDurationMs,omitempty"`
+	CreditsBilled     *int   `json:"creditsBilled,omitempty"`
+	Error             string `json:"error,omitempty"`
+}
+
+// BrowserListResponse is returned when listing browser sessions.
+type BrowserListResponse struct {
+	Success  bool             `json:"success"`
+	Sessions []BrowserSession `json:"sessions,omitempty"`
+	Error    string           `json:"error,omitempty"`
+}
+
+// BrowserSession represents a browser session.
+type BrowserSession struct {
+	ID            string `json:"id"`
+	Status        string `json:"status"`
+	CDPUrl        string `json:"cdpUrl,omitempty"`
+	LiveViewURL   string `json:"liveViewUrl,omitempty"`
+	StreamWebView bool   `json:"streamWebView,omitempty"`
+	CreatedAt     string `json:"createdAt,omitempty"`
+	LastActivity  string `json:"lastActivity,omitempty"`
+}
+
+// ConcurrencyCheck represents concurrency usage information.
+type ConcurrencyCheck struct {
+	Concurrency    int `json:"concurrency"`
+	MaxConcurrency int `json:"maxConcurrency"`
+}
+
+// CreditUsage represents credit usage information.
+type CreditUsage struct {
+	RemainingCredits   int    `json:"remainingCredits"`
+	PlanCredits        int    `json:"planCredits"`
+	BillingPeriodStart string `json:"billingPeriodStart,omitempty"`
+	BillingPeriodEnd   string `json:"billingPeriodEnd,omitempty"`
+}
+
+// DiscoveredTool includes the contract and its semantic/domain provenance.
+type DiscoveredTool struct {
+	ID            string                   `json:"id,omitempty"`
+	Provider      string                   `json:"provider"`
+	Capability    string                   `json:"capability"`
+	Name          string                   `json:"name"`
+	Description   string                   `json:"description"`
+	CreditsCost   int                      `json:"creditsCost"`
+	PerRecord     bool                     `json:"perRecord"`
+	Options       []map[string]interface{} `json:"options"`
+	RequiresOneOf [][]string               `json:"requiresOneOf,omitempty"`
+	Response      map[string]interface{}   `json:"response,omitempty"`
+	Examples      map[string]string        `json:"examples,omitempty"`
+	Example       map[string]interface{}   `json:"example,omitempty"`
+	Label         string                   `json:"label,omitempty"`
+	WhenToUse     string                   `json:"whenToUse,omitempty"`
+	Returns       interface{}              `json:"returns,omitempty"`
+	Discovery     interface{}              `json:"discovery,omitempty"`
+	Attribution   interface{}              `json:"attribution,omitempty"`
+	MatchedBy     []string                 `json:"matchedBy,omitempty"`
+	MatchedURLs   []string                 `json:"matchedUrls,omitempty"`
+	Concept       string                   `json:"concept,omitempty"`
+	Cohorts       []string                 `json:"cohorts,omitempty"`
+	Similarity    *float64                 `json:"similarity,omitempty"`
+}
+
+type FindToolsOptions struct {
+	URLs         []string `json:"urls,omitempty"`
+	Providers    []string `json:"providers,omitempty"`
+	Categories   []string `json:"categories,omitempty"`
+	Groups       []string `json:"groups,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Level        string   `json:"level,omitempty"`
+	Expand       []string `json:"expand,omitempty"`
+	Limit        *int     `json:"limit,omitempty"`
+	Offset       *int     `json:"offset,omitempty"`
+}
+
+type FindToolsData struct {
+	Level string                   `json:"level"`
+	Items []map[string]interface{} `json:"items"`
+	Total int                      `json:"total"`
+	Next  *AlexandriaCall          `json:"next"`
+}

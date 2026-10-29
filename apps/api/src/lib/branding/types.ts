@@ -1,5 +1,7 @@
 import { Logger } from "winston";
 import { BrandingProfile } from "../../types/branding";
+import { CostTracking } from "../cost-tracking";
+import type { loadFirstScreen } from "./jev";
 
 export interface ButtonSnapshot {
   index: number;
@@ -17,6 +19,11 @@ export interface ButtonSnapshot {
     bottomLeft?: string;
   };
   shadow?: string | null;
+  /** Distance from the top of the page in px, when the scan measured it. */
+  top?: number;
+  /** Left edge and width in px, when the scan measured them. */
+  left?: number;
+  width?: number;
   // Debug: original color values before conversion to hex
   originalBackgroundColor?: string;
   originalTextColor?: string;
@@ -65,6 +72,8 @@ export interface BrandingLLMInput {
     href?: string;
     source: string;
     logoSvgScore?: number;
+    /** The colors the logo is drawn in, most used first, when readable. */
+    colors?: Array<{ color: string; share: number }>;
   }>;
   brandName?: string;
   /** Full page title (e.g. "AI Innovation Workspace | Miro") — LLM infers brand from this. */
@@ -78,6 +87,13 @@ export interface BrandingLLMInput {
     area?: number;
   }>;
   screenshot?: string;
+  /** The page's first screen for Jev (a JPEG/PNG URL or data URL), captured
+   * after the branding scan (see the branding format's __experimental_screenshot and
+   * BRANDING_JEV_SCREENSHOT_PERCENT). */
+  firstScreen?: string;
+  /** The first screen already being downloaded since the engine returned, so
+   * the download overlaps the transformers that run before branding. */
+  firstScreenImage?: ReturnType<typeof loadFirstScreen>;
   url: string;
   /** Optional header/nav HTML chunk for LLM when no logo candidates (fallback context). */
   headerHtmlChunk?: string;
@@ -95,6 +111,7 @@ export interface BrandingLLMInput {
   scrapeId?: string;
   zeroDataRetention?: boolean;
   teamFlags?: { debugBranding?: boolean } | null;
+  costTracking: CostTracking;
   logger: Logger;
 }
 
@@ -112,6 +129,9 @@ export interface BrandingScriptReturn {
     classes: string;
     text: string;
     rect: { w: number; h: number };
+    // Scripts older than the position fields don't send them.
+    position?: { top: number; left: number };
+    visible?: boolean;
     colors: {
       text: string;
       background: string;
@@ -175,6 +195,8 @@ export interface BrandingScriptReturn {
     href?: string;
     source: string;
     logoSvgScore?: number;
+    /** The colors the logo is drawn in, most used first, when readable. */
+    colors?: Array<{ color: string; share: number }>;
   }>;
   brandName?: string;
   /** Full page title (e.g. "AI Innovation Workspace | Miro") — LLM can infer brand from this. */

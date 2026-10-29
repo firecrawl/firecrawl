@@ -1,3 +1,12 @@
+export class ExistingCreditsLockError extends Error {
+  constructor(readonly lockId: string) {
+    super(
+      "Credit reservation already exists; execution ownership is unresolved.",
+    );
+    this.name = "ExistingCreditsLockError";
+  }
+}
+
 export type GetOrCreateCustomerParams = {
   customerId: string;
   name?: string | null;
@@ -15,6 +24,8 @@ export type CreateEntityParams = {
   entityId: string;
   featureId: string;
   name?: string | null;
+  /** Method doing the creation, for the inline-creation counter's `path`. */
+  path: string;
 };
 
 export type TrackParams = {
@@ -23,6 +34,27 @@ export type TrackParams = {
   featureId: string;
   value: number;
   properties?: Record<string, unknown>;
+  /**
+   * The partner's own operation id (the caller's `External-Request-Id`).
+   * firebill route only: sent as `external_request_id`, so firebill reports
+   * the operation under it without a lookup. Opaque, forwarded verbatim.
+   */
+  externalRequestId?: string | null;
+  /**
+   * Stable per-charge identity, honored on the firebill route only (the
+   * direct Autumn SDK does not expose its Idempotency-Key header). When set,
+   * a caller retry — or a requeued job re-billing the same work — dedupes
+   * instead of double-billing. Must be unique per CHARGE, never a shared id
+   * like a crawl id (every page shares it: collision = underbilling).
+   */
+  idempotencyKey?: string;
+  /**
+   * firebill route only. `false` keeps an unanswered event out of the durable
+   * retry, for a caller that treats `false` as "did not happen" and releases
+   * something on it: a late retry landing would bill what it already undid.
+   * Defaults to retrying.
+   */
+  durableRetry?: boolean;
 };
 
 export type EnsureOrgProvisionedParams = {
@@ -33,7 +65,8 @@ export type EnsureOrgProvisionedParams = {
 
 export type EnsureTeamProvisionedParams = {
   teamId: string;
-  orgId?: string | null;
+  /** See TrackCreditsParams.orgId. */
+  orgId: string;
   name?: string | null;
 };
 
@@ -43,20 +76,77 @@ export type LockCreditsParams = {
   lockId?: string;
   expiresAt?: number;
   properties?: Record<string, unknown>;
+  featureId?: string;
+  /** See TrackCreditsParams.orgId. */
+  orgId: string;
+  /** Arms firebill's partner credit gate, which is asked before Autumn holds anything. */
+  partnerJobToken?: string | null;
 };
+
+/**
+ * Why a partner's gate refused, as opposed to Autumn. `job_revoked` is the only
+ * one that never resolves on its own, and so the only one a caller may answer
+ * by stopping a schedule.
+ */
+export type LockDeniedReason =
+  | "out_of_credits"
+  | "job_revoked"
+  | "gate_unavailable";
+
+/**
+ * Outcome of an Autumn credit lock attempt.
+ *
+ * - `denied`: Autumn refused, or a partner's gate did — see `reason`.
+ * - `skipped`: billing not in effect; proceed without a lock.
+ * - `locked`: reserved; finalize with `lockId`. `operationToken` is the
+ *   partner's id for this occurrence — hand it back on the finalize.
+ */
+export type LockCreditsResult =
+  | { status: "locked"; lockId: string; operationToken?: string }
+  | { status: "denied"; reason?: LockDeniedReason }
+  | { status: "skipped" };
 
 export type FinalizeCreditsLockParams = {
   lockId: string;
   action: "confirm" | "release";
   overrideValue?: number;
   properties?: Record<string, unknown>;
+  /**
+   * The team the lock was taken for, and its org. Needed to route the settle
+   * through firebill for allowlisted orgs — a finalize carries no customer
+   * context of its own. When omitted, the settle goes directly to Autumn
+   * (which also works for a firebill-taken lock: the hold lives in Autumn
+   * either way, but loses firebill's durable retry). A caller that cannot name
+   * the org omits this, which is the route an unnameable org already took.
+   */
+  team?: { teamId: string; orgId: string };
+  /** For a gated run, the `operationToken` its lock handed back. */
+  externalRequestId?: string | null;
+  /** Which balance the hold was against; lets firebill split the settle. */
+  featureId?: string;
+  /** What the lock reserved. Autumn nets outstanding holds out of a reported
+   * balance, so firebill adds this back to see what the ghost can really pay. */
+  heldValue?: number | null;
 };
 
 export type TrackCreditsParams = {
   teamId: string;
   value: number;
   properties?: Record<string, unknown>;
-  requestScoped?: boolean;
+  featureId?: string;
+  /** See TrackParams.idempotencyKey. */
+  idempotencyKey?: string;
+  /** See TrackParams.externalRequestId. */
+  externalRequestId?: string | null;
+  /** See TrackParams.durableRetry. */
+  durableRetry?: boolean;
+  /**
+   * The team's org — the Autumn customer this usage bills against. The service
+   * never looks it up: callers hold it already (a request's ACUC, a job's
+   * payload), and a lookup buried in here is one an agentic edit reaches for
+   * instead of passing the org it has.
+   */
+  orgId: string;
 };
 
 export type CreateEntityResult =

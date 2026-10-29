@@ -1,10 +1,8 @@
+import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { deleteKey, getValue, setValue } from "./redis";
-import {
-  isPostgrestNoRowsError,
-  supabase_rr_service,
-  supabase_service,
-} from "./supabase";
+import { db, dbRr } from "../db/connection";
+import * as schema from "../db/schema";
 
 type AgentSponsorStatus = {
   status: "pending" | "verified" | "blocked";
@@ -42,37 +40,30 @@ export async function getAgentSponsorStatus({
   }
 
   try {
-    const { data, error } = await supabase_rr_service
-      .from("agent_sponsors")
-      .select("status, verification_deadline, email")
-      .eq("api_key_id", apiKeyId)
-      .single();
+    const [data] = await dbRr
+      .select({
+        status: schema.agent_sponsors.status,
+        verification_deadline: schema.agent_sponsors.verification_deadline,
+        email: schema.agent_sponsors.email,
+      })
+      .from(schema.agent_sponsors)
+      .where(eq(schema.agent_sponsors.api_key_id, apiKeyId))
+      .limit(1);
 
-    if (error) {
-      // Only cache "no sponsor" when it's a confirmed no-rows result.
-      // Do not cache on other errors (e.g. connection/timeout) so we retry on next request.
-      if (isPostgrestNoRowsError(error)) {
-        await setValue(
-          cacheKey,
-          JSON.stringify(CACHE_MISS_SENTINEL),
-          AGENT_SPONSOR_CACHE_TTL,
-        );
-      } else {
-        logger.error("Failed to look up agent sponsor status", {
-          apiKeyId,
-          error,
-        });
-      }
-      return null;
-    }
     if (!data) {
+      // Confirmed no-rows result — cache the "no sponsor" sentinel.
+      await setValue(
+        cacheKey,
+        JSON.stringify(CACHE_MISS_SENTINEL),
+        AGENT_SPONSOR_CACHE_TTL,
+      );
       return null;
     }
 
     const result: AgentSponsorStatus = {
-      status: data.status,
-      verification_deadline: data.verification_deadline,
-      email: data.email,
+      status: data.status as AgentSponsorStatus["status"],
+      verification_deadline: data.verification_deadline!,
+      email: data.email!,
     };
 
     await setValue(cacheKey, JSON.stringify(result), AGENT_SPONSOR_CACHE_TTL);
@@ -89,7 +80,7 @@ export async function getAgentSponsorStatus({
 /**
  * Clear cached agent sponsor status for a given api_key_id.
  */
-export async function clearAgentSponsorCache({
+async function clearAgentSponsorCache({
   apiKeyId,
 }: {
   apiKeyId: number;
@@ -100,7 +91,7 @@ export async function clearAgentSponsorCache({
 /**
  * Look up agent sponsor record by verification token.
  */
-export async function getAgentSponsorByToken({
+async function getAgentSponsorByToken({
   agent_signup_token,
 }: {
   agent_signup_token: string;
@@ -110,38 +101,44 @@ export async function getAgentSponsorByToken({
   status: string;
   verification_deadline: string;
   agent_name: string;
-  sandboxed_team_id: string;
-  api_key_id: number;
+  sandboxed_team_id: string | null;
+  api_key_id: number | null;
 } | null> {
-  const { data, error } = await supabase_service
-    .from("agent_sponsors")
-    .select(
-      "id, email, status, verification_deadline, agent_name, sandboxed_team_id, api_key_id",
-    )
-    .eq("verification_token", agent_signup_token)
-    .single();
+  try {
+    const [data] = await db
+      .select({
+        id: schema.agent_sponsors.id,
+        email: schema.agent_sponsors.email,
+        status: schema.agent_sponsors.status,
+        verification_deadline: schema.agent_sponsors.verification_deadline,
+        agent_name: schema.agent_sponsors.agent_name,
+        sandboxed_team_id: schema.agent_sponsors.sandboxed_team_id,
+        api_key_id: schema.agent_sponsors.api_key_id,
+      })
+      .from(schema.agent_sponsors)
+      .where(eq(schema.agent_sponsors.verification_token, agent_signup_token))
+      .limit(1);
 
-  if (error || !data) {
+    return data ?? null;
+  } catch {
     return null;
   }
-
-  return data;
 }
 
 /**
  * Mark sponsor as verified and set verified_at timestamp.
  */
-export async function markSponsorVerified({
+async function markSponsorVerified({
   sponsorId,
 }: {
   sponsorId: number;
 }): Promise<void> {
-  const { error } = await supabase_service
-    .from("agent_sponsors")
-    .update({ status: "verified", verified_at: new Date().toISOString() })
-    .eq("id", sponsorId);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.agent_sponsors)
+      .set({ status: "verified", verified_at: new Date().toISOString() })
+      .where(eq(schema.agent_sponsors.id, sponsorId));
+  } catch (error) {
     logger.error("Failed to mark sponsor as verified", { sponsorId, error });
     throw error;
   }
@@ -150,17 +147,17 @@ export async function markSponsorVerified({
 /**
  * Mark sponsor as blocked.
  */
-export async function markSponsorBlocked({
+async function markSponsorBlocked({
   sponsorId,
 }: {
   sponsorId: number;
 }): Promise<void> {
-  const { error } = await supabase_service
-    .from("agent_sponsors")
-    .update({ status: "blocked" })
-    .eq("id", sponsorId);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.agent_sponsors)
+      .set({ status: "blocked" })
+      .where(eq(schema.agent_sponsors.id, sponsorId));
+  } catch (error) {
     logger.error("Failed to mark sponsor as blocked", { sponsorId, error });
     throw error;
   }

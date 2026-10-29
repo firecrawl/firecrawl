@@ -2,8 +2,10 @@ import os
 import time
 import pytest
 from dotenv import load_dotenv
+from unittest.mock import patch
 from firecrawl import Firecrawl
 from firecrawl.v2.types import ScrapeOptions, PaginationConfig
+from firecrawl.v2.utils.http_client import HttpClient
 
 load_dotenv()
 
@@ -48,6 +50,17 @@ class TestBatchScrapeE2E:
         job = self.client.get_batch_scrape_status(start_resp.id)
         assert job.status in ["scraping", "completed", "failed"]
         assert job.total >= 0
+
+    def test_status_of_running_single_url_batch_does_not_repoll(self):
+        """One status call on a just-started batch reads the current page instead of polling until it finishes."""
+        start_resp = self.client.start_batch_scrape(["https://docs.firecrawl.dev"], formats=["markdown"])
+
+        with patch.object(HttpClient, "get", autospec=True, side_effect=HttpClient.get) as get:
+            job = self.client.get_batch_scrape_status(start_resp.id)
+
+        if job.status != "scraping":
+            pytest.skip("Batch finished before the status call; nothing running to page over.")
+        assert get.call_count <= 2
 
     def test_get_batch_scrape_status_page(self):
         """Fetch a single batch scrape page using the next URL."""

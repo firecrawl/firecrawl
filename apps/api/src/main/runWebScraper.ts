@@ -29,6 +29,8 @@ export async function startWebScraperPipeline({
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
       ...job.data.internalOptions,
+      // In-flight jobs enqueued before orgId existed may omit it.
+      orgId: job.data.internalOptions?.orgId ?? null,
     },
     team_id: job.data.team_id,
     bull_job_id: job.id,
@@ -89,6 +91,7 @@ async function runWebScraper({
           ...internalOptions,
           urlInvisibleInCurrentCrawl,
           teamId: internalOptions?.teamId ?? team_id,
+          orgId: internalOptions?.orgId ?? null,
         },
         costTracking,
       );

@@ -8,14 +8,24 @@ import {
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError, MapFailedError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveViaAvgrab } from "../../lib/avgrab-resolve";
+import {
+  checkUrlsAgainstThreatPolicy,
+  resolveThreatProtection,
+} from "../../lib/threat-protection/request";
+import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 
 configDotenv();
 
@@ -23,12 +33,16 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     jobId: uuidv7(),
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "mapController",
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
@@ -38,10 +52,52 @@ export async function mapController(
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
 
-  const permissions = checkPermissions(req.body, req.acuc?.flags);
+  // Map is link discovery, not content scraping, but it is outbound to the
+  // target. Under Safe Mode: force domainControls so discovered links are
+  // filtered, and under lockdown serve from the index only (no sitemap/robots
+  // fetch to the target).
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
+  if (lockdownIndexOnly) {
+    req.body.useIndex = true;
+  }
+  // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
+  // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
+  if (
+    safeMode.safeMode?.enforceRobots &&
+    !lockdownIndexOnly &&
+    req.body.ignoreRobotsTxt
+  ) {
+    return res.status(403).json({
+      success: false,
+      code: "SAFE_MODE_BLOCKED",
+      error:
+        "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
+    });
+  }
+
+  const threatProtection = await resolveThreatProtection({
+    teamId: req.auth.team_id,
+    orgId: req.acuc?.org_id ?? null,
+    flags: req.acuc?.flags ?? null,
+    override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
+  });
+  if (threatProtection.error) {
+    return res.status(403).json({
+      success: false,
+      error: threatProtection.error,
+    });
+  }
+
+  const permissions = checkPermissions(req.body, req.acuc?.flags, {
+    threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
+  });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -61,31 +117,39 @@ export async function mapController(
     id: mapId,
     kind: "map",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
-    zeroDataRetention: false, // not supported for map
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
-  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate entirely
+  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
+  // entirely. Skipped under Safe Mode so results still flow through the
+  // standard path (domain-controls filtering + lockdown index-only).
   try {
-    const avgrabResults = await resolveViaAvgrab(
-      req.body.url,
-      req.body.limit,
-      logger,
-    );
+    const avgrabResults = safeMode.safeMode
+      ? null
+      : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
 
     if (avgrabResults !== null) {
       const creditsCost = avgrabResults.length;
 
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
+        req.acuc?.org_id ?? null,
         creditsCost,
         req.acuc?.api_key_id ?? null,
-        { endpoint: "map", jobId: mapId },
+        {
+          endpoint: "map",
+          jobId: mapId,
+          // Suffixed so this early-return path can never collide with the main
+          // map charge below, even if both ever billed the same mapId.
+          chargeId: `${mapId}:avgrab`,
+          externalRequestId: externalRequestId(req),
+        },
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
@@ -117,6 +181,7 @@ export async function mapController(
 
       return res.status(200).json({
         success: true,
+        id: mapId,
         links: avgrabResults,
       });
     }
@@ -149,6 +214,7 @@ export async function mapController(
         },
         origin: req.body.origin,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         allowExternalLinks: req.body.allowExternalLinks,
         abort: abort.signal,
         mock: req.body.useMock,
@@ -188,17 +254,51 @@ export async function mapController(
     }
   }
 
+  // Threat protection: remove blocked links from the returned URL list
+  // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
+  // URL (see calculateThreatScanCredits).
+  //
+  // "zscaler" mode evaluates map results against local rules only (org
+  // lists + synced custom categories): one map can return thousands of
+  // URLs, and inline classification would burn the tenant's 400/hour
+  // urlLookup budget on links that may never be fetched. Every URL still
+  // gets the full provider check when a scrape of it starts.
+  let threatScanCredits = 0;
+  if (threatProtection.policy && result.mapResults.length > 0) {
+    const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
+      result.mapResults.map(x => x.url),
+      threatProtection.policy,
+      {
+        teamId: req.auth.team_id,
+        localRulesOnly: threatProtection.policy.mode === "zscaler",
+      },
+    );
+    threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
+    result.mapResults = result.mapResults.filter(x => {
+      const decision = decisionsByUrl.get(x.url);
+      return decision === undefined || decision.allowed;
+    });
+  }
+
   // Bill the team
+  const creditsToBill = 1 + threatScanCredits;
   billTeam(
     req.auth.team_id,
-    req.acuc?.sub_id ?? undefined,
-    1,
+    req.acuc?.org_id ?? null,
+    creditsToBill,
     req.acuc?.api_key_id ?? null,
-    { endpoint: "map", jobId: mapId },
+    {
+      endpoint: "map",
+      externalRequestId: externalRequestId(req),
+      jobId: mapId,
+      chargeId: mapId,
+    },
   ).catch(error => {
-    logger.error(
-      `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,
-    );
+    logger.error("Failed to bill team for map credits", {
+      teamId: req.auth.team_id,
+      creditsToBill,
+      error,
+    });
   });
 
   logMap({
@@ -216,8 +316,8 @@ export async function mapController(
       location: req.body.location,
     },
     results: result.mapResults,
-    credits_cost: 1,
-    zeroDataRetention: false, // not supported
+    credits_cost: creditsToBill,
+    zeroDataRetention,
   }).catch(error => {
     logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
   });
@@ -254,6 +354,7 @@ export async function mapController(
 
   const response = {
     success: true as const,
+    id: result.job_id,
     links: result.mapResults,
     ...(warning && { warning }),
   };

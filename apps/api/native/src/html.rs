@@ -11,8 +11,9 @@ use serde_json::Value;
 use tokio::task;
 use url::Url;
 
-static URL_REGEX: LazyLock<Regex> =
-  LazyLock::new(|| Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern"));
+static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+  Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern")
+});
 
 use crate::utils::to_napi_err;
 
@@ -524,70 +525,96 @@ fn _transform_html_inner(
     }
   }
 
-  let srcset_images: Vec<_> = document
-    .select("img[srcset]")
-    .map_err(|_| "Failed to select srcset images")?
+  // Resolve images, including lazy-loaded ones. Many sites ship a tiny
+  // placeholder in `src` and keep the real image in `data-srcset` / `data-src`,
+  // swapping it in via JS only once the image scrolls into view. When the real
+  // `srcset` isn't present yet, fall back to those lazy-load attributes so we
+  // emit the actual image instead of the placeholder. Images that already have
+  // a `srcset` are handled exactly as before.
+  let imgs: Vec<_> = document
+    .select("img")
+    .map_err(|_| "Failed to select images")?
     .collect();
-  for img in srcset_images {
-    let mut sizes: Vec<ImageSource> = img
-      .attributes
-      .borrow()
-      .get("srcset")
-      .ok_or("Failed to get srcset")?
-      .split(',')
-      .filter_map(|x| {
-        let tok: Vec<&str> = x.trim().split(' ').collect();
-        let last_token = tok[tok.len() - 1];
-        let (last_token, last_token_used) = if tok.len() > 1
-          && !last_token.is_empty()
-          && (last_token.ends_with('x') || last_token.ends_with('w'))
-        {
-          (last_token, true)
-        } else {
-          ("1x", false)
-        };
+  for img in imgs {
+    let srcset = {
+      let attrs = img.attributes.borrow();
+      attrs
+        .get("srcset")
+        .filter(|x| !x.trim().is_empty())
+        .or_else(|| attrs.get("data-srcset").filter(|x| !x.trim().is_empty()))
+        .map(|x| x.to_string())
+    };
 
-        if let Some((last_index, _)) = last_token.char_indices().last() {
-          if let Ok(parsed_size) = last_token[..last_index].parse() {
-            Some(ImageSource {
-              url: if last_token_used {
-                tok[0..tok.len() - 1].join(" ")
-              } else {
-                tok.join(" ")
-              },
-              size: parsed_size,
-              is_x: last_token.ends_with('x'),
-            })
+    if let Some(srcset) = srcset {
+      let mut sizes: Vec<ImageSource> = srcset
+        .split(',')
+        .filter_map(|x| {
+          let tok: Vec<&str> = x.trim().split(' ').collect();
+          let last_token = tok[tok.len() - 1];
+          let (last_token, last_token_used) = if tok.len() > 1
+            && !last_token.is_empty()
+            && (last_token.ends_with('x') || last_token.ends_with('w'))
+          {
+            (last_token, true)
+          } else {
+            ("1x", false)
+          };
+
+          if let Some((last_index, _)) = last_token.char_indices().last() {
+            if let Ok(parsed_size) = last_token[..last_index].parse() {
+              Some(ImageSource {
+                url: if last_token_used {
+                  tok[0..tok.len() - 1].join(" ")
+                } else {
+                  tok.join(" ")
+                },
+                size: parsed_size,
+                is_x: last_token.ends_with('x'),
+              })
+            } else {
+              None
+            }
           } else {
             None
           }
-        } else {
-          None
+        })
+        .collect();
+
+      if sizes.iter().all(|x| x.is_x) {
+        if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
+          sizes.push(ImageSource {
+            url: src,
+            size: 1.0,
+            is_x: true,
+          });
         }
-      })
-      .collect();
-
-    if sizes.iter().all(|x| x.is_x) {
-      if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
-        sizes.push(ImageSource {
-          url: src,
-          size: 1.0,
-          is_x: true,
-        });
       }
-    }
 
-    sizes.sort_by(|a, b| {
-      b.size
-        .partial_cmp(&a.size)
-        .unwrap_or(std::cmp::Ordering::Equal)
-    });
+      sizes.sort_by(|a, b| {
+        b.size
+          .partial_cmp(&a.size)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
 
-    if let Some(biggest) = sizes.first() {
-      img
-        .attributes
-        .borrow_mut()
-        .insert("src", biggest.url.clone());
+      if let Some(biggest) = sizes.first() {
+        img
+          .attributes
+          .borrow_mut()
+          .insert("src", biggest.url.clone());
+      }
+    } else {
+      // No usable `srcset`/`data-srcset`: fall back to `data-src` for the
+      // common lazy-load case where only a single image URL is deferred.
+      let data_src = {
+        let attrs = img.attributes.borrow();
+        attrs
+          .get("data-src")
+          .filter(|x| !x.trim().is_empty())
+          .map(|x| x.to_string())
+      };
+      if let Some(data_src) = data_src {
+        img.attributes.borrow_mut().insert("src", data_src);
+      }
     }
   }
 

@@ -5,7 +5,13 @@ import {
   recordError,
   toPx,
 } from "./helpers";
-import { isButtonElement } from "./buttons";
+import {
+  getEffectiveFill,
+  isButtonElement,
+  isVisibleElement,
+  looksFilledOrOutlined,
+  pageTop,
+} from "./buttons";
 
 export const sampleElements = (): Element[] => {
   const picksSet = new Set<Element>();
@@ -22,16 +28,24 @@ export const sampleElements = (): Element[] => {
 
   pushQ('header img, .site-logo img, img[alt*=logo i], img[src*="logo"]', 5);
 
-  pushQ(
-    'button, input[type="submit"], input[type="button"], [role=button], [data-primary-button], [data-secondary-button], [data-cta], a.button, a.btn, [class*="btn"], [class*="button"], a[class*="bg-brand"], a[class*="bg-primary"], a[class*="bg-accent"]',
-    100,
-  );
-
-  const allLinks = Array.from(document.querySelectorAll("a")).slice(0, 100);
-  for (const link of allLinks) {
-    if (!picksSet.has(link) && isButtonElement(link)) {
-      picksSet.add(link);
+  // Buttons and button-like links, visible ones nearest the top of the page
+  // first. Taking matches in document order let menus and footers use up the
+  // budget before the hero's call to action was reached.
+  const pool: Array<{ el: Element; top: number; order: number }> = [];
+  const scanned = document.querySelectorAll(`${CONSTANTS.BUTTON_SELECTOR}, a`);
+  for (let i = 0; i < scanned.length && i < CONSTANTS.BUTTON_SCAN_LIMIT; i++) {
+    const el = scanned[i];
+    try {
+      const rect = el.getBoundingClientRect();
+      if (!isVisibleElement(el, rect) || !isButtonElement(el)) continue;
+      pool.push({ el, top: pageTop(el, rect), order: i });
+    } catch (e) {
+      recordError("sampleElements-buttons", e);
     }
+  }
+  pool.sort((a, b) => a.top - b.top || a.order - b.order);
+  for (const { el } of pool.slice(0, CONSTANTS.BUTTON_SAMPLE_LIMIT)) {
+    picksSet.add(el);
   }
 
   pushQ('input, select, textarea, [class*="form-control"]', 25);
@@ -49,6 +63,9 @@ export interface StyleSnapshot {
   classes: string;
   text: string;
   rect: { w: number; h: number };
+  /** Page coordinates, so later steps can tell a hero button from a footer link. */
+  position: { top: number; left: number };
+  visible: boolean;
   colors: {
     text: string;
     background: string;
@@ -136,7 +153,14 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     el.tagName.toLowerCase() === "select" ||
     el.tagName.toLowerCase() === "textarea";
 
-  if ((isTransparent || hasZeroAlpha) && !isInputElement) {
+  // The visible fill may sit on a pseudo-element or an inner child.
+  const innerFill =
+    (isTransparent || hasZeroAlpha) && !isInputElement
+      ? getEffectiveFill(el)
+      : null;
+  if (innerFill) {
+    bgColor = innerFill;
+  } else if ((isTransparent || hasZeroAlpha) && !isInputElement) {
     let parent = el.parentElement;
     let depth = 0;
     while (parent && depth < CONSTANTS.MAX_PARENT_TRAVERSAL) {
@@ -268,6 +292,11 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     classes: classNames,
     text: text,
     rect: { w: rect.width, h: rect.height },
+    position: {
+      top: pageTop(el, rect),
+      left: rect.left + (window.scrollX || 0),
+    },
+    visible: isVisibleElement(el, rect),
     colors: {
       text: textColor,
       background: bgColor,
@@ -309,7 +338,9 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
       bottomLeft: toPx(cs.getPropertyValue("border-bottom-left-radius")),
     },
     shadow: cs.getPropertyValue("box-shadow") || null,
-    isButton: isButton && !isNavigation,
+    // A filled or outlined button in the header is still a button: sites often
+    // put their main call to action there. Plain menu links are not.
+    isButton: isButton && (!isNavigation || looksFilledOrOutlined(el)),
     isNavigation: isNavigation,
     hasCTAIndicator: hasCTAIndicator,
     isInput: isInputField,

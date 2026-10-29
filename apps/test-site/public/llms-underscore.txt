@@ -1,0 +1,4 @@
+# Test llms.txt
+
+- [Create an access policy](https://docs.langchain.com/langsmith/smith-api/access_policies/create-an-access-policy.md)
+- [List access policies](https://docs.langchain.com/langsmith/smith-api/access_policies/list-access-policies.md)

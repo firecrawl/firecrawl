@@ -1,7 +1,7 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.18.1",
-  "description": "JavaScript SDK for Firecrawl API",
+  "version": "4.51.0",
+  "description": "JavaScript SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -16,8 +16,8 @@
     "build": "tsup",
     "build-and-publish": "pnpm run build && pnpm publish --access public",
     "publish-beta": "pnpm run build && pnpm publish --access public --tag beta",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/e2e/v2/*.test.ts --detectOpenHandles",
-    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/unit/v2/*.test.ts"
+    "test": "vitest run --reporter=verbose src/__tests__/e2e/v2",
+    "test:unit": "vitest run --reporter=verbose src/__tests__/unit"
   },
   "repository": {
     "type": "git",
@@ -26,29 +26,25 @@
   "author": "Mendable.ai",
   "license": "MIT",
   "dependencies": {
-    "axios": "1.14.0",
-    "firecrawl": "4.16.0",
+    "axios": "1.20.0",
+    "firecrawl": "4.49.1",
     "typescript-event-target": "^1.1.1",
-    "zod": "^3.23.8",
-    "zod-to-json-schema": "^3.23.0"
+    "zod": "^3.25.28 || ^4.6.6",
+    "zod-to-json-schema": "^3.25.2"
   },
   "bugs": {
     "url": "https://github.com/firecrawl/firecrawl/issues"
   },
   "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@jest/globals": "^30.2.0",
     "@types/dotenv": "^8.2.0",
-    "@types/jest": "^30.0.0",
-    "@types/mocha": "^10.0.6",
     "@types/node": "^20.12.12",
     "@types/uuid": "^9.0.8",
     "dotenv": "^16.4.5",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.4.5",
     "tsup": "^8.5.0",
     "typescript": "^5.4.5",
-    "uuid": "^9.0.1"
+    "uuid": "^14.0.0",
+    "vitest": "^4.1.12"
   },
   "keywords": [
     "firecrawl",
@@ -57,21 +53,23 @@
     "web",
     "scraper",
     "api",
-    "sdk"
+    "sdk",
+    "web-search",
+    "literature-search",
+    "research",
+    "scientific-papers",
+    "academic-search",
+    "biomedical",
+    "life-sciences",
+    "pubmed",
+    "biorxiv",
+    "medrxiv",
+    "arxiv",
+    "preprints",
+    "citations",
+    "bioinformatics"
   ],
   "engines": {
-    "node": ">=22.0.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1",
-      "minimatch@<10.2.3": ">=10.2.3",
-      "rollup@<4.59.0": ">=4.59.0",
-      "picomatch@<4.0.4": ">=4.0.4",
-      "handlebars": ">=4.7.9",
-      "brace-expansion": ">=5.0.5",
-      "axios@>=1.14.1 <1.15.0": "1.14.0",
-      "axios@>=0.30.4 <0.31.0": "0.30.3"
-    }
+    "node": ">=18.0.0"
   }
 }

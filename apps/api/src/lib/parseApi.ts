@@ -13,7 +13,7 @@ export function parseApi(api: string) {
   return uuid;
 }
 
-export function apiKeyToFcApiKey(apiKey: string | null | undefined) {
+function apiKeyToFcApiKey(apiKey: string | null | undefined) {
   if (!apiKey) {
     return null;
   }

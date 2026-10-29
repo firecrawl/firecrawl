@@ -1,82 +1,367 @@
+//! Map endpoint for Firecrawl API v2.
+
+use crate::client::Client;
+use crate::types::{LocationConfig, SearchResultWeb, SitemapMode};
+use crate::{AuditMetadata, FirecrawlError};
 use serde::{Deserialize, Serialize};
 
-use crate::{FirecrawlApp, FirecrawlError, API_VERSION};
-
+/// Options for mapping a URL.
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Location {
-    /// Country code (ISO 3166-1 alpha-2)
-    pub country: Option<String>,
-
-    /// List of language codes
-    pub languages: Option<Vec<String>>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Deserialize, Serialize, Debug, Default)]
-#[serde(rename_all = "camelCase")]
 pub struct MapOptions {
-    /// Search query to use for mapping
+    /// Search query to filter discovered links.
     pub search: Option<String>,
 
-    /// Ignore the website sitemap when crawling (default: `true`)
-    pub ignore_sitemap: Option<bool>,
+    /// How to handle the sitemap.
+    pub sitemap: Option<SitemapMode>,
 
-    /// Include subdomains of the website (default: `true`)
+    /// Include subdomains in the mapping.
     pub include_subdomains: Option<bool>,
 
-    /// Maximum number of links to return (default: `5000`)
+    /// Ignore query parameters when deduplicating URLs.
+    pub ignore_query_parameters: Option<bool>,
+
+    /// Maximum number of links to return.
     pub limit: Option<u32>,
 
-    /// Location configuration for proxy location
-    pub location: Option<Location>,
+    /// Timeout in milliseconds.
+    pub timeout: Option<u32>,
+
+    /// Integration identifier for tracking.
+    pub integration: Option<String>,
+
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
+    /// Location configuration for proxy routing.
+    pub location: Option<LocationConfig>,
+
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
 }
 
+/// Request body for map endpoint.
 #[derive(Deserialize, Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
-struct MapRequestBody {
+struct MapRequest {
     url: String,
-
     #[serde(flatten)]
     options: MapOptions,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+/// Response from map endpoint.
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct MapResponse {
-    success: bool,
-
-    links: Vec<String>,
+pub struct MapResponse {
+    /// Whether the request was successful.
+    pub success: bool,
+    /// Discovered links with metadata.
+    pub links: Vec<SearchResultWeb>,
+    /// Warning message if any.
+    pub warning: Option<String>,
 }
 
-impl FirecrawlApp {
-    /// Returns links from a URL using the Firecrawl API.
-    pub async fn map_url(
+impl Client {
+    /// Maps a URL to discover all associated links.
+    ///
+    /// This endpoint discovers links from a website's sitemap, page content,
+    /// and other sources without fully scraping each page.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to map.
+    /// * `options` - Optional mapping configuration.
+    ///
+    /// # Returns
+    ///
+    /// A `MapResponse` containing the discovered links.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::{Client, MapOptions, SitemapMode};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     // Simple map
+    ///     let response = client.map("https://example.com", None).await?;
+    ///     println!("Found {} links", response.links.len());
+    ///
+    ///     // Map with options
+    ///     let options = MapOptions {
+    ///         sitemap: Some(SitemapMode::Include),
+    ///         include_subdomains: Some(true),
+    ///         limit: Some(1000),
+    ///         ..Default::default()
+    ///     };
+    ///     let response = client.map("https://example.com", options).await?;
+    ///
+    ///     for link in response.links {
+    ///         println!("URL: {}, Title: {:?}", link.url, link.title);
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn map(
         &self,
         url: impl AsRef<str>,
         options: impl Into<Option<MapOptions>>,
-    ) -> Result<Vec<String>, FirecrawlError> {
-        let body = MapRequestBody {
+    ) -> Result<MapResponse, FirecrawlError> {
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+        let body = MapRequest {
             url: url.as_ref().to_string(),
-            options: options.into().unwrap_or_default(),
+            options,
         };
 
         let headers = self.prepare_headers(None);
 
         let response = self
             .client
-            .post(&format!("{}{}/map", self.api_url, API_VERSION))
+            .post(self.url("/map"))
             .headers(headers)
             .json(&body)
             .send()
             .await
             .map_err(|e| FirecrawlError::HttpError(format!("Mapping {:?}", url.as_ref()), e))?;
 
-        let response = self
-            .handle_response::<MapResponse>(response, "scrape URL")
-            .await?;
+        self.handle_response(response, "map").await
+    }
 
-        Ok(response.links)
+    /// Maps a URL and returns just the list of URLs.
+    ///
+    /// This is a convenience method that returns only the URL strings.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to map.
+    /// * `options` - Optional mapping configuration.
+    ///
+    /// # Returns
+    ///
+    /// A vector of discovered URL strings.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     let urls = client.map_urls("https://example.com", None).await?;
+    ///     for url in urls {
+    ///         println!("{}", url);
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn map_urls(
+        &self,
+        url: impl AsRef<str>,
+        options: impl Into<Option<MapOptions>>,
+    ) -> Result<Vec<String>, FirecrawlError> {
+        let response = self.map(url, options).await?;
+        Ok(response.links.into_iter().map(|link| link.url).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::Matcher;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_map_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/map")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "links": [
+                        {
+                            "url": "https://example.com/",
+                            "title": "Example Domain",
+                            "description": "Home page"
+                        },
+                        {
+                            "url": "https://example.com/about",
+                            "title": "About Us"
+                        },
+                        {
+                            "url": "https://example.com/contact"
+                        }
+                    ]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.map("https://example.com", None).await.unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.links.len(), 3);
+        assert_eq!(response.links[0].url, "https://example.com/");
+        assert_eq!(response.links[0].title, Some("Example Domain".to_string()));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/map")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "links": []}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.map("https://example.com", None).await.unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_with_options() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/map")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "links": [
+                        { "url": "https://example.com/page1" },
+                        { "url": "https://example.com/page2" }
+                    ]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = MapOptions {
+            sitemap: Some(SitemapMode::Include),
+            include_subdomains: Some(true),
+            limit: Some(100),
+            ..Default::default()
+        };
+
+        let response = client.map("https://example.com", options).await.unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.links.len(), 2);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_urls() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/map")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "links": [
+                        { "url": "https://example.com/page1" },
+                        { "url": "https://example.com/page2" },
+                        { "url": "https://example.com/page3" }
+                    ]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let urls = client.map_urls("https://example.com", None).await.unwrap();
+
+        assert_eq!(urls.len(), 3);
+        assert_eq!(urls[0], "https://example.com/page1");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_with_search_filter() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/map")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "links": [
+                        { "url": "https://example.com/blog/post1" },
+                        { "url": "https://example.com/blog/post2" }
+                    ]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = MapOptions {
+            search: Some("blog".to_string()),
+            ..Default::default()
+        };
+
+        let response = client.map("https://example.com", options).await.unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.links.len(), 2);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_error_response() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/map")
+            .with_status(400)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Invalid URL"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let result = client.map("invalid-url", None).await;
+
+        assert!(result.is_err());
+        mock.assert();
     }
 }

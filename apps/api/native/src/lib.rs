@@ -1,13 +1,12 @@
 #![deny(clippy::all)]
 
 pub use crate::crawler::*;
+pub use crate::document::*;
 pub use crate::engpicker::*;
 pub use crate::html::*;
 pub use crate::logging::*;
 pub use crate::pdf::*;
 pub use crate::utils::*;
-
-pub use crate::document::{DocumentConverter, DocumentType};
 
 mod crawler;
 mod document;

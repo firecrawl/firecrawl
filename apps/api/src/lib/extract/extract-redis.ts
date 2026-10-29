@@ -8,7 +8,6 @@ export enum ExtractStep {
   MAP_RERANK = "map-rerank",
   MULTI_ENTITY = "multi-entity",
   MULTI_ENTITY_SCRAPE = "multi-entity-scrape",
-  MULTI_ENTITY_AGENT_SCRAPE = "multi-entity-agent-scrape",
   MULTI_ENTITY_EXTRACT = "multi-entity-extract",
   SCRAPE = "scrape",
   EXTRACT = "extract",

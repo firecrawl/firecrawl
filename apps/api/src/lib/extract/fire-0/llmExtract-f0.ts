@@ -97,48 +97,63 @@ interface TrimResult {
   warning?: string;
 }
 
-function trimToTokenLimit_F0(
+// Generous upper bound on the number of characters a single token can represent.
+// Real-world ratios for cl100k/o200k are ~3-4 chars/token; 5 leaves ample headroom
+// while still bounding how much text the (synchronous, main-thread) tiktoken encoder
+// ever has to process. Without this cap, encoding an unbounded multi-megabyte string
+// can block the event loop for tens of seconds.
+const MAX_CHARS_PER_TOKEN = 5;
+
+export function trimToTokenLimit_F0(
   text: string,
   maxTokens: number,
   modelId: string = "gpt-4o-mini",
   previousWarning?: string,
 ): TrimResult {
+  // Pre-trim by characters before handing anything to tiktoken. This bounds the cost
+  // of the synchronous encode() below so a huge input can't freeze the event loop.
+  const maxChars = maxTokens * MAX_CHARS_PER_TOKEN;
+  const preTrimmed = text.length > maxChars;
+  const candidate = preTrimmed ? text.slice(0, maxChars) : text;
+
   try {
     const encoder = encoding_for_model(modelId as TiktokenModel);
     try {
-      const tokens = encoder.encode(text);
+      const tokens = encoder.encode(candidate);
       const numTokens = tokens.length;
 
-      if (numTokens <= maxTokens) {
+      // The candidate fits within the token budget. If we never pre-trimmed, the
+      // original text is returned untouched.
+      if (numTokens <= maxTokens && !preTrimmed) {
         return { text, numTokens };
       }
 
-      const modifier = 3;
-      // Start with 3 chars per token estimation
-      let currentText = text.slice(0, Math.floor(maxTokens * modifier) - 1);
-
-      // Keep trimming until we're under the token limit
-      while (true) {
-        const currentTokens = encoder.encode(currentText);
-        if (currentTokens.length <= maxTokens) {
-          const warning = `The extraction content would have used more tokens (${numTokens}) than the maximum we allow (${maxTokens}). -- the input has been automatically trimmed.`;
-          return {
-            text: currentText,
-            numTokens: currentTokens.length,
-            warning: previousWarning
-              ? `${warning} ${previousWarning}`
-              : warning,
-          };
-        }
-        const overflow = currentTokens.length * modifier - maxTokens - 1;
-        // If still over limit, remove another chunk
-        currentText = currentText.slice(
-          0,
-          Math.floor(currentText.length - overflow),
-        );
+      if (numTokens <= maxTokens) {
+        // We pre-trimmed by chars but the result is already under the token limit.
+        const warning = `The extraction content would have used more characters than the maximum we allow (${maxChars}). -- the input has been automatically trimmed.`;
+        return {
+          text: candidate,
+          numTokens,
+          warning: previousWarning ? `${warning} ${previousWarning}` : warning,
+        };
       }
-    } catch (e) {
-      throw e;
+
+      // Trim to exactly maxTokens by slicing the token array and decoding it back.
+      // This is a single encode + single decode (no re-encode loop). The cut may
+      // land mid-UTF-8-character; decode() returns raw bytes and TextDecoder
+      // replaces any trailing partial sequence, so only the final glyph can be
+      // affected -- everything before it is byte-identical to the input.
+      const trimmedTokens = tokens.slice(0, maxTokens);
+      const trimmedText = new TextDecoder().decode(
+        encoder.decode(trimmedTokens),
+      );
+
+      const warning = `The extraction content would have used more tokens (${numTokens}${preTrimmed ? "+" : ""}) than the maximum we allow (${maxTokens}). -- the input has been automatically trimmed.`;
+      return {
+        text: trimmedText,
+        numTokens: maxTokens,
+        warning: previousWarning ? `${warning} ${previousWarning}` : warning,
+      };
     } finally {
       encoder.free();
     }
@@ -178,7 +193,8 @@ export async function generateCompletions_F0({
   mode?: "object" | "no-object";
   metadata: {
     teamId: string;
-    functionId?: string;
+    // Required so every call is attributed in LLM telemetry.
+    functionId: string;
     extractId?: string;
     scrapeId?: string;
   };

@@ -10,6 +10,7 @@ import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../services/billing/types";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 
 export interface DocumentWithCostTracking {
   document: Document;
@@ -30,6 +31,7 @@ interface ScrapeItem {
 
 interface ScrapeSearchOptions {
   teamId: string;
+  orgId?: string | null;
   origin: string;
   timeout: number;
   scrapeOptions: ScrapeOptions;
@@ -39,6 +41,9 @@ interface ScrapeSearchOptions {
   requestId?: string;
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
+  keylessReserved?: boolean;
+  threatProtectionPolicy?: ThreatProtectionPolicy | null;
+  safeModeBypassed?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -76,10 +81,13 @@ async function scrapeSearchResultDirect(
         },
         internalOptions: {
           teamId: options.teamId,
+          orgId: options.orgId ?? null,
           bypassBilling: options.bypassBilling ?? true,
           zeroDataRetention,
           teamFlags: flags,
           agentIndexOnly: options.agentIndexOnly ?? false,
+          threatProtection: options.threatProtectionPolicy ?? undefined,
+          safeModeBypassed: options.safeModeBypassed === true,
         },
         skipNuq: true,
         origin: options.origin,
@@ -87,6 +95,7 @@ async function scrapeSearchResultDirect(
         startTime: Date.now(),
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
+        keylessReserved: options.keylessReserved ?? false,
         requestId: options.requestId,
         billing: options.billing,
       },
@@ -142,12 +151,17 @@ async function scrapeSearchResultDirect(
 export function getItemsToScrape(
   searchResponse: SearchV2Response,
   flags: TeamFlags,
+  context?: {
+    team_id?: string | null;
+    org_id?: string | null;
+    origin?: string | null;
+  },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
 
   if (searchResponse.web) {
     for (const item of searchResponse.web) {
-      if (!isUrlBlocked(item.url, flags)) {
+      if (!isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "web",
@@ -163,7 +177,7 @@ export function getItemsToScrape(
 
   if (searchResponse.news) {
     for (const item of searchResponse.news) {
-      if (item.url && !isUrlBlocked(item.url, flags)) {
+      if (item.url && !isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "news",
@@ -179,7 +193,7 @@ export function getItemsToScrape(
 
   if (searchResponse.images) {
     for (const item of searchResponse.images) {
-      if (item.url && !isUrlBlocked(item.url, flags)) {
+      if (item.url && !isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "image",

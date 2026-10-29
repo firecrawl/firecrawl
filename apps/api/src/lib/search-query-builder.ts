@@ -4,11 +4,16 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "developer" | "gov";
   sites?: string[];
 }
 
 export type CategoryOption = string | CategoryInput;
+
+interface DomainFilterOptions {
+  includeDomains?: string[];
+  excludeDomains?: string[];
+}
 
 interface QueryBuilderResult {
   query: string;
@@ -33,6 +38,16 @@ const DEFAULT_RESEARCH_SITES = [
   "medrxiv.org",
 ];
 
+export function hasCategory(
+  categories: unknown,
+  type: CategoryInput["type"],
+): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(c => (typeof c === "string" ? c : c?.type) === type)
+  );
+}
+
 /**
  * Builds a search query with category filters
  * @param baseQuery The base search query
@@ -42,20 +57,14 @@ const DEFAULT_RESEARCH_SITES = [
 export function buildSearchQuery(
   baseQuery: string,
   categories?: CategoryOption[],
+  domainOptions: DomainFilterOptions = {},
 ): QueryBuilderResult {
   const categoryMap = new Map<string, string>();
-
-  if (!categories || categories.length === 0) {
-    return {
-      query: baseQuery,
-      categoryMap,
-    };
-  }
 
   const siteFilters: string[] = [];
   let hasPdfFilter = false;
 
-  for (const category of categories) {
+  for (const category of categories ?? []) {
     if (typeof category === "string") {
       // Simple string format
       if (category === "github") {
@@ -101,8 +110,21 @@ export function buildSearchQuery(
     categoryFilter += " filetype:pdf";
   }
 
+  const includeDomains = domainOptions.includeDomains ?? [];
+  const excludeDomains = domainOptions.excludeDomains ?? [];
+  // Bare `site:` operators, not a parenthesized group: some backends don't
+  // parse `(site:foo.com)` and drop the filter, leaking off-domain results.
+  const includeFilter =
+    includeDomains.length > 0
+      ? " " + includeDomains.map(domain => `site:${domain}`).join(" OR ")
+      : "";
+  const excludeFilter =
+    excludeDomains.length > 0
+      ? " " + excludeDomains.map(domain => `-site:${domain}`).join(" ")
+      : "";
+
   return {
-    query: baseQuery + categoryFilter,
+    query: baseQuery + categoryFilter + includeFilter + excludeFilter,
     categoryMap,
   };
 }
@@ -135,7 +157,7 @@ export function getCategoryFromUrl(
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-      
+
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())

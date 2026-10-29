@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Firecrawl</RootNamespace>
+
+    <!-- NuGet package metadata -->
+    <PackageId>firecrawl-sdk</PackageId>
+    <Version>1.15.1</Version>
+    <Authors>Firecrawl</Authors>
+    <Company>Firecrawl</Company>
+    <Description>.NET SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, and map the web, and run Monitor jobs.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/firecrawl/firecrawl</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/firecrawl/firecrawl</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>firecrawl;web-scraping;crawling;api;sdk</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Firecrawl.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

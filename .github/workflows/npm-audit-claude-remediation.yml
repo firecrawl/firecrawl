@@ -1,0 +1,189 @@
+name: Audit NPM Claude Remediation
+
+on:
+  workflow_run:
+    workflows: ["Audit NPM Packages"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      has_uncovered: ${{ steps.scan.outputs.has_uncovered }}
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 11.4.0
+
+      - name: Scan default branch audit failures
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/audit-ci-vuln-scan.mjs
+
+      - name: Skip when all vulnerabilities are covered
+        if: ${{ steps.scan.outputs.has_uncovered != 'true' }}
+        run: |
+          echo "No uncovered audit-ci vulnerabilities on ${GITHUB_REF_NAME}; skipping Claude."
+
+  remediate:
+    needs: scan
+    if: ${{ needs.scan.outputs.has_uncovered == 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 60
+    concurrency:
+      group: audit-npm-claude-remediation-${{ github.event.repository.default_branch }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    env:
+      NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL: ${{ secrets.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 11.4.0
+
+      - name: Rescan default branch audit failures
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/audit-ci-vuln-scan.mjs
+
+      - name: Run Claude remediation
+        id: claude
+        if: ${{ steps.scan.outputs.has_uncovered == 'true' }}
+        uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # v1
+        with:
+          anthropic_api_key: ${{ secrets.NPM_AUDIT_CLAUDE_ANTHROPIC_API_KEY }}
+          additional_permissions: |
+            issues: read
+          base_branch: ${{ github.event.repository.default_branch }}
+          branch_prefix: claude/audit-ci/
+          prompt: ${{ steps.scan.outputs.prompt }}
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,WebSearch,TodoWrite,Bash(pnpm:*),Bash(npm:*),Bash(node:*),Bash(git:*),Bash(gh:*),Bash(jq:*),Bash(rg:*),Bash(date:*)"
+
+      - name: Ensure remediation PR marker
+        id: remediation_pr
+        if: ${{ steps.scan.outputs.has_uncovered == 'true' && steps.claude.outputs.branch_name != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_NAME: ${{ steps.claude.outputs.branch_name }}
+          MARKER: ${{ steps.scan.outputs.marker }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning::Claude did not leave an open PR for branch ${BRANCH_NAME}; marker could not be enforced."
+            exit 0
+          fi
+
+          PR_URL="$(gh pr view "$PR_NUMBER" --json url --jq '.url')"
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq '.title')"
+          PR_SUMMARY="$(node -e 'const title = process.argv[1] || ""; console.log(title.replace(/^[A-Za-z]+(?:\([^)]+\))?!?:\s*/, ""));' "$PR_TITLE")"
+
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "summary=${PR_SUMMARY}" >> "$GITHUB_OUTPUT"
+
+          gh label create audit-ci-remediation \
+            --description "Automated audit-ci vulnerability remediation" \
+            --color "B60205" \
+            2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label audit-ci-remediation
+
+          BODY_FILE="$(mktemp)"
+          UPDATED_BODY_FILE="$(mktemp)"
+          gh pr view "$PR_NUMBER" --json body --jq '.body // ""' > "$BODY_FILE"
+
+          node - "$BODY_FILE" "$UPDATED_BODY_FILE" "$MARKER" <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+
+          const [, , inputPath, outputPath, marker] = process.argv;
+          const markerRegex = /<!--\s*audit-ci-vuln-keys:\s*\[[\s\S]*?\]\s*-->/;
+          let body = readFileSync(inputPath, "utf8");
+
+          if (!markerRegex.test(body)) {
+            if (/^## Summary\b.*$/m.test(body)) {
+              body = body.replace(/^## Summary\b.*$/m, (heading) => `${heading}\n\n${marker}`);
+            } else {
+              body = `## Summary\n\n${marker}\n\n${body.trim()}\n`;
+            }
+          }
+
+          writeFileSync(outputPath, body);
+          NODE
+
+          gh pr edit "$PR_NUMBER" --body-file "$UPDATED_BODY_FILE"
+
+      - name: Request code review
+        if: ${{ steps.scan.outputs.has_uncovered == 'true' && steps.claude.outputs.branch_name != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_NAME: ${{ steps.claude.outputs.branch_name }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning::No open PR for ${BRANCH_NAME}; cannot request reviewers."
+            exit 0
+          fi
+          gh pr edit "$PR_NUMBER" --add-reviewer abimaelmartell,mogery
+
+      - name: Notify Slack about remediation PR
+        if: ${{ steps.remediation_pr.outputs.pr_url != '' && env.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL }}
+          PR_URL: ${{ steps.remediation_pr.outputs.pr_url }}
+          SUMMARY: ${{ steps.remediation_pr.outputs.summary }}
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg pr_url "$PR_URL" \
+            --arg summary "$SUMMARY" \
+            '{pr_url: $pr_url, summary: $summary}' \
+            | curl --fail-with-body --show-error --silent \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --data @- \
+              "$SLACK_WEBHOOK_URL"

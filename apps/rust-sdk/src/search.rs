@@ -1,140 +1,328 @@
-use crate::{scrape::ScrapeOptions, FirecrawlApp, FirecrawlError, API_VERSION};
+//! Search endpoint for Firecrawl API v2.
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+use crate::client::Client;
+use crate::scrape::ScrapeOptions;
+use crate::types::{
+    DiscoveredTool, Document, SearchCategory, SearchResultImage, SearchResultNews, SearchResultWeb,
+    SearchSource,
+};
+use crate::FirecrawlError;
+
+/// Options for search requests.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchParams {
-    /// The search query string
-    pub query: String,
-    /// Maximum number of results to return. Default: 5, Max: 20
+pub struct SearchOptions {
+    /// Maximum number of results to return. Default: 5, Max: 20.
     pub limit: Option<u32>,
-    /// Time-based search filter.
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    /// Search sources to query (web, news, images, alexandria).
+    pub sources: Option<Vec<SearchSource>>,
+
+    /// Enable Alexandria domain-tool discovery (send alongside `sources: ["alexandria"]`).
+    pub domain_tools: Option<bool>,
+
+    /// Discovery response detail; defaults to compact.
+    pub tool_detail: Option<crate::types::ToolDetail>,
+
+    /// Categories to filter results (github, research, pdf).
+    pub categories: Option<Vec<SearchCategory>>,
+
+    /// Domains to include in search results.
+    pub include_domains: Option<Vec<String>>,
+
+    /// Domains to exclude from search results.
+    pub exclude_domains: Option<Vec<String>>,
+
+    /// Time-based search filter (e.g., "qdr:d" for past day).
     pub tbs: Option<String>,
-    /// Query string to filter search results. Example: "site:example.com"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-    /// Language code. Default: "en"
-    pub lang: Option<String>,
-    /// Country code. Default: "us"
-    pub country: Option<String>,
-    /// Geographic location string for local search results
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    /// Geographic location string for local search results.
     pub location: Option<String>,
-    /// Origin identifier. Default: "api"
-    pub origin: Option<String>,
-    /// Timeout in milliseconds. Default: 60000
+
+    /// Country code to geo-target search results (e.g., "de").
+    pub country: Option<String>,
+
+    /// Whether to ignore invalid URLs in results.
+    #[serde(rename = "ignoreInvalidURLs")]
+    pub ignore_invalid_urls: Option<bool>,
+
+    /// Timeout in milliseconds.
     pub timeout: Option<u32>,
-    /// Additional options for webpage scraping behavior
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    /// Whether to generate query-relevant highlights. Defaults to true.
+    pub highlights: Option<bool>,
+
+    /// Scrape options to apply to each search result.
     pub scrape_options: Option<ScrapeOptions>,
+
+    /// Integration identifier for tracking.
+    pub integration: Option<String>,
+
+    /// Origin label for request attribution (e.g., "rust-sdk@2.8.0").
+    pub origin: Option<String>,
 }
 
-impl Default for SearchParams {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            limit: Some(5),
-            tbs: None,
-            filter: None,
-            lang: Some("en".to_string()),
-            country: Some("us".to_string()),
-            location: None,
-            origin: Some("api".to_string()),
-            timeout: Some(60000),
-            scrape_options: None,
+/// Request body for search endpoint.
+#[derive(Deserialize, Serialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+struct SearchRequest {
+    query: String,
+    #[serde(flatten)]
+    options: SearchOptions,
+}
+
+/// Search results data structure.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchData {
+    /// Web search results (may include scraped documents).
+    pub web: Option<Vec<SearchResultOrDocument>>,
+    /// News search results.
+    pub news: Option<Vec<SearchResultNews>>,
+    /// Image search results.
+    pub images: Option<Vec<SearchResultImage>>,
+    pub tools: Option<Vec<DiscoveredTool>>,
+}
+
+/// A search result that may be a simple result or a full document.
+///
+/// Uses custom deserialization to properly distinguish between web results
+/// and scraped documents by checking for document-specific fields.
+#[derive(Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum SearchResultOrDocument {
+    /// Simple web search result.
+    WebResult(SearchResultWeb),
+    /// Full scraped document.
+    Document(Document),
+}
+
+impl<'de> serde::Deserialize<'de> for SearchResultOrDocument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde_json::Value;
+
+        let value = Value::deserialize(deserializer)?;
+
+        // Check for document-specific fields that indicate scraped content
+        // If any of these exist, it's a Document, not a simple WebResult
+        let is_document = value.get("markdown").is_some()
+            || value.get("html").is_some()
+            || value.get("rawHtml").is_some()
+            || value.get("metadata").is_some();
+
+        if is_document {
+            Document::deserialize(value)
+                .map(SearchResultOrDocument::Document)
+                .map_err(serde::de::Error::custom)
+        } else {
+            SearchResultWeb::deserialize(value)
+                .map(SearchResultOrDocument::WebResult)
+                .map_err(serde::de::Error::custom)
         }
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+/// Response from search endpoint.
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResponse {
+    /// Whether the request was successful.
     pub success: bool,
-    pub data: Vec<SearchDocument>,
+    /// Search results data.
+    pub data: SearchData,
+    /// Warning message if any.
     pub warning: Option<String>,
 }
 
-// TODO: Consider merging fields into document::Document (url, title, description) while preserving optionality
-/// A document returned from a search or scrape request
-#[serde_with::skip_serializing_none]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchDocument {
-    /// Document URL
-    pub url: String,
-    /// Document title
-    pub title: String,
-    /// Document description
-    pub description: String,
-}
-
-impl FirecrawlApp {
-    /// Search for content using the Firecrawl API.
+impl Client {
+    /// Searches the web and optionally scrapes the results.
     ///
     /// # Arguments
     ///
-    /// * `query` - The search query string
-    /// * `params` - Optional parameters for the search request
+    /// * `query` - The search query string.
+    /// * `options` - Optional search configuration.
     ///
     /// # Returns
     ///
-    /// A SearchResponse containing the search results, or a FirecrawlError if the request fails.
+    /// A `SearchResponse` containing the search results.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::{Client, SearchOptions, SearchSource};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     // Simple search
+    ///     let results = client.search("rust programming", None).await?;
+    ///     for result in results.data.web.unwrap_or_default() {
+    ///         match result {
+    ///             firecrawl::SearchResultOrDocument::WebResult(r) => {
+    ///                 println!("URL: {}", r.url);
+    ///             }
+    ///             firecrawl::SearchResultOrDocument::Document(d) => {
+    ///                 println!("Content: {:?}", d.markdown);
+    ///             }
+    ///         }
+    ///     }
+    ///
+    ///     // Search with options
+    ///     let options = SearchOptions {
+    ///         limit: Some(10),
+    ///         sources: Some(vec![SearchSource::Web, SearchSource::News]),
+    ///         ..Default::default()
+    ///     };
+    ///     let results = client.search("rust programming", options).await?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub async fn search(
         &self,
         query: impl AsRef<str>,
-        params: impl Into<Option<SearchParams>>,
+        options: impl Into<Option<SearchOptions>>,
     ) -> Result<SearchResponse, FirecrawlError> {
-        let mut search_params = params.into().unwrap_or_default();
-        search_params.query = query.as_ref().to_string();
+        if query.as_ref().trim().is_empty() {
+            return Err(FirecrawlError::Misuse("Query cannot be empty".into()));
+        }
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+        let body = SearchRequest {
+            query: query.as_ref().to_string(),
+            options,
+        };
 
-        self.search_with_params(search_params).await
-    }
-
-    /// Alternative method that takes SearchParams directly
-    ///
-    /// # Arguments
-    ///
-    /// * `params` - Search parameters including the query
-    ///
-    /// # Returns
-    ///
-    /// A SearchResponse containing the search results, or a FirecrawlError if the request fails.
-    pub async fn search_with_params(
-        &self,
-        params: SearchParams,
-    ) -> Result<SearchResponse, FirecrawlError> {
         let headers = self.prepare_headers(None);
 
         let response = self
             .client
-            .post(format!("{}{}/search", self.api_url, API_VERSION))
+            .post(self.url("/search"))
             .headers(headers)
-            .json(&params)
+            .json(&body)
             .send()
             .await
             .map_err(|e| {
-                FirecrawlError::HttpError(format!("Searching with query: {:?}", params.query), e)
+                FirecrawlError::HttpError(format!("Searching for {:?}", query.as_ref()), e)
             })?;
 
-        self.handle_response::<SearchResponse>(response, "search")
-            .await
+        self.handle_response(response, "search").await
+    }
+
+    /// Searches the web and scrapes the results.
+    ///
+    /// This is a convenience method that enables scraping for all results.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The search query string.
+    /// * `limit` - Maximum number of results to return.
+    ///
+    /// # Returns
+    ///
+    /// A vector of scraped documents.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     let documents = client.search_and_scrape("rust programming", 5).await?;
+    ///     for doc in documents {
+    ///         println!("Title: {:?}", doc.metadata.and_then(|m| m.title));
+    ///         println!("Content: {:?}", doc.markdown);
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn search_and_scrape(
+        &self,
+        query: impl AsRef<str>,
+        limit: u32,
+    ) -> Result<Vec<Document>, FirecrawlError> {
+        let options = SearchOptions {
+            limit: Some(limit),
+            scrape_options: Some(ScrapeOptions::default()),
+            ..Default::default()
+        };
+
+        let response = self.search(query, options).await?;
+
+        let documents: Vec<Document> = response
+            .data
+            .web
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|result| match result {
+                SearchResultOrDocument::Document(doc) => Some(doc),
+                SearchResultOrDocument::WebResult(_) => None,
+            })
+            .collect();
+
+        Ok(documents)
     }
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
     use serde_json::json;
 
-    #[tokio::test]
-    #[ignore = "Makes real network request"]
-    async fn test_real_search() {
-        let api_url = std::env::var("FIRECRAWL_API_URL")
-            .expect("Please set the FIRECRAWL_API_URL environment variable");
-        let app = FirecrawlApp::new_selfhosted(api_url, None::<&str>).unwrap();
-        let response = app.search("test query", None).await.unwrap();
-        assert!(response.success);
+    #[test]
+    fn serializes_highlights_option() {
+        let options = SearchOptions {
+            highlights: Some(false),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({ "highlights": false })
+        );
+    }
+
+    #[test]
+    fn serializes_country_option() {
+        let options = SearchOptions {
+            country: Some("de".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({ "country": "de" })
+        );
+
+        let default_value = serde_json::to_value(SearchOptions::default()).unwrap();
+        assert!(default_value.get("country").is_none());
+    }
+
+    #[test]
+    fn serializes_ignore_invalid_urls_option() {
+        let options = SearchOptions {
+            ignore_invalid_urls: Some(true),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({ "ignoreInvalidURLs": true })
+        );
     }
 
     #[tokio::test]
@@ -142,104 +330,218 @@ pub mod tests {
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
-            .mock("POST", "/v1/search")
+            .mock("POST", "/v2/search")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
                     "success": true,
-                    "data": [{
-                        "url": "https://example.com",
-                        "title": "Example Domain",
-                        "description": "...."
-                    }],
+                    "data": {
+                        "web": [
+                            {
+                                "url": "https://example.com",
+                                "title": "Example Domain",
+                                "description": "This domain is for examples"
+                            },
+                            {
+                                "url": "https://example.org",
+                                "title": "Another Example",
+                                "description": "More examples"
+                            }
+                        ]
+                    }
                 })
                 .to_string(),
             )
             .create();
 
-        let app = FirecrawlApp::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let response = app.search("test", None).await.unwrap();
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.search("test query", None).await.unwrap();
 
         assert!(response.success);
-        assert_eq!(response.data.len(), 1);
-        assert_eq!(response.data[0].url, "https://example.com");
-        assert_eq!(response.data[0].title, "Example Domain".to_string());
-        assert_eq!(response.data[0].description, "....".to_string());
+        let web_results = response.data.web.unwrap();
+        assert_eq!(web_results.len(), 2);
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_search_with_params() {
+    async fn test_search_with_options() {
         let mut server = mockito::Server::new_async().await;
+
         let mock = server
-            .mock("POST", "/v1/search")
-            .with_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(json!({
-                "query": "test",
-                "limit": 10,
-                "lang": "fr",
-                "country": "fr",
-                "origin": "api",
-                "timeout": 30000
-            })))
+            .mock("POST", "/v2/search")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
                     "success": true,
-                    "data": [],
-                    "warning": "No results found"
+                    "data": {
+                        "web": [
+                            {
+                                "url": "https://example.com",
+                                "title": "Test Result",
+                                "description": "A test result"
+                            }
+                        ],
+                        "news": [
+                            {
+                                "title": "Breaking News",
+                                "url": "https://news.example.com",
+                                "snippet": "Something happened",
+                                "date": "2024-01-01"
+                            }
+                        ]
+                    }
                 })
                 .to_string(),
             )
             .create();
 
-        let app = FirecrawlApp::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let params = SearchParams {
-            query: "test".to_string(),
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = SearchOptions {
             limit: Some(10),
-            lang: Some("fr".to_string()),
-            country: Some("fr".to_string()),
-            timeout: Some(30000),
+            sources: Some(vec![SearchSource::Web, SearchSource::News]),
             ..Default::default()
         };
 
-        let response = app.search_with_params(params).await.unwrap();
+        let response = client.search("test", options).await.unwrap();
 
         assert!(response.success);
-        assert_eq!(response.data.len(), 0);
-        assert_eq!(response.warning, Some("No results found".to_string()));
+        assert!(response.data.web.is_some());
+        assert!(response.data.news.is_some());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_search_and_scrape() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/search")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "data": {
+                        "web": [
+                            {
+                                "markdown": "# Example\n\nThis is the scraped content.",
+                                "metadata": {
+                                    "sourceURL": "https://example.com",
+                                    "statusCode": 200,
+                                    "title": "Example"
+                                }
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let documents = client.search_and_scrape("test", 5).await.unwrap();
+
+        assert_eq!(documents.len(), 1);
+        assert!(documents[0].markdown.is_some());
         mock.assert();
     }
 
     #[tokio::test]
     async fn test_search_error_response() {
         let mut server = mockito::Server::new_async().await;
+
         let mock = server
-            .mock("POST", "/v1/search")
+            .mock("POST", "/v2/search")
             .with_status(400)
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
                     "success": false,
-                    "error": "Invalid query"
+                    "error": "Invalid limit"
                 })
                 .to_string(),
             )
             .create();
 
-        let app = FirecrawlApp::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let result = app.search("", None).await;
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let result = client
+            .search(
+                "test",
+                SearchOptions {
+                    limit: Some(0),
+                    ..Default::default()
+                },
+            )
+            .await;
 
         assert!(result.is_err());
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_search_network_error() {
-        let app = FirecrawlApp::new_selfhosted("http://invalid-url", Some("test_key")).unwrap();
-        let result = app.search("test", None).await;
-        assert!(result.is_err());
+    async fn test_search_mixed_results_deserialization() {
+        // Test that results with markdown/metadata are correctly identified as Documents
+        // and simple results are identified as WebResults
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/search")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "data": {
+                        "web": [
+                            // Simple web result (no markdown/metadata)
+                            {
+                                "url": "https://example.com/simple",
+                                "title": "Simple Result",
+                                "description": "Just a search result"
+                            },
+                            // Scraped document with url AND markdown
+                            {
+                                "url": "https://example.com/scraped",
+                                "markdown": "# Scraped Content\n\nThis has content.",
+                                "metadata": {
+                                    "sourceURL": "https://example.com/scraped",
+                                    "statusCode": 200,
+                                    "title": "Scraped Page"
+                                }
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.search("test", None).await.unwrap();
+
+        let web_results = response.data.web.unwrap();
+        assert_eq!(web_results.len(), 2);
+
+        // First should be WebResult
+        match &web_results[0] {
+            SearchResultOrDocument::WebResult(r) => {
+                assert_eq!(r.url, "https://example.com/simple");
+                assert_eq!(r.title, Some("Simple Result".to_string()));
+            }
+            SearchResultOrDocument::Document(_) => panic!("Expected WebResult, got Document"),
+        }
+
+        // Second should be Document (has markdown)
+        match &web_results[1] {
+            SearchResultOrDocument::Document(d) => {
+                assert!(d.markdown.is_some());
+                assert!(d.markdown.as_ref().unwrap().contains("Scraped Content"));
+            }
+            SearchResultOrDocument::WebResult(_) => panic!("Expected Document, got WebResult"),
+        }
+
+        mock.assert();
     }
 }

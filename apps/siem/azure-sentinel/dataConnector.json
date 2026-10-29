@@ -1,0 +1,25 @@
+{
+  "name": "FirecrawlScrapeActivityPushConnector",
+  "apiVersion": "2024-09-01",
+  "type": "Microsoft.SecurityInsights/dataConnectors",
+  "kind": "Push",
+  "properties": {
+    "connectorDefinitionName": "FirecrawlScrapeActivityPush",
+    "dcrConfig": {
+      "streamName": "Custom-FirecrawlScrapeActivity",
+      "dataCollectionEndpoint": "[[parameters('dcrConfig').dataCollectionEndpoint]]",
+      "dataCollectionRuleImmutableId": "[[parameters('dcrConfig').dataCollectionRuleImmutableId]]"
+    },
+    "auth": {
+      "type": "Push",
+      "AppId": "[[parameters('auth').appId]]",
+      "ServicePrincipalId": "[[parameters('auth').servicePrincipalId]]"
+    },
+    "request": {
+      "RetryCount": 1
+    },
+    "response": {
+      "eventsJsonPaths": ["$"]
+    }
+  }
+}

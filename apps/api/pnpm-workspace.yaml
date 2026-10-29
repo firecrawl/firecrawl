@@ -3,4 +3,124 @@ packages:
 injectWorkspacePackages: true
 minimumReleaseAge: 720 # 12 hours
 minimumReleaseAgeExclude:
+  # GHSA-27r3-jxmh-p828: allow today's patched releases through the age gate.
+  - "body-parser@1.20.9 || 2.4.0"
+  # GHSA-rxp7-6hxx-x8q5: patched release published today.
+  - "ip-address@10.7.4"
   - fast-xml-parser
+  - follow-redirects
+  # GHSA-27r3-jxmh-p828: body-parser 1.20.9 and 2.4.0 were published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - body-parser
+  # GHSA-q7qp-rjg7-q26m / CVE-2026-113872: multer 2.5.0 was published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - multer
+  # TypeScript 7 resolves its native platform binaries (e.g.
+  # @typescript/typescript-darwin-arm64) as transitive optional deps, which
+  # the age gate would otherwise silently skip, leaving tsc unable to run.
+  - typescript
+  - "@typescript/typescript6"
+  - "@typescript/typescript-*"
+overrides:
+  # GHSA-mrhx-c7xc-m3w5: fixed in 4.6.6. Bounded <5.0.0; cannot resolve to 5.x.
+  "zod@>=4.0.0 <4.6.6": "4.6.7"
+  # GHSA-27r3-jxmh-p828: Express 5.2.1 also loads body-parser 2.x.
+  "body-parser@<1.20.9": "1.20.9"
+  "body-parser@>=2.0.0 <2.4.0": "2.4.0"
+  "@types/express": "^5.0.6"
+  # GHSA-698v-4r3x-3vcv: pin the 8.0 and 8.1 lines to 8.1.6. Cannot resolve to 8.2+.
+  "vite@>=8.0.0 <8.1.6": "8.1.6"
+  bigint-buffer: "npm:four-flap-bigint-buffer@1.1.6"
+  diff: "^8.0.3"
+  ajv: "^8.18.0"
+  fast-xml-builder: ">=1.1.6 <2.0.0"
+  fast-xml-parser: "^5.7.0"
+  fast-uri: "3.1.9"
+  "glob@>=10.2.0 <10.5.0": ">=10.5.0"
+  "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
+  "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
+  # GHSA-6pq8-jhm2-2vcw: fixed in 6.16.1. Bounded <7.0.0.
+  "qs@<6.16.1": ">=6.16.1 <7.0.0"
+  "minimatch@<10.2.3": ">=10.2.3"
+  "bn.js@<5.2.3": ">=5.2.3"
+  "@tootallnate/once@<3.0.1": ">=3.0.1"
+  yauzl: "^3.2.1"
+  undici: "7.30.1"
+  # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
+  # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
+  # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
+  # GHSA-m8m8-qj5v-23w3 / GHSA-44g4-m2mj-wpvx / GHSA-r4gj-5m52-g5wh:
+  # pin the 1.x line only. Exact 1.20.0 cannot resolve to 2.x.
+  "axios@>=1.0.0 <1.20.0": "1.20.0"
+  # GHSA-m9gg-hp2v-232j / GHSA-f596-whhp-79r4: pin the 1.x line only.
+  # Exact 1.14.5 cannot resolve to 2.x.
+  "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.5"
+  "picomatch@<4.0.4": ">=4.0.4"
+  "yaml@<2.8.3": ">=2.8.3"
+  # GHSA-r4xh-jqrq-34v2: pin the 1.x line only. Exact 1.9.0 cannot
+  # resolve to 2.x.
+  "smol-toml@>=1.0.0 <1.9.0": "1.9.0"
+  # GHSA-jqcg-44mw-7w3h: pin the 2.x line only. Exact 2.0.8 cannot
+  # resolve to 3.x.
+  "proxy-addr@>=2.0.0 <2.0.8": "2.0.8"
+  # GHSA-68fv-2mgg-jv7q: pin the 1.x line only. Exact 1.2.2 cannot
+  # resolve to 2.x.
+  "source-map-js@>=1.0.0 <1.2.2": "1.2.2"
+  handlebars: ">=4.7.9"
+  "path-to-regexp@~0.1.12": "0.1.13"
+  # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
+  # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
+  "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
+  "postcss@>=8.0.0 <8.5.26": "8.5.26"
+  "nanoid@>=3.0.0 <3.3.18": "3.3.18"
+  "ws@>=7.0.0 <7.5.11": "7.5.11"
+  "ws@>=8.0.0 <8.21.0": "8.21.0"
+  "form-data@>=2.0.0 <2.5.6": "2.5.6"
+  "form-data@>=3.0.0 <3.0.5": "3.0.5"
+  "form-data@>=4.0.0 <4.0.6": "4.0.6"
+  "@babel/core@>=7.0.0 <7.29.6": "7.29.7"
+  # GHSA-Q3JH-WRC6-JGQ8 / GHSA-8R9P-F939-6H3C: fixed in 1.16.1.
+  # Replacement is bounded <2.0.0; cannot resolve to follow-redirects 2.x.
+  "follow-redirects@<1.16.1": ">=1.16.1 <2.0.0"
+  "uuid@<11.1.1": "11.1.1"
+  "js-cookie@<3.0.7": "3.0.7"
+  # GHSA-pqg4-j6r4-53mv: fixed in 1.11.0.
+  "shell-quote@<1.11.0": "1.11.0"
+  "esbuild@>=0.17.0 <0.28.1": "0.28.1"
+  "query-string@>=9.0.0 <10.0.0": ">=9.5.0 <10.0.0"
+  # GHSA-866g-f22w-33x8: pin the 4.x line only. Exact 4.0.51 cannot
+  # resolve to 5.x.
+  "@ai-sdk/provider-utils@>=4.0.0 <4.0.33": "4.0.51"
+  # GHSA-8988-4f7v-96qf (@opentelemetry/core): only patched on the 2.x
+  # line. @google-cloud/bigtable@7 resolves its metrics chain onto OTel
+  # 1.x; Google's own exporter 0.22 already peers with 2.x, so force the
+  # trio onto the patched line the rest of the tree already uses.
+  "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.22.0"
+  "@opentelemetry/core@<2.9.0": "2.9.0"
+  "@opentelemetry/resources@<2.9.0": "2.9.0"
+  "@opentelemetry/sdk-metrics@<2.9.0": "2.9.0"
+  # GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
+  # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
+  # ip-address@^6, but only its updatedb script loads it; lookup() never does.
+  "geoip-country>ip-address": "10.7.4"
+patchedDependencies:
+  "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
+allowBuilds:
+  "@mendable/firecrawl-rs": true
+  bigint-buffer: true
+  # Optional native accelerator for fast-crc32c (pulled in by
+  # @google-cloud/bigtable); the pure-JS fallback is fine for our payload
+  # sizes, so no native compilation.
+  sse4_crc32: false
+  bufferutil: true
+  esbuild: true
+  foundationdb: true
+  four-flap-bigint-buffer: true
+  keccak: true
+  koffi: true
+  libpq: true
+  msgpackr-extract: true
+  oxc-resolver: true
+  protobufjs: true
+  utf-8-validate: true
+  wordpos: true

@@ -1,0 +1,1032 @@
+using System.Text.Json;
+using Firecrawl.Exceptions;
+using Firecrawl.Models;
+using MonitorModel = Firecrawl.Models.Monitor;
+
+namespace Firecrawl;
+
+/// <summary>
+/// Client for the Firecrawl v2 API.
+///
+/// <example>
+/// <code>
+/// var client = new FirecrawlClient("fc-your-api-key");
+///
+/// // Scrape a single page
+/// var doc = await client.ScrapeAsync("https://example.com",
+///     new ScrapeOptions { Formats = new List&lt;object&gt; { "markdown" } });
+///
+/// // Crawl a website
+/// var job = await client.CrawlAsync("https://example.com",
+///     new CrawlOptions { Limit = 50 });
+/// </code>
+/// </example>
+/// </summary>
+public class FirecrawlClient
+{
+    private const string DefaultApiUrl = "https://api.firecrawl.dev";
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
+    private const int DefaultMaxRetries = 3;
+    private const double DefaultBackoffFactor = 0.5;
+    private const int DefaultPollIntervalSec = 2;
+    private const int DefaultJobTimeoutSec = 300;
+    private const int DefaultInteractTimeoutSec = 30;
+    private const int InteractTimeoutHeadroomSec = 60;
+
+    private readonly FirecrawlHttpClient _http;
+
+    /// <summary>
+    /// Creates a new FirecrawlClient with the specified API key.
+    /// </summary>
+    /// <param name="apiKey">The Firecrawl API key.</param>
+    /// <param name="apiUrl">Optional API base URL (defaults to https://api.firecrawl.dev).</param>
+    /// <param name="timeout">Optional HTTP request timeout.</param>
+    /// <param name="maxRetries">Optional maximum number of retries for transient failures.</param>
+    /// <param name="backoffFactor">Optional exponential backoff factor in seconds.</param>
+    /// <param name="httpClient">Optional pre-configured HttpClient instance.</param>
+    public FirecrawlClient(
+        string? apiKey = null,
+        string? apiUrl = null,
+        TimeSpan? timeout = null,
+        int maxRetries = DefaultMaxRetries,
+        double backoffFactor = DefaultBackoffFactor,
+        HttpClient? httpClient = null)
+    {
+        var resolvedKey = ResolveApiKey(apiKey);
+        var resolvedUrl = ResolveApiUrl(apiUrl);
+
+        _http = new FirecrawlHttpClient(
+            resolvedKey,
+            resolvedUrl,
+            timeout ?? DefaultTimeout,
+            maxRetries,
+            backoffFactor,
+            httpClient);
+    }
+
+    // ================================================================
+    // SCRAPE
+    // ================================================================
+
+    /// <summary>
+    /// Scrapes a single URL and returns the document.
+    /// </summary>
+    public async Task<Document> ScrapeAsync(
+        string url,
+        ScrapeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+
+        var body = BuildBody(options);
+        body["url"] = url;
+
+        var response = await _http.PostAsync<ApiResponse<Document>>(
+            "/v2/scrape", body, cancellationToken: cancellationToken);
+
+        // Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+        if (!response.Success && response.Error is not null)
+            throw new FirecrawlException(response.Error, 200, response.Code, response.Details);
+
+        return response.Data ?? throw new FirecrawlException("Scrape response contained no data");
+    }
+
+    /// <summary>
+    /// Runs code or a natural-language prompt in the browser session of a scrape job.
+    /// </summary>
+    /// <param name="jobId">The scrape job ID (<c>metadata.scrapeId</c> on the scraped document).</param>
+    /// <param name="code">Code to run. Optional when <paramref name="prompt"/> is set.</param>
+    /// <param name="language">Runtime for the code: "node", "python", or "bash".</param>
+    /// <param name="timeout">Execution timeout in seconds (1-300). The API defaults to 30.</param>
+    /// <param name="prompt">Natural-language instruction for the browser agent. Optional when <paramref name="code"/> is set.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<BrowserExecuteResponse> InteractAsync(
+        string jobId,
+        string? code,
+        string language = "node",
+        int? timeout = null,
+        string? prompt = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        var hasCode = !string.IsNullOrWhiteSpace(code);
+        var hasPrompt = !string.IsNullOrWhiteSpace(prompt);
+        if (!hasCode && !hasPrompt)
+            throw new ArgumentException("Either code or prompt must be provided", nameof(code));
+
+        var body = new Dictionary<string, object>
+        {
+            ["language"] = language,
+            ["origin"] = SdkOrigin,
+        };
+        if (hasCode)
+            body["code"] = code!;
+        if (hasPrompt)
+            body["prompt"] = prompt!;
+        if (timeout.HasValue)
+            body["timeout"] = timeout.Value;
+
+        // Browser setup and cleanup run outside the execution timeout, so allow headroom past it.
+        return await _http.PostAsync<BrowserExecuteResponse>(
+            $"/v2/scrape/{Uri.EscapeDataString(jobId)}/interact",
+            body,
+            cancellationToken: cancellationToken,
+            minimumTimeout: TimeSpan.FromSeconds((timeout ?? DefaultInteractTimeoutSec) + InteractTimeoutHeadroomSec));
+    }
+
+    /// <summary>
+    /// Stops the browser session of a scrape job.
+    /// </summary>
+    public async Task<BrowserDeleteResponse> StopInteractiveBrowserAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.DeleteAsync<BrowserDeleteResponse>(
+            $"/v2/scrape/{Uri.EscapeDataString(jobId)}/interact", cancellationToken);
+    }
+
+    // ================================================================
+    // CRAWL
+    // ================================================================
+
+    /// <summary>
+    /// Starts an async crawl job and returns immediately.
+    /// </summary>
+    public async Task<CrawlResponse> StartCrawlAsync(
+        string url,
+        CrawlOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+
+        var body = BuildBody(options);
+        body["url"] = url;
+
+        return await _http.PostAsync<CrawlResponse>(
+            "/v2/crawl", body, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the status and results of a crawl job.
+    /// </summary>
+    public async Task<CrawlJob> GetCrawlStatusAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.GetAsync<CrawlJob>(
+            $"/v2/crawl/{jobId}", cancellationToken);
+    }
+
+    /// <summary>
+    /// Crawls a website and waits for completion (auto-polling).
+    /// </summary>
+    public async Task<CrawlJob> CrawlAsync(
+        string url,
+        CrawlOptions? options = null,
+        int pollIntervalSec = DefaultPollIntervalSec,
+        int timeoutSec = DefaultJobTimeoutSec,
+        CancellationToken cancellationToken = default)
+    {
+        var start = await StartCrawlAsync(url, options, cancellationToken);
+        return await PollCrawlAsync(
+            start.Id ?? throw new FirecrawlException("Crawl start did not return a job ID"),
+            pollIntervalSec, timeoutSec, cancellationToken);
+    }
+
+    /// <summary>
+    /// Cancels a running crawl job.
+    /// </summary>
+    public async Task<Dictionary<string, object>> CancelCrawlAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.DeleteAsync<Dictionary<string, object>>(
+            $"/v2/crawl/{jobId}", cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets errors from a crawl job.
+    /// </summary>
+    public async Task<Dictionary<string, object>> GetCrawlErrorsAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.GetAsync<Dictionary<string, object>>(
+            $"/v2/crawl/{jobId}/errors", cancellationToken);
+    }
+
+    // ================================================================
+    // BATCH SCRAPE
+    // ================================================================
+
+    /// <summary>
+    /// Starts an async batch scrape job.
+    /// </summary>
+    public async Task<BatchScrapeResponse> StartBatchScrapeAsync(
+        List<string> urls,
+        BatchScrapeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(urls);
+
+        var body = BuildBody(options);
+        body["urls"] = urls;
+
+        // The API expects scrape options flattened at the top level
+        if (body.TryGetValue("options", out var nested) && nested is JsonElement nestedElement)
+        {
+            body.Remove("options");
+            var nestedDict = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                nestedElement.GetRawText(), FirecrawlHttpClient.JsonOptions);
+            if (nestedDict != null)
+            {
+                var batchFields = new Dictionary<string, object>(body);
+                foreach (var kv in nestedDict)
+                    body.TryAdd(kv.Key, kv.Value);
+                foreach (var kv in batchFields)
+                    body[kv.Key] = kv.Value;
+            }
+        }
+
+        Dictionary<string, string>? extraHeaders = null;
+        if (options?.IdempotencyKey is { Length: > 0 } idempotencyKey)
+        {
+            extraHeaders = new Dictionary<string, string>
+            {
+                ["x-idempotency-key"] = idempotencyKey
+            };
+        }
+
+        return await _http.PostAsync<BatchScrapeResponse>(
+            "/v2/batch/scrape", body, extraHeaders, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the status and results of a batch scrape job.
+    /// </summary>
+    public async Task<BatchScrapeJob> GetBatchScrapeStatusAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.GetAsync<BatchScrapeJob>(
+            $"/v2/batch/scrape/{jobId}", cancellationToken);
+    }
+
+    /// <summary>
+    /// Batch-scrapes URLs and waits for completion (auto-polling).
+    /// </summary>
+    public async Task<BatchScrapeJob> BatchScrapeAsync(
+        List<string> urls,
+        BatchScrapeOptions? options = null,
+        int pollIntervalSec = DefaultPollIntervalSec,
+        int timeoutSec = DefaultJobTimeoutSec,
+        CancellationToken cancellationToken = default)
+    {
+        var start = await StartBatchScrapeAsync(urls, options, cancellationToken);
+        return await PollBatchScrapeAsync(
+            start.Id ?? throw new FirecrawlException("Batch scrape start did not return a job ID"),
+            pollIntervalSec, timeoutSec, cancellationToken);
+    }
+
+    /// <summary>
+    /// Cancels a running batch scrape job.
+    /// </summary>
+    public async Task<Dictionary<string, object>> CancelBatchScrapeAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.DeleteAsync<Dictionary<string, object>>(
+            $"/v2/batch/scrape/{jobId}", cancellationToken);
+    }
+
+    // ================================================================
+    // PARSE
+    // ================================================================
+
+    /// <summary>
+    /// Parses an uploaded file (HTML, PDF, DOCX, etc.) via <c>/v2/parse</c>
+    /// and returns the extracted document.
+    /// </summary>
+    /// <param name="file">The file to upload.</param>
+    /// <param name="options">Optional parse options. Browser-only formats
+    /// (changeTracking, screenshot, branding, product, menu), actions, waitFor, location,
+    /// and mobile are rejected.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<Document> ParseAsync(
+        ParseFile file,
+        ParseOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        var filename = file.Filename?.Trim();
+        if (string.IsNullOrEmpty(filename))
+            throw new ArgumentException("filename cannot be empty", nameof(file));
+
+        if (file.Content is null || file.Content.Length == 0)
+            throw new ArgumentException("file content cannot be empty", nameof(file));
+
+        options?.Validate();
+
+        var optionsJson = JsonSerializer.Serialize(
+            options ?? new ParseOptions(),
+            FirecrawlHttpClient.JsonOptions);
+
+        var fields = new Dictionary<string, string>
+        {
+            ["options"] = optionsJson,
+        };
+
+        var response = await _http.PostMultipartAsync<ApiResponse<Document>>(
+            "/v2/parse",
+            fields,
+            fileField: "file",
+            fileName: filename,
+            fileContentType: file.ResolveContentType(),
+            fileContent: file.Content,
+            cancellationToken: cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Parse response contained no data");
+    }
+
+    /// <summary>
+    /// Lists the file formats accepted by <c>/v2/parse</c>, including whether
+    /// each one is currently available on this deployment.
+    /// </summary>
+    public async Task<List<ParseFormat>> GetParseFormatsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync<ApiResponse<ParseFormatsData>>(
+            "/v2/parse/formats", cancellationToken);
+
+        return response.Data?.Formats
+            ?? throw new FirecrawlException("Parse formats response contained no data");
+    }
+
+    // ================================================================
+    // MAP
+    // ================================================================
+
+    /// <summary>
+    /// Discovers URLs on a website.
+    /// </summary>
+    public async Task<MapData> MapAsync(
+        string url,
+        MapOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+
+        var body = BuildBody(options);
+        body["url"] = url;
+
+        return await _http.PostAsync<MapData>(
+            "/v2/map", body, cancellationToken: cancellationToken);
+    }
+
+    // ================================================================
+    // MONITOR
+    // ================================================================
+
+    public async Task<MonitorModel> CreateMonitorAsync(
+        CreateMonitorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var response = await _http.PostAsync<ApiResponse<MonitorModel>>(
+            "/v2/monitor", request, cancellationToken: cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Create monitor response contained no data");
+    }
+
+    public async Task<List<MonitorModel>> ListMonitorsAsync(
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync<ApiResponse<List<MonitorModel>>>(
+            $"/v2/monitor{BuildQuery(limit, offset)}", cancellationToken);
+
+        return response.Data ?? new List<MonitorModel>();
+    }
+
+    public async Task<MonitorModel> GetMonitorAsync(
+        string monitorId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+
+        var response = await _http.GetAsync<ApiResponse<MonitorModel>>(
+            $"/v2/monitor/{monitorId}", cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Get monitor response contained no data");
+    }
+
+    public async Task<MonitorModel> UpdateMonitorAsync(
+        string monitorId,
+        UpdateMonitorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var response = await _http.PatchAsync<ApiResponse<MonitorModel>>(
+            $"/v2/monitor/{monitorId}", request, cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Update monitor response contained no data");
+    }
+
+    public async Task<bool> DeleteMonitorAsync(
+        string monitorId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+
+        var response = await _http.DeleteAsync<Dictionary<string, object>>(
+            $"/v2/monitor/{monitorId}", cancellationToken);
+
+        return response.TryGetValue("success", out var success) && success switch
+        {
+            bool value => value,
+            JsonElement element when element.ValueKind == JsonValueKind.True => true,
+            _ => false
+        };
+    }
+
+    public async Task<MonitorCheck> RunMonitorAsync(
+        string monitorId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+
+        var response = await _http.PostAsync<ApiResponse<MonitorCheck>>(
+            $"/v2/monitor/{monitorId}/run", new Dictionary<string, object>(), cancellationToken: cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Run monitor response contained no data");
+    }
+
+    public async Task<List<MonitorCheck>> ListMonitorChecksAsync(
+        string monitorId,
+        int? limit = null,
+        int? offset = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+
+        var response = await _http.GetAsync<ApiResponse<List<MonitorCheck>>>(
+            $"/v2/monitor/{monitorId}/checks{BuildQuery(limit, offset)}", cancellationToken);
+
+        return response.Data ?? new List<MonitorCheck>();
+    }
+
+    public async Task<MonitorCheckDetail> GetMonitorCheckAsync(
+        string monitorId,
+        string checkId,
+        int? limit = null,
+        int? skip = null,
+        string? status = null,
+        bool autoPaginate = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(monitorId);
+        ArgumentNullException.ThrowIfNull(checkId);
+
+        var response = await _http.GetAsync<ApiResponse<MonitorCheckDetail>>(
+            $"/v2/monitor/{monitorId}/checks/{checkId}{BuildMonitorCheckQuery(limit, skip, status)}",
+            cancellationToken);
+
+        var check = response.Data ?? throw new FirecrawlException("Get monitor check response contained no data");
+        return autoPaginate ? await PaginateMonitorCheckAsync(check, cancellationToken) : check;
+    }
+
+    // ================================================================
+    // SEARCH
+    // ================================================================
+
+    /// <summary>
+    /// Performs a web search.
+    /// </summary>
+    public async Task<SearchData> SearchAsync(
+        string query,
+        SearchOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var body = BuildBody(options);
+        body["query"] = query;
+
+        var response = await _http.PostAsync<ApiResponse<SearchData>>(
+            "/v2/search", body, cancellationToken: cancellationToken);
+
+        return response.Data ?? throw new FirecrawlException("Search response contained no data");
+    }
+
+    /// <summary>
+    /// Searches research papers.
+    /// </summary>
+    public async Task<SearchPapersResponse> SearchPapersAsync(
+        string query,
+        SearchPapersOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<SearchPapersResponse>(
+            "/v2/search/research/papers" + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K,
+                ["authors"] = options?.Authors,
+                ["categories"] = options?.Categories,
+                ["from"] = options?.From,
+                ["to"] = options?.To
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Fetches paper metadata.
+    /// </summary>
+    public async Task<PaperMetadataResponse> InspectPaperAsync(
+        string paperId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+
+        return await _http.GetAsync<PaperMetadataResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Fetches paper metadata and query-guided passages.
+    /// </summary>
+    public async Task<ReadPaperResponse> ReadPaperAsync(
+        string paperId,
+        string query,
+        ReadPaperOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<ReadPaperResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}"
+            + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Finds papers related to a paper.
+    /// </summary>
+    public async Task<SimilarPapersResponse> RelatedPapersAsync(
+        string paperId,
+        string intent,
+        RelatedPapersOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+        ArgumentNullException.ThrowIfNull(intent);
+
+        return await _http.GetAsync<SimilarPapersResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}/similar"
+            + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["intent"] = intent,
+                ["origin"] = SdkOrigin,
+                ["mode"] = options?.Mode,
+                ["k"] = options?.K,
+                ["rerank"] = options?.Rerank,
+                ["anchor"] = options?.Anchor
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Searches GitHub research content.
+    /// </summary>
+    [Obsolete("Stops responding after 2026-11-03. Use DeveloperSearchAsync, which does not carry over the score breakdown or the web fallback results.")]
+    public async Task<GitHubSearchResponse> SearchGitHubAsync(
+        string query,
+        SearchGitHubOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<GitHubSearchResponse>(
+            "/v2/search/research/github" + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Searches the developer index: public repositories, GitHub issues,
+    /// merged pull requests, READMEs and code documentation.
+    /// </summary>
+    /// <exception cref="ArgumentException">The query is blank.</exception>
+    public async Task<DeveloperSearchResponse> DeveloperSearchAsync(
+        string query,
+        DeveloperSearchOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+
+        var body = BuildBody(options);
+        body["query"] = query;
+
+        return await _http.PostAsync<DeveloperSearchResponse>(
+            "/v2/search/developer", body, cancellationToken: cancellationToken);
+    }
+
+    // ================================================================
+    // AGENT
+    // ================================================================
+
+    /// <summary>
+    /// Lists agent runs, most recent first.
+    /// </summary>
+    /// <remarks>
+    /// Pages are fixed at 20 runs. To fetch the next page, pass the before
+    /// value from the previous page's next URL. This method does not
+    /// auto-paginate.
+    /// </remarks>
+    /// <param name="before">Only return agent runs created before this unix millisecond timestamp.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<AgentListResponse> ListAgentsAsync(
+        long? before = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = before.HasValue
+            ? $"?before={Uri.EscapeDataString(before.Value.ToString())}"
+            : string.Empty;
+
+        return await _http.GetAsync<AgentListResponse>(
+            $"/v2/agent{query}", cancellationToken);
+    }
+
+    /// <summary>
+    /// Starts an async agent job and returns immediately.
+    /// </summary>
+    public async Task<AgentResponse> StartAgentAsync(
+        string prompt,
+        AgentOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+
+        var body = BuildBody(options);
+        body["prompt"] = prompt;
+
+        return await _http.PostAsync<AgentResponse>(
+            "/v2/agent", body, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the status and result of an agent job.
+    /// </summary>
+    public async Task<AgentStatusResponse> GetAgentStatusAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.GetAsync<AgentStatusResponse>(
+            $"/v2/agent/{Uri.EscapeDataString(jobId)}", cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs an agent job and waits until it completes, fails, or is cancelled (auto-polling).
+    /// Check <see cref="AgentStatusResponse.Status"/> on the result.
+    /// </summary>
+    /// <remarks>
+    /// On timeout this throws <see cref="JobTimeoutException"/> and the job keeps running; pass its
+    /// JobId to <see cref="GetAgentStatusAsync"/> to keep waiting or <see cref="CancelAgentAsync"/> to stop it.
+    /// </remarks>
+    public async Task<AgentStatusResponse> AgentAsync(
+        string prompt,
+        AgentOptions? options = null,
+        int pollIntervalSec = DefaultPollIntervalSec,
+        int timeoutSec = DefaultJobTimeoutSec,
+        CancellationToken cancellationToken = default)
+    {
+        var start = await StartAgentAsync(prompt, options, cancellationToken);
+        return await PollAgentAsync(
+            start.Id ?? throw new FirecrawlException(start.Error ?? "Agent start did not return a job ID"),
+            pollIntervalSec, timeoutSec, cancellationToken);
+    }
+
+    /// <summary>
+    /// Cancels a running agent job.
+    /// </summary>
+    public async Task<Dictionary<string, object>> CancelAgentAsync(
+        string jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+
+        return await _http.DeleteAsync<Dictionary<string, object>>(
+            $"/v2/agent/{Uri.EscapeDataString(jobId)}", cancellationToken);
+    }
+
+    // ================================================================
+    // USAGE & METRICS
+    // ================================================================
+
+    /// <summary>
+    /// Gets current concurrency usage.
+    /// </summary>
+    public async Task<ConcurrencyCheck> GetConcurrencyAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetAsync<ConcurrencyCheck>(
+            "/v2/concurrency-check", cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets current credit usage.
+    /// </summary>
+    public async Task<CreditUsage> GetCreditUsageAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetAsync<CreditUsage>(
+            "/v2/team/credit-usage", cancellationToken);
+    }
+
+    // ================================================================
+    // INTERNAL POLLING HELPERS
+    // ================================================================
+
+    private async Task<CrawlJob> PollCrawlAsync(
+        string jobId,
+        int pollIntervalSec,
+        int timeoutSec,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var job = await GetCrawlStatusAsync(jobId, cancellationToken);
+            if (job.IsDone)
+                return await PaginateCrawlAsync(job, cancellationToken);
+
+            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+        }
+
+        throw new JobTimeoutException(jobId, timeoutSec, "Crawl");
+    }
+
+    private async Task<BatchScrapeJob> PollBatchScrapeAsync(
+        string jobId,
+        int pollIntervalSec,
+        int timeoutSec,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var job = await GetBatchScrapeStatusAsync(jobId, cancellationToken);
+            if (job.IsDone)
+                return await PaginateBatchScrapeAsync(job, cancellationToken);
+
+            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+        }
+
+        throw new JobTimeoutException(jobId, timeoutSec, "Batch scrape");
+    }
+
+    private async Task<AgentStatusResponse> PollAgentAsync(
+        string jobId,
+        int pollIntervalSec,
+        int timeoutSec,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var status = await GetAgentStatusAsync(jobId, cancellationToken);
+            if (status.IsDone)
+                return status;
+
+            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+        }
+
+        throw new JobTimeoutException(jobId, timeoutSec, "Agent");
+    }
+
+    private async Task<CrawlJob> PaginateCrawlAsync(
+        CrawlJob job,
+        CancellationToken cancellationToken)
+    {
+        job.Data ??= new List<Document>();
+        var current = job;
+
+        while (!string.IsNullOrEmpty(current.Next))
+        {
+            var nextPage = await _http.GetAbsoluteAsync<CrawlJob>(
+                current.Next, cancellationToken);
+
+            if (nextPage.Data is { Count: > 0 })
+                job.Data.AddRange(nextPage.Data);
+
+            current = nextPage;
+        }
+
+        job.Next = null;
+        return job;
+    }
+
+    private async Task<BatchScrapeJob> PaginateBatchScrapeAsync(
+        BatchScrapeJob job,
+        CancellationToken cancellationToken)
+    {
+        job.Data ??= new List<Document>();
+        var current = job;
+
+        while (!string.IsNullOrEmpty(current.Next))
+        {
+            var nextPage = await _http.GetAbsoluteAsync<BatchScrapeJob>(
+                current.Next, cancellationToken);
+
+            if (nextPage.Data is { Count: > 0 })
+                job.Data.AddRange(nextPage.Data);
+
+            current = nextPage;
+        }
+
+        job.Next = null;
+        return job;
+    }
+
+    private async Task<MonitorCheckDetail> PaginateMonitorCheckAsync(
+        MonitorCheckDetail check,
+        CancellationToken cancellationToken)
+    {
+        check.Pages ??= new List<MonitorCheckPage>();
+        var current = check;
+
+        while (!string.IsNullOrEmpty(current.Next))
+        {
+            var response = await _http.GetAbsoluteAsync<ApiResponse<MonitorCheckDetail>>(
+                current.Next, cancellationToken);
+            if (response.Data == null)
+                break;
+
+            var nextPage = response.Data;
+
+            if (nextPage.Pages is { Count: > 0 })
+                check.Pages.AddRange(nextPage.Pages);
+
+            current = nextPage;
+        }
+
+        check.Next = null;
+        return check;
+    }
+
+    // ================================================================
+    // INTERNAL UTILITIES
+    // ================================================================
+
+    private const string SdkOrigin = "dotnet-sdk@1.15.1";
+
+    private static Dictionary<string, object> BuildBody(object? options)
+    {
+        Dictionary<string, object> body;
+        if (options == null)
+        {
+            body = new Dictionary<string, object>();
+        }
+        else
+        {
+            var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
+            body = JsonSerializer.Deserialize<Dictionary<string, object>>(json, FirecrawlHttpClient.JsonOptions)
+                ?? new Dictionary<string, object>();
+        }
+
+        // Identify the SDK so the API can grant the keyless free tier; harmless
+        // telemetry on keyed requests.
+        if (!body.ContainsKey("origin"))
+            body["origin"] = SdkOrigin;
+
+        return body;
+    }
+
+    private static string BuildQuery(int? limit = null, int? offset = null, string? status = null)
+    {
+        var query = new List<string>();
+        if (limit.HasValue)
+            query.Add($"limit={Uri.EscapeDataString(limit.Value.ToString())}");
+        if (offset.HasValue)
+            query.Add($"offset={Uri.EscapeDataString(offset.Value.ToString())}");
+        if (!string.IsNullOrWhiteSpace(status))
+            query.Add($"status={Uri.EscapeDataString(status)}");
+
+        return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static string BuildMonitorCheckQuery(int? limit = null, int? skip = null, string? status = null)
+    {
+        var query = new List<string>();
+        if (limit.HasValue)
+            query.Add($"limit={Uri.EscapeDataString(limit.Value.ToString())}");
+        if (skip.HasValue)
+            query.Add($"skip={Uri.EscapeDataString(skip.Value.ToString())}");
+        if (!string.IsNullOrWhiteSpace(status))
+            query.Add($"status={Uri.EscapeDataString(status)}");
+
+        return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static string BuildResearchQuery(Dictionary<string, object?> parameters)
+    {
+        var query = new List<string>();
+        foreach (var (key, value) in parameters)
+        {
+            if (value == null)
+                continue;
+
+            if (value is System.Collections.IEnumerable values && value is not string)
+            {
+                foreach (var item in values)
+                {
+                    if (item != null)
+                        AddQueryValue(query, key, item);
+                }
+                continue;
+            }
+
+            AddQueryValue(query, key, value);
+        }
+
+        return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static void AddQueryValue(List<string> query, string key, object value)
+    {
+        var stringValue = value is bool boolValue
+            ? boolValue.ToString().ToLowerInvariant()
+            : value.ToString() ?? string.Empty;
+
+        query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(stringValue)}");
+    }
+
+    private static string? ResolveApiKey(string? apiKey)
+    {
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            return apiKey;
+
+        var envKey = Environment.GetEnvironmentVariable("FIRECRAWL_API_KEY");
+        if (!string.IsNullOrWhiteSpace(envKey))
+            return envKey;
+
+        // No key: scrape and search fall back to the keyless free tier (per-IP).
+        // Other endpoints return 401 from the API until a key is provided.
+        return null;
+    }
+
+    private static string ResolveApiUrl(string? apiUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(apiUrl))
+            return apiUrl;
+
+        var envUrl = Environment.GetEnvironmentVariable("FIRECRAWL_API_URL");
+        if (!string.IsNullOrWhiteSpace(envUrl))
+            return envUrl;
+
+        return DefaultApiUrl;
+    }
+}

@@ -1,11 +1,10 @@
-import { supabase_service } from "../../../services/supabase";
+import { changeTrackingGetLastScrape } from "../../../lib/change-tracking-store";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
-import gitDiff from "git-diff";
-import parseDiff from "parse-diff";
 import { generateCompletions } from "./llmExtract";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
+import { createMarkdownChangeDiff } from "../../../lib/change-tracking-diff";
 
 async function extractDataWithSchema(
   content: string,
@@ -89,11 +88,20 @@ export async function deriveDiff(
     }
 
     const start = Date.now();
-    const res = await supabase_service.rpc("diff_get_last_scrape_v7", {
-      i_team_id: meta.internalOptions.teamId,
-      i_url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
-      i_tag: changeTrackingFormat?.tag ?? null,
-    });
+    let last: Awaited<ReturnType<typeof changeTrackingGetLastScrape>>;
+    try {
+      last = await changeTrackingGetLastScrape({
+        team_id: meta.internalOptions.teamId!,
+        url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
+        tag: changeTrackingFormat?.tag ?? null,
+      });
+    } catch (error) {
+      meta.logger.error("Error fetching previous scrape", { error });
+      document.warning =
+        "Comparing failed, please try again later." +
+        (document.warning ? ` ${document.warning}` : "");
+      return document;
+    }
     const end = Date.now();
     if (end - start > 100) {
       meta.logger.debug("Diffing took a while", {
@@ -105,25 +113,17 @@ export async function deriveDiff(
       });
     }
 
-    const data:
-      | {
-          o_job_id: string;
-          o_date_added: string;
-        }
-      | undefined
-      | null = (res.data ?? [])[0] as any;
-
-    const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
+    const rawJob = last?.job_id ? await getJobFromGCS(last.job_id) : null;
     const job: Document | null = rawJob?.[0] ?? null;
 
     meta.logger.debug("Change tracking debugging", {
-      isDataPresent: !!data,
-      data,
+      isDataPresent: !!last,
+      data: last,
       isRawJobPresent: !!rawJob,
       isJobPresent: !!job,
     });
 
-    if (data && job) {
+    if (last && job) {
       const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
 
@@ -141,7 +141,7 @@ export async function deriveDiff(
             : "same";
 
       document.changeTracking = {
-        previousScrapeAt: data.o_date_added,
+        previousScrapeAt: last.date_added,
         changeStatus,
         visibility: meta.internalOptions.urlInvisibleInCurrentCrawl
           ? "hidden"
@@ -152,58 +152,15 @@ export async function deriveDiff(
         changeTrackingFormat?.modes?.includes("git-diff") &&
         changeStatus === "changed"
       ) {
-        const diffText = gitDiff(previousMarkdown, currentMarkdown, {
-          color: false,
-          wordDiff: false,
-        });
-        // meta.logger.debug("Diff text", { diffText });
-        if (diffText) {
-          const diffStructured = parseDiff(diffText);
-          // meta.logger.debug("Diff structured", { diffStructured });
+        const diff = createMarkdownChangeDiff(
+          previousMarkdown,
+          currentMarkdown,
+        );
+        // meta.logger.debug("Diff text", { diffText: diff?.text });
+        if (diff) {
           document.changeTracking.diff = {
-            text: diffText,
-            json: {
-              files: diffStructured.map(file => ({
-                from: file.from || null,
-                to: file.to || null,
-                chunks: file.chunks.map(chunk => ({
-                  content: chunk.content,
-                  changes: chunk.changes.map(change => {
-                    const baseChange = {
-                      type: change.type,
-                      content: change.content,
-                    };
-
-                    if (
-                      change.type === "normal" &&
-                      "ln1" in change &&
-                      "ln2" in change
-                    ) {
-                      return {
-                        ...baseChange,
-                        normal: true,
-                        ln1: change.ln1,
-                        ln2: change.ln2,
-                      };
-                    } else if (change.type === "add" && "ln" in change) {
-                      return {
-                        ...baseChange,
-                        add: true,
-                        ln: change.ln,
-                      };
-                    } else if (change.type === "del" && "ln" in change) {
-                      return {
-                        ...baseChange,
-                        del: true,
-                        ln: change.ln,
-                      };
-                    }
-
-                    return baseChange;
-                  }),
-                })),
-              })),
-            },
+            text: diff.text,
+            json: diff.json,
           };
         }
       }
@@ -265,7 +222,7 @@ export async function deriveDiff(
             (document.warning ? ` ${document.warning}` : "");
         }
       }
-    } else if (!res.error) {
+    } else {
       document.changeTracking = {
         previousScrapeAt: null,
         changeStatus: document.metadata.statusCode === 404 ? "removed" : "new",
@@ -273,11 +230,6 @@ export async function deriveDiff(
           ? "hidden"
           : "visible",
       };
-    } else {
-      meta.logger.error("Error fetching previous scrape", { error: res.error });
-      document.warning =
-        "Comparing failed, please try again later." +
-        (document.warning ? ` ${document.warning}` : "");
     }
   }
 

@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -8,15 +9,61 @@ import {
 } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
-import { supabase_service } from "../../services/supabase";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
+import {
+  AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+  getAgentZdrRetentionMinutes,
+  getScrapeZDR,
+  getSearchZDR,
+} from "../../lib/zdr-helpers";
+import {
+  checkUrlsAgainstThreatPolicy,
+  resolveThreatProtection,
+} from "../../lib/threat-protection/request";
+import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import { billTeam } from "../../services/billing/credit_billing";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
+import { fetchAgentThread, threadErrorFor } from "./agent-thread";
+import {
+  AGENT_DEFAULT_MAX_CREDITS,
+  gateAgentCredits,
+} from "./agent-credit-gate";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
   res: Response<AgentResponse>,
 ) {
   const agentId = uuidv7();
+
+  const originalRequest = { ...req.body };
+  req.body = agentRequestSchema.parse(req.body);
+
+  // An agent run scrapes and searches under ZDR, so it needs both
+  // entitlements up front instead of failing on its first inner call.
+  const scrapeZDR = getScrapeZDR(req.acuc?.flags);
+  const searchZDR = getSearchZDR(req.acuc?.flags);
+  if (
+    (req.body.zeroDataRetention === true || scrapeZDR === "forced") &&
+    !(
+      (scrapeZDR === "allowed" || scrapeZDR === "forced") &&
+      (searchZDR === "allowed" || searchZDR === "forced-zdr")
+    )
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "zdr_not_enabled",
+      error:
+        "Zero Data Retention (ZDR) for agent runs requires both scrape ZDR and search ZDR to be enabled for your team. Contact support@firecrawl.com to enable it.",
+    });
+  }
+
+  const zeroDataRetention =
+    scrapeZDR === "forced" ||
+    (req.body.zeroDataRetention === true && scrapeZDR === "allowed");
+
   const logger = _logger.child({
     agentId,
     extractId: agentId,
@@ -25,50 +72,172 @@ export async function agentController(
     team_id: req.auth.team_id,
     module: "api/v2",
     method: "agentController",
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
 
-  const originalRequest = { ...req.body };
-  req.body = agentRequestSchema.parse(req.body);
-
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (zeroDataRetention && req.body.threadId) {
     return res.status(400).json({
       success: false,
+      code: "zdr_threads_unsupported",
       error:
-        "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+        "Agent threads are not supported with zero data retention. Remove threadId to start a new run.",
     });
   }
 
-  _logger.info("Agent starting...", {
+  // Read once, here: the agent service keeps the run's retention from start.
+  const zeroDataRetentionMinutes = zeroDataRetention
+    ? getAgentZdrRetentionMinutes(req.acuc?.flags)
+    : null;
+  if (zeroDataRetentionMinutes === "invalid") {
+    logger.error("Invalid agentZdrRetentionMinutes team flag", {
+      agentZdrRetentionMinutes: req.acuc?.flags?.agentZdrRetentionMinutes,
+    });
+    return res.status(500).json({
+      success: false,
+      code: "zdr_retention_misconfigured",
+      error:
+        "Zero Data Retention is misconfigured for your team. Contact support@firecrawl.com.",
+    });
+  }
+
+  logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
-    subId: req.acuc?.sub_id,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
+
+  // Threat protection: check the agent's starting URLs before handing off to
+  // the agent service. Content the agent fetches through the API
+  // (agent-interop scrapes) is additionally enforced by the scrape pipeline's
+  // org-policy resolution; in-page navigations performed by the remote
+  // browser cannot be intercepted here.
+  const threatProtection = await resolveThreatProtection({
+    teamId: req.auth.team_id,
+    orgId: req.acuc?.org_id ?? null,
+    flags: req.acuc?.flags ?? null,
+    override: req.body.threatProtection,
+  });
+  if (threatProtection.error) {
+    return res.status(403).json({
+      success: false,
+      error: threatProtection.error,
+    });
+  }
+  if (threatProtection.policy && (req.body.urls?.length ?? 0) > 0) {
+    const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
+      req.body.urls ?? [],
+      threatProtection.policy,
+      { teamId: req.auth.team_id },
+    );
+    if (blocked.length > 0) {
+      // The whole request is rejected below, so no agent job will ever run
+      // to bill the allowed start URLs' scans — every consulted decision
+      // (allowed and blocked) bills its scan fee here (+2 per unique
+      // scanned URL): the scans already happened.
+      const threatScanCredits = calculateThreatScanCredits(
+        decisionsByUrl.values(),
+      );
+      if (threatScanCredits > 0) {
+        billTeam(
+          req.auth.team_id,
+          req.acuc?.org_id ?? null,
+          threatScanCredits,
+          req.acuc?.api_key_id ?? null,
+          { endpoint: "agent", jobId: agentId, chargeId: `${agentId}:threat` },
+        ).catch(error => {
+          logger.error(
+            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
+          );
+        });
+      }
+      const first = blocked[0];
+      const error = new UnsafeDomainBlockedError(first.url, first.decision);
+      emitRejectedScrapeActivityEvents(
+        blocked.map(blockedUrl => ({
+          scrapeId: uuidv7(),
+          requestId: agentId,
+          endpoint: "agent",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          auditMetadata: req.body.auditMetadata,
+          url: blockedUrl.url,
+          error: new UnsafeDomainBlockedError(
+            blockedUrl.url,
+            blockedUrl.decision,
+          ),
+          threatDecisions: [blockedUrl.decision],
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention,
+        })),
+      );
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+  }
 
   if (!config.EXTRACT_V3_BETA_URL) {
     throw new Error("Agent beta is not enabled.");
   }
 
-  // If maxCredits > 2500, skip free request consumption — this is always a paid request
+  // A follow-up is validated before the free request is consumed and before
+  // logRequest, so a rejected continuation leaves no orphan request row.
+  if (req.body.threadId) {
+    const thread = await fetchAgentThread(
+      req.body.threadId,
+      req.auth.team_id,
+    ).catch(error => {
+      logger.error("Failed to check agent thread.", { error });
+      return null;
+    });
+
+    if (thread === null) {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to check agent thread.",
+      });
+    }
+
+    if (thread.status !== 200) {
+      const mapped = threadErrorFor(thread.status);
+
+      if (!mapped) {
+        logger.error("Failed to check agent thread.", {
+          status: thread.status,
+          text: await thread.text(),
+        });
+
+        return res.status(500).json({
+          success: false,
+          error: "Failed to check agent thread.",
+        });
+      }
+
+      const body = (await thread.json().catch(() => null)) as {
+        runId?: unknown;
+      } | null;
+
+      return res.status(thread.status).json({
+        success: false,
+        code: mapped.code,
+        error: mapped.error,
+        ...(typeof body?.runId === "string" ? { runId: body.runId } : {}),
+      });
+    }
+  }
+
+  // A request above the free cap is always paid. Otherwise a free request is
+  // consumed atomically here, and only a consumed one skips the credit gate.
   const highCreditRequest =
-    req.body.maxCredits !== undefined && req.body.maxCredits > 2500;
+    req.body.maxCredits !== undefined &&
+    req.body.maxCredits > AGENT_DEFAULT_MAX_CREDITS;
 
   let freeRequest: any;
 
   if (config.USE_DB_AUTHENTICATION && !highCreditRequest) {
-    const { data, error: freeRequestError } = await supabase_service.rpc(
-      "agent_consume_free_request_if_left",
-      {
-        i_team_id: req.auth.team_id,
-      },
-    );
-
-    if (freeRequestError) {
-      throw freeRequestError;
-    }
-
-    freeRequest = data;
+    freeRequest = await agentConsumeFreeRequestIfLeft(req.auth.team_id);
   }
 
   const isFreeRequest = highCreditRequest
@@ -77,16 +246,46 @@ export async function agentController(
       ? !!freeRequest?.[0]?.consumed
       : true;
 
+  let maxCredits = req.body.maxCredits;
+  let stopOnInsufficientCredits = false;
+  if (!isFreeRequest) {
+    const gate = await gateAgentCredits({
+      teamId: req.auth.team_id,
+      orgId: req.auth.org_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      requestedMaxCredits: req.body.maxCredits,
+    });
+    if (!gate.allowed) {
+      logger.warn("Insufficient credits to start agent run", {
+        balance: gate.balance,
+      });
+      return res.status(402).json({
+        success: false,
+        error: `Insufficient credits to start an agent run. Your team's credit balance is ${gate.balance} credits. Add credits at https://firecrawl.dev/pricing to continue.`,
+      });
+    }
+    maxCredits = gate.maxCredits;
+    stopOnInsufficientCredits = gate.stopOnInsufficientCredits;
+  }
+
   await logRequest({
     id: agentId,
     kind: "agent",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
-    zeroDataRetention: false, // not supported for agent
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
+    creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+    ...(zeroDataRetention
+      ? {
+          jobAccessZeroDataRetentionMinutes:
+            zeroDataRetentionMinutes ?? AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+        }
+      : {}),
   });
 
   const passthrough = await fetch(
@@ -106,10 +305,21 @@ export async function agentController(
         apiKeyId: req.acuc!.api_key_id ?? undefined,
         teamId: req.auth.team_id,
         isFreeRequest,
-        maxCredits: req.body.maxCredits ?? undefined,
+        maxCredits: maxCredits ?? undefined,
+        stopOnInsufficientCredits: stopOnInsufficientCredits || undefined,
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,
+        effort: req.body.effort,
+        auditMetadata: req.body.auditMetadata,
+        threadId: req.body.threadId,
+        mode: req.body.mode,
+        exchange: req.body.exchange,
+        location: req.body.location,
+        ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
+        ...(zeroDataRetentionMinutes !== null
+          ? { zeroDataRetentionMinutes }
+          : {}),
       }),
     },
   );
@@ -121,14 +331,30 @@ export async function agentController(
       status: passthrough.status,
       text,
     });
+
+    // TODO: should we try to insert a failed agent row here, since a request is already created? - Mogery
+
     return res.status(500).json({
       success: false,
       error: "Failed to passthrough agent request.",
     });
   }
 
+  // The agent service mints the thread id, so the response body is the only
+  // place it exists at this point.
+  const result = (await passthrough.json().catch(() => null)) as {
+    threadId?: unknown;
+    threadTurn?: unknown;
+  } | null;
+
   return res.status(200).json({
     success: true,
     id: agentId,
+    ...(typeof result?.threadId === "string"
+      ? { threadId: result.threadId }
+      : {}),
+    ...(typeof result?.threadTurn === "number"
+      ? { threadTurn: result.threadTurn }
+      : {}),
   });
 }

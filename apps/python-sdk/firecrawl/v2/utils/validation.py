@@ -388,6 +388,8 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     # schema is recommended; if provided, normalize Pydantic forms
     schema = format_obj.get('schema')
     normalized = dict(format_obj)
+    if "check_prompt_injection" in normalized:
+        normalized["checkPromptInjection"] = normalized.pop("check_prompt_injection")
     if schema is not None:
         normalized_schema = _normalize_schema(schema)
         if normalized_schema is not None:
@@ -453,6 +455,35 @@ def _validate_query_format(format_obj: Any) -> Dict[str, Any]:
 
     if not isinstance(format_obj.get('prompt'), str) or not format_obj['prompt'].strip():
         raise ValueError("query format requires a non-empty 'prompt' string")
+
+    if "directQuote" in format_obj:
+        raise ValueError("query format uses 'mode' instead of 'directQuote'")
+
+    mode = format_obj.get("mode")
+    if mode is not None and mode not in ("freeform", "directQuote"):
+        raise ValueError("query format mode must be 'freeform' or 'directQuote'")
+
+    return format_obj
+
+
+def _validate_question_format(format_obj: Any) -> Dict[str, Any]:
+    """Validate and prepare question format object."""
+    if not isinstance(format_obj, dict):
+        raise ValueError("question format must be an object with 'type' and 'question' fields")
+
+    if not isinstance(format_obj.get('question'), str) or not format_obj['question'].strip():
+        raise ValueError("question format requires a non-empty 'question' string")
+
+    return format_obj
+
+
+def _validate_highlights_format(format_obj: Any) -> Dict[str, Any]:
+    """Validate and prepare highlights format object."""
+    if not isinstance(format_obj, dict):
+        raise ValueError("highlights format must be an object with 'type' and 'query' fields")
+
+    if not isinstance(format_obj.get('query'), str) or not format_obj['query'].strip():
+        raise ValueError("highlights format requires a non-empty 'query' string")
 
     return format_obj
 
@@ -536,13 +567,38 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "use_mock": "useMock",
         "block_ads": "blockAds",
         "store_in_cache": "storeInCache",
-        "max_age": "maxAge"
+        "max_age": "maxAge",
+        "min_age": "minAge",
+        "redact_pii": "redactPII",
+        "check_prompt_injection": "checkPromptInjection",
+        "threat_protection": "threatProtection",
+        "audit_metadata": "auditMetadata",
     }
     
     # Apply field mappings
     for snake_case, camel_case in field_mappings.items():
         if snake_case in options_data:
             scrape_data[camel_case] = options_data.pop(snake_case)
+
+    # redactPII may be a nested object whose inner `replace_style` field
+    # also needs camel-casing.
+    if isinstance(scrape_data.get("redactPII"), dict):
+        if "replace_style" in scrape_data["redactPII"]:
+            scrape_data["redactPII"]["replaceStyle"] = scrape_data["redactPII"].pop(
+                "replace_style"
+            )
+
+    # threatProtection is a nested object whose inner fields also need
+    # camel-casing.
+    if isinstance(scrape_data.get("threatProtection"), dict):
+        threat_data = scrape_data["threatProtection"]
+        for snake_case, camel_case in (
+            ("risk_score_threshold", "riskScoreThreshold"),
+            ("blocked_tlds", "blockedTlds"),
+            ("failure_policy", "failurePolicy"),
+        ):
+            if snake_case in threat_data:
+                threat_data[camel_case] = threat_data.pop(snake_case)
     
     # Handle special cases
     for key, value in options_data.items():
@@ -566,12 +622,20 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                     raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
                                 if fmt == "query":
                                     raise ValueError("query format must be an object with 'type' and 'prompt' fields")
+                                if fmt == "question":
+                                    raise ValueError("question format must be an object with 'type' and 'question' fields")
+                                if fmt == "highlights":
+                                    raise ValueError("highlights format must be an object with 'type' and 'query' fields")
                                 converted_formats.append(_convert_format_string(fmt))
                             elif isinstance(fmt, dict):
                                 fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                                 if fmt_type == 'json':
                                     validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                     converted_formats.append(validated_json)
+                                elif fmt_type == 'question':
+                                    converted_formats.append(_validate_question_format(fmt))
+                                elif fmt_type == 'highlights':
+                                    converted_formats.append(_validate_highlights_format(fmt))
                                 elif fmt_type == 'query':
                                     converted_formats.append(_validate_query_format(fmt))
                                 elif fmt_type == 'screenshot':
@@ -591,8 +655,16 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                             elif hasattr(fmt, 'type'):
                                 if fmt.type == 'json':
                                     converted_formats.append(_validate_json_format(fmt.model_dump()))
+                                elif fmt.type == 'question':
+                                    converted_formats.append(_validate_question_format(fmt.model_dump(exclude_none=True)))
+                                elif fmt.type == 'highlights':
+                                    converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                                 elif fmt.type == 'query':
                                     converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
+                                elif fmt.type in ('changeTracking', 'change_tracking'):
+                                    data = fmt.model_dump(exclude_none=True)
+                                    data['type'] = _convert_format_string(data.get('type', fmt.type))
+                                    converted_formats.append(data)
                                 else:
                                     converted_formats.append(_convert_format_string(fmt.type))
                             else:
@@ -623,12 +695,20 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
                             if fmt == "query":
                                 raise ValueError("query format must be an object with 'type' and 'prompt' fields")
+                            if fmt == "question":
+                                raise ValueError("question format must be an object with 'type' and 'question' fields")
+                            if fmt == "highlights":
+                                raise ValueError("highlights format must be an object with 'type' and 'query' fields")
                             converted_formats.append(_convert_format_string(fmt))
                         elif isinstance(fmt, dict):
                             fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                             if fmt_type == 'json':
                                 validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                 converted_formats.append(validated_json)
+                            elif fmt_type == 'question':
+                                converted_formats.append(_validate_question_format(fmt))
+                            elif fmt_type == 'highlights':
+                                converted_formats.append(_validate_highlights_format(fmt))
                             elif fmt_type == 'query':
                                 converted_formats.append(_validate_query_format(fmt))
                             elif fmt_type == 'screenshot':
@@ -646,6 +726,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         elif hasattr(fmt, 'type'):
                             if fmt.type == 'json':
                                 converted_formats.append(_validate_json_format(fmt.model_dump()))
+                            elif fmt.type == 'question':
+                                converted_formats.append(_validate_question_format(fmt.model_dump(exclude_none=True)))
+                            elif fmt.type == 'highlights':
+                                converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                             elif fmt.type == 'screenshot':
                                 normalized = {'type': 'screenshot'}
                                 if getattr(fmt, 'full_page', None) is not None:
@@ -658,6 +742,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 converted_formats.append(normalized)
                             elif fmt.type == 'query':
                                 converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
+                            elif fmt.type in ('changeTracking', 'change_tracking'):
+                                data = fmt.model_dump(exclude_none=True)
+                                data['type'] = _convert_format_string(data.get('type', fmt.type))
+                                converted_formats.append(data)
                             else:
                                 converted_formats.append(_convert_format_string(fmt.type))
                         else:
@@ -705,12 +793,21 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         parser_data = dict(parser)
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
+                        # Deprecated alias from the pre-rename pageMarkdown option.
+                        if "page_markdown" in parser_data:
+                            parser_data.setdefault("pages", parser_data.pop("page_markdown"))
+                        if "pageMarkdown" in parser_data:
+                            parser_data.setdefault("pages", parser_data.pop("pageMarkdown"))
+                        if "page_markers" in parser_data:
+                            parser_data["pageMarkers"] = parser_data.pop("page_markers")
                         converted_parsers.append(parser_data)
                     else:
                         parser_data = parser.model_dump(exclude_none=True)
                         # Convert snake_case to camelCase for API
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
+                        if "page_markers" in parser_data:
+                            parser_data["pageMarkers"] = parser_data.pop("page_markers")
                         converted_parsers.append(parser_data)
                 scrape_data["parsers"] = converted_parsers
             elif key == "location":
@@ -718,6 +815,12 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                     scrape_data["location"] = value
                 else:
                     scrape_data["location"] = value.model_dump(exclude_none=True)
+            elif key == "tool_detail":
+                scrape_data["toolDetail"] = value
+            elif key == "domain_tools":
+                # Only ever sent when explicitly enabled; never emit `false`.
+                if value:
+                    scrape_data["domainTools"] = True
             elif key == "profile":
                 if isinstance(value, dict):
                     profile_data = {
@@ -734,4 +837,4 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value
     
-    return scrape_data  
+    return scrape_data

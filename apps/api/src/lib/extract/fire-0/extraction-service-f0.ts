@@ -23,7 +23,7 @@ import {
   generateCompletions_F0,
   generateSchemaFromPrompt_F0,
 } from "./llmExtract-f0";
-import { dereferenceSchema_F0 } from "./helpers/dereference-schema-f0";
+import { dereferenceSchema } from "../helpers/dereference-schema";
 import { analyzeSchemaAndPrompt_F0 } from "./completions/analyzeSchemaAndPrompt-f0";
 import { checkShouldExtract_F0 } from "./completions/checkShouldExtract-f0";
 import { batchExtractPromise_F0 } from "./completions/batchExtract-f0";
@@ -39,15 +39,18 @@ import {
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
+import { orgIdFromAcuc } from "../../team-org";
+import { resolveThreatProtection } from "../../threat-protection/request";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
   teamId: string;
-  subId?: string;
   cacheMode?: "load" | "save" | "direct";
   cacheKey?: string;
   apiKeyId: number | null;
   createdAt?: number;
+  /** The caller's External-Request-Id, carried on the charge for firebill. */
+  externalRequestId?: string | null;
 }
 
 interface ExtractResult {
@@ -77,7 +80,7 @@ export async function performExtraction_F0(
   extractId: string,
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
-  const { request, teamId, subId, apiKeyId } = options;
+  const { request, teamId, apiKeyId } = options;
   const createdAt = options.createdAt
     ? new Date(options.createdAt)
     : new Date();
@@ -91,6 +94,18 @@ export async function performExtraction_F0(
   let sources: Record<string, string[]> = {};
 
   const acuc = await getACUCTeam(teamId);
+
+  // Threat protection: resolve the effective policy once for this extract
+  // job (org config + the request's threatProtection override, which the
+  // controller already validated). Threaded into every document scrape so
+  // both user-provided and discovered URLs are enforced in the pipeline.
+  const threatProtectionPolicy = (
+    await resolveThreatProtection({
+      teamId,
+      flags: acuc?.flags ?? null,
+      override: request.threatProtection,
+    })
+  ).policy;
 
   const logger = _logger.child({
     module: "extract",
@@ -168,6 +183,7 @@ export async function performExtraction_F0(
         url,
         prompt: request.prompt,
         teamId,
+        orgId: acuc?.org_id ?? null,
         allowExternalLinks: request.allowExternalLinks,
         origin: request.origin,
         limit: request.limit,
@@ -250,7 +266,7 @@ export async function performExtraction_F0(
   }
 
   if (reqSchema) {
-    reqSchema = await dereferenceSchema_F0(reqSchema);
+    reqSchema = await dereferenceSchema(reqSchema);
   }
 
   logger.debug("Transformed schema.", {
@@ -273,6 +289,7 @@ export async function performExtraction_F0(
   } = await analyzeSchemaAndPrompt_F0(links, reqSchema, request.prompt ?? "", {
     teamId,
     extractId,
+    functionId: "performExtraction_F0",
   });
 
   logger.debug("Analyzed schema.", {
@@ -336,11 +353,13 @@ export async function performExtraction_F0(
           {
             url,
             teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "extract",
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
             requestId: extractId,
+            threatProtectionPolicy,
           },
           urlTraces,
           logger.child({
@@ -631,11 +650,13 @@ export async function performExtraction_F0(
           {
             url,
             teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "extract",
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
             requestId: extractId,
+            threatProtectionPolicy,
           },
           urlTraces,
           logger.child({
@@ -852,7 +873,19 @@ export async function performExtraction_F0(
   const creditsToBill = Math.ceil(tokensToBill / 15);
 
   // Bill team for usage
-  billTeam(teamId, subId, creditsToBill, apiKeyId, { endpoint: "extract", jobId: extractId }, logger).catch(error => {
+  billTeam(
+    teamId,
+    orgIdFromAcuc(acuc),
+    creditsToBill,
+    apiKeyId,
+    {
+      endpoint: "extract",
+      jobId: extractId,
+      chargeId: extractId,
+      externalRequestId: options.externalRequestId ?? null,
+    },
+    logger,
+  ).catch(error => {
     logger.error(
       `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
     );

@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
+import { shutdownTracing } from "../../otel";
 import {
   scrapeQueue,
   nuqGetLocalMetrics,
@@ -13,8 +12,6 @@ import Express from "express";
 import { logger } from "../../lib/logger";
 
 (async () => {
-  setSentryServiceTag("nuq-prefetch-worker");
-
   const app = Express();
 
   app.get("/metrics", (_, res) =>
@@ -28,13 +25,25 @@ import { logger } from "../../lib/logger";
     }
   });
 
-  const server = app.listen(config.NUQ_PREFETCH_WORKER_PORT, () => {
-    logger.info("NuQ prefetch worker metrics server started");
-  });
+  const server = app.listen(
+    config.NUQ_PREFETCH_WORKER_PORT,
+    (error?: Error) => {
+      if (error) {
+        logger.error("Failed to start NuQ prefetch worker metrics server", {
+          error,
+          port: config.NUQ_PREFETCH_WORKER_PORT,
+        });
+        throw error;
+      }
+
+      logger.info("NuQ prefetch worker metrics server started");
+    },
+  );
 
   async function shutdown() {
     server.close();
     await nuqShutdown();
+    await shutdownTracing();
     process.exit(0);
   }
 

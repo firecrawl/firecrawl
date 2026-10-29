@@ -42,6 +42,24 @@ try {
   nativeGetComputedStyle = () => ({}) as CSSStyleDeclaration;
 }
 
+/** Computed style of a pseudo-element ("::before" / "::after"), or null. */
+export const getPseudoStyle = (
+  el: Element,
+  pseudo: string,
+): CSSStyleDeclaration | null => {
+  try {
+    return (
+      nativeGetComputedStyle as (
+        el: Element,
+        pseudo?: string,
+      ) => CSSStyleDeclaration
+    )(el, pseudo);
+  } catch (e) {
+    recordError("getPseudoStyle", e);
+    return null;
+  }
+};
+
 // Style caching
 const styleCache = new WeakMap<Element, CSSStyleDeclaration>();
 

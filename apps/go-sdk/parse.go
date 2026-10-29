@@ -1,0 +1,168 @@
+package firecrawl
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"mime"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// ParseFile is a binary upload payload for the `/v2/parse` endpoint.
+//
+// Supported file extensions: .html, .htm, .pdf, .docx, .doc, .odt, .rtf, .xlsx, .xls
+type ParseFile struct {
+	// Filename for the upload (e.g., "document.pdf"). Required.
+	Filename string
+	// Raw file bytes. Required (non-empty).
+	Content []byte
+	// Optional MIME type hint (e.g., "application/pdf").
+	ContentType string
+}
+
+// NewParseFileFromPath reads a file from disk and returns a ParseFile ready for upload.
+func NewParseFileFromPath(path string) (*ParseFile, error) {
+	if path == "" {
+		return nil, &FirecrawlError{Message: "file path is required"}
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to read parse file %q: %v", path, err)}
+	}
+
+	filename := filepath.Base(path)
+	contentType := mime.TypeByExtension(filepath.Ext(path))
+
+	return &ParseFile{
+		Filename:    filename,
+		Content:     content,
+		ContentType: contentType,
+	}, nil
+}
+
+// NewParseFileFromBytes builds a ParseFile from in-memory bytes.
+func NewParseFileFromBytes(filename string, content []byte) *ParseFile {
+	return &ParseFile{
+		Filename: filename,
+		Content:  content,
+	}
+}
+
+// ParseFormatKind classifies a parse input format. Unknown kinds returned by the
+// API are preserved as-is.
+type ParseFormatKind string
+
+const (
+	ParseFormatKindDocument ParseFormatKind = "document"
+	ParseFormatKindImage    ParseFormatKind = "image"
+)
+
+// ParseFormat describes one input file format accepted by the `/v2/parse` endpoint.
+type ParseFormat struct {
+	Format     string          `json:"format"`
+	Kind       ParseFormatKind `json:"kind"`
+	Extensions []string        `json:"extensions"`
+	MimeTypes  []string        `json:"mimeTypes"`
+	// Available is false when the format is supported but disabled on this deployment.
+	Available bool `json:"available"`
+}
+
+// ParseOptions configures a parse request.
+//
+// Parse does not support browser-rendering features (actions, waitFor, location,
+// mobile) nor the screenshot, branding, product, menu, or changeTracking formats. The proxy
+// field only accepts "auto" or "basic".
+type ParseOptions struct {
+	Formats             []string          `json:"-"`
+	FormatOptions       []interface{}     `json:"-"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	IncludeTags         []string          `json:"includeTags,omitempty"`
+	ExcludeTags         []string          `json:"excludeTags,omitempty"`
+	OnlyMainContent     *bool             `json:"onlyMainContent,omitempty"`
+	Timeout             *int              `json:"timeout,omitempty"`
+	Parsers             []interface{}     `json:"parsers,omitempty"`
+	SkipTLSVerification *bool             `json:"skipTlsVerification,omitempty"`
+	RemoveBase64Images  *bool             `json:"removeBase64Images,omitempty"`
+	BlockAds            *bool             `json:"blockAds,omitempty"`
+	Proxy               *string           `json:"proxy,omitempty"`
+	Integration         *string           `json:"integration,omitempty"`
+	RedactPII           *bool             `json:"redactPII,omitempty"`
+	AuditMetadata       *AuditMetadata    `json:"auditMetadata,omitempty"`
+	JsonOptions         *JsonOptions      `json:"-"`
+	// CheckPromptInjection scans the parsed content for prompt injection before
+	// LLM-backed formats run. A detection fails the parse with
+	// SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the
+	// whole content.
+	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
+}
+
+// MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.
+func (o ParseOptions) MarshalJSON() ([]byte, error) {
+	type parseOptions ParseOptions
+	payload := struct {
+		parseOptions
+		Formats interface{} `json:"formats,omitempty"`
+	}{
+		parseOptions: parseOptions(o),
+	}
+
+	payload.Formats = requestFormats(o.Formats, o.FormatOptions, o.JsonOptions)
+
+	return json.Marshal(payload)
+}
+
+// Parse uploads a file to the `/v2/parse` endpoint and returns the extracted document.
+func (c *Client) Parse(ctx context.Context, file *ParseFile, opts *ParseOptions) (*Document, error) {
+	if file == nil {
+		return nil, &FirecrawlError{Message: "parse file is required"}
+	}
+	filename := strings.TrimSpace(file.Filename)
+	if filename == "" {
+		return nil, &FirecrawlError{Message: "filename cannot be empty"}
+	}
+	if len(file.Content) == 0 {
+		return nil, &FirecrawlError{Message: "file content cannot be empty"}
+	}
+
+	optionsMap := map[string]interface{}{}
+	mergeOptions(optionsMap, opts)
+
+	optionsJSON, err := json.Marshal(optionsMap)
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to serialize parse options: %v", err)}
+	}
+
+	fields := map[string]string{"options": string(optionsJSON)}
+	raw, err := c.http.postMultipart(ctx, "/v2/parse", fields, "file", filename, file.ContentType, file.Content)
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := extractDataAs[Document](raw)
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// GetParseFormats lists the input file formats accepted by the `/v2/parse` endpoint.
+func (c *Client) GetParseFormats(ctx context.Context) ([]ParseFormat, error) {
+	raw, err := c.http.get(ctx, "/v2/parse/formats")
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := extractDataAs[struct {
+		Formats []ParseFormat `json:"formats"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	if data.Formats == nil {
+		return nil, &FirecrawlError{Message: "parse formats response missing formats list"}
+	}
+	return data.Formats, nil
+}

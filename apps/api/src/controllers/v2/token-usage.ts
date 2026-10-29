@@ -1,8 +1,6 @@
 import { Response } from "express";
 import { ErrorResponse, RequestWithAuth } from "./types";
-import { getTeamBalance } from "../../services/autumn/usage";
-
-const TOKENS_PER_CREDIT = 15;
+import { getTeamBalance, TOKENS_PER_CREDIT } from "../../services/autumn/usage";
 
 interface TokenUsageResponse {
   success: true;

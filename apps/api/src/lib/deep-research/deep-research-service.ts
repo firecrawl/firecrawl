@@ -7,6 +7,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdFromAcuc } from "../team-org";
 import { includesFormat } from "../format-utils";
 export interface DeepResearchServiceOptions {
   researchId: string;
@@ -19,13 +20,14 @@ export interface DeepResearchServiceOptions {
   systemPrompt: string;
   formats: string[];
   jsonOptions: ExtractOptions;
-  subId?: string;
   apiKeyId: number | null;
+  /** The caller's External-Request-Id, carried on the charge for firebill. */
+  externalRequestId?: string | null;
 }
 
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
   const costTracking = new CostTracking();
-  const { researchId, teamId, timeLimit, subId, maxUrls, apiKeyId } = options;
+  const { researchId, teamId, timeLimit, maxUrls, apiKeyId } = options;
   const startTime = Date.now();
   let currentTopic = options.query;
   let urlsAnalyzed = 0;
@@ -134,6 +136,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
           searchQuery.query,
           {
             teamId: options.teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "deep-research",
             timeout: 10000,
             scrapeOptions: {
@@ -427,10 +430,15 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     // Bill team for usage based on URLs analyzed
     billTeam(
       teamId,
-      subId,
+      orgIdFromAcuc(acuc),
       credits_billed,
       apiKeyId,
-      { endpoint: "deep_research", jobId: researchId },
+      {
+        endpoint: "deep_research",
+        jobId: researchId,
+        chargeId: researchId,
+        externalRequestId: options.externalRequestId ?? null,
+      },
       logger,
     ).catch(error => {
       logger.error(

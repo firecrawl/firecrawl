@@ -45,37 +45,36 @@ describe("E2E Tests for v0 API Routes", () => {
           .post("/v0/scrape")
           .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
-          .send({ url: "https://roastmywebsite.ai" });
+          .send({ url: "https://firecrawl-test-site.vercel.app" });
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
         expect(response.body.data).toHaveProperty("content");
         expect(response.body.data).toHaveProperty("markdown");
         expect(response.body.data).toHaveProperty("metadata");
         expect(response.body.data).not.toHaveProperty("html");
-        expect(response.body.data.content).toContain("_Roast_");
+        expect(response.body.data.content).toContain("Firecrawl Test Site");
         expect(response.body.data.metadata.pageError).toBeUndefined();
-        expect(response.body.data.metadata.title).toBe("Roast My Website");
+        expect(response.body.data.metadata.title).toBe(
+          "Firecrawl Test Website",
+        );
         expect(response.body.data.metadata.description).toBe(
-          "Welcome to Roast My Website, the ultimate tool for putting your website through the wringer! This repository harnesses the power of Firecrawl to scrape and capture screenshots of websites, and then unleashes the latest LLM vision models to mercilessly roast them. 🌶️",
+          "Welcome to the Firecrawl Test Website!",
         );
-        expect(response.body.data.metadata.keywords).toBe(
-          "Roast My Website,Roast,Website,GitHub,Firecrawl",
+        expect(response.body.data.metadata.ogTitle).toBe(
+          "Firecrawl Test Website",
         );
-        expect(response.body.data.metadata.robots).toBe("follow, index");
-        expect(response.body.data.metadata.ogTitle).toBe("Roast My Website");
         expect(response.body.data.metadata.ogDescription).toBe(
-          "Welcome to Roast My Website, the ultimate tool for putting your website through the wringer! This repository harnesses the power of Firecrawl to scrape and capture screenshots of websites, and then unleashes the latest LLM vision models to mercilessly roast them. 🌶️",
+          "Welcome to the Firecrawl Test Website!",
         );
-        expect(response.body.data.metadata.ogUrl).toBe(
-          "https://www.roastmywebsite.ai",
+        expect(response.body.data.metadata.ogUrl).toContain(
+          "firecrawl-test-site",
         );
-        expect(response.body.data.metadata.ogImage).toBe(
-          "https://www.roastmywebsite.ai/og.png",
+        expect(response.body.data.metadata.ogImage).toContain(
+          "firecrawl-test-site",
         );
         expect(response.body.data.metadata.ogLocaleAlternate).toStrictEqual([]);
-        expect(response.body.data.metadata.ogSiteName).toBe("Roast My Website");
         expect(response.body.data.metadata.sourceURL).toBe(
-          "https://roastmywebsite.ai",
+          "https://firecrawl-test-site.vercel.app",
         );
         expect(response.body.data.metadata.pageStatusCode).toBe(200);
       },
@@ -90,7 +89,7 @@ describe("E2E Tests for v0 API Routes", () => {
           .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
-            url: "https://roastmywebsite.ai",
+            url: "https://firecrawl-test-site.vercel.app",
             pageOptions: { includeHtml: true },
           });
         expect(response.statusCode).toBe(200);
@@ -99,8 +98,8 @@ describe("E2E Tests for v0 API Routes", () => {
         expect(response.body.data).toHaveProperty("markdown");
         expect(response.body.data).toHaveProperty("html");
         expect(response.body.data).toHaveProperty("metadata");
-        expect(response.body.data.content).toContain("_Roast_");
-        expect(response.body.data.markdown).toContain("_Roast_");
+        expect(response.body.data.content).toContain("Firecrawl Test Site");
+        expect(response.body.data.markdown).toContain("Firecrawl Test Site");
         expect(response.body.data.html).toContain("<h1");
         expect(response.body.data.metadata.pageStatusCode).toBe(200);
         expect(response.body.data.metadata.pageError).toBeUndefined();

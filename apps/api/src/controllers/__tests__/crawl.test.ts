@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
@@ -6,16 +7,16 @@ import { createIdempotencyKey } from "../../services/idempotency/create";
 import { validateIdempotencyKey } from "../../services/idempotency/validate";
 import { v7 as uuidv7 } from "uuid";
 
-jest.mock("../auth", () => ({
-  authenticateUser: jest.fn().mockResolvedValue({
+vi.mock("../auth", () => ({
+  authenticateUser: vi.fn().mockResolvedValue({
     success: true,
     team_id: "team123",
     error: null,
     status: 200,
   }),
-  reduce: jest.fn(),
+  reduce: vi.fn(),
 }));
-jest.mock("../../services/idempotency/validate");
+vi.mock("../../services/idempotency/validate");
 
 describe("crawlController", () => {
   it("should prevent duplicate requests using the same idempotency key", async () => {
@@ -29,12 +30,12 @@ describe("crawlController", () => {
       },
     } as unknown as Request;
     const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
     } as unknown as Response;
 
     // Mock the idempotency key validation to return false for the second call
-    (validateIdempotencyKey as jest.Mock)
+    (validateIdempotencyKey as Mock)
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 

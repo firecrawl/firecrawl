@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -257,5 +259,85 @@ func TestConverter_ComplexHTML(t *testing.T) {
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
+}
+
+func TestConvertHTML_ZeroDataRetention_SuppressesLogs(t *testing.T) {
+	converter := NewConverter()
+	handler := NewHandler(converter)
+
+	router := mux.NewRouter()
+	handler.RegisterRoutes(router)
+
+	originalLogger := log.Logger
+	t.Cleanup(func() {
+		log.Logger = originalLogger
+	})
+
+	var logBuf bytes.Buffer
+	log.Logger = zerolog.New(&logBuf).Level(zerolog.DebugLevel)
+
+	reqBody := ConvertRequest{HTML: "<p>secret content</p>"}
+	jsonBody, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", "/convert", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "scrape-id-should-not-be-logged")
+	req.Header.Set("X-Zero-Data-Retention", "true")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	logs := logBuf.String()
+	if logs != "" {
+		t.Errorf("expected no logs for ZDR conversion, got: %q", logs)
+	}
+}
+
+func TestConvertHTML_NonZDR_LogsRequestID(t *testing.T) {
+	converter := NewConverter()
+	handler := NewHandler(converter)
+
+	router := mux.NewRouter()
+	handler.RegisterRoutes(router)
+
+	originalLogger := log.Logger
+	t.Cleanup(func() {
+		log.Logger = originalLogger
+	})
+
+	var logBuf bytes.Buffer
+	log.Logger = zerolog.New(&logBuf).Level(zerolog.DebugLevel)
+
+	reqBody := ConvertRequest{HTML: "<p>hello</p>"}
+	jsonBody, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", "/convert", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "scrape-id-123")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	logs := logBuf.String()
+	if !contains(logs, "scrape-id-123") {
+		t.Errorf("expected request_id in logs for non-ZDR conversion, got: %q", logs)
+	}
+	if !contains(logs, "HTML to Markdown conversion completed") {
+		t.Errorf("expected completion log for non-ZDR conversion, got: %q", logs)
+	}
 }
 

@@ -1,0 +1,49 @@
+name: Go SDK Check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/go-sdk/**
+      - .github/workflows/test-go-sdk.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/go-sdk/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-vet:
+    name: Build and Vet
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.23"
+          cache-dependency-path: apps/go-sdk/go.sum
+
+      - name: Build
+        working-directory: ./apps/go-sdk
+        run: go build ./...
+
+      - name: Vet
+        working-directory: ./apps/go-sdk
+        run: go vet ./...
+
+      - name: Test
+        working-directory: ./apps/go-sdk
+        run: go test -race ./...

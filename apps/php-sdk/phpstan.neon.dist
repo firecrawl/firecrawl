@@ -1,0 +1,12 @@
+parameters:
+    level: 6
+    paths:
+        - src
+    tmpDir: .phpstan-cache
+    ignoreErrors:
+        # Laravel Facade and ServiceProvider may not be installed
+        -
+            message: '#Class Illuminate\\\\#'
+            paths:
+                - src/Laravel/*
+            reportUnmatched: false

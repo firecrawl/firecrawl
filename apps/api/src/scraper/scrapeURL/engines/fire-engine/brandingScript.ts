@@ -38,7 +38,7 @@ export const getBrandingScript = (): string => {
   // Wrap in a self-executing function that returns the result
   cachedScript = `(function __extractBrandDesign() {
 ${bundledCode}
-return __extractBrandDesign.extractBrandDesign();
+return __extractBrandDesign.extractBrandDesignWithLogoColors();
 })();`;
 
   return cachedScript;

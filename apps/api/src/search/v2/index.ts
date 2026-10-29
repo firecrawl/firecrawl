@@ -8,6 +8,7 @@ import { Logger } from "winston";
 export async function search({
   query,
   logger,
+  requestId,
   advanced = false,
   num_results = 5,
   tbs = undefined,
@@ -15,14 +16,18 @@ export async function search({
   lang = "en",
   country = "us",
   location = undefined,
+  safe = undefined,
   proxy = undefined,
   sleep_interval = 0,
   timeout = 5000,
   type = undefined,
   enterprise = undefined,
+  includeDomains = undefined,
+  excludeDomains = undefined,
 }: {
   query: string;
   logger: Logger;
+  requestId?: string;
   advanced?: boolean;
   num_results?: number;
   tbs?: string;
@@ -30,29 +35,39 @@ export async function search({
   lang?: string;
   country?: string;
   location?: string;
+  safe?: boolean;
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
   type?: SearchResultType | SearchResultType[];
   enterprise?: ("default" | "anon" | "zdr")[];
+  includeDomains?: string[];
+  excludeDomains?: string[];
 }): Promise<SearchV2Response> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
       const results = await fire_engine_search_v2(query, {
+        requestId,
         numResults: num_results,
         tbs,
         filter,
         lang,
         country,
         location,
+        safe,
         type,
         enterprise,
+        includeDomains,
+        excludeDomains,
       });
 
       return results;
     }
 
+    // includeDomains/excludeDomains are enforced on returned URLs only on
+    // the fire engine path above; the fallback providers below receive them
+    // solely as the site: chain baked into the query.
     if (config.SEARXNG_ENDPOINT) {
       logger.info("Using searxng search");
       const results = await searxng_search(query, {
@@ -62,6 +77,7 @@ export async function search({
         lang,
         country,
         location,
+        safe,
       });
       if (results.web && results.web.length > 0) return results;
     }

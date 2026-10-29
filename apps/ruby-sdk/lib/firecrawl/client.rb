@@ -1,0 +1,671 @@
+# frozen_string_literal: true
+
+require "json"
+require "uri"
+
+module Firecrawl
+  # Client for the Firecrawl v2 API.
+  #
+  # @example Quick start
+  #   client = Firecrawl::Client.new(api_key: "fc-your-api-key")
+  #
+  #   # Scrape a single page
+  #   doc = client.scrape("https://example.com",
+  #     Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"]))
+  #
+  #   # Crawl a website
+  #   job = client.crawl("https://example.com",
+  #     Firecrawl::Models::CrawlOptions.new(limit: 50))
+  class Client
+    DEFAULT_API_URL = "https://api.firecrawl.dev"
+    DEFAULT_TIMEOUT = 300 # seconds
+    DEFAULT_MAX_RETRIES = 3
+    DEFAULT_BACKOFF_FACTOR = 0.5
+    DEFAULT_POLL_INTERVAL = 2 # seconds
+    DEFAULT_JOB_TIMEOUT = 300 # seconds
+
+    # Creates a new Firecrawl client.
+    #
+    # @param api_key [String, nil] API key (falls back to FIRECRAWL_API_KEY env var)
+    # @param api_url [String] API base URL
+    # @param timeout [Integer] HTTP request timeout in seconds
+    # @param max_retries [Integer] maximum automatic retries for transient failures
+    # @param backoff_factor [Float] exponential backoff factor in seconds
+    def initialize(
+      api_key: nil,
+      api_url: nil,
+      timeout: DEFAULT_TIMEOUT,
+      max_retries: DEFAULT_MAX_RETRIES,
+      backoff_factor: DEFAULT_BACKOFF_FACTOR
+    )
+      resolved_key = api_key || ENV["FIRECRAWL_API_KEY"]
+      # A nil/empty key is allowed: scrape, search, and interact fall back to the
+      # keyless free tier (rate-limited per IP). Other methods return 401 from the
+      # API until a key is provided.
+      resolved_key = nil if resolved_key.nil? || resolved_key.strip.empty?
+
+      resolved_url = api_url || ENV["FIRECRAWL_API_URL"] || DEFAULT_API_URL
+      unless resolved_url.match?(%r{\Ahttps?://}i)
+        raise FirecrawlError, "API URL must be a fully qualified HTTP or HTTPS URL (got: #{resolved_url})."
+      end
+
+      @http = HttpClient.new(
+        api_key: resolved_key,
+        base_url: resolved_url,
+        timeout: timeout,
+        max_retries: max_retries,
+        backoff_factor: backoff_factor
+      )
+    end
+
+    # Creates a client from the FIRECRAWL_API_KEY environment variable.
+    #
+    # @return [Client]
+    def self.from_env
+      new
+    end
+
+    # ================================================================
+    # SCRAPE
+    # ================================================================
+
+    # Scrapes a single URL and returns the document.
+    #
+    # @param url [String] the URL to scrape
+    # @param options [Models::ScrapeOptions, nil] scrape configuration
+    # @return [Models::Document]
+    def scrape(url, options = nil)
+      raise ArgumentError, "URL is required" if url.nil?
+
+      body = { "url" => url }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      raw = @http.post("/v2/scrape", body)
+      # Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+      if raw["success"] == false
+        raise FirecrawlError.new(raw["error"] || "Scrape failed", status_code: 200, error_code: raw["code"], details: raw["details"])
+      end
+      data = raw["data"] || raw
+      Models::Document.new(data)
+    end
+
+    # Search research papers.
+    #
+    # @param query [String] research query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def search_papers(query, options = {})
+      @http.get("/v2/search/research/papers#{query(options.merge("query" => query, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Inspect paper metadata.
+    #
+    # @param paper_id [String] paper identifier
+    # @return [Hash]
+    def inspect_paper(paper_id)
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      @http.get("/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}")
+    end
+
+    # Read a paper with query-guided passages.
+    #
+    # @param paper_id [String] paper identifier
+    # @param query_text [String] passage query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def read_paper(paper_id, query_text, options = {})
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      path = "/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}"
+      @http.get("#{path}#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Find papers related to a paper.
+    #
+    # @param paper_id [String] paper identifier
+    # @param intent [String] relatedness intent
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def related_papers(paper_id, intent, options = {})
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      path = "/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}/similar"
+      @http.get("#{path}#{query(options.merge("intent" => intent, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Search GitHub research content.
+    #
+    # @deprecated Stops responding after 2026-11-03. Use {#developer_search},
+    #   which does not carry over the score breakdown or the web fallback
+    #   results.
+    # @param query_text [String] GitHub query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def search_github(query_text, options = {})
+      @http.get("/v2/search/research/github#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Searches the developer index: public repositories, GitHub issues, merged
+    # pull requests, READMEs and code documentation.
+    #
+    # @param query [String] the search query
+    # @param options [Models::DeveloperSearchOptions, nil] developer search filters
+    # @return [Models::DeveloperSearchResponse]
+    # @raise [ArgumentError] if the query is blank
+    def developer_search(query, options = nil)
+      raise ArgumentError, "Query is required" if query.nil? || query.to_s.strip.empty?
+
+      body = { "query" => query }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      Models::DeveloperSearchResponse.new(@http.post("/v2/search/developer", body))
+    end
+
+    # Interacts with the scrape-bound browser session for a scrape job.
+    #
+    # @param job_id [String] the scrape job ID
+    # @param code [String] the code to execute
+    # @param language [String] "python", "node", or "bash" (default: "node")
+    # @param timeout [Integer, nil] execution timeout in seconds (1-300)
+    # @return [Hash] execution result with stdout, stderr, exit_code
+    def interact(job_id, code, language: "node", timeout: nil)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+      raise ArgumentError, "Code is required" if code.nil?
+
+      body = { "code" => code, "language" => language }
+      body["timeout"] = timeout if timeout
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      @http.post("/v2/scrape/#{job_id}/interact", body)
+    end
+
+    # Stops the interactive browser session for a scrape job.
+    #
+    # @param job_id [String] the scrape job ID
+    # @return [Hash] stop response
+    def stop_interactive_browser(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      @http.delete("/v2/scrape/#{job_id}/interact")
+    end
+
+    # ================================================================
+    # PARSE
+    # ================================================================
+
+    # Parses an uploaded file and returns the extracted document.
+    #
+    # @param file [Models::ParseFile] file payload to upload
+    # @param options [Models::ParseOptions, nil] parse configuration
+    # @return [Models::Document]
+    def parse(file, options = nil)
+      raise ArgumentError, "File is required" if file.nil?
+      unless file.is_a?(Models::ParseFile)
+        raise ArgumentError, "File must be a Firecrawl::Models::ParseFile"
+      end
+
+      options_hash = options.nil? ? {} : options.to_h
+      raw = @http.post_multipart(
+        "/v2/parse",
+        fields: { "options" => JSON.generate(options_hash) },
+        file_field: "file",
+        filename: file.filename,
+        content: file.content,
+        content_type: file.content_type,
+      )
+      data = raw["data"] || raw
+      Models::Document.new(data)
+    end
+
+    # Lists the file formats accepted by {#parse} on this deployment.
+    #
+    # @return [Array<Models::ParseFormat>]
+    def get_parse_formats
+      raw = @http.get("/v2/parse/formats")
+      formats = (raw["data"] || {})["formats"] || []
+      formats.map { |f| Models::ParseFormat.new(f) }
+    end
+
+    # ================================================================
+    # CRAWL
+    # ================================================================
+
+    # Starts an async crawl job and returns immediately.
+    #
+    # @param url [String] the URL to start crawling from
+    # @param options [Models::CrawlOptions, nil] crawl configuration
+    # @return [Models::CrawlResponse]
+    def start_crawl(url, options = nil)
+      raise ArgumentError, "URL is required" if url.nil?
+
+      body = { "url" => url }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      raw = @http.post("/v2/crawl", body)
+      Models::CrawlResponse.new(raw)
+    end
+
+    # Gets the status and results of a crawl job.
+    #
+    # @param job_id [String] the crawl job ID
+    # @return [Models::CrawlJob]
+    def get_crawl_status(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/crawl/#{job_id}")
+      Models::CrawlJob.new(raw)
+    end
+
+    # Crawls a website and waits for completion (auto-polling).
+    #
+    # @param url [String] the URL to crawl
+    # @param options [Models::CrawlOptions, nil] crawl configuration
+    # @param poll_interval [Integer] seconds between status checks
+    # @param timeout [Integer] maximum seconds to wait
+    # @return [Models::CrawlJob]
+    def crawl(url, options = nil, poll_interval: DEFAULT_POLL_INTERVAL, timeout: DEFAULT_JOB_TIMEOUT)
+      start = start_crawl(url, options)
+      poll_crawl(start.id, poll_interval, timeout)
+    end
+
+    # Cancels a running crawl job.
+    #
+    # @param job_id [String] the crawl job ID
+    # @return [Hash]
+    def cancel_crawl(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      @http.delete("/v2/crawl/#{job_id}")
+    end
+
+    # Gets errors from a crawl job.
+    #
+    # @param job_id [String] the crawl job ID
+    # @return [Hash]
+    def get_crawl_errors(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      @http.get("/v2/crawl/#{job_id}/errors")
+    end
+
+    # ================================================================
+    # BATCH SCRAPE
+    # ================================================================
+
+    # Starts an async batch scrape job.
+    #
+    # @param urls [Array<String>] the URLs to scrape
+    # @param options [Models::BatchScrapeOptions, nil] batch scrape configuration
+    # @return [Models::BatchScrapeResponse]
+    def start_batch_scrape(urls, options = nil)
+      raise ArgumentError, "URLs list is required" if urls.nil?
+
+      body = { "urls" => urls }
+      extra_headers = {}
+      if options
+        opts_hash = options.to_h
+
+        # idempotencyKey goes as a header, not in body
+        if options.idempotency_key && !options.idempotency_key.empty?
+          extra_headers["x-idempotency-key"] = options.idempotency_key
+        end
+
+        # Flatten nested scrape options to top level (API expects this)
+        nested = opts_hash.delete("options")
+        body.merge!(opts_hash)
+        body.merge!(nested) if nested
+      end
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      raw = @http.post("/v2/batch/scrape", body, extra_headers: extra_headers)
+      Models::BatchScrapeResponse.new(raw)
+    end
+
+    # Gets the status and results of a batch scrape job.
+    #
+    # @param job_id [String] the batch scrape job ID
+    # @return [Models::BatchScrapeJob]
+    def get_batch_scrape_status(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/batch/scrape/#{job_id}")
+      Models::BatchScrapeJob.new(raw)
+    end
+
+    # Batch-scrapes URLs and waits for completion (auto-polling).
+    #
+    # @param urls [Array<String>] the URLs to scrape
+    # @param options [Models::BatchScrapeOptions, nil] batch scrape configuration
+    # @param poll_interval [Integer] seconds between status checks
+    # @param timeout [Integer] maximum seconds to wait
+    # @return [Models::BatchScrapeJob]
+    def batch_scrape(urls, options = nil, poll_interval: DEFAULT_POLL_INTERVAL, timeout: DEFAULT_JOB_TIMEOUT)
+      start = start_batch_scrape(urls, options)
+      poll_batch_scrape(start.id, poll_interval, timeout)
+    end
+
+    # Cancels a running batch scrape job.
+    #
+    # @param job_id [String] the batch scrape job ID
+    # @return [Hash]
+    def cancel_batch_scrape(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      @http.delete("/v2/batch/scrape/#{job_id}")
+    end
+
+    # ================================================================
+    # MAP
+    # ================================================================
+
+    # Discovers URLs on a website.
+    #
+    # @param url [String] the URL to map
+    # @param options [Models::MapOptions, nil] map configuration
+    # @return [Models::MapData]
+    def map(url, options = nil)
+      raise ArgumentError, "URL is required" if url.nil?
+
+      body = { "url" => url }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      raw = @http.post("/v2/map", body)
+      data = raw["data"] || raw
+      Models::MapData.new(data)
+    end
+
+    # ================================================================
+    # MONITOR
+    # ================================================================
+
+    def create_monitor(name:, schedule:, targets:, webhook: nil, notification: nil,
+                       retention_days: nil, goal: nil, judge_enabled: nil)
+      body = {
+        "name" => name,
+        "schedule" => schedule,
+        "targets" => targets,
+        "webhook" => webhook,
+        "notification" => notification,
+        "retentionDays" => retention_days,
+        "goal" => goal,
+        "judgeEnabled" => judge_enabled,
+      }.compact
+      raw = @http.post("/v2/monitor", body)
+      Models::Monitor.new(raw["data"] || raw)
+    end
+
+    def list_monitors(limit: nil, offset: nil)
+      raw = @http.get("/v2/monitor#{query(limit: limit, offset: offset)}")
+      (raw["data"] || []).map { |item| Models::Monitor.new(item) }
+    end
+
+    def get_monitor(monitor_id)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+
+      raw = @http.get("/v2/monitor/#{monitor_id}")
+      Models::Monitor.new(raw["data"] || raw)
+    end
+
+    def update_monitor(monitor_id, **attrs)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+
+      body = {
+        "name" => attrs[:name],
+        "status" => attrs[:status],
+        "schedule" => attrs[:schedule],
+        "webhook" => attrs[:webhook],
+        "notification" => attrs[:notification],
+        "targets" => attrs[:targets],
+        "retentionDays" => attrs[:retention_days],
+        "goal" => attrs[:goal],
+        "judgeEnabled" => attrs[:judge_enabled],
+      }.compact
+      raw = @http.patch("/v2/monitor/#{monitor_id}", body)
+      Models::Monitor.new(raw["data"] || raw)
+    end
+
+    def delete_monitor(monitor_id)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+
+      @http.delete("/v2/monitor/#{monitor_id}")["success"] == true
+    end
+
+    def run_monitor(monitor_id)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+
+      raw = @http.post("/v2/monitor/#{monitor_id}/run", {})
+      Models::MonitorCheck.new(raw["data"] || raw)
+    end
+
+    def list_monitor_checks(monitor_id, limit: nil, offset: nil)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+
+      raw = @http.get("/v2/monitor/#{monitor_id}/checks#{query(limit: limit, offset: offset)}")
+      (raw["data"] || []).map { |item| Models::MonitorCheck.new(item) }
+    end
+
+    def get_monitor_check(monitor_id, check_id, limit: nil, skip: nil, status: nil, auto_paginate: true)
+      raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
+      raise ArgumentError, "Check ID is required" if check_id.nil?
+
+      params = query(limit: limit, skip: skip, status: status)
+      raw = @http.get("/v2/monitor/#{monitor_id}/checks/#{check_id}#{params}")
+      data = raw["data"] || raw
+      data["next"] = raw["next"] if raw["next"]
+      check = Models::MonitorCheckDetail.new(data)
+      auto_paginate ? paginate_monitor_check(check) : check
+    end
+
+    # ================================================================
+    # SEARCH
+    # ================================================================
+
+    # Performs a web search.
+    #
+    # @param query [String] the search query
+    # @param options [Models::SearchOptions, nil] search configuration
+    # @return [Models::SearchData]
+    def search(query, options = nil)
+      raise ArgumentError, "Query is required" if query.nil?
+
+      body = { "query" => query }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      raw = @http.post("/v2/search", body)
+      data = raw["data"] || raw
+      Models::SearchData.new(data)
+    end
+
+    # ================================================================
+    # AGENT
+    # ================================================================
+
+    # Starts an async agent task.
+    #
+    # @param options [Models::AgentOptions] agent configuration
+    # @return [Models::AgentResponse]
+    def start_agent(options)
+      raise ArgumentError, "Agent options are required" if options.nil?
+
+      raw = @http.post("/v2/agent", options.to_h)
+      Models::AgentResponse.new(raw)
+    end
+
+    # Gets the status of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @return [Models::AgentStatusResponse]
+    def get_agent_status(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}")
+      Models::AgentStatusResponse.new(raw)
+    end
+
+    # Lists agent tasks, most recent first.
+    #
+    # Pages are fixed at 20 runs. To fetch the next page, pass the before
+    # value from the previous page's next URL. This method does not
+    # auto-paginate.
+    #
+    # @param before [Integer, nil] only return agent runs created before this
+    #   unix millisecond timestamp
+    # @return [Models::AgentListResponse]
+    def list_agents(before: nil)
+      raw = @http.get("/v2/agent#{query(before: before)}")
+      Models::AgentListResponse.new(raw)
+    end
+
+    # Runs an agent task and waits for completion (auto-polling).
+    #
+    # @param options [Models::AgentOptions] agent configuration
+    # @param poll_interval [Integer] seconds between status checks
+    # @param timeout [Integer] maximum seconds to wait
+    # @return [Models::AgentStatusResponse]
+    def agent(options, poll_interval: DEFAULT_POLL_INTERVAL, timeout: DEFAULT_JOB_TIMEOUT)
+      start = start_agent(options)
+      raise FirecrawlError, "Agent start did not return a job ID" if start.id.nil?
+
+      deadline = Time.now + timeout
+      while Time.now < deadline
+        status = get_agent_status(start.id)
+        return status if status.done?
+
+        sleep(poll_interval)
+      end
+      raise JobTimeoutError.new(start.id, timeout, "Agent")
+    end
+
+    # Cancels a running agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @return [Hash]
+    def cancel_agent(job_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      @http.delete("/v2/agent/#{job_id}")
+    end
+
+    # Gets the trace of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param live_view [Boolean] include live view URLs for active browser sessions
+    # @return [Models::AgentTraceResponse]
+    def get_agent_trace(job_id, live_view: false)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/trace#{query(liveView: live_view ? true : nil)}")
+      Models::AgentTraceResponse.new(raw)
+    end
+
+    # Gets a snapshot of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param snapshot_id [String] the snapshot ID
+    # @return [Models::AgentSnapshotResponse]
+    def get_agent_snapshot(job_id, snapshot_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+      raise ArgumentError, "Snapshot ID is required" if snapshot_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/snapshots/#{snapshot_id}")
+      Models::AgentSnapshotResponse.new(raw)
+    end
+
+    # ================================================================
+    # USAGE & METRICS
+    # ================================================================
+
+    # Gets current concurrency usage.
+    #
+    # @return [Models::ConcurrencyCheck]
+    def get_concurrency
+      raw = @http.get("/v2/concurrency-check")
+      Models::ConcurrencyCheck.new(raw)
+    end
+
+    # Gets current credit usage.
+    #
+    # @return [Models::CreditUsage]
+    def get_credit_usage
+      raw = @http.get("/v2/team/credit-usage")
+      data = raw["data"] || raw
+      Models::CreditUsage.new(data)
+    end
+
+    private
+
+    def query(params = nil, **kwargs)
+      params = (params || {}).merge(kwargs)
+      pairs = []
+      params.each do |key, value|
+        next if value.nil? || value == ""
+
+        values = value.is_a?(Array) ? value : [value]
+        values.each do |item|
+          next if item.nil? || item == ""
+
+          string_value = item == true ? "true" : item == false ? "false" : item.to_s
+          pairs << [key.to_s, string_value]
+        end
+      end
+      pairs.empty? ? "" : "?#{URI.encode_www_form(pairs)}"
+    end
+
+    def poll_crawl(job_id, poll_interval, timeout)
+      deadline = Time.now + timeout
+      while Time.now < deadline
+        job = get_crawl_status(job_id)
+        return paginate_crawl(job) if job.done?
+
+        sleep(poll_interval)
+      end
+      raise JobTimeoutError.new(job_id, timeout, "Crawl")
+    end
+
+    def poll_batch_scrape(job_id, poll_interval, timeout)
+      deadline = Time.now + timeout
+      while Time.now < deadline
+        job = get_batch_scrape_status(job_id)
+        return paginate_batch_scrape(job) if job.done?
+
+        sleep(poll_interval)
+      end
+      raise JobTimeoutError.new(job_id, timeout, "Batch scrape")
+    end
+
+    def paginate_crawl(job)
+      job.data ||= []
+      current = job
+      while current.next_url && !current.next_url.empty?
+        raw = @http.get_absolute(current.next_url)
+        next_page = Models::CrawlJob.new(raw)
+        job.data.concat(next_page.data) unless next_page.data.empty?
+        current = next_page
+      end
+      job
+    end
+
+    def paginate_batch_scrape(job)
+      job.data ||= []
+      current = job
+      while current.next_url && !current.next_url.empty?
+        raw = @http.get_absolute(current.next_url)
+        next_page = Models::BatchScrapeJob.new(raw)
+        job.data.concat(next_page.data) unless next_page.data.empty?
+        current = next_page
+      end
+      job
+    end
+
+    def paginate_monitor_check(check)
+      check.pages ||= []
+      current = check
+      while current.next_url && !current.next_url.empty?
+        raw = @http.get_absolute(current.next_url)
+        data = raw["data"] || raw
+        data["next"] = raw["next"] if raw["next"]
+        next_page = Models::MonitorCheckDetail.new(data)
+        check.pages.concat(next_page.pages) unless next_page.pages.empty?
+        current = next_page
+      end
+      check.next_url = nil
+      check
+    end
+  end
+end

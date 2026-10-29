@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "./config";
-import "./services/sentry";
-import { setSentryServiceTag } from "./services/sentry";
-import * as Sentry from "@sentry/node";
+import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -11,33 +9,41 @@ import {
   getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
+  getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
+import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
-import { adminRouter } from "./routes/admin";
+import {
+  adminInternalRouter,
+  adminRouter,
+  countAdminPathRoute,
+} from "./routes/admin";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import {
-  ErrorResponse,
-  RequestWithMaybeACUC,
-  ResponseWithSentry,
-} from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
 import { ZodError } from "zod";
-import { QueueFullError } from "./lib/concurrency-limit";
+import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
-import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
+import { exchangeRouter } from "./routes/exchange";
+import { labsRouter } from "./routes/labs";
+import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
+import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
+import { isKeylessConfigured } from "./lib/keyless";
+import { shutdownPubSubLogging } from "./services/logging/log_job";
+import { notFoundHandler } from "./lib/not-found";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -50,6 +56,12 @@ logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
 
+if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
+  logger.warn(
+    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
+  );
+}
+
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
@@ -61,10 +73,23 @@ const app = ws.app;
 
 global.isProduction = config.IS_PRODUCTION;
 
-setSentryServiceTag("api");
+// Capture the exact request bytes so integrations that sign the raw payload
+// (e.g. Slack's X-Slack-Signature) can verify it after body parsing. Typed with
+// the node http types body-parser's `verify` hook expects.
+const captureRawBody = (
+  req: http.IncomingMessage,
+  _res: http.ServerResponse,
+  buf: Buffer,
+) => {
+  if (buf && buf.length) {
+    (req as http.IncomingMessage & { rawBody?: Buffer }).rawBody = buf;
+  }
+};
 
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json({ limit: "10mb" }));
+registerMcpActionLogIngestRoute(app);
+
+app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
+app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
 
 app.use(cors()); // Add this line to enable CORS
 
@@ -77,19 +102,32 @@ if (config.EXPRESS_TRUST_PROXY) {
 }
 
 const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+
+const bullBoardQueues = [
+  new BullMQAdapter(getGenerateLlmsTxtQueue()),
+  new BullMQAdapter(getDeepResearchQueue()),
+  new BullMQAdapter(getBillingQueue()),
+  new BullMQAdapter(getPrecrawlQueue()),
+  new BullMQAdapter(getFirebillTrackRetryQueue()),
+  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
+  // management UI, not here.
+];
 
 const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: [
-    new BullMQAdapter(getGenerateLlmsTxtQueue()),
-    new BullMQAdapter(getDeepResearchQueue()),
-    new BullMQAdapter(getBillingQueue()),
-    new BullMQAdapter(getPrecrawlQueue()),
-  ],
+  queues: bullBoardQueues,
   serverAdapter: serverAdapter,
 });
 
-app.use(`/admin/${config.BULL_AUTH_KEY}/queues`, serverAdapter.getRouter());
+if (!config.BULL_AUTH_KEY) {
+  logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
+} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
+  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+  app.use(
+    `/admin/${config.BULL_AUTH_KEY}/queues`,
+    countAdminPathRoute("queues"),
+    serverAdapter.getRouter(),
+  );
+}
 
 app.get("/", (_, res) => {
   res.json({
@@ -106,28 +144,84 @@ app.get("/e2e-test", (_, res) => {
 app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
+app.use("/labs", labsRouter);
+app.use("/exchange", exchangeRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
 const HOST = config.HOST;
 
+// The internal listener has no key check: keep its port off public ingress.
+function startAdminInternalServer(port: number) {
+  const adminApp = express();
+  adminApp.disable("x-powered-by");
+  adminApp.use(bodyParser.json({ limit: "10mb" }));
+
+  const internalBullBoard = new ExpressAdapter();
+  internalBullBoard.setBasePath("/admin/queues");
+  createBullBoard({
+    queues: bullBoardQueues,
+    serverAdapter: internalBullBoard,
+  });
+  adminApp.use("/admin/queues", internalBullBoard.getRouter());
+
+  adminApp.use(adminInternalRouter);
+  adminApp.use(notFoundHandler);
+  adminApp.use(
+    (err: unknown, req: Request, res: Response, _next: NextFunction) => {
+      logger.error("Internal admin request failed", {
+        error: err,
+        path: req.path,
+      });
+      res.status(500).json({ success: false, error: "Internal server error" });
+    },
+  );
+
+  const host = config.ADMIN_INTERNAL_HOST;
+  return adminApp.listen(port, host, (error?: Error) => {
+    if (error) {
+      logger.error("Failed to start internal admin server", {
+        error,
+        port,
+        host,
+      });
+      throw error;
+    }
+
+    logger.info("Internal admin server listening", {
+      pid: process.pid,
+      port,
+      host,
+    });
+  });
+}
+
 async function startServer(port = DEFAULT_PORT) {
+  startNodeRuntimeMetrics();
   try {
     await initializeBlocklist();
     initializeEngineForcing();
+    warmExchangeCatalog();
   } catch (error) {
-    logger.error("Failed to initialize blocklist and engine forcing", {
+    logger.error("Failed to initialize API startup dependencies", {
       error,
     });
     throw error;
   }
 
-  // Attach WebSocket proxy to the Express app
-  attachWsProxy(app);
+  const server = app.listen(Number(port), HOST, (error?: Error) => {
+    if (error) {
+      logger.error("Failed to start HTTP server", { error, port, host: HOST });
+      throw error;
+    }
 
-  const server = app.listen(Number(port), HOST, () => {
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
+
+  const adminInternalServer =
+    config.ADMIN_INTERNAL_PORT !== undefined
+      ? startAdminInternalServer(config.ADMIN_INTERNAL_PORT)
+      : undefined;
 
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
@@ -136,11 +230,19 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Waiting 60s for GCE load balancer drain timeout");
       await new Promise(resolve => setTimeout(resolve, 60000));
     }
-    server.close(() => {
+    const adminInternalClosed = new Promise<void>(resolve =>
+      adminInternalServer
+        ? adminInternalServer.close(() => resolve())
+        : resolve(),
+    );
+    server.close(async () => {
+      await adminInternalClosed;
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(() => {
+          shutdownIndexerQueue().finally(async () => {
+            await shutdownPubSubLogging();
+            await shutdownTracing();
             logger.info("NUQ shutdown complete");
             process.exit(0);
           });
@@ -166,6 +268,10 @@ if (require.main === module) {
 app.get("/is-production", (req, res) => {
   res.send({ isProduction: global.isProduction });
 });
+
+// Terminal handler for unmatched paths. Must stay after every route and before
+// the error middleware below, or Express falls back to its default HTML page.
+app.use(notFoundHandler);
 
 app.use(
   (
@@ -215,13 +321,11 @@ app.use(
   },
 );
 
-Sentry.setupExpressErrorHandler(app);
-
 app.use(
   (
     err: unknown,
     req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
-    res: ResponseWithSentry<ErrorResponse>,
+    res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
     if (
@@ -236,8 +340,19 @@ app.use(
         error: "Bad request, malformed JSON",
       });
     }
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status?: number }).status === 413
+    ) {
+      return res.status(413).json({
+        success: false,
+        error: "Request body is too large",
+      });
+    }
 
-    const id = res.sentry ?? uuidv7();
+    const id = uuidv7();
 
     logger.error(
       "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",

@@ -15,8 +15,12 @@ import {
   StoredCrawl,
 } from "../../../lib/crawl-redis";
 import { config } from "../../../config";
-import { crawlGroup } from "../../../services/worker/nuq";
+import {
+  crawlGroup,
+  resolveNewGroupBackend,
+} from "../../../services/worker/nuq-router";
 import { _addScrapeJobToBullMQ } from "../../../services/queue-jobs";
+import { requestCreditsShards } from "../../../lib/request-credits-store";
 
 type ResponseType = {
   ok: boolean;
@@ -49,6 +53,7 @@ export async function crawlMonitorController(
     target_hint: "https://firecrawl.dev",
     zeroDataRetention: false,
     api_key_id: req.acuc?.api_key_id ?? null,
+    creditsShards: requestCreditsShards(2),
   });
 
   const sc: StoredCrawl = {
@@ -58,6 +63,7 @@ export async function crawlMonitorController(
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention: false,
     },
@@ -77,10 +83,16 @@ export async function crawlMonitorController(
     });
   }
 
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
   await crawlGroup.addGroup(
     id,
     sc.team_id,
     (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    {
+      backend: sc.queueBackend,
+      maxConcurrency: sc.maxConcurrency,
+      delaySeconds: sc.crawlerOptions?.delay,
+    },
   );
 
   await saveCrawl(id, sc);

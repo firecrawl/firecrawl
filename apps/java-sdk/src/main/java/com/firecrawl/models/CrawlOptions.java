@@ -21,6 +21,8 @@ public class CrawlOptions {
     private Boolean crawlEntireDomain;
     private Boolean allowExternalLinks;
     private Boolean allowSubdomains;
+    private Boolean ignoreRobotsTxt;
+    private String robotsUserAgent;
     private Integer delay;
     private Integer maxConcurrency;
     private Object webhook;
@@ -42,6 +44,8 @@ public class CrawlOptions {
     public Boolean getCrawlEntireDomain() { return crawlEntireDomain; }
     public Boolean getAllowExternalLinks() { return allowExternalLinks; }
     public Boolean getAllowSubdomains() { return allowSubdomains; }
+    public Boolean getIgnoreRobotsTxt() { return ignoreRobotsTxt; }
+    public String getRobotsUserAgent() { return robotsUserAgent; }
     public Integer getDelay() { return delay; }
     public Integer getMaxConcurrency() { return maxConcurrency; }
     public Object getWebhook() { return webhook; }
@@ -64,6 +68,8 @@ public class CrawlOptions {
         private Boolean crawlEntireDomain;
         private Boolean allowExternalLinks;
         private Boolean allowSubdomains;
+        private Boolean ignoreRobotsTxt;
+        private String robotsUserAgent;
         private Integer delay;
         private Integer maxConcurrency;
         private Object webhook;
@@ -107,6 +113,12 @@ public class CrawlOptions {
         /** Follow subdomains. */
         public Builder allowSubdomains(Boolean allowSubdomains) { this.allowSubdomains = allowSubdomains; return this; }
 
+        /** Ignore the website's robots.txt rules. Enterprise only. */
+        public Builder ignoreRobotsTxt(Boolean ignoreRobotsTxt) { this.ignoreRobotsTxt = ignoreRobotsTxt; return this; }
+
+        /** Custom User-Agent string for robots.txt evaluation. Enterprise only. */
+        public Builder robotsUserAgent(String robotsUserAgent) { this.robotsUserAgent = robotsUserAgent; return this; }
+
         /** Delay in milliseconds between requests. */
         public Builder delay(Integer delay) { this.delay = delay; return this; }
 
@@ -141,6 +153,8 @@ public class CrawlOptions {
             o.crawlEntireDomain = this.crawlEntireDomain;
             o.allowExternalLinks = this.allowExternalLinks;
             o.allowSubdomains = this.allowSubdomains;
+            o.ignoreRobotsTxt = this.ignoreRobotsTxt;
+            o.robotsUserAgent = this.robotsUserAgent;
             o.delay = this.delay;
             o.maxConcurrency = this.maxConcurrency;
             o.webhook = this.webhook;

@@ -66,7 +66,7 @@ export function transformArrayToObject_F0(
   // Initialize the array in the transformed result
   let currentLevel = transformedResult;
   arrayKeyParts.forEach(part => {
-    if (!currentLevel[part]) {
+    if (!Object.prototype.hasOwnProperty.call(currentLevel, part)) {
       currentLevel[part] = {};
     }
     currentLevel = currentLevel[part];

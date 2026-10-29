@@ -17,6 +17,7 @@ beforeAll(async () => {
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
   const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
+  const longPdfUrl = `${TEST_SUITE_WEBSITE}/example-long.pdf`;
   const htmlUrl = TEST_SUITE_WEBSITE;
 
   describe("Array format", () => {
@@ -142,8 +143,45 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBeGreaterThan(0);
         expect(response.metadata.numPages).toBeLessThan(10000);
+        // When the cap exceeds the real page count nothing is truncated, so
+        // totalPages should be reported and equal numPages.
+        expect(response.metadata.totalPages).toBe(response.metadata.numPages);
       },
       scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "reports totalPages when a PDF is truncated by maxPages",
+      async () => {
+        // example-long.pdf has many pages; cap well below the real count.
+        const truncated = await scrape(
+          {
+            url: longPdfUrl,
+            parsers: [{ type: "pdf", maxPages: 5 }],
+          },
+          identity,
+        );
+
+        expect(truncated.metadata.numPages).toBe(5);
+        // The true total is reported even though only 5 pages were parsed.
+        expect(truncated.metadata.totalPages).toBeDefined();
+        expect(truncated.metadata.totalPages!).toBeGreaterThan(
+          truncated.metadata.numPages!,
+        );
+
+        // The reported total should match an uncapped scrape's page count.
+        const full = await scrape(
+          {
+            url: longPdfUrl,
+            parsers: [{ type: "pdf" }],
+          },
+          identity,
+        );
+
+        expect(full.metadata.totalPages).toBe(full.metadata.numPages);
+        expect(truncated.metadata.totalPages).toBe(full.metadata.numPages);
+      },
+      scrapeTimeout * 10,
     );
   });
 
@@ -338,6 +376,24 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           {
             url: pdfUrl,
             parsers: [{ type: "pdf", mode: "invalid" } as any],
+          },
+          identity,
+        );
+
+        expect(raw.statusCode).toBe(400);
+        expect(raw.body.success).toBe(false);
+        expect(raw.body.error).toBe("Bad Request");
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "rejects non-boolean pages",
+      async () => {
+        const raw = await scrapeRaw(
+          {
+            url: pdfUrl,
+            parsers: [{ type: "pdf", pages: "yes" } as any],
           },
           identity,
         );

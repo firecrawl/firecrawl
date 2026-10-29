@@ -71,7 +71,7 @@ describe("E2E Tests for v1 API Routes", () => {
       "should return a successful response with a valid API key",
       async () => {
         const scrapeRequest: ScrapeRequestInput = {
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
         };
 
         const response: any = await request(TEST_URL)
@@ -89,30 +89,29 @@ describe("E2E Tests for v1 API Routes", () => {
         expect(response.body.data).toHaveProperty("markdown");
         expect(response.body.data).toHaveProperty("metadata");
         expect(response.body.data).not.toHaveProperty("html");
-        expect(response.body.data.markdown).toContain("_Roast_");
+        expect(response.body.data.markdown).toContain("Firecrawl Test Site");
         expect(response.body.data.metadata.error).toBeUndefined();
-        expect(response.body.data.metadata.title).toBe("Roast My Website");
+        expect(response.body.data.metadata.title).toBe(
+          "Firecrawl Test Website",
+        );
         expect(response.body.data.metadata.description).toBe(
-          "Welcome to Roast My Website, the ultimate tool for putting your website through the wringer! This repository harnesses the power of Firecrawl to scrape and capture screenshots of websites, and then unleashes the latest LLM vision models to mercilessly roast them. 🌶️",
+          "Welcome to the Firecrawl Test Website!",
         );
-        expect(response.body.data.metadata.keywords).toBe(
-          "Roast My Website,Roast,Website,GitHub,Firecrawl",
+        expect(response.body.data.metadata.ogTitle).toBe(
+          "Firecrawl Test Website",
         );
-        expect(response.body.data.metadata.robots).toBe("follow, index");
-        expect(response.body.data.metadata.ogTitle).toBe("Roast My Website");
         expect(response.body.data.metadata.ogDescription).toBe(
-          "Welcome to Roast My Website, the ultimate tool for putting your website through the wringer! This repository harnesses the power of Firecrawl to scrape and capture screenshots of websites, and then unleashes the latest LLM vision models to mercilessly roast them. 🌶️",
+          "Welcome to the Firecrawl Test Website!",
         );
-        expect(response.body.data.metadata.ogUrl).toBe(
-          "https://www.roastmywebsite.ai",
+        expect(response.body.data.metadata.ogUrl).toContain(
+          "firecrawl-test-site",
         );
-        expect(response.body.data.metadata.ogImage).toBe(
-          "https://www.roastmywebsite.ai/og.png",
+        expect(response.body.data.metadata.ogImage).toContain(
+          "firecrawl-test-site",
         );
         expect(response.body.data.metadata.ogLocaleAlternate).toStrictEqual([]);
-        expect(response.body.data.metadata.ogSiteName).toBe("Roast My Website");
         expect(response.body.data.metadata.sourceURL).toBe(
-          "https://roastmywebsite.ai",
+          "https://firecrawl-test-site.vercel.app",
         );
         expect(response.body.data.metadata.statusCode).toBe(200);
       },
@@ -179,7 +178,7 @@ describe("E2E Tests for v1 API Routes", () => {
       "should return a successful response with a valid API key and includeHtml set to true",
       async () => {
         const scrapeRequest: ScrapeRequestInput = {
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
           formats: ["markdown", "html"],
         };
 
@@ -197,7 +196,7 @@ describe("E2E Tests for v1 API Routes", () => {
         expect(response.body.data).toHaveProperty("markdown");
         expect(response.body.data).toHaveProperty("html");
         expect(response.body.data).toHaveProperty("metadata");
-        expect(response.body.data.markdown).toContain("_Roast_");
+        expect(response.body.data.markdown).toContain("Firecrawl Test Site");
         expect(response.body.data.html).toContain("<h1");
         expect(response.body.data.metadata.statusCode).toBe(200);
         expect(response.body.data.metadata.error).toBeUndefined();
@@ -454,7 +453,7 @@ describe("E2E Tests for v1 API Routes", () => {
       "should return a successful response with a valid API key and includeHtml set to true",
       async () => {
         const scrapeRequest: ScrapeRequestInput = {
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
           formats: ["html", "rawHtml"],
         };
 
@@ -517,7 +516,7 @@ describe("E2E Tests for v1 API Routes", () => {
       "should return a successful response with a valid links on page",
       async () => {
         const scrapeRequest: ScrapeRequestInput = {
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
           formats: ["links"],
         };
 
@@ -568,7 +567,7 @@ describe("E2E Tests for v1 API Routes", () => {
       "should return a successful response with a valid API key",
       async () => {
         const mapRequest = {
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
         };
 
         const response: any = await request(TEST_URL)
@@ -965,15 +964,16 @@ describe("E2E Tests for v1 API Routes", () => {
       },
     );
 
-    it.concurrent(
-      "should return Job not found for invalid job ID",
-      async () => {
-        const response = await request(TEST_URL)
-          .get("/v1/crawl/invalidJobId")
-          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
-        expect(response.statusCode).toBe(404);
-      },
-    );
+    it.concurrent("should reject an invalid job ID", async () => {
+      const response = await request(TEST_URL)
+        .get("/v1/crawl/invalidJobId")
+        .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
 
     it.concurrent(
       "should return a successful crawl status response for a valid crawl job",

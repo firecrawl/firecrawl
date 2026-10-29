@@ -12,8 +12,9 @@ from ..types import (
     Document,
     WebhookConfig,
     PaginationConfig,
+    AuditMetadata,
 )
-from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
+from ..utils import FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 from ..utils.normalize import normalize_document_input
 from ..types import CrawlErrorsResponse
 
@@ -29,7 +30,7 @@ def _parse_batch_scrape_documents(data_list: Optional[List[Any]]) -> List[Docume
 
 def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     return {
         "status": body.get("status"),
@@ -53,6 +54,7 @@ def start_batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
 ) -> BatchScrapeResponse:
     """
@@ -79,6 +81,7 @@ def start_batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        audit_metadata=audit_metadata,
     )
     
     # Make the API request
@@ -92,7 +95,7 @@ def start_batch_scrape(
     # Parse response
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     return BatchScrapeResponse(
         id=body.get("id"),
         url=body.get("url"),
@@ -133,7 +136,7 @@ def get_batch_scrape_status(
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
-    if auto_paginate and payload["next"]:
+    if auto_paginate and payload["next"] and (documents or payload["status"] == "completed"):
         documents = _fetch_all_batch_pages(
             client, 
             payload["next"], 
@@ -255,7 +258,9 @@ def _fetch_all_batch_pages(
         if max_results is not None and len(documents) >= max_results:
             break
         
-        # Get next URL
+        # A running job repeats its cursor on an empty page until new documents finish.
+        if not page_payload["data"] and page_payload["next"] == current_url:
+            break
         current_url = page_payload["next"]
         page_count += 1
     
@@ -341,6 +346,7 @@ def batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None
@@ -373,6 +379,7 @@ def batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        audit_metadata=audit_metadata,
         idempotency_key=idempotency_key,
     )
 
@@ -424,6 +431,7 @@ def prepare_batch_scrape_request(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> dict:
     """
     Prepare a batch scrape request payload.
@@ -443,6 +451,8 @@ def prepare_batch_scrape_request(
         scrape_data = prepare_scrape_options(options)
         if scrape_data:
             request_data.update(scrape_data)
+    if audit_metadata is not None:
+        request_data["auditMetadata"] = audit_metadata.model_dump()
 
     # Batch-specific fields
     if webhook is not None:

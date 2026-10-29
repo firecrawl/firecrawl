@@ -3,11 +3,9 @@ import {
   ConcurrencyCheckResponse,
   RequestWithAuth,
 } from "./types";
-import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
-import { getRedisConnection } from "../../../src/services/queue-service";
-import { getACUCTeam } from "../auth";
-import { RateLimiterMode } from "../../types";
+import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -21,34 +19,12 @@ export async function concurrencyCheckController(
     });
   }
 
-  let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
-  if (!req.acuc.is_extract) {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Extract,
-    );
-  } else {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Crawl,
-    );
-  }
-
-  const concurrencyLimiterKey = "concurrency-limiter:" + req.auth.team_id;
-  const now = Date.now();
-  const activeJobsOfTeam = await getRedisConnection().zrangebyscore(
-    concurrencyLimiterKey,
-    now,
-    Infinity,
-  );
+  const activeJobsOfTeam = await getCombinedTeamActiveCount(req.auth.team_id);
 
   return res.status(200).json({
     success: true,
-    concurrency: activeJobsOfTeam.length,
-    maxConcurrency: Math.max(req.acuc.concurrency, otherACUC?.concurrency ?? 0),
+    concurrency: activeJobsOfTeam,
+    maxConcurrency:
+      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
   });
 }

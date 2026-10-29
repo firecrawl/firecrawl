@@ -1,7 +1,7 @@
 defmodule Firecrawl.MixProject do
   use Mix.Project
 
-  @version "1.0.0"
+  @version "1.12.6"
   @source_url "https://github.com/firecrawl/firecrawl/tree/main/apps/elixir-sdk"
 
   def project do
@@ -13,7 +13,7 @@ defmodule Firecrawl.MixProject do
       deps: deps(),
       package: package(),
       name: "Firecrawl",
-      description: "Auto-generated Elixir client for the Firecrawl API v2",
+      description: "Elixir client for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs on the v2 API. Auto-generated from the OpenAPI spec.",
       source_url: @source_url,
       docs: [
         main: "Firecrawl",

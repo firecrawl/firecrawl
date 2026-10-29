@@ -1,4 +1,6 @@
-import { supabase_service } from "../supabase";
+import { and, eq, gte, lte } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { withAuth } from "../../lib/withAuth";
 import { Resend } from "resend";
@@ -6,7 +8,6 @@ import { NotificationType } from "../../types";
 import { logger } from "../../../src/lib/logger";
 import { sendSlackWebhook } from "../alerts/slack";
 import { getNotificationString } from "./notification_string";
-import { AuthCreditUsageChunk } from "../../controllers/v1/types";
 import { redlock } from "../redlock";
 import { redisEvictConnection } from "../redis";
 import { trackEvent } from "../ledger/tracking";
@@ -21,15 +22,6 @@ type EmailTemplate = {
 };
 
 const emailTemplates: Record<NotificationType, EmailTemplate> = {
-  [NotificationType.APPROACHING_LIMIT]: {
-    subject: "You've used 80% of your credit limit - Firecrawl",
-    html: "Hey there,<br/><p>You are approaching your credit limit for this billing period. Your usage right now is around 80% of your total credit limit. Consider upgrading your plan to avoid hitting the limit. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><br/>Thanks,<br/>Firecrawl Team<br/>",
-  },
-  [NotificationType.LIMIT_REACHED]: {
-    subject:
-      "Credit Limit Reached! Take action now to resume usage - Firecrawl",
-    html: "Hey there,<br/><p>You have reached your credit limit for this billing period. To resume usage, please upgrade your plan. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><br/>Thanks,<br/>Firecrawl Team<br/>",
-  },
   [NotificationType.RATE_LIMIT_REACHED]: {
     subject: "Rate Limit Reached - Firecrawl",
     html: "Hey there,<br/><p>You've hit one of the Firecrawl endpoint's rate limit! Take a breather and try again in a few moments. If you need higher rate limits, consider upgrading your plan. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><p>If you have any questions, feel free to reach out to us at <a href='mailto:help@firecrawl.com'>help@firecrawl.com</a></p><br/>Thanks,<br/>Firecrawl Team<br/><br/>Ps. this email is only sent once every 7 days if you reach a rate limit.",
@@ -62,7 +54,6 @@ const emailTemplates: Record<NotificationType, EmailTemplate> = {
     <p>You can modify your notification settings anytime at <a href='https://www.firecrawl.dev/app/account-settings'>firecrawl.dev/app/account-settings</a>.</p>
     <br/>Thanks,<br/>Firecrawl Team<br/>`,
   },
-  // Agent sponsor confirm emails are sent directly in the agent-signup controller
   [NotificationType.AGENT_SPONSOR_CONFIRM]: {
     subject: "An AI agent requested an API key under your email - Firecrawl",
     html: "",
@@ -74,8 +65,6 @@ const notificationToEmailCategory: Record<
   NotificationType,
   "rate_limit_warnings" | "system_alerts"
 > = {
-  [NotificationType.APPROACHING_LIMIT]: "system_alerts",
-  [NotificationType.LIMIT_REACHED]: "system_alerts",
   [NotificationType.RATE_LIMIT_REACHED]: "rate_limit_warnings",
   [NotificationType.AUTO_RECHARGE_SUCCESS]: "system_alerts",
   [NotificationType.AUTO_RECHARGE_FAILED]: "system_alerts",
@@ -90,7 +79,6 @@ export async function sendNotification(
   notificationType: NotificationType,
   startDateString: string | null,
   endDateString: string | null,
-  chunk: AuthCreditUsageChunk,
   bypassRecentChecks: boolean = false,
   is_ledger_enabled: boolean = false,
   context: NotificationContext = {},
@@ -100,7 +88,6 @@ export async function sendNotification(
     notificationType,
     startDateString,
     endDateString,
-    chunk,
     bypassRecentChecks,
     is_ledger_enabled,
     context,
@@ -116,25 +103,35 @@ async function sendEmailNotification(
 
   try {
     // Get user's email preferences
-    const { data: user, error: userError } = await supabase_service
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (userError) {
+    let user: { id: string } | undefined;
+    try {
+      [user] = await db
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(eq(schema.users.email, email))
+        .limit(1);
+    } catch (userError) {
       logger.debug(`Error fetching user: ${userError}`);
+      return { success: false };
+    }
+    if (!user) {
       return { success: false };
     }
 
     // Check user's email preferences
-    const { data: preferences, error: prefError } = await supabase_service
-      .from("notification_preferences")
-      .select("unsubscribed_all, email_preferences")
-      .eq("user_id", user.id)
-      .single();
-
-    if (prefError) {
+    let preferences:
+      | { unsubscribed_all: boolean | null; email_preferences: string[] | null }
+      | undefined;
+    try {
+      [preferences] = await db
+        .select({
+          unsubscribed_all: schema.notification_preferences.unsubscribed_all,
+          email_preferences: schema.notification_preferences.email_preferences,
+        })
+        .from(schema.notification_preferences)
+        .where(eq(schema.notification_preferences.user_id, user.id))
+        .limit(1);
+    } catch (prefError) {
       logger.debug(`Error fetching preferences: ${prefError}`);
       return { success: false };
     }
@@ -171,7 +168,7 @@ async function sendEmailNotification(
     const { error } = await resend.emails.send({
       from: "Firecrawl <notifications@notifications.firecrawl.dev>",
       to: [email],
-      reply_to: "help@firecrawl.com",
+      replyTo: "help@firecrawl.com",
       subject: template.subject,
       html,
     });
@@ -210,7 +207,6 @@ async function sendNotificationInternal(
   notificationType: NotificationType,
   startDateString: string | null,
   endDateString: string | null,
-  chunk: AuthCreditUsageChunk,
   bypassRecentChecks: boolean = false,
   is_ledger_enabled: boolean = false,
   context: NotificationContext = {},
@@ -226,14 +222,25 @@ async function sendNotificationInternal(
         const fifteenDaysAgo = new Date();
         fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
 
-        const { data, error } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", fifteenDaysAgo.toISOString());
-
-        if (error) {
+        let data: { id: string }[];
+        try {
+          data = await db
+            .select({ id: schema.user_notifications.id })
+            .from(schema.user_notifications)
+            .where(
+              and(
+                eq(schema.user_notifications.team_id, team_id),
+                eq(
+                  schema.user_notifications.notification_type,
+                  notificationType,
+                ),
+                gte(
+                  schema.user_notifications.sent_date,
+                  fifteenDaysAgo.toISOString(),
+                ),
+              ),
+            );
+        } catch (error) {
           logger.debug(`Error fetching notifications: ${error}`);
           return { success: false };
         }
@@ -244,18 +251,30 @@ async function sendNotificationInternal(
 
         // TODO: observation: Free credits people are not receiving notifications
 
-        const { data: recentData, error: recentError } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", startDateString)
-          .lte("sent_date", endDateString);
-
-        if (recentError) {
-          logger.debug(
-            `Error fetching recent notifications: ${recentError.message}`,
-          );
+        let recentData: { id: string }[];
+        try {
+          recentData = await db
+            .select({ id: schema.user_notifications.id })
+            .from(schema.user_notifications)
+            .where(
+              and(
+                eq(schema.user_notifications.team_id, team_id),
+                eq(
+                  schema.user_notifications.notification_type,
+                  notificationType,
+                ),
+                gte(
+                  schema.user_notifications.sent_date,
+                  startDateString as string,
+                ),
+                lte(
+                  schema.user_notifications.sent_date,
+                  endDateString as string,
+                ),
+              ),
+            );
+        } catch (recentError) {
+          logger.debug(`Error fetching recent notifications: ${recentError}`);
           return { success: false };
         }
 
@@ -278,36 +297,40 @@ async function sendNotificationInternal(
         });
       }
       // get the emails from the user with the team_id
-      const { data: emails, error: emailsError } = await supabase_service
-        .from("users")
-        .select("email")
-        .eq("team_id", team_id);
-
-      if (emailsError) {
+      let emails: { email: string | null }[];
+      try {
+        emails = await db
+          .select({ email: schema.users.email })
+          .from(schema.users)
+          .where(eq(schema.users.team_id, team_id));
+      } catch (emailsError) {
         logger.debug(`Error fetching emails: ${emailsError}`);
         return { success: false };
       }
 
       if (!is_ledger_enabled) {
         for (const email of emails) {
-          await sendEmailNotification(email.email, notificationType, context);
+          if (email.email) {
+            await sendEmailNotification(email.email, notificationType, context);
+          }
         }
       }
 
-      const { error: insertError } = await supabase_service
-        .from("user_notifications")
-        .insert([
-          {
-            team_id: team_id,
-            notification_type: notificationType,
-            sent_date: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+      let insertError: unknown = null;
+      try {
+        await db.insert(schema.user_notifications).values({
+          team_id: team_id,
+          notification_type: notificationType,
+          sent_date: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        insertError = error;
+      }
 
       if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
         sendSlackWebhook(
-          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
+          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}`,
           false,
           config.SLACK_ADMIN_WEBHOOK_URL,
         ).catch(error => {
@@ -364,15 +387,19 @@ export async function sendNotificationWithCustomDays(
         now.getTime() - daysBetweenEmails * 24 * 60 * 60 * 1000,
       );
 
-      const { data: recentNotifications, error: recentNotificationsError } =
-        await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", pastDate.toISOString());
-
-      if (recentNotificationsError) {
+      let recentNotifications: { id: string }[];
+      try {
+        recentNotifications = await db
+          .select({ id: schema.user_notifications.id })
+          .from(schema.user_notifications)
+          .where(
+            and(
+              eq(schema.user_notifications.team_id, team_id),
+              eq(schema.user_notifications.notification_type, notificationType),
+              gte(schema.user_notifications.sent_date, pastDate.toISOString()),
+            ),
+          );
+      } catch (recentNotificationsError) {
         logger.debug(
           `Error fetching recent notifications: ${recentNotificationsError}`,
         );
@@ -397,12 +424,13 @@ export async function sendNotificationWithCustomDays(
         `Sending notification for team_id: ${team_id} and notificationType: ${notificationType}`,
       );
       // get the emails from the user with the team_id
-      const { data: emails, error: emailsError } = await supabase_service
-        .from("users")
-        .select("email")
-        .eq("team_id", team_id);
-
-      if (emailsError) {
+      let emails: { email: string | null }[];
+      try {
+        emails = await db
+          .select({ email: schema.users.email })
+          .from(schema.users)
+          .where(eq(schema.users.team_id, team_id));
+      } catch (emailsError) {
         logger.debug(`Error fetching emails: ${emailsError}`);
         await redisEvictConnection.del(redisKey); // free up redis, let it try again
         return { success: false };
@@ -420,20 +448,23 @@ export async function sendNotificationWithCustomDays(
 
       if (!is_ledger_enabled) {
         for (const email of emails) {
-          await sendEmailNotification(email.email, notificationType);
+          if (email.email) {
+            await sendEmailNotification(email.email, notificationType);
+          }
         }
       }
 
-      const { error: insertError } = await supabase_service
-        .from("user_notifications")
-        .insert([
-          {
-            team_id: team_id,
-            notification_type: notificationType,
-            sent_date: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+      let insertError: unknown = null;
+      try {
+        await db.insert(schema.user_notifications).values({
+          team_id: team_id,
+          notification_type: notificationType,
+          sent_date: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        insertError = error;
+      }
 
       if (
         config.SLACK_ADMIN_WEBHOOK_URL &&

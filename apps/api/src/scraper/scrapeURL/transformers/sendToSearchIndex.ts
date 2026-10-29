@@ -19,7 +19,21 @@ import { Meta } from "..";
  * Check if document should be indexed for search
  */
 function shouldIndexForSearch(meta: Meta, document: Document): boolean {
+  if (meta.internalOptions.isParse) {
+    return false;
+  }
+
   if (meta.internalOptions.zeroDataRetention) {
+    return false;
+  }
+
+  // Exchange-delivered content is never stored on the Firecrawl side.
+  if (meta.winnerEngine === "exchange") {
+    return false;
+  }
+
+  // Lockdown must not forward the target URL to any external service.
+  if (meta.options.lockdown) {
     return false;
   }
 

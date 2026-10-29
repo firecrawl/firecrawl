@@ -1,66 +1,39 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger as _logger } from "../lib/logger";
+import { dbIndex } from "../db/connection";
+import * as schema from "../db/schema";
+import {
+  insertOmceJobIfNeeded,
+  queryIndexAtSplitLevel as rpcQueryIndexAtSplitLevel,
+  queryOmceSignatures as rpcQueryOmceSignatures,
+  queryEngpickerVerdict as rpcQueryEngpickerVerdict,
+  queryIndexAtSplitLevelWithMeta as rpcQueryIndexAtSplitLevelWithMeta,
+  queryIndexAtDomainSplitLevelWithMeta as rpcQueryIndexAtDomainSplitLevelWithMeta,
+  queryDomainPriority as rpcQueryDomainPriority,
+} from "../db/rpc";
 import { configDotenv } from "dotenv";
 import { ApiError } from "@google-cloud/storage";
 import crypto from "crypto";
 import { redisEvictConnection } from "./redis";
+import {
+  deriveIndexVariantKey,
+  upsertCachedIndexEntries,
+  useIndexCache,
+  type IndexCacheEntry,
+} from "./index-cache";
 import type { Logger } from "winston";
-import psl from "psl";
+import { parseHostname } from "../lib/url-utils";
 import { MapDocument } from "../controllers/v2/types";
 import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";
+import { getGcsScreenshotUrlResignReason } from "./index-screenshot-url";
 configDotenv();
-
-// SupabaseService class initializes the Supabase client conditionally based on environment variables.
-class IndexSupabaseService {
-  private client: SupabaseClient | null = null;
-
-  constructor() {
-    const supabaseUrl = config.INDEX_SUPABASE_URL;
-    const supabaseServiceToken = config.INDEX_SUPABASE_SERVICE_TOKEN;
-    // Only initialize the Supabase client if both URL and Service Token are provided.
-    if (!supabaseUrl || !supabaseServiceToken) {
-      // Warn the user that Authentication is disabled by setting the client to null
-      _logger.warn("Index supabase client will not be initialized.");
-      this.client = null;
-    } else {
-      this.client = createClient(supabaseUrl, supabaseServiceToken);
-    }
-  }
-
-  // Provides access to the initialized Supabase client, if available.
-  getClient(): SupabaseClient | null {
-    return this.client;
-  }
-}
-
-const serv = new IndexSupabaseService();
-
-// Using a Proxy to handle dynamic access to the Supabase client or service methods.
-// This approach ensures that if Supabase is not configured, any attempt to use it will result in a clear error.
-export const index_supabase_service: SupabaseClient = new Proxy(serv, {
-  get: function (target, prop, receiver) {
-    const client = target.getClient();
-    // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
-    if (client === null) {
-      return () => {
-        throw new Error("Index supabase client is not configured.");
-      };
-    }
-    // Direct access to SupabaseService properties takes precedence.
-    if (prop in target) {
-      return Reflect.get(target, prop, receiver);
-    }
-    // Otherwise, delegate access to the Supabase client.
-    return Reflect.get(client, prop, receiver);
-  },
-}) as unknown as SupabaseClient;
 
 export async function getIndexFromGCS(
   url: string,
   logger?: Logger,
+  opts: { indexCreatedAt?: string | null } = {},
 ): Promise<any | null> {
   try {
     return await withSpan("firecrawl-index-get-from-gcs", async span => {
@@ -82,26 +55,11 @@ export async function getIndexFromGCS(
       if (typeof parsed.screenshot === "string") {
         try {
           const screenshotUrl = new URL(parsed.screenshot);
-          let expiresAt =
-            parseInt(screenshotUrl.searchParams.get("Expires") ?? "0", 10) *
-            1000;
-          if (expiresAt === 0) {
-            expiresAt =
-              new Date(
-                screenshotUrl.searchParams.get("X-Goog-Date") ??
-                  "1970-01-01T00:00:00Z",
-              ).getTime() +
-              parseInt(
-                screenshotUrl.searchParams.get("X-Goog-Expires") ?? "0",
-                10,
-              ) *
-                1000;
-          }
-          if (
-            screenshotUrl.hostname === "storage.googleapis.com" &&
-            expiresAt < Date.now()
-          ) {
-            logger?.info("Re-signing screenshot URL");
+          const resignReason = getGcsScreenshotUrlResignReason(screenshotUrl, {
+            indexCreatedAt: opts.indexCreatedAt,
+          });
+          if (resignReason !== null) {
+            logger?.info("Re-signing screenshot URL", { reason: resignReason });
             const filePath = decodeURIComponent(
               screenshotUrl.pathname.split("/")[2],
             );
@@ -165,6 +123,8 @@ export async function saveIndexToGCS(
     pdfMetadata?: PdfMetadata;
     contentType?: string;
     postprocessorsUsed?: string[];
+    proxyUsed?: "basic" | "stealth";
+    firePdfCacheKey?: string;
   },
 ): Promise<void> {
   return await withSpan("firecrawl-index-save-to-gcs", async span => {
@@ -207,11 +167,10 @@ export async function saveIndexToGCS(
 }
 
 export const useIndex =
-  config.INDEX_SUPABASE_URL !== "" && config.INDEX_SUPABASE_URL !== undefined;
+  config.INDEX_DATABASE_URL !== "" && config.INDEX_DATABASE_URL !== undefined;
 
 export const useSearchIndex =
-  config.SEARCH_INDEX_SUPABASE_URL !== "" &&
-  config.SEARCH_INDEX_SUPABASE_URL !== undefined;
+  config.SEARCH_SERVICE_URL !== "" && config.SEARCH_SERVICE_URL !== undefined;
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
@@ -253,8 +212,8 @@ export function normalizeURLForIndex(url: string): string {
   return urlObj.toString();
 }
 
-export function hashURL(url: string): string {
-  return "\\x" + crypto.createHash("sha256").update(url).digest("hex");
+export function hashURL(url: string): Buffer {
+  return crypto.createHash("sha256").update(url).digest();
 }
 
 export function generateURLSplits(url: string): string[] {
@@ -279,11 +238,8 @@ export function generateDomainSplits(
   fakeDomain?: string,
 ): string[] {
   if (fakeDomain) {
-    const parsed = psl.parse(hostname);
-    if (parsed === null) return [fakeDomain];
-
-    const fakeParsed = psl.parse(fakeDomain);
-    if (fakeParsed === null || fakeParsed.domain === null) return [fakeDomain];
+    const fakeParsed = parseHostname(fakeDomain);
+    if (fakeParsed.domain === null) return [fakeDomain];
 
     const subdomains: string[] = (fakeParsed.subdomain ?? "")
       .split(".")
@@ -300,8 +256,12 @@ export function generateDomainSplits(
     return domains;
   }
 
-  const parsed = psl.parse(hostname);
-  if (parsed === null) {
+  const parsed = parseHostname(hostname);
+  // No registrable domain (IP literal, or a single label such as localhost) means
+  // there are no domain splits to generate. Note an unrecognised suffix still
+  // yields one — tldts reports domain.unknown as its own registrable domain.
+  const domain = parsed.domain;
+  if (domain === null) {
     return [];
   }
 
@@ -309,12 +269,12 @@ export function generateDomainSplits(
     .split(".")
     .filter(x => x !== "");
   if (subdomains.length === 1 && subdomains[0] === "www") {
-    return [parsed.domain];
+    return [domain];
   }
 
   const domains: string[] = [];
   for (let i = subdomains.length; i >= 0; i--) {
-    domains.push(subdomains.slice(i).concat([parsed.domain]).join("."));
+    domains.push(subdomains.slice(i).concat([domain]).join("."));
   }
 
   return domains;
@@ -330,13 +290,34 @@ export async function addIndexInsertJob(data: any) {
   );
 }
 
+function reviveBuffers(_key: string, value: any) {
+  return value?.type === "Buffer" && Array.isArray(value.data)
+    ? Buffer.from(value.data)
+    : value;
+}
+
+function safeParseJob<T>(raw: string, queueKey: string): T | undefined {
+  try {
+    return JSON.parse(raw, reviveBuffers) as T;
+  } catch (error) {
+    _logger.error(`Failed to parse queued job, skipping`, {
+      error,
+      queueKey,
+      raw,
+    });
+    return undefined;
+  }
+}
+
 async function getIndexInsertJobs(): Promise<any[]> {
   const jobs =
     (await redisEvictConnection.lpop(
       INDEX_INSERT_QUEUE_KEY,
       INDEX_INSERT_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x));
+  return jobs
+    .map(x => safeParseJob<any>(x, INDEX_INSERT_QUEUE_KEY))
+    .filter(x => x !== undefined);
 }
 
 export async function processIndexInsertJobs() {
@@ -348,18 +329,53 @@ export async function processIndexInsertJobs() {
     jobCount: jobs.length,
   });
   try {
-    const { error } = await index_supabase_service.from("index").insert(jobs);
-    if (error) {
-      _logger.error(`Index inserter failed to insert jobs`, {
-        error,
-        jobCount: jobs.length,
-      });
-    }
+    await dbIndex.insert(schema.index).values(jobs);
     _logger.info(`Index inserter inserted jobs`, { jobCount: jobs.length });
+    writeThroughIndexCache(jobs);
   } catch (error) {
     _logger.error(`Index inserter failed to insert jobs`, {
       error,
       jobCount: jobs.length,
+    });
+  }
+}
+
+// Write-through to the Dragonfly index cache after rows are durably in the
+// index DB. created_at approximates the DB's defaultNow() by milliseconds,
+// which is irrelevant against day-scale maxAge windows. Fire-and-forget: a
+// cache failure must never affect the insert loop.
+function writeThroughIndexCache(jobs: any[]) {
+  if (!useIndexCache) {
+    return;
+  }
+  const createdAt = new Date().toISOString();
+  const byKey = new Map<string, IndexCacheEntry[]>();
+  for (const job of jobs) {
+    if (!Buffer.isBuffer(job.url_hash) || typeof job.id !== "string") {
+      continue;
+    }
+    const key = deriveIndexVariantKey({
+      urlHash: job.url_hash,
+      isMobile: job.is_mobile,
+      blockAds: job.block_ads,
+      isStealth: job.is_stealth,
+      locationCountry: job.location_country ?? null,
+      locationLanguages: job.location_languages ?? null,
+    });
+    const entries = byKey.get(key) ?? [];
+    entries.push({
+      id: job.id,
+      created_at: createdAt,
+      status: job.status,
+      has_screenshot: job.has_screenshot,
+      has_screenshot_fullscreen: job.has_screenshot_fullscreen,
+      wait_time_ms: job.wait_time_ms ?? null,
+    });
+    byKey.set(key, entries);
+  }
+  for (const [key, entries] of byKey) {
+    upsertCachedIndexEntries(key, entries, _logger).catch(error => {
+      _logger.warn("Index cache write-through failed", { error, key });
     });
   }
 }
@@ -371,17 +387,19 @@ export async function getIndexInsertQueueLength(): Promise<number> {
 const OMCE_JOB_QUEUE_KEY = "omce-job-queue";
 const OMCE_JOB_QUEUE_BATCH_SIZE = 100;
 
-export async function addOMCEJob(data: [number, string]) {
+export async function addOMCEJob(data: [number, Buffer]) {
   await redisEvictConnection.sadd(OMCE_JOB_QUEUE_KEY, JSON.stringify(data));
 }
 
-async function getOMCEJobs(): Promise<[number, string][]> {
+async function getOMCEJobs(): Promise<[number, Buffer][]> {
   const jobs =
     (await redisEvictConnection.spop(
       OMCE_JOB_QUEUE_KEY,
       OMCE_JOB_QUEUE_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x) as [number, string]);
+  return jobs
+    .map(x => safeParseJob<[number, Buffer]>(x, OMCE_JOB_QUEUE_KEY))
+    .filter((x): x is [number, Buffer] => x !== undefined);
 }
 
 export async function processOMCEJobs() {
@@ -395,15 +413,9 @@ export async function processOMCEJobs() {
   try {
     for (const job of jobs) {
       const [level, hash] = job;
-      const { error } = await index_supabase_service.rpc(
-        "insert_omce_job_if_needed",
-        {
-          i_domain_level: level,
-          i_domain_hash: hash,
-        },
-      );
-
-      if (error) {
+      try {
+        await insertOmceJobIfNeeded(level, hash);
+      } catch (error) {
         _logger.error(`OMCE job inserter failed to insert job`, {
           error,
           job,
@@ -440,93 +452,20 @@ export async function queryIndexAtSplitLevel(
 
   const level = urlSplitsHash.length - 1;
 
-  let links: Set<string> = new Set();
-  let iteration = 0;
-
-  while (true) {
-    // Query the index for the next set of links
-    const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_split_level", {
-        i_level: level,
-        i_url_hash: urlSplitsHash[level],
-        i_newer_than: new Date(Date.now() - maxAge).toISOString(),
-      })
-      .range(iteration * 1000, (iteration + 1) * 1000);
-
-    // If there's an error, return the links we have
-    if (error) {
-      _logger.warn("Error querying index", { error, url, limit });
-      return [...links].slice(0, limit);
-    }
-
-    // Add the links to the set
-    const data = _data ?? [];
+  // Raw SQL returns the full result set (no PostgREST 1000-row cap), so the
+  // previous .range() pagination loop is no longer needed.
+  try {
+    const data = await rpcQueryIndexAtSplitLevel(
+      level,
+      urlSplitsHash[level],
+      new Date(Date.now() - maxAge).toISOString(),
+    );
+    const links = new Set<string>();
     data.forEach(x => links.add(x.resolved_url));
-
-    // If we have enough links, return them
-    if (links.size >= limit) {
-      return [...links].slice(0, limit);
-    }
-
-    // If we get less than 1000 links from the query, we're done
-    if (data.length < 1000) {
-      return [...links].slice(0, limit);
-    }
-
-    iteration++;
-  }
-}
-
-export async function queryIndexAtDomainSplitLevel(
-  hostname: string,
-  limit: number,
-  maxAge = 2 * 24 * 60 * 60 * 1000,
-): Promise<string[]> {
-  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
+    return [...links].slice(0, limit);
+  } catch (error) {
+    _logger.warn("Error querying index", { error, url, limit });
     return [];
-  }
-
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
-
-  const level = domainSplitsHash.length - 1;
-  if (domainSplitsHash.length === 0) {
-    return [];
-  }
-
-  let links: Set<string> = new Set();
-  let iteration = 0;
-
-  while (true) {
-    // Query the index for the next set of links
-    const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_domain_split_level", {
-        i_level: level,
-        i_domain_hash: domainSplitsHash[level],
-        i_newer_than: new Date(Date.now() - maxAge).toISOString(),
-      })
-      .range(iteration * 1000, (iteration + 1) * 1000);
-
-    // If there's an error, return the links we have
-    if (error) {
-      _logger.warn("Error querying index", { error, hostname, limit });
-      return [...links].slice(0, limit);
-    }
-
-    // Add the links to the set
-    const data = _data ?? [];
-    data.forEach(x => links.add(x.resolved_url));
-
-    // If we have enough links, return them
-    if (links.size >= limit) {
-      return [...links].slice(0, limit);
-    }
-
-    // If we get less than 1000 links from the query, we're done
-    if (data.length < 1000) {
-      return [...links].slice(0, limit);
-    }
-
-    iteration++;
   }
 }
 
@@ -545,20 +484,16 @@ export async function queryOMCESignatures(
     return [];
   }
 
-  const { data, error } = await index_supabase_service.rpc(
-    "query_omce_signatures",
-    {
-      i_domain_hash: domainSplitsHash[level],
-      i_newer_than: new Date(Date.now() - maxAge).toISOString(),
-    },
-  );
-
-  if (error) {
+  try {
+    const data = await rpcQueryOmceSignatures(
+      domainSplitsHash[level],
+      new Date(Date.now() - maxAge).toISOString(),
+    );
+    return data?.[0]?.signatures ?? [];
+  } catch (error) {
     _logger.warn("Error querying index (omce)", { error, hostname });
     return [];
   }
-
-  return data?.[0]?.signatures ?? [];
 }
 
 export async function queryEngpickerVerdict(
@@ -576,37 +511,26 @@ export async function queryEngpickerVerdict(
   }
 
   // 250ms max time taken
-
-  const res: { data: any; error: any } = await Promise.any([
-    index_supabase_service.rpc("query_engpicker_verdict", {
-      i_domain_hash: domainSplitsHash[level],
-    }),
-    new Promise<{
-      data: {
-        verdict: "TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown";
-      }[];
-      error: any;
-    }>(resolve =>
-      setTimeout(
-        () =>
-          resolve({
-            data: [{ verdict: "Unknown" }],
-            error: "Took longer than 250ms",
-          }),
-        250,
+  try {
+    const data = await Promise.race([
+      rpcQueryEngpickerVerdict(domainSplitsHash[level]),
+      new Promise<{ verdict: string }[]>(resolve =>
+        setTimeout(() => resolve([{ verdict: "Unknown" }]), 250),
       ),
-    ),
-  ]);
+    ]);
 
-  if (res.error) {
+    return (data?.[0]?.verdict ?? "Unknown") as
+      | "TlsClientOk"
+      | "ChromeCdpRequired"
+      | "Uncertain"
+      | "Unknown";
+  } catch (error) {
     _logger.warn("Error querying index (engpicker)", {
-      error: res.error,
+      error,
       hostname,
     });
     return "Unknown";
   }
-
-  return res.data?.[0]?.verdict ?? "Unknown";
 }
 
 export async function queryIndexAtSplitLevelWithMeta(
@@ -624,48 +548,23 @@ export async function queryIndexAtSplitLevelWithMeta(
 
   const level = urlSplitsHash.length - 1;
 
-  let links: MapDocument[] = [];
-  let iteration = 0;
-
-  while (true) {
-    // Query the index for the next set of links
-    const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_split_level_with_meta", {
-        i_level: level,
-        i_url_hash: urlSplitsHash[level],
-        i_newer_than: new Date(
-          Date.now() - 2 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
-      })
-      .range(iteration * 1000, (iteration + 1) * 1000);
-
-    // If there's an error, return the links we have
-    if (error) {
-      _logger.warn("Error querying index", { error, url, limit });
-      return links.slice(0, limit);
-    }
-
-    // Add the links to the set
-    const data = _data ?? [];
-    data.forEach(x =>
-      links.push({
-        url: x.resolved_url,
-        title: x.title ?? undefined,
-        description: x.description ?? undefined,
-      }),
+  // Raw SQL returns the full result set (no PostgREST 1000-row cap), so the
+  // previous .range() pagination loop is no longer needed.
+  try {
+    const data = await rpcQueryIndexAtSplitLevelWithMeta(
+      level,
+      urlSplitsHash[level],
+      new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     );
-
-    // If we have enough links, return them
-    if (links.length >= limit) {
-      return links.slice(0, limit);
-    }
-
-    // If we get less than 1000 links from the query, we're done
-    if (data.length < 1000) {
-      return links.slice(0, limit);
-    }
-
-    iteration++;
+    const links: MapDocument[] = data.map(x => ({
+      url: x.resolved_url,
+      title: x.title ?? undefined,
+      description: x.description ?? undefined,
+    }));
+    return links.slice(0, limit);
+  } catch (error) {
+    _logger.warn("Error querying index", { error, url, limit });
+    return [];
   }
 }
 
@@ -684,53 +583,28 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
     return [];
   }
 
-  let links: MapDocument[] = [];
-  let iteration = 0;
-
-  while (true) {
-    // Query the index for the next set of links
-    const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_domain_split_level_with_meta", {
-        i_level: level,
-        i_domain_hash: domainSplitsHash[level],
-        i_newer_than: new Date(
-          Date.now() - 2 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
-      })
-      .range(iteration * 1000, (iteration + 1) * 1000);
-
-    // If there's an error, return the links we have
-    if (error) {
-      _logger.warn("Error querying index", { error, hostname, limit });
-      return links.slice(0, limit);
-    }
-
-    // Add the links to the set
-    const data = _data ?? [];
-    data.forEach(x =>
-      links.push({
-        url: x.resolved_url,
-        title: x.title ?? undefined,
-        description: x.description ?? undefined,
-      }),
+  // Raw SQL returns the full result set (no PostgREST 1000-row cap), so the
+  // previous .range() pagination loop is no longer needed.
+  try {
+    const data = await rpcQueryIndexAtDomainSplitLevelWithMeta(
+      level,
+      domainSplitsHash[level],
+      new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     );
-
-    // If we have enough links, return them
-    if (links.length >= limit) {
-      return links.slice(0, limit);
-    }
-
-    // If we get less than 1000 links from the query, we're done
-    if (data.length < 1000) {
-      return links.slice(0, limit);
-    }
-
-    iteration++;
+    const links: MapDocument[] = data.map(x => ({
+      url: x.resolved_url,
+      title: x.title ?? undefined,
+      description: x.description ?? undefined,
+    }));
+    return links.slice(0, limit);
+  } catch (error) {
+    _logger.warn("Error querying index", { error, hostname, limit });
+    return [];
   }
 }
 
 type DomainPriority = {
-  domain_hash: string;
+  domain_hash: Buffer;
   priority: number;
 };
 
@@ -745,40 +619,18 @@ export async function queryDomainsForPrecrawl(
     return [];
   }
 
-  let results: DomainPriority[] = [];
-  let iteration = 0;
-
-  while (true) {
-    const { data, error } = await index_supabase_service
-      .rpc("query_domain_priority", {
-        p_min_total: minEvents,
-        p_min_priority: minPriority,
-        p_lim: maxDomains,
-        p_time: date.toISOString(),
-      })
-      .range(
-        iteration * 1000,
-        Math.min((iteration + 1) * 1000, maxDomains) - 1,
-      );
-
-    if (error) {
-      logger.error("Error getting domain priorities", {
-        error,
-      });
-      return results.slice(0, maxDomains);
-    }
-
-    const batchData = data ?? [];
-    results = results.concat(batchData);
-
-    if (results.length >= maxDomains) {
-      return results.slice(0, maxDomains);
-    }
-
-    if (batchData.length < 1000) {
-      return results.slice(0, maxDomains);
-    }
-
-    iteration++;
+  // Raw SQL returns the full result set (no PostgREST 1000-row cap), so the
+  // previous .range() pagination loop is no longer needed.
+  try {
+    const data = await rpcQueryDomainPriority(
+      minEvents,
+      minPriority,
+      maxDomains,
+      date.toISOString(),
+    );
+    return data.slice(0, maxDomains);
+  } catch (error) {
+    logger.error("Error getting domain priorities", { error });
+    return [];
   }
 }

@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { RequestWithAuth, ErrorResponse } from "./types";
-import { supabase_rr_service } from "../../services/supabase";
+import { clickhouseClient } from "../../lib/clickhouse-client";
 import { logger as _logger } from "../../lib/logger";
 
 const ACTIVITY_WINDOW_HOURS = 24;
@@ -27,7 +27,12 @@ function decodeCursor(
   }
 }
 
+function toClickHouseDateTime(value: string): string {
+  return value.replace("T", " ").replace(/Z$/, "");
+}
+
 const VALID_ENDPOINTS = [
+  "alexandria",
   "scrape",
   "crawl",
   "batch_scrape",
@@ -56,6 +61,14 @@ interface ActivityResponse {
   data: ActivityItem[];
   cursor: string | null;
   has_more: boolean;
+}
+
+interface ActivityRow {
+  id: string;
+  kind: ActivityEndpoint;
+  api_version: string;
+  created_at: string;
+  target_hint: string | null;
 }
 
 export async function activityController(
@@ -93,35 +106,60 @@ export async function activityController(
     });
   }
 
-  // Build query
-  const windowStart = new Date(
-    Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000,
-  ).toISOString();
+  if (clickhouseClient === null) {
+    return res.status(501).json({
+      success: false,
+      error: "This endpoint is only available if ClickHouse is configured.",
+    });
+  }
 
-  let query = supabase_rr_service
-    .from("requests")
-    .select("id, kind, api_version, created_at, target_hint")
-    .eq("team_id", req.auth.team_id)
-    .gte("created_at", windowStart)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1); // fetch one extra to determine has_more
+  const windowStart = toClickHouseDateTime(
+    new Date(Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000).toISOString(),
+  );
 
-  if (endpoint) {
-    query = query.eq("kind", endpoint);
+  const conditions = [
+    "team_id = {teamId: UUID}",
+    "created_at >= {windowStart: DateTime64(3)}",
+  ];
+  const queryParams: Record<string, string | number> = {
+    teamId: req.auth.team_id,
+    windowStart,
+    limit: limit + 1,
+  };
+
+  if (endpoint === "alexandria") {
+    conditions.push(
+      "(kind = 'alexandria' OR (kind = 'scrape' AND startsWith(target_hint, 'alexandria:')))",
+    );
+  } else if (endpoint) {
+    conditions.push("kind = {endpoint: String}");
+    queryParams.endpoint = endpoint;
   }
 
   if (cursor) {
-    // For keyset pagination: fetch rows where (created_at, id) < (cursor.createdAt, cursor.id)
-    // This translates to: created_at < cursor OR (created_at = cursor AND id < cursor.id)
-    query = query.or(
-      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+    conditions.push(
+      "(created_at < {cursorCreatedAt: DateTime64(3)} OR (created_at = {cursorCreatedAt: DateTime64(3)} AND id < {cursorId: UUID}))",
     );
+    queryParams.cursorCreatedAt = toClickHouseDateTime(cursor.createdAt);
+    queryParams.cursorId = cursor.id;
   }
 
-  const { data, error } = await query;
-
-  if (error) {
+  let data: ActivityRow[];
+  try {
+    const result = await clickhouseClient.query({
+      query: `
+        SELECT id, kind, api_version, created_at, target_hint
+        FROM requests
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1 BY id
+        LIMIT {limit: UInt32}
+      `,
+      query_params: queryParams,
+      format: "JSONEachRow",
+    });
+    data = await result.json<ActivityRow>();
+  } catch (error) {
     logger.error("Failed to fetch activity", { error });
     return res.status(500).json({
       success: false,
@@ -129,10 +167,10 @@ export async function activityController(
     });
   }
 
-  const hasMore = (data?.length ?? 0) > limit;
-  const items = hasMore ? data!.slice(0, limit) : (data ?? []);
+  const hasMore = data.length > limit;
+  const items = hasMore ? data.slice(0, limit) : data;
 
-  const responseData: ActivityItem[] = items.map((row: any) => ({
+  const responseData: ActivityItem[] = items.map(row => ({
     id: row.id,
     endpoint: row.kind,
     api_version: row.api_version,

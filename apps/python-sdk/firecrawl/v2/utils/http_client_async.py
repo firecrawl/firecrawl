@@ -1,6 +1,8 @@
 import asyncio
 import httpx
 from typing import Optional, Dict, Any
+from .api_origin import pin_to_api_origin
+from .caller_origin import default_origin
 from .get_version import get_version
 
 version = get_version()
@@ -14,16 +16,17 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
+        # Attribution string stamped into request payloads / research query params.
+        self.origin = origin or default_origin(version)
 
-        headers = {
-            "Content-Type": "application/json",
-        }
+        headers = {}
 
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -36,6 +39,9 @@ class AsyncHttpClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def _build_url(self, endpoint: str) -> str:
+        return pin_to_api_origin(self.api_url, endpoint)
 
     def _headers(self, idempotency_key: Optional[str] = None) -> Dict[str, str]:
         headers: Dict[str, str] = {}
@@ -60,15 +66,16 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = f"python-sdk@{version}"
+        payload["origin"] = payload.get("origin") or self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.post(
-                    endpoint,
+                    url,
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
@@ -85,6 +92,49 @@ class AsyncHttpClient:
                 await asyncio.sleep(backoff_factor * (2 ** attempt))
 
         raise last_exception or Exception("Unexpected error in POST request")
+
+    async def post_multipart(
+        self,
+        endpoint: str,
+        data: Dict[str, Any],
+        files: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
+    ) -> httpx.Response:
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
+
+        last_exception = None
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
+            try:
+                url = self._build_url(endpoint)
+                response = await self._client.post(
+                    url,
+                    data=data,
+                    files=files,
+                    headers={**self._headers(), **(headers or {})},
+                    timeout=timeout,
+                )
+                if response.status_code == 502:
+                    if attempt < num_attempts - 1:
+                        await asyncio.sleep(backoff_factor * (2 ** attempt))
+                        continue
+                return response
+            except httpx.HTTPError as e:
+                last_exception = e
+                if attempt == num_attempts - 1:
+                    raise e
+                await asyncio.sleep(backoff_factor * (2 ** attempt))
+
+        raise last_exception or Exception("Unexpected error in multipart POST request")
 
     async def get(
         self,
@@ -106,8 +156,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.get(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -144,8 +195,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.delete(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -161,3 +213,46 @@ class AsyncHttpClient:
                 await asyncio.sleep(backoff_factor * (2 ** attempt))
 
         raise last_exception or Exception("Unexpected error in DELETE request")
+
+    async def patch(
+        self,
+        endpoint: str,
+        data: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
+    ) -> httpx.Response:
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
+
+        payload = dict(data)
+        payload["origin"] = payload.get("origin") or self.origin
+
+        last_exception = None
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
+            try:
+                url = self._build_url(endpoint)
+                response = await self._client.patch(
+                    url,
+                    json=payload,
+                    headers={**self._headers(), **(headers or {})},
+                    timeout=timeout,
+                )
+                if response.status_code == 502 and attempt < num_attempts - 1:
+                    await asyncio.sleep(backoff_factor * (2 ** attempt))
+                    continue
+                return response
+            except httpx.HTTPError as e:
+                last_exception = e
+                if attempt == num_attempts - 1:
+                    raise e
+                await asyncio.sleep(backoff_factor * (2 ** attempt))
+
+        raise last_exception or Exception("Unexpected error in PATCH request")

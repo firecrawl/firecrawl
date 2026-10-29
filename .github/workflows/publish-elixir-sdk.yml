@@ -15,13 +15,21 @@ defaults:
   run:
     working-directory: ./apps/elixir-sdk
 
+permissions: {}
+
 jobs:
-  regenerate-and-publish:
+  regenerate:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up Elixir
         uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1
@@ -35,6 +43,9 @@ jobs:
       - name: Regenerate from OpenAPI spec
         run: mix run generate.exs
 
+      - name: Test regenerated code
+        run: mix test
+
       - name: Check for changes
         id: check_changes
         run: |
@@ -44,21 +55,124 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit regenerated code
-        if: steps.check_changes.outputs.changed == 'true' && github.event_name == 'schedule'
+      # The regen PR must come from the App, not github-actions[bot], so its CI runs without approval.
+      - name: Check for regen App credentials
+        id: app_creds
+        if: steps.check_changes.outputs.changed == 'true'
+        env:
+          CLIENT_ID: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$CLIENT_ID" ] && [ -n "$PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ELIXIR_REGEN_APP_CLIENT_ID or ELIXIR_REGEN_APP_PRIVATE_KEY is not set; falling back to github.token."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create regen App token
+        id: app_token
+        if: steps.app_creds.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Create PR with regenerated code
+        if: steps.check_changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token || github.token }}
+          APP_SLUG: ${{ steps.app_token.outputs.app-slug }}
+        run: |
           cd "$GITHUB_WORKSPACE"
-          git add apps/elixir-sdk/
+
           VERSION=$(grep '@version' apps/elixir-sdk/mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not parse version from mix.exs"
+            exit 1
+          fi
+          BRANCH="chore/elixir-sdk-regen-v${VERSION}"
+
+          # Check if a PR already exists for this version.
+          # If gh fails, abort rather than risk deleting a live PR branch.
+          if ! PR_JSON=$(gh pr list --head "$BRANCH" --state open --json number 2>&1); then
+            echo "::error::Failed to check for existing PRs: $PR_JSON"
+            exit 1
+          fi
+          EXISTING_PR=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #${EXISTING_PR} already exists for ${BRANCH} — skipping."
+            exit 0
+          fi
+
+          if [ -n "$APP_SLUG" ]; then
+            BOT_LOGIN="${APP_SLUG}[bot]"
+            BOT_ID=$(gh api "/users/${BOT_LOGIN}" --jq .id)
+            git config user.name "$BOT_LOGIN"
+            git config user.email "${BOT_ID}+${BOT_LOGIN}@users.noreply.github.com"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Delete stale remote branch if it exists (no open PR at this point)
+          git push origin --delete "$BRANCH" 2>/dev/null || true
+
+          git checkout -b "$BRANCH"
+          git add apps/elixir-sdk/
           git commit -m "chore(elixir-sdk): regenerate from OpenAPI spec (v${VERSION})"
-          git push
+          git push -u origin "$BRANCH"
+
+          PR_BODY=$(cat <<EOF
+          Auto-generated PR to update the Elixir SDK from the latest OpenAPI spec.
+
+          ## Changes
+          - Regenerated \`lib/firecrawl.ex\` from the v2 OpenAPI spec
+          - Version bumped to \`${VERSION}\`
+
+          This PR was created automatically by the \`publish-elixir-sdk\` workflow.
+          EOF
+          )
+
+          gh pr create \
+            --title "chore(elixir-sdk): regenerate from OpenAPI spec (v${VERSION})" \
+            --body "$PR_BODY" \
+            --head "$BRANCH" \
+            --base main
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1
+        with:
+          elixir-version: '1.17'
+          otp-version: '27'
+
+      - name: Install dependencies
+        run: mix deps.get
 
       - name: Check if version needs publishing
         id: version_info
         run: |
           LOCAL_VERSION=$(grep '@version' mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$LOCAL_VERSION" ]; then
+            echo "::error::Could not parse local version from mix.exs"
+            exit 1
+          fi
           echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
 
           # Check published version on hex.pm

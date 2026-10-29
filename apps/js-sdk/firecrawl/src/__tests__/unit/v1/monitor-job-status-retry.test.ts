@@ -1,154 +1,107 @@
-import FirecrawlApp from '../../../index';
-import { describe, test, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import FirecrawlApp from '../../../v1';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const successResponse = {
+  status: 200,
+  data: { status: 'completed', data: [{ url: 'test.com', markdown: 'test' }] },
+};
+
+function networkError(message: string, code: string) {
+  return Object.assign(new Error(message), { code });
+}
+
+function httpError(message: string, status: number) {
+  return Object.assign(new Error(message), { response: { status, data: { error: message } } });
+}
 
 describe('monitorJobStatus retry logic', () => {
   let app: FirecrawlApp;
-  let originalConsoleWarn: typeof console.warn;
-  
+  let delays: number[];
+
   beforeEach(() => {
     app = new FirecrawlApp({ apiKey: 'test-key', apiUrl: 'https://test.com' });
-    originalConsoleWarn = console.warn;
-    console.warn = jest.fn();
+    delays = [];
+    vi.useFakeTimers();
+    const fakeSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return fakeSetTimeout(fn, ms);
+    }) as any);
   });
 
   afterEach(() => {
-    console.warn = originalConsoleWarn;
-    jest.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
-  test('should retry on socket hang up error', async () => {
-    const socketHangUpError = new Error('socket hang up') as any;
-    socketHangUpError.code = 'ECONNRESET';
-    
-    const successResponse = {
-      status: 200,
-      data: { status: 'completed', data: [{ url: 'test.com', markdown: 'test' }] }
-    };
+  function failFirst(n: number, error: Error, statuses: string[] = []) {
+    let calls = 0;
+    app.getRequest = (async () => {
+      calls++;
+      if (calls <= n) throw error;
+      const status = statuses.shift();
+      return status ? { status: 200, data: { status } } : successResponse;
+    }) as any;
+    return () => calls;
+  }
 
-    const originalGetRequest = app.getRequest;
-    let callCount = 0;
-    
-    app.getRequest = async function(url: string, headers: any) {
-      callCount++;
-      if (callCount === 1) {
-        throw socketHangUpError;
-      }
-      return successResponse;
-    };
+  async function monitor() {
+    const result = app.monitorJobStatus('test-id', {} as any, 1);
+    result.catch(() => {});
+    await vi.runAllTimersAsync();
+    return result;
+  }
 
-    const result = await app.monitorJobStatus('test-id', {}, 1);
-    
-    expect(callCount).toBe(2);
+  test.each([
+    ['socket hang up', networkError('socket hang up', 'ECONNRESET')],
+    ['ETIMEDOUT', networkError('timeout', 'ETIMEDOUT')],
+    ['HTTP 408', httpError('Request timeout', 408)],
+    ['HTTP 504', httpError('Gateway timeout', 504)],
+  ])('retries once after a %s error and returns the job data', async (_label, error) => {
+    const calls = failFirst(1, error);
+
+    const result = await monitor();
+
+    expect(calls()).toBe(2);
     expect(result).toEqual(successResponse.data);
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Network error during job status check (attempt 1/3): socket hang up')
-    );
+    expect(delays).toEqual([1000]);
   });
 
-  test('should retry on ETIMEDOUT error', async () => {
-    const timeoutError = new Error('timeout') as any;
-    timeoutError.code = 'ETIMEDOUT';
-    
-    const successResponse = {
-      status: 200,
-      data: { status: 'completed', data: [{ url: 'test.com', markdown: 'test' }] }
-    };
+  test('uses exponential backoff between retries', async () => {
+    const calls = failFirst(2, networkError('socket hang up', 'ECONNRESET'));
 
-    const originalGetRequest = app.getRequest;
-    let callCount = 0;
-    
-    app.getRequest = async function(url: string, headers: any) {
-      callCount++;
-      if (callCount === 1) {
-        throw timeoutError;
-      }
-      return successResponse;
-    };
+    const result = await monitor();
 
-    const result = await app.monitorJobStatus('test-id', {}, 1);
-    
-    expect(callCount).toBe(2);
+    expect(calls()).toBe(3);
     expect(result).toEqual(successResponse.data);
+    expect(delays).toEqual([1000, 2000]);
   });
 
-  test('should fail after max retries exceeded', async () => {
-    const socketHangUpError = new Error('socket hang up') as any;
-    socketHangUpError.code = 'ECONNRESET';
-    
-    app.getRequest = async function(url: string, headers: any) {
-      throw socketHangUpError;
-    };
+  test('records both the retry backoff and the 2s poll wait for an active job', async () => {
+    const calls = failFirst(1, networkError('socket hang up', 'ECONNRESET'), ['active']);
 
-    await expect(app.monitorJobStatus('test-id', {}, 1)).rejects.toThrow('socket hang up');
-    
-    expect(console.warn).toHaveBeenCalledTimes(3);
-  }, 15000);
+    const result = await monitor();
 
-  test('should not retry on non-retryable errors', async () => {
-    const authError = new Error('Unauthorized') as any;
-    authError.response = { status: 401, data: { error: 'Unauthorized' } };
-    
-    app.getRequest = async function(url: string, headers: any) {
-      throw authError;
-    };
-
-    await expect(app.monitorJobStatus('test-id', {}, 1)).rejects.toThrow('Unauthorized');
-    
-    expect(console.warn).not.toHaveBeenCalled();
-  });
-
-  test('should retry on HTTP timeout status codes', async () => {
-    const timeoutError = new Error('Request timeout') as any;
-    timeoutError.response = { status: 408, data: { error: 'Request timeout' } };
-    
-    const successResponse = {
-      status: 200,
-      data: { status: 'completed', data: [{ url: 'test.com', markdown: 'test' }] }
-    };
-
-    const originalGetRequest = app.getRequest;
-    let callCount = 0;
-    
-    app.getRequest = async function(url: string, headers: any) {
-      callCount++;
-      if (callCount === 1) {
-        throw timeoutError;
-      }
-      return successResponse;
-    };
-
-    const result = await app.monitorJobStatus('test-id', {}, 1);
-    
-    expect(callCount).toBe(2);
+    expect(calls()).toBe(3);
     expect(result).toEqual(successResponse.data);
+    expect(delays).toEqual([1000, 2000]);
   });
 
-  test('should use exponential backoff for retries', async () => {
-    const socketHangUpError = new Error('socket hang up') as any;
-    socketHangUpError.code = 'ECONNRESET';
-    
-    const successResponse = {
-      status: 200,
-      data: { status: 'completed', data: [{ url: 'test.com', markdown: 'test' }] }
-    };
+  test('fails after max retries are exceeded', async () => {
+    const calls = failFirst(Infinity, networkError('socket hang up', 'ECONNRESET'));
 
-    const originalGetRequest = app.getRequest;
-    let callCount = 0;
-    
-    app.getRequest = async function(url: string, headers: any) {
-      callCount++;
-      if (callCount <= 2) {
-        throw socketHangUpError;
-      }
-      return successResponse;
-    };
+    await expect(monitor()).rejects.toThrow('socket hang up');
 
-    const startTime = Date.now();
-    const result = await app.monitorJobStatus('test-id', {}, 1);
-    const endTime = Date.now();
-    
-    expect(callCount).toBe(3);
-    expect(result).toEqual(successResponse.data);
-    expect(endTime - startTime).toBeGreaterThan(3000);
+    expect(calls()).toBe(4);
+    expect(delays).toEqual([1000, 2000, 4000]);
+  });
+
+  test('does not retry non-retryable errors', async () => {
+    const calls = failFirst(Infinity, httpError('Unauthorized', 401));
+
+    await expect(monitor()).rejects.toThrow('Unauthorized');
+
+    expect(calls()).toBe(1);
+    expect(delays).toEqual([]);
   });
 });

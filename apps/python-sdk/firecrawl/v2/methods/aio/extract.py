@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 import asyncio
 import warnings
 
-from ...types import ExtractResponse, ScrapeOptions
+from ...types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 
@@ -25,6 +25,7 @@ def _prepare_extract_request(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -49,6 +50,10 @@ def _prepare_extract_request(
             body["scrapeOptions"] = prepared
     if integration is not None and str(integration).strip():
         body["integration"] = str(integration).strip()
+    if threat_protection is not None:
+        body["threatProtection"] = threat_protection.model_dump(
+            by_alias=True, exclude_none=True
+        )
     return body
 
 
@@ -65,6 +70,7 @@ async def start_extract(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Start an extract job (non-blocking, async).
 
@@ -85,6 +91,7 @@ async def start_extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        threat_protection=threat_protection,
     )
     resp = await client.post("/v2/extract", body)
     return ExtractResponse(**resp.json())
@@ -135,6 +142,7 @@ async def extract(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Extract structured data and wait until completion (async).
 
@@ -156,6 +164,7 @@ async def extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        threat_protection=threat_protection,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

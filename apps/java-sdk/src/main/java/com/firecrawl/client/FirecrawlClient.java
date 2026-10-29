@@ -1,5 +1,6 @@
 package com.firecrawl.client;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.errors.JobTimeoutException;
 import com.firecrawl.models.*;
@@ -36,6 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
+    private static final String SDK_ORIGIN = "java-sdk@1.18.7";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -100,7 +102,19 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
-        return extractData(http.post("/v2/scrape", body, Map.class), Document.class);
+        body.putIfAbsent("origin", SDK_ORIGIN);
+        Map raw = http.post("/v2/scrape", body, Map.class);
+        // Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+        if (Boolean.FALSE.equals(raw.get("success"))) {
+            Object error = raw.get("error");
+            Object code = raw.get("code");
+            throw new FirecrawlException(
+                    error != null ? String.valueOf(error) : "Scrape failed",
+                    200,
+                    code != null ? String.valueOf(code) : null,
+                    raw.get("details"));
+        }
+        return extractData(raw, Document.class);
     }
 
     /**
@@ -147,6 +161,7 @@ public class FirecrawlClient {
         body.put("language", language != null ? language : "node");
         if (timeout != null) body.put("timeout", timeout);
         if (origin != null) body.put("origin", origin);
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return http.post("/v2/scrape/" + jobId + "/interact", body, BrowserExecuteResponse.class);
     }
 
@@ -195,6 +210,75 @@ public class FirecrawlClient {
         return stopInteractiveBrowser(jobId);
     }
 
+    /**
+     * Parses an uploaded file and returns the extracted document.
+     *
+     * @param file the file payload to parse
+     * @return the parsed document
+     */
+    public Document parse(ParseFile file) {
+        return parse(file, null);
+    }
+
+    /**
+     * Parses an uploaded file with scrape-compatible options.
+     *
+     * @param file the file payload to parse
+     * @param options parse options (parse-compatible subset)
+     * @return the parsed document
+     */
+    @SuppressWarnings("unchecked")
+    public Document parse(ParseFile file, ParseOptions options) {
+        Objects.requireNonNull(file, "Parse file is required");
+
+        Map<String, Object> optionsMap = new LinkedHashMap<>();
+        if (options != null) {
+            mergeOptions(optionsMap, options);
+        }
+
+        String optionsJson;
+        try {
+            optionsJson = http.objectMapper.writeValueAsString(optionsMap);
+        } catch (JsonProcessingException e) {
+            throw new FirecrawlException("Failed to serialize parse options", e);
+        }
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("options", optionsJson);
+
+        return extractData(
+                http.postMultipart(
+                        "/v2/parse",
+                        fields,
+                        "file",
+                        file.getContent(),
+                        file.getFilename(),
+                        file.getContentType(),
+                        Map.class
+                ),
+                Document.class
+        );
+    }
+
+    /**
+     * Lists the upload types accepted by {@link #parse(ParseFile, ParseOptions)}.
+     *
+     * @return the supported parse formats
+     */
+    public List<ParseFormat> getParseFormats() {
+        Map<?, ?> raw = http.get("/v2/parse/formats", Map.class);
+        Object data = raw.get("data");
+        Object formats = data instanceof Map<?, ?> ? ((Map<?, ?>) data).get("formats") : null;
+        if (!(formats instanceof List<?>)) {
+            return Collections.emptyList();
+        }
+        List<ParseFormat> result = new ArrayList<>();
+        for (Object item : (List<?>) formats) {
+            result.add(http.objectMapper.convertValue(item, ParseFormat.class));
+        }
+        return result;
+    }
+
     // ================================================================
     // CRAWL
     // ================================================================
@@ -213,6 +297,7 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return http.post("/v2/crawl", body, CrawlResponse.class);
     }
 
@@ -312,6 +397,7 @@ public class FirecrawlClient {
                 body.putAll(batchFields);
             }
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return http.post("/v2/batch/scrape", body, BatchScrapeResponse.class, extraHeaders);
     }
 
@@ -364,6 +450,18 @@ public class FirecrawlClient {
         return http.delete("/v2/batch/scrape/" + jobId, Map.class);
     }
 
+    /**
+     * Gets errors and robots.txt blocks from a batch scrape job.
+     *
+     * @param jobId the batch scrape job ID
+     * @return error details
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getBatchScrapeErrors(String jobId) {
+        Objects.requireNonNull(jobId, "Job ID is required");
+        return http.get("/v2/batch/scrape/" + jobId + "/errors", Map.class);
+    }
+
     // ================================================================
     // MAP
     // ================================================================
@@ -392,7 +490,83 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/map", body, Map.class), MapData.class);
+    }
+
+    // ================================================================
+    // MONITOR
+    // ================================================================
+
+    public Monitor createMonitor(Map<String, Object> request) {
+        Objects.requireNonNull(request, "Monitor request is required");
+        return extractData(http.post("/v2/monitor", request, Map.class), Monitor.class);
+    }
+
+    public List<Monitor> listMonitors() {
+        return listMonitors(null, null);
+    }
+
+    public List<Monitor> listMonitors(Integer limit, Integer offset) {
+        Map raw = http.get("/v2/monitor" + listQuery(limit, offset), Map.class);
+        return extractDataList(raw, Monitor.class);
+    }
+
+    public Monitor getMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        return extractData(http.get("/v2/monitor/" + monitorId, Map.class), Monitor.class);
+    }
+
+    public Monitor updateMonitor(String monitorId, Map<String, Object> request) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Objects.requireNonNull(request, "Monitor update request is required");
+        return extractData(http.patch("/v2/monitor/" + monitorId, request, Map.class), Monitor.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    public boolean deleteMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Map<String, Object> response = http.delete("/v2/monitor/" + monitorId, Map.class);
+        return Boolean.TRUE.equals(response.get("success"));
+    }
+
+    public MonitorCheck runMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        return extractData(
+                http.post("/v2/monitor/" + monitorId + "/run", Collections.emptyMap(), Map.class),
+                MonitorCheck.class
+        );
+    }
+
+    public List<MonitorCheck> listMonitorChecks(String monitorId) {
+        return listMonitorChecks(monitorId, null, null);
+    }
+
+    public List<MonitorCheck> listMonitorChecks(String monitorId, Integer limit, Integer offset) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Map raw = http.get("/v2/monitor/" + monitorId + "/checks" + listQuery(limit, offset), Map.class);
+        return extractDataList(raw, MonitorCheck.class);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(String monitorId, String checkId) {
+        return getMonitorCheck(monitorId, checkId, null, null, null, true);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
+        return getMonitorCheck(monitorId, checkId, limit, skip, status, true);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Objects.requireNonNull(checkId, "Check ID is required");
+        MonitorCheckDetail check = extractData(
+                http.get("/v2/monitor/" + monitorId + "/checks/" + checkId
+                        + monitorCheckQuery(limit, skip, status), Map.class),
+                MonitorCheckDetail.class
+        );
+        return autoPaginate ? paginateMonitorCheck(check) : check;
     }
 
     // ================================================================
@@ -423,7 +597,110 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/search", body, Map.class), SearchData.class);
+    }
+
+    public ResearchModels.SearchPapersResponse searchPapers(String query) {
+        return searchPapers(query, null);
+    }
+
+    public ResearchModels.SearchPapersResponse searchPapers(String query, ResearchModels.SearchPapersOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers" + researchQuery(params), ResearchModels.SearchPapersResponse.class);
+    }
+
+    public ResearchModels.PaperMetadataResponse inspectPaper(String paperId) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId), ResearchModels.PaperMetadataResponse.class);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query) {
+        return readPaper(paperId, query, null);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + researchQuery(params), ResearchModels.ReadPaperResponse.class);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent) {
+        return relatedPapers(paperId, intent, null);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(intent, "Intent is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("intent", intent);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
+     *             which does not carry over the score breakdown or the web
+     *             fallback results.
+     */
+    @Deprecated
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
+        return searchGitHub(query, null);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
+     *             which does not carry over the score breakdown or the web
+     *             fallback results.
+     */
+    @Deprecated
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/github" + researchQuery(params), ResearchModels.GitHubSearchResponse.class);
+    }
+
+    /**
+     * Searches the developer index: public repositories, GitHub issues, merged
+     * pull requests, READMEs and code documentation.
+     *
+     * @param query the search query
+     * @return ranked developer search results
+     */
+    public ResearchModels.DeveloperSearchResponse developerSearch(String query) {
+        return developerSearch(query, null);
+    }
+
+    /**
+     * Searches the developer index with filters.
+     *
+     * @param query   the search query
+     * @param options developer search filters
+     * @return ranked developer search results
+     * @throws IllegalArgumentException if the query is blank
+     */
+    public ResearchModels.DeveloperSearchResponse developerSearch(String query, ResearchModels.DeveloperSearchOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        if (query.isBlank()) {
+            throw new IllegalArgumentException("Query cannot be empty");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("query", query);
+        if (options != null) mergeOptions(body, options);
+        body.put("origin", SDK_ORIGIN);
+        return http.post("/v2/search/developer", body, ResearchModels.DeveloperSearchResponse.class);
     }
 
     // ================================================================
@@ -450,6 +727,34 @@ public class FirecrawlClient {
     public AgentStatusResponse getAgentStatus(String jobId) {
         Objects.requireNonNull(jobId, "Job ID is required");
         return http.get("/v2/agent/" + jobId, AgentStatusResponse.class);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents() {
+        return listAgents(null);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents(Long before) {
+        String endpoint = "/v2/agent";
+        if (before != null) {
+            endpoint += "?before=" + before;
+        }
+        return http.get(endpoint, AgentListResponse.class);
     }
 
     /**
@@ -498,6 +803,46 @@ public class FirecrawlClient {
         return http.delete("/v2/agent/" + jobId, Map.class);
     }
 
+    /**
+     * Gets the event trace of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return the agent trace response
+     */
+    public AgentTraceResponse getAgentTrace(String jobId) {
+        return getAgentTrace(jobId, false);
+    }
+
+    /**
+     * Gets the event trace of an agent task, optionally including live view URLs
+     * for active browser sessions.
+     *
+     * @param jobId    the agent job ID
+     * @param liveView whether to include active browser sessions with live view URLs
+     * @return the agent trace response
+     */
+    public AgentTraceResponse getAgentTrace(String jobId, boolean liveView) {
+        Objects.requireNonNull(jobId, "Job ID is required");
+        String endpoint = "/v2/agent/" + jobId + "/trace";
+        if (liveView) {
+            endpoint += "?liveView=true";
+        }
+        return http.get(endpoint, AgentTraceResponse.class);
+    }
+
+    /**
+     * Gets a snapshot of an agent task.
+     *
+     * @param jobId      the agent job ID
+     * @param snapshotId the snapshot ID
+     * @return the agent snapshot response
+     */
+    public AgentSnapshotResponse getAgentSnapshot(String jobId, String snapshotId) {
+        Objects.requireNonNull(jobId, "Job ID is required");
+        Objects.requireNonNull(snapshotId, "Snapshot ID is required");
+        return http.get("/v2/agent/" + jobId + "/snapshots/" + snapshotId, AgentSnapshotResponse.class);
+    }
+
     // ================================================================
     // BROWSER
     // ================================================================
@@ -520,10 +865,26 @@ public class FirecrawlClient {
      * @return the browser session details
      */
     public BrowserCreateResponse browser(Integer ttl, Integer activityTtl, Boolean streamWebView) {
+        return browser(ttl, activityTtl, streamWebView, null);
+    }
+
+    /**
+     * Creates a new browser session that browses from a given country.
+     *
+     * @param ttl            total session lifetime in seconds (30-3600), or null for default
+     * @param activityTtl    idle timeout in seconds (10-3600), or null for default
+     * @param streamWebView  whether to enable live view streaming, or null for default
+     * @param country        ISO 3166-1 alpha-2 country code such as "GB", sent as
+     *                       {@code location.country}, or null for default (US)
+     * @return the browser session details
+     */
+    public BrowserCreateResponse browser(Integer ttl, Integer activityTtl, Boolean streamWebView,
+                                         String country) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (ttl != null) body.put("ttl", ttl);
         if (activityTtl != null) body.put("activityTtl", activityTtl);
         if (streamWebView != null) body.put("streamWebView", streamWebView);
+        if (country != null) body.put("location", Map.of("country", country));
         return http.post("/v2/browser", body, BrowserCreateResponse.class);
     }
 
@@ -716,6 +1077,36 @@ public class FirecrawlClient {
     }
 
     /**
+     * Asynchronously parses an uploaded file with default options.
+     *
+     * @param file the file payload
+     * @return a CompletableFuture that resolves to the parsed Document
+     */
+    public CompletableFuture<Document> parseAsync(ParseFile file) {
+        return parseAsync(file, null);
+    }
+
+    /**
+     * Asynchronously parses an uploaded file.
+     *
+     * @param file the file payload
+     * @param options parse options
+     * @return a CompletableFuture that resolves to the parsed Document
+     */
+    public CompletableFuture<Document> parseAsync(ParseFile file, ParseOptions options) {
+        return CompletableFuture.supplyAsync(() -> parse(file, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists the upload types accepted by parse.
+     *
+     * @return a CompletableFuture that resolves to the supported parse formats
+     */
+    public CompletableFuture<List<ParseFormat>> getParseFormatsAsync() {
+        return CompletableFuture.supplyAsync(this::getParseFormats, asyncExecutor);
+    }
+
+    /**
      * Asynchronously crawls a website and waits for completion.
      *
      * @param url     the URL to crawl
@@ -762,6 +1153,36 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> search(query, options), asyncExecutor);
     }
 
+    public CompletableFuture<ResearchModels.SearchPapersResponse> searchPapersAsync(String query, ResearchModels.SearchPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchPapers(query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.PaperMetadataResponse> inspectPaperAsync(String paperId) {
+        return CompletableFuture.supplyAsync(() -> inspectPaper(paperId), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.ReadPaperResponse> readPaperAsync(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        return CompletableFuture.supplyAsync(() -> readPaper(paperId, query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.SimilarPapersResponse> relatedPapersAsync(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
+     *             which does not carry over the score breakdown or the web
+     *             fallback results.
+     */
+    @Deprecated
+    public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.DeveloperSearchResponse> developerSearchAsync(String query, ResearchModels.DeveloperSearchOptions options) {
+        return CompletableFuture.supplyAsync(() -> developerSearch(query, options), asyncExecutor);
+    }
+
     /**
      * Asynchronously runs a map operation.
      *
@@ -771,6 +1192,50 @@ public class FirecrawlClient {
      */
     public CompletableFuture<MapData> mapAsync(String url, MapOptions options) {
         return CompletableFuture.supplyAsync(() -> map(url, options), asyncExecutor);
+    }
+
+    public CompletableFuture<Monitor> createMonitorAsync(Map<String, Object> request) {
+        return CompletableFuture.supplyAsync(() -> createMonitor(request), asyncExecutor);
+    }
+
+    public CompletableFuture<List<Monitor>> listMonitorsAsync(Integer limit, Integer offset) {
+        return CompletableFuture.supplyAsync(() -> listMonitors(limit, offset), asyncExecutor);
+    }
+
+    public CompletableFuture<Monitor> getMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> getMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<Monitor> updateMonitorAsync(String monitorId, Map<String, Object> request) {
+        return CompletableFuture.supplyAsync(() -> updateMonitor(monitorId, request), asyncExecutor);
+    }
+
+    public CompletableFuture<Boolean> deleteMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> deleteMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<MonitorCheck> runMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> runMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<List<MonitorCheck>> listMonitorChecksAsync(String monitorId, Integer limit, Integer offset) {
+        return CompletableFuture.supplyAsync(() -> listMonitorChecks(monitorId, limit, offset), asyncExecutor);
+    }
+
+    public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
+        return CompletableFuture.supplyAsync(
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status),
+                asyncExecutor
+        );
+    }
+
+    public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
+        return CompletableFuture.supplyAsync(
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status, autoPaginate),
+                asyncExecutor
+        );
     }
 
     /**
@@ -793,7 +1258,22 @@ public class FirecrawlClient {
      */
     public CompletableFuture<BrowserCreateResponse> browserAsync(Integer ttl, Integer activityTtl,
                                                                     Boolean streamWebView) {
-        return CompletableFuture.supplyAsync(() -> browser(ttl, activityTtl, streamWebView), asyncExecutor);
+        return browserAsync(ttl, activityTtl, streamWebView, null);
+    }
+
+    /**
+     * Asynchronously creates a new browser session that browses from a given country.
+     *
+     * @param ttl            total session lifetime in seconds, or null for default
+     * @param activityTtl    idle timeout in seconds, or null for default
+     * @param streamWebView  whether to enable live view streaming, or null for default
+     * @param country        ISO 3166-1 alpha-2 country code, or null for default (US)
+     * @return a CompletableFuture that resolves to the BrowserCreateResponse
+     */
+    public CompletableFuture<BrowserCreateResponse> browserAsync(Integer ttl, Integer activityTtl,
+                                                                    Boolean streamWebView, String country) {
+        return CompletableFuture.supplyAsync(() -> browser(ttl, activityTtl, streamWebView, country),
+                asyncExecutor);
     }
 
     /**
@@ -828,6 +1308,160 @@ public class FirecrawlClient {
      */
     public CompletableFuture<BrowserListResponse> listBrowsersAsync(String status) {
         return CompletableFuture.supplyAsync(() -> listBrowsers(status), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts a crawl job and returns immediately with the job reference.
+     *
+     * @param url     the URL to start crawling from
+     * @param options crawl configuration options
+     * @return a CompletableFuture that resolves to the CrawlResponse
+     */
+    public CompletableFuture<CrawlResponse> startCrawlAsync(String url, CrawlOptions options) {
+        return CompletableFuture.supplyAsync(() -> startCrawl(url, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of a crawl job.
+     *
+     * @param jobId the crawl job ID
+     * @return a CompletableFuture that resolves to the CrawlJob
+     */
+    public CompletableFuture<CrawlJob> getCrawlStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getCrawlStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels a crawl job.
+     *
+     * @param jobId the crawl job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelCrawlAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelCrawl(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts a batch scrape job and returns immediately with the job reference.
+     *
+     * @param urls    the URLs to scrape
+     * @param options batch scrape configuration options
+     * @return a CompletableFuture that resolves to the BatchScrapeResponse
+     */
+    public CompletableFuture<BatchScrapeResponse> startBatchScrapeAsync(List<String> urls, BatchScrapeOptions options) {
+        return CompletableFuture.supplyAsync(() -> startBatchScrape(urls, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of a batch scrape job.
+     *
+     * @param jobId the batch scrape job ID
+     * @return a CompletableFuture that resolves to the BatchScrapeJob
+     */
+    public CompletableFuture<BatchScrapeJob> getBatchScrapeStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getBatchScrapeStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels a batch scrape job.
+     *
+     * @param jobId the batch scrape job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelBatchScrapeAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelBatchScrape(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts an agent task and returns immediately with the job reference.
+     *
+     * @param options agent configuration options
+     * @return a CompletableFuture that resolves to the AgentResponse
+     */
+    public CompletableFuture<AgentResponse> startAgentAsync(AgentOptions options) {
+        return CompletableFuture.supplyAsync(() -> startAgent(options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the AgentStatusResponse
+     */
+    public CompletableFuture<AgentStatusResponse> getAgentStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getAgentStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists agent runs, most recent first.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return a CompletableFuture that resolves to the AgentListResponse
+     */
+    public CompletableFuture<AgentListResponse> listAgentsAsync(Long before) {
+        return CompletableFuture.supplyAsync(() -> listAgents(before), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelAgentAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelAgent(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the event trace of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the AgentTraceResponse
+     */
+    public CompletableFuture<AgentTraceResponse> getAgentTraceAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getAgentTrace(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the event trace of an agent task, optionally including
+     * live view URLs for active browser sessions.
+     *
+     * @param jobId    the agent job ID
+     * @param liveView whether to include active browser sessions with live view URLs
+     * @return a CompletableFuture that resolves to the AgentTraceResponse
+     */
+    public CompletableFuture<AgentTraceResponse> getAgentTraceAsync(String jobId, boolean liveView) {
+        return CompletableFuture.supplyAsync(() -> getAgentTrace(jobId, liveView), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets a snapshot of an agent task.
+     *
+     * @param jobId      the agent job ID
+     * @param snapshotId the snapshot ID
+     * @return a CompletableFuture that resolves to the AgentSnapshotResponse
+     */
+    public CompletableFuture<AgentSnapshotResponse> getAgentSnapshotAsync(String jobId, String snapshotId) {
+        return CompletableFuture.supplyAsync(() -> getAgentSnapshot(jobId, snapshotId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets concurrency info.
+     *
+     * @return a CompletableFuture that resolves to the ConcurrencyCheck
+     */
+    public CompletableFuture<ConcurrencyCheck> getConcurrencyAsync() {
+        return CompletableFuture.supplyAsync(this::getConcurrency, asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets credit usage.
+     *
+     * @return a CompletableFuture that resolves to the CreditUsage
+     */
+    public CompletableFuture<CreditUsage> getCreditUsageAsync() {
+        return CompletableFuture.supplyAsync(this::getCreditUsage, asyncExecutor);
     }
 
     // ================================================================
@@ -894,6 +1528,25 @@ public class FirecrawlClient {
         return job;
     }
 
+    private MonitorCheckDetail paginateMonitorCheck(MonitorCheckDetail check) {
+        if (check.getPages() == null) {
+            check.setPages(new ArrayList<>());
+        }
+        MonitorCheckDetail current = check;
+        while (current.getNext() != null && !current.getNext().isEmpty()) {
+            MonitorCheckDetail nextPage = extractData(
+                    http.getAbsolute(current.getNext(), Map.class),
+                    MonitorCheckDetail.class
+            );
+            if (nextPage.getPages() != null && !nextPage.getPages().isEmpty()) {
+                check.getPages().addAll(nextPage.getPages());
+            }
+            current = nextPage;
+        }
+        check.setNext(null);
+        return check;
+    }
+
     // ================================================================
     // INTERNAL UTILITIES
     // ================================================================
@@ -909,6 +1562,59 @@ public class FirecrawlClient {
             return http.objectMapper.convertValue(rawResponse, type);
         }
         return http.objectMapper.convertValue(data, type);
+    }
+
+    private <T> List<T> extractDataList(Map rawResponse, Class<T> type) {
+        Object data = rawResponse.get("data");
+        if (!(data instanceof List<?>)) {
+            return Collections.emptyList();
+        }
+        List<T> result = new ArrayList<>();
+        for (Object item : (List<?>) data) {
+            result.add(http.objectMapper.convertValue(item, type));
+        }
+        return result;
+    }
+
+    private String listQuery(Integer limit, Integer offset) {
+        List<String> parts = new ArrayList<>();
+        if (limit != null) parts.add("limit=" + limit);
+        if (offset != null) parts.add("offset=" + offset);
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String monitorCheckQuery(Integer limit, Integer skip, String status) {
+        List<String> parts = new ArrayList<>();
+        if (limit != null) parts.add("limit=" + limit);
+        if (skip != null) parts.add("skip=" + skip);
+        if (status != null && !status.isBlank()) {
+            parts.add("status=" + java.net.URLEncoder.encode(status, java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String researchQuery(Map<String, Object> params) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) continue;
+            if (value instanceof Collection<?>) {
+                for (Object item : (Collection<?>) value) {
+                    if (item != null) parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(item)));
+                }
+            } else {
+                parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(value)));
+            }
+        }
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof Boolean ? value.toString().toLowerCase(Locale.ROOT) : value.toString();
+    }
+
+    private String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /**
@@ -936,6 +1642,7 @@ public class FirecrawlClient {
     public static final class Builder {
 
         private String apiKey;
+        private boolean apiKeyExplicitlySet;
         private String apiUrl = DEFAULT_API_URL;
         private long timeoutMs = DEFAULT_TIMEOUT_MS;
         private int maxRetries = DEFAULT_MAX_RETRIES;
@@ -951,6 +1658,7 @@ public class FirecrawlClient {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            this.apiKeyExplicitlySet = true;
             return this;
         }
 
@@ -1026,17 +1734,19 @@ public class FirecrawlClient {
 
         public FirecrawlClient build() {
             String resolvedKey = apiKey;
+            if (apiKeyExplicitlySet && (resolvedKey == null || resolvedKey.isBlank())) {
+                throw new FirecrawlException(
+                        "API key cannot be null or empty when explicitly provided.");
+            }
             if (resolvedKey == null || resolvedKey.isBlank()) {
                 resolvedKey = System.getenv("FIRECRAWL_API_KEY");
             }
             if (resolvedKey == null || resolvedKey.isBlank()) {
                 resolvedKey = System.getProperty("firecrawl.apiKey");
             }
-            if (resolvedKey == null || resolvedKey.isBlank()) {
-                throw new FirecrawlException(
-                        "API key is required. Set it via builder.apiKey(), " +
-                        "FIRECRAWL_API_KEY environment variable, or firecrawl.apiKey system property.");
-            }
+            // A null/blank key is allowed: scrape, search, and interact fall back
+            // to the keyless free tier (rate-limited per IP). Other methods return
+            // 401 from the API until a key is provided.
 
             String resolvedUrl = apiUrl;
             if (resolvedUrl == null || resolvedUrl.equals(DEFAULT_API_URL)) {

@@ -1,41 +1,29 @@
 [package]
 name = "firecrawl"
-author= "Mendable.ai"
-version = "1.4.0"
+version = "2.21.8"
 edition = "2021"
 license = "MIT"
 homepage = "https://www.firecrawl.dev/"
-repository ="https://github.com/firecrawl/firecrawl"
-description = "Rust SDK for Firecrawl API."
+repository = "https://github.com/firecrawl/firecrawl"
+description = "Official Rust SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs."
 authors = ["Gergő Móricz <mogery@firecrawl.dev>", "sanix-darker <sanixdk@gmail.com>", "kkharji <kkharji@protonmail.com>"]
+keywords = ["firecrawl", "web-scraping", "crawling", "api"]
+categories = ["api-bindings", "web-programming"]
 
 [lib]
 path = "src/lib.rs"
 name = "firecrawl"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-reqwest = { version = "0.12.22", features = ["json", "blocking"] }
-serde = { version = "^1.0", features = ["derive"] }
-serde_json = "^1.0"
-serde_with = "^3.9"
-log = "^0.4"
-thiserror = "^1.0"
-uuid = { version = "^1.10", features = ["v4"] }
-tokio = { version = "^1", features = ["full"] }
-futures = "0.3.31"
-schemars = "0.8.22"
-tracing = ">=0.1.0,<0.2.0"
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = "3"
+thiserror = "1"
+tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
-clippy = "^0.0.302"
-assert_matches = "^1.5"
-dotenvy = "^0.15"
 tokio = { version = "1", features = ["full"] }
-mockito = "1.7.0"
-clap = { version ="4.5.35", features = ["derive"] }
-axum = { version = "0.8.3", features = ["tokio", "macros"] }
-bat = "0.25.0"
-
-[build-dependencies]
-tokio = { version = "1", features = ["full"] }
+mockito = "1.7"
+serde_json = "1"

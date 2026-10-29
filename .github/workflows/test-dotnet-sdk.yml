@@ -1,0 +1,52 @@
+name: .NET SDK Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/dot-net-sdk/**
+      - .github/workflows/test-dotnet-sdk.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/dot-net-sdk/**
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        working-directory: ./apps/dot-net-sdk
+        run: dotnet restore
+
+      - name: Build
+        working-directory: ./apps/dot-net-sdk
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run unit tests
+        working-directory: ./apps/dot-net-sdk
+        run: dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+
+      - name: Publish test report
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: dorny/test-reporter@3eeb9fc888e82e8be2fb356bbeec2750231672bc # v1
+        with:
+          name: .NET SDK Test Report
+          path: apps/dot-net-sdk/TestResults/**/*.trx
+          reporter: dotnet-trx
+          fail-on-error: true

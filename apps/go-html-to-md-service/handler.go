@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -100,10 +101,14 @@ type ErrorResponse struct {
 func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	// Zero data retention requests must not retain any per-request log
+	// entries that could correlate back to a customer scrape.
+	zdr := strings.EqualFold(r.Header.Get("X-Zero-Data-Retention"), "true")
+
 	// Extract request ID from header for logging
 	requestID := r.Header.Get("X-Request-ID")
 	logger := log.Logger
-	if requestID != "" {
+	if requestID != "" && !zdr {
 		logger = log.With().Str("request_id", requestID).Logger()
 	}
 
@@ -140,13 +145,16 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log metrics
-	duration := time.Since(startTime)
-	logger.Info().
-		Dur("duration_ms", duration).
-		Int("input_size", len(req.HTML)).
-		Int("output_size", len(markdown)).
-		Msg("HTML to Markdown conversion completed")
+	// Skip per-request success logs for ZDR requests so no record is kept
+	// that ties a request_id or its input/output sizes to the customer.
+	if !zdr {
+		duration := time.Since(startTime)
+		logger.Info().
+			Dur("duration_ms", duration).
+			Int("input_size", len(req.HTML)).
+			Int("output_size", len(markdown)).
+			Msg("HTML to Markdown conversion completed")
+	}
 
 	// Send response
 	response := ConvertResponse{

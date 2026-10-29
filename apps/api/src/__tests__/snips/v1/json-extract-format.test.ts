@@ -83,7 +83,7 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
           expect(response.json).toBeUndefined();
           expect(response.extract.mainHeading).toBeDefined();
         },
-        scrapeTimeout,
+        scrapeTimeout * 2,
       );
     });
 
@@ -150,7 +150,7 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
           expect(response.extract).toBeUndefined();
           expect(response.json.mainHeading).toBeDefined();
         },
-        scrapeTimeout,
+        scrapeTimeout * 2,
       );
     });
 

@@ -1,21 +1,26 @@
 {
   "name": "playwright-scraper-api",
   "version": "1.0.0",
-  "description": "scraper api with playwright",
+  "description": "browser rendering service with playwright",
   "main": "api.ts",
   "scripts": {
     "start": "node dist/api.js",
     "build": "tsc",
-    "dev": "tsx api.ts"
+    "dev": "tsx api.ts",
+    "test": "node --import tsx --test --test-force-exit helpers/*.spec.ts"
   },
   "keywords": [],
   "author": "Jeff Pereira",
   "license": "ISC",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "ipaddr.js": "^2.3.0",
-    "playwright": "^1.58.1",
+    "playwright": "^1.64.1",
+    "proxy-chain": "^2.7.1",
     "user-agents": "^1.1.669"
   },
   "devDependencies": {
@@ -25,9 +30,5 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
-  "pnpm": {
-    "overrides": {
-      "path-to-regexp@<8.4.0": ">=8.4.0"
-    }
-  }
+  "packageManager": "pnpm@11.4.0"
 }

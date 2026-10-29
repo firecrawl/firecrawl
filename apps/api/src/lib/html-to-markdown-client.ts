@@ -9,7 +9,6 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 
 interface ConvertRequest {
   html: string;
@@ -38,6 +37,7 @@ export async function convertHTMLToMarkdownWithHttpService(
   context?: {
     logger?: Logger;
     requestId?: string;
+    zeroDataRetention?: boolean;
   },
 ): Promise<string> {
   if (!html || html.trim() === "") {
@@ -46,6 +46,7 @@ export async function convertHTMLToMarkdownWithHttpService(
 
   const contextLogger = context?.logger || logger;
   const requestId = context?.requestId;
+  const zeroDataRetention = context?.zeroDataRetention === true;
   const url = config.HTML_TO_MARKDOWN_SERVICE_URL;
   const startTime = Date.now();
 
@@ -56,9 +57,14 @@ export async function convertHTMLToMarkdownWithHttpService(
       "Content-Type": "application/json",
     };
 
-    // Add request ID header if available
-    if (requestId) {
+    // Add request ID header if available, but never for ZDR — it would
+    // let the downstream service correlate logs back to a customer scrape.
+    if (requestId && !zeroDataRetention) {
       headers["X-Request-ID"] = requestId;
+    }
+
+    if (zeroDataRetention) {
+      headers["X-Zero-Data-Retention"] = "true";
     }
 
     const response = await axios.post<ConvertResponse>(
@@ -76,12 +82,14 @@ export async function convertHTMLToMarkdownWithHttpService(
       throw new Error("Conversion was not successful");
     }
 
-    contextLogger.debug("HTML to Markdown conversion successful", {
-      duration_ms: duration,
-      input_size: html.length,
-      output_size: response.data.markdown.length,
-      ...(requestId ? { request_id: requestId } : {}),
-    });
+    if (!zeroDataRetention) {
+      contextLogger.debug("HTML to Markdown conversion successful", {
+        duration_ms: duration,
+        input_size: html.length,
+        output_size: response.data.markdown.length,
+        ...(requestId ? { request_id: requestId } : {}),
+      });
+    }
 
     return response.data.markdown;
   } catch (error) {
@@ -103,21 +111,6 @@ export async function convertHTMLToMarkdownWithHttpService(
         serviceUrl: url,
       });
 
-      // Capture in Sentry with additional context
-      Sentry.captureException(error, {
-        tags: {
-          service: "html-to-markdown",
-          status_code: statusCode,
-          ...(requestId ? { request_id: requestId } : {}),
-        },
-        extra: {
-          serviceUrl: url,
-          errorMessage,
-          errorDetails,
-          inputSize: html.length,
-        },
-      });
-
       // Include details in error message if available
       const fullErrorMessage = errorDetails
         ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
@@ -131,11 +124,6 @@ export async function convertHTMLToMarkdownWithHttpService(
           error,
         },
       );
-      Sentry.captureException(error, {
-        tags: {
-          ...(requestId ? { request_id: requestId } : {}),
-        },
-      });
       throw error;
     }
   }

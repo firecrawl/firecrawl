@@ -10,10 +10,11 @@ export type ExtractJobData = {
   extractId: string;
   request: any;
   teamId: string;
-  subId?: string | null;
   apiKeyId?: number | null;
   agent?: any;
   createdAt: number;
+  /** The caller's External-Request-Id, carried on the extract charge. */
+  externalRequestId?: string | null;
 };
 
 let connection: amqp.ChannelModel | null = null;

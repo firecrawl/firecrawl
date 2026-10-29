@@ -12,16 +12,19 @@ from ...types import (
     ActiveCrawl,
     PaginationConfig,
 )
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
+from ..crawl import _job_id_from_next_url
 import time
 
 
 def _prepare_crawl_request(request: CrawlRequest) -> dict:
     if not request.url or not request.url.strip():
         raise ValueError("URL cannot be empty")
+    if request.limit is not None and request.limit <= 0:
+        raise ValueError("Limit must be positive")
     data = {"url": request.url}
     if request.prompt:
         data["prompt"] = request.prompt
@@ -49,6 +52,8 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
         "crawl_entire_domain": "crawlEntireDomain",
         "allow_external_links": "allowExternalLinks",
         "allow_subdomains": "allowSubdomains",
+        "ignore_robots_txt": "ignoreRobotsTxt",
+        "robots_user_agent": "robotsUserAgent",
         "delay": "delay",
         "max_concurrency": "maxConcurrency",
         "regex_on_full_url": "regexOnFullURL",
@@ -74,7 +79,7 @@ def _parse_crawl_documents(data_list: Optional[List[Any]]) -> List[Document]:
 
 def _parse_crawl_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     return {
         "status": body.get("status"),
@@ -83,6 +88,7 @@ def _parse_crawl_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
         "credits_used": body.get("creditsUsed", 0),
         "expires_at": body.get("expiresAt"),
         "next": body.get("next"),
+        "warning": body.get("warning"),
         "data": _parse_crawl_documents(body.get("data", [])),
     }
 
@@ -109,7 +115,7 @@ async def start_crawl(client: AsyncHttpClient, request: CrawlRequest) -> CrawlRe
     body = response.json()
     if body.get("success"):
         return CrawlResponse(id=body.get("id"), url=body.get("url"))
-    raise Exception(body.get("error", "Unknown error occurred"))
+    raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
 
 async def get_crawl_status(
@@ -146,7 +152,11 @@ async def get_crawl_status(
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
-    if auto_paginate and payload["next"]:
+    if auto_paginate and payload["next"] and (documents or payload["status"] == "completed") and not (
+        pagination_config
+        and pagination_config.max_results is not None
+        and len(documents) >= pagination_config.max_results
+    ):
         documents = await _fetch_all_pages_async(
             client,
             payload["next"],
@@ -156,12 +166,14 @@ async def get_crawl_status(
         )
 
     return CrawlJob(
+        id=job_id,
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"] if not auto_paginate else None,
+        warning=payload["warning"],
         data=documents,
     )
 
@@ -192,12 +204,14 @@ async def get_crawl_status_page(
     body = response.json()
     payload = _parse_crawl_status_response(body)
     return CrawlJob(
+        id=_job_id_from_next_url(next_url),
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"],
+        warning=payload["warning"],
         data=payload["data"],
     )
 
@@ -269,7 +283,9 @@ async def _fetch_all_pages_async(
         if (max_results is not None) and (len(documents) >= max_results):
             break
         
-        # Get next URL
+        # A running job repeats its cursor on an empty page until new documents finish.
+        if not page_payload["data"] and page_payload["next"] == current_url:
+            break
         current_url = page_payload["next"]
         page_count += 1
     
@@ -285,12 +301,17 @@ async def cancel_crawl(client: AsyncHttpClient, job_id: str) -> bool:
         job_id: ID of the crawl job
         
     Returns:
-        True if cancellation was successful
+        True if the crawl was cancelled. False if the crawl was not
+        cancelled, for example because it already completed (HTTP 409).
         
     Raises:
-        Exception: If the cancellation operation fails
+        FirecrawlError: If the API returns any other error status
+        httpx.HTTPError: If the request fails before a response arrives
     """
     response = await client.delete(f"/v2/crawl/{job_id}")
+    if response.status_code == 409:
+        # The crawl already completed, so there is nothing to cancel.
+        return False
     if response.status_code >= 400:
         handle_response_error(response, "cancel crawl")
     body = response.json()
@@ -322,7 +343,7 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
         handle_response_error(response, "crawl params preview")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     params_data = body.get("data", {})
     converted: Dict[str, Any] = {}
     mapping = {
@@ -335,6 +356,8 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
         "crawlEntireDomain": "crawl_entire_domain",
         "allowExternalLinks": "allow_external_links",
         "allowSubdomains": "allow_subdomains",
+        "ignoreRobotsTxt": "ignore_robots_txt",
+        "robotsUserAgent": "robots_user_agent",
         "maxConcurrency": "max_concurrency",
         "scrapeOptions": "scrape_options",
         "zeroDataRetention": "zero_data_retention",
@@ -394,7 +417,7 @@ async def get_active_crawls(client: AsyncHttpClient) -> ActiveCrawlsResponse:
         handle_response_error(response, "get active crawls")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     crawls_in = body.get("crawls", [])
     normalized = []
     for c in crawls_in:

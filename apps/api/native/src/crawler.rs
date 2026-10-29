@@ -33,6 +33,7 @@ pub struct FilterLinksCall {
   pub allow_backward_crawling: bool,
   pub ignore_robots_txt: bool,
   pub robots_txt: String,
+  pub robots_user_agent: Option<String>,
   pub allow_external_content_links: bool,
   pub allow_subdomains: bool,
 }
@@ -44,6 +45,13 @@ pub struct FilterLinksResult {
   pub denial_reasons: HashMap<String, String>,
 }
 
+#[derive(Serialize)]
+#[napi(object)]
+pub struct RegexValidationError {
+  pub pattern: String,
+  pub error: String,
+}
+
 #[derive(Deserialize)]
 #[napi(object)]
 pub struct FilterUrlCall {
@@ -53,6 +61,7 @@ pub struct FilterUrlCall {
   pub excludes: Vec<String>,
   pub ignore_robots_txt: bool,
   pub robots_txt: String,
+  pub robots_user_agent: Option<String>,
   pub allow_external_content_links: bool,
   pub allow_subdomains: bool,
 }
@@ -131,6 +140,45 @@ fn is_file(path: &str) -> bool {
   } else {
     false
   }
+}
+
+static DOCUMENT_SEGMENT: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"\.[A-Za-z0-9]{2,}$").unwrap());
+
+struct CrawlScope {
+  prefix: String,
+  exact: Option<String>,
+}
+
+/// Resolves the path a crawl is scoped to when backward crawling is disabled.
+/// Keep in sync with getCrawlScope() in apps/api/src/lib/crawl-scope.ts.
+fn crawl_scope(initial_url: &Url) -> CrawlScope {
+  let path = initial_url.path();
+
+  if path.ends_with('/') {
+    return CrawlScope {
+      prefix: path.to_string(),
+      exact: None,
+    };
+  }
+
+  let last_slash = path.rfind('/').map_or(0, |i| i + 1);
+  if DOCUMENT_SEGMENT.is_match(&path[last_slash..]) {
+    return CrawlScope {
+      prefix: path[..last_slash].to_string(),
+      exact: None,
+    };
+  }
+
+  CrawlScope {
+    prefix: format!("{path}/"),
+    exact: Some(path.to_string()),
+  }
+}
+
+#[inline]
+fn is_within_crawl_scope(path: &str, scope: &CrawlScope) -> bool {
+  scope.exact.as_deref() == Some(path) || path.starts_with(&scope.prefix)
 }
 
 #[inline]
@@ -227,6 +275,22 @@ fn is_external_main_page(url_str: &str) -> bool {
   }
 }
 
+fn build_robot(
+  ignore_robots_txt: bool,
+  robots_txt: &str,
+  robots_user_agent: Option<&str>,
+) -> Option<Robot> {
+  if ignore_robots_txt || robots_txt.is_empty() {
+    return None;
+  }
+  if let Some(ua) = robots_user_agent {
+    return Robot::new(ua, robots_txt.as_bytes()).ok();
+  }
+  Robot::new("FireCrawlAgent", robots_txt.as_bytes())
+    .ok()
+    .or_else(|| Robot::new("FirecrawlAgent", robots_txt.as_bytes()).ok())
+}
+
 fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult, String> {
   let limit = data.limit.map_or(usize::MAX, |x| x.max(0) as usize);
   if limit == 0 {
@@ -239,26 +303,24 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   let base_url = Url::parse(&data.base_url).map_err(|e| format!("Base URL parse error: {e}"))?;
   let initial_url =
     Url::parse(&data.initial_url).map_err(|e| format!("Initial URL parse error: {e}"))?;
-  let initial_path = initial_url.path();
+  let scope = crawl_scope(&initial_url);
 
-  let excludes_regex: Vec<Regex> = data
+  let excludes_regex: Vec<PathRegex> = data
     .excludes
     .iter()
-    .filter_map(|e| Regex::new(e).ok())
+    .filter_map(|e| compile_path_regex(e).ok())
     .collect();
-  let includes_regex: Vec<Regex> = data
+  let includes_regex: Vec<PathRegex> = data
     .includes
     .iter()
-    .filter_map(|i| Regex::new(i).ok())
+    .filter_map(|i| compile_path_regex(i).ok())
     .collect();
 
-  let robot = if !data.ignore_robots_txt && !data.robots_txt.is_empty() {
-    Robot::new("FireCrawlAgent", data.robots_txt.as_bytes())
-      .ok()
-      .or_else(|| Robot::new("FirecrawlAgent", data.robots_txt.as_bytes()).ok())
-  } else {
-    None
-  };
+  let robot = build_robot(
+    data.ignore_robots_txt,
+    &data.robots_txt,
+    data.robots_user_agent.as_deref(),
+  );
 
   let mut result_links = Vec::new();
   let mut denial_reasons = HashMap::new();
@@ -301,7 +363,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         continue;
       }
 
-      if !data.allow_backward_crawling && !path.starts_with(initial_path) {
+      if !data.allow_backward_crawling && !is_within_crawl_scope(path, &scope) {
         denial_reasons.insert(link, BACKWARD_CRAWLING.to_string());
         continue;
       }
@@ -312,12 +374,20 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         path
       };
 
-      if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(match_target)) {
+      if !excludes_regex.is_empty()
+        && excludes_regex
+          .iter()
+          .any(|r| r.is_match(match_target.as_bytes()))
+      {
         denial_reasons.insert(link, EXCLUDE_PATTERN.to_string());
         continue;
       }
 
-      if !includes_regex.is_empty() && !includes_regex.iter().any(|r| r.is_match(match_target)) {
+      if !includes_regex.is_empty()
+        && !includes_regex
+          .iter()
+          .any(|r| r.is_match(match_target.as_bytes()))
+      {
         denial_reasons.insert(link, INCLUDE_PATTERN.to_string());
         continue;
       }
@@ -337,7 +407,11 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         continue;
       }
 
-      if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(url_str)) {
+      if !excludes_regex.is_empty()
+        && excludes_regex
+          .iter()
+          .any(|r| r.is_match(url_str.as_bytes()))
+      {
         denial_reasons.insert(link, EXCLUDE_PATTERN.to_string());
         continue;
       }
@@ -360,7 +434,11 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         } else {
           path
         };
-        if !includes_regex.is_empty() && !includes_regex.iter().any(|r| r.is_match(match_target)) {
+        if !includes_regex.is_empty()
+          && !includes_regex
+            .iter()
+            .any(|r| r.is_match(match_target.as_bytes()))
+        {
           denial_reasons.insert(link, INCLUDE_PATTERN.to_string());
           continue;
         }
@@ -391,6 +469,65 @@ pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
     })?;
 
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter links error: {e}")))
+}
+
+/// Compiled form of a client-supplied includePaths/excludePaths pattern.
+///
+/// Path patterns are compiled with Unicode mode disabled, over bytes. Every
+/// haystack they are matched against is a serialized `url::Url` path or href,
+/// which is always percent-encoded ASCII, so ASCII and Unicode mode produce the
+/// same matches. Unicode mode is what makes compilation expensive: a Unicode
+/// `\w` is hundreds of codepoint ranges, so `\w{50}` alone compiles to more than
+/// two megabytes of NFA, and `.{2000}` or `[\w-]{1,100}` several times over hit
+/// the crate's 10 MiB default. In ASCII mode the same patterns compile in well
+/// under a millisecond, which is what lets the size limit below be tight.
+type PathRegex = regex::bytes::Regex;
+
+/// Approximate upper bound, in bytes, on the compiled NFA of a single path
+/// pattern. Patterns are untrusted, and the `regex` crate's compile time and
+/// heap usage scale with the *compiled* size rather than the pattern's length:
+/// `a{5}{5}{5}{5}{5}{5}` is 19 characters but expands to `a{15625}`. The crate's
+/// default of 10 MiB lets a short pattern cost tens of milliseconds of CPU per
+/// compile; this limit keeps it well under one millisecond while still admitting
+/// path filters far larger than any realistic one.
+/// https://docs.rs/regex/latest/regex/#untrusted-patterns
+const PATH_REGEX_SIZE_LIMIT: usize = 256 * 1024;
+
+/// Cache capacity of the lazy DFA used when matching a path pattern. Bounded so
+/// a large pattern cannot claim the crate's 2 MiB default per compiled regex.
+const PATH_REGEX_DFA_SIZE_LIMIT: usize = 256 * 1024;
+
+/// Maximum nesting depth of a path pattern's syntax tree (crate default: 250).
+const PATH_REGEX_NEST_LIMIT: u32 = 50;
+
+/// Compile an includePaths/excludePaths pattern with resource limits suitable
+/// for untrusted input. Every place that compiles a client-supplied path pattern
+/// must go through this so validation and filtering agree on what is accepted.
+fn compile_path_regex(pattern: &str) -> std::result::Result<PathRegex, regex::Error> {
+  regex::bytes::RegexBuilder::new(pattern)
+    .unicode(false)
+    .size_limit(PATH_REGEX_SIZE_LIMIT)
+    .dfa_size_limit(PATH_REGEX_DFA_SIZE_LIMIT)
+    .nest_limit(PATH_REGEX_NEST_LIMIT)
+    .build()
+}
+
+/// Validate regex patterns against the engine's regex flavor (the Rust `regex`
+/// crate), which is what link filtering compiles them with. Returns an entry for
+/// each pattern that fails to compile so callers can reject unsupported syntax
+/// (e.g. look-around, backreferences) instead of silently ignoring it.
+#[napi]
+pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
+  patterns
+    .into_iter()
+    .filter_map(|pattern| match compile_path_regex(&pattern) {
+      Ok(_) => None,
+      Err(e) => Some(RegexValidationError {
+        pattern,
+        error: e.to_string(),
+      }),
+    })
+    .collect()
 }
 
 fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
@@ -452,19 +589,17 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     });
   }
 
-  let excludes_regex: Vec<Regex> = data
+  let excludes_regex: Vec<PathRegex> = data
     .excludes
     .iter()
-    .filter_map(|e| Regex::new(e).ok())
+    .filter_map(|e| compile_path_regex(e).ok())
     .collect();
 
-  let robot = if !data.ignore_robots_txt && !data.robots_txt.is_empty() {
-    Robot::new("FireCrawlAgent", data.robots_txt.as_bytes())
-      .ok()
-      .or_else(|| Robot::new("FirecrawlAgent", data.robots_txt.as_bytes()).ok())
-  } else {
-    None
-  };
+  let robot = build_robot(
+    data.ignore_robots_txt,
+    &data.robots_txt,
+    data.robots_user_agent.as_deref(),
+  );
 
   if is_internal_link(&url, &base_url) {
     // INTERNAL LINKS
@@ -476,7 +611,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
 
-    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path)) {
+    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path.as_bytes())) {
       return Ok(FilterUrlResult {
         allowed: false,
         url: None,
@@ -509,7 +644,11 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
 
-    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(url_str)) {
+    if !excludes_regex.is_empty()
+      && excludes_regex
+        .iter()
+        .any(|r| r.is_match(url_str.as_bytes()))
+    {
       return Ok(FilterUrlResult {
         allowed: false,
         url: None,
@@ -528,9 +667,16 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       }
     };
 
-    if is_internal_link(&context_url, &base_url)
-      && data.allow_external_content_links
+    // Allow an external destination when external content links are enabled and
+    // it is not an external site's homepage. Two cases qualify: the link was
+    // found on an in-scope page, or an already-admitted external link redirected
+    // within its own registrable domain (its canonical URL or a subdomain of
+    // it), matched via the same PSL check used for allowSubdomains.
+    if data.allow_external_content_links
       && !is_external_main_page(url_str)
+      && (is_internal_link(&context_url, &base_url)
+        || is_subdomain(&url, &context_url)
+        || is_internal_link(&url, &context_url))
     {
       return Ok(FilterUrlResult {
         allowed: true,
@@ -571,7 +717,77 @@ pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URL error: {e}")))
 }
 
+/// Sitemaps nest a handful of levels; anything deeper is malformed.
+const MAX_SITEMAP_DEPTH: usize = 32;
+
+/// roxmltree recurses once per nesting level and overflows the stack on
+/// deeply nested input, which kills the whole process instead of erroring.
+fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
+  let mut depth = 0usize;
+  let mut i = 0;
+  while let Some(offset) = xml[i..].find('<') {
+    i += offset;
+    let rest = &xml[i..];
+    let skip_to = if rest.starts_with("<!--") {
+      Some("-->")
+    } else if rest.starts_with("<![CDATA[") {
+      Some("]]>")
+    } else if rest.starts_with("<?") {
+      Some("?>")
+    } else {
+      None
+    };
+    if let Some(marker) = skip_to {
+      let Some(end) = rest.find(marker) else {
+        return false;
+      };
+      i += end + marker.len();
+      continue;
+    }
+
+    let Some(end) = unquoted_tag_end(rest) else {
+      return false;
+    };
+    let tag = &rest[..end];
+    if tag.starts_with("</") {
+      depth = depth.saturating_sub(1);
+    } else if !tag.starts_with("<!") && !tag.ends_with('/') {
+      depth += 1;
+      if depth > limit {
+        return true;
+      }
+    }
+    i += end + 1;
+  }
+  false
+}
+
+/// Index of the `>` closing the tag at the start of `tag`, ignoring any inside quoted attribute values.
+fn unquoted_tag_end(tag: &str) -> Option<usize> {
+  let mut quote = None;
+  for (i, b) in tag.bytes().enumerate() {
+    match quote {
+      Some(q) if b == q => quote = None,
+      Some(_) => {}
+      None if b == b'"' || b == b'\'' => quote = Some(b),
+      None if b == b'>' => return Some(i),
+      None => {}
+    }
+  }
+  None
+}
+
 fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
+  if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
+    return Err(format!(
+      "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
+    ));
+  }
+  // Entity replacement text can carry nested markup the depth scan never sees.
+  if xml_content.contains("<!ENTITY") {
+    return Err("XML parsing error: entity declarations are not supported".to_string());
+  }
+
   let doc = roxmltree::Document::parse_with_options(
     xml_content,
     roxmltree::ParsingOptions {
@@ -739,6 +955,54 @@ pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingRes
 mod tests {
   use super::*;
 
+  fn scope_of(url: &str) -> CrawlScope {
+    crawl_scope(&Url::parse(url).unwrap())
+  }
+
+  #[test]
+  fn test_crawl_scope_document_seed_scopes_to_directory() {
+    let scope = scope_of("https://example.com/docs/guide.md");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/docs/other.md", &scope));
+    assert!(is_within_crawl_scope("/docs/nested/deep.md", &scope));
+    assert!(!is_within_crawl_scope("/blog/post.md", &scope));
+    assert!(!is_within_crawl_scope("/", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_directory_seed() {
+    let scope = scope_of("https://example.com/docs/");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/docs/guide.md", &scope));
+    assert!(!is_within_crawl_scope("/docs", &scope));
+    assert!(!is_within_crawl_scope("/docsearch/x", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_extensionless_seed_allows_seed_and_children() {
+    let scope = scope_of("https://example.com/docs");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact.as_deref(), Some("/docs"));
+
+    assert!(is_within_crawl_scope("/docs", &scope));
+    assert!(is_within_crawl_scope("/docs/guide", &scope));
+    // Sibling paths sharing the seed's prefix must not sneak in.
+    assert!(!is_within_crawl_scope("/docsearch", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_root_seed() {
+    let scope = scope_of("https://example.com");
+    assert_eq!(scope.prefix, "/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/anything/at/all", &scope));
+  }
+
   #[test]
   fn test_parse_sitemap_xml_urlset() {
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -810,6 +1074,68 @@ mod tests {
 
     let result = _parse_sitemap_xml(xml_content);
     assert!(result.is_err());
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_deeply_nested_errors_instead_of_overflowing() {
+    let xml_content = format!(
+      r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{}"#,
+      "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("nested deeper than"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_deeply_nested_with_quoted_gt_errors() {
+    let xml_content = format!(
+      r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{}"#,
+      r#"<url data="x/>" other='y>'>"#.repeat(100_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("nested deeper than"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_entity_with_nested_markup_errors() {
+    let xml_content = format!(
+      r#"<!DOCTYPE urlset [<!ENTITY e "{}">]><urlset>&e;</urlset>"#,
+      "<url>".repeat(100_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("entity declarations"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_with_doctype() {
+    let xml_content = r#"<?xml version="1.0"?>
+<!DOCTYPE urlset>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page1</loc></url></urlset>"#;
+
+    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_with_extensions_comments_and_cdata() {
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!-- generated <by> a plugin -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url>
+    <loc><![CDATA[https://example.com/page1]]></loc>
+    <image:image><image:loc>https://example.com/a.png</image:loc></image:image>
+    <video:video><video:title>t</video:title><video:price currency="USD">1</video:price><video:live/></video:video>
+  </url>
+  <url><loc>https://example.com/page2</loc></url>
+</urlset>"#;
+
+    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    assert_eq!(urlset.url.len(), 2);
+    assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
+    assert_eq!(urlset.url[1].loc[0], "https://example.com/page2");
   }
 
   #[test]
@@ -895,6 +1221,7 @@ mod tests {
       allow_backward_crawling: true,
       allow_external_content_links: false,
       allow_subdomains: false,
+      robots_user_agent: None,
     };
 
     let result = _filter_links(data).unwrap();
@@ -929,6 +1256,7 @@ mod tests {
       allow_backward_crawling: true,
       allow_external_content_links: false,
       allow_subdomains: false,
+      robots_user_agent: None,
     };
 
     let result = _filter_links(data);
@@ -958,6 +1286,7 @@ mod tests {
       allow_backward_crawling: true,
       allow_external_content_links: false,
       allow_subdomains: false,
+      robots_user_agent: None,
     };
 
     let result = _filter_links(data);
@@ -985,6 +1314,7 @@ mod tests {
       allow_backward_crawling: true,
       allow_external_content_links: false,
       allow_subdomains: false,
+      robots_user_agent: None,
     };
 
     let result = _filter_links(data);
@@ -1015,6 +1345,7 @@ mod tests {
       allow_backward_crawling: true,
       allow_external_content_links: false,
       allow_subdomains: true,
+      robots_user_agent: None,
     };
 
     let result = _filter_links(data).unwrap();
@@ -1043,11 +1374,132 @@ mod tests {
   }
 
   #[test]
+  fn test_filter_links_honors_custom_robots_user_agent() {
+    // robots.txt allows the default FireCrawlAgent but blocks CustomBot. Without
+    // a custom user-agent the link is allowed; with `robots_user_agent` wired
+    // through it must be filtered.
+    let robots_txt = "User-agent: *\nAllow: /\n\nUser-agent: CustomBot\nDisallow: /";
+
+    let base_call = |ua: Option<String>| FilterLinksCall {
+      links: vec!["https://example.com/page".to_string()],
+      limit: Some(10),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: false,
+      robots_txt: robots_txt.to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: true,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: ua,
+    };
+
+    let default_result = _filter_links(base_call(None)).unwrap();
+    assert_eq!(default_result.links, vec!["https://example.com/page"]);
+
+    let custom_result = _filter_links(base_call(Some("CustomBot".to_string()))).unwrap();
+    assert!(custom_result.links.is_empty());
+    assert_eq!(
+      custom_result
+        .denial_reasons
+        .get("https://example.com/page")
+        .unwrap(),
+      "ROBOTS_TXT"
+    );
+  }
+
+  #[test]
   fn test_is_file() {
     assert!(is_file("test.png"));
     assert!(is_file("script.js"));
     assert!(is_file("style.css"));
     assert!(!is_file("page"));
     assert!(!is_file("directory/"));
+  }
+
+  fn filter_url_call(href: &str, url: &str, base_url: &str) -> FilterUrlCall {
+    FilterUrlCall {
+      href: href.to_string(),
+      url: url.to_string(),
+      base_url: base_url.to_string(),
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      robots_user_agent: None,
+      allow_external_content_links: true,
+      allow_subdomains: false,
+    }
+  }
+
+  // A discovered external link that redirects within its own domain (the
+  // redirect target's URL and its source URL are both external to the crawl
+  // seed) must be allowed under allowExternalLinks. Regression test for #4315.
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_same_domain() {
+    let result = _filter_url(filter_url_call(
+      "http://www.iana.org/help/example-domains",
+      "https://iana.org/domains/example",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+    assert!(result.denial_reason.is_none());
+  }
+
+  // A redirect that stays within the source's registrable domain but changes to
+  // a real subdomain must be allowed (PSL-based, not just stripping "www.").
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_to_subdomain() {
+    let result = _filter_url(filter_url_call(
+      "https://blog.example.com/post",
+      "https://example.com/link",
+      "https://crawlseed.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+  }
+
+  // Same as above but the redirect keeps the exact hostname, only changing the
+  // path (the london.gov.uk case from #4315).
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_same_host_path_change() {
+    let result = _filter_url(filter_url_call(
+      "https://www.london.gov.uk/programmes-strategies/planning/london-plan",
+      "https://www.london.gov.uk/what-we-do/planning/london-plan",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+  }
+
+  // An in-scope URL that redirects to an unrelated external homepage stays
+  // denied — the external-main-page exclusion is intentional (#4316).
+  #[test]
+  fn test_filter_url_denies_redirect_to_external_homepage() {
+    let result = _filter_url(filter_url_call(
+      "https://www.peoplefirstinfo.org.uk/",
+      "https://www.westminster.gov.uk/node/21229",
+      "https://www.westminster.gov.uk",
+    ))
+    .unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
+  }
+
+  // A redirect that hops to an unrelated external domain (not the source's own
+  // domain, not in scope) remains denied.
+  #[test]
+  fn test_filter_url_denies_redirect_to_unrelated_external_domain() {
+    let result = _filter_url(filter_url_call(
+      "https://unrelated.com/article",
+      "https://iana.org/domains/example",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
   }
 }

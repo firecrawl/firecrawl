@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
-import { supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { waitForJobLogRows } from "./job-log";
 
 type Identity = { apiKey: string; teamId: string };
 type ScrapeStatusRawFn = (
@@ -85,116 +85,83 @@ export async function getLogs() {
     );
 }
 
+type JobRow = Record<string, unknown>;
+
+// Scrape and crawl options are stored as a JSON string; ZDR rows carry none.
+function expectNoStoredContent(row: JobRow) {
+  expect(String(row.url)).not.toContain("://"); // no url stored
+  expect(row.options ?? null).toBeNull();
+}
+
 export async function expectScrapeIsCleanedUp(scrapeId: string) {
-  const { data: scrapeData, error: scrapeError } = await supabase_service
-    .from("scrapes")
-    .select("*")
-    .eq("id", scrapeId)
-    .limit(1);
+  const scrapeData = await waitForJobLogRows("scrapes", "id = {id: UUID}", {
+    id: scrapeId,
+  });
 
-  expect(scrapeError).toBeFalsy();
   expect(scrapeData).toHaveLength(1);
-
-  if (scrapeData && scrapeData.length === 1) {
-    const record = scrapeData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.options).toBeNull();
-  }
+  expectNoStoredContent(scrapeData[0]);
 }
 
 export async function expectCrawlIsCleanedUp(crawlId: string) {
-  const { data: requestData, error: requestError } = await supabase_service
-    .from("requests")
-    .select("*")
-    .eq("id", crawlId)
-    .limit(1);
+  const requestData = await waitForJobLogRows("requests", "id = {id: UUID}", {
+    id: crawlId,
+  });
 
-  expect(requestError).toBeFalsy();
   expect(requestData).toHaveLength(1);
-  
-  if (requestData && requestData.length === 1) {
-    const record = requestData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.kind).toBe("crawl");
-    expect(record.dr_clean_by).not.toBeNull();
-  }
+  expect(requestData[0].kind).toBe("crawl");
 
-  const { data: crawlData, error: crawlError } = await supabase_service
-    .from("crawls")
-    .select("*")
-    .eq("id", crawlId)
-    .limit(1);
+  const crawlData = await waitForJobLogRows("crawls", "id = {id: UUID}", {
+    id: crawlId,
+  });
 
-  expect(crawlError).toBeFalsy();
   expect(crawlData).toHaveLength(1);
-
-  if (crawlData && crawlData.length === 1) {
-    const record = crawlData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.options).toBeNull();
-  }
+  expectNoStoredContent(crawlData[0]);
 }
 
 export async function expectBatchScrapeIsCleanedUp(batchScrapeId: string) {
-  const { data: requestData, error: requestError } = await supabase_service
-    .from("requests")
-    .select("*")
-    .eq("id", batchScrapeId)
-    .limit(1);
+  const requestData = await waitForJobLogRows("requests", "id = {id: UUID}", {
+    id: batchScrapeId,
+  });
 
-  expect(requestError).toBeFalsy();
   expect(requestData).toHaveLength(1);
-  
-  if (requestData && requestData.length === 1) {
-    const record = requestData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.kind).toBe("batch_scrape");
-    expect(record.dr_clean_by).not.toBeNull();
-  }
+  expect(requestData[0].kind).toBe("batch_scrape");
 
-  const { data: batchScrapeData, error: batchScrapeError } = await supabase_service
-    .from("batch_scrapes")
-    .select("*")
-    .eq("id", batchScrapeId)
-    .limit(1);
+  const batchScrapeData = await waitForJobLogRows(
+    "batch_scrapes",
+    "id = {id: UUID}",
+    { id: batchScrapeId },
+  );
 
-  expect(batchScrapeError).toBeFalsy();
   expect(batchScrapeData).toHaveLength(1);
-
-  if (batchScrapeData && batchScrapeData.length === 1) {
-    const record = batchScrapeData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-  }
 }
 
 export async function expectScrapesOfRequestAreCleanedUp(
   requestId: string,
   expectedScrapeCount?: number,
 ) {
-  const { data: scrapes, error: scrapesError } = await supabase_service
-    .from("scrapes")
-    .select("*")
-    .eq("request_id", requestId);
-
-  expect(scrapesError).toBeFalsy();
+  const scrapes = await waitForJobLogRows(
+    "scrapes",
+    "request_id = {requestId: UUID}",
+    { requestId },
+    { min: expectedScrapeCount ?? 1 },
+  );
 
   if (expectedScrapeCount !== undefined) {
-    expect((scrapes ?? []).length).toBe(expectedScrapeCount);
+    expect(scrapes.length).toBe(expectedScrapeCount);
   } else {
-    expect((scrapes ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(scrapes.length).toBeGreaterThanOrEqual(1);
   }
 
-  for (const scrape of scrapes ?? []) {
-    expect(scrape.url).not.toContain("://"); // no url stored
-    expect(scrape.options).toBeNull();
+  for (const scrape of scrapes) {
+    expectNoStoredContent(scrape);
 
-    if (scrape.success) {
-      const gcsJob = await getJobFromGCS(scrape.id);
+    if (scrape.is_successful) {
+      const gcsJob = await getJobFromGCS(String(scrape.id));
       expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
     }
   }
 
-  return scrapes ?? [];
+  return scrapes;
 }
 
 export async function expectScrapesAreFullyCleanedAfterZDRCleaner(

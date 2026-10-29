@@ -1,10 +1,11 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, vi, type Mock } from "vitest";
 import { getCrawlStatus } from "../../../v2/methods/crawl";
 import { getBatchScrapeStatus } from "../../../v2/methods/batch";
+import { getMonitorCheck } from "../../../v2/methods/monitor";
 
 describe("JS SDK v2 pagination", () => {
   function makeHttp(getImpl: (url: string) => any) {
-    return { get: jest.fn(async (u: string) => getImpl(u)) } as any;
+    return { get: vi.fn(async (u: string) => getImpl(u)) } as any;
   }
 
   test("crawl: autoPaginate=false returns next", async () => {
@@ -64,6 +65,26 @@ describe("JS SDK v2 pagination", () => {
     expect(res.next).toBe("https://api/nextBatch");
   });
 
+  test("monitor check: default autoPaginate aggregates pages and nulls next", async () => {
+    const first = { status: 200, data: { success: true, next: "https://api/m1", data: { id: "check1", monitorId: "mon1", status: "completed", trigger: "manual", billingStatus: "confirmed", summary: {}, createdAt: "now", updatedAt: "now", pages: [{ url: "a", status: "changed" }], next: "https://api/m1" } } };
+    const second = { status: 200, data: { success: true, next: null, data: { pages: [{ url: "b", status: "same" }], next: null } } };
+    const http = makeHttp((url) => {
+      if (url.includes("/v2/monitor/")) return first;
+      return second;
+    });
+    const res = await getMonitorCheck(http, "mon1", "check1");
+    expect(res.pages.length).toBe(2);
+    expect(res.next).toBeNull();
+  });
+
+  test("monitor check: autoPaginate=false returns next", async () => {
+    const first = { status: 200, data: { success: true, next: "https://api/m1", data: { id: "check1", monitorId: "mon1", status: "completed", trigger: "manual", billingStatus: "confirmed", summary: {}, createdAt: "now", updatedAt: "now", pages: [{ url: "a", status: "changed" }], next: "https://api/m1" } } };
+    const http = makeHttp(() => first);
+    const res = await getMonitorCheck(http, "mon1", "check1", { autoPaginate: false });
+    expect(res.pages.length).toBe(1);
+    expect(res.next).toBe("https://api/m1");
+  });
+
   test("crawl: maxWaitTime stops pagination after first page", async () => {
     const first = { status: 200, data: { success: true, status: "completed", completed: 1, total: 5, next: "https://api/n1", data: [{ markdown: "a" }] } };
     const p1 = { status: 200, data: { success: true, next: "https://api/n2", data: [{ markdown: "b" }] } };
@@ -72,7 +93,7 @@ describe("JS SDK v2 pagination", () => {
       if (url.endsWith("n1")) return p1;
       return { status: 200, data: { success: true, next: null, data: [{ markdown: "c" }] } };
     });
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     try {
       nowSpy
         .mockImplementationOnce(() => 0)   // started
@@ -80,10 +101,30 @@ describe("JS SDK v2 pagination", () => {
         .mockImplementationOnce(() => 3000); // second loop check > maxWaitTime
       const res = await getCrawlStatus(http, "jobC", { autoPaginate: true, maxWaitTime: 1 });
       expect(res.data.length).toBe(2); // initial + first page
-      expect((http.get as jest.Mock).mock.calls.length).toBe(2); // initial + n1 only
+      expect((http.get as Mock).mock.calls.length).toBe(2); // initial + n1 only
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  test("crawl: stops when a running job's cursor does not advance", async () => {
+    const next = "https://api/v2/crawl/jobR?skip=2";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
+    const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
+    const http = makeHttp((url) => (url === next ? stalled : first));
+    const res = await getCrawlStatus(http, "jobR");
+    expect(res.data.length).toBe(2);
+    expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
+  test("batch: stops when a running job's cursor does not advance", async () => {
+    const next = "https://api/v2/batch/scrape/jobR?skip=2";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
+    const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
+    const http = makeHttp((url) => (url === next ? stalled : first));
+    const res = await getBatchScrapeStatus(http, "jobR");
+    expect(res.data.length).toBe(2);
+    expect((http.get as Mock).mock.calls.length).toBe(2);
   });
 
   test("batch: maxWaitTime stops pagination after first page", async () => {
@@ -94,7 +135,7 @@ describe("JS SDK v2 pagination", () => {
       if (url.endsWith("b1")) return p1;
       return { status: 200, data: { success: true, next: null, data: [{ markdown: "c" }] } };
     });
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     try {
       nowSpy
         .mockImplementationOnce(() => 0)   // started
@@ -102,7 +143,7 @@ describe("JS SDK v2 pagination", () => {
         .mockImplementationOnce(() => 3000); // second loop check > maxWaitTime
       const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true, maxWaitTime: 1 });
       expect(res.data.length).toBe(2);
-      expect((http.get as jest.Mock).mock.calls.length).toBe(2);
+      expect((http.get as Mock).mock.calls.length).toBe(2);
     } finally {
       nowSpy.mockRestore();
     }

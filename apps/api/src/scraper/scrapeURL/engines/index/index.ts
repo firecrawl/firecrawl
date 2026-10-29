@@ -6,7 +6,6 @@ import { Meta } from "../..";
 import {
   getIndexFromGCS,
   hashURL,
-  index_supabase_service,
   normalizeURLForIndex,
   saveIndexToGCS,
   generateURLSplits,
@@ -14,14 +13,45 @@ import {
   generateDomainSplits,
   addOMCEJob,
 } from "../../../../services";
+import { queryMaxAge, indexGetRecent5 } from "../../../../db/rpc";
+import {
+  deleteCachedIndexEntry,
+  deriveIndexVariantKey,
+  filterIndexEntries,
+  getCachedIndexEntries,
+  getCachedMaxAge,
+  getCachedNegative,
+  isNegativeStillValid,
+  setCachedMaxAge,
+  setCachedNegative,
+  upsertCachedIndexEntries,
+  useIndexCache,
+  useIndexNegativeCache,
+  type IndexCacheEntry,
+} from "../../../../services/index-cache";
+import {
+  indexLookupCounter,
+  indexPdfSupersedeCounter,
+} from "../../../../lib/index-cache-metrics";
+import {
+  cacheServiceConfigured,
+  checkFirePdfSupersedes,
+} from "../pdf/fire-pdf/cache-service";
 import {
   AgentIndexOnlyError,
   EngineError,
   IndexMissError,
   NoCachedDataError,
 } from "../../error";
-import { shouldParsePDF } from "../../../../controllers/v2/types";
+import {
+  getPDFBlocks,
+  getPDFMaxPages,
+  getPDFPageMarkdown,
+  getPDFPageMarkers,
+  shouldParsePDF,
+} from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
+import { hasCustomRequestContext } from "../../lib/request-context";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -30,31 +60,40 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     screenshotFormat?.viewport !== undefined ||
     screenshotFormat?.quality !== undefined;
 
+  // A PDF capped by maxPages is truncated, but one whose true page count
+  // fits under the cap is identical to an unlimited scrape and safe to cache.
+  const pdfMaxPages = getPDFMaxPages(meta.options.parsers);
+  const isTruncatedPdf =
+    pdfMaxPages !== undefined &&
+    document.metadata.contentType === "application/pdf" &&
+    (document.metadata.totalPages === undefined ||
+      document.metadata.totalPages > pdfMaxPages);
+
   const shouldCache =
     meta.options.storeInCache &&
+    !meta.internalOptions.isParse &&
     !meta.internalOptions.zeroDataRetention &&
     meta.winnerEngine !== "index" &&
     meta.winnerEngine !== "index;documents" &&
+    // Exchange-delivered content is never stored on the Firecrawl side:
+    // every access must go through the Exchange and its ledger.
+    meta.winnerEngine !== "exchange" &&
     !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
-    !meta.options.parsers?.some(parser => {
-      if (
-        typeof parser === "object" &&
-        parser !== null &&
-        "maxPages" in parser
-      ) {
-        return true;
-      }
-      return false;
-    }) &&
+    // Page-aware and block-aware results are capability-specific and are not
+    // represented in the URL index schema yet. Do not write an entry that
+    // could later be served without its required pages/blocks payload.
+    // Marker-bearing markdown is mutated output — never index it either.
+    !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
+    !getPDFPageMarkers(meta.options.parsers) &&
+    !isTruncatedPdf &&
     (meta.internalOptions.teamId === "sitemap" ||
       (meta.winnerEngine !== "fire-engine;tlsclient" &&
         meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    meta.options.profile === undefined;
+    !hasCustomRequestContext(meta.options);
 
   if (!shouldCache) {
     return document;
@@ -94,13 +133,19 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           pdfMetadata:
             document.metadata.numPages !== undefined
               ? {
-                  // reconstruct pdfMetadata from numPages and title
+                  // reconstruct pdfMetadata from numPages, totalPages and title
                   numPages: document.metadata.numPages,
+                  totalPages: document.metadata.totalPages ?? undefined,
                   title: document.metadata.title ?? undefined,
                 }
               : undefined,
           contentType: document.metadata.contentType,
           postprocessorsUsed: document.metadata.postprocessorsUsed,
+          proxyUsed: document.metadata.proxyUsed,
+          ...(meta.firePdfCacheKey?.current !== undefined &&
+          document.metadata.contentType === "application/pdf"
+            ? { firePdfCacheKey: meta.firePdfCacheKey.current }
+            : {}),
         });
       } catch (error) {
         meta.logger.error("Failed to save document to index", {
@@ -213,9 +258,14 @@ export async function scrapeURLWithIndex(
   const normalizedURL = normalizeURLForIndex(meta.url);
   const urlHash = hashURL(normalizedURL);
 
+  const defaultMaxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
+
+  type MaxAgeSource = "explicit" | "dynamic_cached" | "dynamic_db" | "default";
   let maxAge: number;
+  let maxAgeSource: MaxAgeSource = "default";
   if (meta.options.maxAge !== undefined) {
     maxAge = meta.options.maxAge;
+    maxAgeSource = "explicit";
   } else {
     const domainSplitsHash = generateDomainSplits(
       new URL(meta.url).hostname,
@@ -227,70 +277,217 @@ export async function scrapeURLWithIndex(
       config.FIRECRAWL_INDEX_WRITE_ONLY ||
       config.USE_DB_AUTHENTICATION !== true
     ) {
-      maxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
+      maxAge = defaultMaxAge;
     } else {
       try {
-        maxAge = await Promise.race([
-          (async () => {
-            const { data, error } = await index_supabase_service.rpc(
-              "query_max_age",
-              {
-                i_domain_hash: domainSplitsHash[level],
-              },
-            );
-
-            if (error || !data || data.length === 0) {
-              meta.logger.warn("Failed to get max age from DB", {
-                error,
-              });
-              return 2 * 24 * 60 * 60 * 1000; // 2 days
+        const resolved = await Promise.race([
+          (async (): Promise<{
+            value: number;
+            source: MaxAgeSource;
+          }> => {
+            try {
+              const domainHash = domainSplitsHash[level];
+              if (useIndexCache) {
+                const cached = await getCachedMaxAge(domainHash, meta.logger);
+                if (cached !== null) {
+                  return {
+                    value: cached.maxAge ?? defaultMaxAge,
+                    source: "dynamic_cached",
+                  };
+                }
+              }
+              const data = await queryMaxAge(domainHash);
+              const value =
+                !data || data.length === 0 ? null : (data[0].max_age ?? null);
+              if (useIndexCache) {
+                setCachedMaxAge(domainHash, value, meta.logger).catch(() => {});
+              }
+              return { value: value ?? defaultMaxAge, source: "dynamic_db" };
+            } catch (error) {
+              meta.logger.warn("Failed to get max age from DB", { error });
+              return { value: defaultMaxAge, source: "default" };
             }
-
-            return data[0].max_age ?? 2 * 24 * 60 * 60 * 1000; // 2 days
           })(),
-          new Promise(resolve =>
+          new Promise<{ value: number; source: MaxAgeSource }>(resolve =>
             setTimeout(() => {
-              resolve(2 * 24 * 60 * 60 * 1000); // 2 days
+              resolve({ value: defaultMaxAge, source: "default" });
             }, 200),
           ),
         ]);
+        maxAge = resolved.value;
+        maxAgeSource = resolved.source;
       } catch (e) {
         meta.logger.warn("Failed to get max age from DB", {
           error: e,
         });
-        maxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
+        maxAge = defaultMaxAge;
       }
     }
   }
 
   const checkpoint1 = Date.now();
 
-  const { data, error } = await index_supabase_service.rpc(
-    "index_get_recent_4",
-    {
-      p_url_hash: urlHash,
-      p_max_age_ms: maxAge,
-      p_is_mobile: meta.options.mobile,
-      p_block_ads: meta.options.blockAds,
-      p_feature_screenshot: meta.featureFlags.has("screenshot"),
-      p_feature_screenshot_fullscreen: meta.featureFlags.has(
-        "screenshot@fullScreen",
-      ),
-      p_location_country: meta.options.location?.country ?? null,
-      p_location_languages:
-        (meta.options.location?.languages?.length ?? 0) > 0
-          ? meta.options.location?.languages
-          : null,
-      p_wait_time_ms: meta.options.waitFor,
-      p_is_stealth: meta.featureFlags.has("stealthProxy"),
-      p_min_age_ms: meta.options.minAge ?? null,
-    },
-  );
+  const variantKey = deriveIndexVariantKey({
+    urlHash,
+    isMobile: meta.options.mobile,
+    blockAds: meta.options.blockAds,
+    isStealth: meta.featureFlags.has("stealthProxy"),
+    locationCountry: meta.options.location?.country ?? null,
+    locationLanguages:
+      (meta.options.location?.languages?.length ?? 0) > 0
+        ? (meta.options.location?.languages ?? null)
+        : null,
+  });
 
-  if (error || !data) {
-    throw new EngineError("Failed to retrieve URL from DB index", {
-      cause: error,
+  let cacheStatus: "hit" | "filtered" | "miss" | "error" | "disabled" =
+    "disabled";
+  let servedFromCache = false;
+  let negativeHit = false;
+  let timingsCache = 0;
+  let timingsDb = 0;
+
+  // Canonical log for every index URL->id lookup. debug = normal op, warn =
+  // recovered weird op (cache failure with DB fallback, GCS self-heal),
+  // error = failed op.
+  const logLookup = (
+    level: "debug" | "warn" | "error",
+    dbResult: "hit" | "miss" | "error",
+    extra: Record<string, unknown> = {},
+  ) => {
+    const outcome = negativeHit
+      ? "cache_neg_hit"
+      : cacheStatus === "hit"
+        ? "cache_hit"
+        : cacheStatus === "disabled"
+          ? `db_only_${dbResult}`
+          : `cache_${cacheStatus}_db_${dbResult}`;
+    indexLookupCounter.inc({ outcome });
+    const effectiveLevel =
+      level === "debug" && cacheStatus === "error" ? "warn" : level;
+    meta.logger[effectiveLevel]("Index URL lookup", {
+      module: "index",
+      method: "scrapeURLWithIndex",
+      canonicalLog: "index/url_lookup",
+      outcome,
+      urlHash: urlHash.toString("hex"),
+      variantKey,
+      teamId: meta.internalOptions.teamId,
+      scrapeId: meta.id,
+      maxAge,
+      maxAgeSource,
+      minAge: meta.options.minAge ?? null,
+      timingsMaxAge: checkpoint1 - startTime,
+      timingsCache,
+      timingsDb,
+      timingsFull: Date.now() - startTime,
+      ...extra,
     });
+  };
+
+  let data: { id: string; created_at: string; status: number }[] = [];
+
+  if (useIndexCache) {
+    const cacheStart = Date.now();
+    const read = await getCachedIndexEntries(variantKey, meta.logger);
+    timingsCache = Date.now() - cacheStart;
+    if (read.status === "hit") {
+      const filtered = filterIndexEntries(read.entries, {
+        maxAgeMs: maxAge,
+        minAgeMs: meta.options.minAge ?? null,
+        needsScreenshot: meta.featureFlags.has("screenshot"),
+        needsScreenshotFullscreen: meta.featureFlags.has(
+          "screenshot@fullScreen",
+        ),
+        waitTimeMs: meta.options.waitFor,
+      });
+      if (filtered.length > 0) {
+        data = filtered;
+        servedFromCache = true;
+        cacheStatus = "hit";
+      } else {
+        // The capped per-key entry list may have dropped rows the DB still
+        // has, so an empty filter result must fall through to the DB.
+        cacheStatus = "filtered";
+      }
+    } else {
+      cacheStatus = read.status;
+    }
+  }
+
+  // Negative cache: on a clean positive miss (key absent), a still-valid
+  // negative marker proves there's no index entry for this window, so we can
+  // skip Postgres. Not consulted on "filtered"/"error" (entries exist, or the
+  // cache is unhealthy and we must fall back to the DB), nor for minAge
+  // requests (different no-data semantics — NoCachedDataError, no waterfall).
+  if (
+    !servedFromCache &&
+    useIndexNegativeCache &&
+    cacheStatus === "miss" &&
+    meta.options.minAge === undefined
+  ) {
+    const negStart = Date.now();
+    const neg = await getCachedNegative(variantKey, meta.logger);
+    timingsCache += Date.now() - negStart;
+    if (
+      neg !== null &&
+      isNegativeStillValid(neg.emptyFrom, maxAge, Date.now())
+    ) {
+      negativeHit = true;
+    }
+  }
+
+  if (!servedFromCache && !negativeHit) {
+    const dbStart = Date.now();
+    try {
+      const rows = await indexGetRecent5({
+        url_hash: urlHash,
+        max_age_ms: maxAge,
+        is_mobile: meta.options.mobile,
+        block_ads: meta.options.blockAds,
+        feature_screenshot: meta.featureFlags.has("screenshot"),
+        feature_screenshot_fullscreen: meta.featureFlags.has(
+          "screenshot@fullScreen",
+        ),
+        location_country: meta.options.location?.country ?? null,
+        location_languages:
+          (meta.options.location?.languages?.length ?? 0) > 0
+            ? (meta.options.location?.languages ?? null)
+            : null,
+        wait_time_ms: meta.options.waitFor,
+        is_stealth: meta.featureFlags.has("stealthProxy"),
+        min_age_ms: meta.options.minAge ?? null,
+      });
+      timingsDb = Date.now() - dbStart;
+      if (useIndexCache && rows.length > 0) {
+        const entries: IndexCacheEntry[] = rows.map(row => ({
+          id: row.id,
+          created_at: row.created_at,
+          status: row.status,
+          has_screenshot: row.has_screenshot,
+          has_screenshot_fullscreen: row.has_screenshot_fullscreen,
+          wait_time_ms: row.wait_time_ms,
+        }));
+        upsertCachedIndexEntries(variantKey, entries, meta.logger).catch(
+          () => {},
+        );
+      } else if (
+        useIndexNegativeCache &&
+        rows.length === 0 &&
+        meta.options.minAge === undefined
+      ) {
+        // Confirmed empty for [dbStart - maxAge, dbStart]; record the left edge.
+        setCachedNegative(variantKey, dbStart - maxAge, meta.logger).catch(
+          () => {},
+        );
+      }
+      data = rows;
+    } catch (error) {
+      timingsDb = Date.now() - dbStart;
+      logLookup("error", "error", { error });
+      throw new EngineError("Failed to retrieve URL from DB index", {
+        cause: error,
+      });
+    }
   }
 
   let selectedRow: {
@@ -312,15 +509,7 @@ export async function scrapeURLWithIndex(
   }
 
   if (selectedRow === null || selectedRow === undefined) {
-    meta.logger.debug("Index metrics", {
-      module: "index/metrics",
-      hit: false,
-      maxAge,
-      dynamicMaxAge: meta.options.maxAge === undefined,
-      timingsFull: Date.now() - startTime,
-      timingsMaxAge: checkpoint1 - startTime,
-      timingsSupa: Date.now() - checkpoint1,
-    });
+    logLookup("debug", "miss");
 
     if (meta.internalOptions.agentIndexOnly) {
       throw new AgentIndexOnlyError();
@@ -341,11 +530,15 @@ export async function scrapeURLWithIndex(
   const doc = await getIndexFromGCS(
     id + ".json",
     meta.logger.child({ module: "index", method: "getIndexFromGCS" }),
+    { indexCreatedAt: selectedRow.created_at },
   );
   if (!doc) {
-    meta.logger.warn("Index document not found in GCS", {
-      indexDocumentId: id,
-    });
+    if (servedFromCache) {
+      // Self-heal: drop the poisoned cache entry so it can't keep serving an
+      // id whose document is gone.
+      deleteCachedIndexEntry(variantKey, id, meta.logger).catch(() => {});
+    }
+    logLookup("warn", "hit", { gcsMiss: true, indexDocumentId: id });
     throw new EngineError("Document not found in GCS");
   }
 
@@ -355,6 +548,7 @@ export async function scrapeURLWithIndex(
   // If the cached content is base64 PDF but we want parsed PDF (parsePDF:true or default)
   if (isCachedPdfBase64 && shouldParsePDF(meta.options.parsers)) {
     // Cached content is unparsed PDF, but we want parsed - report cache miss
+    logLookup("debug", "hit", { pdfMismatch: "cached_unparsed_want_parsed" });
     throw new IndexMissError();
   }
 
@@ -365,20 +559,67 @@ export async function scrapeURLWithIndex(
       meta.url.toLowerCase().endsWith(".pdf") || meta.url.includes(".pdf?");
     if (isPdfUrl) {
       // This is likely a parsed PDF cached, but we want unparsed - report cache miss
+      logLookup("debug", "hit", { pdfMismatch: "cached_parsed_want_unparsed" });
       throw new IndexMissError();
     }
   }
 
-  meta.logger.debug("Index metrics", {
-    module: "index/metrics",
-    hit: true,
+  // Check if returned PDF has a higher numPages than what the user's parsers[pdf].maxPages config allows.
+  let numPages = doc.pdfMetadata?.numPages ?? doc.numPages;
+  if (numPages !== undefined) {
+    let maxPages = getPDFMaxPages(meta.options.parsers);
+    if (maxPages !== undefined && numPages > maxPages) {
+      logLookup("debug", "hit", {
+        pdfMismatch: "cached_pdf_overflows_parsers_max_pages",
+      });
+      throw new IndexMissError();
+    }
+  }
+
+  // A cached image document is OCR output. The live path only OCRs images
+  // for requests that opted in with the image parser on a team with the
+  // flag, so serving that output to any other request would hand out what a
+  // fresh scrape refuses: report a miss and let the waterfall decide.
+  if (
+    doc.contentType?.startsWith("image/") &&
+    !(await meta.imageOcrEnabled())
+  ) {
+    logLookup("debug", "hit", { imageMismatch: "cached_ocr_not_requested" });
+    throw new IndexMissError();
+  }
+
+  // fire-pdf may have re-parsed this PDF since it was indexed (a refresh or a
+  // campaign). Only once a fresh entry exists is the index copy skipped, so
+  // the request lands on that entry without a parse and is re-indexed.
+  if (
+    config.INDEX_PDF_SUPERSEDE_CHECK &&
+    typeof doc.firePdfCacheKey === "string" &&
+    doc.contentType === "application/pdf" &&
+    !isCachedPdfBase64 &&
+    cacheServiceConfigured()
+  ) {
+    const result = await checkFirePdfSupersedes(
+      meta,
+      doc.firePdfCacheKey,
+      new Date(selectedRow.created_at),
+    );
+    indexPdfSupersedeCounter.inc({ result });
+    if (result === "superseded") {
+      // The DB path may have just written this id through to Dragonfly.
+      deleteCachedIndexEntry(variantKey, id, meta.logger).catch(() => {});
+      logLookup("debug", "hit", {
+        pdfSuperseded: true,
+        indexDocumentId: id,
+      });
+      throw new IndexMissError();
+    }
+  }
+
+  logLookup("debug", "hit", {
     age: Date.now() - new Date(selectedRow.created_at).getTime(),
-    maxAge,
-    dynamicMaxAge: meta.options.maxAge === undefined,
-    timingsFull: Date.now() - startTime,
-    timingsMaxAge: checkpoint1 - startTime,
-    timingsSupa: checkpoint2 - checkpoint1,
-    timingsGCS: Date.now() - checkpoint2,
+    status: selectedRow.status,
+    indexDocumentId: id,
+    timingsGcs: Date.now() - checkpoint2,
   });
 
   return {
@@ -403,7 +644,9 @@ export async function scrapeURLWithIndex(
 
     postprocessorsUsed: doc.postprocessorsUsed,
 
-    proxyUsed: doc.proxyUsed ?? "basic",
+    proxyUsed:
+      doc.proxyUsed ??
+      (meta.featureFlags.has("stealthProxy") ? "stealth" : "basic"), // this can be dropped after june 2026, it's here to backfill proxyUsed for older index entries that don't have it
   };
 }
 

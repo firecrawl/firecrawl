@@ -12,7 +12,7 @@ describe("E2E Tests for Map V2 API Routes", () => {
         .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
         .set("Content-Type", "application/json")
         .send({
-          url: "https://roastmywebsite.ai",
+          url: "https://firecrawl-test-site.vercel.app",
           limit: 10,
         });
 

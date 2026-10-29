@@ -1,0 +1,70 @@
+[
+  {
+    "time": 1,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/raw",
+        "engine": "chrome-cdp",
+        "format": "rawBase64"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"\",\"url\":\"https://example.com/raw\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"},\"file\":{\"name\":\"raw.html\",\"content\":\"PGh0bWw+cmF3PC9odG1sPg==\"}}"
+    }
+  },
+  {
+    "time": 2,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/raw.pdf",
+        "engine": "chrome-cdp",
+        "format": "rawBase64"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"\",\"url\":\"https://example.com/raw.pdf\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"application/pdf\"},\"file\":{\"name\":\"raw.pdf\",\"content\":\"PGh0bWw+cmF3PC9odG1sPg==\"}}"
+    }
+  },
+  {
+    "time": 3,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/raw.docx",
+        "engine": "chrome-cdp",
+        "format": "rawBase64"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"\",\"url\":\"https://example.com/raw.docx\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"},\"file\":{\"name\":\"raw.docx\",\"content\":\"PGh0bWw+cmF3PC9odG1sPg==\"}}"
+    }
+  },
+  {
+    "time": 4,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/raw-error",
+        "engine": "chrome-cdp",
+        "format": "rawBase64"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"Not found\",\"url\":\"https://example.com/raw-error\",\"pageStatusCode\":404,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"}}"
+    }
+  }
+]

@@ -1,10 +1,10 @@
 import { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 import { z } from "zod";
 
 import { robustFetch } from "../../lib/fetch";
 import {
   ActionError,
+  AddFeatureError,
   EngineError,
   SiteError,
   SSLError,
@@ -12,11 +12,20 @@ import {
   DNSResolutionError,
   FEPageLoadFailed,
   ProxySelectionError,
+  SiteRestrictionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
+import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
+
+const browserCookieSchema = z
+  .object({
+    name: z.string(),
+    value: z.string(),
+  })
+  .passthrough();
 
 const successSchema = z.object({
   jobId: z.string(),
@@ -32,6 +41,7 @@ const successSchema = z.object({
 
   // TODO: this needs to be non-optional, might need fixes on f-e side to ensure reliability
   responseHeaders: z.record(z.string(), z.string()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 
   // timeTakenCookie: z.number().optional(),
   // timeTakenRequest: z.number().optional(),
@@ -81,18 +91,22 @@ const successSchema = z.object({
           link: z.string(),
         }),
       }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("getCookies"),
+        result: z
+          .object({
+            cookies: browserCookieSchema.array(),
+          })
+          .passthrough(),
+      }),
     ])
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler
-  file: z
-    .object({
-      name: z.string(),
-      content: z.string(),
-    })
-    .optional()
-    .or(z.null()),
+  // chrome-cdp only -- file download handler (inline base64 or a GCS
+  // handoff reference; see fileSchema.ts).
+  file: fireEngineFileSchema,
 
   docUrl: z.string().optional(),
 
@@ -122,6 +136,8 @@ const failedSchema = z.object({
   state: z.literal("failed"),
   processing: z.literal(false),
   error: z.string(),
+  retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export class StillProcessingError extends Error {
@@ -176,6 +192,23 @@ export async function fireEngineCheckStatus(
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
     if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
+      throw new SiteRestrictionError();
+    }
+    if (
+      failedParse.data.retryWithStealth &&
+      meta.options.proxy === "auto" &&
+      !meta.featureFlags.has("stealthProxy")
+    ) {
+      logger.info(
+        "Scrape job signaled retryWithStealth. Adding stealthProxy flag.",
+        { jobId },
+      );
+      throw new AddFeatureError(["stealthProxy"]);
+    }
+    if (
       typeof status.error === "string" &&
       status.error.includes("Chrome error: ")
     ) {
@@ -204,10 +237,10 @@ export async function fireEngineCheckStatus(
       );
     } else if (
       typeof status.error === "string" &&
-      status.error.includes("File size exceeds")
+      status.error.includes("File exceeds size limit")
     ) {
       throw new UnsupportedFileError(
-        "File size exceeds " + status.error.split("File size exceeds ")[1],
+        status.error.slice(status.error.indexOf("File exceeds size limit")),
       );
     } else if (
       typeof status.error === "string" &&

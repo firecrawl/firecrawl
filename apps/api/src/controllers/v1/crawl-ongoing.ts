@@ -6,7 +6,7 @@ import {
 } from "./types";
 import { getCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import { crawlGroup } from "../../services/worker/nuq";
+import { crawlGroup } from "../../services/worker/nuq-router";
 configDotenv();
 
 export async function ongoingCrawlsController(

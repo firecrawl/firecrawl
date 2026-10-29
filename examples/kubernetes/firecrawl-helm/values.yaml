@@ -59,6 +59,18 @@ nuqPrefetchWorker:
       memory: "2G"
       cpu: "1000m"
 
+cclogWorker:
+  enabled: false
+  replicaCount: 1
+  port: 3013
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
 nuqPostgres:
   replicaCount: 1
   image:
@@ -132,6 +144,7 @@ config:
   EXTRACT_WORKER_PORT: "3004"
   NUQ_WORKER_PORT: "3006"
   NUQ_PREFETCH_WORKER_PORT: "3011"
+  CCLOG_WORKER_PORT: "3013"
   NUQ_WORKER_COUNT: "5"
   USE_DB_AUTHENTICATION: "false"
   IS_KUBERNETES: "true"

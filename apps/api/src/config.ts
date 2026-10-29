@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -9,20 +10,107 @@ const delimitedList = (separator = ",") => {
   });
 };
 
-// Ethereum address schema: validates 0x followed by 40 hex characters
-const ethereumAddress = z
-  .string()
-  .transform(s => s.trim())
-  .pipe(
-    z.union([
-      z.literal(""), // Allow empty string (treated as undefined below)
-      z
-        .string()
-        .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address format"),
-    ]),
-  )
-  .transform(s => (s === "" ? undefined : (s as `0x${string}`)))
-  .optional();
+const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
+
+const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(value => (value === "" ? undefined : value), schema);
+
+const worldIdSubjectList = (name: string) =>
+  emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(entry => /^[A-Za-z0-9_-]{43}$/.test(entry.trim())),
+        `${name} must be comma-separated subject hashes`,
+      ),
+  );
+
+// Trim strings and treat blank ones as unset (optional or default schemas).
+const blankStringAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    value =>
+      typeof value === "string"
+        ? value.trim() === ""
+          ? undefined
+          : value.trim()
+        : value,
+    schema,
+  );
+
+const RESEARCH_PAPER_OPERATIONS = [
+  "search",
+  "inspect",
+  "read",
+  "similar",
+] as const;
+
+// "github" is out of the default and the true/all shorthand, so keyless
+// behaviour is unchanged until someone names it. An explicit list replaces the
+// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
+const RESEARCH_KEYLESS_OPERATIONS = [
+  ...RESEARCH_PAPER_OPERATIONS,
+  "github",
+] as const;
+
+export type ResearchKeylessOperation =
+  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
+
+const researchKeylessDisabled = z.preprocess(
+  value => {
+    if (typeof value !== "string") return value;
+    const raw = value.trim().toLowerCase();
+    if (raw === "") return undefined;
+    if (["false", "0", "off", "no", "none"].includes(raw)) return [];
+    if (["true", "1", "on", "yes", "all"].includes(raw)) {
+      return [...RESEARCH_PAPER_OPERATIONS];
+    }
+    return raw
+      .split(",")
+      .map(operation => operation.trim())
+      .filter(Boolean);
+  },
+  z
+    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
+    .default([...RESEARCH_PAPER_OPERATIONS]),
+);
+
+const teamDailyLimits = z.preprocess(
+  value =>
+    value === undefined
+      ? []
+      : typeof value === "string"
+        ? value
+            .split(",")
+            .map(entry => entry.trim().toLowerCase())
+            .filter(Boolean)
+            .map(entry => entry.split(":").map(part => part.trim()))
+        : value,
+  z
+    .array(z.tuple([z.uuid(), z.coerce.number().int().positive()]))
+    .refine(
+      pairs => new Set(pairs.map(([teamId]) => teamId)).size === pairs.length,
+      "each team id may appear only once",
+    )
+    .transform(pairs => Object.fromEntries(pairs)),
+);
+
+const containsLoneSurrogate = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (!(nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff)) return true;
+      index++;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+};
 
 /* Schema */
 const configSchema = z.object({
@@ -36,29 +124,192 @@ const configSchema = z.object({
   FIRECRAWL_APP_PORT: z.string().default("3002"),
   FIRECRAWL_APP_SCHEME: z.string().default("http"),
   LOGGING_LEVEL: z.string().optional(),
+  FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
+  SUPPORT_AGENT_URL: z.string().url().optional(),
+  SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
+  FIREBRAIN_TRACKS_URL: z.preprocess(
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
+  FIREBRAIN_TRACKS_API_KEY: z.preprocess(
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().optional(),
+  ),
+  RESEARCH_PROXY_URL: z.string().url().optional(),
+  SEARCH_PLATFORM_URL: z.string().url().optional(),
+  RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
+  // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
+  // listed team's limit replaces its plan limit.
+  GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
+  LABS_SEARCH_URL: z.string().url().optional(),
+  LABS_SEARCH_SECRET: z.string().optional(),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
 
+  // Keyless free tier (scrape/search/interact without an API key, per-IP/day).
+  // Non-negative integers; 0 means "enabled but no budget", unset means "off".
+  KEYLESS_CREDITS_PER_DAY: z.coerce.number().int().nonnegative().optional(),
+  KEYLESS_REQUESTS_PER_DAY: z.coerce.number().int().nonnegative().optional(),
+  // Shared secret that lets a trusted proxy (e.g. the hosted MCP server)
+  // forward the real client IP for keyless rate-limiting via the
+  // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
+  KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Dedicated HMAC key for joining keyless quota-exhaustion events to the
+  // existing privacy-controlled conversion pipeline. Never use the proxy or
+  // credential secrets here: this value is only an analytics pseudonymizer.
+  KEYLESS_CONVERSION_HMAC_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // AES-128 keys for keyless signup link tokens (firecrawl.dev/k/<token>):
+  // comma-separated base64, 16 bytes each. The first encrypts; every key is
+  // tried to decrypt, so keep a rotated-out key listed while its links live.
+  // Must match firecrawl-web's KEYLESS_SIGNUP_LINK_KEYS. Unset sends the
+  // regular signup link.
+  KEYLESS_SIGNUP_LINK_KEYS: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(key => /^[A-Za-z0-9+/]{21}[AQgw]==$/.test(key.trim())),
+        "KEYLESS_SIGNUP_LINK_KEYS must be comma-separated base64 16-byte keys",
+      ),
+  ),
+  // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
+  // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
+  // authorize billed requests for a managed OAuth connection.
+  MCP_DELEGATED_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // World ID verified-human keyless bucket. The issuer defaults to World's; the
+  // feature is off unless the client ID, client secret, credential secret and
+  // subject secret are set.
+  WORLD_ID_ISSUER: emptyStringAsDefault(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine(
+        value => value.startsWith("https://"),
+        "WORLD_ID_ISSUER must be an https URL",
+      )
+      .default("https://auth.world.org"),
+  ),
+  WORLD_ID_CLIENT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CLIENT_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().trim().min(32)),
+  // Keys the subject hashes (bucket ids, allow and deny lists). Kept apart
+  // from the credential secret so rotating that one revokes credentials
+  // without resetting buckets or the lists.
+  WORLD_ID_SUBJECT_SECRET: emptyStringAsUndefined(z.string().trim().min(32)),
+  // Optional comma-separated allowlist of subject hashes. When set, only these
+  // verified humans are issued a credential; unset issues one to anyone who
+  // verifies.
+  WORLD_ID_ALLOWED_SUBJECTS: worldIdSubjectList("WORLD_ID_ALLOWED_SUBJECTS"),
+  // Optional comma-separated subject hashes that are refused: no new
+  // credential, and their existing credentials stop working.
+  WORLD_ID_DENIED_SUBJECTS: worldIdSubjectList("WORLD_ID_DENIED_SUBJECTS"),
+  // Optional Spur Context API token (https://docs.spur.us/context-api). When
+  // set, keyless requests have their client IP checked against Spur and are
+  // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/
+  // TOR). Unset disables the check entirely (keyless behaves as before).
+  SPUR_API_KEY: z.string().optional(),
+
+  // Threat protection (enterprise domain risk blocking). "normal" mode uses
+  // Google Web Risk. An unset key disables the provider (lookups then fail
+  // per the org's failurePolicy).
+  GOOGLE_WEB_RISK_API_KEY: z.string().optional(),
+  GOOGLE_WEB_RISK_API_URL: z
+    .string()
+    .url()
+    .default("https://webrisk.googleapis.com"),
+  // Google Web Risk Update API sync tuning. ZDR: "normal" mode checks run
+  // against a locally synced hash-prefix database (threatLists:computeDiff)
+  // instead of sending URLs to Google, and verdicts are never persisted.
+  //
+  // Floor for how often threatLists:computeDiff may run per list. Google's
+  // recommendedNextDiff is respected when it is later than this floor.
+  THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+  // A synced threat list older than this is treated as unavailable
+  // (provider-failure semantics → the org's failurePolicy decides).
+  THREAT_LIST_STALENESS_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(6 * 60 * 60),
+
+  // Zscaler ZIA provider ("zscaler" threat protection mode). Base-URL
+  // overrides exist for tests (mock ZIA server); production always uses the
+  // real endpoints derived from the org's vanity domain and cloud name.
+  ZSCALER_TOKEN_URL_OVERRIDE: z.string().url().optional(),
+  ZSCALER_API_URL_OVERRIDE: z.string().url().optional(),
+
+  // Organization SIEM logging delivery. The encryption key must decode to
+  // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
+  // so self-hosted deployments that do not use this feature need no key.
+  SIEM_LOGGING_ENCRYPTION_KEY: z.string().optional(),
+  PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
+
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
+  BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
+  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(z.stringbool().default(true)),
+  ADMIN_INTERNAL_PORT: emptyStringAsUndefined(
+    z.coerce.number().int().positive().max(65535),
+  ),
+  ADMIN_INTERNAL_HOST: emptyStringAsDefault(z.string().default("localhost")),
+  S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
+  XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
-  AUTUMN_CHECK_ENABLED: z.string().optional(),
-  AUTUMN_CHECK_DRY_RUN: z.string().optional(),
-  AUTUMN_CHECK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
-  AUTUMN_EXPERIMENT: z.string().optional(),
-  AUTUMN_EXPERIMENT_PERCENT: z.coerce.number().default(100),
-  AUTUMN_REQUEST_TRACK_EXPERIMENT: z.string().optional(),
-  AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
+  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
+  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
+  FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
+  FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1200),
+  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
+
+  // OAuth token introspection
+  OAUTH_INTROSPECT_URL: z.string().optional(),
+  OAUTH_INTROSPECT_SECRET: z.string().optional(),
+  MCP_ACTION_LOG_SECRET: z.string().optional(),
+  MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
+  MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
+
+  // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
+  AGENT_AUTH_RESOURCE_METADATA_URL: z
+    .url()
+    .default("https://www.firecrawl.dev/.well-known/oauth-protected-resource"),
 
   // Database & Storage
   POSTGRES_HOST: z.string().default("localhost"),
@@ -66,21 +317,48 @@ const configSchema = z.object({
   POSTGRES_DB: z.string().default("postgres"),
   POSTGRES_USER: z.string().default("postgres"),
   POSTGRES_PASSWORD: z.string().default("postgres"),
+  DATABASE_URL: z.string().optional(),
+  DATABASE_REPLICA_URL: z.string().optional(),
+  INDEX_DATABASE_URL: z.string().optional(),
+  // Pool sizing preset for this process (see db/pool-profiles.ts). Unset keeps
+  // the historical pool settings; deployments opt into `api`, `worker` or
+  // `utility` to keep connections warm within the pooler's client budget.
+  DB_POOL_PROFILE: emptyStringAsUndefined(z.enum(["api", "worker", "utility"])),
+  INDEX_CACHE_REDIS_URL: z.string().optional(),
+  // Negative (miss) caching TTL for index URL->id lookups, in ms. 0 disables
+  // it; the cache then only shields lookups that find data. A positive value
+  // (e.g. 600000 = 10min) also short-circuits repeat lookups for URLs with no
+  // index entry. Kept short so any missed cache-clear self-heals quickly.
+  INDEX_CACHE_NEGATIVE_TTL_MS: z.coerce.number().default(0),
+  // `parsers: [{ type: "pdf", refresh: true }]` skips URL index reads, so the
+  // request reaches the PDF engine and its content-cache refresh budget
+  // instead of being answered with the indexed copy of the old parse.
+  INDEX_SKIP_ON_PDF_REFRESH: z.stringbool().default(false),
+  // On a URL index hit for a PDF whose entry recorded its fire-pdf content
+  // key, ask the fire-pdf cache service whether it holds a newer parse; if it
+  // does, the index copy is treated as a miss so the request is answered from
+  // the newer entry (no parse) and re-indexed. Needs FIRE_PDF_CACHE_BASE_URL.
+  INDEX_PDF_SUPERSEDE_CHECK: z.stringbool().default(false),
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
+  SPUR_REDIS_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
-
-  // Supabase
-  SUPABASE_URL: z.string().optional(),
-  SUPABASE_ANON_TOKEN: z.string().optional(),
-  SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SUPABASE_REPLICA_URL: z.string().optional(),
-  INDEX_SUPABASE_URL: z.string().optional(),
-  INDEX_SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SEARCH_INDEX_SUPABASE_URL: z.string().optional(),
+  FDB_CLUSTER_FILE: emptyStringAsUndefined(z.string()),
+  NUQ_BACKEND: emptyStringAsUndefined(z.enum(["pg", "fdb"])),
+  NUQ_FDB_READY_SHARDS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(2048),
+  ),
+  // 1 = strict (priority, FIFO) promotion order per team; raise for teams with
+  // extreme finish rates at the cost of approximate cross-shard ordering
+  NUQ_FDB_TEAM_PENDING_SHARDS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(1),
+  ),
+  NUQ_FDB_TIME_BUCKETS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(16),
+  ),
 
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),
@@ -88,6 +366,74 @@ const configSchema = z.object({
   GCS_FIRE_ENGINE_BUCKET_NAME: z.string().optional(),
   GCS_INDEX_BUCKET_NAME: z.string().optional(),
   GCS_MEDIA_BUCKET_NAME: z.string().optional(),
+  GCS_SCREENSHOT_RESIGN_BEFORE: emptyStringAsUndefined(z.string().datetime()),
+  GCS_PARSE_UPLOAD_BUCKET_NAME: z.string().optional(),
+  PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
+  PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
+
+  // Google Cloud Pub/Sub
+  PUBSUB_CREDENTIALS: z.string().optional(),
+  // Prepended to every log topic name. Production leaves it unset and
+  // publishes to `<table>`; staging sets `staging-` so its rows land in the
+  // `staging-<table>` topics and the staging ClickHouse database instead of
+  // the production tables.
+  PUBSUB_TOPIC_PREFIX: z.string().default(""),
+  // Publisher backlog cap, per process. Log publishing is fire-and-forget and
+  // retries for up to five minutes, so during a stall the backlog is what
+  // grows; rows beyond the cap are dropped and counted rather than letting a
+  // hung channel take the process down.
+  PUBSUB_MAX_OUTSTANDING_MESSAGES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
+  PUBSUB_MAX_OUTSTANDING_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(64 * 1024 * 1024),
+
+  // Cloud Bigtable operational stores. The client
+  // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
+  // emulator plus these vars. BIGTABLE_CREDENTIALS mirrors
+  // GCS_CREDENTIALS: base64-encoded service-account JSON; unset falls
+  // back to Application Default Credentials.
+  BIGTABLE_PROJECT_ID: z.string().optional(),
+  BIGTABLE_INSTANCE_ID: z.string().optional(),
+  BIGTABLE_APP_PROFILE_ID: z.string().optional(),
+  BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
+  BIGTABLE_JOB_ACCESS_TABLE: z.string().optional(),
+  BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
+  BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
+  BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
+  BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
+  BIGTABLE_CREDENTIALS: z.string().optional(),
+
+  // ClickHouse (Search Analytics)
+  CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
+  CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
+
+  // Search highlights: highlighter service base URL. TOKEN is optional
+  // bearer auth for legacy/external services; the in-cluster service omits it.
+  HIGHLIGHT_MODEL_URL: z.string().optional(),
+  HIGHLIGHT_MODEL_TOKEN: z.string().optional(),
+  // Stable percentage of non-MCP/CLI cohorts whose generated highlights are
+  // returned. The remaining eligible traffic still runs in shadow mode.
+  HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
+  // TypeSafe (Jev): judges search results for the `safe: true` filter.
+  TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+
+  // Alexandria tool discovery: rewrite search queries with Anthropic before
+  // tool lookup, and add tools to default searches (also the alexandriaAutoTools
+  // team flag).
+  ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+
+  // Exchange (routed data sources service)
+  FIRE_EXCHANGE_URL: z.url().optional(),
+  EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
@@ -112,6 +458,13 @@ const configSchema = z.object({
   SCRAPE_MAX_FEATURE_REMOVALS: z.coerce.number().int().positive().default(3),
   SCRAPE_MAX_PDF_PREFETCHES: z.coerce.number().int().positive().default(2),
   SCRAPE_MAX_DOCUMENT_PREFETCHES: z.coerce.number().int().positive().default(2),
+  // Max concurrent native PDF extractions per process. Each extraction holds
+  // the (≤50MB) PDF plus its parsed text/markdown in memory on a tokio blocking
+  // thread; unbounded concurrency OOM-killed pods when several large PDFs
+  // landed on one process at once. 3 keeps the worst-case transient memory
+  // (~3 × ~0.5GB) well under the 8G limit while being far above typical demand
+  // (per-pod average concurrency is ~0.02).
+  PDF_EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(3),
 
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),
@@ -128,6 +481,7 @@ const configSchema = z.object({
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
   NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011), // todo: investigate why .catch is needed
   NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
+  CCLOG_WORKER_PORT: z.coerce.number().default(3013).catch(3013),
   EXTRACT_WORKER_PORT: z.coerce.number().default(3004),
   NUQ_WAIT_MODE: z.string().optional(),
 
@@ -158,11 +512,106 @@ const configSchema = z.object({
   PDF_MU_V2_EXPERIMENT: z.string().optional(),
   PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
 
-  // Self-Hosted OCR Experiment
-  PDF_OCR_EXPERIMENT_ENABLE: z.stringbool().optional(),
-  PDF_OCR_EXPERIMENT_PERCENT: z.coerce.number().min(0).max(100).default(10),
-  PDF_OCR_BASE_URL: z.string().optional(),
-  PDF_OCR_API_KEY: z.string().optional(),
+  // MinerU direct routing (bypass Rust extraction for a % of traffic)
+  MINERU_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
+  // Fire PDF (replaces MinerU for a % of traffic)
+  FIRE_PDF_ENABLE: z.stringbool().optional(),
+  FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
+  FIRE_PDF_BASE_URL: z.string().optional(),
+  FIRE_PDF_API_KEY: z.string().optional(),
+  // Cached fire-pdf results are looked up through this service when set
+  // (POST /cache/lookup, same key as FIRE_PDF_API_KEY), and fire-pdf writes
+  // them; without it the bucket is read and written from here.
+  FIRE_PDF_CACHE_BASE_URL: z.string().optional(),
+  // `parsers: [{ type: "pdf", refresh: true }]` skips the content cache and
+  // forces a fresh parse. Per team, per minute, budgeted here or by the
+  // cache service when one is configured; beyond the budget the request is
+  // served normally. 0 disables the option.
+  FIRE_PDF_CACHE_REFRESH_PER_MINUTE: z.coerce.number().int().min(0).default(10),
+  // Opt in to background refresh: lookups carry `background_refresh: true`,
+  // so the cache service can answer a refresh-campaign match with the stale
+  // entry instead of a miss. When it grants a refresh (`refresh_requested`),
+  // the stale result is served and the bytes are submitted to fire-pdf's bulk
+  // queue for a fresh parse, which fire-pdf writes back to the cache. Needs
+  // FIRE_PDF_CACHE_BASE_URL and FIRE_PDF_BASE_URL.
+  FIRE_PDF_CACHE_BACKGROUND_REFRESH: z.stringbool().default(false),
+  // /v2/parse sends every PDF (auto/ocr mode) to FirePDF: no direct
+  // text-layer extraction, no FIRE_PDF_PERCENT sampling, no MinerU
+  // diversion. Explicit `mode: "fast"` keeps direct extraction. FirePDF
+  // failures still fall back to MinerU / pdf-parse. Needs FIRE_PDF_ENABLE.
+  PARSE_PDF_ALWAYS_FIRE_PDF: z.stringbool().default(true),
+  // Table rendering FirePDF applies to /v2/parse documents. `dynamic` keeps
+  // pipe tables where they are lossless and HTML where structure needs it
+  // (merged cells, large tables); `off` sends no format (pipe tables).
+  // Any explicit format puts the request outside the FirePDF content cache.
+  PARSE_FIRE_PDF_TABLE_FORMAT: z
+    .enum(["off", "markdown", "html", "dynamic"])
+    .default("dynamic"),
+  // Raster image OCR of image URLs and parse uploads through FirePDF (see
+  // lib/image-ocr-gate.ts). Needs FIRE_PDF_BASE_URL.
+  IMAGE_OCR_ENABLED: z.stringbool().default(false),
+  // Async /jobs rollout is a separate, server-controlled cohort inside
+  // traffic already selected for FirePDF. It is disabled by default.
+  FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Separate cohort for crawl/batch-originated scrapes (any scrape
+  // carrying a crawlId): no caller waits on one specific document, so
+  // these can ramp onto the async lane ahead of interactive traffic.
+  FIRE_PDF_ASYNC_BULK_ORIGIN_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
+  FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
+  FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
+  FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Long-poll wait sent as `wait_ms` on GET /jobs/:id: fire-pdf holds the
+  // request until the job is terminal or the wait elapses, so completion is
+  // seen as it happens instead of at the next scheduled poll. 0 disables
+  // it; values above fire-pdf's 25s cap are clamped to it.
+  FIRE_PDF_ASYNC_WAIT_MS: z.coerce.number().int().min(0).default(0),
+  // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
+  // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
+  // switch, not a percentage: no alternative engine exists at this size,
+  // so there is no cohort to sample "out" — only text-only degradation.
+  // FIRE_PDF_ENABLE remains the master switch for both paths.
+  FIRE_PDF_BY_REFERENCE_ENABLE: z.stringbool().default(true),
+  // Bucket that receives large-PDF inputs for by-reference async submits
+  // (fire-pdf reads them back via `input_gcs_uri`). fire-pdf only accepts
+  // URIs inside its own configured bucket + `inputs/` prefix, so this must
+  // match fire-pdf's FIRE_PDF_GCS_BUCKET. Upload failures (e.g. missing
+  // IAM grant) fall back to the pre-by-reference behavior for oversized
+  // files rather than failing the scrape.
+  FIRE_PDF_GCS_INPUT_BUCKET: z
+    .string()
+    .trim()
+    .min(1)
+    .default("firecrawl-pdf-pipeline"),
+  // Bucket fire-engine uses for its large-PDF handoff (files too big to
+  // inline as base64 in its response). Acts as the allowlist for inbound
+  // `file.gcs_uri` references — objects outside it are never fetched or
+  // copied. Deliberately no default: this is a security-sensitive inbound
+  // allowlist, so consuming references requires explicit opt-in (set to
+  // fire-engine's GCS_PDF_BUCKET_NAME); unset disables the path.
+  FIRE_ENGINE_PDF_GCS_BUCKET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Large-PDF size policy, applied per team on every acquisition path
+  // (direct download, fire-engine handoff, by-reference submit) and sent to
+  // fire-engine as the per-request pdfMaxSize. The default applies to every
+  // team; ids on the allowlist get the privileged cap. Both are clamped to
+  // the 256MB architectural ceiling.
+  PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50 * 1024 * 1024),
+  PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(256 * 1024 * 1024),
+  // Comma-separated team ids granted the privileged cap. Prefer the
+  // `largePdfs` team flag, which grants the same cap without a deploy.
+  PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
@@ -178,6 +627,27 @@ const configSchema = z.object({
   SLACK_WEBHOOK_URL: z.string().optional(),
   SLACK_ADMIN_WEBHOOK_URL: z.string().optional(),
   DISABLE_WEBHOOK_DELIVERY: z.stringbool().optional(),
+
+  // Slack integration ("Add to Slack" for monitor notifications + /monitor
+  // slash command). Credentials come from the Firecrawl Slack app.
+  SLACK_CLIENT_ID: z.string().optional(),
+  SLACK_CLIENT_SECRET: z.string().optional(),
+  SLACK_SIGNING_SECRET: z.string().optional(),
+  // Bot scopes requested during install. Override only if the Slack app manifest
+  // changes; keep in sync with slack-app-manifest.json.
+  SLACK_OAUTH_SCOPES: z
+    .string()
+    .default(
+      "chat:write,chat:write.public,commands,channels:read,groups:read,team:read,incoming-webhook",
+    ),
+  // Absolute URL Slack redirects back to after authorize. Must exactly match a
+  // Redirect URL configured on the Slack app (e.g.
+  // https://api.firecrawl.dev/v2/slack/oauth/callback).
+  SLACK_OAUTH_REDIRECT_URL: z.string().optional(),
+  // 32-byte key (hex or base64) used to AES-256-GCM encrypt stored bot tokens.
+  // Required when ENV=production. Elsewhere, if unset, tokens are stored with a
+  // `plain:` prefix.
+  SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
@@ -189,12 +659,79 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
+  // TypeSafe Jev answers branding decisions whenever TYPESAFE_API_KEY is set
+  // (lib/branding/jev.ts), with the LLM as fallback. BRANDING_JEV=false sends
+  // every branding request to the LLM instead.
+  BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
+  // Share of teams (0-100, stable per team) whose branding scrapes also
+  // capture the page's first screen for Jev, as if they had asked for it with
+  // the branding format's __experimental_screenshot. Never for ZDR scrapes.
+  BRANDING_JEV_SCREENSHOT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
+    z.coerce.number().int().positive(),
+  ),
+  // Warn scrapes of search engine results pages (google.*/search, ...) that
+  // /search returns those results directly (lib/serp-url.ts).
+  // SERP_SCRAPE_WARNING turns it on for every team, SERP_SCRAPE_WARNING_TEAM_IDS
+  // (comma-separated) for listed teams, and SERP_SCRAPE_WARNING_ROLLOUT_PERCENT
+  // for a stable share of teams.
+  SERP_SCRAPE_WARNING: emptyStringAsUndefined(z.stringbool()),
+  SERP_SCRAPE_WARNING_TEAM_IDS: delimitedList(",").optional(),
+  SERP_SCRAPE_WARNING_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
+  // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
+  // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
+  // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
+  // back to the default model for that request.
+  EXTRACTION_PROVIDER_BASE_URL: blankStringAsUnset(z.string().url().optional()),
+  EXTRACTION_PROVIDER_API_KEY: blankStringAsUnset(z.string().optional()),
+  EXTRACTION_PROVIDER_MODEL: blankStringAsUnset(
+    z.string().min(1).default("extraction-v1"),
+  ),
+  EXTRACTION_PROVIDER_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(0),
+  EXTRACTION_PROVIDER_SHADOW_PERCENT: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(0),
+  EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
+  // Let any team pick the provider per request (json format `model`); off =
+  // only teams in TEAM_IDS may.
+  EXTRACTION_PROVIDER_REQUEST_OPT_IN: z.stringbool().optional(),
+  EXTRACTION_PROVIDER_MAX_INPUT_BYTES: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(400_000),
+  EXTRACTION_PROVIDER_INPUT_COST_PER_MTOK: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.07),
+  EXTRACTION_PROVIDER_OUTPUT_COST_PER_MTOK: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.2),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+
+  // LangSmith (tracing for interact agent)
+  LANGSMITH_API_KEY: z.string().optional(),
+  LANGSMITH_PROJECT: z.string().optional(),
+  LANGSMITH_ENDPOINT: z.string().optional(),
+  LANGSMITH_TRACING: z.stringbool().optional(),
 
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
@@ -212,51 +749,129 @@ const configSchema = z.object({
   BACKGROUND_INDEX_TEAM_ID: z.string().optional(),
   PRECRAWL_TEAM_ID: z.string().optional(),
 
-  // Payment (x402)
-  X402_ENDPOINT_PRICE_USD: z.string().optional(),
-  X402_NETWORK: z.string().optional(),
-  X402_PAY_TO_ADDRESS: ethereumAddress,
-  X402_FACILITATOR_URL: z.string().url().optional(),
-
   // System
   MAX_CPU: z.coerce.number().default(0.8),
   MAX_RAM: z.coerce.number().default(0.8),
   SYS_INFO_MAX_CACHE_DURATION: z.coerce.number().default(150),
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
 
-  // Sentry
-  SENTRY_DSN: z.string().optional(),
-  SENTRY_TRACE_SAMPLE_RATE: z.coerce.number().default(0.01),
-  SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+
+  // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then
+  // exported over http/protobuf at 100% sampling, and the SDK honors the
+  // standard OTEL_EXPORTER_OTLP_* / OTEL_BSP_* / OTEL_RESOURCE_ATTRIBUTES
+  // variables. Zero-data-retention spans are never exported (see otel-tracer).
+  OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_SERVICE_NAME: emptyStringAsUndefined(z.string()),
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
   AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
+  // firebill — durable usage-event store that sits in front of Autumn. When
+  // both URL and SECRET are set, usage tracking for orgs listed in
+  // FIREBILL_ORG_IDS (comma-separated org UUIDs) is routed through firebill
+  // instead of directly to Autumn (gradual rollout).
+  FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
+  FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  FIREBILL_ORG_IDS: delimitedList(",").optional(),
+  // How long "this team is not partner-provisioned" is trusted. Only the
+  // negative is bounded: provisioning is one-way, so a positive cannot go
+  // stale, while a negative does the moment a partner provisions an account.
+  // Capped at firebill's own gateway lookup TTL (300s) — the two sides answer
+  // the same question, and trusting a negative for longer than firebill trusts
+  // an answer turns this cache back into the stale allowlist it replaced. 0
+  // disables caching negatives entirely.
+  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(300)
+    .default(60),
+  // Sticky percentage ramp, on top of the allowlist above. The bucket is a
+  // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
+  // only ever adds, and never reshuffles who is on which path mid-rollout.
+  // 0 (the default) is also the kill switch: the allowlist still routes, and
+  // nothing else does.
+  FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Miscellaneous
+  // The commit the image was built from, set by the Dockerfile's GIT_SHA.
+  FIRECRAWL_BUILD_SHA: emptyStringAsUndefined(z.string().trim().min(1)),
   IDMUX_URL: z.string().optional(),
   GITHUB_RUN_NUMBER: z.string().optional(),
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
+  DISABLE_MONITORING: z.stringbool().default(false),
 
-  EXTRACT_V3_BETA_URL: z.string().optional(),
-  AGENT_INTEROP_SECRET: z.string().optional(),
+  // Stamp an inferred `integration` on unlabelled direct callers.
+  INFER_INTEGRATION_ENABLED: z.stringbool().default(true),
+
+  EXTRACT_V3_BETA_URL: z.string().url().optional(),
+  AGENT_INTEROP_SECRET: z
+    .string()
+    .refine(value => value.trim().length > 0, {
+      error: "AGENT_INTEROP_SECRET must not be blank",
+    })
+    .refine(value => !containsLoneSurrogate(value), {
+      error: "AGENT_INTEROP_SECRET must not contain lone surrogates",
+    })
+    .optional(),
 
   // Wikipedia Enterprise API
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
 
   // Browser Service
-  BROWSER_SERVICE_URL: z.string().optional(),
-  BROWSER_SERVICE_API_KEY: z.string().optional(),
-  BROWSER_SERVICE_WEBHOOK_SECRET: z.string().optional(),
+  HANGAR_URL: z.url().optional(),
 
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),
 
+  // Product extraction (product-search Rust service)
+  PRODUCT_EXTRACTION_SERVICE_URL: z.string().optional(),
+
+  // Menu extraction (menu-search Rust service)
+  MENU_EXTRACTION_SERVICE_URL: z.string().optional(),
+
+  // PII Redaction (fire-privacy)
+  FIRE_PRIVACY_URL: z.string().optional(),
+  FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
+
+  ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
+
+  // Deterministic JSON extraction (reusable-json-mode)
+  EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),
+  EXTRACT_ANCHOR_MODEL: z.string().default("openai/gpt-oss-120b"),
+  EXTRACT_LIGHT_MODEL: z.string().default("openai/gpt-oss-20b"),
+  CODE_SANDBOX_URL: z.string().default("ws://code-sandbox:3001"),
 });
 
-export const config = configSchema.parse(process.env);
+const validatedConfigSchema = configSchema.superRefine((value, context) => {
+  if (
+    value.EXTRACTION_PROVIDER_ROLLOUT_PERCENT +
+      value.EXTRACTION_PROVIDER_SHADOW_PERCENT >
+    100
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
+      message:
+        "EXTRACTION_PROVIDER_ROLLOUT_PERCENT + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100",
+    });
+  }
+  for (const error of getMcpActionLogConfigErrors(value)) {
+    context.addIssue({
+      code: "custom",
+      path: [error.path],
+      message: error.message,
+    });
+  }
+});
+
+export const config = validatedConfigSchema.parse(process.env);

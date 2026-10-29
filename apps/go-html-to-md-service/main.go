@@ -22,8 +22,13 @@ const (
 )
 
 func main() {
-	// Configure logging
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	// Configure logging.
+	// RFC3339Nano emits sub-second precision (and an unambiguous string format
+	// for Cloud Logging) so log entries from this service can be ordered
+	// correctly relative to other services. The previous TimeFormatUnix value
+	// produced second-level resolution, which collapsed many events into a
+	// single timestamp bucket and made cross-service log correlation flaky.
+	zerolog.TimeFieldFormat = time.RFC3339Nano
 
 	env := os.Getenv("ENV")
 

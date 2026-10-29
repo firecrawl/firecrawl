@@ -1,5 +1,6 @@
 from typing import Dict, Any, Union, List, TypeVar, Type
 from ...types import (
+    DiscoveredTool,
     SearchRequest,
     SearchData,
     Document,
@@ -7,6 +8,7 @@ from ...types import (
     SearchResultNews,
     SearchResultImages,
 )
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
 from ...utils.normalize import normalize_document_input
@@ -40,17 +42,20 @@ async def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
-        out = SearchData()
+        out = SearchData(warning=response_data.get("warning"), **agent_hint_metadata(response_data))
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)
         if "news" in data:
             out.news = _transform_array(data["news"], SearchResultNews)
         if "images" in data:
             out.images = _transform_array(data["images"], SearchResultImages)
+        if "tools" in data:
+            out.tools = [DiscoveredTool(**item) for item in data["tools"]]
         return out
     except Exception as err:
-        if hasattr(err, "response"):
-            handle_response_error(getattr(err, "response"), "search")
+        response = getattr(err, "response", None)
+        if response is not None:
+            handle_response_error(response, "search")
         raise err
 
 def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, Document]]:
@@ -109,7 +114,7 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
             raise ValueError("Timeout cannot exceed 300000ms (5 minutes)")
 
     if request.sources is not None:
-        valid_sources = {"web", "news", "images"}
+        valid_sources = {"web", "news", "images", "alexandria"}
         for source in request.sources:
             if isinstance(source, str):
                 if source not in valid_sources:
@@ -117,6 +122,11 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
             elif hasattr(source, 'type'):
                 if source.type not in valid_sources:
                     raise ValueError(f"Invalid source type: {source.type}. Valid types: {valid_sources}")
+
+    if request.include_domains and request.exclude_domains:
+        raise ValueError(
+            "include_domains and exclude_domains cannot both be specified"
+        )
 
     if request.location is not None:
         if not isinstance(request.location, str) or len(request.location.strip()) == 0:
@@ -152,6 +162,20 @@ def _prepare_search_request(request: SearchRequest) -> Dict[str, Any]:
     if validated_request.ignore_invalid_urls is not None:
         data["ignoreInvalidURLs"] = validated_request.ignore_invalid_urls
         data.pop("ignore_invalid_urls", None)
+
+    if validated_request.include_domains is not None:
+        data["includeDomains"] = validated_request.include_domains
+        data.pop("include_domains", None)
+
+    if validated_request.exclude_domains is not None:
+        data["excludeDomains"] = validated_request.exclude_domains
+        data.pop("exclude_domains", None)
+
+    if validated_request.threat_protection is not None:
+        data["threatProtection"] = validated_request.threat_protection.model_dump(
+            by_alias=True, exclude_none=True
+        )
+        data.pop("threat_protection", None)
 
     if validated_request.scrape_options is not None:
         scrape_data = prepare_scrape_options(validated_request.scrape_options)

@@ -8,10 +8,12 @@ import {
   idmux,
   scrapeTimeout,
 } from "./lib";
-import { it, expect } from "@jest/globals";
+import request from "supertest";
+import { it, expect } from "vitest";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 
@@ -25,12 +27,40 @@ beforeAll(async () => {
   });
 }, 10000);
 
+describe("UUID validation", () => {
+  it.concurrent("rejects malformed UUIDs for crawl status", async () => {
+    const response = await request(TEST_API_URL)
+      .get("/v1/crawl/not-a-uuid")
+      .set("Authorization", `Bearer ${identity.apiKey}`)
+      .send();
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toBe(
+      "Invalid job ID format. Job ID must be a valid UUID.",
+    );
+  });
+
+  it.concurrent("rejects malformed UUIDs for batch scrape status", async () => {
+    const response = await request(TEST_API_URL)
+      .get("/v1/batch/scrape/not-a-uuid")
+      .set("Authorization", `Bearer ${identity.apiKey}`)
+      .send();
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toBe(
+      "Invalid job ID format. Job ID must be a valid UUID.",
+    );
+  });
+});
+
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   const base = TEST_SUITE_WEBSITE;
   const baseUrl = new URL(base);
   const baseDomain = baseUrl.hostname;
 
-  it.concurrent(
+  it(
     "works",
     async () => {
       const results = await crawl(
@@ -46,7 +76,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "works with ignoreSitemap: true",
     async () => {
       const results = await crawl(
@@ -63,12 +93,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "filters URLs properly",
     async () => {
       const res = await crawl(
         {
-          url: base,
+          url: `${TEST_SUITE_WEBSITE}/blog`,
           includePaths: ["^/blog$"],
           limit: 10,
         },
@@ -110,7 +140,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   //   10 * scrapeTimeout,
   // );
 
-  it.concurrent(
+  it(
     "delay parameter works",
     async () => {
       await crawl(

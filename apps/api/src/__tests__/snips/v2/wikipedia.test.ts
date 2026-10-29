@@ -276,6 +276,27 @@ describeIf(HAS_WIKIPEDIA && !process.env.TEST_SUITE_SELF_HOSTED)(
       );
     });
 
+    describe("og:image metadata", () => {
+      it.concurrent(
+        "includes og:image in metadata and rawHtml for articles with an image",
+        async () => {
+          const response = await scrape(
+            {
+              url: "https://en.wikipedia.org/wiki/Military",
+              formats: ["rawHtml"],
+            },
+            identity,
+          );
+
+          expect(response.metadata.statusCode).toBe(200);
+          expect(response.metadata.ogImage).toBeTruthy();
+          expect(response.metadata.ogImage).toMatch(/^https?:\/\//);
+          expect(response.rawHtml).toContain('property="og:image"');
+        },
+        scrapeTimeout,
+      );
+    });
+
     describe("error handling", () => {
       it.concurrent(
         "fails gracefully for non-existent Wikipedia article",

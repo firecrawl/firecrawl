@@ -4,10 +4,13 @@ import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.models.*;
 import okhttp3.OkHttpClient;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,6 +27,13 @@ class FirecrawlClientTest {
     void testBuilderRequiresApiKey() {
         assertThrows(FirecrawlException.class, () ->
                 FirecrawlClient.builder().apiKey("").build()
+        );
+    }
+
+    @Test
+    void testBuilderRejectsExplicitNullApiKey() {
+        assertThrows(FirecrawlException.class, () ->
+                FirecrawlClient.builder().apiKey(null).build()
         );
     }
 
@@ -52,17 +62,46 @@ class FirecrawlClientTest {
 
     @Test
     void testScrapeOptionsBuilder() {
+        QueryFormat queryFormat = QueryFormat.builder()
+                .prompt("What is Firecrawl?")
+                .mode(QueryFormat.Mode.DIRECT_QUOTE)
+                .build();
+
         ScrapeOptions options = ScrapeOptions.builder()
-                .formats(List.of("markdown", "html"))
+                .formats(List.of("markdown", "html", "video", queryFormat))
                 .onlyMainContent(true)
                 .timeout(30000)
                 .mobile(false)
+                .redactPII(true)
                 .build();
 
-        assertEquals(List.of("markdown", "html"), options.getFormats());
+        assertEquals(List.of("markdown", "html", "video", queryFormat), options.getFormats());
+        assertEquals("query", queryFormat.getType());
+        assertEquals(QueryFormat.Mode.DIRECT_QUOTE, queryFormat.getMode());
         assertTrue(options.getOnlyMainContent());
         assertEquals(30000, options.getTimeout());
         assertFalse(options.getMobile());
+        assertTrue(options.getRedactPII());
+    }
+
+    @Test
+    void testQuestionAndHighlightsFormats() {
+        QuestionFormat questionFormat = QuestionFormat.builder()
+                .question("What is Firecrawl?")
+                .build();
+        HighlightsFormat highlightsFormat = HighlightsFormat.builder()
+                .query("What is Firecrawl?")
+                .build();
+
+        ScrapeOptions options = ScrapeOptions.builder()
+                .formats(List.of(questionFormat, highlightsFormat))
+                .build();
+
+        assertEquals(List.of(questionFormat, highlightsFormat), options.getFormats());
+        assertEquals("question", questionFormat.getType());
+        assertEquals("What is Firecrawl?", questionFormat.getQuestion());
+        assertEquals("highlights", highlightsFormat.getType());
+        assertEquals("What is Firecrawl?", highlightsFormat.getQuery());
     }
 
     @Test
@@ -99,6 +138,7 @@ class FirecrawlClientTest {
         ScrapeOptions original = ScrapeOptions.builder()
                 .formats(List.of("markdown"))
                 .timeout(5000)
+                .redactPII(true)
                 .build();
 
         ScrapeOptions modified = original.toBuilder()
@@ -108,6 +148,19 @@ class FirecrawlClientTest {
         assertEquals(5000, original.getTimeout());
         assertEquals(10000, modified.getTimeout());
         assertEquals(List.of("markdown"), modified.getFormats());
+        assertTrue(modified.getRedactPII());
+    }
+
+    @Test
+    void testScrapeOptionsSerializesCheckPromptInjection() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ScrapeOptions options = ScrapeOptions.builder()
+                .checkPromptInjection(true)
+                .build();
+
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertTrue(options.toBuilder().build().getCheckPromptInjection());
+        assertFalse(mapper.convertValue(ScrapeOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
     }
 
     @Test
@@ -158,6 +211,213 @@ class FirecrawlClientTest {
         assertThrows(NullPointerException.class, () ->
                 client.stopInteractiveBrowser(null)
         );
+    }
+
+    @Test
+    void testParseFileBuilder() {
+        ParseFile file = ParseFile.builder()
+                .filename("upload.html")
+                .content("<html><body>hello</body></html>".getBytes(StandardCharsets.UTF_8))
+                .contentType("text/html")
+                .build();
+
+        assertEquals("upload.html", file.getFilename());
+        assertEquals("text/html", file.getContentType());
+        assertTrue(file.getContent().length > 0);
+        byte[] firstRead = file.getContent();
+        firstRead[0] = 'X';
+        assertNotEquals(firstRead[0], file.getContent()[0]);
+    }
+
+    @Test
+    void testParseRequiresFile() {
+        FirecrawlClient client = FirecrawlClient.builder()
+                .apiKey("fc-test-key")
+                .build();
+        assertThrows(NullPointerException.class, () ->
+                client.parse(null)
+        );
+    }
+
+    @Test
+    void testParseOptionsRejectsChangeTrackingFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("markdown", "changeTracking"))
+                        .build()
+        );
+    }
+
+    @Test
+    void testParseOptionsRejectsVideoFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("video"))
+                        .build()
+        );
+    }
+
+    @Test
+    void testParseOptionsRejectsProductFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("product"))
+                        .build()
+        );
+    }
+
+    @Test
+    void testParseOptionsRejectsMenuFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("menu"))
+                        .build()
+        );
+    }
+
+    @Test
+    void testPdfParserSerializesPageMarkers() throws Exception {
+        PdfParser parser = PdfParser.builder()
+                .mode("auto")
+                .pages(true)
+                .blocks(true)
+                .pageMarkers(true)
+                .build();
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(parser);
+
+        assertTrue(json.contains("\"type\":\"pdf\""));
+        assertTrue(json.contains("\"mode\":\"auto\""));
+        assertTrue(json.contains("\"pages\":true"));
+        assertTrue(json.contains("\"blocks\":true"));
+        assertTrue(json.contains("\"pageMarkers\":true"));
+    }
+
+    @Test
+    void testDocumentDeserializesPages() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"pages\":["
+                + "{\"pageNumber\":1,\"markdown\":\"# Cover\"},"
+                + "{\"pageNumber\":2,\"markdown\":\"## Intro\"}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getPages());
+        assertEquals(2, doc.getPages().size());
+        assertEquals(1, doc.getPages().get(0).getPageNumber());
+        assertEquals("# Cover", doc.getPages().get(0).getMarkdown());
+        assertEquals(2, doc.getPages().get(1).getPageNumber());
+        assertEquals("## Intro", doc.getPages().get(1).getMarkdown());
+    }
+
+    @Test
+    void testDocumentDeserializesBlocks() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"blocks\":[{"
+                + "\"pageNumber\":1,\"width\":1700,\"height\":2200,\"status\":\"ok\","
+                + "\"items\":[{\"id\":\"p1.b0\",\"type\":\"title\",\"label\":\"doc_title\","
+                + "\"bbox\":[0.118,0.054,0.882,0.092],\"content\":\"# Annual Report 2025\","
+                + "\"markdownSpan\":[0,21],\"readingOrder\":0,\"source\":\"native_text\","
+                + "\"confidence\":{\"layout\":0.97,\"ocr\":null}}]}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getBlocks());
+        assertEquals(1, doc.getBlocks().size());
+
+        PdfPageBlocks page = doc.getBlocks().get(0);
+        assertEquals(1, page.getPageNumber());
+        assertEquals(1700.0, page.getWidth());
+        assertEquals(2200.0, page.getHeight());
+        assertEquals("ok", page.getStatus());
+        assertEquals(1, page.getItems().size());
+
+        PdfBlockItem item = page.getItems().get(0);
+        assertEquals("p1.b0", item.getId());
+        assertEquals("title", item.getType());
+        assertEquals("doc_title", item.getLabel());
+        assertEquals(List.of(0.118, 0.054, 0.882, 0.092), item.getBbox());
+        assertEquals("# Annual Report 2025", item.getContent());
+        assertEquals(List.of(0, 21), item.getMarkdownSpan());
+        assertEquals(0, item.getReadingOrder());
+        assertEquals("native_text", item.getSource());
+        assertEquals(0.97, item.getConfidence().getLayout());
+        assertNull(item.getConfidence().getOcr());
+    }
+
+    @Test
+    void testDocumentDeserializesMenu() throws Exception {
+        String json = "{\"menu\":{"
+                + "\"isMenu\":true,"
+                + "\"confidence\":0.9,"
+                + "\"currency\":\"USD\","
+                + "\"sourceUrl\":\"https://example.com/menu\","
+                + "\"merchant\":{\"name\":\"Joe's Diner\",\"type\":\"restaurant\",\"location\":{\"city\":\"NYC\"}},"
+                + "\"sections\":[{"
+                + "\"id\":\"sec-1\",\"name\":\"Mains\",\"description\":\"Hearty plates\",\"items\":[{"
+                + "\"id\":\"item-1\",\"name\":\"Burger\",\"description\":\"Beef burger\","
+                + "\"images\":[{\"url\":\"https://example.com/burger.jpg\",\"alt\":\"Burger\"}],"
+                + "\"price\":{\"amount\":12.5,\"currency\":\"USD\",\"formatted\":\"$12.50\"},"
+                + "\"availability\":{\"inStock\":true,\"text\":\"Available\"},"
+                + "\"dietary\":[\"halal\"],\"calories\":800,"
+                + "\"optionGroups\":[{\"name\":\"Cheese\"}],"
+                + "\"identifiers\":{\"merchantItemId\":\"sku-99\"},"
+                + "\"url\":\"https://example.com/menu#burger\","
+                + "\"sourceUrl\":\"https://example.com/menu\""
+                + "}]}]}}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        Menu menu = doc.getMenu();
+        assertNotNull(menu);
+        assertTrue(menu.isMenu());
+        assertEquals(0.9, menu.getConfidence());
+        assertEquals("USD", menu.getCurrency());
+        assertEquals("https://example.com/menu", menu.getSourceUrl());
+        assertEquals("Joe's Diner", menu.getMerchant().getName());
+        assertEquals("restaurant", menu.getMerchant().getType());
+
+        assertEquals(1, menu.getSections().size());
+        MenuSection section = menu.getSections().get(0);
+        assertEquals("sec-1", section.getId());
+        assertEquals("Mains", section.getName());
+
+        MenuItem item = section.getItems().get(0);
+        assertEquals("Burger", item.getName());
+        assertEquals(12.5, item.getPrice().getAmount());
+        assertTrue(item.getAvailability().isInStock());
+        assertEquals(List.of("halal"), item.getDietary());
+        assertEquals(800.0, item.getCalories());
+        assertEquals("https://example.com/burger.jpg", item.getImages().get(0).getUrl());
+        assertEquals("sku-99", item.getIdentifiers().getMerchantItemId());
+        assertEquals("https://example.com/menu", item.getSourceUrl());
+    }
+
+    @Test
+    void testParseOptionsBuilderSupportsRedactPII() {
+        ParseOptions options = ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .redactPII(true)
+                .build();
+
+        assertTrue(options.getRedactPII());
+    }
+
+    @Test
+    void testParseOptionsSerializesCheckPromptInjection() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ParseOptions options = ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .checkPromptInjection(true)
+                .build();
+
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertTrue(options.toBuilder().build().getCheckPromptInjection());
+        assertFalse(mapper.convertValue(ParseOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
     }
 
     // ================================================================
@@ -236,5 +496,42 @@ class FirecrawlClientTest {
         CreditUsage usage = client.getCreditUsage();
 
         assertNotNull(usage);
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
+    void testParseE2E() {
+        FirecrawlClient client = FirecrawlClient.fromEnv();
+        ParseFile file = ParseFile.builder()
+                .filename("java-parse-e2e.html")
+                .content("<!DOCTYPE html><html><body><h1>Java SDK Parse E2E</h1></body></html>".getBytes(StandardCharsets.UTF_8))
+                .contentType("text/html")
+                .build();
+
+        Document doc = client.parse(file, ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .build());
+
+        assertNotNull(doc);
+        assertNotNull(doc.getMarkdown());
+        assertFalse(doc.getMarkdown().isEmpty());
+        assertTrue(doc.getMarkdown().contains("Java SDK Parse E2E"));
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
+    void testGetParseFormatsE2E() {
+        FirecrawlClient client = FirecrawlClient.fromEnv();
+        List<ParseFormat> formats;
+        try {
+            formats = client.getParseFormats();
+        } catch (FirecrawlException e) {
+            Assumptions.assumeTrue(e.getStatusCode() != 404, "GET /v2/parse/formats is not deployed yet");
+            throw e;
+        }
+
+        assertFalse(formats.isEmpty());
+        assertTrue(formats.stream().anyMatch(f ->
+                "pdf".equals(f.getFormat()) && f.getKindType() == ParseFormat.Kind.DOCUMENT));
     }
 }

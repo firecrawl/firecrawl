@@ -1,17 +1,15 @@
 import "dotenv/config";
 import { config } from "../config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
-import * as Sentry from "@sentry/node";
+import { shutdownTracing } from "../otel";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { ExtractResult } from "../lib/extract/extraction-service";
+import { ExtractResult } from "../lib/extract/types";
 import { updateExtract } from "../lib/extract/extract-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
+import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { getErrorContactMessage } from "../lib/deployment";
-import { TransportableError } from "../lib/error";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
@@ -20,7 +18,7 @@ import {
   shutdownExtractQueue,
   ExtractJobData,
 } from "./extract-queue";
-import { logExtract } from "./logging/log_job";
+import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
 
@@ -59,8 +57,8 @@ const processExtractJob = async (
     result = await performExtraction_F0(data.extractId, {
       request: data.request,
       teamId: data.teamId,
-      subId: data.subId ?? undefined,
       apiKeyId: data.apiKeyId ?? null,
+      externalRequestId: data.externalRequestId ?? null,
     });
 
     if (result && result.success) {
@@ -104,15 +102,6 @@ const processExtractJob = async (
     logger.error(`🚫 Extract job errored ${data.extractId} - ${error}`, {
       error,
     });
-
-    // Filter out TransportableErrors (flow control)
-    if (!(error instanceof TransportableError)) {
-      Sentry.captureException(error, {
-        data: {
-          extractId: data.extractId,
-        },
-      });
-    }
 
     await updateExtract(data.extractId, {
       status: "failed",
@@ -187,6 +176,7 @@ const processDLQJob = async (data: ExtractJobData) => {
 
 // Start the worker
 const app = Express();
+startNodeRuntimeMetrics();
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
@@ -199,7 +189,15 @@ app.get("/metrics", async (_, res) => {
 });
 
 const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
-app.listen(workerPort, () => {
+app.listen(workerPort, (error?: Error) => {
+  if (error) {
+    _logger.error("Failed to start extract worker health endpoint", {
+      error,
+      port: workerPort,
+    });
+    throw error;
+  }
+
   _logger.info(
     `Extract worker health endpoint is running on port ${workerPort}`,
   );
@@ -208,6 +206,8 @@ app.listen(workerPort, () => {
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
   await shutdownExtractQueue();
+  await shutdownPubSubLogging();
+  await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);
 }
@@ -225,8 +225,6 @@ if (require.main === module) {
 }
 
 (async () => {
-  setSentryServiceTag("extract-worker");
-
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

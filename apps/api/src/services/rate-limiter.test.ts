@@ -1,4 +1,21 @@
+import { vi } from "vitest";
 import { config } from "../config";
+import { RateLimiterMode } from "../types";
+import type { TeamFlags } from "../controllers/v1/types";
+
+// The module builds a Redis client at import time. Stub ioredis so the limiter
+// can be constructed without a live server.
+vi.mock("ioredis", () => ({
+  default: class {
+    defineCommand() {}
+  },
+}));
+
+import {
+  getAutumnRateLimiter,
+  rateLimitExperimentApplies,
+} from "./rate-limiter";
+
 // import {
 //   getRateLimiter,
 //   serverRateLimiter,
@@ -369,3 +386,167 @@ import { config } from "../config";
 //   });
 // });
 // TODO: FIX
+
+describe("getAutumnRateLimiter", () => {
+  const flagsWith = (overrides: unknown): TeamFlags =>
+    ({ rateLimitOverrides: overrides }) as TeamFlags;
+
+  it("multiplies the base limit when there is no override", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 5).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 5, null).points).toBe(
+      50,
+    );
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, {} as TeamFlags).points,
+    ).toBe(50);
+  });
+
+  it("scales the exchange mode like scrape", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(10);
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 50).points).toBe(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 50).points,
+    );
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange).keyPrefix).toBe(
+      "exchange",
+    );
+  });
+
+  it("gives exchange discover a flat 10000 regardless of multiplier", () => {
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1).points,
+    ).toBe(10000);
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1000).points,
+    ).toBe(10000);
+  });
+
+  describe("rate-limit experiment", () => {
+    const limit = (
+      mode: RateLimiterMode,
+      multiplier: number,
+      variant?: "control" | "treatment",
+    ) => getAutumnRateLimiter(mode, multiplier, undefined, variant).points;
+
+    it("raises scrape, search and exchange to the plan's minimum for treatment", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        expect(limit(mode, 1, "treatment")).toBe(50);
+        expect(limit(mode, 10, "treatment")).toBe(500);
+        expect(limit(mode, 50, "treatment")).toBe(1000);
+        expect(limit(mode, 500, "treatment")).toBe(5000);
+      }
+    });
+
+    it("keeps base × multiplier for control and without a variant", () => {
+      expect(limit(RateLimiterMode.Scrape, 1, "control")).toBe(10);
+      expect(limit(RateLimiterMode.Search, 10, "control")).toBe(100);
+      expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
+    });
+
+    it("rounds an off-tier multiplier down to the tier below it", () => {
+      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(50);
+      expect(limit(RateLimiterMode.Scrape, 6, "treatment")).toBe(60);
+      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(500);
+      expect(limit(RateLimiterMode.Scrape, 200, "treatment")).toBe(2000);
+    });
+
+    it("leaves other modes and overrides alone for treatment", () => {
+      expect(limit(RateLimiterMode.Map, 1, "treatment")).toBe(10);
+      expect(limit(RateLimiterMode.Crawl, 1, "treatment")).toBe(2);
+      expect(
+        getAutumnRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+          "treatment",
+        ).points,
+      ).toBe(5);
+    });
+
+    it("applies only where the treatment minimum changes the limit", () => {
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 1)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Search, 10)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Exchange, 50)).toBe(
+        true,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 20)).toBe(true);
+      // 50/min in both variants, or above every minimum.
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(false);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 500)).toBe(
+        false,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Map, 1)).toBe(false);
+      expect(
+        rateLimitExperimentApplies(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  it("replaces the computed limit with the override for that mode", () => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Scrape]: 42 }),
+    );
+
+    expect(limiter.points).toBe(42);
+  });
+
+  it("keeps the normal limit when only another mode is overridden", () => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Map]: 42 }),
+    );
+
+    expect(limiter.points).toBe(50);
+  });
+
+  it("applies the override to a mode that has no base limit", () => {
+    // Research is not multiplier-scaled, so it normally uses the fallback 100.
+    expect(getAutumnRateLimiter(RateLimiterMode.Research, 5).points).toBe(100);
+    expect(
+      getAutumnRateLimiter(
+        RateLimiterMode.Research,
+        5,
+        flagsWith({ [RateLimiterMode.Research]: 7 }),
+      ).points,
+    ).toBe(7);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["a negative number", -10],
+    ["a non-integer", 12.5],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["a numeric string", "42"],
+    ["null", null],
+    ["an object", { rpm: 42 }],
+  ])("ignores an override of %s", (_label, value) => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Scrape]: value }),
+    );
+
+    expect(limiter.points).toBe(50);
+  });
+
+  it("ignores an override map that is not an object", () => {
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, flagsWith(null)).points,
+    ).toBe(50);
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, flagsWith("scrape=42"))
+        .points,
+    ).toBe(50);
+  });
+});

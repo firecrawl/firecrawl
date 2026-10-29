@@ -1,6 +1,6 @@
 # Firecrawl Java SDK
 
-Java SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
+Java SDK for [Firecrawl](https://firecrawl.dev), the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs.
 
 ## Prerequisites
 
@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.1.1")
+implementation("com.firecrawl:firecrawl-java:1.18.7")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.1.1'
+implementation 'com.firecrawl:firecrawl-java:1.18.7'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.1.1'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.1.1</version>
+    <version>1.18.7</version>
 </dependency>
 ```
 
@@ -147,6 +147,50 @@ System.out.println(doc.getMarkdown());
 System.out.println(doc.getMetadata().get("title"));
 ```
 
+### Video Extraction
+
+Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+
+```java
+Document doc = client.scrape("https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    ScrapeOptions.builder()
+        .formats(List.of("video"))
+        .build());
+
+System.out.println(doc.getVideo());
+```
+
+### Parse Uploaded Files
+
+Upload local files (`html`, `pdf`, `docx`, etc.) via multipart form data and parse them synchronously.
+Parse options intentionally exclude browser-only features like change tracking, screenshot, branding, audio, video, actions, waitFor, location, and mobile.
+
+```java
+ParseFile file = ParseFile.builder()
+    .filename("upload.html")
+    .content("<!DOCTYPE html><html><body><h1>Java Parse</h1></body></html>".getBytes())
+    .contentType("text/html")
+    .build();
+
+Document parsed = client.parse(file,
+    ParseOptions.builder()
+        .formats(List.of("markdown"))
+        .build());
+
+System.out.println(parsed.getMarkdown());
+```
+
+To see which upload types the API accepts, call `getParseFormats()`. Each entry has a `format`, a `kind` (`document` or `image`), its `extensions` and `mimeTypes`, and whether it is `available` on the current deployment (image formats need image OCR enabled).
+
+```java
+import com.firecrawl.models.ParseFormat;
+
+for (ParseFormat format : client.getParseFormats()) {
+    System.out.println(format.getFormat() + " " + format.getKind()
+        + " " + format.getExtensions() + " available=" + format.isAvailable());
+}
+```
+
 #### JSON Extraction
 
 ```java
@@ -169,6 +213,32 @@ Document doc = client.scrape("https://example.com/product",
         .build());
 
 System.out.println(doc.getJson());
+```
+
+#### Product Extraction
+
+Use the `product` format to get structured product data (title, brand, and variants, each with their own price and availability) from product pages, available on the document's `getProduct()`. It is the deterministic counterpart to the LLM-powered `json` format.
+
+```java
+Document doc = client.scrape("https://example.com/product",
+    ScrapeOptions.builder()
+        .formats(List.of("product"))
+        .build());
+
+System.out.println(doc.getProduct());
+```
+
+#### Menu Extraction
+
+Use the `menu` format to get structured menu data (merchant profile plus ordered sections, each holding items with their own price, availability, and images) from restaurant and menu pages, available on the document's `getMenu()`.
+
+```java
+Document doc = client.scrape("https://example.com/menu",
+    ScrapeOptions.builder()
+        .formats(List.of("menu"))
+        .build());
+
+System.out.println(doc.getMenu());
 ```
 
 #### Scrape-Bound Interactive Session
@@ -268,7 +338,7 @@ for (Map<String, Object> link : data.getLinks()) {
 Search the web and optionally scrape results.
 
 ```java
-SearchData results = client.search("firecrawl web scraping",
+SearchData results = client.search("firecrawl",
     SearchOptions.builder()
         .limit(10)
         .build());
@@ -277,6 +347,26 @@ if (results.getWeb() != null) {
     for (Map<String, Object> result : results.getWeb()) {
         System.out.println(result.get("title") + " — " + result.get("url"));
     }
+}
+```
+
+### Developer Search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `developerSearch` replaces the deprecated `searchGitHub`.
+
+```java
+import com.firecrawl.models.ResearchModels;
+
+ResearchModels.DeveloperSearchOptions options = new ResearchModels.DeveloperSearchOptions();
+options.k = 5;
+options.types = List.of("issue", "pull_request");
+options.repos = List.of("square/okhttp");
+
+ResearchModels.DeveloperSearchResponse response =
+    client.developerSearch("retry an http request with exponential backoff", options);
+
+for (ResearchModels.DeveloperSearchResult result : response.results) {
+    System.out.println(result.title + " " + result.url);
 }
 ```
 
@@ -291,6 +381,23 @@ AgentStatusResponse result = client.agent(
         .build());
 
 System.out.println(result.getData());
+```
+
+To let the agent use the Exchange (Alexandria) data providers connected to your team, pass `exchange`. `toolkits` pins up to 5 providers by slug; omit it to allow all of them.
+
+```java
+AgentStatusResponse result = client.agent(
+    AgentOptions.builder()
+        .prompt("Find the head of engineering at example.com")
+        .exchange(AgentExchangeOptions.builder()
+            .enabled(true)
+            .toolkits(List.of("provider-slug"))
+            .build())
+        .build());
+
+if (result.getExchange() != null) {
+    System.out.println("Paid provider calls: " + result.getExchange().getPaidCalls());
+}
 ```
 
 ### Usage & Metrics
@@ -371,14 +478,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.1.1.jar
+# Output: build/libs/firecrawl-java-1.18.7.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.1.1 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.18.7 in local Maven repository
 ```
 
 ## Running Tests

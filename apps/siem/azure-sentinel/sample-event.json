@@ -1,0 +1,35 @@
+[
+  {
+    "schema_version": 1,
+    "event_type": "scrape_activity",
+    "scrape_id": "00000000-0000-0000-0000-000000000001",
+    "request_id": "00000000-0000-0000-0000-000000000002",
+    "endpoint": "scrape",
+    "team_id": "00000000-0000-0000-0000-000000000003",
+    "org_id": "00000000-0000-0000-0000-000000000004",
+    "api_key": {
+      "id": "123",
+      "name": "production"
+    },
+    "audit_metadata": {
+      "username": "alice@example.com"
+    },
+    "started_at": "2026-07-24T10:00:00.000Z",
+    "completed_at": "2026-07-24T10:00:01.500Z",
+    "url": "https://example.com/path?q=1",
+    "domain": "example.com",
+    "http_method": "GET",
+    "http_status": 200,
+    "result": "success",
+    "error": null,
+    "origin": "api",
+    "integration": "node-sdk",
+    "zero_data_retention": true,
+    "threat": {
+      "decision": "allow",
+      "rule": "default-allow",
+      "provider": "google-web-risk",
+      "categories": []
+    }
+  }
+]

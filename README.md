@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**The API to search, scrape, and interact with the web at scale. Firecrawl is the context API for AI agents. 🔥** Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -56,9 +56,9 @@ _Pst. Hey, you, join our stargazers :)_
 - **LLM-ready output**: Clean markdown, structured JSON, screenshots, and more — spend fewer tokens, build better AI apps
 - **We handle the hard stuff**: Rotating proxies, orchestration, rate limits, JS-blocked content, and more — zero configuration
 - **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
-- **Media parsing**: Parse and extract content from web-hosted PDFs, DOCX, and more
+- **Document parsing**: Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON
 - **Actions**: Click, scroll, write, wait, and press before extracting content
-- **Open source**: Developed transparently and collaboratively — [join our community](https://github.com/firecrawl/firecrawl)
+- **Open source**: Developed transparently and collaboratively — [join our community](https://discord.gg/firecrawl)
 
 ---
 
@@ -76,10 +76,12 @@ _Pst. Hey, you, join our stargazers :)_
 
 | Feature | Description |
 |---------|-------------|
+| [**Parse**](https://docs.firecrawl.dev/features/parse) | Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON |
 | [**Agent**](#agent) | Automated data gathering, just describe what you need |
 | [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
+| [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
 
 ---
 
@@ -96,7 +98,7 @@ from firecrawl import Firecrawl
 
 app = Firecrawl(api_key="fc-YOUR_API_KEY")
 
-search_result = app.search("firecrawl web scraping", limit=5)
+search_result = app.search("firecrawl", limit=5)
 ```
 
 <details>
@@ -104,11 +106,11 @@ search_result = app.search("firecrawl web scraping", limit=5)
 
 **Node.js**
 ```javascript
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
 
-app.search("firecrawl web scraping", { limit: 5 })
+app.search("firecrawl", { limit: 5 })
 ```
 
 **cURL**
@@ -117,14 +119,14 @@ curl -X POST 'https://api.firecrawl.dev/v2/search' \
 -H 'Authorization: Bearer fc-YOUR_API_KEY' \
 -H 'Content-Type: application/json' \
 -d '{
-  "query": "firecrawl web scraping",
+  "query": "firecrawl",
   "limit": 5
 }'
 ```
 
 **CLI**
 ```bash
-firecrawl search "firecrawl web scraping" --limit 5
+firecrawl search "firecrawl" --limit 5
 ```
 </details>
 
@@ -146,7 +148,7 @@ Output:
 
 ### Scrape
 
-Get LLM-ready data from any website — markdown, JSON, screenshots, and more.
+Get LLM-ready context from any website — markdown, JSON, screenshots, and more.
 
 ```python
 from firecrawl import Firecrawl
@@ -161,7 +163,7 @@ result = app.scrape('firecrawl.dev')
 
 **Node.js**
 ```javascript
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({ apiKey: "fc-YOUR_API_KEY" });
 
@@ -189,14 +191,13 @@ Output:
 ```
 # Firecrawl
 
-Firecrawl is a powerful web scraping tool that makes it easy
-to extract clean data from any website.
+Firecrawl helps AI agents search, scrape, and interact with the web.
 
 ## Features
-- Scrape: Markdown from any page
-- Search: Search + scrape the web
-- Map: Discover all site URLs
-- Agent: Extract with AI prompts
+- Search: Find information across the web
+- Scrape: Clean data from any page
+- Interact: Click, navigate, and operate pages
+- Agent: Autonomous data gathering
 ```
 
 ### Interact
@@ -220,7 +221,7 @@ app.interact(scrape_id, prompt="Click the first result")
 
 **Node.js**
 ```javascript
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
 
@@ -316,7 +317,7 @@ See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all
 
 ### Agent
 
-**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and extracts it. No URLs required.
+**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and retrieves it. No URLs required.
 
 Agent is the evolution of our `/extract` endpoint: faster, more reliable, and doesn't require you to know the URLs upfront.
 ```bash
@@ -383,26 +384,31 @@ result = app.agent(
 )
 ```
 
-#### Model Selection
+#### Effort Selection
 
-Choose between two models based on your needs:
+Set how much reasoning the agent spends on the task:
 
-| Model | Cost | Best For |
-|-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical extraction |
+| Effort | Best For |
+|--------|----------|
+| `low` | Simple lookups on one site |
+| `medium` | Multi-step tasks on a few pages |
+| `high` | Deep research, complex navigation, critical data |
+
 ```python
 result = app.agent(
     prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
-    model="spark-1-pro"
+    effort="high"
 )
 ```
 
-**When to use Pro:**
-- Comparing data across multiple websites
-- Extracting from sites with complex navigation or auth
-- Research tasks where the agent needs to explore multiple paths
-- Critical data where accuracy is paramount
+Every effort level runs the `spark-2` model. Effort changes the reasoning
+budget, not the model.
+
+#### Model
+
+Every agent run executes on `spark-2`, the default, so you don't need to set
+`model`. The retired `spark-1-pro` and `spark-1-mini` names are still accepted
+for backwards compatibility, but they are deprecated and run `spark-2`.
 
 Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
 
@@ -468,7 +474,7 @@ Response:
 {
   "success": true,
   "links": [
-    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Turn websites into LLM-ready data"},
+    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "The context API for AI agents"},
     {"url": "https://firecrawl.dev/pricing", "title": "Pricing", "description": "Firecrawl pricing plans"},
     {"url": "https://firecrawl.dev/blog", "title": "Blog", "description": "Firecrawl blog"}
   ]
@@ -509,13 +515,13 @@ for doc in job.data:
 
 ## SDKs
 
-Our SDKs provide a convenient way to interact with all Firecrawl features and automatically handle polling for async operations like crawling and batch scraping.
+Our SDKs provide a convenient way to use all Firecrawl features and automatically handle polling for async operations.
 
 ### Python
 
 Install the SDK:
 ```bash
-pip install firecrawl-py
+pip install firecrawl
 ```
 ```python
 from firecrawl import Firecrawl
@@ -536,7 +542,7 @@ for doc in docs.data:
     print(doc.metadata.source_url, doc.markdown[:100])
 
 # Search the web
-results = app.search("best web scraping tools 2024", limit=10)
+results = app.search("best AI data tools 2024", limit=10)
 print(results)
 ```
 
@@ -544,10 +550,10 @@ print(results)
 
 Install the SDK:
 ```bash
-npm install @mendable/firecrawl-js
+npm install firecrawl
 ```
 ```javascript
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
 
@@ -566,10 +572,75 @@ docs.data.forEach(doc => {
 });
 
 // Search the web
-const results = await app.search('best web scraping tools 2024', { limit: 10 });
+const results = await app.search('best AI data tools 2024', { limit: 10 });
 results.data.web.forEach(result => {
     console.log(`${result.title}: ${result.url}`);
 });
+```
+
+### Go
+
+Install the SDK:
+```bash
+go get github.com/firecrawl/firecrawl/apps/go-sdk
+```
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	firecrawl "github.com/firecrawl/firecrawl/apps/go-sdk"
+	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
+)
+
+func main() {
+	// Create a client (reads FIRECRAWL_API_KEY from environment)
+	client, err := firecrawl.NewClient(option.WithAPIKey("fc-YOUR_API_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx := context.Background()
+
+	// Scrape a single URL
+	doc, err := client.Scrape(ctx, "https://firecrawl.dev", &firecrawl.ScrapeOptions{
+		Formats: []string{"markdown"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(doc.Markdown)
+
+	// Use the Agent for autonomous data gathering
+	agent, err := client.Agent(ctx, &firecrawl.AgentOptions{
+		Prompt: "Find the founders of Stripe",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(agent.Data)
+
+	// Crawl a website (automatically waits for completion)
+	job, err := client.Crawl(ctx, "https://docs.firecrawl.dev", &firecrawl.CrawlOptions{
+		Limit: firecrawl.Int(50),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Crawled %d pages\n", len(job.Data))
+
+	// Search the web
+	results, err := client.Search(ctx, "best AI data tools 2024", &firecrawl.SearchOptions{
+		Limit: firecrawl.Int(10),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(results)
+}
 ```
 
 ### Java
@@ -614,7 +685,7 @@ for (FirecrawlDocument page : job.getData()) {
 }
 
 // Search the web
-SearchParams searchParams = new SearchParams("best web scraping tools 2024");
+SearchParams searchParams = new SearchParams("best AI data tools 2024");
 searchParams.setLimit(10);
 SearchResponse results = client.search(searchParams);
 for (SearchResult r : results.getResults()) {
@@ -647,7 +718,7 @@ end
 
 # Search the web
 {:ok, response} = Firecrawl.search_and_scrape(
-  query: "best web scraping tools 2024",
+  query: "best AI data tools 2024",
   limit: 10
 )
 
@@ -655,18 +726,144 @@ end
 {:ok, response} = Firecrawl.map_urls(url: "https://example.com")
 ```
 
-### Community SDKs
+### Rust
 
-- [Go SDK](https://github.com/mendableai/firecrawl-go)
-- [Rust SDK](https://docs.firecrawl.dev/sdks/rust)
+Add the dependency:
+```toml
+[dependencies]
+firecrawl = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+```rust
+use firecrawl::{Client, ScrapeOptions, Format, CrawlOptions};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new("fc-YOUR_API_KEY")?;
+
+    // Scrape a URL
+    let document = client.scrape("https://firecrawl.dev", None).await?;
+    println!("{:?}", document.markdown);
+
+    // Crawl a website
+    let options = CrawlOptions {
+        limit: Some(50),
+        ..Default::default()
+    };
+    let result = client.crawl("https://docs.firecrawl.dev", options).await?;
+    println!("Crawled {} pages", result.data.len());
+
+    // Search the web
+    let response = client.search("best web scraping tools 2024", None).await?;
+    println!("{:?}", response.data);
+
+    Ok(())
+}
+```
+
+### Ruby
+
+Install the SDK:
+```bash
+gem install firecrawl-sdk
+```
+```ruby
+require "firecrawl"
+
+client = Firecrawl::Client.new(api_key: "fc-YOUR_API_KEY")
+
+# Scrape a single URL
+doc = client.scrape("https://firecrawl.dev",
+  Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"]))
+puts doc.markdown
+
+# Use the Agent for autonomous data gathering
+result = client.agent(
+  Firecrawl::Models::AgentOptions.new(prompt: "Find the founders of Stripe"))
+puts result.data
+
+# Crawl a website (automatically waits for completion)
+job = client.crawl("https://docs.firecrawl.dev",
+  Firecrawl::Models::CrawlOptions.new(limit: 50))
+job.data.each { |d| puts d.metadata.source_url }
+
+# Search the web
+results = client.search("best AI data tools 2024",
+  Firecrawl::Models::SearchOptions.new(limit: 10))
+puts results
+```
+
+### .NET
+
+Install the SDK:
+```bash
+dotnet add package firecrawl-sdk
+```
+```csharp
+using Firecrawl;
+using Firecrawl.Models;
+
+var client = new FirecrawlClient("fc-YOUR_API_KEY");
+
+// Scrape a single URL
+var doc = await client.ScrapeAsync("https://firecrawl.dev",
+    new ScrapeOptions { Formats = new List<object> { "markdown" } });
+Console.WriteLine(doc.Markdown);
+
+// Crawl a website (automatically waits for completion)
+var job = await client.CrawlAsync("https://docs.firecrawl.dev",
+    new CrawlOptions { Limit = 50 });
+Console.WriteLine($"Crawled {job.Data.Count} pages");
+
+// Search the web
+var results = await client.SearchAsync("best AI data tools 2024",
+    new SearchOptions { Limit = 10 });
+Console.WriteLine(results);
+```
+
+### PHP
+
+Install the SDK:
+```bash
+composer require firecrawl/firecrawl-sdk
+```
+```php
+<?php
+
+use Firecrawl\Client\FirecrawlClient;
+use Firecrawl\Models\ScrapeOptions;
+use Firecrawl\Models\CrawlOptions;
+use Firecrawl\Models\SearchOptions;
+
+$client = FirecrawlClient::create(apiKey: 'fc-YOUR_API_KEY');
+
+// Scrape a single URL
+$doc = $client->scrape('https://firecrawl.dev', ScrapeOptions::with(
+    formats: ['markdown'],
+));
+echo $doc->getMarkdown();
+
+// Crawl a website (automatically waits for completion)
+$job = $client->crawl('https://docs.firecrawl.dev', CrawlOptions::with(limit: 50));
+foreach ($job->getData() as $page) {
+    echo $page->getMetadata()['sourceURL'] . "\n";
+}
+
+// Search the web
+$results = $client->search('best AI data tools 2024', SearchOptions::with(limit: 10));
+print_r($results);
+```
 
 ---
 
 ## Integrations
 
 **Agents & AI Tools**
-- [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
-- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+- [Firecrawl Skills Catalog](https://github.com/firecrawl/skills) — install with `npx skills add firecrawl/skills`
+- [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli)
+- [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)
+
+The build skills (integrating Firecrawl into product code) are authored in this repo under [`skills/`](./skills) and mirrored into the catalog by CI. Contributing skills? CLI skills (including the research/developer index skills) → PR [`firecrawl/cli`](https://github.com/firecrawl/cli). Build/SDK skills → PR this repo (`skills/`). Workflow skills → PR [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog ([`firecrawl/skills`](https://github.com/firecrawl/skills)) is read-only — never PR it directly.
 
 **Platforms**
 - [Lovable](https://docs.lovable.dev/integrations/firecrawl)
@@ -675,7 +872,7 @@ end
 
 [View all integrations →](https://www.firecrawl.dev/integrations)
 
-**Missing your favorite tool?** [Open an issue](https://github.com/mendableai/firecrawl/issues) and let us know!
+**Missing your favorite tool?** [Open an issue](https://github.com/firecrawl/firecrawl/issues) and let us know!
 
 ---
 

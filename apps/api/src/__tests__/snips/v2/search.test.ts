@@ -5,7 +5,7 @@ import {
   HAS_SEARCH,
   TEST_PRODUCTION,
 } from "../lib";
-import { search, idmux, Identity } from "./lib";
+import { search, searchRaw, searchWithFailure, idmux, Identity } from "./lib";
 import { config } from "../../../config";
 
 let identity: Identity;
@@ -31,6 +31,78 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       );
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "ignores legacy client model on search requests",
+    async () => {
+      const body = {
+        query: "firecrawl documentation",
+        clientModel: "claude-sonnet-4-6",
+        limit: 1,
+      };
+      const res = await search(body, identity);
+      expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "ignores legacy objective on search requests",
+    async () => {
+      const body = {
+        query: "firecrawl",
+        objective: "Find official documentation",
+        limit: 1,
+      };
+      const res = await searchRaw(body, identity);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "works with includeDomains",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          includeDomains: ["firecrawl.dev"],
+          limit: 3,
+        },
+        identity,
+      );
+
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      for (const result of res.web ?? []) {
+        expect(result.url).toBeDefined();
+        const hostname = new URL(result.url!).hostname;
+        expect(
+          hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects includeDomains with excludeDomains",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          includeDomains: ["firecrawl.dev"],
+          excludeDomains: ["example.com"],
+        },
+        identity,
+      );
+
+      expect(res.error).toBe("Invalid request body");
     },
     60000,
   );
@@ -218,6 +290,38 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 
+  concurrentIf(TEST_PRODUCTION)(
+    "works with safe",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          safe: true,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects non-boolean safe",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          safe: "active",
+        } as any,
+        identity,
+      );
+
+      expect(res.error).toBe("Invalid request body");
+    },
+    60000,
+  );
+
   it.concurrent(
     "country defaults to undefined when location is set",
     async () => {
@@ -230,6 +334,58 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       );
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "targets the country named by location when country is omitted",
+    async () => {
+      const res = await search(
+        {
+          query: "gobierno",
+          location: "Mexico",
+        },
+        identity,
+      );
+      const topHosts = (res.web ?? [])
+        .slice(0, 3)
+        .map(result => new URL(result.url).hostname);
+      expect(topHosts.some(host => host.endsWith("gob.mx"))).toBe(true);
+    },
+    60000,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "targets the country's location when location is omitted",
+    async () => {
+      const res = await search(
+        {
+          query: "gobierno",
+          country: "mx",
+        },
+        identity,
+      );
+      const topHosts = (res.web ?? [])
+        .slice(0, 3)
+        .map(result => new URL(result.url).hostname);
+      expect(topHosts.some(host => host.endsWith("gob.mx"))).toBe(true);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects non-string location",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          location: 123,
+        } as any,
+        identity,
+      );
+
+      expect(res.error).toBe("Invalid request body");
     },
     60000,
   );
@@ -269,3 +425,68 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 });
+
+describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
+  "research category notice",
+  () => {
+    it.concurrent(
+      "carries the notice on every response that uses the category",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"] },
+          identity,
+        );
+        expect(raw.statusCode).toBe(200);
+        expect(raw.headers["warning"]).toMatch(/^299 - "/);
+        expect(raw.headers["link"]).toContain(
+          "https://docs.firecrawl.dev/features/research",
+        );
+        expect(raw.body.warnings).toHaveLength(1);
+        expect(raw.body.warnings[0]).toContain("2026-11-16");
+      },
+      60000,
+    );
+
+    it.concurrent(
+      "reaches requests the schema rejects",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"], limit: 0 },
+          identity,
+        );
+        expect(raw.statusCode).toBe(400);
+        expect(raw.body.success).toBe(false);
+        expect(raw.body.warnings).toHaveLength(1);
+      },
+      60000,
+    );
+
+    concurrentIf(TEST_PRODUCTION)(
+      "reaches requests auth rejects",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"] },
+          { apiKey: "invalid-api-key", teamId: "" },
+        );
+        expect(raw.statusCode).toBe(401);
+        expect(raw.headers["warning"]).toContain("2026-11-16");
+        expect(raw.body.warnings).toHaveLength(1);
+      },
+      60000,
+    );
+
+    it.concurrent(
+      "stays silent for every other category",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["github"] },
+          identity,
+        );
+        expect(raw.statusCode).toBe(200);
+        expect(raw.headers["warning"]).toBeUndefined();
+        expect(raw.body.warnings).toBeUndefined();
+      },
+      60000,
+    );
+  },
+);

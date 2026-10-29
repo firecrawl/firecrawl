@@ -1,4 +1,4 @@
-//! End-to-end tests for Firecrawl v2 API.
+//! End-to-end tests for Firecrawl API.
 //!
 //! These tests require the following environment variables:
 //! - API_URL: The Firecrawl API URL
@@ -6,16 +6,15 @@
 //!
 //! Run with: cargo test --test v2_e2e -- --ignored
 
-use dotenvy::dotenv;
-use firecrawl::v2::{
-    AgentOptions, BatchScrapeOptions, Client, CrawlOptions, Format, MapOptions, ScrapeOptions,
+use firecrawl::{
+    AgentOptions, BatchScrapeOptions, Client, CrawlOptions, FirecrawlError, Format, JobStatus,
+    MapOptions, ParseFile, ParseFormat, ParseFormatKind, ParseOptions, ScrapeOptions,
     SearchOptions, SitemapMode,
 };
 use serde_json::json;
 use std::env;
 
 fn get_client() -> Client {
-    dotenv().ok();
     let api_url = env::var("API_URL").expect("API_URL environment variable is required");
     let api_key = env::var("TEST_API_KEY").ok();
     Client::new_selfhosted(api_url, api_key).expect("Failed to create client")
@@ -23,7 +22,7 @@ fn get_client() -> Client {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_scrape() {
+async fn test_scrape() {
     let client = get_client();
     let doc = client
         .scrape("https://example.com", None)
@@ -35,7 +34,55 @@ async fn test_v2_scrape() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_scrape_with_options() {
+async fn test_parse() {
+    let client = get_client();
+    let file = ParseFile::from_bytes(
+        "rust-parse-e2e.html",
+        b"<!DOCTYPE html><html><body><h1>Rust Parse E2E</h1></body></html>".to_vec(),
+    )
+    .with_content_type("text/html");
+
+    let options = ParseOptions {
+        formats: Some(vec![ParseFormat::Markdown]),
+        ..Default::default()
+    };
+
+    let doc = client
+        .parse(file, Some(options))
+        .await
+        .expect("Parse should succeed");
+    assert!(doc.markdown.is_some(), "Response should contain markdown");
+}
+
+#[tokio::test]
+#[ignore = "Requires API access"]
+async fn test_get_parse_formats() -> Result<(), FirecrawlError> {
+    let client = get_client();
+    let formats = match client.get_parse_formats().await {
+        Err(FirecrawlError::APIError(_, e)) if e.code.as_deref() == Some("NOT_FOUND") => {
+            eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
+            return Ok(());
+        }
+        Err(FirecrawlError::HttpRequestFailed(_, 404, _)) => {
+            eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
+            return Ok(());
+        }
+        result => result?,
+    };
+
+    assert!(!formats.is_empty(), "Formats list should not be empty");
+    assert!(
+        formats
+            .iter()
+            .any(|f| f.format == "pdf" && f.kind == ParseFormatKind::Document),
+        "Formats should include a pdf document entry"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires API access"]
+async fn test_scrape_with_options() {
     let client = get_client();
     let options = ScrapeOptions {
         formats: Some(vec![Format::Markdown, Format::Html, Format::Links]),
@@ -54,7 +101,7 @@ async fn test_v2_scrape_with_options() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_scrape_with_schema() {
+async fn test_scrape_with_schema() {
     let client = get_client();
 
     let schema = json!({
@@ -75,7 +122,7 @@ async fn test_v2_scrape_with_schema() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_search() {
+async fn test_search() {
     let client = get_client();
     let response = client
         .search("rust programming", None)
@@ -87,7 +134,7 @@ async fn test_v2_search() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_search_with_options() {
+async fn test_search_with_options() {
     let client = get_client();
     let options = SearchOptions {
         limit: Some(5),
@@ -104,7 +151,7 @@ async fn test_v2_search_with_options() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_map() {
+async fn test_map() {
     let client = get_client();
     let response = client
         .map("https://example.com", None)
@@ -116,7 +163,7 @@ async fn test_v2_map() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_map_with_options() {
+async fn test_map_with_options() {
     let client = get_client();
     let options = MapOptions {
         sitemap: Some(SitemapMode::Include),
@@ -134,7 +181,7 @@ async fn test_v2_map_with_options() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_crawl_async() {
+async fn test_crawl_async() {
     let client = get_client();
     let response = client
         .start_crawl("https://example.com", None)
@@ -150,10 +197,7 @@ async fn test_v2_crawl_async() {
         .await
         .expect("Get crawl status should succeed");
     assert!(
-        matches!(
-            status.status,
-            firecrawl::v2::JobStatus::Scraping | firecrawl::v2::JobStatus::Completed
-        ),
+        matches!(status.status, JobStatus::Scraping | JobStatus::Completed),
         "Status should be scraping or completed"
     );
 
@@ -163,7 +207,7 @@ async fn test_v2_crawl_async() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_crawl_sync() {
+async fn test_crawl_sync() {
     let client = get_client();
     let options = CrawlOptions {
         limit: Some(2),
@@ -177,14 +221,14 @@ async fn test_v2_crawl_sync() {
         .expect("Crawl should succeed");
 
     assert!(
-        job.status == firecrawl::v2::JobStatus::Completed,
+        job.status == JobStatus::Completed,
         "Job should be completed"
     );
 }
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_batch_scrape_async() {
+async fn test_batch_scrape_async() {
     let client = get_client();
     let urls = vec![
         "https://example.com".to_string(),
@@ -202,7 +246,7 @@ async fn test_v2_batch_scrape_async() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_batch_scrape_sync() {
+async fn test_batch_scrape_sync() {
     let client = get_client();
     let urls = vec!["https://example.com".to_string()];
 
@@ -221,14 +265,14 @@ async fn test_v2_batch_scrape_sync() {
         .expect("Batch scrape should succeed");
 
     assert!(
-        job.status == firecrawl::v2::JobStatus::Completed,
+        job.status == JobStatus::Completed,
         "Job should be completed"
     );
 }
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_agent_async() {
+async fn test_agent_async() {
     let client = get_client();
     let options = AgentOptions {
         urls: Some(vec!["https://example.com".to_string()]),
@@ -247,7 +291,7 @@ async fn test_v2_agent_async() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_v2_agent_with_schema() {
+async fn test_agent_with_schema() {
     let client = get_client();
 
     #[derive(Debug, serde::Deserialize)]
@@ -280,10 +324,10 @@ async fn test_v2_agent_with_schema() {
     }
 }
 
-// Test that the v2 client can be created with different configurations
+// Test that the client can be created with different configurations
 // This test doesn't require API access
 #[test]
-fn test_v2_client_creation() {
+fn test_client_creation() {
     // Cloud client requires API key
     let cloud_result = Client::new("test-key");
     assert!(cloud_result.is_ok());

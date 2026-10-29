@@ -78,6 +78,96 @@ describe("Map tests", () => {
     60000,
   );
 
+  it.concurrent(
+    "sitemap=only returns every URL of the sitemap",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-all-urls",
+          ignoreCache: true,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      // The first URL the sitemap yields used to be discarded, so
+      // /first-page never made it into the response.
+      const urls = response.body.links.map(x => x.url);
+      expect(urls).toContain("https://www.hfea.gov.uk/first-page");
+      expect(urls).toContain("https://www.hfea.gov.uk/second-page");
+      expect(urls).toContain("https://www.hfea.gov.uk/third-page");
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "sitemap=only still respects a limit smaller than the sitemap",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-all-urls",
+          ignoreCache: true,
+          limit: 2,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links.length).toBe(2);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "sitemap=only skips a deeply nested sitemap and returns the others",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-deeply-nested",
+          ignoreCache: true,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      const urls = response.body.links.map(x => x.url);
+      expect(urls).toContain("https://www.hfea.gov.uk/first-page");
+      expect(urls).toContain("https://www.hfea.gov.uk/second-page");
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "sitemap=only returns no links when the only sitemap is deeply nested",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-deeply-nested-only",
+          ignoreCache: true,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links).toEqual([]);
+    },
+    60000,
+  );
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "sitemap=only respects limit",
     async () => {
@@ -132,26 +222,30 @@ describe("Map tests", () => {
         {
           url: "http://firecrawl.com",
           limit: 5,
+          sitemap: "only",
+          useIndex: false,
+          useMock: "map-redirect",
+          ignoreCache: true,
         },
         identity,
       );
+
+      if (response.statusCode !== 200) {
+        console.warn(
+          "Map redirect test failed",
+          JSON.stringify(response.body, null, 2),
+        );
+      }
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.links.length).toBeGreaterThan(0);
 
-      const nonFirecrawlLinks = response.body.links.filter(
-        link => !link.url.includes("firecrawl.dev"),
-      );
-      if (nonFirecrawlLinks.length > 0) {
-        console.log(
-          "Links not containing 'firecrawl.dev':",
-          JSON.stringify(nonFirecrawlLinks, null, 2),
-        );
-      }
-
       expect(
         response.body.links.every(link => link.url.includes("firecrawl.dev")),
+      ).toBe(true);
+      expect(
+        response.body.links.every(link => !link.url.includes("firecrawl.com")),
       ).toBe(true);
     },
     60000,

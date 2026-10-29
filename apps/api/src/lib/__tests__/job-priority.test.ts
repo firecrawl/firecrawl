@@ -1,23 +1,53 @@
+import type { Mock } from "vitest";
+import { vi } from "vitest";
+
+// Hermetic: job-priority talks to services/redis (not queue-service) and reads
+// the team's limits off its ACUC, so both are stubbed here.
+vi.mock("../../services/redis", () => ({
+  redisEvictConnection: {
+    sadd: vi.fn(),
+    srem: vi.fn(),
+    scard: vi.fn(),
+    expire: vi.fn(),
+  },
+}));
+
+vi.mock("../../controllers/auth", () => ({
+  getACUCTeam: vi.fn(),
+}));
+
+vi.mock("../../services/autumn/autumn.service", () => ({
+  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
+}));
+
 import {
   getJobPriority,
   addJobPriority,
   deleteJobPriority,
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
+import { getACUCTeam } from "../../controllers/auth";
 import {} from "../../types";
 
-jest.mock("../../services/queue-service", () => ({
-  redisConnection: {
-    sadd: jest.fn(),
-    srem: jest.fn(),
-    scard: jest.fn(),
-    expire: jest.fn(),
-  },
-}));
+function mockMultiplier(rate_limit_multiplier: number) {
+  vi.mocked(getACUCTeam).mockResolvedValue({
+    team_id: "team1",
+    rate_limit_multiplier,
+  } as never);
+}
+
+// Multipliers that land on the plan tiers the priority cases below assume.
+const STANDARD_MULTIPLIER = 50;
+const HOBBY_MULTIPLIER = 10;
+const FREE_MULTIPLIER = 1;
+
+beforeEach(() => {
+  mockMultiplier(FREE_MULTIPLIER);
+});
 
 describe("Job Priority Tests", () => {
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("addJobPriority should add job_id to the set and set expiration", async () => {
@@ -46,37 +76,35 @@ describe("Job Priority Tests", () => {
 
   test("getJobPriority should return correct priority based on plan and set length", async () => {
     const team_id = "team1";
-    const plan = "standard";
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(150);
+    mockMultiplier(STANDARD_MULTIPLIER);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
 
     const priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(250);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
     const priorityExceeded = await getJobPriority({ team_id });
-    expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.4)
+    expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.2)
   });
 
   test("getJobPriority should handle different plans correctly", async () => {
     const team_id = "team1";
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(50);
-    let plan = "hobby";
+    mockMultiplier(HOBBY_MULTIPLIER);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(50);
     let priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(150);
-    plan = "hobby";
+    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
     priority = await getJobPriority({ team_id });
-    expect(priority).toBe(25); // basePriority + Math.ceil((150 - 50) * 0.3)
+    expect(priority).toBe(25); // basePriority + Math.ceil((150 - 100) * 0.3)
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(25);
-    plan = "free";
+    mockMultiplier(FREE_MULTIPLIER);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(25);
     priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(60);
-    plan = "free";
+    (redisEvictConnection.scard as Mock).mockResolvedValue(60);
     priority = await getJobPriority({ team_id });
     expect(priority).toBe(28); // basePriority + Math.ceil((60 - 25) * 0.5)
   });
@@ -93,7 +121,7 @@ describe("Job Priority Tests", () => {
     );
 
     // Clear the mock calls
-    (redisEvictConnection.expire as jest.Mock).mockClear();
+    (redisEvictConnection.expire as Mock).mockClear();
 
     // Add another job
     await addJobPriority(team_id, job_id2);
@@ -107,7 +135,7 @@ describe("Job Priority Tests", () => {
     const team_id = "team1";
     const job_id = "job1";
 
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
     await addJobPriority(team_id, job_id);
     expect(redisEvictConnection.expire).toHaveBeenCalledWith(
@@ -116,21 +144,44 @@ describe("Job Priority Tests", () => {
     );
 
     // Fast-forward time by 59 seconds
-    jest.advanceTimersByTime(59000);
+    vi.advanceTimersByTime(59000);
 
     // The set should still exist
     expect(redisEvictConnection.scard).not.toHaveBeenCalled();
 
     // Fast-forward time by 2 more seconds (total 61 seconds)
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
 
     // Check if the set has been removed (scard should return 0)
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(0);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(0);
     const setSize = await redisEvictConnection.scard(
       `limit_team_id:${team_id}`,
     );
     expect(setSize).toBe(0);
 
-    jest.useRealTimers();
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where the multiplier comes from: the caller's ACUC when it holds one.
+// ---------------------------------------------------------------------------
+
+describe("the ACUC the caller supplies", () => {
+  it("reads the multiplier off the ACUC the caller holds", async () => {
+    // 2500 lands on the top tier: no penalty at this set size.
+    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
+    const acuc = { team_id: "team1", rate_limit_multiplier: 2500 } as never;
+
+    expect(await getJobPriority({ team_id: "team1", acuc })).toBe(10);
+    expect(getACUCTeam).not.toHaveBeenCalled();
+  });
+
+  it("reads the team's ACUC when the caller holds none", async () => {
+    (redisEvictConnection.scard as Mock).mockResolvedValue(1);
+
+    await getJobPriority({ team_id: "team1" });
+
+    expect(getACUCTeam).toHaveBeenCalledWith("team1");
   });
 });
