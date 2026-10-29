@@ -2,7 +2,7 @@ import express from "express";
 import request from "supertest";
 
 // Real routers; auth is stubbed to answer with the options its route passed,
-// so each request shows whether the route opts in to the hosted MCP minimum.
+// so each request shows whether the route opts in to the hosted MCP minimums.
 vi.mock("../../routes/shared", async importOriginal => {
   const actual = await importOriginal<typeof import("../../routes/shared")>();
   return {
@@ -31,7 +31,17 @@ async function optsIn(path: string): Promise<boolean> {
 }
 
 describe("hosted MCP rate-limit opt-in", () => {
-  it.each(["/v2/scrape", "/v2/search"])("is set on %s", async path => {
+  it.each([
+    "/v2/scrape",
+    "/v2/search",
+    "/v2/batch/scrape",
+    "/v2/parse",
+    "/v2/parse/upload-url",
+    "/v2/map",
+    "/v2/crawl",
+    "/v2/extract",
+    "/v2/agent",
+  ])("is set on %s", async path => {
     expect(await optsIn(path)).toBe(true);
   });
 
@@ -39,11 +49,8 @@ describe("hosted MCP rate-limit opt-in", () => {
     "/v1/scrape",
     "/v1/search",
     "/v1/batch/scrape",
-    "/v2/batch/scrape",
-    "/v2/parse",
-    "/v2/parse/upload-url",
-    "/v2/map",
-    "/v2/crawl",
+    "/v1/map",
+    "/v1/crawl",
   ])("is not set on %s", async path => {
     expect(await optsIn(path)).toBe(false);
   });

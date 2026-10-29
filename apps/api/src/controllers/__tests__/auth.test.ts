@@ -1254,6 +1254,24 @@ describe("authenticateUser", () => {
       },
     );
 
+    it("uses the raised limiter for other multiplier-scaled modes", async () => {
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Map,
+        HOSTED_MCP_ROUTE,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+        RateLimiterMode.Map,
+        1,
+        {},
+      );
+      expect(hostedMcpConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(planConsume).not.toHaveBeenCalled();
+    });
+
     it("uses only the raised limiter for an API key the hosted MCP relayed", async () => {
       const auth = await authenticateUser(
         requestWith(API_KEY, {
@@ -1608,6 +1626,17 @@ describe("authenticateUser", () => {
           requestWith(`Bearer ${signDelegation()}`),
           {},
           RateLimiterMode.Scrape,
+        );
+
+        expect(concurrencyOf(auth)).toBe(2);
+      });
+
+      it("keeps the plan limit for modes other than scrape and search", async () => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          RateLimiterMode.Crawl,
+          HOSTED_MCP_ROUTE,
         );
 
         expect(concurrencyOf(auth)).toBe(2);
