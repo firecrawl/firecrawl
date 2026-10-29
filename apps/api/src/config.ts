@@ -305,9 +305,8 @@ const configSchema = z.object({
   MCP_ACTION_LOG_SECRET: z.string().optional(),
   MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
   MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
-  // Hosted MCP calls spend the team's MCP credits balance before the
-  // endpoint's own credits (see AutumnService.coversWithMcpCredits).
-  MCP_CREDITS_ENABLED: z.stringbool().default(false),
+  // Autumn feature id of the balance hosted MCP calls spend first (see
+  // AutumnService.trackHostedMcpCredits).
   MCP_CREDITS_FEATURE_ID: z.string().min(1).default("MCP_CREDITS"),
 
   // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)

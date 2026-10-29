@@ -3,7 +3,6 @@ import { queueBillingOperation } from "./batch_billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
-  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
@@ -38,25 +37,14 @@ export async function billTeam(
         ...toAutumnBillingProperties(billing),
         apiKeyId: api_key_id,
       };
-      // A hosted MCP charge spends the team's MCP credits while they cover it,
-      // and the endpoint's own feature otherwise.
-      const featureId =
-        org_id !== null &&
-        billing.hostedMcp &&
-        (await autumnService.coversWithMcpCredits({
-          teamId: team_id,
-          orgId: org_id,
-          value: credits,
-          properties: autumnProperties,
-        }))
-          ? MCP_CREDITS_FEATURE_ID
-          : featureIdForBillingEndpoint(billing.endpoint);
+      const featureId = featureIdForBillingEndpoint(billing.endpoint);
 
       let trackedInRequest = false;
+      let mcpCredits = 0;
       if (org_id !== null) {
         // Stable per-charge key (firebill route only): a caller retry or re-run
         // job with the same chargeId dedupes instead of double-billing.
-        trackedInRequest = await autumnService.trackCredits({
+        const charge = {
           teamId: team_id,
           orgId: org_id,
           value: credits,
@@ -66,7 +54,14 @@ export async function billTeam(
             ? `fc:track:${billing.endpoint}:${billing.chargeId}`
             : undefined,
           externalRequestId: billing.externalRequestId ?? undefined,
-        });
+        };
+        // A hosted MCP charge spends the team's MCP credits first.
+        if (billing.hostedMcp) {
+          ({ tracked: trackedInRequest, mcpCredits } =
+            await autumnService.trackHostedMcpCredits(charge));
+        } else {
+          trackedInRequest = await autumnService.trackCredits(charge);
+        }
       } else if (team_id !== "preview" && !team_id.startsWith("preview_")) {
         // Preview teams are never tracked anyway; a real team arriving without
         // an org is not expected, and its usage is about to go unmetered.
@@ -81,9 +76,7 @@ export async function billTeam(
         org_id,
         credits,
         api_key_id,
-        featureId === featureIdForBillingEndpoint(billing.endpoint)
-          ? billing
-          : { ...billing, featureId },
+        mcpCredits > 0 ? { ...billing, mcpCredits } : billing,
         false,
         trackedInRequest,
       );

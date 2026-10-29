@@ -7,7 +7,7 @@ const {
   trackCredits,
   refundCredits,
   isRoutedThroughFirebill,
-  coversWithMcpCredits,
+  trackHostedMcpCredits,
 } = vi.hoisted(() => ({
   withAuth: vi.fn((fn: any) => fn),
   queueBillingOperation: vi.fn<(args: any[]) => Promise<any>>(),
@@ -15,7 +15,8 @@ const {
   refundCredits: vi.fn<(args: any) => Promise<void>>(),
   isRoutedThroughFirebill:
     vi.fn<(teamId: string, orgId: string) => Promise<boolean>>(),
-  coversWithMcpCredits: vi.fn<(args: any) => Promise<boolean>>(),
+  trackHostedMcpCredits:
+    vi.fn<(args: any) => Promise<{ tracked: boolean; mcpCredits: number }>>(),
 }));
 
 vi.mock("../../../lib/withAuth", () => ({
@@ -31,11 +32,10 @@ vi.mock("../../autumn/autumn.service", () => ({
     trackCredits,
     refundCredits,
     isRoutedThroughFirebill,
-    coversWithMcpCredits,
+    trackHostedMcpCredits,
   },
   featureIdForBillingEndpoint: (endpoint?: string) =>
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
 }));
 
 vi.mock("../../notification/email_notification", () => ({
@@ -61,7 +61,7 @@ beforeEach(() => {
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
   isRoutedThroughFirebill.mockResolvedValue(false);
-  coversWithMcpCredits.mockResolvedValue(false);
+  trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 0 });
 });
 
 describe("billTeam", () => {
@@ -241,15 +241,16 @@ describe("billTeam MCP credits", () => {
   const hostedMcpScrape = {
     endpoint: "scrape" as const,
     jobId: "job-1",
+    chargeId: "job-1",
     hostedMcp: true,
   };
 
-  it("spends MCP credits on a hosted MCP charge they cover", async () => {
-    coversWithMcpCredits.mockResolvedValue(true);
+  it("charges a hosted MCP call through the MCP credits split", async () => {
+    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
 
     await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
 
-    expect(coversWithMcpCredits).toHaveBeenCalledWith({
+    expect(trackHostedMcpCredits).toHaveBeenCalledExactlyOnceWith({
       teamId: "team-1",
       orgId: "org-1",
       value: 3,
@@ -259,79 +260,66 @@ describe("billTeam MCP credits", () => {
         jobId: "job-1",
         apiKeyId: 123,
       },
+      featureId: "CREDITS",
+      idempotencyKey: "fc:track:scrape:job-1",
+      externalRequestId: undefined,
     });
-    expect(trackCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
-    );
-    // The ledger operation remembers the feature, so a batch refund returns
-    // the charge to it.
+    expect(trackCredits).not.toHaveBeenCalled();
+    // The ledger records the MCP-paid part apart from regular credits.
     expect(queueBillingOperation).toHaveBeenCalledWith([
       "team-1",
       "org-1",
       3,
       123,
-      { ...hostedMcpScrape, featureId: "MCP_CREDITS" },
+      { ...hostedMcpScrape, mcpCredits: 2 },
       false,
       true,
     ]);
   });
 
-  it("refunds a failed enqueue to the MCP credits it spent", async () => {
-    coversWithMcpCredits.mockResolvedValue(true);
+  it("queues an unchanged ledger operation when MCP credits paid nothing", async () => {
+    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 0 });
+
+    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
+
+    expect(queueBillingOperation).toHaveBeenCalledWith([
+      "team-1",
+      "org-1",
+      3,
+      123,
+      hostedMcpScrape,
+      false,
+      true,
+    ]);
+  });
+
+  it("refunds a failed enqueue to the endpoint's own feature", async () => {
+    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
     queueBillingOperation.mockResolvedValueOnce({ success: false });
 
     await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
 
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
+      expect.objectContaining({ value: 3, featureId: "CREDITS" }),
     );
   });
 
-  it.each([
-    ["scrape", "CREDITS"],
-    ["search", "SEARCH_CREDITS"],
-  ] as const)(
-    "falls back to the endpoint's own feature once MCP credits can't cover a hosted MCP %s",
-    async (endpoint, featureId) => {
-      coversWithMcpCredits.mockResolvedValue(false);
-
-      await billTeam("team-1", "org-1", 3, 123, {
-        endpoint,
-        jobId: "job-1",
-        hostedMcp: true,
-      });
-
-      expect(trackCredits).toHaveBeenCalledWith(
-        expect.objectContaining({ value: 3, featureId }),
-      );
-      expect(queueBillingOperation).toHaveBeenCalledWith([
-        "team-1",
-        "org-1",
-        3,
-        123,
-        { endpoint, jobId: "job-1", hostedMcp: true },
-        false,
-        true,
-      ]);
-    },
-  );
-
-  it("never looks at MCP credits for a call the hosted MCP did not make", async () => {
+  it("never goes through the MCP credits split for a call the hosted MCP did not make", async () => {
     await billTeam("team-1", "org-1", 3, 123, {
       endpoint: "scrape",
       jobId: "job-1",
     });
 
-    expect(coversWithMcpCredits).not.toHaveBeenCalled();
+    expect(trackHostedMcpCredits).not.toHaveBeenCalled();
     expect(trackCredits).toHaveBeenCalledWith(
       expect.objectContaining({ featureId: "CREDITS" }),
     );
   });
 
-  it("never looks at MCP credits for a team without an org", async () => {
+  it("never charges Autumn for a team without an org", async () => {
     await billTeam("preview_abc", null, 3, null, hostedMcpScrape);
 
-    expect(coversWithMcpCredits).not.toHaveBeenCalled();
+    expect(trackHostedMcpCredits).not.toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
   });
 });

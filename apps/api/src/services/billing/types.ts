@@ -42,16 +42,16 @@ export type BillingMetadata = {
   /**
    * The hosted MCP made the request, as verified at authentication (see
    * `AuthObject.hostedMcp`). Its charges spend the team's MCP credits first
-   * (see AutumnService.coversWithMcpCredits). Rides the job payload like the
+   * (see AutumnService.trackHostedMcpCredits). Rides the job payload like the
    * rest of this metadata, so a crawl's pages carry it too.
    */
   hostedMcp?: boolean;
   /**
-   * The Autumn feature the request-time charge spent, set only when it is not
-   * the endpoint's own (featureIdForBillingEndpoint): an MCP credits charge.
-   * A refund of that charge goes back to the same feature.
+   * Credits of this charge the team's MCP credits paid, set by the request-time
+   * charge. The ledger records them as their own row, tagged apart from
+   * regular credits used (see queueBillingOperation).
    */
-  featureId?: string;
+  mcpCredits?: number;
 };
 
 export function resolveBillingMetadata({

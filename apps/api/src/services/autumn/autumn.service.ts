@@ -39,7 +39,7 @@ export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
 /**
  * The balance hosted MCP calls spend before the endpoint's own feature (see
- * AutumnService.coversWithMcpCredits). Configurable so the id can follow the
+ * AutumnService.trackHostedMcpCredits). Configurable so the id can follow the
  * Autumn feature without a code change.
  */
 export const MCP_CREDITS_FEATURE_ID = config.MCP_CREDITS_FEATURE_ID;
@@ -574,15 +574,13 @@ export class AutumnService {
   }
 
   /**
-   * Whether a hosted MCP charge of `value` fits the team's MCP credits
-   * (MCP_CREDITS_FEATURE_ID), which those charges spend before the endpoint's
-   * own feature. False, so the charge stays on the endpoint's own feature
-   * exactly as before, when MCP_CREDITS_ENABLED is off, for a team without the
-   * feature or without enough of it left, for a partner-provisioned team (its
-   * usage is split with the partner on the regular features), and when Autumn
-   * can't answer.
+   * How much of a hosted MCP charge of `value` the team's MCP credits
+   * (MCP_CREDITS_FEATURE_ID) can pay: all of it, or what is left when that is
+   * less. 0 for a team without the feature or with none left, for a
+   * partner-provisioned team (its usage is split with the partner on the
+   * regular features), and when Autumn can't answer.
    */
-  async coversWithMcpCredits({
+  async mcpCreditsAvailable({
     teamId,
     orgId,
     value,
@@ -590,10 +588,9 @@ export class AutumnService {
   }: Pick<
     TrackCreditsParams,
     "teamId" | "orgId" | "value" | "properties"
-  >): Promise<boolean> {
-    if (!config.MCP_CREDITS_ENABLED || !(value > 0)) return false;
-    if (this.isPreviewTeam(teamId)) return false;
-    if (await this.isGatewayProvisioned(teamId)) return false;
+  >): Promise<number> {
+    if (!(value > 0) || this.isPreviewTeam(teamId)) return 0;
+    if (await this.isGatewayProvisioned(teamId)) return 0;
     const result = await this.checkCredits({
       teamId,
       orgId,
@@ -601,7 +598,44 @@ export class AutumnService {
       properties,
       featureId: MCP_CREDITS_FEATURE_ID,
     });
-    return result?.allowed === true;
+    if (!result) return 0;
+    if (result.allowed) return value;
+    return Math.max(0, Math.min(value, Math.floor(result.remaining)));
+  }
+
+  /**
+   * Tracks a hosted MCP charge: the part the team's MCP credits can pay (see
+   * mcpCreditsAvailable) on MCP_CREDITS_FEATURE_ID, and the rest on
+   * `featureId`, the endpoint's own feature. When the MCP credits pay nothing,
+   * the whole charge is tracked exactly as trackCredits would track it.
+   * Resolves whether every part was tracked, and the credits the MCP credits
+   * paid.
+   */
+  async trackHostedMcpCredits(
+    params: TrackCreditsParams,
+  ): Promise<{ tracked: boolean; mcpCredits: number }> {
+    const mcpCredits = await this.mcpCreditsAvailable(params);
+    const rest = params.value - mcpCredits;
+    const [mcpTracked, restTracked] = await Promise.all([
+      mcpCredits > 0
+        ? this.trackCredits({
+            ...params,
+            value: mcpCredits,
+            featureId: MCP_CREDITS_FEATURE_ID,
+            // Its own charge event: the rest keeps the caller's key, and the
+            // same key would dedupe one part against the other.
+            idempotencyKey:
+              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
+          })
+        : true,
+      mcpCredits === 0 || rest > 0
+        ? this.trackCredits({ ...params, value: rest })
+        : true,
+    ]);
+    return {
+      tracked: mcpTracked && restTracked,
+      mcpCredits: mcpTracked ? mcpCredits : 0,
+    };
   }
 
   /**

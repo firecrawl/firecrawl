@@ -120,6 +120,7 @@ vi.mock("../../queue-service", () => ({
 
 import {
   processBillingBatch,
+  queueBillingOperation,
   startBillingBatchProcessing,
 } from "../batch_billing";
 
@@ -429,31 +430,97 @@ describe("startBillingBatchProcessing", () => {
   });
 });
 
-describe("processBillingBatch MCP credits refunds", () => {
-  it("refunds a request-tracked charge to the feature it spent", async () => {
-    queue = [
-      makeOp({
-        autumnTrackInRequest: true,
-        credits: 4,
-        billing: { endpoint: "scrape", featureId: "MCP_CREDITS" },
+describe("MCP credits on the ledger", () => {
+  it("records the part MCP credits paid as its own tagged row", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
+      false,
+      true,
+      { accessEventId: "access-1" },
+    );
+
+    expect(queue.map(op => JSON.parse(op))).toEqual([
+      expect.objectContaining({
+        credits: 2,
+        exchange_access_event_id: "access-1",
       }),
-      makeOp({
-        autumnTrackInRequest: true,
-        credits: 6,
-        billing: { endpoint: "scrape" },
+      expect.not.objectContaining({
+        exchange_access_event_id: expect.anything(),
       }),
-    ];
+    ]);
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledTimes(2);
+    expect(billTeam7).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 2, subscription_id: null }),
+    );
+    expect(billTeam7).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 3, subscription_id: "mcp_credits" }),
+    );
+  });
+
+  it("records a charge MCP credits paid in full as one tagged row", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 5 },
+      false,
+      true,
+    );
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ credits: 5, subscription_id: "mcp_credits" }),
+    );
+  });
+
+  it("records a charge MCP credits paid nothing of as today's untagged row", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true },
+      false,
+      true,
+    );
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledExactlyOnceWith({
+      team_id: "team-1",
+      subscription_id: null,
+      credits: 5,
+      api_key_id: 123,
+      is_extract: false,
+    });
+  });
+
+  it("refunds both parts to the endpoint's own feature when the ledger fails", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
+      false,
+      true,
+    );
     billTeam7.mockRejectedValue(new Error("db failed"));
 
     await processBillingBatch();
 
-    // Kept in separate groups, so each refund returns only its own credits.
-    expect(refundCredits).toHaveBeenCalledTimes(2);
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 4, featureId: "MCP_CREDITS" }),
+      expect.objectContaining({ value: 2, featureId: "CREDITS" }),
     );
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 6, featureId: "CREDITS" }),
+      expect.objectContaining({ value: 3, featureId: "CREDITS" }),
     );
   });
 });

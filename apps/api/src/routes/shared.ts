@@ -196,7 +196,7 @@ export function checkCreditsMiddleware(
       if (
         !autumnResult.allowed &&
         req.auth.hostedMcp &&
-        (await autumnService.coversWithMcpCredits({
+        (await autumnService.mcpCreditsAvailable({
           teamId: req.auth.team_id,
           orgId,
           value: requestedCredits,
@@ -205,7 +205,7 @@ export function checkCreditsMiddleware(
             path: req.path,
             apiKeyId: req.acuc?.api_key_id ?? null,
           },
-        }))
+        })) >= requestedCredits
       ) {
         req.account = { remainingCredits: Infinity };
         return next();

@@ -83,6 +83,9 @@ const BATCH_LOCK_KEY = "billing_batch_lock";
 const BATCH_SIZE = 5000; // Batch size for processing
 const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
+// The ledger's tag for usage the team's MCP credits paid. bill_team_7 stores it
+// in credit_usage.subscription_id, which it passes through as a tag.
+const MCP_CREDITS_LEDGER_TAG = "mcp_credits";
 
 // Define interfaces for billing operations
 interface BillingOperation {
@@ -105,6 +108,8 @@ interface BillingOperation {
   // the event pending for reconciliation rather than voiding it.
   exchange_access_event_id?: string;
   billing_reference?: string;
+  // Recorded on the ledger row (see MCP_CREDITS_LEDGER_TAG).
+  ledger_tag?: string;
 }
 
 // Grouped billing operations for batch processing
@@ -115,6 +120,7 @@ interface GroupedBillingOperation {
   billing: BillingMetadata;
   is_extract: boolean;
   api_key_id: number | null;
+  ledger_tag?: string;
   operations: BillingOperation[];
 }
 
@@ -186,9 +192,7 @@ async function refundRequestTrackedCredits(
         ...toAutumnBillingProperties(group.billing),
         apiKeyId: group.api_key_id,
       },
-      featureId:
-        group.billing.featureId ??
-        featureIdForBillingEndpoint(group.billing.endpoint),
+      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
     });
   } catch (error) {
     logger.warn("Failed to refund Autumn request-tracked credits", {
@@ -289,9 +293,7 @@ export async function processBillingBatch() {
       } else {
         orgId = op.org_id;
       }
-      // The charged feature is in the key so a group's refund goes back to the
-      // one feature all of its operations spent.
-      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${billing.featureId ?? ""}:${op.is_extract}:${op.api_key_id}`;
+      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.ledger_tag ?? ""}:${op.is_extract}:${op.api_key_id}`;
 
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {
@@ -301,6 +303,7 @@ export async function processBillingBatch() {
           billing,
           is_extract: op.is_extract,
           api_key_id: op.api_key_id,
+          ledger_tag: op.ledger_tag,
           operations: [],
         });
       }
@@ -354,6 +357,7 @@ export async function processBillingBatch() {
           group.api_key_id,
           logger,
           group.is_extract,
+          group.ledger_tag ?? null,
         );
 
         if (!billingResult.success) {
@@ -464,28 +468,47 @@ export async function queueBillingOperation(
   });
 
   try {
-    const operation: BillingOperation = {
+    const operation = {
       team_id,
       ...(org_id === undefined ? {} : { org_id }),
-      credits,
       billing,
       is_extract,
       timestamp: new Date().toISOString(),
       api_key_id,
       autumnTrackInRequest,
-      ...(exchange === undefined
-        ? {}
-        : {
-            exchange_access_event_id: exchange.accessEventId,
-            ...(exchange.billingReference === undefined
-              ? {}
-              : { billing_reference: exchange.billingReference }),
-          }),
     };
+
+    // The part the team's MCP credits paid is its own ledger row, tagged so
+    // MCP-paid usage is counted apart from regular credits used. The Exchange
+    // access rides the first row only, so it is confirmed once.
+    const mcpCredits = Math.min(billing.mcpCredits ?? 0, credits);
+    const operations: BillingOperation[] = [
+      ...(mcpCredits === 0 || mcpCredits < credits
+        ? [{ ...operation, credits: credits - mcpCredits }]
+        : []),
+      ...(mcpCredits > 0
+        ? [
+            {
+              ...operation,
+              credits: mcpCredits,
+              ledger_tag: MCP_CREDITS_LEDGER_TAG,
+            },
+          ]
+        : []),
+    ];
+    if (exchange !== undefined) {
+      operations[0] = {
+        ...operations[0],
+        exchange_access_event_id: exchange.accessEventId,
+        ...(exchange.billingReference === undefined
+          ? {}
+          : { billing_reference: exchange.billingReference }),
+      };
+    }
 
     // Add operation to Redis list
     const redis = getRedisConnection();
-    await redis.rpush(BATCH_KEY, JSON.stringify(operation));
+    await redis.rpush(BATCH_KEY, ...operations.map(op => JSON.stringify(op)));
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(
       `📥 Added billing operation to queue (${queueLength} total pending)`,
@@ -519,6 +542,7 @@ async function supaBillTeam(
   api_key_id: number | null,
   __logger?: any,
   is_extract: boolean = false,
+  subscription_id: string | null = null,
 ) {
   const _logger = (__logger ?? logger).child({
     module: "credit_billing",
@@ -538,7 +562,7 @@ async function supaBillTeam(
   try {
     data = await billTeam7({
       team_id,
-      subscription_id: null,
+      subscription_id,
       credits,
       api_key_id: api_key_id ?? null,
       is_extract,
