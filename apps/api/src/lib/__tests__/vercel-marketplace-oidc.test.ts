@@ -53,9 +53,7 @@ async function sign(
 ) {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({
-    resource: "res_1",
-    owner: "team_abc",
-    project: "prj_abc",
+    act: { sub: "owner:team_abc:project:prj_abc:environment:production" },
     environment: "production",
     ...overrides.claims,
   })
@@ -67,6 +65,7 @@ async function sign(
     .setAudience(overrides.aud ?? "icfg_1")
     .setSubject("res_1")
     .setIssuedAt(now)
+    .setNotBefore(now)
     .setExpirationTime(now + (overrides.expSecondsFromNow ?? 300))
     .sign(overrides.key ?? signing.privateKey);
 }
@@ -106,9 +105,7 @@ describe("verifyVercelOidcToken", () => {
       iss: ISSUER,
       aud: "icfg_1",
       sub: "res_1",
-      resource: "res_1",
-      owner: "team_abc",
-      project: "prj_abc",
+      actor: "owner:team_abc:project:prj_abc:environment:production",
       environment: "production",
     });
   });
@@ -145,15 +142,15 @@ describe("verifyVercelOidcToken", () => {
         integrationId: INTEGRATION_ID,
         getKey: staticJwks(),
       }),
-    ).resolves.toMatchObject({ resource: "res_1" });
+    ).resolves.toMatchObject({ sub: "res_1" });
   });
 
   it("rejects an aud that is not a single string", async () => {
     await expectInvalid(await sign({ aud: ["icfg_1", "icfg_2"] }));
   });
 
-  it("rejects a token without a resource claim", async () => {
-    await expectInvalid(await sign({ claims: { resource: undefined } }));
+  it("rejects a token without an act claim", async () => {
+    await expectInvalid(await sign({ claims: { act: undefined } }));
   });
 });
 
@@ -209,7 +206,7 @@ describe("createVercelJwks", () => {
     now += 30_000;
     await expect(
       verifyVercelOidcToken(rotated, { integrationId: INTEGRATION_ID, getKey }),
-    ).resolves.toMatchObject({ resource: "res_1" });
+    ).resolves.toMatchObject({ sub: "res_1" });
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
@@ -257,7 +254,7 @@ describe("createVercelJwks", () => {
     now += 2 * 60 * 60 * 1000;
     await expect(
       verifyVercelOidcToken(token, { integrationId: INTEGRATION_ID, getKey }),
-    ).resolves.toMatchObject({ resource: "res_1" });
+    ).resolves.toMatchObject({ sub: "res_1" });
     expect(error).toHaveBeenCalledWith(
       "Vercel Marketplace JWKS refresh failed, using cached keys",
       expect.any(Object),

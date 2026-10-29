@@ -12,7 +12,7 @@ import { logger } from "./logger";
 // credential. We only verify it; Vercel hosts the mint endpoint.
 
 const VERCEL_INTEGRATIONS_ORIGIN = "https://integrations.vercel.com";
-// Vercel issues exp = iat + 300 today and may move to 900.
+// Vercel's contract sets the access token TTL to 15 minutes.
 const CLOCK_TOLERANCE_SECONDS = 60;
 
 const DEFAULT_JWKS_MAX_AGE_MS = 60 * 60 * 1000;
@@ -33,11 +33,9 @@ interface VercelOidcClaims {
   iss: string;
   aud: string;
   sub: string;
-  resource: string;
-  owner?: string;
-  project?: string;
+  actor: string;
+  role?: string;
   environment?: string;
-  deployment?: string;
   exp: number;
   iat: number;
 }
@@ -187,9 +185,9 @@ function optionalString(value: unknown): string | undefined {
 
 /**
  * Verifies a Vercel Marketplace OIDC resource token: RS256 only, exact issuer
- * for our integration, and a single-string aud (the installation id) plus a
- * resource claim. aud is not pinned here because it varies per installation;
- * the caller checks it against the stored installation.
+ * for our integration, a single-string aud (the installation id), sub (our
+ * resource id) and act.sub. aud is not pinned here because it varies per
+ * installation; the caller checks it against the stored installation.
  */
 export async function verifyVercelOidcToken(
   token: string,
@@ -204,7 +202,7 @@ export async function verifyVercelOidcToken(
       issuer: vercelIssuer(options.integrationId),
       algorithms: ["RS256"],
       clockTolerance: CLOCK_TOLERANCE_SECONDS,
-      requiredClaims: ["exp", "iat", "aud", "sub"],
+      requiredClaims: ["exp", "iat", "nbf", "aud", "sub", "act"],
     }));
   } catch (error) {
     if (error instanceof VercelJwksUnavailableError) throw error;
@@ -216,19 +214,21 @@ export async function verifyVercelOidcToken(
   if (typeof payload.aud !== "string" || payload.aud.length === 0) {
     throw new VercelOidcTokenInvalidError("aud_not_single_string");
   }
-  if (typeof payload.resource !== "string" || payload.resource.length === 0) {
-    throw new VercelOidcTokenInvalidError("missing_resource");
+  if (typeof payload.sub !== "string" || payload.sub.length === 0) {
+    throw new VercelOidcTokenInvalidError("missing_sub");
+  }
+  const actor = optionalString((payload.act as { sub?: unknown } | null)?.sub);
+  if (!actor) {
+    throw new VercelOidcTokenInvalidError("missing_act");
   }
 
   return {
     iss: payload.iss as string,
     aud: payload.aud,
-    sub: payload.sub as string,
-    resource: payload.resource,
-    owner: optionalString(payload.owner),
-    project: optionalString(payload.project),
+    sub: payload.sub,
+    actor,
+    role: optionalString(payload.role),
     environment: optionalString(payload.environment),
-    deployment: optionalString(payload.deployment),
     exp: payload.exp as number,
     iat: payload.iat as number,
   };
