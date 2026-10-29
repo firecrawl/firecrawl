@@ -1457,6 +1457,32 @@ describe("authenticateUser", () => {
       },
     );
 
+    it("keeps a free team at 25 when trusted agent traffic floors its rate multiplier at hobby", async () => {
+      config.AGENT_INTEROP_SECRET = "agent-secret";
+
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`, {
+          body: {
+            __agentInterop: {
+              auth: "agent-secret",
+              requestId: "req-1",
+              shouldBill: true,
+            },
+          },
+        }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(concurrencyOf(auth)).toBe(25);
+      // The rate limiter still sees the floored multiplier.
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        HOBBY_RATE_LIMIT_MULTIPLIER,
+        {},
+      );
+    });
+
     it("raises a hobby team to 50 for an API key the hosted MCP relayed", async () => {
       vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
         concurrency_limit: 5,

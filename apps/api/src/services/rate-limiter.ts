@@ -187,7 +187,8 @@ const HOSTED_MCP_MIN_CONCURRENCY_HOBBY = 50;
 /**
  * The concurrency limit for a call the hosted MCP made (verified in
  * controllers/auth.ts): HOSTED_MCP_MIN_CONCURRENCY_HOBBY at the hobby
- * multiplier and HOSTED_MCP_MIN_CONCURRENCY_FREE below it. Undefined on the
+ * multiplier and HOSTED_MCP_MIN_CONCURRENCY_FREE below it. Pass the team's
+ * own plan multiplier, not one floored for agent traffic. Undefined on the
  * same teams and modes that getHostedMcpRateLimiter leaves alone, and when the
  * team's own limit is already at least that minimum (which covers a custom
  * Autumn concurrency grant).

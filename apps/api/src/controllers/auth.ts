@@ -1163,12 +1163,14 @@ async function supaAuthenticateUser(
     // The same calls get a raised concurrency ceiling, so the team semaphore
     // does not cut the raised rate back to the plan's concurrency. Only this
     // request's chunk changes: the queue gates read the team's own limit
-    // through getACUCTeam.
+    // through getACUCTeam. The tier comes from the team's own plan
+    // multiplier, not `multiplier`, which trusted agent traffic floors at
+    // hobby, so a free team never gets the hobby concurrency.
     const hostedMcpConcurrency = hostedMcpCall
       ? getHostedMcpConcurrencyLimit(
           mode,
           chunk.concurrency_limit,
-          multiplier,
+          chunk.rate_limit_multiplier,
           chunk.flags,
         )
       : undefined;
