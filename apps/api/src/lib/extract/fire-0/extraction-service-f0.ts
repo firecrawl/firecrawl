@@ -9,8 +9,6 @@ import { scrapeDocument_F0 } from "./document-scraper-f0";
 import { billTeam } from "../../../services/billing/credit_billing";
 import { logExtract } from "../../../services/logging/log_job";
 import { spreadSchemas_F0 } from "./helpers/spread-schemas-f0";
-import Ajv from "ajv";
-const ajv = new Ajv();
 import { getErrorContactMessage } from "../../deployment";
 
 import { ExtractStep, updateExtract } from "../extract-redis";
@@ -426,8 +424,6 @@ export async function performExtraction_F0(
     for (const chunk of chunks) {
       const chunkPromises = chunk.map(async doc => {
         try {
-          ajv.compile(multiEntitySchema);
-
           // Wrap in timeout promise
           let timeoutHandle: NodeJS.Timeout;
           const timeoutPromise = new Promise(resolve => {
