@@ -16,7 +16,7 @@ from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
-from ..crawl import _job_id_from_next_url
+from ..crawl import _job_id_from_next_url, _normalize_preview_scrape_options
 import time
 
 
@@ -364,7 +364,10 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
     }
     for camel, snake in mapping.items():
         if camel in params_data:
-            converted[snake] = params_data[camel]
+            value = params_data[camel]
+            if camel == "scrapeOptions" and value is not None:
+                value = _normalize_preview_scrape_options(value)
+            converted[snake] = value
     if "webhook" in params_data:
         wk = params_data["webhook"]
         converted["webhook"] = wk
