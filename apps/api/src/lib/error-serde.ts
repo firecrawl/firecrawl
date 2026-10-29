@@ -119,6 +119,7 @@ const errorMap: Record<ErrorCodes, any> = {
   zdr_expired: null,
   zdr_no_snapshots: null,
   zdr_not_enabled: null,
+  zdr_retention_misconfigured: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {

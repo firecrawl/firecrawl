@@ -11,6 +11,7 @@ type OperationalJobAccess = {
   kind: ApiJobKind;
   clientOrigin?: string;
   expiresAtMs: number;
+  zeroDataRetentionMinutes?: number;
 };
 
 /**
