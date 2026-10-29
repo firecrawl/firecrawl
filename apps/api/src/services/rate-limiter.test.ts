@@ -13,6 +13,7 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
 
@@ -486,6 +487,63 @@ describe("getAutumnRateLimiter", () => {
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
         ),
       ).toBe(false);
+    });
+  });
+
+  describe("hosted MCP minimum", () => {
+    it("raises free and hobby to 600 and standard to 1,000 in a bucket of its own", () => {
+      for (const mode of [RateLimiterMode.Scrape, RateLimiterMode.Search]) {
+        // Free, hobby, ×11 and ×25 plan variants, then standard and a ×60
+        // variant.
+        for (const [multiplier, limit] of [
+          [1, 600],
+          [5, 600],
+          [10, 600],
+          [11, 600],
+          [25, 600],
+          [50, 1000],
+          [60, 1000],
+        ]) {
+          const limiter = getHostedMcpRateLimiter(mode, multiplier);
+          expect(limiter?.points).toBe(limit);
+          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        }
+      }
+    });
+
+    it("leaves plans already at or above their minimum on their normal limiter", () => {
+      // A ×100 variant (exactly 1,000), growth and scale.
+      for (const multiplier of [100, 500, 1000]) {
+        expect(
+          getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
+        ).toBe(undefined);
+      }
+    });
+
+    it("leaves other modes and overridden modes alone", () => {
+      for (const mode of [
+        RateLimiterMode.Exchange,
+        RateLimiterMode.Map,
+        RateLimiterMode.Crawl,
+        RateLimiterMode.Extract,
+        RateLimiterMode.Browser,
+        RateLimiterMode.ExchangeDiscover,
+      ]) {
+        expect(getHostedMcpRateLimiter(mode, 1)).toBe(undefined);
+      }
+      expect(
+        getHostedMcpRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(undefined);
+    });
+
+    it("treats a multiplier of zero or below as ×1", () => {
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
+        600,
+      );
     });
   });
 

@@ -142,6 +142,55 @@ export function getAutumnRateLimiter(
 }
 
 /**
+ * Modes that get the hosted MCP minimum. Agent clients send scrape and search
+ * calls in bursts, so the plan limits refused valid agent work on teams that
+ * still had credits.
+ */
+const HOSTED_MCP_MODES: ReadonlySet<RateLimiterMode> = new Set([
+  RateLimiterMode.Scrape,
+  RateLimiterMode.Search,
+]);
+
+/**
+ * Per-minute minimums for hosted MCP calls: 600 below the standard multiplier
+ * (free and hobby), 1,000 from it, so standard never sits below hobby. Growth
+ * and above are already higher, so they keep their plan limits.
+ */
+const HOSTED_MCP_MIN_RATE_LIMIT = 600;
+const HOSTED_MCP_STANDARD_MIN_RATE_LIMIT = 1000;
+const STANDARD_RATE_LIMIT_MULTIPLIER = 50;
+
+/**
+ * The limiter for a call the hosted MCP made (verified in controllers/auth.ts),
+ * or undefined when the team's normal limit (see getAutumnRateLimiter) is
+ * already at least its minimum, under an org override for the mode, and for
+ * modes outside HOSTED_MCP_MODES.
+ *
+ * The raised limit counts in its own bucket, so hosted MCP calls never use up
+ * the team's API budget for the mode and API calls never use up the hosted
+ * MCP one.
+ */
+export function getHostedMcpRateLimiter(
+  mode: RateLimiterMode,
+  multiplier: number = 1,
+  flags?: TeamFlags,
+): RateLimiterRedis | undefined {
+  if (!HOSTED_MCP_MODES.has(mode)) return undefined;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    return undefined;
+  }
+  const base = BASE_RATE_LIMITS[mode];
+  if (base === undefined) return undefined;
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  const minimum =
+    safeMultiplier >= STANDARD_RATE_LIMIT_MULTIPLIER
+      ? HOSTED_MCP_STANDARD_MIN_RATE_LIMIT
+      : HOSTED_MCP_MIN_RATE_LIMIT;
+  if (base * safeMultiplier >= minimum) return undefined;
+  return createRateLimiter(`hostedMcp:${mode}`, minimum);
+}
+
+/**
  * Autumn rate-limit multiplier granted to the hobby plan. Trusted agent
  * traffic (a valid `__agentInterop` secret) is floored at this multiplier so a
  * free team's agent runs are limited like hobby rather than at ×1; see

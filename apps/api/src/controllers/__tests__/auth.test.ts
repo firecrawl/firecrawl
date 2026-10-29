@@ -11,6 +11,7 @@ import { redlock } from "../../services/redlock";
 import { deleteKey, getValue, setValue } from "../../services/redis";
 import {
   getAutumnRateLimiter,
+  getHostedMcpRateLimiter,
   getRateLimiter,
   HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../../services/rate-limiter";
@@ -76,6 +77,7 @@ vi.mock("../../services/rate-limiter", async importOriginal => {
   return {
     ...actual,
     getRateLimiter: vi.fn(),
+    getHostedMcpRateLimiter: vi.fn(),
     getAutumnRateLimiter: vi.fn(),
   };
 });
@@ -1185,6 +1187,207 @@ describe("authenticateUser", () => {
 
       expect(auth.success).toBe(false);
       expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("hosted MCP rate-limit minimum", () => {
+    const API_KEY = "Bearer 00000000-0000-4000-8000-000000000000";
+    const requestWith = (
+      authorization: string,
+      extra: {
+        body?: Record<string, unknown>;
+        headers?: Record<string, string>;
+      } = {},
+    ) => ({
+      headers: { authorization, ...extra.headers },
+      socket: { remoteAddress: "127.0.0.1" },
+      body: extra.body,
+    });
+    const planConsume = vi.fn().mockResolvedValue(undefined);
+    const hostedMcpConsume = vi.fn().mockResolvedValue(undefined);
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
+      config.KEYLESS_PROXY_SECRET = "hosted-mcp-proxy-secret";
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: {},
+        },
+      ]);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({
+        consume: planConsume,
+      } as never);
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue({
+        consume: hostedMcpConsume,
+      } as never);
+    });
+
+    it.each([RateLimiterMode.Scrape, RateLimiterMode.Search])(
+      "uses only the raised limiter for a verified hosted MCP credential (%s)",
+      async mode => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          mode,
+        );
+
+        expect(auth.success).toBe(true);
+        expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          mode,
+          1,
+          {},
+        );
+        expect(hostedMcpConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+        expect(planConsume).not.toHaveBeenCalled();
+      },
+    );
+
+    it("uses only the raised limiter for an API key the hosted MCP relayed", async () => {
+      const auth = await authenticateUser(
+        requestWith(API_KEY, {
+          headers: { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+        }),
+        {},
+        RateLimiterMode.Search,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+        RateLimiterMode.Search,
+        1,
+        {},
+      );
+      expect(hostedMcpConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(planConsume).not.toHaveBeenCalled();
+    });
+
+    it("keeps the plan limit when no proxy secret is configured", async () => {
+      config.KEYLESS_PROXY_SECRET = undefined;
+
+      await authenticateUser(
+        requestWith(API_KEY, {
+          headers: { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+        }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+    });
+
+    it("does not enroll the org in the experiment through a hosted MCP call", async () => {
+      await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
+      expect(hostedMcpConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+    });
+
+    it("runs the experiment when the hosted MCP minimum does not apply", async () => {
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue(undefined);
+
+      await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getRateLimitExperimentVariant).toHaveBeenCalledOnce();
+    });
+
+    it("keeps the plan limit for an OAuth access token sent straight to the API", async () => {
+      config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+      config.OAUTH_INTROSPECT_SECRET = "secret";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              active: true,
+              api_key: "fc-00000000000000004000800000000000",
+              scope: "firecrawl:global",
+              client_id: "client-1",
+              team_id: "team-1",
+              exp: Math.floor(Date.now() / 1000) + 60,
+              aud: "https://api.firecrawl.dev/",
+              credential_purpose: "hosted_mcp_oauth",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      );
+
+      const auth = await authenticateUser(
+        requestWith("Bearer fco_rest_grant_token"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
+      ["an MCP X-Origin header", { headers: { "x-origin": "mcp" } }],
+      ["the CLI integration", { body: { origin: "api", integration: "cli" } }],
+      [
+        "a wrong proxy secret",
+        { headers: { "x-firecrawl-keyless-secret": "not-the-secret" } },
+      ],
+      ["no origin", {}],
+    ])("keeps the plan limit for an API key with %s", async (_label, extra) => {
+      const auth = await authenticateUser(
+        requestWith(API_KEY, extra),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
+    });
+
+    it("does not raise the limit for a credential that fails verification", async () => {
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation({}, "wrong-secret")}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(false);
+      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
+    });
+
+    it("keeps the plan limiter when the minimum does not raise it", async () => {
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue(undefined);
+
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+      expect(hostedMcpConsume).not.toHaveBeenCalled();
     });
   });
 
