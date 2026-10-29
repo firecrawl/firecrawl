@@ -746,6 +746,31 @@ describe("executeSearch query operators", () => {
     ]);
   });
 
+  it("enforces a site: domain written with a leading dot", async () => {
+    mocks.search.mockResolvedValue({
+      web: [
+        web("https://www.irs.gov/forms-instructions"),
+        web("https://www.taxforms.example/1040"),
+      ],
+    });
+
+    const result = await executeSearch(
+      { ...options([]), query: "tax forms site:.gov" },
+      context,
+      logger,
+    );
+
+    expect(result.response.web?.map(x => x.url)).toEqual([
+      "https://www.irs.gov/forms-instructions",
+    ]);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "tax forms site:.gov",
+        includeDomains: ["gov"],
+      }),
+    );
+  });
+
   it("enforces site: on image results", async () => {
     mocks.search.mockResolvedValue({
       images: [
