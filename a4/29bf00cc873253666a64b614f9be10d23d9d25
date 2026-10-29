@@ -1,0 +1,22 @@
+apps/api/src/lib/scrape-billing.ts
+  s_8fcc4c507e6624::t_a79c5ed2e2c93c 200
+apps/api/src/lib/scrape-billing.test.ts
+  s_8fcc4c507e6624::t_63252681e78c06 690-700,702-708
+  s_8fcc4c507e6624::t_f92ec130309ee3 701
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a429bf00cc873253666a64b614f9be10d23d9d25",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
