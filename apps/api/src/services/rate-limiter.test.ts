@@ -506,9 +506,33 @@ describe("getAutumnRateLimiter", () => {
       }
     });
 
-    it("leaves every plan above hobby on its normal limiter", () => {
-      // ×11 and ×25 plan variants, standard, growth and scale.
-      for (const multiplier of [11, 25, 50, 500, 1000]) {
+    it("raises standard to 2000 in a bucket of its own", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        // Standard (×50) and an off-tier ×100 variant, which rounds down.
+        for (const multiplier of [50, 100]) {
+          const limiter = getHostedMcpRateLimiter(mode, multiplier);
+          expect(limiter?.points).toBe(2000);
+          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        }
+      }
+    });
+
+    it("never lowers a standard-tier plan already at 2000 or more", () => {
+      // 10 × 200 = 2000 and 10 × 400 = 4000 on their normal limiters.
+      for (const multiplier of [200, 400]) {
+        expect(
+          getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
+        ).toBe(undefined);
+      }
+    });
+
+    it("leaves plans between hobby and standard, and growth and above, on their normal limiter", () => {
+      // ×11 and ×25 plan variants, growth, scale and enterprise.
+      for (const multiplier of [11, 25, 49, 500, 1000, 2500]) {
         expect(
           getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
         ).toBe(undefined);
@@ -558,8 +582,28 @@ describe("getAutumnRateLimiter", () => {
       );
     });
 
-    it("leaves every plan above hobby on its own limit", () => {
-      for (const multiplier of [11, 25, 50, 500, 1000]) {
+    it("raises standard to 75, and leaves a standard team at 75 or more alone", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        expect(getHostedMcpConcurrencyLimit(mode, 50, 50)).toBe(75);
+        expect(getHostedMcpConcurrencyLimit(mode, 50, 100)).toBe(75);
+      }
+      for (const concurrencyLimit of [75, 100]) {
+        expect(
+          getHostedMcpConcurrencyLimit(
+            RateLimiterMode.Scrape,
+            concurrencyLimit,
+            50,
+          ),
+        ).toBe(undefined);
+      }
+    });
+
+    it("leaves plans between hobby and standard, and growth and above, on their own limit", () => {
+      for (const multiplier of [11, 25, 49, 500, 1000, 2500]) {
         expect(
           getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 5, multiplier),
         ).toBe(undefined);

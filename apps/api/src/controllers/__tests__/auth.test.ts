@@ -1475,10 +1475,10 @@ describe("authenticateUser", () => {
       );
 
       expect(concurrencyOf(auth)).toBe(25);
-      // The rate limiter still sees the floored multiplier.
-      expect(getHostedMcpRateLimiter).toHaveBeenCalledWith(
+      // The rate tier is also picked from the plan's own ×1.
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
         RateLimiterMode.Scrape,
-        HOBBY_RATE_LIMIT_MULTIPLIER,
+        1,
         {},
       );
     });
@@ -1499,8 +1499,31 @@ describe("authenticateUser", () => {
       expect(concurrencyOf(auth)).toBe(50);
     });
 
+    it("raises a standard team to 75 and asks for the standard rate tier", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        concurrency_limit: 50,
+        rate_limit_multiplier: 50,
+        is_paid_plan: true,
+      });
+
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Search,
+      );
+
+      expect(concurrencyOf(auth)).toBe(75);
+      expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+        RateLimiterMode.Search,
+        50,
+        {},
+      );
+    });
+
     it.each([
-      ["a plan above hobby", 5, HOBBY_RATE_LIMIT_MULTIPLIER + 1],
+      ["a plan between hobby and standard", 5, HOBBY_RATE_LIMIT_MULTIPLIER + 1],
+      ["growth", 100, 500],
+      ["a standard team already at 75", 75, 50],
       ["a hobby team already at 50", 50, HOBBY_RATE_LIMIT_MULTIPLIER],
       ["a free team already at 25", 25, 1],
       ["a free team above 25", 30, 1],

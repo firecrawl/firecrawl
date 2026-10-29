@@ -141,19 +141,56 @@ export function getAutumnRateLimiter(
   return createRateLimiter(`${mode}`, rateLimit);
 }
 
-/**
- * Per-minute minimum for scrape, search and exchange calls the hosted MCP makes
- * for a free or hobby team. Agent clients send these calls in bursts, so the
- * plan limits refused valid agent work on teams that still had credits.
- */
-const HOSTED_MCP_MIN_RATE_LIMIT = 600;
+/** Autumn rate-limit multipliers of the standard and growth plans. */
+const STANDARD_RATE_LIMIT_MULTIPLIER = 50;
+const GROWTH_RATE_LIMIT_MULTIPLIER = 500;
+
+type HostedMcpTier = { rateLimit: number; concurrency: number };
 
 /**
- * The limiter for a call the hosted MCP made (verified in controllers/auth.ts),
- * or undefined when the team is above hobby (multiplier over
- * HOBBY_RATE_LIMIT_MULTIPLIER), when its normal limit (see getAutumnRateLimiter)
- * is already at least HOSTED_MCP_MIN_RATE_LIMIT, under an org override for the
- * mode, and for modes outside RAISED_MINIMUM_MODES.
+ * Minimums for scrape, search and exchange calls the hosted MCP makes. Agent
+ * clients send these calls in bursts, so the plan limits refused valid agent
+ * work on teams that still had credits.
+ *
+ * - Rate: 600/min on free and hobby covers the p99 burst of rate-limited MCP
+ *   teams on both; standard MCP bursts reach about 2,000/min at p99.
+ * - Concurrency: 600/min is 10 calls a second, and at a typical scrape time of
+ *   about 2.5 seconds that keeps about 25 in flight, so the raised rate limit
+ *   is not cut back to the plan's concurrency by the team semaphore.
+ *   Rate-limited MCP teams reach about 10 jobs in flight at p99 on free, 42 on
+ *   hobby and 69 on standard, so hobby gets 50 and standard 75.
+ */
+const HOSTED_MCP_FREE: HostedMcpTier = { rateLimit: 600, concurrency: 25 };
+const HOSTED_MCP_HOBBY: HostedMcpTier = { rateLimit: 600, concurrency: 50 };
+const HOSTED_MCP_STANDARD: HostedMcpTier = { rateLimit: 2000, concurrency: 75 };
+
+/**
+ * The hosted MCP tier for a team's own Autumn plan multiplier (never one
+ * floored for agent traffic): free below the hobby multiplier, hobby at it,
+ * standard from the standard multiplier up to (not including) growth, so
+ * off-tier variants in that range round down to standard. Undefined between
+ * hobby and standard (×11 to ×49 plan variants) and from growth up, which
+ * keep their plan limits.
+ */
+function hostedMcpTier(multiplier: number): HostedMcpTier | undefined {
+  const safeMultiplier = multiplier > 0 ? multiplier : 1;
+  if (safeMultiplier < HOBBY_RATE_LIMIT_MULTIPLIER) return HOSTED_MCP_FREE;
+  if (safeMultiplier === HOBBY_RATE_LIMIT_MULTIPLIER) return HOSTED_MCP_HOBBY;
+  if (
+    safeMultiplier >= STANDARD_RATE_LIMIT_MULTIPLIER &&
+    safeMultiplier < GROWTH_RATE_LIMIT_MULTIPLIER
+  ) {
+    return HOSTED_MCP_STANDARD;
+  }
+  return undefined;
+}
+
+/**
+ * The limiter for a call the hosted MCP made (verified in controllers/auth.ts)
+ * at the tier for the team's plan multiplier (see hostedMcpTier), or
+ * undefined when the plan has no tier, when its normal limit (see
+ * getAutumnRateLimiter) is already at least the tier's rate, under an org
+ * override for the mode, and for modes outside RAISED_MINIMUM_MODES.
  *
  * The raised limit counts in its own bucket, so hosted MCP calls never use up
  * the team's API budget for the mode and API calls never use up the hosted
@@ -164,34 +201,22 @@ export function getHostedMcpRateLimiter(
   multiplier: number = 1,
   flags?: TeamFlags,
 ): RateLimiterRedis | undefined {
-  if (!hostedMcpMinimumApplies(mode, multiplier, flags)) return undefined;
+  const tier = hostedMcpTierFor(mode, multiplier, flags);
+  if (!tier) return undefined;
   const base = BASE_RATE_LIMITS[mode];
   if (base === undefined) return undefined;
   const safeMultiplier = multiplier > 0 ? multiplier : 1;
-  if (base * safeMultiplier >= HOSTED_MCP_MIN_RATE_LIMIT) return undefined;
-  return createRateLimiter(`hostedMcp:${mode}`, HOSTED_MCP_MIN_RATE_LIMIT);
+  if (base * safeMultiplier >= tier.rateLimit) return undefined;
+  return createRateLimiter(`hostedMcp:${mode}`, tier.rateLimit);
 }
 
 /**
- * Concurrency minimums for scrape, search and exchange calls the hosted MCP
- * makes for a free (2) or hobby (5) team. Free is sized to the hosted MCP rate
- * minimum: 600/min is 10 calls a second, and at a typical scrape time of about
- * 2.5 seconds that keeps about 25 in flight, so the raised rate limit is not
- * cut back to the plan's concurrency by the team semaphore. Hobby gets 50
- * because rate-limited hobby MCP teams reach about 42 jobs in flight at p99
- * (free: about 10).
- */
-const HOSTED_MCP_MIN_CONCURRENCY_FREE = 25;
-const HOSTED_MCP_MIN_CONCURRENCY_HOBBY = 50;
-
-/**
  * The concurrency limit for a call the hosted MCP made (verified in
- * controllers/auth.ts): HOSTED_MCP_MIN_CONCURRENCY_HOBBY at the hobby
- * multiplier and HOSTED_MCP_MIN_CONCURRENCY_FREE below it. Pass the team's
- * own plan multiplier, not one floored for agent traffic. Undefined on the
- * same teams and modes that getHostedMcpRateLimiter leaves alone, and when the
- * team's own limit is already at least that minimum (which covers a custom
- * Autumn concurrency grant).
+ * controllers/auth.ts) at the tier for the team's plan multiplier (see
+ * hostedMcpTier). Undefined on the same plans and modes that
+ * getHostedMcpRateLimiter leaves alone, and when the team's own limit is
+ * already at least the tier's concurrency (which covers a custom Autumn
+ * concurrency grant).
  *
  * This raises the ceiling the request checks against the team's shared
  * concurrency pool; it is not a pool of its own. Hosted MCP calls still count
@@ -204,28 +229,26 @@ export function getHostedMcpConcurrencyLimit(
   multiplier: number = 1,
   flags?: TeamFlags,
 ): number | undefined {
-  if (!hostedMcpMinimumApplies(mode, multiplier, flags)) return undefined;
-  const minimum =
-    multiplier >= HOBBY_RATE_LIMIT_MULTIPLIER
-      ? HOSTED_MCP_MIN_CONCURRENCY_HOBBY
-      : HOSTED_MCP_MIN_CONCURRENCY_FREE;
-  if (concurrencyLimit >= minimum) return undefined;
-  return minimum;
+  const tier = hostedMcpTierFor(mode, multiplier, flags);
+  if (!tier) return undefined;
+  if (concurrencyLimit >= tier.concurrency) return undefined;
+  return tier.concurrency;
 }
 
 /**
- * Whether a hosted MCP minimum may apply: only for RAISED_MINIMUM_MODES, only
- * at or below the hobby multiplier, and never under an org override for the
- * mode.
+ * The hosted MCP tier when one may apply: only for RAISED_MINIMUM_MODES, only
+ * for a plan with a tier, and never under an org override for the mode.
  */
-function hostedMcpMinimumApplies(
+function hostedMcpTierFor(
   mode: RateLimiterMode,
   multiplier: number,
   flags?: TeamFlags,
-): boolean {
-  if (!RAISED_MINIMUM_MODES.has(mode)) return false;
-  if (multiplier > HOBBY_RATE_LIMIT_MULTIPLIER) return false;
-  return getRateLimitOverride(mode, flags?.rateLimitOverrides) === undefined;
+): HostedMcpTier | undefined {
+  if (!RAISED_MINIMUM_MODES.has(mode)) return undefined;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    return undefined;
+  }
+  return hostedMcpTier(multiplier);
 }
 
 /**

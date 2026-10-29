@@ -1157,15 +1157,16 @@ async function supaAuthenticateUser(
         req.headers["x-firecrawl-keyless-secret"],
         config.KEYLESS_PROXY_SECRET,
       );
+    // The tier comes from the team's own plan multiplier, not `multiplier`,
+    // which trusted agent traffic floors at hobby, so a free team never gets
+    // the hobby tier.
     const hostedMcpLimiter = hostedMcpCall
-      ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
+      ? getHostedMcpRateLimiter(mode, chunk.rate_limit_multiplier, chunk.flags)
       : undefined;
     // The same calls get a raised concurrency ceiling, so the team semaphore
     // does not cut the raised rate back to the plan's concurrency. Only this
     // request's chunk changes: the queue gates read the team's own limit
-    // through getACUCTeam. The tier comes from the team's own plan
-    // multiplier, not `multiplier`, which trusted agent traffic floors at
-    // hobby, so a free team never gets the hobby concurrency.
+    // through getACUCTeam.
     const hostedMcpConcurrency = hostedMcpCall
       ? getHostedMcpConcurrencyLimit(
           mode,
