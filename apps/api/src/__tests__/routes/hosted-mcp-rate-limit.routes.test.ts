@@ -31,14 +31,13 @@ async function optsIn(path: string): Promise<boolean> {
 }
 
 describe("hosted MCP rate-limit opt-in", () => {
-  it.each(["/v1/scrape", "/v1/search", "/v2/scrape", "/v2/search"])(
-    "is set on %s",
-    async path => {
-      expect(await optsIn(path)).toBe(true);
-    },
-  );
+  it.each(["/v2/scrape", "/v2/search"])("is set on %s", async path => {
+    expect(await optsIn(path)).toBe(true);
+  });
 
   it.each([
+    "/v1/scrape",
+    "/v1/search",
     "/v1/batch/scrape",
     "/v2/batch/scrape",
     "/v2/parse",

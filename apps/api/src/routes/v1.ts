@@ -50,10 +50,7 @@ v1Router.use(requestTimingMiddleware("v1"));
 
 v1Router.post(
   "/scrape",
-  authMiddleware(RateLimiterMode.Scrape, {
-    allowKeyless: true,
-    hostedMcpRateLimit: true,
-  }),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
@@ -85,10 +82,7 @@ v1Router.post(
 
 v1Router.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search, {
-    allowKeyless: true,
-    hostedMcpRateLimit: true,
-  }),
+  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
