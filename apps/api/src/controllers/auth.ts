@@ -858,6 +858,9 @@ type AuthenticateOptions = {
   // Route opt-in: a trusted agent-interop request may authenticate with a
   // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.
   allowAgentManagedKey?: boolean;
+  // Route opt-in: calls the hosted MCP makes get the raised per-minute
+  // minimum (see getHostedMcpRateLimiter) only on routes that set this.
+  hostedMcpRateLimit?: boolean;
 };
 
 async function supaAuthenticateUser(
@@ -1145,21 +1148,23 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-    // Calls the hosted MCP makes get a raised per-minute minimum. Two signals
-    // prove the hosted MCP made the call: a verified delegated credential
-    // (OAuth sessions) or the proxy secret it shares with the API (API-key
-    // sessions). `fco_` tokens never qualify: the hosted MCP keeps those for
-    // the issuer, so a REST call carrying one comes from the client itself.
-    // Origin and integration are client-set, so they never change the limit.
+    // Calls the hosted MCP makes on routes that opt in (scrape and search)
+    // get a raised per-minute minimum. Two signals prove the hosted MCP made
+    // the call: a verified delegated credential (OAuth sessions) or the proxy
+    // secret it shares with the API (API-key sessions). `fco_` tokens never
+    // qualify: the hosted MCP keeps those for the issuer, so a REST call
+    // carrying one comes from the client itself. Origin and integration are
+    // client-set, so they never change the limit.
     hostedMcpCall =
       hostedMcpDelegation ||
       timingSafeSecretEqual(
         req.headers["x-firecrawl-keyless-secret"],
         config.KEYLESS_PROXY_SECRET,
       );
-    const hostedMcpLimiter = hostedMcpCall
-      ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
-      : undefined;
+    const hostedMcpLimiter =
+      options?.hostedMcpRateLimit === true && hostedMcpCall
+        ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
+        : undefined;
     if (hostedMcpLimiter) {
       // At or above the treatment minimum on every plan it applies to, so the
       // experiment cannot change this call's limit and does not enroll the

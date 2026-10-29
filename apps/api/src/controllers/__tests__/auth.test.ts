@@ -1203,6 +1203,8 @@ describe("authenticateUser", () => {
       socket: { remoteAddress: "127.0.0.1" },
       body: extra.body,
     });
+    // Options of a route that opts in to the hosted MCP minimum.
+    const HOSTED_MCP_ROUTE = { hostedMcpRateLimit: true };
     const planConsume = vi.fn().mockResolvedValue(undefined);
     const hostedMcpConsume = vi.fn().mockResolvedValue(undefined);
 
@@ -1238,6 +1240,7 @@ describe("authenticateUser", () => {
           requestWith(`Bearer ${signDelegation()}`),
           {},
           mode,
+          HOSTED_MCP_ROUTE,
         );
 
         expect(auth.success).toBe(true);
@@ -1258,6 +1261,7 @@ describe("authenticateUser", () => {
         }),
         {},
         RateLimiterMode.Search,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(auth.success).toBe(true);
@@ -1270,6 +1274,30 @@ describe("authenticateUser", () => {
       expect(planConsume).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ["a verified delegated credential", `Bearer ${signDelegation()}`, {}],
+      [
+        "an API key with the proxy secret",
+        API_KEY,
+        { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+      ],
+    ])(
+      "keeps the plan limit on a route that does not opt in, for %s",
+      async (_label, authorization, headers) => {
+        // Parse and batch scrape share the scrape mode but not the opt-in.
+        const auth = await authenticateUser(
+          requestWith(authorization, { headers }),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth.success).toBe(true);
+        expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+        expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+        expect(hostedMcpConsume).not.toHaveBeenCalled();
+      },
+    );
+
     it("keeps the plan limit when no proxy secret is configured", async () => {
       config.KEYLESS_PROXY_SECRET = undefined;
 
@@ -1279,6 +1307,7 @@ describe("authenticateUser", () => {
         }),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
@@ -1321,6 +1350,7 @@ describe("authenticateUser", () => {
         requestWith(`Bearer ${signDelegation()}`),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(getRateLimitExperimentVariant).not.toHaveBeenCalled();
@@ -1334,6 +1364,7 @@ describe("authenticateUser", () => {
         requestWith(`Bearer ${signDelegation()}`),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(getRateLimitExperimentVariant).toHaveBeenCalledOnce();
@@ -1365,6 +1396,7 @@ describe("authenticateUser", () => {
         requestWith("Bearer fco_rest_grant_token"),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(auth.success).toBe(true);
@@ -1387,6 +1419,7 @@ describe("authenticateUser", () => {
         requestWith(API_KEY, extra),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(auth.success).toBe(true);
@@ -1400,6 +1433,7 @@ describe("authenticateUser", () => {
         requestWith(`Bearer ${signDelegation({}, "wrong-secret")}`),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(auth.success).toBe(false);
@@ -1414,6 +1448,7 @@ describe("authenticateUser", () => {
         requestWith(`Bearer ${signDelegation()}`),
         {},
         RateLimiterMode.Scrape,
+        HOSTED_MCP_ROUTE,
       );
 
       expect(auth.success).toBe(true);

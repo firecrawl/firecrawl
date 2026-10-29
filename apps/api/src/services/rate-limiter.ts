@@ -166,9 +166,10 @@ const STANDARD_RATE_LIMIT_MULTIPLIER = 50;
  * already at least its minimum, under an org override for the mode, and for
  * modes outside HOSTED_MCP_MODES.
  *
- * The raised limit counts in its own bucket, so hosted MCP calls never use up
- * the team's API budget for the mode and API calls never use up the hosted
- * MCP one.
+ * Where the minimum applies, the call counts in its own bucket, so those hosted
+ * MCP calls do not use up the team's API budget for the mode and API calls do
+ * not use up the hosted MCP one. Where it does not apply, the call uses the
+ * team's normal limiter.
  */
 export function getHostedMcpRateLimiter(
   mode: RateLimiterMode,
