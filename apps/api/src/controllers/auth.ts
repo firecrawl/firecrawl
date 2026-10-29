@@ -12,9 +12,7 @@ import {
   getHostedMcpRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
-  rateLimitExperimentApplies,
 } from "../services/rate-limiter";
-import { getRateLimitExperimentVariant } from "../services/rate-limit-experiment";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
@@ -1139,8 +1137,6 @@ async function supaAuthenticateUser(
     }
   }
 
-  // The rate-limit experiment runs after the ban and restriction checks, so
-  // only requests that reach the limiter enroll an org or count as exposed.
   if (chunk !== null) {
     const multiplier = authenticatedRateLimitMultiplier(
       chunk,
@@ -1164,26 +1160,7 @@ async function supaAuthenticateUser(
         ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
         : undefined;
     if (hostedMcpLimiter) {
-      // At or above the treatment minimum on every plan it applies to, so the
-      // experiment cannot change this call's limit and does not enroll the
-      // org through it.
       rateLimiter = hostedMcpLimiter;
-    } else if (
-      rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
-      (await getRateLimitExperimentVariant({
-        orgId: chunk.org_id,
-        teamId: chunk.team_id,
-        apiKeyId: chunk.api_key_id_text ?? chunk.api_key_id,
-        rateLimitMultiplier: chunk.rate_limit_multiplier,
-        isPaidPlan: chunk.is_paid_plan,
-      })) === "treatment"
-    ) {
-      rateLimiter = getAutumnRateLimiter(
-        mode,
-        multiplier,
-        chunk.flags,
-        "treatment",
-      );
     }
   }
 
