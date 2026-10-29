@@ -1339,40 +1339,49 @@ describe("authenticateUser", () => {
       expect(getRateLimitExperimentVariant).toHaveBeenCalledOnce();
     });
 
-    it("keeps the plan limit for an OAuth access token sent straight to the API", async () => {
-      config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
-      config.OAUTH_INTROSPECT_SECRET = "secret";
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(
-            JSON.stringify({
-              active: true,
-              api_key: "fc-00000000000000004000800000000000",
-              scope: "firecrawl:global",
-              client_id: "client-1",
-              team_id: "team-1",
-              exp: Math.floor(Date.now() / 1000) + 60,
-              aud: "https://api.firecrawl.dev/",
-              credential_purpose: "hosted_mcp_oauth",
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
+    it.each([
+      ["", {}],
+      [
+        " with the proxy secret",
+        { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+      ],
+    ])(
+      "keeps the plan limit for an OAuth access token sent straight to the API%s",
+      async (_label, headers) => {
+        config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+        config.OAUTH_INTROSPECT_SECRET = "secret";
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue(
+            new Response(
+              JSON.stringify({
+                active: true,
+                api_key: "fc-00000000000000004000800000000000",
+                scope: "firecrawl:global",
+                client_id: "client-1",
+                team_id: "team-1",
+                exp: Math.floor(Date.now() / 1000) + 60,
+                aud: "https://api.firecrawl.dev/",
+                credential_purpose: "hosted_mcp_oauth",
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
           ),
-        ),
-      );
+        );
 
-      const auth = await authenticateUser(
-        requestWith("Bearer fco_rest_grant_token"),
-        {},
-        RateLimiterMode.Scrape,
-        HOSTED_MCP_ROUTE,
-      );
+        const auth = await authenticateUser(
+          requestWith("Bearer fco_rest_grant_token", { headers }),
+          {},
+          RateLimiterMode.Scrape,
+          HOSTED_MCP_ROUTE,
+        );
 
-      expect(auth.success).toBe(true);
-      expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
-      expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
-      expect(hostedMcpConsume).not.toHaveBeenCalled();
-    });
+        expect(auth.success).toBe(true);
+        expect(getHostedMcpRateLimiter).not.toHaveBeenCalled();
+        expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
+        expect(hostedMcpConsume).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
