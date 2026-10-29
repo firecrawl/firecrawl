@@ -11,9 +11,14 @@ on:
       - apps/redis/**
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
       push-app-image:
         runs-on: blacksmith-4vcpu-ubuntu-2404
+        permissions:
+          contents: read
+          packages: write
         defaults:
           run:
             working-directory: './apps/redis'

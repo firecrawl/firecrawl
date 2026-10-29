@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import {
   RequestWithAuth,
   SearchRequest,
@@ -144,9 +145,10 @@ async function searchControllerInner(
   });
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
-  const isSearchPreview =
-    config.SEARCH_PREVIEW_TOKEN !== undefined &&
-    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+  const isSearchPreview = timingSafeSecretEqual(
+    req.body.__searchPreviewToken,
+    config.SEARCH_PREVIEW_TOKEN,
+  );
 
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;

@@ -16,10 +16,14 @@ on:
 # This workflow reads Version from apps/go-sdk/version.go, checks whether the
 # corresponding tag already exists, and if not creates+pushes it, then warms
 # the proxy.golang.org cache to trigger pkg.go.dev indexing.
+permissions: {}
+
 jobs:
   publish:
     name: Tag and index on pkg.go.dev
+    if: github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
     permissions:
       contents: write
     steps:

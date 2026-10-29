@@ -11,7 +11,10 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { getAutumnRateLimiter } from "./rate-limiter";
+import {
+  getAutumnRateLimiter,
+  rateLimitExperimentApplies,
+} from "./rate-limiter";
 
 // import {
 //   getRateLimiter,
@@ -415,6 +418,75 @@ describe("getAutumnRateLimiter", () => {
     expect(
       getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1000).points,
     ).toBe(10000);
+  });
+
+  describe("rate-limit experiment", () => {
+    const limit = (
+      mode: RateLimiterMode,
+      multiplier: number,
+      variant?: "control" | "treatment",
+    ) => getAutumnRateLimiter(mode, multiplier, undefined, variant).points;
+
+    it("raises scrape, search and exchange to the plan's minimum for treatment", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        expect(limit(mode, 1, "treatment")).toBe(50);
+        expect(limit(mode, 10, "treatment")).toBe(500);
+        expect(limit(mode, 50, "treatment")).toBe(1000);
+        expect(limit(mode, 500, "treatment")).toBe(5000);
+      }
+    });
+
+    it("keeps base × multiplier for control and without a variant", () => {
+      expect(limit(RateLimiterMode.Scrape, 1, "control")).toBe(10);
+      expect(limit(RateLimiterMode.Search, 10, "control")).toBe(100);
+      expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
+    });
+
+    it("rounds an off-tier multiplier down to the tier below it", () => {
+      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(50);
+      expect(limit(RateLimiterMode.Scrape, 6, "treatment")).toBe(60);
+      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(500);
+      expect(limit(RateLimiterMode.Scrape, 200, "treatment")).toBe(2000);
+    });
+
+    it("leaves other modes and overrides alone for treatment", () => {
+      expect(limit(RateLimiterMode.Map, 1, "treatment")).toBe(10);
+      expect(limit(RateLimiterMode.Crawl, 1, "treatment")).toBe(2);
+      expect(
+        getAutumnRateLimiter(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+          "treatment",
+        ).points,
+      ).toBe(5);
+    });
+
+    it("applies only where the treatment minimum changes the limit", () => {
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 1)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Search, 10)).toBe(true);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Exchange, 50)).toBe(
+        true,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 20)).toBe(true);
+      // 50/min in both variants, or above every minimum.
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(false);
+      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 500)).toBe(
+        false,
+      );
+      expect(rateLimitExperimentApplies(RateLimiterMode.Map, 1)).toBe(false);
+      expect(
+        rateLimitExperimentApplies(
+          RateLimiterMode.Scrape,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(false);
+    });
   });
 
   it("replaces the computed limit with the override for that mode", () => {

@@ -2,6 +2,8 @@ allowBuilds:
   esbuild: true
   sharp: true
 overrides:
+  # GHSA-mrhx-c7xc-m3w5: fixed in 4.6.6. Bounded <5.0.0; cannot resolve to 5.x.
+  "zod@>=4.0.0 <4.6.6": "4.6.7"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   # GHSA-698v-4r3x-3vcv: pin the 8.0 and 8.1 lines to 8.1.6. Cannot resolve to 8.2+.
   "vite@>=8.0.0 <8.1.6": "8.1.6"
@@ -11,7 +13,8 @@ overrides:
   # GHSA-4Q55-J62X-FR9H: all fixed in >=5.9.3; keep the 5.x line only.
   # The <6.0.0 ceiling cannot resolve to 6.x.
   devalue: ">=5.9.3 <6.0.0"
-  h3: ">=1.15.9"
+  # Keep the 1.x line only; unstorage@1 needs h3@^1.
+  h3: ">=1.15.9 <2.0.0"
   "picomatch@<4.0.4": ">=4.0.4"
   # GHSA-r4xh-jqrq-34v2: pin the 1.x line only. Exact 1.9.0 cannot
   # resolve to 2.x.
@@ -32,3 +35,6 @@ overrides:
   # GHSA-ch52-4w7c-c8xp: pin the 4.x line only. Exact 4.3.0 cannot
   # resolve to 5.x.
   "http-cache-semantics@>=4.0.0 <5.0.0": "4.3.0"
+  # GHSA-4qv8-2p9j-2685 / GHSA-f72v-6w45-q472 / GHSA-xjj6-f33q-929c:
+  # pin the 8.x line only. Exact 8.12.2 cannot resolve to 9.x.
+  "undici@>=8.0.0 <8.12.2": "8.12.2"

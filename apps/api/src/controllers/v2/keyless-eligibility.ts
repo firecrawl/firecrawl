@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import {
   checkKeylessEligibility,
   keylessSignupUrlForIp,
@@ -33,7 +34,7 @@ export async function keylessEligibilityController(
   res: Response,
 ): Promise<void> {
   const secret = req.headers["x-firecrawl-keyless-secret"];
-  if (!config.KEYLESS_PROXY_SECRET || secret !== config.KEYLESS_PROXY_SECRET) {
+  if (!timingSafeSecretEqual(secret, config.KEYLESS_PROXY_SECRET)) {
     res.status(401).json({ eligible: false, error: "Unauthorized" });
     return;
   }

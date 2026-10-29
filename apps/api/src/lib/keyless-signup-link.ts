@@ -2,6 +2,7 @@ import { createCipheriv } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { config } from "../config";
 import { logger } from "./logger";
+import { timingSafeSecretEqual } from "./secret-compare";
 import { resolveIntegration } from "../utils/integration";
 
 // Keyless prompts link to signup at https://firecrawl.dev/k/<token>. The token
@@ -340,9 +341,10 @@ export function keylessSignupSurface(req: RequestLike): KeylessSignupSurface {
       : (headerOrigin ?? bodyOrigin);
   const integration = resolveIntegration(lowerString(body.integration), req);
   if (
-    config.KEYLESS_PROXY_SECRET &&
-    firstHeader(req, "x-firecrawl-keyless-secret") ===
-      config.KEYLESS_PROXY_SECRET
+    timingSafeSecretEqual(
+      firstHeader(req, "x-firecrawl-keyless-secret"),
+      config.KEYLESS_PROXY_SECRET,
+    )
   ) {
     return "mcp";
   }

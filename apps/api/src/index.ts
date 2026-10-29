@@ -9,12 +9,17 @@ import {
   getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
+  getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
-import { adminRouter } from "./routes/admin";
+import {
+  adminInternalRouter,
+  adminRouter,
+  countAdminPathRoute,
+} from "./routes/admin";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
@@ -98,23 +103,30 @@ if (config.EXPRESS_TRUST_PROXY) {
 
 const serverAdapter = new ExpressAdapter();
 
+const bullBoardQueues = [
+  new BullMQAdapter(getGenerateLlmsTxtQueue()),
+  new BullMQAdapter(getDeepResearchQueue()),
+  new BullMQAdapter(getBillingQueue()),
+  new BullMQAdapter(getPrecrawlQueue()),
+  new BullMQAdapter(getFirebillTrackRetryQueue()),
+  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
+  // management UI, not here.
+];
+
 const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: [
-    new BullMQAdapter(getGenerateLlmsTxtQueue()),
-    new BullMQAdapter(getDeepResearchQueue()),
-    new BullMQAdapter(getBillingQueue()),
-    new BullMQAdapter(getPrecrawlQueue()),
-    // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
-    // management UI, not here.
-  ],
+  queues: bullBoardQueues,
   serverAdapter: serverAdapter,
 });
 
-if (config.BULL_AUTH_KEY) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
-  app.use(`/admin/${config.BULL_AUTH_KEY}/queues`, serverAdapter.getRouter());
-} else {
+if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
+} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
+  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+  app.use(
+    `/admin/${config.BULL_AUTH_KEY}/queues`,
+    countAdminPathRoute("queues"),
+    serverAdapter.getRouter(),
+  );
 }
 
 app.get("/", (_, res) => {
@@ -139,6 +151,51 @@ app.use(adminRouter);
 const DEFAULT_PORT = config.PORT;
 const HOST = config.HOST;
 
+// The internal listener has no key check: keep its port off public ingress.
+function startAdminInternalServer(port: number) {
+  const adminApp = express();
+  adminApp.disable("x-powered-by");
+  adminApp.use(bodyParser.json({ limit: "10mb" }));
+
+  const internalBullBoard = new ExpressAdapter();
+  internalBullBoard.setBasePath("/admin/queues");
+  createBullBoard({
+    queues: bullBoardQueues,
+    serverAdapter: internalBullBoard,
+  });
+  adminApp.use("/admin/queues", internalBullBoard.getRouter());
+
+  adminApp.use(adminInternalRouter);
+  adminApp.use(notFoundHandler);
+  adminApp.use(
+    (err: unknown, req: Request, res: Response, _next: NextFunction) => {
+      logger.error("Internal admin request failed", {
+        error: err,
+        path: req.path,
+      });
+      res.status(500).json({ success: false, error: "Internal server error" });
+    },
+  );
+
+  const host = config.ADMIN_INTERNAL_HOST;
+  return adminApp.listen(port, host, (error?: Error) => {
+    if (error) {
+      logger.error("Failed to start internal admin server", {
+        error,
+        port,
+        host,
+      });
+      throw error;
+    }
+
+    logger.info("Internal admin server listening", {
+      pid: process.pid,
+      port,
+      host,
+    });
+  });
+}
+
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
   try {
@@ -161,6 +218,11 @@ async function startServer(port = DEFAULT_PORT) {
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
 
+  const adminInternalServer =
+    config.ADMIN_INTERNAL_PORT !== undefined
+      ? startAdminInternalServer(config.ADMIN_INTERNAL_PORT)
+      : undefined;
+
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
     if (config.IS_KUBERNETES) {
@@ -168,7 +230,13 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Waiting 60s for GCE load balancer drain timeout");
       await new Promise(resolve => setTimeout(resolve, 60000));
     }
-    server.close(() => {
+    const adminInternalClosed = new Promise<void>(resolve =>
+      adminInternalServer
+        ? adminInternalServer.close(() => resolve())
+        : resolve(),
+    );
+    server.close(async () => {
+      await adminInternalClosed;
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {

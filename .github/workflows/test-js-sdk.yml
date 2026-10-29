@@ -61,7 +61,7 @@ jobs:
           tags: tag:ci
           use-cache: 'true'
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
         working-directory: ./apps/js-sdk/firecrawl
       - name: Build
         run: pnpm run build

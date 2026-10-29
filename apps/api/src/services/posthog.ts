@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { redisEvictConnection } from "./redis";
 import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
@@ -48,11 +48,11 @@ function originToSurface(
  * events to the same person we key on the API key owner's email. Falls back to
  * the team_id (team-level) when the owner/email can't be resolved.
  *
- * Only called on the rare gated-first event, so the extra read is cheap.
+ * Only called on rare, deduplicated events, so the extra read is cheap.
  */
-async function resolveDistinctId(
+export async function resolveDistinctId(
   teamId: string,
-  apiKeyId?: number | null,
+  apiKeyId?: string | number | null,
 ): Promise<string> {
   if (!apiKeyId) return teamId;
   try {
@@ -64,7 +64,9 @@ async function resolveDistinctId(
       // team's milestone to another team's owner email — falls back to teamId.
       .where(
         and(
-          eq(schema.api_keys.id, apiKeyId),
+          // Compared as text cast to bigint, so an id past the safe-integer
+          // range (passed as its exact decimal string) is matched exactly.
+          sql`${schema.api_keys.id} = cast(${String(apiKeyId)} as bigint)`,
           eq(schema.api_keys.team_id, teamId),
         ),
       )

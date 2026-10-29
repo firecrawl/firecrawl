@@ -1,13 +1,20 @@
 import { randomUUID } from "crypto";
+import type { Job } from "bullmq";
 import { z } from "zod";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
+import {
+  getFirebillTrackRetryQueue,
+  type FirebillTrackRetryJobData,
+} from "../queue-service";
 import type { LockDeniedReason, TrackParams } from "./types";
 import {
   firebillCheckTotal,
   firebillFailureCauseTotal,
   firebillRetryTotal,
+  firebillTrackRetryExhaustedValueTotal,
+  firebillTrackRetryTotal,
   firebillTrackTotal,
 } from "./metrics";
 
@@ -53,6 +60,19 @@ const FIREBILL_GATED_LOCK_TIMEOUT_MS = 10000;
 // cannot reach the broker — which more attempts will not fix.
 const FIREBILL_ATTEMPTS = 2;
 const FIREBILL_RETRY_DELAY_MS = 150;
+
+// The durable retry behind an unanswered track: first re-send after 30s, then
+// 60s, 120s and doubling, so the eighth and last lands about two hours after
+// the caller gave up. Long enough to outlast a firebill pod being rescheduled
+// off a lost node.
+export const FIREBILL_DURABLE_RETRY_ATTEMPTS = 8;
+const FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS = 30_000;
+// BullMQ's exponential backoff waits base * 2^(n-1) after the nth failure, so
+// a 60s base is what makes the second gap double the first.
+const FIREBILL_DURABLE_RETRY_BACKOFF_MS = 60_000;
+// The queue's Redis client retries a command forever while disconnected, so an
+// enqueue is bounded here: a Redis outage must not hang the billing call.
+const FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS = 2000;
 
 /**
  * Why a firebill call did not produce a usable answer, at a cardinality safe to
@@ -325,18 +345,21 @@ function firebillUrl(path: string): string {
  * itself, so the absolute value is sent either way.
  *
  * Returns true when firebill accepted the event, mirroring the boolean
- * contract of the direct Autumn track path. A `false` means firebill never
- * took it: nothing is retrying, and the usage goes unbilled.
+ * contract of the direct Autumn track path. A `false` means firebill did not
+ * confirm it. An unanswered event is then handed to a durable retry that
+ * re-sends the identical event under the same idempotency key, so it is billed
+ * once whether or not the lost attempt landed; an explicit refusal is not.
  */
 export async function firebillTrack(params: TrackParams): Promise<boolean> {
-  const operation = params.value < 0 ? "refund" : "track";
+  const operation = trackOperation(params.value);
   const path = `/v1/${operation}`;
   // Both attempts must be the same event. Without a caller key firebill mints
   // one per request, so a retry after an accepted-but-lost first attempt would
   // be a second charge; minting here instead keeps one identity per call while
   // separate calls stay distinct, exactly as before.
+  const { durableRetry = true, ...event } = params;
   const attempted = {
-    ...params,
+    ...event,
     idempotencyKey: params.idempotencyKey ?? randomUUID(),
   };
 
@@ -369,6 +392,10 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // counter rather than a throw: billing must not fail the customer's request,
   // and a log alone is too quiet to alert on.
   const outcome = last.reason === "not_success" ? "refused" : "ambiguous";
+  const handedToRetry =
+    outcome === "ambiguous" &&
+    durableRetry &&
+    (await enqueueFirebillTrackRetry(attempted));
   logger.error(
     outcome === "refused"
       ? "firebill refused a usage event; it will not be billed"
@@ -382,6 +409,7 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
       callerSuppliedKey: params.idempotencyKey !== undefined,
       path,
       attempts: FIREBILL_ATTEMPTS,
+      handedToRetry,
       reason: last.reason,
       cause: last.cause,
       ...(last.status !== undefined ? { status: last.status } : {}),
@@ -395,6 +423,128 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // would quietly turn one threshold into one threshold per cause.
   firebillFailureCauseTotal.labels(operation, last.cause).inc();
   return false;
+}
+
+function trackOperation(value: number): "track" | "refund" {
+  return value < 0 ? "refund" : "track";
+}
+
+/**
+ * Hands an unanswered event to the durable retry queue. The job carries the
+ * whole event, key included, so every re-send is byte-for-byte the event the
+ * caller sent. Keyed by the idempotency key, so the same event enqueued twice
+ * (a stalled job re-running its charge) is one job.
+ */
+async function enqueueFirebillTrackRetry(
+  event: FirebillTrackRetryJobData,
+): Promise<boolean> {
+  const operation = trackOperation(event.value);
+  const context = {
+    customerId: event.customerId,
+    entityId: event.entityId,
+    featureId: event.featureId,
+    value: event.value,
+    idempotencyKey: event.idempotencyKey,
+  };
+  const timedOut = Symbol("enqueue timed out");
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const added = await Promise.race([
+      getFirebillTrackRetryQueue().add(operation, event, {
+        jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
+        delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
+        attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+        backoff: {
+          type: "exponential",
+          delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
+        },
+      }),
+      new Promise<typeof timedOut>(resolve => {
+        timer = setTimeout(
+          () => resolve(timedOut),
+          FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    // The add is still in flight and may land: unknown, not lost.
+    if (added === timedOut) {
+      logger.error(
+        "firebill durable retry enqueue timed out; the retry may or may not have been queued",
+        { ...context, timeoutMs: FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS },
+      );
+      firebillTrackRetryTotal.labels(operation, "enqueue_timeout").inc();
+      return false;
+    }
+    firebillTrackRetryTotal.labels(operation, "enqueued").inc();
+    return true;
+  } catch (error) {
+    logger.error(
+      "firebill durable retry could not be enqueued; the event will not be billed unless replayed",
+      { ...context, error },
+    );
+    firebillTrackRetryTotal.labels(operation, "enqueue_failed").inc();
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * One durable re-send of an event firebill never confirmed. Throws on any
+ * answer but accepted so the queue schedules the next attempt with backoff;
+ * the last failed attempt logs and counts the event as exhausted first.
+ *
+ * Any non-accepted answer is retried, a refusal included: an earlier attempt
+ * may still have landed, and the shared key makes a late duplicate a no-op.
+ */
+export async function processFirebillTrackRetry(
+  job: Job<FirebillTrackRetryJobData>,
+): Promise<void> {
+  const event = job.data;
+  const operation = trackOperation(event.value);
+  const attempt = job.attemptsMade + 1;
+  const attempts = job.opts.attempts ?? 1;
+
+  firebillTrackRetryTotal.labels(operation, "retried").inc();
+  const result = await firebillAttempt(`/v1/${operation}`, event);
+
+  const context = {
+    customerId: event.customerId,
+    entityId: event.entityId,
+    featureId: event.featureId,
+    value: event.value,
+    idempotencyKey: event.idempotencyKey,
+    attempt,
+    attempts,
+  };
+
+  if (result.ok) {
+    firebillTrackRetryTotal.labels(operation, "settled").inc();
+    logger.info("firebill accepted a usage event on durable retry", context);
+    return;
+  }
+
+  const failure = {
+    ...context,
+    reason: result.reason,
+    cause: result.cause,
+    ...(result.status !== undefined ? { status: result.status } : {}),
+  };
+  if (attempt >= attempts) {
+    firebillTrackRetryTotal.labels(operation, "exhausted").inc();
+    firebillTrackRetryExhaustedValueTotal
+      .labels(operation, event.featureId)
+      .inc(Math.abs(event.value));
+    logger.error(
+      "firebill durable retry exhausted; the event may not have been billed",
+      failure,
+    );
+  } else {
+    logger.warn("firebill durable retry attempt failed; will retry", failure);
+  }
+  throw new Error(
+    `firebill ${operation} retry ${attempt}/${attempts} failed: ${result.cause}`,
+  );
 }
 
 type AttemptResult =

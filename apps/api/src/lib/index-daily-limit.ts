@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { isKeylessTeamId } from "./keyless";
 import { logger } from "./logger";
@@ -69,7 +70,10 @@ export async function reserveIndexCalls(
   calls: number,
   now = new Date(),
 ): Promise<IndexDailyReservation> {
-  const limit = indexCallsPerDay(rateLimitMultiplier);
+  const limit =
+    (index === "gov"
+      ? config.GOV_INDEX_CALLS_PER_DAY_OVERRIDES?.[teamId]
+      : undefined) ?? indexCallsPerDay(rateLimitMultiplier);
   if (calls <= 0 || limit === null)
     return { ok: true, release: async () => {} };
 

@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import {
   Document,
   RequestWithAuth,
@@ -130,9 +131,10 @@ export async function searchController(
     id: jobId,
   };
   const middlewareTime = controllerStartTime - middlewareStartTime;
-  const isSearchPreview =
-    config.SEARCH_PREVIEW_TOKEN !== undefined &&
-    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+  const isSearchPreview = timingSafeSecretEqual(
+    req.body.__searchPreviewToken,
+    config.SEARCH_PREVIEW_TOKEN,
+  );
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
 

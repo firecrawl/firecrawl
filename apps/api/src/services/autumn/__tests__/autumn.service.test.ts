@@ -100,6 +100,15 @@ vi.mock("../client", () => ({
   },
 }));
 
+// An unanswered firebill track is handed to a Redis-backed retry queue; no
+// Redis here, so the hand-off is accepted and dropped.
+const { retryQueueAdd } = vi.hoisted(() => ({
+  retryQueueAdd: vi.fn(async (_name: string, _data: unknown) => undefined),
+}));
+vi.mock("../../queue-service", () => ({
+  getFirebillTrackRetryQueue: () => ({ add: retryQueueAdd }),
+}));
+
 vi.mock("../../../db/connection", () => ({
   get dbRr() {
     return makeDbStub(state.gatewayStubRow, state.gatewayStubThrows);
@@ -1169,6 +1178,33 @@ describe("firebill routing", () => {
       idempotency_key: expect.any(String),
     });
   });
+
+  it.each([
+    ["trackCredits", 4, "track"],
+    ["refundCredits", 4, "refund"],
+  ] as const)(
+    "%s carries durableRetry through to firebill's retry hand-off",
+    async (method, value, name) => {
+      state.configRef = firebillConfig();
+      mockFetch.mockRejectedValue(new Error("timeout"));
+      const svc = makeService();
+      const call = (durableRetry?: boolean) =>
+        svc[method]({
+          teamId: "team-1",
+          orgId: "org-1",
+          value,
+          idempotencyKey: `fc:${name}:test:1`,
+          ...(durableRetry === undefined ? {} : { durableRetry }),
+        });
+
+      await expect(call(false)).resolves.toBe(false);
+      expect(retryQueueAdd).not.toHaveBeenCalled();
+
+      await expect(call()).resolves.toBe(false);
+      expect(retryQueueAdd).toHaveBeenCalledTimes(1);
+      expect(retryQueueAdd.mock.calls[0]![0]).toBe(name);
+    },
+  );
 
   // The gate, not the charge. Before this branch existed checkCredits asked
   // Autumn about the ghost's balance alone — and a gateway ghost is designed to
