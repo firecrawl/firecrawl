@@ -1289,6 +1289,37 @@ describe("authenticateUser", () => {
       expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
     });
 
+    it("marks the verified hosted MCP calls on the auth result, and no others", async () => {
+      const delegated = await authenticateUser(
+        requestWith("Bearer " + signDelegation()),
+        {},
+        RateLimiterMode.Scrape,
+      );
+      const relayed = await authenticateUser(
+        requestWith(API_KEY, {
+          headers: { "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret" },
+        }),
+        {},
+        RateLimiterMode.Crawl,
+      );
+      const selfDeclared = await authenticateUser(
+        requestWith(API_KEY, {
+          body: { origin: "mcp-fastmcp" },
+          headers: {
+            "x-origin": "mcp-fastmcp",
+            "x-firecrawl-keyless-secret": "not-the-secret",
+          },
+        }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(delegated).toMatchObject({ success: true, hostedMcp: true });
+      expect(relayed).toMatchObject({ success: true, hostedMcp: true });
+      expect(selfDeclared.success).toBe(true);
+      expect(selfDeclared).not.toHaveProperty("hostedMcp");
+    });
+
     it("does not enroll the org in the experiment through a hosted MCP call", async () => {
       await authenticateUser(
         requestWith(`Bearer ${signDelegation()}`),

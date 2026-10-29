@@ -468,6 +468,7 @@ function createResearchController(
               endpoint: endpoint.billAs === "scrape" ? "scrape" : "search",
               jobId,
               chargeId: jobId,
+              hostedMcp: authedReq.auth.hostedMcp,
             },
           ).catch(billingError => {
             logger.error("Failed to bill research request", {

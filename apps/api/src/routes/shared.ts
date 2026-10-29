@@ -191,6 +191,26 @@ export function checkCreditsMiddleware(
         return next();
       }
 
+      // A hosted MCP call the team's balance can't cover still runs when its
+      // MCP credits can, which billing then spends first (see billTeam).
+      if (
+        !autumnResult.allowed &&
+        req.auth.hostedMcp &&
+        (await autumnService.coversWithMcpCredits({
+          teamId: req.auth.team_id,
+          orgId,
+          value: requestedCredits,
+          properties: {
+            source: "checkCreditsMiddleware:mcp",
+            path: req.path,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+          },
+        }))
+      ) {
+        req.account = { remainingCredits: Infinity };
+        return next();
+      }
+
       const success = autumnResult.allowed;
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
@@ -321,9 +341,14 @@ export function authMiddleware(
         }
       }
 
-      const { team_id, org_id, chunk } = auth;
+      const { team_id, org_id, chunk, hostedMcp } = auth;
 
-      req.auth = { team_id, org_id, agentInterop: agentInteropStatus(req) };
+      req.auth = {
+        team_id,
+        org_id,
+        agentInterop: agentInteropStatus(req),
+        ...(hostedMcp ? { hostedMcp: true } : {}),
+      };
       req.acuc = chunk ?? undefined;
       next();
     })().catch(err => next(err));

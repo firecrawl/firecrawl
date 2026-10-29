@@ -315,6 +315,7 @@ async function searchControllerInner(
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
       externalRequestId: externalRequestId(req),
+      hostedMcp: req.auth.hostedMcp,
     };
 
     logger = logger.child({

@@ -402,6 +402,7 @@ export async function crawlController(
         endpoint: "crawl",
         jobId: id,
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       },
       crawl_id: id,
       webhook: req.body.webhook,

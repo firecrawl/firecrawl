@@ -1318,6 +1318,9 @@ type AuthObject = {
   // Set only by authMiddleware from the raw request; controllers may re-parse
   // the body and drop `__agentInterop`, so read this instead.
   agentInterop?: AgentInteropStatus;
+  // Set only by authMiddleware, from the hosted MCP verification in
+  // supaAuthenticateUser; never from the request body or headers directly.
+  hostedMcp?: boolean;
 };
 
 type Account = {

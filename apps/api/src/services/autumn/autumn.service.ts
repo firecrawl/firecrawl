@@ -37,6 +37,12 @@ import { ExistingCreditsLockError } from "./types";
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+/**
+ * The balance hosted MCP calls spend before the endpoint's own feature (see
+ * AutumnService.coversWithMcpCredits). Configurable so the id can follow the
+ * Autumn feature without a code change.
+ */
+export const MCP_CREDITS_FEATURE_ID = config.MCP_CREDITS_FEATURE_ID;
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
@@ -565,6 +571,37 @@ export class AutumnService {
       );
       return null;
     }
+  }
+
+  /**
+   * Whether a hosted MCP charge of `value` fits the team's MCP credits
+   * (MCP_CREDITS_FEATURE_ID), which those charges spend before the endpoint's
+   * own feature. False, so the charge stays on the endpoint's own feature
+   * exactly as before, when MCP_CREDITS_ENABLED is off, for a team without the
+   * feature or without enough of it left, for a partner-provisioned team (its
+   * usage is split with the partner on the regular features), and when Autumn
+   * can't answer.
+   */
+  async coversWithMcpCredits({
+    teamId,
+    orgId,
+    value,
+    properties,
+  }: Pick<
+    TrackCreditsParams,
+    "teamId" | "orgId" | "value" | "properties"
+  >): Promise<boolean> {
+    if (!config.MCP_CREDITS_ENABLED || !(value > 0)) return false;
+    if (this.isPreviewTeam(teamId)) return false;
+    if (await this.isGatewayProvisioned(teamId)) return false;
+    const result = await this.checkCredits({
+      teamId,
+      orgId,
+      value,
+      properties,
+      featureId: MCP_CREDITS_FEATURE_ID,
+    });
+    return result?.allowed === true;
   }
 
   /**

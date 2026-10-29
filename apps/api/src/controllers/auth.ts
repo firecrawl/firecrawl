@@ -1139,6 +1139,7 @@ async function supaAuthenticateUser(
 
   // The rate-limit experiment runs after the ban and restriction checks, so
   // only requests that reach the limiter enroll an org or count as exposed.
+  let hostedMcpCall = false;
   if (chunk !== null) {
     const multiplier = authenticatedRateLimitMultiplier(
       chunk,
@@ -1151,7 +1152,7 @@ async function supaAuthenticateUser(
     // sessions). `fco_` tokens never qualify: the hosted MCP keeps those for
     // the issuer, so a REST call carrying one comes from the client itself.
     // Origin and integration are client-set, so they never change the limit.
-    const hostedMcpCall =
+    hostedMcpCall =
       hostedMcpDelegation ||
       timingSafeSecretEqual(
         req.headers["x-firecrawl-keyless-secret"],
@@ -1287,5 +1288,6 @@ async function supaAuthenticateUser(
     team_id: teamId ?? undefined,
     org_id: chunk?.org_id ?? null,
     chunk,
+    ...(hostedMcpCall ? { hostedMcp: true } : {}),
   };
 }

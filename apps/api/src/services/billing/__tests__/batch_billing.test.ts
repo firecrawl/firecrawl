@@ -428,3 +428,32 @@ describe("startBillingBatchProcessing", () => {
     expect(queue).toHaveLength(0);
   });
 });
+
+describe("processBillingBatch MCP credits refunds", () => {
+  it("refunds a request-tracked charge to the feature it spent", async () => {
+    queue = [
+      makeOp({
+        autumnTrackInRequest: true,
+        credits: 4,
+        billing: { endpoint: "scrape", featureId: "MCP_CREDITS" },
+      }),
+      makeOp({
+        autumnTrackInRequest: true,
+        credits: 6,
+        billing: { endpoint: "scrape" },
+      }),
+    ];
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    // Kept in separate groups, so each refund returns only its own credits.
+    expect(refundCredits).toHaveBeenCalledTimes(2);
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 4, featureId: "MCP_CREDITS" }),
+    );
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 6, featureId: "CREDITS" }),
+    );
+  });
+});

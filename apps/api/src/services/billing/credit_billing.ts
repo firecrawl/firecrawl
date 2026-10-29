@@ -3,6 +3,7 @@ import { queueBillingOperation } from "./batch_billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
@@ -37,7 +38,19 @@ export async function billTeam(
         ...toAutumnBillingProperties(billing),
         apiKeyId: api_key_id,
       };
-      const featureId = featureIdForBillingEndpoint(billing.endpoint);
+      // A hosted MCP charge spends the team's MCP credits while they cover it,
+      // and the endpoint's own feature otherwise.
+      const featureId =
+        org_id !== null &&
+        billing.hostedMcp &&
+        (await autumnService.coversWithMcpCredits({
+          teamId: team_id,
+          orgId: org_id,
+          value: credits,
+          properties: autumnProperties,
+        }))
+          ? MCP_CREDITS_FEATURE_ID
+          : featureIdForBillingEndpoint(billing.endpoint);
 
       let trackedInRequest = false;
       if (org_id !== null) {
@@ -68,7 +81,9 @@ export async function billTeam(
         org_id,
         credits,
         api_key_id,
-        billing,
+        featureId === featureIdForBillingEndpoint(billing.endpoint)
+          ? billing
+          : { ...billing, featureId },
         false,
         trackedInRequest,
       );

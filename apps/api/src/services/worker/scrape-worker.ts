@@ -40,6 +40,7 @@ import {
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import {
   _addScrapeJobToBullMQ,
@@ -169,7 +170,7 @@ async function billScrapeJob(
   // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
   // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
   // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = featureIdForBillingEndpoint(billing.endpoint);
+  let featureId = featureIdForBillingEndpoint(billing.endpoint);
   let trackedInRequest = false;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
@@ -209,6 +210,20 @@ async function billScrapeJob(
         routedToFirebill = orgId
           ? await autumnService.isRoutedThroughFirebill(job.data.team_id, orgId)
           : false;
+        // A hosted MCP charge spends the team's MCP credits while they cover
+        // it, and the endpoint's own feature otherwise.
+        if (
+          orgId &&
+          billing.hostedMcp &&
+          (await autumnService.coversWithMcpCredits({
+            teamId: job.data.team_id,
+            orgId,
+            value: creditsToBeBilled,
+            properties: autumnProperties,
+          }))
+        ) {
+          featureId = MCP_CREDITS_FEATURE_ID;
+        }
         trackedInRequest = orgId
           ? await autumnService.trackCredits({
               teamId: job.data.team_id,
@@ -265,7 +280,10 @@ async function billScrapeJob(
                 team_id: job.data.team_id,
                 org_id: orgId,
                 credits: creditsToBeBilled,
-                billing,
+                billing:
+                  featureId === featureIdForBillingEndpoint(billing.endpoint)
+                    ? billing
+                    : { ...billing, featureId },
                 is_extract: false,
                 timestamp: new Date().toISOString(),
                 originating_job_id: job.id,
