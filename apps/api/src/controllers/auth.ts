@@ -1150,10 +1150,11 @@ async function supaAuthenticateUser(
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true &&
       (hostedMcpDelegation ||
-        timingSafeSecretEqual(
-          req.headers["x-firecrawl-keyless-secret"],
-          config.KEYLESS_PROXY_SECRET,
-        ));
+        (!token.startsWith("fco_") &&
+          timingSafeSecretEqual(
+            req.headers["x-firecrawl-keyless-secret"],
+            config.KEYLESS_PROXY_SECRET,
+          )));
     // The tiers follow the team's own plan multiplier, not the one trusted
     // agent traffic floors at hobby, so a free team never gets the hobby tier.
     const hostedMcpLimiter = hostedMcpRaise
