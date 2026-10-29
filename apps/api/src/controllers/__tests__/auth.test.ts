@@ -1564,13 +1564,13 @@ describe("authenticateUser", () => {
         const auth = await authenticateUser(
           requestWith(`Bearer ${signDelegation()}`),
           {},
-          RateLimiterMode.Search,
+          RateLimiterMode.Scrape,
           HOSTED_MCP_ROUTE,
         );
 
         expect(concurrencyOf(auth)).toBe(75);
         expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
-          RateLimiterMode.Search,
+          RateLimiterMode.Scrape,
           50,
           {},
         );
@@ -1631,16 +1631,19 @@ describe("authenticateUser", () => {
         expect(concurrencyOf(auth)).toBe(2);
       });
 
-      it("keeps the plan limit for modes other than scrape and search", async () => {
-        const auth = await authenticateUser(
-          requestWith(`Bearer ${signDelegation()}`),
-          {},
-          RateLimiterMode.Crawl,
-          HOSTED_MCP_ROUTE,
-        );
+      it.each([RateLimiterMode.Search, RateLimiterMode.Crawl])(
+        "keeps the plan limit for %s, which does not check the semaphore",
+        async mode => {
+          const auth = await authenticateUser(
+            requestWith(`Bearer ${signDelegation()}`),
+            {},
+            mode,
+            HOSTED_MCP_ROUTE,
+          );
 
-        expect(concurrencyOf(auth)).toBe(2);
-      });
+          expect(concurrencyOf(auth)).toBe(2);
+        },
+      );
 
       it.each([
         ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
