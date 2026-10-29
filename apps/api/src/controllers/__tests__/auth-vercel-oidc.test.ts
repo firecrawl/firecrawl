@@ -113,9 +113,7 @@ async function sign(
 ) {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({
-    resource: overrides.resource ?? "res_1",
-    owner: "team_vercel",
-    project: "prj_1",
+    act: { sub: "owner:team_vercel:project:prj_1:environment:production" },
     environment: "production",
   })
     .setProtectedHeader({ alg: overrides.alg ?? "RS256", kid: "k1" })
@@ -123,6 +121,7 @@ async function sign(
     .setAudience(overrides.aud ?? "icfg_1")
     .setSubject(overrides.resource ?? "res_1")
     .setIssuedAt(now)
+    .setNotBefore(now)
     .setExpirationTime(now + (overrides.expSecondsFromNow ?? 300))
     .sign(overrides.key ?? signing.privateKey);
 }

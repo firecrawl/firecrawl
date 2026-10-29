@@ -154,14 +154,13 @@ export async function resolveVercelOidcToken(
 
   const audit = {
     installationId: claims.aud,
-    resourceId: claims.resource,
-    sub: claims.sub,
-    owner: claims.owner,
-    project: claims.project,
+    resourceId: claims.sub,
+    actor: claims.actor,
+    role: claims.role,
     environment: claims.environment,
   };
 
-  const row = await lookupResource(claims.aud, claims.resource);
+  const row = await lookupResource(claims.aud, claims.sub);
   if (!row || !row.apiKey || !row.teamId) {
     const rejected = {
       ok: false as const,
@@ -184,7 +183,7 @@ export async function resolveVercelOidcToken(
     apiKey: row.apiKey,
     teamId: row.teamId,
     installationId: claims.aud,
-    resourceId: claims.resource,
+    resourceId: claims.sub,
   };
   logger.info("Vercel OIDC token verified", { ...audit, teamId: row.teamId });
 
