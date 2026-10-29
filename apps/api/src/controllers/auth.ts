@@ -859,8 +859,9 @@ type AuthenticateOptions = {
   // Route opt-in: a trusted agent-interop request may authenticate with a
   // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.
   allowAgentManagedKey?: boolean;
-  // Route opt-in: calls the hosted MCP makes get the raised per-minute
-  // minimum (see getHostedMcpRateLimiter) only on routes that set this.
+  // Route opt-in: calls the hosted MCP makes get the raised per-minute and
+  // concurrency minimums (see getHostedMcpRateLimiter and
+  // getHostedMcpConcurrencyLimit) only on routes that set this.
   hostedMcpRateLimit?: boolean;
 };
 
