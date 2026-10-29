@@ -499,18 +499,20 @@ describe("getAutumnRateLimiter", () => {
 
   describe("hosted MCP concurrency minimum", () => {
     it("raises free to 25, hobby to 50 and standard to 75", () => {
-      for (const mode of [RateLimiterMode.Scrape, RateLimiterMode.Search]) {
-        for (const [multiplier, limit, concurrency] of [
-          [1, 2, 25],
-          [10, 5, 50],
-          [25, 5, 50],
-          [50, 50, 75],
-          [100, 50, 75],
-        ]) {
-          expect(getHostedMcpConcurrencyLimit(mode, limit, multiplier)).toBe(
-            concurrency,
-          );
-        }
+      for (const [multiplier, limit, concurrency] of [
+        [1, 2, 25],
+        [10, 5, 50],
+        [25, 5, 50],
+        [50, 50, 75],
+        [100, 50, 75],
+      ]) {
+        expect(
+          getHostedMcpConcurrencyLimit(
+            RateLimiterMode.Scrape,
+            limit,
+            multiplier,
+          ),
+        ).toBe(concurrency);
       }
     });
 
@@ -530,9 +532,9 @@ describe("getAutumnRateLimiter", () => {
       expect(
         getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 50, 500),
       ).toBe(undefined);
-      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Crawl, 2, 1)).toBe(
-        undefined,
-      );
+      for (const mode of [RateLimiterMode.Search, RateLimiterMode.Crawl]) {
+        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(undefined);
+      }
       expect(
         getHostedMcpConcurrencyLimit(
           RateLimiterMode.Scrape,

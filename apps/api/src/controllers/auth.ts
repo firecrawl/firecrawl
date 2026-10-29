@@ -1141,10 +1141,10 @@ async function supaAuthenticateUser(
 
   if (chunk !== null) {
     // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
-    // raised per-minute minimum, and scrape and search calls a raised
-    // concurrency minimum. Two signals prove the hosted MCP made the call: a
-    // verified delegated credential (managed OAuth sessions) or the proxy
-    // secret it shares with the API (sessions that send a plain API key).
+    // raised per-minute minimum, and scrape calls a raised concurrency
+    // minimum. Two signals prove the hosted MCP made the call: a verified
+    // delegated credential (managed OAuth sessions) or the proxy secret it
+    // shares with the API (sessions that send a plain API key).
     // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
     // so a REST call carrying one comes from the client itself. Origin and
     // integration are client-set, so they never change the limit.
