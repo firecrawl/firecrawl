@@ -142,13 +142,13 @@ export function getAutumnRateLimiter(
 }
 
 /**
- * Modes whose concurrency the hosted MCP tier raises. Agent clients send
- * scrape and search calls in bursts, and only scrape checks the team
- * semaphore at request time; other modes keep the plan's concurrency.
+ * Modes whose concurrency the hosted MCP tier raises. Scrape is the mode that
+ * checks the team semaphore at request time (`/v2/scrape` and `/v2/parse`),
+ * so the raised scrape rate is not cut back to the plan's concurrency; other
+ * modes keep the plan's concurrency.
  */
 const HOSTED_MCP_CONCURRENCY_MODES: ReadonlySet<RateLimiterMode> = new Set([
   RateLimiterMode.Scrape,
-  RateLimiterMode.Search,
 ]);
 
 /** Autumn rate-limit multipliers of the standard and growth plans. */
@@ -220,9 +220,9 @@ export function getHostedMcpRateLimiter(
 }
 
 /**
- * The concurrency limit for a hosted MCP scrape or search call at its plan
- * tier (see hostedMcpTier), or undefined for other modes, when there is no
- * tier, or when the team's own limit is already at least the tier's.
+ * The concurrency limit for a hosted MCP scrape call at its plan tier (see
+ * hostedMcpTier), or undefined for other modes, when there is no tier, or
+ * when the team's own limit is already at least the tier's.
  *
  * This raises the ceiling the request checks against the team's shared
  * concurrency pool; it is not a pool of its own, so the team cannot run its
