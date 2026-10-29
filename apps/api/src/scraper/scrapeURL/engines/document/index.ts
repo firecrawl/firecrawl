@@ -20,6 +20,10 @@ import {
 import { readFile, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
 
+// The file is buffered whole in memory before conversion; same cap as the
+// PDF engine's download.
+const DOCUMENT_DOWNLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   // With fire-engine available this engine never downloads files itself:
   // buildFallbackList routes file URLs through the browser engines and the
@@ -83,6 +87,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
+          DOCUMENT_DOWNLOAD_MAX_FILE_SIZE,
         ),
       );
       response = result.response;
