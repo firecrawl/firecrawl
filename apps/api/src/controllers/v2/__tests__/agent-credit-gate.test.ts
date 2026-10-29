@@ -245,6 +245,20 @@ describe("gateAgentCredits for a hosted MCP run", () => {
     });
   });
 
+  it("admits a cap below the minimum when MCP credits clear the minimum", async () => {
+    checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 0 });
+    mcpCreditsAvailable.mockResolvedValueOnce(20);
+
+    expect(await hosted(10)).toEqual({
+      allowed: true,
+      maxCredits: 10,
+      stopOnInsufficientCredits: true,
+    });
+    expect(mcpCreditsAvailable).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 20 }),
+    );
+  });
+
   it("refuses when the balance and MCP credits together are below the minimum", async () => {
     checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 12 });
     mcpCreditsAvailable.mockResolvedValueOnce(7);

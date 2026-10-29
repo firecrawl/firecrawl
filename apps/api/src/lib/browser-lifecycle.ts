@@ -495,6 +495,15 @@ export async function reserveBrowserPromptCredits(
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     await markBrowserSessionUsedPrompt(current.id);
+    // The prompt rate is most of a session's charge, so a hosted MCP prompt
+    // bills the session as hosted even when another call created it.
+    if (current.should_bill && req.auth.hostedMcp)
+      await markBrowserSessionHostedMcp(current.id).catch(error =>
+        logger.warn("Failed to mark a hosted MCP browser session", {
+          sessionId: current.id,
+          error,
+        }),
+      );
   });
 }
 

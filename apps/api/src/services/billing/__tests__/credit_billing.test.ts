@@ -389,7 +389,7 @@ describe("billTeam MCP credits on an agent run", () => {
   const agentCall = {
     endpoint: "search" as const,
     jobId: "job-1",
-    chargeId: "job-1",
+    chargeId: "charge-1",
     hostedMcp: true,
     agentRequestId: "agent-run",
   };
@@ -401,7 +401,7 @@ describe("billTeam MCP credits on an agent run", () => {
 
     expect(recordRequestCredits).toHaveBeenCalledExactlyOnceWith({
       requestId: "agent-run:mcp",
-      jobId: "job-1",
+      jobId: "charge-1",
       credits: 2,
     });
   });

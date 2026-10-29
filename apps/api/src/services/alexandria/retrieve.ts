@@ -319,8 +319,8 @@ export async function retrieveProviders(input: {
   // The MCP credits pay first, up to what they hold; the rest settles on the
   // scrape feature's hold.
   const mcpPart = (credits: number) => Math.min(credits, mcpHeldCredits);
-  const finalize = async (credits: number) => {
-    const [mcpSettled, restSettled] = await Promise.all([
+  const finalizeParts = (credits: number) =>
+    Promise.all([
       mcpLockId
         ? settle(
             mcpLockId,
@@ -338,8 +338,8 @@ export async function retrieveProviders(input: {
           )
         : true,
     ]);
-    return mcpSettled && restSettled;
-  };
+  const finalize = async (credits: number) =>
+    (await finalizeParts(credits)).every(Boolean);
 
   try {
     const denied = await authorizeProviders(
@@ -567,11 +567,16 @@ export async function retrieveProviders(input: {
     if (!receiptMatches)
       return fail("Alexandria receipt did not match the request");
 
-    const credits = answer.creditsCost;
-    const mcpCredits = mcpPart(credits);
-    const settled = await finalize(credits);
+    const [mcpSettled, restSettled] = await finalizeParts(answer.creditsCost);
+    const settled = mcpSettled && restSettled;
+    // A split settle that landed in part records the part that landed; the
+    // rest goes unbilled, as a whole settle that does not land does.
+    const mcpCredits = mcpSettled ? mcpPart(answer.creditsCost) : 0;
+    const credits =
+      mcpCredits +
+      (restSettled ? answer.creditsCost - mcpPart(answer.creditsCost) : 0);
     const recorded =
-      settled && billable && credits > 0
+      billable && credits > 0
         ? await recordLedgerUsage(
             id,
             input.teamId,
@@ -582,8 +587,7 @@ export async function retrieveProviders(input: {
             mcpCredits,
           )
         : settled;
-    const charged =
-      settled && billable && credits > 0 && (recorded || !refundable);
+    const charged = billable && credits > 0 && (recorded || !refundable);
     if (charged && input.agentRequestId) {
       await recordAgentCredits(input.agentRequestId, id, credits);
       await tallyAgentMcpCredits(
@@ -592,7 +596,7 @@ export async function retrieveProviders(input: {
         mcpCredits,
       );
     }
-    if (!billable || recorded)
+    if (!billable || (settled && recorded))
       void reportExchangeUsageBilling({
         requestId: id,
         status: billable ? "confirmed" : "void",

@@ -331,6 +331,7 @@ async function billScrapeJob(
                 billing,
               },
             );
+            await tallyAgentMcpCredits(billing, job.id, mcpCredits);
           } else if (orgId) {
             const refund = {
               teamId: job.data.team_id,

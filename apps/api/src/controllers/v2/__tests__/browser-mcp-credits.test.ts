@@ -72,7 +72,12 @@ vi.mock("../../../lib/browser-sessions", () => ({
   updateBrowserSessionScrapeId: vi.fn(),
   settleBrowserSessionOnce: mocks.settleOnce,
   withLockedBrowserSession: vi.fn(async (_id: string, run: any) =>
-    run({ id: "session-1", status: "active", credits_used: null }),
+    run({
+      id: "session-1",
+      status: "active",
+      credits_used: null,
+      should_bill: true,
+    }),
   ),
   listUnsettledHangarSessions: vi.fn(),
   didBrowserSessionUsePrompt: mocks.usedPrompt,
@@ -91,6 +96,11 @@ vi.mock("../../../lib/team-org", () => ({
 }));
 vi.mock("../../../lib/request-credits-store", () => ({
   recordRequestCredits: mocks.recordRequestCredits,
+}));
+vi.mock("../../../lib/keyless", () => ({
+  updateKeylessBrowserCredits: vi.fn(async () => true),
+  logKeylessCreditUsage: vi.fn(async () => {}),
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "limit",
 }));
 vi.mock("../../../services/logging/log_job", () => ({
   logRequest: vi.fn(async () => {}),
@@ -234,6 +244,8 @@ describe("browser sessions from hosted MCP calls", () => {
       reserveBrowserPromptCredits(makeReq(true) as any, session),
     ).resolves.toBeUndefined();
 
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+
     mocks.mcpCreditsAvailable.mockResolvedValue(69);
     await expect(
       reserveBrowserPromptCredits(makeReq(true) as any, session),
@@ -241,6 +253,15 @@ describe("browser sessions from hosted MCP calls", () => {
     await expect(
       reserveBrowserPromptCredits(makeReq(false) as any, session),
     ).rejects.toMatchObject({ status: 402 });
+  });
+
+  it("marks the session hosted on a hosted prompt the balance covers", async () => {
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+
+    mocks.markHostedMcp.mockClear();
+    await reserveBrowserPromptCredits(makeReq(false) as any, session);
+    expect(mocks.markHostedMcp).not.toHaveBeenCalled();
   });
 
   it.each([

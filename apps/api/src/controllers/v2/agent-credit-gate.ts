@@ -69,7 +69,8 @@ export async function gateAgentCredits({
       ? autumnService.mcpCreditsAvailable({
           teamId,
           orgId,
-          value: requested,
+          // Never below the minimum, which a smaller cap still has to clear.
+          value: Math.max(requested, AGENT_MIN_CREDITS),
           properties: {
             source: "agentCreditGate:mcp",
             path: "/agent",

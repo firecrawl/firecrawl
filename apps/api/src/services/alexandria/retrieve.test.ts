@@ -879,6 +879,33 @@ describe("hosted MCP calls", () => {
     ]);
   });
 
+  it.each([
+    ["the MCP part", "mcp_credits", 1, 0],
+    ["the rest", "credits", 2, 2],
+  ])(
+    "records only what landed when %s does not settle",
+    async (_, failing, credits, mcpCredits) => {
+      mocks.mcpAvailable.mockResolvedValue(2);
+      mocks.finalize.mockImplementation(async arg => arg.featureId !== failing);
+      expect((await hosted({ agentRequestId: "agent-run" })).status).toBe(200);
+      expect(mocks.billAdd).toHaveBeenCalledWith(
+        "bill_team",
+        expect.objectContaining({
+          credits,
+          billing: expect.objectContaining(
+            mcpCredits > 0 ? { mcpCredits } : {},
+          ),
+        }),
+        expect.anything(),
+      );
+      if (mcpCredits === 0) expect(billing()).not.toHaveProperty("mcpCredits");
+      expect(mocks.recordCredits).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "agent-run", credits }),
+      );
+      expect(mocks.report).not.toHaveBeenCalled();
+    },
+  );
+
   it("releases both holds on a definitive refusal", async () => {
     mocks.mcpAvailable.mockResolvedValue(2);
     exchangeAnswers({ error: "nope" }, 400);
