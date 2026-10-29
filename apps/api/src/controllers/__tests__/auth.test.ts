@@ -1312,6 +1312,142 @@ describe("authenticateUser", () => {
       expect(planConsume).toHaveBeenCalledExactlyOnceWith("team-1");
       expect(hostedMcpConsume).not.toHaveBeenCalled();
     });
+
+    describe("concurrency", () => {
+      const PROXY_SECRET = {
+        "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret",
+      };
+      const concurrencyOf = (
+        auth: Awaited<ReturnType<typeof authenticateUser>>,
+      ) => (auth.success ? auth.chunk?.concurrency_limit : undefined);
+      const limits = (
+        concurrency_limit: number,
+        rate_limit_multiplier: number,
+      ) =>
+        vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+          concurrency_limit,
+          rate_limit_multiplier,
+          is_paid_plan: rate_limit_multiplier > 1,
+        });
+
+      it("raises a free team to 25 for a verified hosted MCP credential", async () => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          RateLimiterMode.Scrape,
+          HOSTED_MCP_ROUTE,
+        );
+
+        expect(concurrencyOf(auth)).toBe(25);
+      });
+
+      it("raises a hobby team to 50 for an API key the hosted MCP relayed", async () => {
+        limits(5, HOBBY_RATE_LIMIT_MULTIPLIER);
+
+        const auth = await authenticateUser(
+          requestWith(API_KEY, { headers: PROXY_SECRET }),
+          {},
+          RateLimiterMode.Scrape,
+          HOSTED_MCP_ROUTE,
+        );
+
+        expect(concurrencyOf(auth)).toBe(50);
+      });
+
+      it("raises a standard team to 75 and asks for the standard rate tier", async () => {
+        limits(50, 50);
+
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          RateLimiterMode.Search,
+          HOSTED_MCP_ROUTE,
+        );
+
+        expect(concurrencyOf(auth)).toBe(75);
+        expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          RateLimiterMode.Search,
+          50,
+          {},
+        );
+      });
+
+      it("keeps a free team on the free tier when trusted agent traffic floors its multiplier", async () => {
+        config.AGENT_INTEROP_SECRET = "agent-secret";
+
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`, {
+            body: {
+              __agentInterop: {
+                auth: "agent-secret",
+                requestId: "req-1",
+                shouldBill: true,
+              },
+            },
+          }),
+          {},
+          RateLimiterMode.Scrape,
+          HOSTED_MCP_ROUTE,
+        );
+
+        expect(concurrencyOf(auth)).toBe(25);
+        expect(getHostedMcpRateLimiter).toHaveBeenCalledExactlyOnceWith(
+          RateLimiterMode.Scrape,
+          1,
+          {},
+        );
+      });
+
+      it.each([
+        ["growth", 100, 500],
+        ["a team already above its tier", 30, 1],
+      ])(
+        "keeps the plan limit for %s",
+        async (_label, concurrency, multiplier) => {
+          limits(concurrency, multiplier);
+
+          const auth = await authenticateUser(
+            requestWith(`Bearer ${signDelegation()}`),
+            {},
+            RateLimiterMode.Scrape,
+            HOSTED_MCP_ROUTE,
+          );
+
+          expect(concurrencyOf(auth)).toBe(concurrency);
+        },
+      );
+
+      it("keeps the plan limit on a route that does not opt in", async () => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(concurrencyOf(auth)).toBe(2);
+      });
+
+      it.each([
+        ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
+        [
+          "a wrong proxy secret",
+          { headers: { "x-firecrawl-keyless-secret": "not-the-secret" } },
+        ],
+        ["no origin", {}],
+      ])(
+        "keeps the plan limit for an API key with %s",
+        async (_label, extra) => {
+          const auth = await authenticateUser(
+            requestWith(API_KEY, extra),
+            {},
+            RateLimiterMode.Scrape,
+            HOSTED_MCP_ROUTE,
+          );
+
+          expect(concurrencyOf(auth)).toBe(2);
+        },
+      );
+    });
   });
 
   describe("agent interop rate-limit floor", () => {
