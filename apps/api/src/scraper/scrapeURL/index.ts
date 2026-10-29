@@ -1004,6 +1004,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 arm: testArm ? "test" : "control",
                 engine: error.engine,
                 nextEngine,
+                error: error.error,
               });
               if (testArm) {
                 if (

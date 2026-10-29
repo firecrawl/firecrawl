@@ -99,5 +99,14 @@ describe("inWaterfallExperimentArm", () => {
     expect(share("skip-enhanced-retry-after-site-protection")).toBeLessThan(
       0.24,
     );
+    expect(share("basic-retry-on-429")).toBeGreaterThan(0.45);
+    expect(share("basic-retry-on-429")).toBeLessThan(0.55);
+    const both = ids.filter(
+      id =>
+        inWaterfallExperimentArm(id, "tunnel-error-retry") &&
+        inWaterfallExperimentArm(id, "basic-retry-on-429"),
+    ).length;
+    expect(both / ids.length).toBeGreaterThan(0.2);
+    expect(both / ids.length).toBeLessThan(0.3);
   });
 });
