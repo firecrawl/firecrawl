@@ -1159,10 +1159,11 @@ async function supaAuthenticateUser(
     // change the limit.
     hostedMcpCall =
       hostedMcpDelegation ||
-      timingSafeSecretEqual(
-        req.headers["x-firecrawl-keyless-secret"],
-        config.KEYLESS_PROXY_SECRET,
-      );
+      (!token.startsWith("fco_") &&
+        timingSafeSecretEqual(
+          req.headers["x-firecrawl-keyless-secret"],
+          config.KEYLESS_PROXY_SECRET,
+        ));
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not `multiplier`,
