@@ -82,7 +82,13 @@ export async function billTeam(
       );
 
       // A track only happens with an org in hand; named again so the type says so.
-      if (!result.success && trackedInRequest && org_id !== null) {
+      // A charge the MCP credits paid part of is refundable for that part even
+      // when the rest was not tracked.
+      if (
+        !result.success &&
+        (trackedInRequest || mcpCredits > 0) &&
+        org_id !== null
+      ) {
         if (await autumnService.isRoutedThroughFirebill(team_id, org_id)) {
           // No compensating refund on the firebill route: the tracked charge
           // is durable and correct, and a refund here poisons a retried
@@ -97,7 +103,9 @@ export async function billTeam(
           const refund = {
             teamId: team_id,
             orgId: org_id,
-            value: credits,
+            // Only what was charged: the rest when it was tracked, and the
+            // MCP credits part (refunded on its own below).
+            value: (trackedInRequest ? credits - mcpCredits : 0) + mcpCredits,
             properties: autumnProperties,
             featureId,
             // Distinct from the track key: the refund is its own charge event.

@@ -306,7 +306,10 @@ async function billScrapeJob(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
-        if (trackedInRequest && creditsToBeBilled !== null) {
+        if (
+          (trackedInRequest || mcpCredits > 0) &&
+          creditsToBeBilled !== null
+        ) {
           if (routedToFirebill) {
             // No compensating refund on the firebill route: the tracked charge
             // is durable and correct (the scrape ran), and refunding it here
@@ -330,7 +333,11 @@ async function billScrapeJob(
             const refund = {
               teamId: job.data.team_id,
               orgId,
-              value: creditsToBeBilled,
+              // Only what was charged: the rest when it was tracked, and the
+              // MCP credits part (refunded on its own below).
+              value:
+                (trackedInRequest ? creditsToBeBilled - mcpCredits : 0) +
+                mcpCredits,
               properties: autumnProperties,
               featureId,
               // Distinct from the track key: a refund is its own charge event

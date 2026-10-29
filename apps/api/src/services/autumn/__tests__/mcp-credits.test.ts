@@ -6,26 +6,39 @@
 
 import { vi } from "vitest";
 
-const { mockCheck, mockTrack, mockAutumnClient, state } = vi.hoisted(() => {
-  const mockCheck = vi.fn<(args: any) => Promise<any>>();
-  const mockTrack = vi.fn<(args: any) => Promise<void>>();
-  const mockAutumnClient = {
-    customers: { getOrCreate: vi.fn(), get: vi.fn() },
-    entities: {
-      get: vi.fn().mockResolvedValue({ id: "team-1" }),
-      create: vi.fn(),
-    },
-    balances: { finalize: vi.fn() },
-    check: mockCheck,
-    track: mockTrack,
-  };
-  return {
-    mockCheck,
-    mockTrack,
-    mockAutumnClient,
-    state: { gatewayStubRow: null as unknown },
-  };
-});
+const { mockCheck, mockTrack, mockAutumnClient, state, redis } = vi.hoisted(
+  () => {
+    const store = new Map<string, string>();
+    const redis = {
+      store,
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      set: vi.fn(async (key: string, value: unknown, ...args: unknown[]) => {
+        if (args.includes("NX") && store.has(key)) return null;
+        store.set(key, String(value));
+        return "OK";
+      }),
+    };
+    const mockCheck = vi.fn<(args: any) => Promise<any>>();
+    const mockTrack = vi.fn<(args: any) => Promise<void>>();
+    const mockAutumnClient = {
+      customers: { getOrCreate: vi.fn(), get: vi.fn() },
+      entities: {
+        get: vi.fn().mockResolvedValue({ id: "team-1" }),
+        create: vi.fn(),
+      },
+      balances: { finalize: vi.fn() },
+      check: mockCheck,
+      track: mockTrack,
+    };
+    return {
+      mockCheck,
+      mockTrack,
+      mockAutumnClient,
+      state: { gatewayStubRow: null as unknown },
+      redis,
+    };
+  },
+);
 
 vi.mock("../client", () => ({
   autumnClient: mockAutumnClient,
@@ -33,6 +46,7 @@ vi.mock("../client", () => ({
 
 vi.mock("../../queue-service", () => ({
   getFirebillTrackRetryQueue: () => ({ add: vi.fn() }),
+  getRedisConnection: () => redis,
 }));
 
 vi.mock("../../../db/connection", () => ({
@@ -90,6 +104,7 @@ async function tracksOf(fn: (service: AutumnService) => Promise<unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.gatewayStubRow = null;
+  redis.store.clear();
   mockTrack.mockResolvedValue(undefined);
   mcpBalance(100);
 });
@@ -277,5 +292,63 @@ describe("refundHostedMcpCredits", () => {
     await service.refundHostedMcpCredits({ ...refund, mcpCredits: 0 });
 
     expect(refundCredits).toHaveBeenCalledExactlyOnceWith(refund);
+  });
+});
+
+describe("hosted MCP charge retries", () => {
+  it("splits a retried charge as the first attempt did, after it used the MCP credits up", async () => {
+    mcpBalance(5);
+    const first = await tracksOf(service =>
+      service.trackHostedMcpCredits(charge),
+    );
+    mcpBalance(0);
+    const retry = await tracksOf(service =>
+      service
+        .trackHostedMcpCredits(charge)
+        .then(result =>
+          expect(result).toEqual({ tracked: true, mcpCredits: 5 }),
+        ),
+    );
+
+    expect(retry).toEqual(first);
+    expect(retry).toEqual([
+      expect.objectContaining({ featureId: MCP_CREDITS_FEATURE_ID, value: 5 }),
+    ]);
+  });
+
+  it("records the allocation once, for 7 days, under the charge's key", async () => {
+    mcpBalance(3);
+
+    await new AutumnService().trackHostedMcpCredits(charge);
+
+    expect(redis.set).toHaveBeenCalledExactlyOnceWith(
+      "fc:mcp-credits:allocation:fc:track:scrape:job-1",
+      3,
+      "EX",
+      7 * 24 * 60 * 60,
+      "NX",
+    );
+  });
+
+  it("works the split out afresh for a charge without a key", async () => {
+    mcpBalance(3);
+
+    await new AutumnService().trackHostedMcpCredits({
+      ...charge,
+      idempotencyKey: undefined,
+    });
+
+    expect(redis.get).not.toHaveBeenCalled();
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it("works the split out afresh when Redis can't answer", async () => {
+    mcpBalance(3);
+    redis.get.mockRejectedValueOnce(new Error("redis down"));
+
+    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
+      tracked: true,
+      mcpCredits: 3,
+    });
   });
 });

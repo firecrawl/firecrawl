@@ -320,6 +320,31 @@ describe("billTeam MCP credits", () => {
     expect(refundCredits).not.toHaveBeenCalled();
   });
 
+  it("refunds the MCP credits part of a failed enqueue even when the rest was not tracked", async () => {
+    trackHostedMcpCredits.mockResolvedValue({ tracked: false, mcpCredits: 2 });
+    queueBillingOperation.mockResolvedValueOnce({ success: false });
+
+    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
+
+    expect(queueBillingOperation).toHaveBeenCalledWith(
+      expect.arrayContaining([false]),
+    );
+    expect(refundHostedMcpCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ value: 2, mcpCredits: 2 }),
+    );
+    expect(refundCredits).not.toHaveBeenCalled();
+  });
+
+  it("refunds nothing for a failed enqueue when nothing was tracked", async () => {
+    trackHostedMcpCredits.mockResolvedValue({ tracked: false, mcpCredits: 0 });
+    queueBillingOperation.mockResolvedValueOnce({ success: false });
+
+    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
+
+    expect(refundHostedMcpCredits).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
+  });
+
   it("refunds a failed enqueue MCP credits paid nothing of as today", async () => {
     trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 0 });
     queueBillingOperation.mockResolvedValueOnce({ success: false });

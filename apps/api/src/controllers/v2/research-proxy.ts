@@ -37,6 +37,7 @@ const searchCreditGate = () =>
   checkCreditsMiddleware(
     SEARCH_CREDITS_PER_TEN_RESULTS,
     SEARCH_CREDITS_FEATURE_ID,
+    { mcpCredits: true },
   );
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 

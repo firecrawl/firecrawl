@@ -522,6 +522,25 @@ describe("MCP credits on the ledger", () => {
     );
   });
 
+  it("refunds only the MCP credits part when the rest was not tracked", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
+      false,
+      false,
+    );
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
+    );
+  });
+
   it("confirms a split charge's Exchange access once, after both rows commit", async () => {
     await queueBillingOperation(
       "team-1",

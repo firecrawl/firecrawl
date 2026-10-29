@@ -19,6 +19,7 @@ import {
   autumnEntityCreatedInlineTotal,
   billingRouteTotal,
 } from "./metrics";
+import { getRedisConnection } from "../queue-service";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -604,17 +605,57 @@ export class AutumnService {
   }
 
   /**
+   * The MCP credits part of a keyed hosted MCP charge. The first attempt
+   * records it, so a retry under the same key (a stalled job re-running its
+   * charge) splits the charge the same way and each part dedupes against its
+   * first track, even after that first track used the MCP credits up. Without
+   * a key, or when Redis can't answer, it is worked out afresh.
+   */
+  private async hostedMcpAllocation(params: TrackCreditsParams) {
+    if (!params.idempotencyKey) return this.mcpCreditsAvailable(params);
+    const key = `fc:mcp-credits:allocation:${params.idempotencyKey}`;
+    try {
+      const recorded = await getRedisConnection().get(key);
+      if (recorded !== null) return Number(recorded);
+    } catch (error) {
+      logger.warn("Failed to read a hosted MCP charge's allocation", {
+        key,
+        error,
+      });
+      return this.mcpCreditsAvailable(params);
+    }
+    const mcpCredits = await this.mcpCreditsAvailable(params);
+    try {
+      const redis = getRedisConnection();
+      if (
+        (await redis.set(key, mcpCredits, "EX", 7 * 24 * 60 * 60, "NX")) ===
+        null
+      ) {
+        const recorded = await redis.get(key);
+        if (recorded !== null) return Number(recorded);
+      }
+    } catch (error) {
+      logger.warn("Failed to record a hosted MCP charge's allocation", {
+        key,
+        error,
+      });
+    }
+    return mcpCredits;
+  }
+
+  /**
    * Tracks a hosted MCP charge: the part the team's MCP credits can pay (see
    * mcpCreditsAvailable) on MCP_CREDITS_FEATURE_ID, and the rest on
    * `featureId`, the endpoint's own feature. When the MCP credits pay nothing,
    * the whole charge is tracked exactly as trackCredits would track it.
-   * Resolves whether every part was tracked, and the credits the MCP credits
-   * paid.
+   * Resolves whether every part was tracked, and the credits tracked on
+   * MCP_CREDITS_FEATURE_ID: those were charged even when `tracked` is false,
+   * so a caller reversing the charge reverses them on their own.
    */
   async trackHostedMcpCredits(
     params: TrackCreditsParams,
   ): Promise<{ tracked: boolean; mcpCredits: number }> {
-    const mcpCredits = await this.mcpCreditsAvailable(params);
+    const mcpCredits = await this.hostedMcpAllocation(params);
     const rest = params.value - mcpCredits;
     const [mcpTracked, restTracked] = await Promise.all([
       mcpCredits > 0

@@ -335,7 +335,14 @@ export async function processBillingBatch() {
 
         const group = groupedOperations.get(key)!;
         group.total_credits += credits;
-        group.operations.push({ ...op, credits });
+        // MCP credits are only recorded once their track succeeded, so their
+        // row is refundable even when the rest of the charge was not tracked.
+        group.operations.push({
+          ...op,
+          credits,
+          autumnTrackInRequest:
+            ledger_tag === MCP_CREDITS_LEDGER_TAG || op.autumnTrackInRequest,
+        });
       }
     }
 
