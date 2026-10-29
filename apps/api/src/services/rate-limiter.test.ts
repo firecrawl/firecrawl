@@ -13,7 +13,6 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
-  getHostedMcpConcurrencyLimit,
   getHostedMcpRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
@@ -492,47 +491,29 @@ describe("getAutumnRateLimiter", () => {
   });
 
   describe("hosted MCP minimum", () => {
-    it("raises free and hobby to 600 in a bucket of its own", () => {
-      for (const mode of [
-        RateLimiterMode.Scrape,
-        RateLimiterMode.Search,
-        RateLimiterMode.Exchange,
-      ]) {
-        for (const multiplier of [1, 5, 10]) {
+    it("raises free and hobby to 600 and standard to 1,000 in a bucket of its own", () => {
+      for (const mode of [RateLimiterMode.Scrape, RateLimiterMode.Search]) {
+        // Free, hobby, ×11 and ×25 plan variants, then standard and a ×60
+        // variant.
+        for (const [multiplier, limit] of [
+          [1, 600],
+          [5, 600],
+          [10, 600],
+          [11, 600],
+          [25, 600],
+          [50, 1000],
+          [60, 1000],
+        ]) {
           const limiter = getHostedMcpRateLimiter(mode, multiplier);
-          expect(limiter?.points).toBe(600);
+          expect(limiter?.points).toBe(limit);
           expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
         }
       }
     });
 
-    it("raises standard to 2000 in a bucket of its own", () => {
-      for (const mode of [
-        RateLimiterMode.Scrape,
-        RateLimiterMode.Search,
-        RateLimiterMode.Exchange,
-      ]) {
-        // Standard (×50) and an off-tier ×100 variant, which rounds down.
-        for (const multiplier of [50, 100]) {
-          const limiter = getHostedMcpRateLimiter(mode, multiplier);
-          expect(limiter?.points).toBe(2000);
-          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
-        }
-      }
-    });
-
-    it("never lowers a standard-tier plan already at 2000 or more", () => {
-      // 10 × 200 = 2000 and 10 × 400 = 4000 on their normal limiters.
-      for (const multiplier of [200, 400]) {
-        expect(
-          getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
-        ).toBe(undefined);
-      }
-    });
-
-    it("leaves plans between hobby and standard, and growth and above, on their normal limiter", () => {
-      // ×11 and ×25 plan variants, growth, scale and enterprise.
-      for (const multiplier of [11, 25, 49, 500, 1000, 2500]) {
+    it("leaves plans already at or above their minimum on their normal limiter", () => {
+      // A ×100 variant (exactly 1,000), growth and scale.
+      for (const multiplier of [100, 500, 1000]) {
         expect(
           getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
         ).toBe(undefined);
@@ -541,6 +522,7 @@ describe("getAutumnRateLimiter", () => {
 
     it("leaves other modes and overridden modes alone", () => {
       for (const mode of [
+        RateLimiterMode.Exchange,
         RateLimiterMode.Map,
         RateLimiterMode.Crawl,
         RateLimiterMode.Extract,
@@ -562,102 +544,6 @@ describe("getAutumnRateLimiter", () => {
       expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
         600,
       );
-    });
-  });
-
-  describe("hosted MCP concurrency minimum", () => {
-    it("raises free to 25 and hobby to 50", () => {
-      for (const mode of [
-        RateLimiterMode.Scrape,
-        RateLimiterMode.Search,
-        RateLimiterMode.Exchange,
-      ]) {
-        // Free (2 at ×1) and hobby (5 at ×10).
-        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(25);
-        expect(getHostedMcpConcurrencyLimit(mode, 5, 10)).toBe(50);
-      }
-      // Off-tier multipliers below hobby round down to free.
-      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 2, 9)).toBe(
-        25,
-      );
-    });
-
-    it("raises standard to 75, and leaves a standard team at 75 or more alone", () => {
-      for (const mode of [
-        RateLimiterMode.Scrape,
-        RateLimiterMode.Search,
-        RateLimiterMode.Exchange,
-      ]) {
-        expect(getHostedMcpConcurrencyLimit(mode, 50, 50)).toBe(75);
-        expect(getHostedMcpConcurrencyLimit(mode, 50, 100)).toBe(75);
-      }
-      for (const concurrencyLimit of [75, 100]) {
-        expect(
-          getHostedMcpConcurrencyLimit(
-            RateLimiterMode.Scrape,
-            concurrencyLimit,
-            50,
-          ),
-        ).toBe(undefined);
-      }
-    });
-
-    it("leaves plans between hobby and standard, and growth and above, on their own limit", () => {
-      for (const multiplier of [11, 25, 49, 500, 1000, 2500]) {
-        expect(
-          getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 5, multiplier),
-        ).toBe(undefined);
-      }
-    });
-
-    it("leaves a free team already at or above 25 alone", () => {
-      for (const concurrencyLimit of [25, 50, 200]) {
-        expect(
-          getHostedMcpConcurrencyLimit(
-            RateLimiterMode.Scrape,
-            concurrencyLimit,
-            1,
-          ),
-        ).toBe(undefined);
-      }
-      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 24, 1)).toBe(
-        25,
-      );
-    });
-
-    it("leaves a hobby team already at or above 50 alone", () => {
-      for (const concurrencyLimit of [50, 100, 200]) {
-        expect(
-          getHostedMcpConcurrencyLimit(
-            RateLimiterMode.Scrape,
-            concurrencyLimit,
-            10,
-          ),
-        ).toBe(undefined);
-      }
-      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 30, 10)).toBe(
-        50,
-      );
-    });
-
-    it("leaves other modes and overridden modes alone", () => {
-      for (const mode of [
-        RateLimiterMode.Map,
-        RateLimiterMode.Crawl,
-        RateLimiterMode.Extract,
-        RateLimiterMode.Browser,
-        RateLimiterMode.ExchangeDiscover,
-      ]) {
-        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(undefined);
-      }
-      expect(
-        getHostedMcpConcurrencyLimit(
-          RateLimiterMode.Scrape,
-          2,
-          1,
-          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
-        ),
-      ).toBe(undefined);
     });
   });
 
