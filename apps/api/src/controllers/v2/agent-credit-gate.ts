@@ -65,7 +65,7 @@ export async function gateAgentCredits({
 
   const requested = requestedMaxCredits ?? AGENT_DEFAULT_MAX_CREDITS;
   const mcpCredits = () =>
-    hostedMcp
+    hostedMcp && requested > 0
       ? autumnService.mcpCreditsAvailable({
           teamId,
           orgId,

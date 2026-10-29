@@ -259,6 +259,14 @@ describe("gateAgentCredits for a hosted MCP run", () => {
     );
   });
 
+  it("leaves a non-positive maxCredits to the balance alone", async () => {
+    checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 0 });
+    mcpCreditsAvailable.mockResolvedValue(1000);
+
+    expect(await hosted(-1)).toEqual({ allowed: false, balance: 0 });
+    expect(mcpCreditsAvailable).not.toHaveBeenCalled();
+  });
+
   it("refuses when the balance and MCP credits together are below the minimum", async () => {
     checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 12 });
     mcpCreditsAvailable.mockResolvedValueOnce(7);
