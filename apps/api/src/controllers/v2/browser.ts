@@ -57,6 +57,7 @@ export const browserCreateRequestSchema = z.object({
       auth: z.string(),
       requestId: z.string().uuid(),
       shouldBill: z.boolean(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });

@@ -352,3 +352,26 @@ export async function didBrowserSessionUsePrompt(
 ): Promise<boolean> {
   return (await getValue(promptFlagKey(sessionId))) === "1";
 }
+
+// ---------------------------------------------------------------------------
+// Hosted MCP sessions (Redis)
+// ---------------------------------------------------------------------------
+
+function hostedMcpFlagKey(sessionId: string): string {
+  return `browser_session:hosted_mcp:${sessionId}`;
+}
+
+export async function markBrowserSessionHostedMcp(
+  sessionId: string,
+): Promise<void> {
+  await setValue(hostedMcpFlagKey(sessionId), "1", PROFILE_DELETED_TTL_SECONDS);
+}
+
+/** A flag lost to Redis bills the session as before: on regular credits. */
+export async function didBrowserSessionComeFromHostedMcp(
+  sessionId: string,
+): Promise<boolean> {
+  return (
+    (await getValue(hostedMcpFlagKey(sessionId)).catch(() => null)) === "1"
+  );
+}

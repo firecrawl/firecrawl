@@ -19,6 +19,8 @@ import {
   settleBrowserSessionOnce,
   withLockedBrowserSession,
   didBrowserSessionUsePrompt,
+  didBrowserSessionComeFromHostedMcp,
+  markBrowserSessionHostedMcp,
   listUnsettledHangarSessions,
   BrowserSessionRow,
 } from "./browser-sessions";
@@ -183,7 +185,16 @@ async function createBrowserSessionInternal(
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
     });
-    if (credit !== null && !credit.allowed)
+    if (
+      credit !== null &&
+      !credit.allowed &&
+      !(await mcpCreditsCover(
+        req,
+        credit.remaining,
+        estimatedCredits,
+        "browserCreate:mcp",
+      ))
+    )
       throw new BrowserSessionError(
         402,
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
@@ -248,6 +259,15 @@ async function createBrowserSessionInternal(
       credits_used: null,
       profile_name: options.profile?.name ?? null,
     });
+    // Settlement runs later, often with no request in hand, so the session
+    // keeps the verified hosted MCP signal for it.
+    if (shouldBill && req.auth.hostedMcp)
+      await markBrowserSessionHostedMcp(session.id).catch(error =>
+        logger.warn("Failed to mark a hosted MCP browser session", {
+          sessionId: session.id,
+          error,
+        }),
+      );
     return {
       session,
       expiresAt:
@@ -272,6 +292,31 @@ async function createBrowserSessionInternal(
     );
     throw error;
   }
+}
+
+/**
+ * Whether a hosted MCP call's MCP credits pay for what its balance refused.
+ * What is left of the balance counts only when the balance is why the check
+ * refused; a spend limit refuses with plenty left.
+ */
+async function mcpCreditsCover(
+  req: RequestWithAuth<any, any, any>,
+  remaining: number,
+  value: number,
+  source: string,
+): Promise<boolean> {
+  if (!req.auth.hostedMcp || !req.acuc?.org_id) return false;
+  const mcp = await autumnService.mcpCreditsAvailable({
+    teamId: req.auth.team_id,
+    orgId: req.acuc.org_id,
+    value,
+    properties: {
+      source,
+      path: req.path,
+      apiKeyId: req.acuc.api_key_id ?? null,
+    },
+  });
+  return (remaining < value ? Math.max(remaining, 0) : 0) + mcp >= value;
 }
 
 export async function settleBrowserSession(
@@ -351,6 +396,10 @@ async function settleBrowserSessionInternal(
               : "browser",
           jobId: agentRequestId ?? session.id,
           chargeId: `${session.id}:destroy`,
+          ...(agentRequestId ? { agentRequestId } : {}),
+          ...((await didBrowserSessionComeFromHostedMcp(session.id))
+            ? { hostedMcp: true }
+            : {}),
         },
       ).catch(error =>
         logger.error("Failed to bill browser session", {
@@ -418,7 +467,16 @@ export async function reserveBrowserPromptCredits(
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
     });
-    if (credit !== null && !credit.allowed)
+    if (
+      credit !== null &&
+      !credit.allowed &&
+      !(await mcpCreditsCover(
+        req,
+        credit.remaining,
+        credits,
+        "browserPrompt:mcp",
+      ))
+    )
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
