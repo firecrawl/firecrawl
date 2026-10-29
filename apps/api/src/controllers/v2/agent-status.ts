@@ -133,6 +133,7 @@ export async function agentStatusController(
       : {}),
     model,
     effort,
+    safe: agent.safe,
     threadId: thread.threadId,
     threadTurn: thread.threadTurn,
     mode: thread.mode,

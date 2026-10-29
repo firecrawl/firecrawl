@@ -119,6 +119,47 @@ describe("agentStatusController", () => {
     expect(body.effort).toBeUndefined();
   });
 
+  it("returns safe for a run that filtered its searches", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "processing",
+      model: "spark-2",
+      safe: true,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "processing", safe: true }),
+    );
+  });
+
+  it("leaves safe undefined when the run did not set it", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "success",
+      model: "spark-2",
+      data: { result: "ok" },
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect((res.json as Mock).mock.calls[0][0].safe).toBeUndefined();
+  });
+
   it("returns terminal state and result metadata from extract-v3", async () => {
     (getAgentJobAccess as Mock).mockResolvedValue({
       teamId: "team-123",
