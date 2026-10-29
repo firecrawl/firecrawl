@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,12 +16,17 @@ function meta(): any {
   };
 }
 
+let dir: string;
 let filePath: string;
 
 beforeAll(async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pdf-parse-test-"));
+  dir = await mkdtemp(join(tmpdir(), "pdf-parse-test-"));
   filePath = join(dir, "doc.pdf");
   await writeFile(filePath, "%PDF-1.4\n");
+});
+
+afterAll(async () => {
+  await rm(dir, { recursive: true, force: true });
 });
 
 beforeEach(() => {
