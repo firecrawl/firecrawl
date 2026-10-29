@@ -9,6 +9,8 @@ import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
   getRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpConcurrencyLimit,
+  getHostedMcpRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
   rateLimitExperimentApplies,
@@ -857,6 +859,10 @@ type AuthenticateOptions = {
   // Route opt-in: a trusted agent-interop request may authenticate with a
   // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.
   allowAgentManagedKey?: boolean;
+  // Route opt-in: calls the hosted MCP makes get the raised per-minute and
+  // concurrency minimums (see getHostedMcpRateLimiter and
+  // getHostedMcpConcurrencyLimit) only on routes that set this.
+  hostedMcpRateLimit?: boolean;
 };
 
 async function supaAuthenticateUser(
@@ -902,6 +908,9 @@ async function supaAuthenticateUser(
 
   let teamId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
+  // Set only once a hosted MCP delegated credential has verified, so the
+  // client never decides it.
+  let hostedMcpDelegation = false;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
@@ -947,6 +956,7 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
+    hostedMcpDelegation = true;
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,
@@ -1139,7 +1149,46 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
-    if (
+    // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
+    // raised per-minute minimum, and scrape calls a raised concurrency
+    // minimum. Two signals prove the hosted MCP made the call: a verified
+    // delegated credential (managed OAuth sessions) or the proxy secret it
+    // shares with the API (sessions that send a plain API key).
+    // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
+    // so a REST call carrying one comes from the client itself. Origin and
+    // integration are client-set, so they never change the limit.
+    const hostedMcpRaise =
+      options?.hostedMcpRateLimit === true &&
+      (hostedMcpDelegation ||
+        (!token.startsWith("fco_") &&
+          timingSafeSecretEqual(
+            req.headers["x-firecrawl-keyless-secret"],
+            config.KEYLESS_PROXY_SECRET,
+          )));
+    // The tiers follow the team's own plan multiplier, not `multiplier`,
+    // which trusted agent traffic floors at hobby, so a free team never gets
+    // the hobby tier.
+    const hostedMcpLimiter = hostedMcpRaise
+      ? getHostedMcpRateLimiter(mode, chunk.rate_limit_multiplier, chunk.flags)
+      : undefined;
+    const hostedMcpConcurrency = hostedMcpRaise
+      ? getHostedMcpConcurrencyLimit(
+          mode,
+          chunk.concurrency_limit,
+          chunk.rate_limit_multiplier,
+          chunk.flags,
+        )
+      : undefined;
+    if (hostedMcpConcurrency !== undefined) {
+      // Only this request's chunk changes; the cached team limits do not.
+      chunk = { ...chunk, concurrency_limit: hostedMcpConcurrency };
+    }
+    if (hostedMcpLimiter) {
+      // At or above the treatment minimum on every plan it applies to, so the
+      // experiment cannot change this call's limit and does not enroll the
+      // org through it.
+      rateLimiter = hostedMcpLimiter;
+    } else if (
       rateLimitExperimentApplies(mode, multiplier, chunk.flags) &&
       (await getRateLimitExperimentVariant({
         orgId: chunk.org_id,

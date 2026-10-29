@@ -44,7 +44,7 @@ import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
 import { extractController } from "../controllers/v2/extract";
 import { extractStatusController } from "../controllers/v2/extract-status";
 import {
-  authMiddleware,
+  authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
   scrapeBlocklistMiddleware,
@@ -124,6 +124,12 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+
+// Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
+// in controllers/auth.ts); /v1 routes do not.
+const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
+  sharedAuthMiddleware(mode, { ...options, hostedMcpRateLimit: true });
+
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
