@@ -522,14 +522,32 @@ describe("getAutumnRateLimiter", () => {
       }
     });
 
-    it("leaves other modes and overridden modes alone", () => {
+    it("scales every multiplier-scaled mode by the same tier multiplier", () => {
+      // ×60 on free and hobby, ×200 on standard, applied to each mode's base.
+      for (const [mode, free, standard] of [
+        [RateLimiterMode.Map, 600, 2000],
+        [RateLimiterMode.Exchange, 600, 2000],
+        [RateLimiterMode.BrowserExecute, 600, 2000],
+        [RateLimiterMode.Crawl, 120, 400],
+        [RateLimiterMode.Extract, 120, 400],
+        [RateLimiterMode.Browser, 120, 400],
+        [RateLimiterMode.CrawlStatus, 30000, 100000],
+        [RateLimiterMode.ExtractStatus, 30000, 100000],
+      ] as const) {
+        const freeLimiter = getHostedMcpRateLimiter(mode, 1);
+        expect(freeLimiter?.points).toBe(free);
+        expect(freeLimiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        expect(getHostedMcpRateLimiter(mode, 10)?.points).toBe(free);
+        expect(getHostedMcpRateLimiter(mode, 50)?.points).toBe(standard);
+        expect(getHostedMcpRateLimiter(mode, 500)).toBe(undefined);
+      }
+    });
+
+    it("leaves flat modes and overridden modes alone", () => {
       for (const mode of [
-        RateLimiterMode.Exchange,
-        RateLimiterMode.Map,
-        RateLimiterMode.Crawl,
-        RateLimiterMode.Extract,
-        RateLimiterMode.Browser,
         RateLimiterMode.ExchangeDiscover,
+        RateLimiterMode.Account,
+        RateLimiterMode.Research,
       ]) {
         expect(getHostedMcpRateLimiter(mode, 1)).toBe(undefined);
       }
