@@ -60,6 +60,7 @@ describe("sendDocumentToSearchIndex", () => {
     { cookie: "session=abc" },
     { "X-API-Key": "key" },
     { "x-api-key": "key" },
+    { "Api-Key": "key" },
     { "Proxy-Authorization": "Basic abc" },
   ])("skips a page fetched with %o", async headers => {
     await sendDocumentToSearchIndex(meta(headers), document());
