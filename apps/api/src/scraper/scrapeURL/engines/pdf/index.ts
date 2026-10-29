@@ -938,6 +938,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }),
         },
         tempFilePath,
+        maxPages ?? undefined,
       );
     }
 
