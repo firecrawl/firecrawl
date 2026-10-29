@@ -10,6 +10,7 @@ const {
   refundCredits,
   billTeam7,
   getACUCTeam,
+  reportExchangeBilling,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -24,8 +25,13 @@ const {
     refundCredits: vi.fn<(args: any) => Promise<void>>(),
     billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
     getACUCTeam: vi.fn<(teamId: string) => Promise<any>>(),
+    reportExchangeBilling: vi.fn<(args: any) => Promise<boolean>>(),
   };
 });
+
+vi.mock("../../../lib/exchange", () => ({
+  reportExchangeBilling,
+}));
 
 vi.mock("../../../lib/logger", () => ({
   logger,
@@ -42,6 +48,7 @@ vi.mock("../../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: (endpoint?: string) =>
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
+  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
 }));
 
 vi.mock("../../../db/rpc", () => ({
@@ -440,18 +447,8 @@ describe("MCP credits on the ledger", () => {
       { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
       false,
       true,
-      { accessEventId: "access-1" },
     );
-
-    expect(queue.map(op => JSON.parse(op))).toEqual([
-      expect.objectContaining({
-        credits: 2,
-        exchange_access_event_id: "access-1",
-      }),
-      expect.not.objectContaining({
-        exchange_access_event_id: expect.anything(),
-      }),
-    ]);
+    expect(queue).toHaveLength(1);
 
     await processBillingBatch();
 
@@ -502,7 +499,7 @@ describe("MCP credits on the ledger", () => {
     });
   });
 
-  it("refunds both parts to the endpoint's own feature when the ledger fails", async () => {
+  it("refunds each part to the balance it was tracked on when the ledger fails", async () => {
     await queueBillingOperation(
       "team-1",
       "org-1",
@@ -516,11 +513,54 @@ describe("MCP credits on the ledger", () => {
 
     await processBillingBatch();
 
+    expect(refundCredits).toHaveBeenCalledTimes(2);
     expect(refundCredits).toHaveBeenCalledWith(
       expect.objectContaining({ value: 2, featureId: "CREDITS" }),
     );
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 3, featureId: "CREDITS" }),
+      expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
     );
+  });
+
+  it("confirms a split charge's Exchange access once, after both rows commit", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
+      false,
+      true,
+      { accessEventId: "access-1", billingReference: "ref-1" },
+    );
+    await processBillingBatch();
+
+    expect(reportExchangeBilling).toHaveBeenCalledExactlyOnceWith({
+      accessEventId: "access-1",
+      status: "confirmed",
+      billingReference: "ref-1",
+    });
+  });
+
+  it("leaves a split charge's Exchange access pending when one row fails", async () => {
+    await queueBillingOperation(
+      "team-1",
+      "org-1",
+      5,
+      123,
+      { endpoint: "scrape", hostedMcp: true, mcpCredits: 3 },
+      false,
+      true,
+      { accessEventId: "access-1" },
+    );
+    billTeam7.mockImplementation(async ({ subscription_id }) => {
+      if (subscription_id === "mcp_credits") throw new Error("db failed");
+      return [];
+    });
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledTimes(2);
+    expect(reportExchangeBilling).not.toHaveBeenCalled();
   });
 });

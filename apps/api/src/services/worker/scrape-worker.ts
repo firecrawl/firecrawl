@@ -327,7 +327,7 @@ async function billScrapeJob(
               },
             );
           } else if (orgId) {
-            await autumnService.refundCredits({
+            const refund = {
               teamId: job.data.team_id,
               orgId,
               value: creditsToBeBilled,
@@ -337,7 +337,11 @@ async function billScrapeJob(
               // (same key would 409 as a duplicate of the track and be dropped).
               idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
               externalRequestId: billing.externalRequestId ?? undefined,
-            });
+            };
+            // A split charge refunds each part to the balance it was tracked on.
+            await (mcpCredits > 0
+              ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
+              : autumnService.refundCredits(refund));
           }
         }
         // The billing operation never reached the queue, so no debit will

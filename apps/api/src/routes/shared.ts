@@ -48,6 +48,8 @@ import { resolveIntegration } from "../utils/integration";
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId: string = CREDITS_FEATURE_ID,
+  // Set on routes whose billing spends a hosted MCP call's MCP credits first.
+  { mcpCredits = false }: { mcpCredits?: boolean } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     let minimum = _minimum;
@@ -195,6 +197,7 @@ export function checkCreditsMiddleware(
       // MCP credits can, which billing then spends first (see billTeam).
       if (
         !autumnResult.allowed &&
+        mcpCredits &&
         req.auth.hostedMcp &&
         (await autumnService.mcpCreditsAvailable({
           teamId: req.auth.team_id,

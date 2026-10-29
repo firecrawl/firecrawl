@@ -639,6 +639,34 @@ export class AutumnService {
   }
 
   /**
+   * Reverses a trackHostedMcpCredits charge: `mcpCredits` back to
+   * MCP_CREDITS_FEATURE_ID and the rest to `featureId`, each part keyed as it
+   * was tracked. With no MCP credits it is exactly refundCredits. Resolves
+   * whether every part was refunded.
+   */
+  async refundHostedMcpCredits({
+    mcpCredits,
+    ...params
+  }: TrackCreditsParams & { mcpCredits: number }): Promise<boolean> {
+    const rest = params.value - mcpCredits;
+    const [mcpRefunded, restRefunded] = await Promise.all([
+      mcpCredits > 0
+        ? this.refundCredits({
+            ...params,
+            value: mcpCredits,
+            featureId: MCP_CREDITS_FEATURE_ID,
+            idempotencyKey:
+              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
+          })
+        : true,
+      mcpCredits === 0 || rest > 0
+        ? this.refundCredits({ ...params, value: rest })
+        : true,
+    ]);
+    return mcpRefunded && restRefunded;
+  }
+
+  /**
    * Whether the org has an auto top-up that can actually fire for CREDITS: it
    * is enabled, and the org holds a prepaid CREDITS item for it to buy. Autumn
    * enables the control on some free orgs, but a free plan has no prepaid item,

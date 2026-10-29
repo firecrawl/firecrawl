@@ -5,6 +5,7 @@ import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import {
   resolveBillingMetadata,
@@ -108,8 +109,6 @@ interface BillingOperation {
   // the event pending for reconciliation rather than voiding it.
   exchange_access_event_id?: string;
   billing_reference?: string;
-  // Recorded on the ledger row (see MCP_CREDITS_LEDGER_TAG).
-  ledger_tag?: string;
 }
 
 // Grouped billing operations for batch processing
@@ -192,7 +191,11 @@ async function refundRequestTrackedCredits(
         ...toAutumnBillingProperties(group.billing),
         apiKeyId: group.api_key_id,
       },
-      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
+      // The part MCP credits paid goes back to them.
+      featureId:
+        group.ledger_tag === MCP_CREDITS_LEDGER_TAG
+          ? MCP_CREDITS_FEATURE_ID
+          : featureIdForBillingEndpoint(group.billing.endpoint),
     });
   } catch (error) {
     logger.warn("Failed to refund Autumn request-tracked credits", {
@@ -217,8 +220,11 @@ export async function processBillingBatch() {
   }
 
   // Exchange operations whose debit committed this run; their ledger
-  // confirmations are delivered after the lock is released.
+  // confirmations are delivered after the lock is released. An operation
+  // MCP credits paid part of is split across ledger rows, so each access
+  // counts the rows it spans.
   const committedExchangeOps: BillingOperation[] = [];
+  const exchangeRowCounts = new Map<string, number>();
 
   try {
     // Get all operations from Redis list
@@ -293,24 +299,44 @@ export async function processBillingBatch() {
       } else {
         orgId = op.org_id;
       }
-      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.ledger_tag ?? ""}:${op.is_extract}:${op.api_key_id}`;
-
-      if (!groupedOperations.has(key)) {
-        groupedOperations.set(key, {
-          team_id: op.team_id,
-          org_id: orgId,
-          total_credits: 0,
-          billing,
-          is_extract: op.is_extract,
-          api_key_id: op.api_key_id,
-          ledger_tag: op.ledger_tag,
-          operations: [],
-        });
+      // The part the team's MCP credits paid is its own ledger row, tagged so
+      // MCP-paid usage is counted apart from regular credits used.
+      const mcpCredits = Math.min(billing.mcpCredits ?? 0, op.credits);
+      const parts = [
+        ...(mcpCredits === 0 || mcpCredits < op.credits
+          ? [{ credits: op.credits - mcpCredits, ledger_tag: undefined }]
+          : []),
+        ...(mcpCredits > 0
+          ? [{ credits: mcpCredits, ledger_tag: MCP_CREDITS_LEDGER_TAG }]
+          : []),
+      ];
+      if (op.exchange_access_event_id !== undefined) {
+        exchangeRowCounts.set(
+          op.exchange_access_event_id,
+          (exchangeRowCounts.get(op.exchange_access_event_id) ?? 0) +
+            parts.length,
+        );
       }
+      for (const { credits, ledger_tag } of parts) {
+        const key = `${op.team_id}:${orgId}:${billing.endpoint}:${ledger_tag ?? ""}:${op.is_extract}:${op.api_key_id}`;
 
-      const group = groupedOperations.get(key)!;
-      group.total_credits += op.credits;
-      group.operations.push(op);
+        if (!groupedOperations.has(key)) {
+          groupedOperations.set(key, {
+            team_id: op.team_id,
+            org_id: orgId,
+            total_credits: 0,
+            billing,
+            is_extract: op.is_extract,
+            api_key_id: op.api_key_id,
+            ledger_tag,
+            operations: [],
+          });
+        }
+
+        const group = groupedOperations.get(key)!;
+        group.total_credits += credits;
+        group.operations.push({ ...op, credits });
+      }
     }
 
     if (unresolvedOperations.length > 0) {
@@ -409,7 +435,23 @@ export async function processBillingBatch() {
     await releaseLock();
   }
 
-  await confirmExchangeOutcomes(committedExchangeOps);
+  // An access is confirmed once, and only after every row it spans committed.
+  const committedRows = new Map<string, BillingOperation[]>();
+  for (const op of committedExchangeOps) {
+    const accessEventId = op.exchange_access_event_id!;
+    committedRows.set(accessEventId, [
+      ...(committedRows.get(accessEventId) ?? []),
+      op,
+    ]);
+  }
+  await confirmExchangeOutcomes(
+    [...committedRows]
+      .filter(
+        ([accessEventId, rows]) =>
+          rows.length === exchangeRowCounts.get(accessEventId),
+      )
+      .map(([, rows]) => rows[0]),
+  );
 }
 
 // Start periodic batch processing
@@ -468,47 +510,28 @@ export async function queueBillingOperation(
   });
 
   try {
-    const operation = {
+    const operation: BillingOperation = {
       team_id,
       ...(org_id === undefined ? {} : { org_id }),
+      credits,
       billing,
       is_extract,
       timestamp: new Date().toISOString(),
       api_key_id,
       autumnTrackInRequest,
+      ...(exchange === undefined
+        ? {}
+        : {
+            exchange_access_event_id: exchange.accessEventId,
+            ...(exchange.billingReference === undefined
+              ? {}
+              : { billing_reference: exchange.billingReference }),
+          }),
     };
-
-    // The part the team's MCP credits paid is its own ledger row, tagged so
-    // MCP-paid usage is counted apart from regular credits used. The Exchange
-    // access rides the first row only, so it is confirmed once.
-    const mcpCredits = Math.min(billing.mcpCredits ?? 0, credits);
-    const operations: BillingOperation[] = [
-      ...(mcpCredits === 0 || mcpCredits < credits
-        ? [{ ...operation, credits: credits - mcpCredits }]
-        : []),
-      ...(mcpCredits > 0
-        ? [
-            {
-              ...operation,
-              credits: mcpCredits,
-              ledger_tag: MCP_CREDITS_LEDGER_TAG,
-            },
-          ]
-        : []),
-    ];
-    if (exchange !== undefined) {
-      operations[0] = {
-        ...operations[0],
-        exchange_access_event_id: exchange.accessEventId,
-        ...(exchange.billingReference === undefined
-          ? {}
-          : { billing_reference: exchange.billingReference }),
-      };
-    }
 
     // Add operation to Redis list
     const redis = getRedisConnection();
-    await redis.rpush(BATCH_KEY, ...operations.map(op => JSON.stringify(op)));
+    await redis.rpush(BATCH_KEY, JSON.stringify(operation));
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(
       `📥 Added billing operation to queue (${queueLength} total pending)`,

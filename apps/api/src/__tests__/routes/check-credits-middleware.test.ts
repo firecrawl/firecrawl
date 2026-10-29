@@ -70,6 +70,7 @@ function buildReq(overrides: any = {}): any {
 
 function runMiddleware(
   req: any,
+  middleware = checkCreditsMiddleware(),
 ): Promise<{ res: any; nextErr?: any; nextCalled: boolean }> {
   return new Promise(resolve => {
     let settled = false;
@@ -95,7 +96,7 @@ function runMiddleware(
       nextCalled = true;
       settle({ res, nextErr: err });
     };
-    checkCreditsMiddleware()(req, res, next);
+    middleware(req, res, next);
   });
 }
 
@@ -384,6 +385,10 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     hostedMcp: true,
   };
 
+  const spendsMcpCredits = checkCreditsMiddleware(undefined, undefined, {
+    mcpCredits: true,
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -398,7 +403,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
       auth: hostedMcpAuth,
       acuc: { api_key_id: 7 },
     });
-    const { res, nextCalled } = await runMiddleware(req);
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(nextCalled).toBe(true);
@@ -420,7 +425,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     mcpCreditsAvailableMock.mockResolvedValue(100);
 
     const req = buildReq({ auth: hostedMcpAuth, body: { limit: 100 } });
-    const { res } = await runMiddleware(req);
+    const { res } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(req.body.limit).toBe(100);
@@ -436,7 +441,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     mcpCreditsAvailableMock.mockResolvedValue(40);
 
     const req = buildReq({ auth: hostedMcpAuth, body: { limit: 100 } });
-    const { res } = await runMiddleware(req);
+    const { res } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(req.body.limit).toBe(5);
@@ -454,7 +459,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
       auth: hostedMcpAuth,
       acuc: { api_key_id: 7 },
     });
-    const { res, nextCalled } = await runMiddleware(req);
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(nextCalled).toBe(true);
@@ -465,7 +470,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     mcpCreditsAvailableMock.mockResolvedValue(0);
 
     const req = buildReq({ auth: hostedMcpAuth });
-    const { res, nextCalled } = await runMiddleware(req);
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).toHaveBeenCalledWith(402);
     expect(nextCalled).toBe(false);
@@ -475,7 +480,7 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 
     const req = buildReq({ auth: hostedMcpAuth });
-    const { res } = await runMiddleware(req);
+    const { res } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
@@ -485,9 +490,21 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
 
     const req = buildReq({ body: { limit: 100, origin: "mcp-fastmcp" } });
-    const { res } = await runMiddleware(req);
+    const { res } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).toHaveBeenCalledWith(402);
+    expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
+  });
+
+  it("never looks at MCP credits on a route whose billing doesn't spend them", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+    mcpCreditsAvailableMock.mockResolvedValue(100);
+
+    const req = buildReq({ path: "/v2/extract", auth: hostedMcpAuth });
+    const { res, nextCalled } = await runMiddleware(req);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(nextCalled).toBe(false);
     expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
   });
 });

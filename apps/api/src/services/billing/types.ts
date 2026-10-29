@@ -47,8 +47,8 @@ export type BillingMetadata = {
    */
   hostedMcp?: boolean;
   /**
-   * Credits of this charge the team's MCP credits paid, set by the request-time
-   * charge. The ledger records them as their own row, tagged apart from
+   * Credits of this charge the team's MCP credits paid, set by the charge that
+   * tracks them to Autumn (billTeam or billScrapeJob). The ledger records them as their own row, tagged apart from
    * regular credits used (see queueBillingOperation).
    */
   mcpCredits?: number;

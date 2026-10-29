@@ -307,7 +307,9 @@ const configSchema = z.object({
   MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
   // Autumn feature id of the balance hosted MCP calls spend first (see
   // AutumnService.trackHostedMcpCredits).
-  MCP_CREDITS_FEATURE_ID: z.string().min(1).default("MCP_CREDITS"),
+  MCP_CREDITS_FEATURE_ID: emptyStringAsDefault(
+    z.string().trim().min(1).default("MCP_CREDITS"),
+  ),
 
   // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
   AGENT_AUTH_RESOURCE_METADATA_URL: z

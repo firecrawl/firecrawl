@@ -53,7 +53,7 @@ vi.mock("../../../db/connection", () => ({
 }));
 
 vi.mock("../../../config", () => ({
-  config: { MCP_CREDITS_FEATURE_ID: "MCP_CREDITS" },
+  config: { MCP_CREDITS_FEATURE_ID: "MCP_CREDITS_FROM_CONFIG" },
 }));
 
 import { AutumnService, MCP_CREDITS_FEATURE_ID } from "../autumn.service";
@@ -68,11 +68,11 @@ const charge = {
   externalRequestId: "op-1",
 };
 
-/** MCP_CREDITS balance as Autumn's check reports it. */
+/** MCP credits balance as Autumn's check reports it. */
 function mcpBalance(remaining: number | null) {
   mockCheck.mockImplementation(async ({ featureId, requiredBalance }) => ({
     allowed:
-      featureId === "MCP_CREDITS" &&
+      featureId === MCP_CREDITS_FEATURE_ID &&
       remaining !== null &&
       remaining >= requiredBalance,
     customerId: "org-1",
@@ -96,7 +96,7 @@ beforeEach(() => {
 
 describe("mcpCreditsAvailable", () => {
   it("reads the feature id from config", () => {
-    expect(MCP_CREDITS_FEATURE_ID).toBe("MCP_CREDITS");
+    expect(MCP_CREDITS_FEATURE_ID).toBe("MCP_CREDITS_FROM_CONFIG");
   });
 
   it("pays the whole charge when the MCP credits cover it", async () => {
@@ -105,7 +105,7 @@ describe("mcpCreditsAvailable", () => {
       expect.objectContaining({
         customerId: "org-1",
         entityId: "team-1",
-        featureId: "MCP_CREDITS",
+        featureId: MCP_CREDITS_FEATURE_ID,
         requiredBalance: 5,
       }),
     );
@@ -154,7 +154,7 @@ describe("trackHostedMcpCredits", () => {
 
     expect(tracks).toEqual([
       expect.objectContaining({
-        featureId: "MCP_CREDITS",
+        featureId: MCP_CREDITS_FEATURE_ID,
         value: 5,
         properties: charge.properties,
       }),
@@ -174,7 +174,7 @@ describe("trackHostedMcpCredits", () => {
 
     expect(tracks).toHaveLength(2);
     expect(tracks).toContainEqual(
-      expect.objectContaining({ featureId: "MCP_CREDITS", value: 3 }),
+      expect.objectContaining({ featureId: MCP_CREDITS_FEATURE_ID, value: 3 }),
     );
     expect(tracks).toContainEqual(
       expect.objectContaining({
@@ -194,7 +194,7 @@ describe("trackHostedMcpCredits", () => {
 
     expect(trackCredits).toHaveBeenCalledWith(
       expect.objectContaining({
-        featureId: "MCP_CREDITS",
+        featureId: MCP_CREDITS_FEATURE_ID,
         idempotencyKey: "fc:track:scrape:job-1:mcp",
       }),
     );
@@ -228,12 +228,54 @@ describe("trackHostedMcpCredits", () => {
   it("reports an untracked MCP part as not paid by MCP credits", async () => {
     mcpBalance(3);
     mockTrack.mockImplementation(async ({ featureId }) => {
-      if (featureId === "MCP_CREDITS") throw new Error("track failed");
+      if (featureId === MCP_CREDITS_FEATURE_ID) throw new Error("track failed");
     });
 
     expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
       tracked: false,
       mcpCredits: 0,
     });
+  });
+});
+
+describe("refundHostedMcpCredits", () => {
+  const refund = { ...charge, idempotencyKey: "fc:refund:scrape:job-1" };
+
+  it("refunds each part of a split charge to the balance it was tracked on", async () => {
+    const service = new AutumnService();
+    const refundCredits = vi.spyOn(service, "refundCredits");
+
+    expect(
+      await service.refundHostedMcpCredits({ ...refund, mcpCredits: 3 }),
+    ).toBe(true);
+
+    expect(refundCredits).toHaveBeenCalledTimes(2);
+    expect(refundCredits).toHaveBeenCalledWith({
+      ...refund,
+      value: 3,
+      featureId: MCP_CREDITS_FEATURE_ID,
+      idempotencyKey: "fc:refund:scrape:job-1:mcp",
+    });
+    expect(refundCredits).toHaveBeenCalledWith({ ...refund, value: 2 });
+  });
+
+  it("refunds a charge MCP credits paid in full to them only", async () => {
+    const service = new AutumnService();
+    const refundCredits = vi.spyOn(service, "refundCredits");
+
+    await service.refundHostedMcpCredits({ ...refund, mcpCredits: 5 });
+
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ value: 5, featureId: MCP_CREDITS_FEATURE_ID }),
+    );
+  });
+
+  it("refunds exactly as refundCredits would when MCP credits paid nothing", async () => {
+    const service = new AutumnService();
+    const refundCredits = vi.spyOn(service, "refundCredits");
+
+    await service.refundHostedMcpCredits({ ...refund, mcpCredits: 0 });
+
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(refund);
   });
 });

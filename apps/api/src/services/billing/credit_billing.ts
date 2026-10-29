@@ -94,7 +94,7 @@ export async function billTeam(
             { team_id, credits, billing },
           );
         } else {
-          await autumnService.refundCredits({
+          const refund = {
             teamId: team_id,
             orgId: org_id,
             value: credits,
@@ -105,7 +105,11 @@ export async function billTeam(
               ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
               : undefined,
             externalRequestId: billing.externalRequestId ?? undefined,
-          });
+          };
+          // A split charge refunds each part to the balance it was tracked on.
+          await (mcpCredits > 0
+            ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
+            : autumnService.refundCredits(refund));
         }
       }
 
