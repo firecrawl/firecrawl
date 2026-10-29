@@ -1457,7 +1457,7 @@ describe("authenticateUser", () => {
       },
     );
 
-    it("raises a hobby team to 25 for an API key the hosted MCP relayed", async () => {
+    it("raises a hobby team to 50 for an API key the hosted MCP relayed", async () => {
       vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
         concurrency_limit: 5,
         rate_limit_multiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
@@ -1470,13 +1470,14 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
       );
 
-      expect(concurrencyOf(auth)).toBe(25);
+      expect(concurrencyOf(auth)).toBe(50);
     });
 
     it.each([
       ["a plan above hobby", 5, HOBBY_RATE_LIMIT_MULTIPLIER + 1],
-      ["a team already at 25", 25, HOBBY_RATE_LIMIT_MULTIPLIER],
-      ["a team above 25", 50, 1],
+      ["a hobby team already at 50", 50, HOBBY_RATE_LIMIT_MULTIPLIER],
+      ["a free team already at 25", 25, 1],
+      ["a free team above 25", 30, 1],
     ])(
       "keeps the plan limit for %s",
       async (_label, concurrency_limit, rate_limit_multiplier) => {

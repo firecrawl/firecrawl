@@ -173,20 +173,24 @@ export function getHostedMcpRateLimiter(
 }
 
 /**
- * Concurrency minimum for scrape, search and exchange calls the hosted MCP
- * makes for a free (2) or hobby (5) team. Sized to the hosted MCP rate
+ * Concurrency minimums for scrape, search and exchange calls the hosted MCP
+ * makes for a free (2) or hobby (5) team. Free is sized to the hosted MCP rate
  * minimum: 600/min is 10 calls a second, and at a typical scrape time of about
  * 2.5 seconds that keeps about 25 in flight, so the raised rate limit is not
- * cut back to the plan's concurrency by the team semaphore.
+ * cut back to the plan's concurrency by the team semaphore. Hobby gets 50
+ * because rate-limited hobby MCP teams reach about 42 jobs in flight at p99
+ * (free: about 10).
  */
-const HOSTED_MCP_MIN_CONCURRENCY = 25;
+const HOSTED_MCP_MIN_CONCURRENCY_FREE = 25;
+const HOSTED_MCP_MIN_CONCURRENCY_HOBBY = 50;
 
 /**
  * The concurrency limit for a call the hosted MCP made (verified in
- * controllers/auth.ts), or undefined on the same teams and modes that
- * getHostedMcpRateLimiter leaves alone, and when the team's own limit is
- * already at least HOSTED_MCP_MIN_CONCURRENCY (which covers a custom Autumn
- * concurrency grant).
+ * controllers/auth.ts): HOSTED_MCP_MIN_CONCURRENCY_HOBBY at the hobby
+ * multiplier and HOSTED_MCP_MIN_CONCURRENCY_FREE below it. Undefined on the
+ * same teams and modes that getHostedMcpRateLimiter leaves alone, and when the
+ * team's own limit is already at least that minimum (which covers a custom
+ * Autumn concurrency grant).
  *
  * This raises the ceiling the request checks against the team's shared
  * concurrency pool; it is not a pool of its own. Hosted MCP calls still count
@@ -200,8 +204,12 @@ export function getHostedMcpConcurrencyLimit(
   flags?: TeamFlags,
 ): number | undefined {
   if (!hostedMcpMinimumApplies(mode, multiplier, flags)) return undefined;
-  if (concurrencyLimit >= HOSTED_MCP_MIN_CONCURRENCY) return undefined;
-  return HOSTED_MCP_MIN_CONCURRENCY;
+  const minimum =
+    multiplier >= HOBBY_RATE_LIMIT_MULTIPLIER
+      ? HOSTED_MCP_MIN_CONCURRENCY_HOBBY
+      : HOSTED_MCP_MIN_CONCURRENCY_FREE;
+  if (concurrencyLimit >= minimum) return undefined;
+  return minimum;
 }
 
 /**

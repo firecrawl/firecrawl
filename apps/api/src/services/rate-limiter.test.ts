@@ -542,7 +542,7 @@ describe("getAutumnRateLimiter", () => {
   });
 
   describe("hosted MCP concurrency minimum", () => {
-    it("raises free and hobby to 25", () => {
+    it("raises free to 25 and hobby to 50", () => {
       for (const mode of [
         RateLimiterMode.Scrape,
         RateLimiterMode.Search,
@@ -550,8 +550,12 @@ describe("getAutumnRateLimiter", () => {
       ]) {
         // Free (2 at ×1) and hobby (5 at ×10).
         expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(25);
-        expect(getHostedMcpConcurrencyLimit(mode, 5, 10)).toBe(25);
+        expect(getHostedMcpConcurrencyLimit(mode, 5, 10)).toBe(50);
       }
+      // Off-tier multipliers below hobby round down to free.
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 2, 9)).toBe(
+        25,
+      );
     });
 
     it("leaves every plan above hobby on its own limit", () => {
@@ -562,7 +566,7 @@ describe("getAutumnRateLimiter", () => {
       }
     });
 
-    it("leaves a team already at or above 25 alone", () => {
+    it("leaves a free team already at or above 25 alone", () => {
       for (const concurrencyLimit of [25, 50, 200]) {
         expect(
           getHostedMcpConcurrencyLimit(
@@ -574,6 +578,21 @@ describe("getAutumnRateLimiter", () => {
       }
       expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 24, 1)).toBe(
         25,
+      );
+    });
+
+    it("leaves a hobby team already at or above 50 alone", () => {
+      for (const concurrencyLimit of [50, 100, 200]) {
+        expect(
+          getHostedMcpConcurrencyLimit(
+            RateLimiterMode.Scrape,
+            concurrencyLimit,
+            10,
+          ),
+        ).toBe(undefined);
+      }
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 30, 10)).toBe(
+        50,
       );
     });
 
