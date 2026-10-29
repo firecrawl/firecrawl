@@ -9,6 +9,7 @@ import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import {
   getRateLimiter,
   getAutumnRateLimiter,
+  getHostedMcpConcurrencyLimit,
   getHostedMcpRateLimiter,
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
@@ -1150,14 +1151,30 @@ async function supaAuthenticateUser(
     // sessions). `fco_` tokens never qualify: the hosted MCP keeps those for
     // the issuer, so a REST call carrying one comes from the client itself.
     // Origin and integration are client-set, so they never change the limit.
-    const hostedMcpLimiter =
+    const hostedMcpCall =
       hostedMcpDelegation ||
       timingSafeSecretEqual(
         req.headers["x-firecrawl-keyless-secret"],
         config.KEYLESS_PROXY_SECRET,
-      )
-        ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
-        : undefined;
+      );
+    const hostedMcpLimiter = hostedMcpCall
+      ? getHostedMcpRateLimiter(mode, multiplier, chunk.flags)
+      : undefined;
+    // The same calls get a raised concurrency ceiling, so the team semaphore
+    // does not cut the raised rate back to the plan's concurrency. Only this
+    // request's chunk changes: the queue gates read the team's own limit
+    // through getACUCTeam.
+    const hostedMcpConcurrency = hostedMcpCall
+      ? getHostedMcpConcurrencyLimit(
+          mode,
+          chunk.concurrency_limit,
+          multiplier,
+          chunk.flags,
+        )
+      : undefined;
+    if (hostedMcpConcurrency !== undefined) {
+      chunk = { ...chunk, concurrency_limit: hostedMcpConcurrency };
+    }
     if (hostedMcpLimiter) {
       // Above every treatment minimum it overlaps, so the experiment cannot
       // change this call's limit and does not enroll the org through it.

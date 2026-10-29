@@ -164,16 +164,59 @@ export function getHostedMcpRateLimiter(
   multiplier: number = 1,
   flags?: TeamFlags,
 ): RateLimiterRedis | undefined {
-  if (!RAISED_MINIMUM_MODES.has(mode)) return undefined;
-  if (multiplier > HOBBY_RATE_LIMIT_MULTIPLIER) return undefined;
-  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
-    return undefined;
-  }
+  if (!hostedMcpMinimumApplies(mode, multiplier, flags)) return undefined;
   const base = BASE_RATE_LIMITS[mode];
   if (base === undefined) return undefined;
   const safeMultiplier = multiplier > 0 ? multiplier : 1;
   if (base * safeMultiplier >= HOSTED_MCP_MIN_RATE_LIMIT) return undefined;
   return createRateLimiter(`hostedMcp:${mode}`, HOSTED_MCP_MIN_RATE_LIMIT);
+}
+
+/**
+ * Concurrency minimum for scrape, search and exchange calls the hosted MCP
+ * makes for a free (2) or hobby (5) team. Sized to the hosted MCP rate
+ * minimum: 600/min is 10 calls a second, and at a typical scrape time of about
+ * 2.5 seconds that keeps about 25 in flight, so the raised rate limit is not
+ * cut back to the plan's concurrency by the team semaphore.
+ */
+const HOSTED_MCP_MIN_CONCURRENCY = 25;
+
+/**
+ * The concurrency limit for a call the hosted MCP made (verified in
+ * controllers/auth.ts), or undefined on the same teams and modes that
+ * getHostedMcpRateLimiter leaves alone, and when the team's own limit is
+ * already at least HOSTED_MCP_MIN_CONCURRENCY (which covers a custom Autumn
+ * concurrency grant).
+ *
+ * This raises the ceiling the request checks against the team's shared
+ * concurrency pool; it is not a pool of its own. Hosted MCP calls still count
+ * toward the team's active jobs, so the team's queued crawl and batch jobs
+ * keep their plan limit and wait while the hosted MCP holds the slots.
+ */
+export function getHostedMcpConcurrencyLimit(
+  mode: RateLimiterMode,
+  concurrencyLimit: number,
+  multiplier: number = 1,
+  flags?: TeamFlags,
+): number | undefined {
+  if (!hostedMcpMinimumApplies(mode, multiplier, flags)) return undefined;
+  if (concurrencyLimit >= HOSTED_MCP_MIN_CONCURRENCY) return undefined;
+  return HOSTED_MCP_MIN_CONCURRENCY;
+}
+
+/**
+ * Whether a hosted MCP minimum may apply: only for RAISED_MINIMUM_MODES, only
+ * at or below the hobby multiplier, and never under an org override for the
+ * mode.
+ */
+function hostedMcpMinimumApplies(
+  mode: RateLimiterMode,
+  multiplier: number,
+  flags?: TeamFlags,
+): boolean {
+  if (!RAISED_MINIMUM_MODES.has(mode)) return false;
+  if (multiplier > HOBBY_RATE_LIMIT_MULTIPLIER) return false;
+  return getRateLimitOverride(mode, flags?.rateLimitOverrides) === undefined;
 }
 
 /**

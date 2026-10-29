@@ -13,6 +13,7 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
+  getHostedMcpConcurrencyLimit,
   getHostedMcpRateLimiter,
   rateLimitExperimentApplies,
 } from "./rate-limiter";
@@ -537,6 +538,63 @@ describe("getAutumnRateLimiter", () => {
       expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
         600,
       );
+    });
+  });
+
+  describe("hosted MCP concurrency minimum", () => {
+    it("raises free and hobby to 25", () => {
+      for (const mode of [
+        RateLimiterMode.Scrape,
+        RateLimiterMode.Search,
+        RateLimiterMode.Exchange,
+      ]) {
+        // Free (2 at ×1) and hobby (5 at ×10).
+        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(25);
+        expect(getHostedMcpConcurrencyLimit(mode, 5, 10)).toBe(25);
+      }
+    });
+
+    it("leaves every plan above hobby on its own limit", () => {
+      for (const multiplier of [11, 25, 50, 500, 1000]) {
+        expect(
+          getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 5, multiplier),
+        ).toBe(undefined);
+      }
+    });
+
+    it("leaves a team already at or above 25 alone", () => {
+      for (const concurrencyLimit of [25, 50, 200]) {
+        expect(
+          getHostedMcpConcurrencyLimit(
+            RateLimiterMode.Scrape,
+            concurrencyLimit,
+            1,
+          ),
+        ).toBe(undefined);
+      }
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 24, 1)).toBe(
+        25,
+      );
+    });
+
+    it("leaves other modes and overridden modes alone", () => {
+      for (const mode of [
+        RateLimiterMode.Map,
+        RateLimiterMode.Crawl,
+        RateLimiterMode.Extract,
+        RateLimiterMode.Browser,
+        RateLimiterMode.ExchangeDiscover,
+      ]) {
+        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(undefined);
+      }
+      expect(
+        getHostedMcpConcurrencyLimit(
+          RateLimiterMode.Scrape,
+          2,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(undefined);
     });
   });
 

@@ -1395,6 +1395,168 @@ describe("authenticateUser", () => {
     });
   });
 
+  describe("hosted MCP concurrency minimum", () => {
+    const API_KEY = "Bearer 00000000-0000-4000-8000-000000000000";
+    const PROXY_SECRET = {
+      "x-firecrawl-keyless-secret": "hosted-mcp-proxy-secret",
+    };
+    const requestWith = (
+      authorization: string,
+      extra: {
+        body?: Record<string, unknown>;
+        headers?: Record<string, string>;
+      } = {},
+    ) => ({
+      headers: { authorization, ...extra.headers },
+      socket: { remoteAddress: "127.0.0.1" },
+      body: extra.body,
+    });
+    const concurrencyOf = (
+      auth: Awaited<ReturnType<typeof authenticateUser>>,
+    ) => (auth.success ? auth.chunk?.concurrency_limit : undefined);
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
+      config.KEYLESS_PROXY_SECRET = "hosted-mcp-proxy-secret";
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: {},
+        },
+      ]);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({
+        consume: vi.fn().mockResolvedValue(undefined),
+      } as never);
+      vi.mocked(getHostedMcpRateLimiter).mockReturnValue({
+        consume: vi.fn().mockResolvedValue(undefined),
+      } as never);
+    });
+
+    it.each([
+      RateLimiterMode.Scrape,
+      RateLimiterMode.Search,
+      RateLimiterMode.Exchange,
+    ])(
+      "raises a free team to 25 for a verified hosted MCP credential (%s)",
+      async mode => {
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          mode,
+        );
+
+        expect(concurrencyOf(auth)).toBe(25);
+      },
+    );
+
+    it("raises a hobby team to 25 for an API key the hosted MCP relayed", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        concurrency_limit: 5,
+        rate_limit_multiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
+        is_paid_plan: true,
+      });
+
+      const auth = await authenticateUser(
+        requestWith(API_KEY, { headers: PROXY_SECRET }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(concurrencyOf(auth)).toBe(25);
+    });
+
+    it.each([
+      ["a plan above hobby", 5, HOBBY_RATE_LIMIT_MULTIPLIER + 1],
+      ["a team already at 25", 25, HOBBY_RATE_LIMIT_MULTIPLIER],
+      ["a team above 25", 50, 1],
+    ])(
+      "keeps the plan limit for %s",
+      async (_label, concurrency_limit, rate_limit_multiplier) => {
+        vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+          concurrency_limit,
+          rate_limit_multiplier,
+          is_paid_plan: true,
+        });
+
+        const auth = await authenticateUser(
+          requestWith(`Bearer ${signDelegation()}`),
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(concurrencyOf(auth)).toBe(concurrency_limit);
+      },
+    );
+
+    it("keeps the plan limit under an org override for the mode", async () => {
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: { rateLimitOverrides: { [RateLimiterMode.Scrape]: 50 } },
+        },
+      ]);
+
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(concurrencyOf(auth)).toBe(2);
+    });
+
+    it("keeps the plan limit for modes outside scrape, search and exchange", async () => {
+      const auth = await authenticateUser(
+        requestWith(`Bearer ${signDelegation()}`),
+        {},
+        RateLimiterMode.Crawl,
+      );
+
+      expect(concurrencyOf(auth)).toBe(2);
+    });
+
+    it.each([
+      ["an MCP origin", { body: { origin: "mcp-ua-claude-user" } }],
+      ["an MCP X-Origin header", { headers: { "x-origin": "mcp" } }],
+      [
+        "a wrong proxy secret",
+        { headers: { "x-firecrawl-keyless-secret": "not-the-secret" } },
+      ],
+      ["no origin", {}],
+    ])("keeps the plan limit for an API key with %s", async (_label, extra) => {
+      const auth = await authenticateUser(
+        requestWith(API_KEY, extra),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(concurrencyOf(auth)).toBe(2);
+    });
+
+    it("keeps the plan limit when no proxy secret is configured", async () => {
+      config.KEYLESS_PROXY_SECRET = undefined;
+
+      const auth = await authenticateUser(
+        requestWith(API_KEY, { headers: PROXY_SECRET }),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(concurrencyOf(auth)).toBe(2);
+    });
+  });
+
   describe("agent interop rate-limit floor", () => {
     const flags = {};
     const agentRequest = (auth: string) => ({
