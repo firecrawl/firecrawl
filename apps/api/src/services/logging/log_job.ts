@@ -21,6 +21,7 @@ import type {
   SearchResultCategoriesBySource,
 } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
+import type { ErrorCodes } from "../../lib/error";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
@@ -588,6 +589,8 @@ export type LoggedScrape = {
   url: string;
   is_successful: boolean;
   error?: string;
+  /** Code of a failed scrape's error; the only error detail kept under zero data retention. */
+  error_code?: ErrorCodes;
   doc?: Document;
   time_taken: number;
   team_id: string;
@@ -716,7 +719,11 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         ? "<redacted due to zero data retention>"
         : scrape.url,
       is_successful: scrape.is_successful,
-      error: scrape.error ?? null,
+      error: scrape.zeroDataRetention
+        ? scrape.is_successful
+          ? null
+          : (scrape.error_code ?? "<redacted due to zero data retention>")
+        : (scrape.error ?? null),
       time_taken: scrape.time_taken,
       team_id: storedTeamId,
       options: scrape.zeroDataRetention ? null : scrape.options,
