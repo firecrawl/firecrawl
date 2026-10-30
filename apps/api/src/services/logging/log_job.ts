@@ -27,6 +27,7 @@ import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
+import { redactLogData } from "./redact";
 import {
   JOB_ACCESS_TTL_MS,
   isApiJobKind,
@@ -391,11 +392,14 @@ async function robustInsert(table: string, data: any, _logger: Logger) {
     return;
   }
 
-  // Clean the row once so the log receives accepted values.
-  data = sanitizeLogData({
-    ...data,
-    created_at: data.created_at ?? new Date(),
-  });
+  // Redact credentials and internal fields, then clean the row once so the
+  // log receives accepted values.
+  data = sanitizeLogData(
+    redactLogData({
+      ...data,
+      created_at: data.created_at ?? new Date(),
+    }),
+  );
 
   // Pub/Sub is the store of record: publish and wait for it. A failed
   // publish fails the log call.
