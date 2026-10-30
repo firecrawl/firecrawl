@@ -91,6 +91,7 @@ async def interact(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    url: Optional[str] = None,
 ) -> BrowserExecuteResponse:
     if not job_id or not job_id.strip():
         raise ValueError("Job ID cannot be empty")
@@ -110,6 +111,8 @@ async def interact(
         payload["timeout"] = timeout
     if origin is not None:
         payload["origin"] = origin
+    if url is not None:
+        payload["url"] = url
 
     response = await client.post(f"/v2/scrape/{job_id}/interact", payload)
     if response.status_code >= 400:
@@ -169,6 +172,7 @@ async def scrape_execute(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    url: Optional[str] = None,
 ) -> BrowserExecuteResponse:
     """Deprecated alias for interact()."""
     return await interact(
@@ -179,6 +183,7 @@ async def scrape_execute(
         language=language,
         timeout=timeout,
         origin=origin,
+        url=url,
     )
 
 

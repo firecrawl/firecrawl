@@ -376,6 +376,23 @@ print(run.stdout)
 firecrawl.stop_interaction(scrape_job_id)
 ```
 
+If the original scrape's replay context is unavailable (for example, with zero
+data retention), pass an optional fallback URL:
+
+```python
+run = firecrawl.interact(
+  scrape_job_id,
+  prompt="Read the page title",
+  url="https://example.com",
+)
+```
+
+The API uses `url` only when it has no retained replay context. It does not replay
+the original scrape's actions or replace an existing browser session. The same
+argument is available on `AsyncFirecrawl.interact()` and the deprecated
+`scrape_execute()` aliases. Omitting `url` or passing `None` leaves it out of the
+request.
+
 {/* ### Extracting Structured Data from Websites
 
   To extract structured data from websites, use the `extract` method. It takes the URLs to extract data from, a prompt, and a schema as arguments. The schema is a Pydantic model that defines the structure of the extracted data.
