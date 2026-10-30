@@ -774,12 +774,10 @@ const configSchema = z.object({
   // Billing
   AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
   // firebill — durable usage-event store that sits in front of Autumn. When
-  // both URL and SECRET are set, usage tracking for orgs listed in
-  // FIREBILL_ORG_IDS (comma-separated org UUIDs) is routed through firebill
-  // instead of directly to Autumn (gradual rollout).
+  // both URL and SECRET are set, every org's usage is routed through firebill
+  // instead of directly to Autumn.
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
-  FIREBILL_ORG_IDS: delimitedList(",").optional(),
   // How long "this team is not partner-provisioned" is trusted. Only the
   // negative is bounded: provisioning is one-way, so a positive cannot go
   // stale, while a negative does the moment a partner provisions an account.
@@ -793,12 +791,6 @@ const configSchema = z.object({
     .min(0)
     .max(300)
     .default(60),
-  // Sticky percentage ramp, on top of the allowlist above. The bucket is a
-  // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
-  // only ever adds, and never reshuffles who is on which path mid-rollout.
-  // 0 (the default) is also the kill switch: the allowlist still routes, and
-  // nothing else does.
-  FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Miscellaneous
   // The commit the image was built from, set by the Dockerfile's GIT_SHA.
