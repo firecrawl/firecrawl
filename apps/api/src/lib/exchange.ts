@@ -48,10 +48,6 @@ type RouteInput = {
     professionalProfileCompanyDataBeta?: boolean;
     organizationDataSourceAccess?: OrganizationDataSourceAccess | null;
   } | null;
-  /** Caller's IP, forwarded so country-scoped provider terms resolve. */
-  clientIp?: string;
-  /** Billing country for the team, when the caller already resolved it. */
-  billingCountry?: string;
 };
 
 export type ExchangeScrapeMetadata = {
@@ -427,17 +423,14 @@ const ledgerAcceptanceCache = new Map<
 // The ledger lookup costs two Exchange calls and sits on the scrape path, so
 // answers are cached per process: briefly when not accepted, so a fresh
 // acceptance is picked up quickly, and longer once accepted. Keyed by the
-// team the Exchange calls are made for, the catalog's terms identity, and the
-// caller location, so new terms are rechecked as soon as the catalog carries
-// them and a different country does not reuse another country's answer.
+// team the Exchange calls are made for and the catalog's terms identity, so
+// new terms are rechecked as soon as the catalog carries them.
 function getLedgerAcceptance(input: {
   teamId: string;
   orgId: string;
   provider: string;
   terms: ExchangeTerms;
   revocation?: { disabledAt: unknown };
-  clientIp?: string;
-  billingCountry?: string;
 }): Promise<boolean> {
   const key = [
     input.teamId,
@@ -446,8 +439,6 @@ function getLedgerAcceptance(input: {
     input.terms.key,
     input.terms.version,
     input.revocation === undefined ? "" : String(input.revocation.disabledAt),
-    input.clientIp ?? "",
-    input.billingCountry ?? "",
   ].join("\0");
   const cached = ledgerAcceptanceCache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
@@ -462,34 +453,20 @@ function getLedgerAcceptance(input: {
     expiresAt: Date.now() + LEDGER_NOT_ACCEPTED_TTL_MS,
     value: Promise.resolve(false),
   };
-  // Billing country is per team, so a worker that no longer has the request
-  // can still resolve it. Loaded only on a cache miss: the lookup pulls in
-  // the database, which the rest of this module does not need. The caller IP
-  // only exists on the request that accepted the job.
-  entry.value = (async () => {
-    try {
-      let billingCountry = input.billingCountry;
-      if (billingCountry === undefined) {
-        const { billingCountryForTeam } = await import("./billing-country");
-        billingCountry = await billingCountryForTeam(input.teamId);
-      }
-      const accepted = await hasLedgerAcceptance({
-        teamId: input.teamId,
-        orgId: input.orgId,
-        provider: input.provider,
-        revocation: input.revocation,
-        timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
-        clientIp: input.clientIp,
-        billingCountry,
-      }).catch(() => false);
+  entry.value = hasLedgerAcceptance({
+    teamId: input.teamId,
+    orgId: input.orgId,
+    provider: input.provider,
+    revocation: input.revocation,
+    timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
+  })
+    .catch(() => false)
+    .then(accepted => {
       if (accepted) {
         entry.expiresAt = Date.now() + LEDGER_ACCEPTED_TTL_MS;
       }
       return accepted;
-    } catch {
-      return false;
-    }
-  })();
+    });
   ledgerAcceptanceCache.set(key, entry);
   return entry.value;
 }
@@ -534,8 +511,6 @@ async function getProviderAccessDecision(
       provider: provider.id,
       terms: provider.terms,
       revocation: { disabledAt: entry.disabledAt },
-      clientIp: input.clientIp,
-      billingCountry: input.billingCountry,
     }))
       ? "allowed"
       : "terms_required";
@@ -557,8 +532,6 @@ async function getProviderAccessDecision(
       orgId,
       provider: provider.id,
       terms: provider.terms,
-      clientIp: input.clientIp,
-      billingCountry: input.billingCountry,
     }))
   ) {
     return "allowed";

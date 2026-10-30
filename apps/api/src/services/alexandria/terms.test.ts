@@ -1,5 +1,11 @@
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  billingCountry: vi.fn(async (): Promise<string | undefined> => undefined),
+}));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
+vi.mock("../../lib/billing-country", () => ({
+  billingCountryForTeam: mocks.billingCountry,
+}));
 import { acceptProviderTerms, hasLedgerAcceptance } from "./terms";
 
 const terms = { key: "shopify", version: "2026-01", digest: "a".repeat(64) };
@@ -211,7 +217,41 @@ it("reads the ledger for the caller's country", async () => {
     }),
   );
   expect(mocks.request).toHaveBeenCalledWith(
-    expect.objectContaining({ path: statusPath }),
+    expect.objectContaining({
+      path: statusPath,
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+});
+
+it("resolves the team's billing country when the caller does not pass one", async () => {
+  mocks.billingCountry.mockResolvedValueOnce("DE");
+  mocks.request.mockImplementation(ledgerExchange({ required: true, terms }));
+
+  await expect(
+    hasLedgerAcceptance({
+      teamId: "team",
+      orgId: "org",
+      provider: "peopledatalabs",
+      timeoutMs: 1000,
+      clientIp: "203.0.113.7",
+    }),
+  ).resolves.toBe(true);
+  expect(mocks.billingCountry).toHaveBeenCalledWith("team");
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/provider-terms/requirements",
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: statusPath,
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
   );
 });
 
@@ -231,6 +271,10 @@ it("does not treat missing country-scoped terms as accepted", async () => {
     }),
   ).resolves.toBe(false);
   expect(mocks.request).toHaveBeenCalledWith(
-    expect.objectContaining({ path: statusPath }),
+    expect.objectContaining({
+      path: statusPath,
+      clientIp: "198.51.100.8",
+      billingCountry: "US",
+    }),
   );
 });

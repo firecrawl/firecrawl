@@ -23,9 +23,6 @@ vi.mock("../../../scraper/scrapeURL/lib/fetch", () => ({
 vi.mock("../../../services/alexandria/client", () => ({
   exchangeRequest: mocks.exchangeRequest,
 }));
-vi.mock("../../../lib/billing-country", () => ({
-  billingCountryForTeam: vi.fn(async () => undefined),
-}));
 
 describe("Exchange routing", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;

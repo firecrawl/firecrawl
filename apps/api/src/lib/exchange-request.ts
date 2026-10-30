@@ -16,8 +16,6 @@ export function getExchangeAccessForRequestBody(input: {
   zeroDataRetention: boolean;
   teamId: string | null;
   orgId: string | null;
-  clientIp?: string;
-  billingCountry?: string;
 }): Promise<ExchangeAccess> {
   const body = input.body ?? {};
   const scrapeOptions =
@@ -47,7 +45,5 @@ export function getExchangeAccessForRequestBody(input: {
     lockdown: scrapeOptions.lockdown ?? body.lockdown,
     redactPII: scrapeOptions.redactPII,
     flags: input.flags,
-    clientIp: input.clientIp,
-    billingCountry: input.billingCountry,
   });
 }

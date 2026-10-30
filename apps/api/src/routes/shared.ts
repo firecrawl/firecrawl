@@ -487,7 +487,6 @@ function blocklistGate(
         zeroDataRetention,
         teamId: req.acuc?.team_id ?? null,
         orgId: req.acuc?.org_id ?? null,
-        clientIp: req.ip,
       });
 
       if (exchangeAccess.allowed) {

@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   exchangeRequest: vi.fn(),
   addScrapeJobs: vi.fn(),
   emitRejectedScrapeActivityEvents: vi.fn(),
-  getCrawl: vi.fn(),
 }));
 
 vi.mock(
@@ -30,9 +29,6 @@ vi.mock("../../../services/alexandria/client", async importOriginal => ({
   >()),
   exchangeRequest: mocks.exchangeRequest,
 }));
-vi.mock("../../../lib/billing-country", () => ({
-  billingCountryForTeam: vi.fn(async () => undefined),
-}));
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../services/queue-jobs")>()),
   addScrapeJobs: mocks.addScrapeJobs,
@@ -48,7 +44,6 @@ vi.mock("../../../lib/crawl-redis", async importOriginal => ({
   finishCrawlKickoff: vi.fn(),
   lockURLs: vi.fn().mockResolvedValue(true),
   addCrawlJobs: vi.fn(),
-  getCrawl: mocks.getCrawl,
 }));
 vi.mock("../../../services/worker/nuq-router", async importOriginal => ({
   ...(await importOriginal<
@@ -105,7 +100,6 @@ describe("v2 batch scrape of blocklisted URLs", () => {
     mocks.exchangeRequest.mockRejectedValue(new Error("offline"));
     mocks.addScrapeJobs.mockReset();
     mocks.emitRejectedScrapeActivityEvents.mockReset();
-    mocks.getCrawl.mockReset();
     setExchangeProvidersForTest([
       {
         id: "acme",
@@ -125,7 +119,6 @@ describe("v2 batch scrape of blocklisted URLs", () => {
   async function batchScrape(
     body: Record<string, unknown>,
     flags: Record<string, unknown>,
-    ip = "203.0.113.7",
   ): Promise<{ status: number; body: any }> {
     let status = 200;
     let payload: any;
@@ -146,7 +139,6 @@ describe("v2 batch scrape of blocklisted URLs", () => {
         headers: {},
         protocol: "http",
         host: "api.test",
-        ip,
         auth: { team_id: "team-1" },
         acuc: { flags, team_id: "team-1", org_id: "org-1" },
       } as any,
@@ -192,36 +184,6 @@ describe("v2 batch scrape of blocklisted URLs", () => {
         },
       } as any);
       expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
-    });
-
-    it("refreshes the caller IP on jobs appended to an existing batch", async () => {
-      const appendToId = "123e4567-e89b-12d3-a456-426614174000";
-      mocks.getCrawl.mockResolvedValue({
-        team_id: "team-1",
-        internalOptions: {
-          teamId: "team-1",
-          orgId: "org-1",
-          clientIp: "198.51.100.1",
-        },
-      });
-
-      const result = await batchScrape(
-        { urls: [OPEN_URL], appendToId, ignoreInvalidURLs: false },
-        ACCEPTED_FLAGS,
-        "203.0.113.50",
-      );
-
-      expect(result.status).toBe(200);
-      expect(enqueuedJobs()).toEqual([
-        expect.objectContaining({
-          data: expect.objectContaining({
-            url: OPEN_URL,
-            internalOptions: expect.objectContaining({
-              clientIp: "203.0.113.50",
-            }),
-          }),
-        }),
-      ]);
     });
 
     it("asks for the terms when they keep a blocked URL out", async () => {

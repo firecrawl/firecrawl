@@ -298,7 +298,6 @@ async function scrapeControllerInner(
               zeroDataRetention,
               teamFlags: req.acuc?.flags ?? null,
               orgId: req.acuc?.org_id ?? null,
-              clientIp: req.ip,
               agentIndexOnly: (req as any).agentIndexOnly ?? false,
               threatProtection: threatProtection.policy ?? undefined,
               safeMode: safeMode.allowlisted ? undefined : safeMode.safeMode,

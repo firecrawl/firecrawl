@@ -346,7 +346,6 @@ export async function batchScrapeController(
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
           orgId: req.acuc?.org_id ?? null,
-          clientIp: req.ip,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
@@ -373,12 +372,11 @@ export async function batchScrapeController(
     });
   }
   if (req.body.appendToId && sc?.internalOptions) {
-    // Refresh Safe Mode, threat protection, and the caller IP so appended jobs
-    // follow this request, not whatever was stored when the batch was created.
+    // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
+    // current policy, not whatever was stored when the batch was created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
-    sc.internalOptions.clientIp = req.ip;
   }
 
   if (!req.body.appendToId) {
