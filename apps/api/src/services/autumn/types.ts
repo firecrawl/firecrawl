@@ -1,24 +1,3 @@
-export type GetOrCreateCustomerParams = {
-  customerId: string;
-  name?: string | null;
-  email?: string | null;
-  autoEnablePlanId?: string;
-};
-
-export type GetEntityParams = {
-  customerId: string;
-  entityId: string;
-};
-
-export type CreateEntityParams = {
-  customerId: string;
-  entityId: string;
-  featureId: string;
-  name?: string | null;
-  /** Method doing the creation, for the inline-creation counter's `path`. */
-  path: string;
-};
-
 export type TrackParams = {
   customerId: string;
   entityId?: string;
@@ -44,19 +23,6 @@ export type TrackParams = {
    * late retry landing would bill what it already undid. Defaults to retrying.
    */
   durableRetry?: boolean;
-};
-
-export type EnsureOrgProvisionedParams = {
-  orgId: string;
-  name?: string | null;
-  email?: string | null;
-};
-
-export type EnsureTeamProvisionedParams = {
-  teamId: string;
-  /** See TrackCreditsParams.orgId. */
-  orgId: string;
-  name?: string | null;
 };
 
 export type LockCreditsParams = {
@@ -137,8 +103,3 @@ export type TrackCreditsParams = {
    */
   orgId: string;
 };
-
-export type CreateEntityResult =
-  | { ok: true; entity: unknown }
-  | { ok: false; conflict: true }
-  | { ok: false; conflict: false };
