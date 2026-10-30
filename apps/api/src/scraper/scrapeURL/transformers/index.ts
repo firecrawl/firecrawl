@@ -33,6 +33,7 @@ import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
 import { CrawlDenialError } from "../../../lib/error";
 import { shouldCheckRobots } from "../shouldCheckRobots";
+import { hasNoindexDirective } from "../lib/noindex";
 
 type Transformer = (
   meta: Meta,
@@ -56,12 +57,7 @@ async function deriveMetadataFromRawHTML(
 
   // Honor noindex under the same policy that decides robots.txt checks.
   if (shouldCheckRobots(meta.options, meta.internalOptions)) {
-    const robotsContent = document.metadata.robots;
-    const fcAgentContent = document.metadata.firecrawlAgentRobots;
-    if (
-      (robotsContent && robotsContent.toLowerCase().includes("noindex")) ||
-      (fcAgentContent && fcAgentContent.toLowerCase().includes("noindex"))
-    ) {
+    if (hasNoindexDirective(document.metadata)) {
       throw new CrawlDenialError("URL blocked by noindex meta tag");
     }
   }
