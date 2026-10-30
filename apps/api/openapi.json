@@ -587,6 +587,14 @@
                     },
                     "chargeId": {
                       "type": "string"
+                    },
+                    "requiredCredits": {
+                      "type": "integer",
+                      "description": "On insufficient_credits for an alexandria request: the most the request can cost, which is what was reserved. Reservation is automatic; no request option sets it."
+                    },
+                    "calls": {
+                      "type": "integer",
+                      "description": "On insufficient_credits for an alexandria request: how many provider calls the request held credits for. Fewer calls per request lower the reservation."
                     }
                   }
                 }

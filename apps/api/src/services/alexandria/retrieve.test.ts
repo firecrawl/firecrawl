@@ -168,7 +168,9 @@ it("tells the caller how much a refused hold needed and that no option sets it",
       code: "insufficient_credits",
       requiredCredits: 5,
       calls: 2,
-      error: expect.stringContaining("no option sets the reservation"),
+      error: expect.stringMatching(
+        /no option sets the reservation.*Add credits, or send fewer of these 2 calls per request/,
+      ),
     }),
   );
   expect(executions()).toHaveLength(0);
