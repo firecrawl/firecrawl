@@ -1,0 +1,21 @@
+apps/api/native/Cargo.toml
+  s_8fcc4c507e6624::t_de047fbd9dfa9e 31
+apps/api/native/Cargo.lock
+  s_8fcc4c507e6624::t_75a4f38f5a17fd 1-2856
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af1da9f1b49caca1af7df9d0ba69330892c40c8f",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "unknown"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
