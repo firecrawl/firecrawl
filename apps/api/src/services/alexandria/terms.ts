@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { billingCountryForTeam } from "../../lib/billing-country";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse } from "./contracts";
 
@@ -89,15 +90,34 @@ export function acceptedAfter(
   );
 }
 
+type CallerLocation = { clientIp?: string; billingCountry?: string };
+
+// IP is forwarded only when the caller already has it. Billing country is per
+// team, so it can be resolved here when the caller did not supply one.
+async function callerLocation(input: {
+  teamId: string;
+  clientIp?: string;
+  billingCountry?: string;
+}): Promise<CallerLocation> {
+  return {
+    clientIp: input.clientIp,
+    billingCountry:
+      input.billingCountry ?? (await billingCountryForTeam(input.teamId)),
+  };
+}
+
 export async function acceptedProviders(
   teamId: string,
   orgId: string,
   timeoutMs = TIMEOUT_MS,
+  location?: CallerLocation,
 ): Promise<Map<string, LedgerAcceptance>> {
   const response = await exchangeRequest({
     teamId,
     path: `/v1/provider-terms/status?organizationId=${encodeURIComponent(orgId)}`,
     timeoutMs,
+    clientIp: location?.clientIp,
+    billingCountry: location?.billingCountry,
   }).catch(() => undefined);
   const parsed =
     response?.status === 200
@@ -122,6 +142,10 @@ export async function acceptedProviders(
  * provider's current terms, recorded after `revocation.disabledAt` when an
  * admin revocation has to be lifted. The API's accept route records
  * acceptance only there. Any failure reads as not accepted.
+ *
+ * Country-scoped terms (required only in some countries) are decided from the
+ * caller's IP, when the caller has one, and the team's billing country.
+ * Without them the Exchange treats the caller as outside every required country.
  */
 export async function hasLedgerAcceptance(input: {
   teamId: string;
@@ -129,15 +153,22 @@ export async function hasLedgerAcceptance(input: {
   provider: string;
   revocation?: { disabledAt: unknown };
   timeoutMs: number;
+  /** Caller's IP as the API sees it; Exchange resolves the country from it. */
+  clientIp?: string;
+  /** Country on the team's billing address, when the caller already has it. */
+  billingCountry?: string;
 }): Promise<boolean> {
+  const location = await callerLocation(input);
   const [requirements, ledger] = await Promise.all([
     exchangeRequest({
       teamId: input.teamId,
       path: "/v1/provider-terms/requirements",
       body: { providers: [input.provider] },
       timeoutMs: input.timeoutMs,
+      clientIp: location.clientIp,
+      billingCountry: location.billingCountry,
     }).catch(() => undefined),
-    acceptedProviders(input.teamId, input.orgId, input.timeoutMs),
+    acceptedProviders(input.teamId, input.orgId, input.timeoutMs, location),
   ]);
   const parsed =
     requirements?.status === 200
@@ -161,13 +192,20 @@ export async function acceptProviderTerms(input: {
   orgId: string;
   apiKeyId: string | null;
   body: AcceptTerms;
+  /** Caller's IP as the API sees it; Exchange resolves the country from it. */
+  clientIp?: string;
+  /** Country on the team's billing address, when it has one. */
+  billingCountry?: string;
 }): Promise<ExchangeResponse> {
   const { provider, version, digest, agent } = input.body;
+  const location = await callerLocation(input);
   const requirements = await exchangeRequest({
     teamId: input.teamId,
     path: "/v1/provider-terms/requirements",
     body: { providers: [provider] },
     timeoutMs: TIMEOUT_MS,
+    clientIp: location.clientIp,
+    billingCountry: location.billingCountry,
   }).catch(() => undefined);
   if (requirements?.status === 404)
     return refusal(404, "Unknown provider.", { code: "unknown_provider" });
@@ -213,6 +251,8 @@ export async function acceptProviderTerms(input: {
       surface: "api",
     },
     timeoutMs: TIMEOUT_MS,
+    clientIp: location.clientIp,
+    billingCountry: location.billingCountry,
   }).catch(() => undefined);
   const recorded = z
     .object({ id: z.string(), occurred_at: z.string() })
