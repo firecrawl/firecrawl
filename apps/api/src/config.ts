@@ -371,7 +371,10 @@ const configSchema = z.object({
   GCS_FIRE_ENGINE_BUCKET_NAME: z.string().optional(),
   GCS_INDEX_BUCKET_NAME: z.string().optional(),
   GCS_MEDIA_BUCKET_NAME: z.string().optional(),
-  GCS_SCREENSHOT_RESIGN_BEFORE: emptyStringAsUndefined(z.string().datetime()),
+  // zod 4.5+ requires seconds; also accept minute precision as before.
+  GCS_SCREENSHOT_RESIGN_BEFORE: emptyStringAsUndefined(
+    z.union([z.iso.datetime(), z.iso.datetime({ precision: -1 })]),
+  ),
   GCS_PARSE_UPLOAD_BUCKET_NAME: z.string().optional(),
   PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),

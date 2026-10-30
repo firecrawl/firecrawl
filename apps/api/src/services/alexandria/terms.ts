@@ -58,7 +58,11 @@ export type LedgerAcceptance = {
   acceptedAt?: string | null;
 };
 
-const timestampSchema = z.iso.datetime({ offset: true });
+// zod 4.5+ requires seconds; also accept minute precision as before.
+const timestampSchema = z.union([
+  z.iso.datetime({ offset: true }),
+  z.iso.datetime({ offset: true, precision: -1 }),
+]);
 
 function timestamp(value: unknown): number {
   const parsed = timestampSchema.safeParse(value);
