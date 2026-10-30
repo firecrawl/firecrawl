@@ -6,6 +6,7 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { browserProfileDeletedKey } from "./browser-profiles";
+import { logger } from "./logger";
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
@@ -371,7 +372,12 @@ export async function markBrowserSessionHostedMcp(
 export async function didBrowserSessionComeFromHostedMcp(
   sessionId: string,
 ): Promise<boolean> {
-  return (
-    (await getValue(hostedMcpFlagKey(sessionId)).catch(() => null)) === "1"
-  );
+  const flag = await getValue(hostedMcpFlagKey(sessionId)).catch(error => {
+    logger.warn("Failed to read a browser session's hosted MCP flag", {
+      sessionId,
+      error,
+    });
+    return null;
+  });
+  return flag === "1";
 }
