@@ -30,7 +30,11 @@ import {
   scrapeURLWithIndex,
   sendDocumentToIndex,
 } from "../index";
-import { IndexMissError } from "../../../error";
+import {
+  AgentIndexOnlyError,
+  IndexMissError,
+  NoCachedDataError,
+} from "../../../error";
 
 const productUrl = "https://www.amazon.com/dp/B000000000";
 const checkpointUrl = "https://www.amazon.com/checkpoint/continue?token=abc";
@@ -80,6 +84,7 @@ describe("isInterstitialPage", () => {
     [productUrl, "<p>product</p>"],
     ["https://example.com/checkpoint/continue", checkpointHtml],
     ["https://notamazon.com/checkpoint/continue", undefined],
+    ["https://amazon.com.example.net/checkpoint/continue", undefined],
     [undefined, checkpointHtml],
     ["not a url", undefined],
   ])("does not flag %s", (url, html) => {
@@ -163,6 +168,25 @@ describe("URL index interstitial handling", () => {
       expect.any(String),
       "row-cached",
       expect.anything(),
+    );
+  });
+
+  it("keeps agent-index-only and minAge miss semantics for a cached checkpoint page", async () => {
+    vi.mocked(getIndexFromGCS).mockResolvedValue({
+      url: checkpointUrl,
+      html: checkpointHtml,
+      statusCode: 200,
+      contentType: "text/html",
+    } as any);
+    const agentMeta = meta();
+    agentMeta.internalOptions.agentIndexOnly = true;
+    await expect(scrapeURLWithIndex(agentMeta)).rejects.toBeInstanceOf(
+      AgentIndexOnlyError,
+    );
+    const minAgeMeta = meta();
+    minAgeMeta.options.minAge = 1000;
+    await expect(scrapeURLWithIndex(minAgeMeta)).rejects.toBeInstanceOf(
+      NoCachedDataError,
     );
   });
 

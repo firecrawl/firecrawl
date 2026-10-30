@@ -53,7 +53,8 @@ import {
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { hasCustomRequestContext } from "../../lib/request-context";
 
-const AMAZON_HOST = /(^|\.)amazon\.[a-z.]+$/i;
+const AMAZON_HOST =
+  /(^|\.)amazon\.(com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})$/i;
 const AMAZON_INTERSTITIAL_PATH = /^\/(checkpoint\/|errors\/validatecaptcha)/i;
 
 /**
@@ -580,6 +581,12 @@ export async function scrapeURLWithIndex(
   if (isInterstitialPage(doc.url, doc.html)) {
     deleteCachedIndexEntry(variantKey, id, meta.logger).catch(() => {});
     logLookup("debug", "hit", { interstitial: true, indexDocumentId: id });
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
     throw new IndexMissError();
   }
 
