@@ -588,7 +588,8 @@ async function firebillAttempt(
       // direct-Autumn path below.
       body: JSON.stringify({
         customer_id: customerId,
-        entity_id: entityId,
+        // Required by firebill; empty for a customer-level charge.
+        entity_id: entityId ?? "",
         feature_id: featureId,
         value: Math.abs(value),
         properties,

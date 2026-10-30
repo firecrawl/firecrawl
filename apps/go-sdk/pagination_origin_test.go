@@ -116,6 +116,8 @@ var paginationFollowers = []paginationFollower{
 				_, _ = w.Write([]byte(`{"success":true,"id":"abc"}`))
 			case r.URL.Path == "/v2/batch/scrape/abc" && r.URL.Query().Get("skip") == "":
 				_, _ = w.Write([]byte(`{"status":"completed","data":[{"markdown":"one"}],"next":"` + next + `"}`))
+			case r.URL.Path == "/v2/batch/scrape/abc/errors":
+				_, _ = w.Write([]byte(`{"errors":[],"robotsBlocked":[]}`))
 			default:
 				return false
 			}

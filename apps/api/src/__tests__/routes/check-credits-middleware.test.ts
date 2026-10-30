@@ -15,7 +15,7 @@ vi.mock("../../lib/logger", () => ({
 vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
     checkCredits: vi.fn(),
-    mcpCreditsAvailable: vi.fn(),
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
   CREDITS_FEATURE_ID: "CREDITS",
 }));
@@ -50,10 +50,6 @@ import { getTeamBalance } from "../../services/autumn/usage";
 const checkCreditsMock = autumnService.checkCredits as MockedFunction<
   typeof autumnService.checkCredits
 >;
-const mcpCreditsAvailableMock =
-  autumnService.mcpCreditsAvailable as MockedFunction<
-    typeof autumnService.mcpCreditsAvailable
-  >;
 const getTeamBalanceMock = getTeamBalance as MockedFunction<
   typeof getTeamBalance
 >;
@@ -127,6 +123,36 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.any(String),
       expect.not.objectContaining({ request: expect.anything() }),
+    );
+  });
+
+  it("tells a Gateway account to contact its platform on a 402", async () => {
+    checkCreditsMock.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      gatewayProvisioned: true,
+    });
+
+    const { res } = await runMiddleware(buildReq());
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: "platform_managed_credits",
+        error: expect.stringContaining("contact that platform"),
+      }),
+    );
+  });
+
+  it("keeps the generic 402 for an account that is not a Gateway account", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+
+    const { res } = await runMiddleware(buildReq());
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.not.objectContaining({ code: expect.anything() }),
     );
   });
 
@@ -393,9 +419,8 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     vi.clearAllMocks();
   });
 
-  it("runs a hosted MCP call the team's credits can't cover when its MCP credits can", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
-    mcpCreditsAvailableMock.mockResolvedValue(1);
+  it("gates a hosted MCP call on MCP credits, the balance it is billed to", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 
     const req = buildReq({
       path: "/v2/scrape",
@@ -407,104 +432,70 @@ describe("checkCreditsMiddleware – MCP credits", () => {
 
     expect(res.status).not.toHaveBeenCalled();
     expect(nextCalled).toBe(true);
-    expect(req.account.remainingCredits).toBe(Infinity);
-    expect(mcpCreditsAvailableMock).toHaveBeenCalledExactlyOnceWith({
+    expect(checkCreditsMock).toHaveBeenCalledExactlyOnceWith({
       teamId: "team_test",
       orgId: "org_test",
       value: 1,
       properties: {
-        source: "checkCreditsMiddleware:mcp",
+        source: "checkCreditsMiddleware",
         path: "/v2/scrape",
         apiKeyId: 7,
       },
+      featureId: "MCP_CREDITS",
     });
   });
 
-  it("keeps the full crawl limit when MCP credits cover it", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 5 });
-    mcpCreditsAvailableMock.mockResolvedValue(100);
+  it("refuses a hosted MCP call MCP credits and what they fall back to can't cover", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
 
-    const req = buildReq({ auth: hostedMcpAuth, body: { limit: 100 } });
-    const { res } = await runMiddleware(req, spendsMcpCredits);
+    const req = buildReq({ auth: hostedMcpAuth });
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
 
-    expect(res.status).not.toHaveBeenCalled();
-    expect(req.body.limit).toBe(100);
-    expect(mcpCreditsAvailableMock).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 100 }),
-    );
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(nextCalled).toBe(false);
   });
 
-  it("clamps the crawl limit as today when MCP credits cover only part of it", async () => {
+  it("clamps the crawl limit against MCP credits on the re-check too", async () => {
     checkCreditsMock
       .mockResolvedValueOnce({ allowed: false, remaining: 5 })
       .mockResolvedValueOnce({ allowed: true, remaining: 5 });
-    mcpCreditsAvailableMock.mockResolvedValue(40);
 
     const req = buildReq({ auth: hostedMcpAuth, body: { limit: 100 } });
     const { res } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(req.body.limit).toBe(5);
+    expect(checkCreditsMock).toHaveBeenCalledTimes(2);
+    for (const [check] of checkCreditsMock.mock.calls) {
+      expect(check.featureId).toBe("MCP_CREDITS");
+    }
   });
 
-  // Per-key spend caps limit regular credits only.
-  it("runs a hosted MCP call on MCP credits when its key is over its spend cap", async () => {
-    // A per-key cap denies while the team balance stays healthy.
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 5000 });
-    mcpCreditsAvailableMock.mockResolvedValue(1);
+  it("gates a call the hosted MCP did not make on the route's own feature", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 
-    const req = buildReq({
-      path: "/v2/scrape",
-      body: {},
-      auth: hostedMcpAuth,
-      acuc: { api_key_id: 7 },
-    });
+    const req = buildReq({ body: { limit: 100, origin: "mcp-fastmcp" } });
     const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
 
     expect(res.status).not.toHaveBeenCalled();
     expect(nextCalled).toBe(true);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "CREDITS" }),
+    );
   });
 
-  it("falls back to the existing gate once MCP credits can't cover the call", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
-    mcpCreditsAvailableMock.mockResolvedValue(0);
-
-    const req = buildReq({ auth: hostedMcpAuth });
-    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
-
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(nextCalled).toBe(false);
-  });
-
-  it("never looks at MCP credits when the team's own credits allow the call", async () => {
+  it("gates a hosted MCP call on the route's own feature where billing doesn't use MCP credits", async () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
-
-    const req = buildReq({ auth: hostedMcpAuth });
-    const { res } = await runMiddleware(req, spendsMcpCredits);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
-  });
-
-  it("never looks at MCP credits for a call the hosted MCP did not make", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
-
-    const req = buildReq({ body: { limit: 100, origin: "mcp-fastmcp" } });
-    const { res } = await runMiddleware(req, spendsMcpCredits);
-
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
-  });
-
-  it("never looks at MCP credits on a route whose billing doesn't spend them", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
-    mcpCreditsAvailableMock.mockResolvedValue(100);
 
     const req = buildReq({ path: "/v2/extract", auth: hostedMcpAuth });
     const { res, nextCalled } = await runMiddleware(req);
 
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(nextCalled).toBe(false);
-    expect(mcpCreditsAvailableMock).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(nextCalled).toBe(true);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "CREDITS" }),
+    );
   });
 });
