@@ -1,0 +1,154 @@
+.github/workflows/test-server.yml
+  h_b58237c6fffd77 267-279,292-296,349-359
+apps/api/package.json
+  h_b58237c6fffd77 145
+apps/api/pnpm-lock.yaml
+  h_b58237c6fffd77 53,282-283,2671-2672,4307-4309,6658,7960,8319
+apps/api/pnpm-workspace.yaml
+  h_b58237c6fffd77 91-95
+apps/api/src/__tests__/routes/check-credits-middleware.test.ts
+  h_b58237c6fffd77 18,53-56,73,99,133-162,410-540
+apps/api/src/__tests__/routes/hosted-mcp-agent-interop.test.ts
+  h_b58237c6fffd77 1-79
+apps/api/src/__tests__/routes/hosted-mcp-rate-limit.routes.test.ts
+  h_b58237c6fffd77 1-57
+apps/api/src/__tests__/routes/research-credit-gate.routes.test.ts
+  h_b58237c6fffd77 37,43,45,49-54,118-130
+apps/api/src/__tests__/snips/v2/keyless.test.ts
+  h_b58237c6fffd77 17-22,934-998
+apps/api/src/__tests__/snips/v2/zdr.test.ts
+  h_b58237c6fffd77 10,12-20,236-376
+apps/api/src/config.ts
+  h_b58237c6fffd77 308-312
+apps/api/src/controllers/__tests__/auth.test.ts
+  h_b58237c6fffd77 14,79,1106-1115,1117-1122,1126-1127,1129-1137,1141-1146,1149-1168,1170-1176,1179-1180,1184-1185,1188-1196,1198-1206,1208-1220,1222,1224-1276,1279-1307,1309-1310,1313-1371,1374-1386,1389-1555
+apps/api/src/controllers/auth.ts
+  h_b58237c6fffd77 12-13,860-863,909-911,957,1142,1144-1179,1269
+apps/api/src/controllers/v1/types.ts
+  h_b58237c6fffd77 1321-1323
+apps/api/src/controllers/v2/__tests__/agent-credit-gate.test.ts
+  h_b58237c6fffd77 5-9,17,37,202-358
+apps/api/src/controllers/v2/__tests__/browser-mcp-credits.test.ts
+  h_b58237c6fffd77 1-337
+apps/api/src/controllers/v2/__tests__/scrape-browser.test.ts
+  h_b58237c6fffd77 278-329
+apps/api/src/controllers/v2/agent-credit-gate.ts
+  h_b58237c6fffd77 31-34,43,49,66-95,98-110,123-125
+apps/api/src/controllers/v2/agent.ts
+  h_b58237c6fffd77 2-5,31,149-154,266,301-313,343
+apps/api/src/controllers/v2/batch-scrape.ts
+  h_b58237c6fffd77 150-154,157,308,325-326
+apps/api/src/controllers/v2/browser.ts
+  h_b58237c6fffd77 60
+apps/api/src/controllers/v2/crawl.ts
+  h_b58237c6fffd77 137-141,409
+apps/api/src/controllers/v2/map.ts
+  h_b58237c6fffd77 152,296
+apps/api/src/controllers/v2/parse.ts
+  h_b58237c6fffd77 375-379,382
+apps/api/src/controllers/v2/research-proxy.ts
+  h_b58237c6fffd77 40,472
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  h_b58237c6fffd77 55,177
+apps/api/src/controllers/v2/scrape.ts
+  h_b58237c6fffd77 225-229,232
+apps/api/src/controllers/v2/search.ts
+  h_b58237c6fffd77 315-319,322,530,543-545
+apps/api/src/controllers/v2/types.ts
+  h_b58237c6fffd77 1242,1300,1337,1363,2127-2130,2701
+apps/api/src/lib/__tests__/keyless-usage-log.test.ts
+  h_b58237c6fffd77 10,15,30,161,172-178,187
+apps/api/src/lib/browser-lifecycle.ts
+  h_b58237c6fffd77 22-23,188-197,226-229,265-273,300-324,389-390,403-404,413-416,476-485,504-512
+apps/api/src/lib/browser-options.test.ts
+  h_b58237c6fffd77 13-16,31,38,41,106-139
+apps/api/src/lib/browser-options.ts
+  h_b58237c6fffd77 55-58,71-73,78
+apps/api/src/lib/browser-sessions.ts
+  h_b58237c6fffd77 9,356-383
+apps/api/src/lib/hangar.ts
+  h_b58237c6fffd77 115,128
+apps/api/src/lib/keyless.ts
+  h_b58237c6fffd77 385,408,427-429,434-437,665-676
+apps/api/src/lib/scrape-billing.test.ts
+  h_b58237c6fffd77 483-492
+apps/api/src/lib/scrape-billing.ts
+  h_b58237c6fffd77 219-224,228
+apps/api/src/routes/shared.ts
+  h_b58237c6fffd77 51-52,196-216,270-282,312,362-369,371-376
+apps/api/src/routes/v2.ts
+  h_b58237c6fffd77 47,127-132,216-218,262,276,309,318,328
+apps/api/src/scraper/scrapeURL/transformers/__tests__/audio.test.ts
+  h_b58237c6fffd77 56-78,118,167,203,224
+apps/api/src/scraper/scrapeURL/transformers/__tests__/product.test.ts
+  h_b58237c6fffd77 14-17,22,43-63
+apps/api/src/scraper/scrapeURL/transformers/__tests__/video.test.ts
+  h_b58237c6fffd77 65,108-137,148,169,203,249,291,315,342
+apps/api/src/scraper/scrapeURL/transformers/audio.ts
+  h_b58237c6fffd77 56-62
+apps/api/src/scraper/scrapeURL/transformers/product.ts
+  h_b58237c6fffd77 14-20
+apps/api/src/scraper/scrapeURL/transformers/video.ts
+  h_b58237c6fffd77 214-220
+apps/api/src/services/alexandria/retrieve.test.ts
+  h_b58237c6fffd77 20-21,48-49,53,99-100,764-955
+apps/api/src/services/alexandria/retrieve.ts
+  h_b58237c6fffd77 15,17,57-60,116-117,286-287,290-295,303,306-307,314,319-342,425-461,463,485,492-495,498,570-577,579,587,590-591,593-599,656,666-670,693-694,705-710
+apps/api/src/services/autumn/__tests__/autumn.service.test.ts
+  h_b58237c6fffd77 1275-1279
+apps/api/src/services/autumn/__tests__/mcp-credits.test.ts
+  h_b58237c6fffd77 1-44,47-49,51-66,69-71,73,75,77-132,135-144,146-170,172-175,178-184,186-192,194,196-221,224-230,233-241,244-246,249-257,260-270,273-284,286,290-311,313-322,324,326-327,329-331,333-335,337-344,347-351,353-355,358-360,362,364,366,368-381,383-386,389-392,394-400,403-404,406-409,411-412,415-419,421-427,430-432,434-437
+apps/api/src/services/autumn/autumn.service.ts
+  h_b58237c6fffd77 22,41-46,484-490,494,510-511,517-518,545-549,570-574,588-748
+apps/api/src/services/billing/__tests__/batch_billing.test.ts
+  h_b58237c6fffd77 13,28,32-35,51,130,439-585
+apps/api/src/services/billing/__tests__/credit_billing.test.ts
+  h_b58237c6fffd77 10-11,19-28,44-45,74-75,250-438
+apps/api/src/services/billing/agent-mcp-credits.ts
+  h_b58237c6fffd77 1-36
+apps/api/src/services/billing/batch_billing.ts
+  h_b58237c6fffd77 8,87-89,122,194-198,223-225,227,302-318,320-334,336-346,393,445-461,575,595
+apps/api/src/services/billing/credit_billing.ts
+  h_b58237c6fffd77 9-10,45,49,59-66,81,87-94,106,109-111,119-124,128-135
+apps/api/src/services/billing/types.ts
+  h_b58237c6fffd77 42-61
+apps/api/src/services/mcp/action-logs.test.ts
+  h_b58237c6fffd77 242,264-273,299-303,394,413
+apps/api/src/services/mcp/action-logs.ts
+  h_b58237c6fffd77 24-29,58,186,243-253,281
+apps/api/src/services/posthog-capture.ts
+  h_b58237c6fffd77 4,6-8,11
+apps/api/src/services/posthog.ts
+  h_b58237c6fffd77 53
+apps/api/src/services/rate-limiter.test.ts
+  h_b58237c6fffd77 16-17,424-442,446-452,455-473,476-483,485,489-516,519-521,523-524,526-537,539,541,545
+apps/api/src/services/rate-limiter.ts
+  h_b58237c6fffd77 49-51,105,109-110,126,135-138,140,144-149,151-155,157-162,165-168,170,174,176-181,183-202,204-206,208-230,233-243
+apps/api/src/services/worker/scrape-worker.ts
+  h_b58237c6fffd77 76,175,214-238,277,304,311-314,334,336,339-343,350-354
+apps/api/src/types.ts
+  h_b58237c6fffd77 175-176
+apps/go-sdk/README.md
+  h_b58237c6fffd77 234-256,261-262
+apps/go-sdk/batch_scrape_errors_test.go
+  h_b58237c6fffd77 1-260
+apps/go-sdk/firecrawl.go
+  h_b58237c6fffd77 224-228,348-352,356-393,395-397,403-405,411-425
+apps/go-sdk/models.go
+  h_b58237c6fffd77 410-413,423-434,442-467
+apps/go-sdk/pagination_origin_test.go
+  h_b58237c6fffd77 119-120
+apps/go-sdk/version.go
+  h_b58237c6fffd77 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d3936b2aea72095f7c1a81fa1dfd270187e5754",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
