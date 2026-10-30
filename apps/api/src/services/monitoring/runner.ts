@@ -14,7 +14,6 @@ import { ScrapeJobData } from "../../types";
 import { includesFormat } from "../../lib/format-utils";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
-import { ExistingCreditsLockError } from "../autumn/types";
 import { getBillingQueue } from "../queue-service";
 import {
   crawlToCrawler,
@@ -1249,7 +1248,6 @@ export async function processMonitorCheckJob(
       );
     }
   } catch (error) {
-    if (error instanceof ExistingCreditsLockError) throw error;
     // Atomically flip running -> failed. Returns null when the check already
     // reached a terminal status — i.e. the reconciler finalized it (completed,
     // billed, lock confirmed) before this late catch ran. In that case we must

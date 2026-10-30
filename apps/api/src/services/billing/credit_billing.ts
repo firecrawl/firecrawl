@@ -46,7 +46,7 @@ export async function billTeam(
 
       let trackedInRequest = false;
       if (org_id !== null) {
-        // Stable per-charge key (firebill route only): a caller retry or re-run
+        // Stable per-charge key: a caller retry or re-run
         // job with the same chargeId dedupes instead of double-billing.
         trackedInRequest = await autumnService.trackCredits({
           teamId: team_id,

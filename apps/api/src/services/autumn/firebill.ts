@@ -44,7 +44,7 @@ function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
 
 // firebill's own internal budget (durable write + forward attempt) is up to
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
-// direct Autumn client.
+// Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
 
 // A gated lock legitimately does more: firebill asks the partner (2.5s ceiling)
@@ -266,8 +266,8 @@ const lockAnswerSchema = z.discriminatedUnion("success", [
 ]);
 
 /**
- * Whether firebill is configured. When it is, every org's usage goes through
- * firebill rather than straight to Autumn.
+ * Whether firebill is configured. Every billing write goes through firebill;
+ * without it, billing is skipped.
  */
 export function firebillConfigured(): boolean {
   return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
@@ -288,8 +288,7 @@ function firebillUrl(path: string): string {
  * firebill's /v1/refund endpoint expects the POSITIVE amount and negates it
  * itself, so the absolute value is sent either way.
  *
- * Returns true when firebill accepted the event, mirroring the boolean
- * contract of the direct Autumn track path. A `false` means firebill did not
+ * Returns true when firebill accepted the event. A `false` means firebill did not
  * confirm it. An unanswered event is then handed to a durable retry that
  * re-sends the identical event under the same idempotency key, so it is billed
  * once whether or not the lost attempt landed; an explicit refusal is not.
@@ -528,8 +527,7 @@ async function firebillAttempt(
         "content-type": "application/json",
       },
       // No overage flag needed: firebill itself pins Autumn's
-      // overage_behavior to "overflow" on every upstream call, matching the
-      // direct-Autumn path below.
+      // overage_behavior to "overflow" on every upstream call.
       body: JSON.stringify({
         customer_id: customerId,
         // Required by firebill; empty for a customer-level charge.
@@ -951,13 +949,12 @@ export async function firebillLock({
  * Settles a lock via firebill's `/v1/finalize`: `confirm` bills the hold,
  * `release` gives the balance back. firebill queues the settle durably and
  * retries it until it lands in Autumn, instead of dropping it when Autumn
- * blinks (the direct-Autumn path's failure mode — the lock then just expires,
- * which for a confirm means the work goes unbilled).
+ * blinks (a dropped settle just lets the lock expire, which for a confirm
+ * means the work goes unbilled).
  *
- * Returns true when firebill accepted the settle for delivery, mirroring the
- * void-and-log contract of the direct finalize path. No direct-Autumn
- * fallback, for the same reason as track: firebill may have durably queued
- * the settle before the call failed.
+ * Returns true when firebill accepted the settle for delivery. No
+ * direct-Autumn fallback, for the same reason as track: firebill may have
+ * durably queued the settle before the call failed.
  */
 export async function firebillFinalize({
   lockId,
