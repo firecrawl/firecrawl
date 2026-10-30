@@ -323,10 +323,10 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
       );
       const ledgerCall = mocks.acceptedProviders.mock.calls[0];
       expect(ledgerCall.slice(0, 2)).toEqual(["team-mcp", "org-mcp"]);
-      expect(ledgerCall[3]).toEqual(
-        expect.objectContaining({ billingCountry: undefined }),
-      );
-      expect(ledgerCall[3]).toHaveProperty("clientIp");
+      expect(ledgerCall[3]).toEqual({
+        clientIp: expect.any(String),
+        billingCountry: undefined,
+      });
     });
 
     it("blocks retrieve when access is disabled for the key's organization", async () => {
