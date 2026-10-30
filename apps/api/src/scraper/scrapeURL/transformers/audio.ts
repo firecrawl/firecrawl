@@ -53,6 +53,13 @@ export async function fetchAudio(
     return document;
   }
 
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Audio format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
   if (!config.AVGRAB_SERVICE_URL) {
     meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
     document.warning =

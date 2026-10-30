@@ -11,6 +11,13 @@ export async function fetchProduct(
     return document;
   }
 
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Product format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
   if (!config.PRODUCT_EXTRACTION_SERVICE_URL) {
     meta.logger.warn("PRODUCT_EXTRACTION_SERVICE_URL is not configured");
     document.warning =
