@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     lock: vi.fn(),
     finalize: vi.fn(),
     refund: vi.fn(),
+    mcpAvailable: vi.fn(),
+    refundMcp: vi.fn(),
     billAdd: vi.fn(),
     report: vi.fn(),
     initCredits: vi.fn(),
@@ -43,9 +45,12 @@ vi.mock("../autumn/autumn.service", () => ({
     lockCredits: mocks.lock,
     finalizeCreditsLock: mocks.finalize,
     refundCredits: mocks.refund,
+    mcpCreditsAvailable: mocks.mcpAvailable,
+    refundHostedMcpCredits: mocks.refundMcp,
     isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
+  MCP_CREDITS_FEATURE_ID: "mcp_credits",
 }));
 import { retrieveProviders } from "./retrieve";
 
@@ -91,6 +96,8 @@ beforeEach(() => {
   mocks.lock.mockResolvedValue({ status: "locked", lockId: "held" });
   mocks.finalize.mockResolvedValue(true);
   mocks.refund.mockResolvedValue(undefined);
+  mocks.mcpAvailable.mockResolvedValue(0);
+  mocks.refundMcp.mockResolvedValue(true);
   mocks.billAdd.mockResolvedValue({});
   mocks.report.mockResolvedValue(true);
   mocks.initCredits.mockResolvedValue(true);
@@ -753,4 +760,196 @@ it("does not retry the write when the credit store is unavailable", async () => 
     executed: true,
   });
   expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
+});
+
+describe("hosted MCP calls", () => {
+  const hosted = (overrides: Record<string, unknown> = {}) =>
+    run({ hostedMcp: true, ...overrides });
+  const locks = () => mocks.lock.mock.calls.map(([arg]) => arg);
+  const settles = () => mocks.finalize.mock.calls.map(([arg]) => arg);
+  const billing = () => mocks.billAdd.mock.calls[0][1].billing;
+
+  beforeEach(() => {
+    mocks.lock.mockImplementation(async arg => ({
+      status: "locked",
+      lockId: arg.lockId,
+    }));
+  });
+
+  it("holds and settles on the MCP credits alone when they cover the call", async () => {
+    mocks.mcpAvailable.mockResolvedValue(5);
+    expect((await hosted()).status).toBe(200);
+    expect(mocks.mcpAvailable).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team", orgId: "org", value: 5 }),
+    );
+    expect(locks()).toEqual([
+      expect.objectContaining({
+        value: 5,
+        featureId: "mcp_credits",
+        lockId: expect.stringMatching(/_mcp$/),
+      }),
+    ]);
+    expect(settles()).toEqual([
+      expect.objectContaining({
+        lockId: locks()[0].lockId,
+        action: "confirm",
+        overrideValue: 3,
+        heldValue: 5,
+        featureId: "mcp_credits",
+      }),
+    ]);
+    expect(billing()).toEqual(
+      expect.objectContaining({ hostedMcp: true, mcpCredits: 3 }),
+    );
+  });
+
+  it("splits the hold and the settle, MCP credits first, when they cover part", async () => {
+    mocks.mcpAvailable.mockResolvedValue(2);
+    expect((await hosted()).status).toBe(200);
+    expect(locks()).toEqual([
+      expect.objectContaining({ value: 2, featureId: "mcp_credits" }),
+      expect.objectContaining({ value: 3, featureId: "credits" }),
+    ]);
+    expect(settles()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          featureId: "mcp_credits",
+          action: "confirm",
+          overrideValue: 2,
+          heldValue: 2,
+        }),
+        expect.objectContaining({
+          featureId: "credits",
+          action: "confirm",
+          overrideValue: 1,
+          heldValue: 3,
+        }),
+      ]),
+    );
+    expect(settles()).toHaveLength(2);
+    expect(billing()).toEqual(
+      expect.objectContaining({ hostedMcp: true, mcpCredits: 2 }),
+    );
+  });
+
+  it("releases the regular hold when the MCP part pays the whole charge", async () => {
+    mocks.mcpAvailable.mockResolvedValue(4);
+    expect((await hosted()).status).toBe(200);
+    expect(settles()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          featureId: "mcp_credits",
+          overrideValue: 3,
+          heldValue: 4,
+        }),
+        expect.objectContaining({ featureId: "credits", action: "release" }),
+      ]),
+    );
+    expect(billing()).toEqual(expect.objectContaining({ mcpCredits: 3 }));
+  });
+
+  it("holds and settles on regular credits alone once the MCP credits are used up", async () => {
+    expect((await hosted()).status).toBe(200);
+    expect(locks()).toEqual([
+      expect.objectContaining({ value: 5, featureId: "credits" }),
+    ]);
+    expect(settles()).toEqual([
+      expect.objectContaining({ featureId: "credits", overrideValue: 3 }),
+    ]);
+    expect(billing()).not.toHaveProperty("mcpCredits");
+  });
+
+  it("hands the MCP hold back when the rest cannot be held", async () => {
+    mocks.mcpAvailable.mockResolvedValue(2);
+    mocks.lock
+      .mockImplementationOnce(async arg => ({
+        status: "locked",
+        lockId: arg.lockId,
+      }))
+      .mockResolvedValueOnce({ status: "denied" });
+    const refused = await hosted();
+    expect(refused.status).toBe(402);
+    expect(executions()).toHaveLength(0);
+    expect(settles()).toEqual([
+      expect.objectContaining({
+        featureId: "mcp_credits",
+        action: "release",
+        heldValue: 2,
+      }),
+    ]);
+  });
+
+  it.each([
+    ["the MCP part", "mcp_credits", 1, 0],
+    ["the rest", "credits", 2, 2],
+  ])(
+    "records only what landed when %s does not settle",
+    async (_, failing, credits, mcpCredits) => {
+      mocks.mcpAvailable.mockResolvedValue(2);
+      mocks.finalize.mockImplementation(async arg => arg.featureId !== failing);
+      expect((await hosted({ agentRequestId: "agent-run" })).status).toBe(200);
+      expect(mocks.billAdd).toHaveBeenCalledWith(
+        "bill_team",
+        expect.objectContaining({
+          credits,
+          billing: expect.objectContaining(
+            mcpCredits > 0 ? { mcpCredits } : {},
+          ),
+        }),
+        expect.anything(),
+      );
+      if (mcpCredits === 0) expect(billing()).not.toHaveProperty("mcpCredits");
+      expect(mocks.recordCredits).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "agent-run", credits }),
+      );
+      expect(mocks.report).not.toHaveBeenCalled();
+    },
+  );
+
+  it("releases both holds on a definitive refusal", async () => {
+    mocks.mcpAvailable.mockResolvedValue(2);
+    exchangeAnswers({ error: "nope" }, 400);
+    expect((await hosted()).status).toBe(400);
+    expect(settles()).toHaveLength(2);
+    expect(settles().every(settle => settle.action === "release")).toBe(true);
+  });
+
+  it("refunds each part to its own balance when the ledger enqueue fails", async () => {
+    mocks.mcpAvailable.mockResolvedValue(2);
+    mocks.billAdd.mockRejectedValue(new Error("queue down"));
+    expect((await hosted()).status).toBe(200);
+    expect(mocks.refundMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 3, mcpCredits: 2, orgId: "org" }),
+    );
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it("adds the MCP part of an agent call to the run's MCP tally", async () => {
+    mocks.mcpAvailable.mockResolvedValue(2);
+    await hosted({ agentRequestId: "agent-run" });
+    expect(mocks.recordCredits).toHaveBeenCalledWith({
+      requestId: "agent-run",
+      jobId: expect.stringMatching(/^alexandria:/),
+      credits: 3,
+    });
+    expect(mocks.recordCredits).toHaveBeenCalledWith({
+      requestId: "agent-run:mcp",
+      jobId: expect.stringMatching(/^alexandria:/),
+      credits: 2,
+    });
+  });
+
+  it("leaves a call not from the hosted MCP as it was", async () => {
+    mocks.mcpAvailable.mockResolvedValue(5);
+    expect((await run({ agentRequestId: "agent-run" })).status).toBe(200);
+    expect(mocks.mcpAvailable).not.toHaveBeenCalled();
+    expect(locks()).toEqual([
+      expect.objectContaining({ value: 5, featureId: "credits" }),
+    ]);
+    expect(billing()).toEqual({
+      endpoint: "scrape",
+      chargeId: expect.any(String),
+    });
+    expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
+  });
 });

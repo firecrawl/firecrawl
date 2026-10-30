@@ -37,6 +37,7 @@ const searchCreditGate = () =>
   checkCreditsMiddleware(
     SEARCH_CREDITS_PER_TEN_RESULTS,
     SEARCH_CREDITS_FEATURE_ID,
+    { mcpCredits: true },
   );
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 
@@ -468,6 +469,7 @@ function createResearchController(
               endpoint: endpoint.billAs === "scrape" ? "scrape" : "search",
               jobId,
               chargeId: jobId,
+              hostedMcp: authedReq.auth.hostedMcp,
             },
           ).catch(billingError => {
             logger.error("Failed to bill research request", {

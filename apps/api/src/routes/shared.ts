@@ -48,6 +48,8 @@ import { resolveIntegration } from "../utils/integration";
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId: string = CREDITS_FEATURE_ID,
+  // Set on routes whose billing spends a hosted MCP call's MCP credits first.
+  { mcpCredits = false }: { mcpCredits?: boolean } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     let minimum = _minimum;
@@ -191,6 +193,27 @@ export function checkCreditsMiddleware(
         return next();
       }
 
+      // A hosted MCP call the team's balance can't cover still runs when its
+      // MCP credits can, which billing then spends first (see billTeam).
+      if (
+        !autumnResult.allowed &&
+        mcpCredits &&
+        req.auth.hostedMcp &&
+        (await autumnService.mcpCreditsAvailable({
+          teamId: req.auth.team_id,
+          orgId,
+          value: requestedCredits,
+          properties: {
+            source: "checkCreditsMiddleware:mcp",
+            path: req.path,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+          },
+        })) >= requestedCredits
+      ) {
+        req.account = { remainingCredits: Infinity };
+        return next();
+      }
+
       const success = autumnResult.allowed;
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
@@ -273,6 +296,7 @@ export function authMiddleware(
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
     allowAgentManagedKey?: boolean;
+    hostedMcpRateLimit?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -322,8 +346,21 @@ export function authMiddleware(
       }
 
       const { team_id, org_id, chunk } = auth;
+      const agentInterop = agentInteropStatus(req);
+      // An agent run started by a hosted MCP call makes its own calls under
+      // the interop secret, and says so in the interop block. Only a trusted
+      // block may say it: the run itself was verified when it started.
+      const hostedMcp =
+        auth.hostedMcp ||
+        (agentInterop === "trusted" &&
+          (req.body as any)?.__agentInterop?.hostedMcp === true);
 
-      req.auth = { team_id, org_id, agentInterop: agentInteropStatus(req) };
+      req.auth = {
+        team_id,
+        org_id,
+        agentInterop,
+        ...(hostedMcp ? { hostedMcp: true } : {}),
+      };
       req.acuc = chunk ?? undefined;
       next();
     })().catch(err => next(err));

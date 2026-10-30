@@ -19,6 +19,7 @@ import {
   autumnEntityCreatedInlineTotal,
   billingRouteTotal,
 } from "./metrics";
+import { getRedisConnection } from "../queue-service";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -37,6 +38,12 @@ import { ExistingCreditsLockError } from "./types";
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+/**
+ * The balance hosted MCP calls spend before the endpoint's own feature (see
+ * AutumnService.trackHostedMcpCredits). Configurable so the id can follow the
+ * Autumn feature without a code change.
+ */
+export const MCP_CREDITS_FEATURE_ID = config.MCP_CREDITS_FEATURE_ID;
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
@@ -565,6 +572,158 @@ export class AutumnService {
       );
       return null;
     }
+  }
+
+  /**
+   * How much of a hosted MCP charge of `value` the team's MCP credits
+   * (MCP_CREDITS_FEATURE_ID) can pay: all of it, or what is left when that is
+   * less. 0 for a team without the feature or with none left, for a
+   * partner-provisioned team (its usage is split with the partner on the
+   * regular features), and when Autumn can't answer.
+   */
+  async mcpCreditsAvailable({
+    teamId,
+    orgId,
+    value,
+    properties,
+  }: Pick<
+    TrackCreditsParams,
+    "teamId" | "orgId" | "value" | "properties"
+  >): Promise<number> {
+    if (!(value > 0) || this.isPreviewTeam(teamId)) return 0;
+    if (await this.isGatewayProvisioned(teamId)) return 0;
+    const result = await this.checkCredits({
+      teamId,
+      orgId,
+      value,
+      properties,
+      featureId: MCP_CREDITS_FEATURE_ID,
+    });
+    if (!result) return 0;
+    if (result.allowed) return value;
+    return Math.max(0, Math.min(value, Math.floor(result.remaining)));
+  }
+
+  /**
+   * The MCP credits part of a keyed hosted MCP charge. The first attempt
+   * records it, so a retry under the same key (a stalled job re-running its
+   * charge) splits the charge the same way and each part dedupes against its
+   * first track, even after that first track used the MCP credits up. Without
+   * a key, or when Redis doesn't answer within a second, it is worked out
+   * afresh. The shared connection queues commands while Redis is down rather
+   * than failing them, hence the bound.
+   */
+  private async hostedMcpAllocation(params: TrackCreditsParams) {
+    if (!params.idempotencyKey) return this.mcpCreditsAvailable(params);
+    const key = `fc:mcp-credits:allocation:${params.idempotencyKey}`;
+    const redis = getRedisConnection();
+    const bounded = async <T>(command: Promise<T>): Promise<T> => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          command,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Redis did not answer in time")),
+              1000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      const recorded = await bounded(redis.get(key));
+      if (recorded !== null) return Number(recorded);
+    } catch (error) {
+      logger.warn("Failed to read a hosted MCP charge's allocation", {
+        key,
+        error,
+      });
+      return this.mcpCreditsAvailable(params);
+    }
+    const mcpCredits = await this.mcpCreditsAvailable(params);
+    try {
+      if (
+        (await bounded(
+          redis.set(key, mcpCredits, "EX", 7 * 24 * 60 * 60, "NX"),
+        )) === null
+      ) {
+        const recorded = await bounded(redis.get(key));
+        if (recorded !== null) return Number(recorded);
+      }
+    } catch (error) {
+      logger.warn("Failed to record a hosted MCP charge's allocation", {
+        key,
+        error,
+      });
+    }
+    return mcpCredits;
+  }
+
+  /**
+   * Tracks a hosted MCP charge: the part the team's MCP credits can pay (see
+   * mcpCreditsAvailable) on MCP_CREDITS_FEATURE_ID, and the rest on
+   * `featureId`, the endpoint's own feature. When the MCP credits pay nothing,
+   * the whole charge is tracked exactly as trackCredits would track it.
+   * Resolves whether every part was tracked, and the credits tracked on
+   * MCP_CREDITS_FEATURE_ID: those were charged even when `tracked` is false,
+   * so a caller reversing the charge reverses them on their own.
+   */
+  async trackHostedMcpCredits(
+    params: TrackCreditsParams,
+  ): Promise<{ tracked: boolean; mcpCredits: number }> {
+    const mcpCredits = await this.hostedMcpAllocation(params);
+    const rest = params.value - mcpCredits;
+    const [mcpTracked, restTracked] = await Promise.all([
+      mcpCredits > 0
+        ? this.trackCredits({
+            ...params,
+            value: mcpCredits,
+            featureId: MCP_CREDITS_FEATURE_ID,
+            // Its own charge event: the rest keeps the caller's key, and the
+            // same key would dedupe one part against the other.
+            idempotencyKey:
+              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
+          })
+        : true,
+      mcpCredits === 0 || rest > 0
+        ? this.trackCredits({ ...params, value: rest })
+        : true,
+    ]);
+    return {
+      tracked: mcpTracked && restTracked,
+      mcpCredits: mcpTracked ? mcpCredits : 0,
+    };
+  }
+
+  /**
+   * Reverses a trackHostedMcpCredits charge: `mcpCredits` back to
+   * MCP_CREDITS_FEATURE_ID and the rest to `featureId`, each part keyed as it
+   * was tracked. With no MCP credits it is exactly refundCredits. Resolves
+   * whether every part was refunded.
+   */
+  async refundHostedMcpCredits({
+    mcpCredits,
+    ...params
+  }: TrackCreditsParams & { mcpCredits: number }): Promise<boolean> {
+    const rest = params.value - mcpCredits;
+    const [mcpRefunded, restRefunded] = await Promise.all([
+      mcpCredits > 0
+        ? this.refundCredits({
+            ...params,
+            value: mcpCredits,
+            featureId: MCP_CREDITS_FEATURE_ID,
+            idempotencyKey:
+              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
+          })
+        : true,
+      mcpCredits === 0 || rest > 0
+        ? this.refundCredits({ ...params, value: rest })
+        : true,
+    ]);
+    return mcpRefunded && restRefunded;
   }
 
   /**
