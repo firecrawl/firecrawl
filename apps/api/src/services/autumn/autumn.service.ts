@@ -580,28 +580,37 @@ export class AutumnService {
    * less. 0 for a team without the feature or with none left, for a
    * partner-provisioned team (its usage is split with the partner on the
    * regular features), and when Autumn can't answer.
+   *
+   * Read from the feature's own balance on the customer, never from a check:
+   * MCP credits draw from the CREDITS credit system once their own balance
+   * runs short, so a check on them answers with the CREDITS pool, and the part
+   * that pool pays must be charged, gated and recorded as regular usage.
    */
   async mcpCreditsAvailable({
     teamId,
     orgId,
     value,
-    properties,
   }: Pick<
     TrackCreditsParams,
     "teamId" | "orgId" | "value" | "properties"
   >): Promise<number> {
-    if (!(value > 0) || this.isPreviewTeam(teamId)) return 0;
+    if (!(value > 0) || !autumnClient || this.isPreviewTeam(teamId)) return 0;
     if (await this.isGatewayProvisioned(teamId)) return 0;
-    const result = await this.checkCredits({
-      teamId,
-      orgId,
-      value,
-      properties,
-      featureId: MCP_CREDITS_FEATURE_ID,
-    });
-    if (!result) return 0;
-    if (result.allowed) return value;
-    return Math.max(0, Math.min(value, Math.floor(result.remaining)));
+    try {
+      const customer = await autumnClient.customers.get({ customerId: orgId });
+      const balance = customer.balances?.[MCP_CREDITS_FEATURE_ID];
+      if (!balance) return 0;
+      if (balance.unlimited) return value;
+      if (!Number.isFinite(balance.remaining)) return 0;
+      return Math.max(0, Math.min(value, Math.floor(balance.remaining)));
+    } catch (error) {
+      logger.warn("Failed to read the MCP credits balance", {
+        teamId,
+        orgId,
+        error,
+      });
+      return 0;
+    }
   }
 
   /**
