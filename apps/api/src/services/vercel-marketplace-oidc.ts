@@ -124,7 +124,9 @@ async function lookupResource(installationId: string, resourceId: string) {
 /**
  * Resolves a Vercel Marketplace OIDC resource token to the API key issued for
  * that resource. Verified resolutions are cached by token hash until the token
- * expires (at most 5 minutes); rejections are cached for a minute.
+ * expires (at most 5 minutes). Unknown resources are cached for a minute;
+ * signature and claim rejections are not cached, since they depend on the
+ * pod's current signing keys.
  *
  * Throws VercelJwksUnavailableError when no usable signing keys are available.
  */
@@ -144,10 +146,8 @@ export async function resolveVercelOidcToken(
     });
   } catch (error) {
     if (error instanceof VercelOidcTokenInvalidError) {
-      const rejected = { ok: false as const, reason: error.reason };
       logger.warn("Vercel OIDC token rejected", { reason: error.reason });
-      await writeCache(key, rejected, NEGATIVE_CACHE_TTL_SECONDS);
-      return rejected;
+      return { ok: false, reason: error.reason };
     }
     throw error;
   }
