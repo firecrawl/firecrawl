@@ -1,44 +1,26 @@
 /**
- * Unit tests for hosted MCP charges in AutumnService: how much the team's MCP
- * credits can pay (mcpCreditsAvailable), and how a charge is split between
- * them and the endpoint's own feature (trackHostedMcpCredits).
+ * Unit tests for hosted MCP charges in AutumnService: a hosted charge is
+ * tracked whole on MCP credits at the customer level, and Autumn decides which
+ * balances pay for it.
  */
 
 import { vi } from "vitest";
 
-const { mockCheck, mockTrack, mockAutumnClient, state, redis } = vi.hoisted(
-  () => {
-    const store = new Map<string, string>();
-    const redis = {
-      store,
-      get: vi.fn(async (key: string) => store.get(key) ?? null),
-      set: vi.fn(async (key: string, value: unknown, ...args: unknown[]) => {
-        if (args.includes("NX") && store.has(key)) return null;
-        store.set(key, String(value));
-        return "OK";
-      }),
-    };
-    const mockCheck = vi.fn<(args: any) => Promise<any>>();
-    const mockTrack = vi.fn<(args: any) => Promise<void>>();
-    const mockAutumnClient = {
-      customers: { getOrCreate: vi.fn(), get: vi.fn() },
-      entities: {
-        get: vi.fn().mockResolvedValue({ id: "team-1" }),
-        create: vi.fn(),
-      },
-      balances: { finalize: vi.fn() },
-      check: mockCheck,
-      track: mockTrack,
-    };
-    return {
-      mockCheck,
-      mockTrack,
-      mockAutumnClient,
-      state: { gatewayStubRow: null as unknown, firebill: false },
-      redis,
-    };
-  },
-);
+const { mockCheck, mockTrack, mockAutumnClient, state } = vi.hoisted(() => {
+  const mockCheck = vi.fn<(args: any) => Promise<any>>();
+  const mockTrack = vi.fn<(args: any) => Promise<any>>();
+  const mockAutumnClient = {
+    customers: { getOrCreate: vi.fn(), get: vi.fn() },
+    entities: {
+      get: vi.fn().mockResolvedValue({ id: "team-1" }),
+      create: vi.fn(),
+    },
+    balances: { finalize: vi.fn() },
+    check: mockCheck,
+    track: mockTrack,
+  };
+  return { mockCheck, mockTrack, mockAutumnClient, state: { firebill: false } };
+});
 
 vi.mock("../client", () => ({
   autumnClient: mockAutumnClient,
@@ -46,23 +28,13 @@ vi.mock("../client", () => ({
 
 vi.mock("../../queue-service", () => ({
   getFirebillTrackRetryQueue: () => ({ add: vi.fn() }),
-  getRedisConnection: () => redis,
 }));
 
 vi.mock("../../../db/connection", () => ({
-  get dbRr() {
-    return {
-      select: () => ({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve(
-                state.gatewayStubRow ? [state.gatewayStubRow] : [],
-              ),
-          }),
-        }),
-      }),
-    };
+  dbRr: {
+    select: () => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+    }),
   },
 }));
 
@@ -87,246 +59,68 @@ const charge = {
   teamId: "team-1",
   orgId: "org-1",
   value: 5,
-  properties: { source: "billTeam", endpoint: "scrape" },
-  featureId: "CREDITS",
-  idempotencyKey: "fc:track:scrape:job-1",
-  externalRequestId: "op-1",
+  properties: { source: "billTeam", endpoint: "search" },
+  featureId: "SEARCH_CREDITS",
+  idempotencyKey: "fc:track:search:job-1",
 };
 
-const CREDITS_POOL = 1000;
-
-/**
- * The customer's balances: MCP credits' own (null when the plan has none) and
- * the CREDITS pool. As in Autumn, MCP credits draw from the CREDITS credit
- * system once their own balance runs short, so a check on them answers with
- * the pool.
- */
-function mcpBalance(remaining: number | null, unlimited = false) {
-  mockAutumnClient.customers.get.mockResolvedValue({
-    id: "org-1",
-    balances: {
-      ...(remaining === null
-        ? {}
-        : {
-            [MCP_CREDITS_FEATURE_ID]: {
-              featureId: MCP_CREDITS_FEATURE_ID,
-              remaining,
-              unlimited,
-            },
-          }),
-      CREDITS: {
-        featureId: "CREDITS",
-        remaining: CREDITS_POOL,
-        unlimited: false,
-      },
-    },
+const deducted = (...deductions: [string, number][]) =>
+  mockTrack.mockResolvedValue({
+    deductions: deductions.map(([featureId, value]) => ({ featureId, value })),
   });
-  mockCheck.mockImplementation(async ({ featureId, requiredBalance }) => {
-    const own = featureId === MCP_CREDITS_FEATURE_ID ? (remaining ?? 0) : 0;
-    const balance =
-      own >= requiredBalance
-        ? { featureId, remaining: own }
-        : { featureId: "CREDITS", remaining: CREDITS_POOL };
-    return {
-      allowed: balance.remaining >= requiredBalance,
-      customerId: "org-1",
-      balance,
-    };
-  });
-}
-
-/** The Autumn track calls a run of fn makes. */
-async function tracksOf(fn: (service: AutumnService) => Promise<unknown>) {
-  mockTrack.mockClear();
-  await fn(new AutumnService());
-  return mockTrack.mock.calls.map(([args]) => args);
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.gatewayStubRow = null;
   state.firebill = false;
-  redis.store.clear();
-  mockTrack.mockResolvedValue(undefined);
-  mcpBalance(100);
+  mockTrack.mockResolvedValue({});
+  mockCheck.mockResolvedValue({ allowed: true, balance: { remaining: 100 } });
 });
 
-describe("mcpCreditsAvailable", () => {
-  it("reads the feature id from config", () => {
-    expect(MCP_CREDITS_FEATURE_ID).toBe("MCP_CREDITS_FROM_CONFIG");
-  });
+it("reads the feature id from config", () => {
+  expect(MCP_CREDITS_FEATURE_ID).toBe("MCP_CREDITS_FROM_CONFIG");
+});
 
-  it("pays the whole charge when the MCP credits cover it", async () => {
-    expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(5);
-    expect(mockAutumnClient.customers.get).toHaveBeenCalledExactlyOnceWith({
-      customerId: "org-1",
+describe("trackHostedMcpCredits", () => {
+  it("tracks the whole charge once on MCP credits, on the customer", async () => {
+    deducted([MCP_CREDITS_FEATURE_ID, 5]);
+
+    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
+      tracked: true,
+      mcpCredits: 5,
     });
+
+    expect(mockTrack).toHaveBeenCalledOnce();
+    const [track] = mockTrack.mock.calls[0];
+    expect(track).toMatchObject({
+      customerId: "org-1",
+      featureId: MCP_CREDITS_FEATURE_ID,
+      value: 5,
+      overageBehavior: "overflow",
+    });
+    expect(track.entityId).toBeUndefined();
+    expect(mockAutumnClient.customers.get).not.toHaveBeenCalled();
+    expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("pays a whole charge from unlimited MCP credits", async () => {
-    mcpBalance(0, true);
-    expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(5);
+  it("counts as MCP credits only what Autumn deducted from them", async () => {
+    deducted([MCP_CREDITS_FEATURE_ID, 3], ["CREDITS", 2]);
+
+    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
+      tracked: true,
+      mcpCredits: 3,
+    });
+    expect(mockTrack).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    ["fall short of the charge", 4, 5, 4],
-    ["are used up", 0, 40, 0],
-  ])(
-    "counts only the MCP credits' own balance when they %s, not the CREDITS pool",
-    async (_name, remaining, value, expected) => {
-      mcpBalance(remaining);
-      expect(
-        await new AutumnService().mcpCreditsAvailable({ ...charge, value }),
-      ).toBe(expected);
-      expect(mockCheck).not.toHaveBeenCalled();
-    },
-  );
-
-  it("pays what is left when the MCP credits fall short", async () => {
-    mcpBalance(3.5);
-    expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(3);
-  });
-
-  it.each([
-    ["used up", 0],
-    ["missing from the team's plan", null],
-  ])("pays nothing when the MCP credits are %s", async (_name, remaining) => {
-    mcpBalance(remaining);
-    expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(0);
-  });
-
-  it("pays nothing when Autumn reports no usable remaining balance", async () => {
-    mcpBalance(Number.NaN);
-    const service = new AutumnService();
-    expect(await service.mcpCreditsAvailable(charge)).toBe(0);
-    expect(await service.trackHostedMcpCredits(charge)).toEqual({
+  it("counts no MCP credits when Autumn reports no deductions", async () => {
+    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
       tracked: true,
       mcpCredits: 0,
     });
   });
 
-  it("pays nothing when Autumn can't answer", async () => {
-    mockAutumnClient.customers.get.mockRejectedValue(new Error("ECONNRESET"));
-    expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(0);
-  });
-
-  it("never asks Autumn for a partner-provisioned or preview team, or a zero charge", async () => {
-    const service = new AutumnService();
-    state.gatewayStubRow = { team_id: "team-1" };
-    expect(await service.mcpCreditsAvailable(charge)).toBe(0);
-    state.gatewayStubRow = null;
-    expect(
-      await service.mcpCreditsAvailable({ ...charge, teamId: "preview_1" }),
-    ).toBe(0);
-    expect(await service.mcpCreditsAvailable({ ...charge, value: 0 })).toBe(0);
-    expect(mockAutumnClient.customers.get).not.toHaveBeenCalled();
-  });
-});
-
-describe("trackHostedMcpCredits", () => {
-  it("tracks the whole charge on MCP credits that cover it", async () => {
-    const tracks = await tracksOf(service =>
-      service
-        .trackHostedMcpCredits(charge)
-        .then(result =>
-          expect(result).toEqual({ tracked: true, mcpCredits: 5 }),
-        ),
-    );
-
-    expect(tracks).toEqual([
-      expect.objectContaining({
-        featureId: MCP_CREDITS_FEATURE_ID,
-        value: 5,
-        properties: charge.properties,
-      }),
-    ]);
-  });
-
-  it("tracks the whole charge on the endpoint's feature once the MCP credits are used up", async () => {
-    mcpBalance(0);
-
-    const tracks = await tracksOf(service =>
-      service
-        .trackHostedMcpCredits({ ...charge, value: 40 })
-        .then(result =>
-          expect(result).toEqual({ tracked: true, mcpCredits: 0 }),
-        ),
-    );
-
-    expect(tracks).toEqual([
-      expect.objectContaining({ featureId: "CREDITS", value: 40 }),
-    ]);
-  });
-
-  it("splits a charge the MCP credits only partly cover", async () => {
-    mcpBalance(3);
-
-    const tracks = await tracksOf(service =>
-      service
-        .trackHostedMcpCredits(charge)
-        .then(result =>
-          expect(result).toEqual({ tracked: true, mcpCredits: 3 }),
-        ),
-    );
-
-    expect(tracks).toHaveLength(2);
-    expect(tracks).toContainEqual(
-      expect.objectContaining({ featureId: MCP_CREDITS_FEATURE_ID, value: 3 }),
-    );
-    expect(tracks).toContainEqual(
-      expect.objectContaining({
-        featureId: "CREDITS",
-        value: 2,
-        overageBehavior: "overflow",
-      }),
-    );
-  });
-
-  it("gives the MCP part its own firebill idempotency key", async () => {
-    mcpBalance(3);
-    const service = new AutumnService();
-    const trackCredits = vi.spyOn(service, "trackCredits");
-
-    await service.trackHostedMcpCredits(charge);
-
-    expect(trackCredits).toHaveBeenCalledWith(
-      expect.objectContaining({
-        featureId: MCP_CREDITS_FEATURE_ID,
-        idempotencyKey: "fc:track:scrape:job-1:mcp",
-      }),
-    );
-    expect(trackCredits).toHaveBeenCalledWith({ ...charge, value: 2 });
-  });
-
-  it.each([
-    ["used up", 0],
-    ["missing from the team's plan", null],
-  ])(
-    "tracks exactly what trackCredits would when the MCP credits are %s",
-    async (_name, remaining) => {
-      mcpBalance(remaining);
-
-      const hostedMcp = await tracksOf(service =>
-        service
-          .trackHostedMcpCredits(charge)
-          .then(result =>
-            expect(result).toEqual({ tracked: true, mcpCredits: 0 }),
-          ),
-      );
-      const regular = await tracksOf(service => service.trackCredits(charge));
-
-      expect(hostedMcp).toEqual(regular);
-      expect(hostedMcp).toEqual([
-        expect.objectContaining({ featureId: "CREDITS", value: 5 }),
-      ]);
-    },
-  );
-
-  it("reports an untracked MCP part as not paid by MCP credits", async () => {
-    mcpBalance(3);
-    mockTrack.mockImplementation(async ({ featureId }) => {
-      if (featureId === MCP_CREDITS_FEATURE_ID) throw new Error("track failed");
-    });
+  it("reports an untracked charge as untracked", async () => {
+    mockTrack.mockRejectedValue(new Error("track failed"));
 
     expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
       tracked: false,
@@ -335,182 +129,46 @@ describe("trackHostedMcpCredits", () => {
   });
 });
 
-describe("refundHostedMcpCredits", () => {
-  const refund = { ...charge, idempotencyKey: "fc:refund:scrape:job-1" };
-
-  it("refunds each part of a split charge to the balance it was tracked on", async () => {
+describe("the entity a charge is made against", () => {
+  it("refunds MCP credits on the customer and other features on the team", async () => {
     const service = new AutumnService();
-    const refundCredits = vi.spyOn(service, "refundCredits");
 
-    expect(
-      await service.refundHostedMcpCredits({ ...refund, mcpCredits: 3 }),
-    ).toBe(true);
-
-    expect(refundCredits).toHaveBeenCalledTimes(2);
-    expect(refundCredits).toHaveBeenCalledWith({
-      ...refund,
-      value: 3,
-      featureId: MCP_CREDITS_FEATURE_ID,
-      idempotencyKey: "fc:refund:scrape:job-1:mcp",
-    });
-    expect(refundCredits).toHaveBeenCalledWith({ ...refund, value: 2 });
-  });
-
-  it("refunds a charge MCP credits paid in full to them only", async () => {
-    const service = new AutumnService();
-    const refundCredits = vi.spyOn(service, "refundCredits");
-
-    await service.refundHostedMcpCredits({ ...refund, mcpCredits: 5 });
-
-    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ value: 5, featureId: MCP_CREDITS_FEATURE_ID }),
-    );
-  });
-
-  it("refunds exactly as refundCredits would when MCP credits paid nothing", async () => {
-    const service = new AutumnService();
-    const refundCredits = vi.spyOn(service, "refundCredits");
-
-    await service.refundHostedMcpCredits({ ...refund, mcpCredits: 0 });
-
-    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(refund);
-  });
-});
-
-describe("hosted MCP charge retries", () => {
-  it("splits a retried charge as the first attempt did, after it used the MCP credits up", async () => {
-    mcpBalance(5);
-    const first = await tracksOf(service =>
-      service.trackHostedMcpCredits(charge),
-    );
-    mcpBalance(0);
-    const retry = await tracksOf(service =>
-      service
-        .trackHostedMcpCredits(charge)
-        .then(result =>
-          expect(result).toEqual({ tracked: true, mcpCredits: 5 }),
-        ),
-    );
-
-    expect(retry).toEqual(first);
-    expect(retry).toEqual([
-      expect.objectContaining({ featureId: MCP_CREDITS_FEATURE_ID, value: 5 }),
-    ]);
-  });
-
-  it("records the allocation once, for 7 days, under the charge's key", async () => {
-    mcpBalance(3);
-
-    await new AutumnService().trackHostedMcpCredits(charge);
-
-    expect(redis.set).toHaveBeenCalledExactlyOnceWith(
-      "fc:mcp-credits:allocation:fc:track:scrape:job-1",
-      3,
-      "EX",
-      7 * 24 * 60 * 60,
-      "NX",
-    );
-  });
-
-  it("works the split out afresh for a charge without a key", async () => {
-    mcpBalance(3);
-
-    await new AutumnService().trackHostedMcpCredits({
+    await service.refundCredits({
       ...charge,
-      idempotencyKey: undefined,
+      featureId: MCP_CREDITS_FEATURE_ID,
     });
+    await service.refundCredits(charge);
 
-    expect(redis.get).not.toHaveBeenCalled();
-    expect(redis.set).not.toHaveBeenCalled();
-  });
-
-  it("works the split out afresh when Redis hangs", async () => {
-    vi.useFakeTimers();
-    try {
-      mcpBalance(3);
-      redis.get.mockReturnValueOnce(new Promise<string | null>(() => {}));
-
-      const result = new AutumnService().trackHostedMcpCredits(charge);
-      await vi.advanceTimersByTimeAsync(1000);
-
-      expect(await result).toEqual({ tracked: true, mcpCredits: 3 });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("works the split out afresh when Redis can't answer", async () => {
-    mcpBalance(3);
-    redis.get.mockRejectedValueOnce(new Error("redis down"));
-
-    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-      tracked: true,
-      mcpCredits: 3,
+    const [[mcp], [search]] = mockTrack.mock.calls;
+    expect(mcp).toMatchObject({ featureId: MCP_CREDITS_FEATURE_ID, value: -5 });
+    expect(mcp.entityId).toBeUndefined();
+    expect(search).toMatchObject({
+      featureId: "SEARCH_CREDITS",
+      entityId: "team-1",
+      value: -5,
     });
   });
-});
 
-describe("the entity hosted MCP charges are made against", () => {
-  const lock = {
-    teamId: "team-1",
-    orgId: "org-1",
-    value: 3,
-    lockId: "alexandria_req-1_mcp",
-    expiresAt: Date.now() + 60_000,
-    featureId: MCP_CREDITS_FEATURE_ID,
-  };
+  it("checks and holds MCP credits on the customer and other features on the team", async () => {
+    const service = new AutumnService();
 
-  describe("directly in Autumn", () => {
-    it("tracks the MCP part on the customer and the rest on the team", async () => {
-      mcpBalance(3);
-
-      const tracks = await tracksOf(service =>
-        service.trackHostedMcpCredits(charge),
-      );
-
-      expect(tracks).toHaveLength(2);
-      const mcp = tracks.find(t => t.featureId === MCP_CREDITS_FEATURE_ID);
-      const rest = tracks.find(t => t.featureId === "CREDITS");
-      expect(mcp).toMatchObject({ customerId: "org-1", value: 3 });
-      expect(mcp.entityId).toBeUndefined();
-      expect(rest).toMatchObject({
-        customerId: "org-1",
-        entityId: "team-1",
-        value: 2,
-      });
+    await service.checkCredits({
+      ...charge,
+      featureId: MCP_CREDITS_FEATURE_ID,
     });
+    await service.lockCredits({ ...charge, featureId: MCP_CREDITS_FEATURE_ID });
+    await service.checkCredits(charge);
 
-    it("refunds the MCP part on the customer and the rest on the team", async () => {
-      const tracks = await tracksOf(service =>
-        service.refundHostedMcpCredits({ ...charge, mcpCredits: 3 }),
-      );
-
-      expect(tracks).toHaveLength(2);
-      const mcp = tracks.find(t => t.featureId === MCP_CREDITS_FEATURE_ID);
-      const rest = tracks.find(t => t.featureId === "CREDITS");
-      expect(mcp).toMatchObject({ value: -3 });
-      expect(mcp.entityId).toBeUndefined();
-      expect(rest).toMatchObject({ entityId: "team-1", value: -2 });
+    const [[check], [hold], [search]] = mockCheck.mock.calls;
+    expect(check.entityId).toBeUndefined();
+    expect(hold).toMatchObject({
+      featureId: MCP_CREDITS_FEATURE_ID,
+      lock: expect.objectContaining({ enabled: true }),
     });
-
-    it("holds MCP credits on the customer and other features on the team", async () => {
-      const service = new AutumnService();
-
-      await service.lockCredits(lock);
-      await service.lockCredits({
-        ...lock,
-        lockId: "alexandria_req-1",
-        featureId: "CREDITS",
-      });
-
-      const [[mcpHold], [rest]] = mockCheck.mock.calls;
-      expect(mcpHold).toMatchObject({
-        customerId: "org-1",
-        featureId: MCP_CREDITS_FEATURE_ID,
-        lock: expect.objectContaining({ lockId: "alexandria_req-1_mcp" }),
-      });
-      expect(mcpHold.entityId).toBeUndefined();
-      expect(rest).toMatchObject({ entityId: "team-1", featureId: "CREDITS" });
+    expect(hold.entityId).toBeUndefined();
+    expect(search).toMatchObject({
+      featureId: "SEARCH_CREDITS",
+      entityId: "team-1",
     });
   });
 
@@ -531,62 +189,62 @@ describe("the entity hosted MCP charges are made against", () => {
       vi.unstubAllGlobals();
     });
 
-    it("tracks the MCP part with an empty entity and the rest on the team", async () => {
-      mcpBalance(3);
+    it("tracks a hosted charge whole with an empty entity", async () => {
       mockFetch.mockImplementation(
         async () => new Response(JSON.stringify({ success: true })),
       );
 
       expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
         tracked: true,
-        mcpCredits: 3,
+        mcpCredits: 0,
       });
 
       expect(mockTrack).not.toHaveBeenCalled();
-      const tracks = bodies("/v1/track");
-      expect(tracks).toHaveLength(2);
-      expect(tracks).toContainEqual(
+      expect(bodies("/v1/track")).toEqual([
         expect.objectContaining({
           customer_id: "org-1",
           entity_id: "",
           feature_id: MCP_CREDITS_FEATURE_ID,
-          value: 3,
+          value: 5,
         }),
-      );
-      expect(tracks).toContainEqual(
-        expect.objectContaining({
-          customer_id: "org-1",
-          entity_id: "team-1",
-          feature_id: "CREDITS",
-          value: 2,
-        }),
-      );
+      ]);
     });
 
-    it("holds MCP credits with an empty entity", async () => {
+    it("checks and holds MCP credits with an empty entity", async () => {
       mockFetch.mockImplementation(
         async () =>
           new Response(
             JSON.stringify({
               success: true,
               allowed: true,
-              lock_id: lock.lockId,
+              remaining: 100,
+              lock_id: "lock-1",
             }),
           ),
       );
+      const service = new AutumnService();
 
-      expect(await new AutumnService().lockCredits(lock)).toEqual({
-        status: "locked",
-        lockId: lock.lockId,
+      await service.checkCredits({
+        ...charge,
+        featureId: MCP_CREDITS_FEATURE_ID,
+      });
+      await service.lockCredits({
+        ...charge,
+        featureId: MCP_CREDITS_FEATURE_ID,
+        lockId: "lock-1",
       });
 
       expect(mockCheck).not.toHaveBeenCalled();
-      expect(bodies("/v1/lock")).toEqual([
+      expect(bodies("/v1/check")).toEqual([
         expect.objectContaining({
-          customer_id: "org-1",
           entity_id: "",
           feature_id: MCP_CREDITS_FEATURE_ID,
-          value: 3,
+        }),
+      ]);
+      expect(bodies("/v1/lock")).toEqual([
+        expect.objectContaining({
+          entity_id: "",
+          feature_id: MCP_CREDITS_FEATURE_ID,
         }),
       ]);
     });

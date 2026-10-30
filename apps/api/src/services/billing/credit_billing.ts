@@ -3,6 +3,7 @@ import { queueBillingOperation } from "./batch_billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
@@ -39,7 +40,9 @@ export async function billTeam(
         ...toAutumnBillingProperties(billing),
         apiKeyId: api_key_id,
       };
-      const featureId = featureIdForBillingEndpoint(billing.endpoint);
+      const featureId = billing.hostedMcp
+        ? MCP_CREDITS_FEATURE_ID
+        : featureIdForBillingEndpoint(billing.endpoint);
 
       let trackedInRequest = false;
       let mcpCredits = 0;
@@ -84,14 +87,8 @@ export async function billTeam(
       );
 
       // A track only happens with an org in hand; named again so the type says so.
-      // A charge the MCP credits paid part of is refundable for that part even
-      // when the rest was not tracked.
       let refunded = false;
-      if (
-        !result.success &&
-        (trackedInRequest || mcpCredits > 0) &&
-        org_id !== null
-      ) {
+      if (!result.success && trackedInRequest && org_id !== null) {
         if (await autumnService.isRoutedThroughFirebill(team_id, org_id)) {
           // No compensating refund on the firebill route: the tracked charge
           // is durable and correct, and a refund here poisons a retried
@@ -103,12 +100,10 @@ export async function billTeam(
             { team_id, credits, billing },
           );
         } else {
-          const refund = {
+          await autumnService.refundCredits({
             teamId: team_id,
             orgId: org_id,
-            // Only what was charged: the rest when it was tracked, and the
-            // MCP credits part (refunded on its own below).
-            value: (trackedInRequest ? credits - mcpCredits : 0) + mcpCredits,
+            value: credits,
             properties: autumnProperties,
             featureId,
             // Distinct from the track key: the refund is its own charge event.
@@ -116,11 +111,7 @@ export async function billTeam(
               ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
               : undefined,
             externalRequestId: billing.externalRequestId ?? undefined,
-          };
-          // A split charge refunds each part to the balance it was tracked on.
-          await (mcpCredits > 0
-            ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
-            : autumnService.refundCredits(refund));
+          });
           refunded = true;
         }
       }

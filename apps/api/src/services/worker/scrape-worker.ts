@@ -40,6 +40,7 @@ import {
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import {
   _addScrapeJobToBullMQ,
@@ -170,7 +171,9 @@ async function billScrapeJob(
   // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
   // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
   // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = featureIdForBillingEndpoint(billing.endpoint);
+  const featureId = billing.hostedMcp
+    ? MCP_CREDITS_FEATURE_ID
+    : featureIdForBillingEndpoint(billing.endpoint);
   let trackedInRequest = false;
   let mcpCredits = 0;
 
@@ -308,10 +311,7 @@ async function billScrapeJob(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
-        if (
-          (trackedInRequest || mcpCredits > 0) &&
-          creditsToBeBilled !== null
-        ) {
+        if (trackedInRequest && creditsToBeBilled !== null) {
           if (routedToFirebill) {
             // No compensating refund on the firebill route: the tracked charge
             // is durable and correct (the scrape ran), and refunding it here
@@ -333,25 +333,17 @@ async function billScrapeJob(
             );
             await tallyAgentMcpCredits(billing, job.id, mcpCredits);
           } else if (orgId) {
-            const refund = {
+            await autumnService.refundCredits({
               teamId: job.data.team_id,
               orgId,
-              // Only what was charged: the rest when it was tracked, and the
-              // MCP credits part (refunded on its own below).
-              value:
-                (trackedInRequest ? creditsToBeBilled - mcpCredits : 0) +
-                mcpCredits,
+              value: creditsToBeBilled,
               properties: autumnProperties,
               featureId,
               // Distinct from the track key: a refund is its own charge event
               // (same key would 409 as a duplicate of the track and be dropped).
               idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
               externalRequestId: billing.externalRequestId ?? undefined,
-            };
-            // A split charge refunds each part to the balance it was tracked on.
-            await (mcpCredits > 0
-              ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
-              : autumnService.refundCredits(refund));
+            });
           }
         }
         // The billing operation never reached the queue, so no debit will

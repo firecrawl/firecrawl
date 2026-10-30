@@ -499,7 +499,7 @@ describe("MCP credits on the ledger", () => {
     });
   });
 
-  it("refunds each part to the balance it was tracked on when the ledger fails", async () => {
+  it("refunds both ledger rows of a hosted charge to MCP credits when the ledger fails", async () => {
     await queueBillingOperation(
       "team-1",
       "org-1",
@@ -515,7 +515,7 @@ describe("MCP credits on the ledger", () => {
 
     expect(refundCredits).toHaveBeenCalledTimes(2);
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 2, featureId: "CREDITS" }),
+      expect.objectContaining({ value: 2, featureId: "MCP_CREDITS" }),
     );
     expect(refundCredits).toHaveBeenCalledWith(
       expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),

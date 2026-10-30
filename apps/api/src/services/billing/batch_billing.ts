@@ -191,11 +191,10 @@ async function refundRequestTrackedCredits(
         ...toAutumnBillingProperties(group.billing),
         apiKeyId: group.api_key_id,
       },
-      // The part MCP credits paid goes back to them.
-      featureId:
-        group.ledger_tag === MCP_CREDITS_LEDGER_TAG
-          ? MCP_CREDITS_FEATURE_ID
-          : featureIdForBillingEndpoint(group.billing.endpoint),
+      // A hosted MCP charge was tracked whole on MCP credits.
+      featureId: group.billing.hostedMcp
+        ? MCP_CREDITS_FEATURE_ID
+        : featureIdForBillingEndpoint(group.billing.endpoint),
     });
   } catch (error) {
     logger.warn("Failed to refund Autumn request-tracked credits", {
@@ -318,7 +317,7 @@ export async function processBillingBatch() {
         );
       }
       for (const { credits, ledger_tag } of parts) {
-        const key = `${op.team_id}:${orgId}:${billing.endpoint}:${ledger_tag ?? ""}:${op.is_extract}:${op.api_key_id}`;
+        const key = `${op.team_id}:${orgId}:${billing.endpoint}:${ledger_tag ?? ""}:${billing.hostedMcp === true}:${op.is_extract}:${op.api_key_id}`;
 
         if (!groupedOperations.has(key)) {
           groupedOperations.set(key, {

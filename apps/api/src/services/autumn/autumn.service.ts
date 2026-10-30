@@ -19,7 +19,6 @@ import {
   autumnEntityCreatedInlineTotal,
   billingRouteTotal,
 } from "./metrics";
-import { getRedisConnection } from "../queue-service";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -31,6 +30,7 @@ import type {
   LockCreditsParams,
   LockCreditsResult,
   TrackCreditsParams,
+  TrackDeduction,
   TrackParams,
 } from "./types";
 import { ExistingCreditsLockError } from "./types";
@@ -341,7 +341,8 @@ export class AutumnService {
    * `routed` is decided by the caller (see {@link resolveBillingRoute}) rather
    * than asked again here: the answer costs a `partner_provisioned_accounts`
    * read on a cold team, and the caller already needed it to know whether to
-   * provision.
+   * provision. Resolves false when the event was not tracked, and otherwise
+   * the deductions Autumn reports for it (none from firebill).
    */
   private async track(
     {
@@ -355,14 +356,14 @@ export class AutumnService {
       durableRetry,
     }: TrackParams,
     routed: boolean,
-  ): Promise<boolean> {
+  ): Promise<TrackDeduction[] | undefined | false> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
     // sends no idempotency key, so the pair could not be deduped.
     if (routed) {
       billingRouteTotal.labels("firebill").inc();
-      return await firebillTrack({
+      return (await firebillTrack({
         customerId,
         entityId,
         featureId,
@@ -371,7 +372,9 @@ export class AutumnService {
         idempotencyKey,
         externalRequestId,
         durableRetry,
-      });
+      }))
+        ? undefined
+        : false;
     }
 
     billingRouteTotal.labels("direct").inc();
@@ -379,7 +382,7 @@ export class AutumnService {
     if (!autumnClient) return false;
 
     try {
-      await autumnClient.track({
+      const response = await autumnClient.track({
         customerId,
         entityId,
         featureId,
@@ -393,7 +396,7 @@ export class AutumnService {
         featureId,
         value,
       });
-      return true;
+      return response?.deductions;
     } catch (error) {
       logger.error("Autumn track failed — billing API may be unavailable", {
         customerId,
@@ -550,7 +553,7 @@ export class AutumnService {
       if (routed) {
         const result = await firebillCheck({
           customerId,
-          entityId: teamId,
+          entityId: billingEntityId(featureId, teamId) ?? "",
           featureId,
           value,
           properties,
@@ -565,7 +568,7 @@ export class AutumnService {
 
       const { allowed, balance } = await autumnClient.check({
         customerId,
-        entityId: teamId,
+        entityId: billingEntityId(featureId, teamId),
         featureId,
         requiredBalance: value,
         properties,
@@ -600,164 +603,27 @@ export class AutumnService {
   }
 
   /**
-   * How much of a hosted MCP charge of `value` the team's MCP credits
-   * (MCP_CREDITS_FEATURE_ID) can pay: all of it, or what is left when that is
-   * less. 0 for a team without the feature or with none left, for a
-   * partner-provisioned team (its usage is split with the partner on the
-   * regular features), and when Autumn can't answer.
-   *
-   * Read from the feature's own balance on the customer, never from a check:
-   * MCP credits draw from the CREDITS credit system once their own balance
-   * runs short, so a check on them answers with the CREDITS pool, and the part
-   * that pool pays must be charged, gated and recorded as regular usage.
-   */
-  async mcpCreditsAvailable({
-    teamId,
-    orgId,
-    value,
-  }: Pick<
-    TrackCreditsParams,
-    "teamId" | "orgId" | "value" | "properties"
-  >): Promise<number> {
-    if (!(value > 0) || !autumnClient || this.isPreviewTeam(teamId)) return 0;
-    if (await this.isGatewayProvisioned(teamId)) return 0;
-    try {
-      const customer = await autumnClient.customers.get({ customerId: orgId });
-      const balance = customer.balances?.[MCP_CREDITS_FEATURE_ID];
-      if (!balance) return 0;
-      if (balance.unlimited) return value;
-      if (!Number.isFinite(balance.remaining)) return 0;
-      return Math.max(0, Math.min(value, Math.floor(balance.remaining)));
-    } catch (error) {
-      logger.warn("Failed to read the MCP credits balance", {
-        teamId,
-        orgId,
-        error,
-      });
-      return 0;
-    }
-  }
-
-  /**
-   * The MCP credits part of a keyed hosted MCP charge. The first attempt
-   * records it, so a retry under the same key (a stalled job re-running its
-   * charge) splits the charge the same way and each part dedupes against its
-   * first track, even after that first track used the MCP credits up. Without
-   * a key, or when Redis doesn't answer within a second, it is worked out
-   * afresh. The shared connection queues commands while Redis is down rather
-   * than failing them, hence the bound.
-   */
-  private async hostedMcpAllocation(params: TrackCreditsParams) {
-    if (!params.idempotencyKey) return this.mcpCreditsAvailable(params);
-    const key = `fc:mcp-credits:allocation:${params.idempotencyKey}`;
-    const redis = getRedisConnection();
-    const bounded = async <T>(command: Promise<T>): Promise<T> => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        return await Promise.race([
-          command,
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error("Redis did not answer in time")),
-              1000,
-            );
-          }),
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-    try {
-      const recorded = await bounded(redis.get(key));
-      if (recorded !== null) return Number(recorded);
-    } catch (error) {
-      logger.warn("Failed to read a hosted MCP charge's allocation", {
-        key,
-        error,
-      });
-      return this.mcpCreditsAvailable(params);
-    }
-    const mcpCredits = await this.mcpCreditsAvailable(params);
-    try {
-      if (
-        (await bounded(
-          redis.set(key, mcpCredits, "EX", 7 * 24 * 60 * 60, "NX"),
-        )) === null
-      ) {
-        const recorded = await bounded(redis.get(key));
-        if (recorded !== null) return Number(recorded);
-      }
-    } catch (error) {
-      logger.warn("Failed to record a hosted MCP charge's allocation", {
-        key,
-        error,
-      });
-    }
-    return mcpCredits;
-  }
-
-  /**
-   * Tracks a hosted MCP charge: the part the team's MCP credits can pay (see
-   * mcpCreditsAvailable) on MCP_CREDITS_FEATURE_ID, and the rest on
-   * `featureId`, the endpoint's own feature. When the MCP credits pay nothing,
-   * the whole charge is tracked exactly as trackCredits would track it.
-   * Resolves whether every part was tracked, and the credits tracked on
-   * MCP_CREDITS_FEATURE_ID: those were charged even when `tracked` is false,
-   * so a caller reversing the charge reverses them on their own.
+   * Tracks a hosted MCP charge, all of it on MCP_CREDITS_FEATURE_ID: Autumn
+   * spends the customer's MCP credits first and takes the rest from the
+   * balances they fall back to, in one step. Resolves whether it was tracked
+   * and how much of it the MCP credits paid, from the deductions Autumn
+   * reports; 0 when it reports none, as on the firebill route.
    */
   async trackHostedMcpCredits(
     params: TrackCreditsParams,
   ): Promise<{ tracked: boolean; mcpCredits: number }> {
-    const mcpCredits = await this.hostedMcpAllocation(params);
-    const rest = params.value - mcpCredits;
-    const [mcpTracked, restTracked] = await Promise.all([
-      mcpCredits > 0
-        ? this.trackCredits({
-            ...params,
-            value: mcpCredits,
-            featureId: MCP_CREDITS_FEATURE_ID,
-            // Its own charge event: the rest keeps the caller's key, and the
-            // same key would dedupe one part against the other.
-            idempotencyKey:
-              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
-          })
-        : true,
-      mcpCredits === 0 || rest > 0
-        ? this.trackCredits({ ...params, value: rest })
-        : true,
-    ]);
+    const deductions = await this.chargeCredits({
+      ...params,
+      featureId: MCP_CREDITS_FEATURE_ID,
+    });
+    if (deductions === false) return { tracked: false, mcpCredits: 0 };
+    const mcpCredits = (deductions ?? [])
+      .filter(deduction => deduction.featureId === MCP_CREDITS_FEATURE_ID)
+      .reduce((sum, deduction) => sum + deduction.value, 0);
     return {
-      tracked: mcpTracked && restTracked,
-      mcpCredits: mcpTracked ? mcpCredits : 0,
+      tracked: true,
+      mcpCredits: Math.max(0, Math.min(params.value, mcpCredits)),
     };
-  }
-
-  /**
-   * Reverses a trackHostedMcpCredits charge: `mcpCredits` back to
-   * MCP_CREDITS_FEATURE_ID and the rest to `featureId`, each part keyed as it
-   * was tracked. With no MCP credits it is exactly refundCredits. Resolves
-   * whether every part was refunded.
-   */
-  async refundHostedMcpCredits({
-    mcpCredits,
-    ...params
-  }: TrackCreditsParams & { mcpCredits: number }): Promise<boolean> {
-    const rest = params.value - mcpCredits;
-    const [mcpRefunded, restRefunded] = await Promise.all([
-      mcpCredits > 0
-        ? this.refundCredits({
-            ...params,
-            value: mcpCredits,
-            featureId: MCP_CREDITS_FEATURE_ID,
-            idempotencyKey:
-              params.idempotencyKey && `${params.idempotencyKey}:mcp`,
-          })
-        : true,
-      mcpCredits === 0 || rest > 0
-        ? this.refundCredits({ ...params, value: rest })
-        : true,
-    ]);
-    return mcpRefunded && restRefunded;
   }
 
   /**
@@ -1023,7 +889,12 @@ export class AutumnService {
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
    */
-  async trackCredits({
+  async trackCredits(params: TrackCreditsParams): Promise<boolean> {
+    return (await this.chargeCredits(params)) !== false;
+  }
+
+  /** trackCredits, resolving what track() does. */
+  private async chargeCredits({
     teamId,
     value,
     properties,
@@ -1032,7 +903,7 @@ export class AutumnService {
     externalRequestId,
     durableRetry,
     orgId,
-  }: TrackCreditsParams): Promise<boolean> {
+  }: TrackCreditsParams): Promise<TrackDeduction[] | undefined | false> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
@@ -1137,7 +1008,7 @@ export class AutumnService {
         teamId,
         orgId,
       );
-      return await this.track(
+      const refunded = await this.track(
         {
           customerId,
           entityId: billingEntityId(featureId, teamId),
@@ -1150,6 +1021,7 @@ export class AutumnService {
         },
         routed,
       );
+      return refunded !== false;
     } catch (error) {
       logger.error(
         "Autumn refundCredits failed — billing API may be unavailable",

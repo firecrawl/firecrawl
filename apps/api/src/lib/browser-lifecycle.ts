@@ -36,6 +36,7 @@ import {
 import {
   autumnService,
   DEFAULT_TEAM_LIMITS,
+  MCP_CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
 import { orgIdForTeam } from "./team-org";
@@ -184,17 +185,9 @@ async function createBrowserSessionInternal(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
+      ...(req.auth.hostedMcp ? { featureId: MCP_CREDITS_FEATURE_ID } : {}),
     });
-    if (
-      credit !== null &&
-      !credit.allowed &&
-      !(await mcpCreditsCover(
-        req,
-        credit.remaining,
-        estimatedCredits,
-        "browserCreate:mcp",
-      ))
-    )
+    if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
         402,
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
@@ -295,31 +288,6 @@ async function createBrowserSessionInternal(
     );
     throw error;
   }
-}
-
-/**
- * Whether a hosted MCP call's MCP credits pay for what its balance refused.
- * What is left of the balance counts only when the balance is why the check
- * refused; a spend limit refuses with plenty left.
- */
-async function mcpCreditsCover(
-  req: RequestWithAuth<any, any, any>,
-  remaining: number,
-  value: number,
-  source: string,
-): Promise<boolean> {
-  if (!req.auth.hostedMcp || !req.acuc?.org_id) return false;
-  const mcp = await autumnService.mcpCreditsAvailable({
-    teamId: req.auth.team_id,
-    orgId: req.acuc.org_id,
-    value,
-    properties: {
-      source,
-      path: req.path,
-      apiKeyId: req.acuc.api_key_id ?? null,
-    },
-  });
-  return (remaining < value ? Math.max(remaining, 0) : 0) + mcp >= value;
 }
 
 export async function settleBrowserSession(
@@ -472,17 +440,9 @@ export async function reserveBrowserPromptCredits(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
+      ...(req.auth.hostedMcp ? { featureId: MCP_CREDITS_FEATURE_ID } : {}),
     });
-    if (
-      credit !== null &&
-      !credit.allowed &&
-      !(await mcpCreditsCover(
-        req,
-        credit.remaining,
-        credits,
-        "browserPrompt:mcp",
-      ))
-    )
+    if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",

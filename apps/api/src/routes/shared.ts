@@ -28,6 +28,7 @@ import { CREDIT_CHECK_EXEMPT_TEAM_ID } from "../controllers/v2/agent-credit-gate
 import {
   autumnService,
   CREDITS_FEATURE_ID,
+  MCP_CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
 import {
@@ -48,7 +49,7 @@ import { resolveIntegration } from "../utils/integration";
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId: string = CREDITS_FEATURE_ID,
-  // Set on routes whose billing spends a hosted MCP call's MCP credits first.
+  // Set on routes that bill a hosted MCP call to MCP credits.
   { mcpCredits = false }: { mcpCredits?: boolean } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -159,6 +160,9 @@ export function checkCreditsMiddleware(
       }
 
       const requestedCredits = minimum ?? 1;
+      // Gated on the balance its charge will be tracked on.
+      const gateFeatureId =
+        mcpCredits && req.auth.hostedMcp ? MCP_CREDITS_FEATURE_ID : featureId;
 
       // No org means no billable identity to gate: keyless and preview teams
       // carry none, and neither does the DB-authentication bypass. `checkCredits`
@@ -181,7 +185,7 @@ export function checkCreditsMiddleware(
           path: req.path,
           apiKeyId: req.acuc?.api_key_id ?? null,
         },
-        featureId,
+        featureId: gateFeatureId,
       });
 
       // Autumn is the source of truth for credits. If it's unavailable
@@ -189,27 +193,6 @@ export function checkCreditsMiddleware(
       // scrape-browser.ts and avoids turning an Autumn outage into a
       // customer outage.
       if (autumnResult === null) {
-        req.account = { remainingCredits: Infinity };
-        return next();
-      }
-
-      // A hosted MCP call the team's balance can't cover still runs when its
-      // MCP credits can, which billing then spends first (see billTeam).
-      if (
-        !autumnResult.allowed &&
-        mcpCredits &&
-        req.auth.hostedMcp &&
-        (await autumnService.mcpCreditsAvailable({
-          teamId: req.auth.team_id,
-          orgId,
-          value: requestedCredits,
-          properties: {
-            source: "checkCreditsMiddleware:mcp",
-            path: req.path,
-            apiKeyId: req.acuc?.api_key_id ?? null,
-          },
-        })) >= requestedCredits
-      ) {
         req.account = { remainingCredits: Infinity };
         return next();
       }
@@ -243,7 +226,7 @@ export function checkCreditsMiddleware(
               path: req.path,
               apiKeyId: req.acuc?.api_key_id ?? null,
             },
-            featureId,
+            featureId: gateFeatureId,
           });
 
           if (clampedResult === null || clampedResult.allowed) {

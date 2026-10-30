@@ -299,7 +299,7 @@ export async function agentController(
   });
 
   // The tally a hosted MCP run's calls add their MCP credits to, so a failed
-  // run can give that part back to MCP credits (see tallyAgentMcpCredits).
+  // run's ledger refund reverses that part as charged (see tallyAgentMcpCredits).
   if (req.auth.hostedMcp) {
     await initializeRequestCredits(
       agentMcpCreditsRequestId(agentId),

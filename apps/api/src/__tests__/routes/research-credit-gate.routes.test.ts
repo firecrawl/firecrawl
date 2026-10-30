@@ -34,13 +34,13 @@ vi.mock("../../services/billing/credit_billing", () => ({
 }));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn(), mcpCreditsAvailable: vi.fn() },
+  autumnService: { checkCredits: vi.fn() },
   CREDITS_FEATURE_ID: "CREDITS",
+  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
   SEARCH_CREDITS_FEATURE_ID: "SEARCH_CREDITS",
 }));
 
 const checkCredits = vi.mocked(autumnService.checkCredits);
-const mcpCreditsAvailable = vi.mocked(autumnService.mcpCreditsAvailable);
 
 function appWith(orgId: string | undefined, hostedMcp = false) {
   const app = express();
@@ -116,16 +116,14 @@ describe.each([
     expect(checkCredits).not.toHaveBeenCalled();
   });
 
-  it("serves a hosted MCP search the team's MCP credits can cover", async () => {
-    checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
-    mcpCreditsAvailable.mockResolvedValue(2);
+  it("gates a hosted MCP search on MCP credits", async () => {
+    checkCredits.mockResolvedValue({ allowed: true, remaining: 500 });
 
     const res = await request(appWith("org-test", true)).get(path);
 
     expect(res.statusCode).toBe(200);
-    expect(upstreamCalls).toHaveLength(1);
-    expect(mcpCreditsAvailable).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: "team-test", value: 2 }),
+    expect(checkCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ value: 2, featureId: "MCP_CREDITS" }),
     );
   });
 });

@@ -49,8 +49,8 @@ export type BillingMetadata = {
   /**
    * The agent run this charge belongs to, when the agent made the call. The
    * MCP credits part of a hosted MCP run's charge is tallied under it (see
-   * tallyAgentMcpCredits), so a failed run can give that part back to MCP
-   * credits rather than to regular credits.
+   * tallyAgentMcpCredits), so a failed run's ledger refund reverses that part
+   * on its own row.
    */
   agentRequestId?: string;
   /**
