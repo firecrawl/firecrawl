@@ -7,7 +7,6 @@ const {
   trackCredits,
   refundCredits,
   isRoutedThroughFirebill,
-  trackHostedMcpCredits,
 } = vi.hoisted(() => ({
   withAuth: vi.fn((fn: any) => fn),
   queueBillingOperation: vi.fn<(args: any[]) => Promise<any>>(),
@@ -15,15 +14,6 @@ const {
   refundCredits: vi.fn<(args: any) => Promise<void>>(),
   isRoutedThroughFirebill:
     vi.fn<(teamId: string, orgId: string) => Promise<boolean>>(),
-  trackHostedMcpCredits:
-    vi.fn<(args: any) => Promise<{ tracked: boolean; mcpCredits: number }>>(),
-}));
-const { recordRequestCredits } = vi.hoisted(() => ({
-  recordRequestCredits: vi.fn<(args: any) => Promise<boolean>>(),
-}));
-
-vi.mock("../../../lib/request-credits-store", () => ({
-  recordRequestCredits,
 }));
 
 vi.mock("../../../lib/withAuth", () => ({
@@ -39,9 +29,8 @@ vi.mock("../../autumn/autumn.service", () => ({
     trackCredits,
     refundCredits,
     isRoutedThroughFirebill,
-    trackHostedMcpCredits,
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
   featureIdForBillingEndpoint: (endpoint?: string) =>
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
@@ -69,8 +58,6 @@ beforeEach(() => {
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
   isRoutedThroughFirebill.mockResolvedValue(false);
-  trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 0 });
-  recordRequestCredits.mockResolvedValue(true);
 });
 
 describe("billTeam", () => {
@@ -246,7 +233,7 @@ describe("billTeam", () => {
   });
 });
 
-describe("billTeam MCP credits", () => {
+describe("billTeam for a hosted MCP call", () => {
   const hostedMcpScrape = {
     endpoint: "scrape" as const,
     jobId: "job-1",
@@ -254,43 +241,16 @@ describe("billTeam MCP credits", () => {
     hostedMcp: true,
   };
 
-  it("charges a hosted MCP call whole on MCP credits", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
-
+  it("charges the whole call on MCP credits and queues an ordinary ledger operation", async () => {
     await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
 
-    expect(trackHostedMcpCredits).toHaveBeenCalledExactlyOnceWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "scrape",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-      featureId: "MCP_CREDITS",
-      idempotencyKey: "fc:track:scrape:job-1",
-      externalRequestId: undefined,
-    });
-    expect(trackCredits).not.toHaveBeenCalled();
-    // The ledger records the part Autumn reports MCP credits paid apart.
-    expect(queueBillingOperation).toHaveBeenCalledWith([
-      "team-1",
-      "org-1",
-      3,
-      123,
-      { ...hostedMcpScrape, mcpCredits: 2 },
-      false,
-      true,
-    ]);
-  });
-
-  it("queues an unchanged ledger operation when MCP credits paid nothing", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 0 });
-
-    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
-
+    expect(trackCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        value: 3,
+        featureId: "MCP_CREDITS",
+        idempotencyKey: "fc:track:scrape:job-1",
+      }),
+    );
     expect(queueBillingOperation).toHaveBeenCalledWith([
       "team-1",
       "org-1",
@@ -303,104 +263,16 @@ describe("billTeam MCP credits", () => {
   });
 
   it("refunds a failed enqueue whole to MCP credits", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
     queueBillingOperation.mockResolvedValueOnce({ success: false });
 
     await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
 
-    expect(refundCredits).toHaveBeenCalledExactlyOnceWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "scrape",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-      featureId: "MCP_CREDITS",
-      idempotencyKey: "fc:refund:scrape:job-1",
-      externalRequestId: undefined,
-    });
-  });
-
-  it("refunds nothing for a failed enqueue when nothing was tracked", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: false, mcpCredits: 0 });
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-
-    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
-
-    expect(refundCredits).not.toHaveBeenCalled();
-  });
-
-  it("charges a call the hosted MCP did not make on the endpoint's own feature", async () => {
-    await billTeam("team-1", "org-1", 3, 123, {
-      endpoint: "scrape",
-      jobId: "job-1",
-    });
-
-    expect(trackHostedMcpCredits).not.toHaveBeenCalled();
-    expect(trackCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ featureId: "CREDITS" }),
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        value: 3,
+        featureId: "MCP_CREDITS",
+        idempotencyKey: "fc:refund:scrape:job-1",
+      }),
     );
-  });
-
-  it("never charges Autumn for a team without an org", async () => {
-    await billTeam("preview_abc", null, 3, null, hostedMcpScrape);
-
-    expect(trackHostedMcpCredits).not.toHaveBeenCalled();
-    expect(trackCredits).not.toHaveBeenCalled();
-  });
-});
-
-describe("billTeam MCP credits on an agent run", () => {
-  const agentCall = {
-    endpoint: "search" as const,
-    jobId: "job-1",
-    chargeId: "charge-1",
-    hostedMcp: true,
-    agentRequestId: "agent-run",
-  };
-
-  it("adds the MCP credits part to the run's MCP tally under the charge", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
-
-    await billTeam("team-1", "org-1", 3, 123, agentCall);
-
-    expect(recordRequestCredits).toHaveBeenCalledExactlyOnceWith({
-      requestId: "agent-run:mcp",
-      jobId: "charge-1",
-      credits: 2,
-    });
-  });
-
-  it("tallies nothing when MCP credits paid nothing or the charge was refunded", async () => {
-    await billTeam("team-1", "org-1", 3, 123, agentCall);
-
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-    await billTeam("team-1", "org-1", 3, 123, agentCall);
-
-    expect(recordRequestCredits).not.toHaveBeenCalled();
-  });
-
-  it("tallies nothing for a call outside an agent run", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
-
-    await billTeam("team-1", "org-1", 3, 123, {
-      ...agentCall,
-      agentRequestId: undefined,
-    });
-
-    expect(recordRequestCredits).not.toHaveBeenCalled();
-  });
-
-  it("still bills when the tally cannot be written", async () => {
-    trackHostedMcpCredits.mockResolvedValue({ tracked: true, mcpCredits: 2 });
-    recordRequestCredits.mockRejectedValueOnce(new Error("store down"));
-
-    await expect(
-      billTeam("team-1", "org-1", 3, 123, agentCall),
-    ).resolves.toMatchObject({ success: true });
   });
 });

@@ -41,12 +41,12 @@ vi.mock("../../lib/exchange", () => ({
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     lockCredits: mocks.lock,
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
     finalizeCreditsLock: mocks.finalize,
     refundCredits: mocks.refund,
     isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
 }));
 import { retrieveProviders } from "./retrieve";
 

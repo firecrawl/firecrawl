@@ -15,9 +15,9 @@ vi.mock("../../lib/logger", () => ({
 vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
     checkCredits: vi.fn(),
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
   CREDITS_FEATURE_ID: "CREDITS",
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
 }));
 
 vi.mock("../../services/autumn/usage", () => ({

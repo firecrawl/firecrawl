@@ -40,7 +40,6 @@ import {
 import {
   autumnService,
   featureIdForBillingEndpoint,
-  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import {
   _addScrapeJobToBullMQ,
@@ -74,7 +73,6 @@ import {
 } from "../../lib/scrape-billing";
 import { getCrawlScope } from "../../lib/crawl-scope";
 import { billTeam } from "../billing/credit_billing";
-import { tallyAgentMcpCredits } from "../billing/agent-mcp-credits";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
@@ -172,10 +170,12 @@ async function billScrapeJob(
   // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
   // request's own credits. Standalone scrapes stay on CREDITS.
   const featureId = billing.hostedMcp
-    ? MCP_CREDITS_FEATURE_ID
+    ? await autumnService.hostedMcpFeatureId(
+        job.data.team_id,
+        featureIdForBillingEndpoint(billing.endpoint),
+      )
     : featureIdForBillingEndpoint(billing.endpoint);
   let trackedInRequest = false;
-  let mcpCredits = 0;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
     creditsToBeBilled = await calculateCreditsToBeBilled(
@@ -214,31 +214,24 @@ async function billScrapeJob(
         routedToFirebill = orgId
           ? await autumnService.isRoutedThroughFirebill(job.data.team_id, orgId)
           : false;
-        if (orgId) {
-          const charge = {
-            teamId: job.data.team_id,
-            orgId,
-            value: creditsToBeBilled,
-            properties: autumnProperties,
-            featureId,
-            // The worker job id is the one identity that is unique per charge
-            // (a crawl id is shared by every page — keying on it would collapse
-            // a crawl's pages into one billed event) AND survives a stall
-            // requeue, which re-runs the job under the same id: with this key,
-            // the re-run dedupes instead of double-billing (firebill route).
-            idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
-            // The caller's own operation id, carried on the charge so
-            // firebill reports it without a request lookup.
-            externalRequestId: billing.externalRequestId ?? undefined,
-          };
-          // A hosted MCP charge spends the team's MCP credits first.
-          if (billing.hostedMcp) {
-            ({ tracked: trackedInRequest, mcpCredits } =
-              await autumnService.trackHostedMcpCredits(charge));
-          } else {
-            trackedInRequest = await autumnService.trackCredits(charge);
-          }
-        }
+        trackedInRequest = orgId
+          ? await autumnService.trackCredits({
+              teamId: job.data.team_id,
+              orgId,
+              value: creditsToBeBilled,
+              properties: autumnProperties,
+              featureId,
+              // The worker job id is the one identity that is unique per charge
+              // (a crawl id is shared by every page — keying on it would collapse
+              // a crawl's pages into one billed event) AND survives a stall
+              // requeue, which re-runs the job under the same id: with this key,
+              // the re-run dedupes instead of double-billing (firebill route).
+              idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+              // The caller's own operation id, carried on the charge so
+              // firebill reports it without a request lookup.
+              externalRequestId: billing.externalRequestId ?? undefined,
+            })
+          : false;
         // On the firebill route the ledger enqueue must be idempotent by the
         // originating job: a stalled job reruns under the same job.id, the
         // track dedupes in firebill, and a fresh random billing job id would
@@ -277,7 +270,7 @@ async function billScrapeJob(
                 team_id: job.data.team_id,
                 org_id: orgId,
                 credits: creditsToBeBilled,
-                billing: mcpCredits > 0 ? { ...billing, mcpCredits } : billing,
+                billing,
                 is_extract: false,
                 timestamp: new Date().toISOString(),
                 originating_job_id: job.id,
@@ -304,7 +297,6 @@ async function billScrapeJob(
           }
         }
 
-        await tallyAgentMcpCredits(billing, job.id, mcpCredits);
         return creditsToBeBilled;
       } catch (error) {
         logger.error(
@@ -331,7 +323,6 @@ async function billScrapeJob(
                 billing,
               },
             );
-            await tallyAgentMcpCredits(billing, job.id, mcpCredits);
           } else if (orgId) {
             await autumnService.refundCredits({
               teamId: job.data.team_id,

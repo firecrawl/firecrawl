@@ -28,9 +28,10 @@ vi.mock("../../../lib/logger", () => {
 vi.mock("../../../services/autumn/autumn.service", () => ({
   autumnService: {
     checkCredits: mocks.checkCredits,
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
+  CREDITS_FEATURE_ID: "CREDITS",
   DEFAULT_TEAM_LIMITS: { concurrency_limit: 2 },
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
 }));
 
 vi.mock("../../../services/worker/nuq-router", () => ({
@@ -266,50 +267,4 @@ describe("browser sessions from hosted MCP calls", () => {
       });
     },
   );
-
-  it("finishes billing a hosted agent session before settlement returns", async () => {
-    mocks.cameFromHostedMcp.mockResolvedValue(true);
-    let billed = false;
-    let billedBeforeTally = false;
-    mocks.billTeam.mockImplementation(async () => {
-      await new Promise(resolve => setTimeout(resolve, 20));
-      billed = true;
-      return { success: true };
-    });
-    mocks.recordRequestCredits.mockImplementation(async () => {
-      billedBeforeTally = billed;
-      return true;
-    });
-    mocks.settleOnce.mockResolvedValue({
-      creditsBilled: 10,
-      newlySettled: true,
-    });
-    await settleBrowserSession({ ...session, request_id: "agent-run" }, {
-      status: "stopped",
-      created_at: 1000,
-      ended_at: 1300,
-    } as any);
-    expect(billed).toBe(true);
-    expect(billedBeforeTally).toBe(true);
-  });
-
-  it("names the agent run on an agent session's charge", async () => {
-    mocks.cameFromHostedMcp.mockResolvedValue(true);
-    mocks.settleOnce.mockResolvedValue({
-      creditsBilled: 10,
-      newlySettled: true,
-    });
-    await settleBrowserSession({ ...session, request_id: "agent-run" }, {
-      status: "stopped",
-      created_at: 1000,
-      ended_at: 1300,
-    } as any);
-    expect(mocks.billTeam).toHaveBeenCalledWith(TEAM_ID, "org-1", 10, null, {
-      endpoint: "agent",
-      jobId: "agent-run",
-      chargeId: "session-1:destroy",
-      agentRequestId: "agent-run",
-      hostedMcp: true,
-    });
-  });
 });

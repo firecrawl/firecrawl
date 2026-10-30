@@ -28,7 +28,6 @@ import { CREDIT_CHECK_EXEMPT_TEAM_ID } from "../controllers/v2/agent-credit-gate
 import {
   autumnService,
   CREDITS_FEATURE_ID,
-  MCP_CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
 import {
@@ -162,7 +161,9 @@ export function checkCreditsMiddleware(
       const requestedCredits = minimum ?? 1;
       // Gated on the balance its charge will be tracked on.
       const gateFeatureId =
-        mcpCredits && req.auth.hostedMcp ? MCP_CREDITS_FEATURE_ID : featureId;
+        mcpCredits && req.auth.hostedMcp
+          ? await autumnService.hostedMcpFeatureId(req.auth.team_id, featureId)
+          : featureId;
 
       // No org means no billable identity to gate: keyless and preview teams
       // carry none, and neither does the DB-authentication bypass. `checkCredits`

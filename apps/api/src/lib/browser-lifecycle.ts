@@ -35,8 +35,8 @@ import {
 } from "../services/worker/nuq-router";
 import {
   autumnService,
+  CREDITS_FEATURE_ID,
   DEFAULT_TEAM_LIMITS,
-  MCP_CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
 import { orgIdForTeam } from "./team-org";
@@ -185,7 +185,14 @@ async function createBrowserSessionInternal(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
-      ...(req.auth.hostedMcp ? { featureId: MCP_CREDITS_FEATURE_ID } : {}),
+      ...(req.auth.hostedMcp
+        ? {
+            featureId: await autumnService.hostedMcpFeatureId(
+              req.auth.team_id,
+              CREDITS_FEATURE_ID,
+            ),
+          }
+        : {}),
     });
     if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
@@ -355,7 +362,7 @@ async function settleBrowserSessionInternal(
         : undefined;
     if (session.should_bill) {
       const hostedMcp = await didBrowserSessionComeFromHostedMcp(session.id);
-      const charge = billTeam(
+      billTeam(
         session.team_id,
         await orgIdForTeam(session.team_id),
         creditsBilled,
@@ -368,7 +375,6 @@ async function settleBrowserSessionInternal(
               : "browser",
           jobId: agentRequestId ?? session.id,
           chargeId: `${session.id}:destroy`,
-          ...(agentRequestId ? { agentRequestId } : {}),
           ...(hostedMcp ? { hostedMcp: true } : {}),
         },
       ).catch(error =>
@@ -378,10 +384,6 @@ async function settleBrowserSessionInternal(
           error,
         }),
       );
-      // A hosted MCP agent run's charge lands, MCP credits part included,
-      // before the run's credits below, so the run never reads one without
-      // the other.
-      if (hostedMcp && agentRequestId) await charge;
     }
     if (agentRequestId) {
       await recordRequestCredits({
@@ -440,7 +442,14 @@ export async function reserveBrowserPromptCredits(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
-      ...(req.auth.hostedMcp ? { featureId: MCP_CREDITS_FEATURE_ID } : {}),
+      ...(req.auth.hostedMcp
+        ? {
+            featureId: await autumnService.hostedMcpFeatureId(
+              req.auth.team_id,
+              CREDITS_FEATURE_ID,
+            ),
+          }
+        : {}),
     });
     if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(

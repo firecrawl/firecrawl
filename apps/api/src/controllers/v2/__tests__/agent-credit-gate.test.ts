@@ -2,8 +2,12 @@ vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn(), hasAutoTopUp: vi.fn() },
-  MCP_CREDITS_FEATURE_ID: "MCP_CREDITS",
+  autumnService: {
+    checkCredits: vi.fn(),
+    hasAutoTopUp: vi.fn(),
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
+  },
+  CREDITS_FEATURE_ID: "CREDITS",
 }));
 
 import { gateAgentCredits } from "../agent-credit-gate";

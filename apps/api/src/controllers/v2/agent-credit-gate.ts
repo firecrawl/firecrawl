@@ -1,6 +1,6 @@
 import {
   autumnService,
-  MCP_CREDITS_FEATURE_ID,
+  CREDITS_FEATURE_ID,
 } from "../../services/autumn/autumn.service";
 import { logger } from "../../lib/logger";
 
@@ -56,13 +56,21 @@ export async function gateAgentCredits({
   };
   if (!orgId || teamId === CREDIT_CHECK_EXEMPT_TEAM_ID) return asRequested;
 
+  const feature = hostedMcp
+    ? {
+        featureId: await autumnService.hostedMcpFeatureId(
+          teamId,
+          CREDITS_FEATURE_ID,
+        ),
+      }
+    : {};
   const check = (value: number, source: string) =>
     autumnService.checkCredits({
       teamId,
       orgId,
       value,
       properties: { source, path: "/agent", apiKeyId },
-      ...(hostedMcp ? { featureId: MCP_CREDITS_FEATURE_ID } : {}),
+      ...feature,
     });
 
   const minimum = await check(AGENT_MIN_CREDITS, "agentCreditGate");

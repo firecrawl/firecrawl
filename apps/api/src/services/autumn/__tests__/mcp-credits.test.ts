@@ -1,6 +1,6 @@
 /**
- * Unit tests for hosted MCP charges in AutumnService: a hosted charge is
- * tracked whole on MCP credits at the customer level, and Autumn decides which
+ * Unit tests for hosted MCP charges in AutumnService: a hosted charge is made
+ * whole on MCP credits at the customer level, and Autumn decides which
  * balances pay for it.
  */
 
@@ -19,7 +19,12 @@ const { mockCheck, mockTrack, mockAutumnClient, state } = vi.hoisted(() => {
     check: mockCheck,
     track: mockTrack,
   };
-  return { mockCheck, mockTrack, mockAutumnClient, state: { firebill: false } };
+  return {
+    mockCheck,
+    mockTrack,
+    mockAutumnClient,
+    state: { firebill: false, gateway: false },
+  };
 });
 
 vi.mock("../client", () => ({
@@ -33,7 +38,12 @@ vi.mock("../../queue-service", () => ({
 vi.mock("../../../db/connection", () => ({
   dbRr: {
     select: () => ({
-      from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve(state.gateway ? [{ team_id: "team-1" }] : []),
+        }),
+      }),
     }),
   },
 }));
@@ -64,14 +74,10 @@ const charge = {
   idempotencyKey: "fc:track:search:job-1",
 };
 
-const deducted = (...deductions: [string, number][]) =>
-  mockTrack.mockResolvedValue({
-    deductions: deductions.map(([featureId, value]) => ({ featureId, value })),
-  });
-
 beforeEach(() => {
   vi.clearAllMocks();
   state.firebill = false;
+  state.gateway = false;
   mockTrack.mockResolvedValue({});
   mockCheck.mockResolvedValue({ allowed: true, balance: { remaining: 100 } });
 });
@@ -80,14 +86,30 @@ it("reads the feature id from config", () => {
   expect(MCP_CREDITS_FEATURE_ID).toBe("MCP_CREDITS_FROM_CONFIG");
 });
 
-describe("trackHostedMcpCredits", () => {
-  it("tracks the whole charge once on MCP credits, on the customer", async () => {
-    deducted([MCP_CREDITS_FEATURE_ID, 5]);
+describe("hostedMcpFeatureId", () => {
+  it("makes a hosted MCP charge on MCP credits", async () => {
+    expect(
+      await new AutumnService().hostedMcpFeatureId("team-1", "SEARCH_CREDITS"),
+    ).toBe(MCP_CREDITS_FEATURE_ID);
+  });
 
-    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-      tracked: true,
-      mcpCredits: 5,
-    });
+  it("keeps a partner-provisioned team's hosted charge on its own feature", async () => {
+    state.gateway = true;
+
+    expect(
+      await new AutumnService().hostedMcpFeatureId("team-1", "SEARCH_CREDITS"),
+    ).toBe("SEARCH_CREDITS");
+  });
+});
+
+describe("the entity a charge is made against", () => {
+  it("tracks an MCP credits charge once, whole, on the customer", async () => {
+    expect(
+      await new AutumnService().trackCredits({
+        ...charge,
+        featureId: MCP_CREDITS_FEATURE_ID,
+      }),
+    ).toBe(true);
 
     expect(mockTrack).toHaveBeenCalledOnce();
     const [track] = mockTrack.mock.calls[0];
@@ -99,37 +121,8 @@ describe("trackHostedMcpCredits", () => {
     });
     expect(track.entityId).toBeUndefined();
     expect(mockAutumnClient.customers.get).not.toHaveBeenCalled();
-    expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("counts as MCP credits only what Autumn deducted from them", async () => {
-    deducted([MCP_CREDITS_FEATURE_ID, 3], ["CREDITS", 2]);
-
-    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-      tracked: true,
-      mcpCredits: 3,
-    });
-    expect(mockTrack).toHaveBeenCalledOnce();
-  });
-
-  it("counts no MCP credits when Autumn reports no deductions", async () => {
-    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-      tracked: true,
-      mcpCredits: 0,
-    });
-  });
-
-  it("reports an untracked charge as untracked", async () => {
-    mockTrack.mockRejectedValue(new Error("track failed"));
-
-    expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-      tracked: false,
-      mcpCredits: 0,
-    });
-  });
-});
-
-describe("the entity a charge is made against", () => {
   it("refunds MCP credits on the customer and other features on the team", async () => {
     const service = new AutumnService();
 
@@ -189,15 +182,17 @@ describe("the entity a charge is made against", () => {
       vi.unstubAllGlobals();
     });
 
-    it("tracks a hosted charge whole with an empty entity", async () => {
+    it("tracks an MCP credits charge with an empty entity", async () => {
       mockFetch.mockImplementation(
         async () => new Response(JSON.stringify({ success: true })),
       );
 
-      expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
-        tracked: true,
-        mcpCredits: 0,
-      });
+      expect(
+        await new AutumnService().trackCredits({
+          ...charge,
+          featureId: MCP_CREDITS_FEATURE_ID,
+        }),
+      ).toBe(true);
 
       expect(mockTrack).not.toHaveBeenCalled();
       expect(bodies("/v1/track")).toEqual([

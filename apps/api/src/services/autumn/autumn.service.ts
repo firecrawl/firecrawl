@@ -30,7 +30,6 @@ import type {
   LockCreditsParams,
   LockCreditsResult,
   TrackCreditsParams,
-  TrackDeduction,
   TrackParams,
 } from "./types";
 import { ExistingCreditsLockError } from "./types";
@@ -341,8 +340,7 @@ export class AutumnService {
    * `routed` is decided by the caller (see {@link resolveBillingRoute}) rather
    * than asked again here: the answer costs a `partner_provisioned_accounts`
    * read on a cold team, and the caller already needed it to know whether to
-   * provision. Resolves false when the event was not tracked, and otherwise
-   * the deductions Autumn reports for it (none from firebill).
+   * provision.
    */
   private async track(
     {
@@ -356,14 +354,14 @@ export class AutumnService {
       durableRetry,
     }: TrackParams,
     routed: boolean,
-  ): Promise<TrackDeduction[] | undefined | false> {
+  ): Promise<boolean> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
     // sends no idempotency key, so the pair could not be deduped.
     if (routed) {
       billingRouteTotal.labels("firebill").inc();
-      return (await firebillTrack({
+      return await firebillTrack({
         customerId,
         entityId,
         featureId,
@@ -372,9 +370,7 @@ export class AutumnService {
         idempotencyKey,
         externalRequestId,
         durableRetry,
-      }))
-        ? undefined
-        : false;
+      });
     }
 
     billingRouteTotal.labels("direct").inc();
@@ -382,7 +378,7 @@ export class AutumnService {
     if (!autumnClient) return false;
 
     try {
-      const response = await autumnClient.track({
+      await autumnClient.track({
         customerId,
         entityId,
         featureId,
@@ -396,7 +392,7 @@ export class AutumnService {
         featureId,
         value,
       });
-      return response?.deductions;
+      return true;
     } catch (error) {
       logger.error("Autumn track failed — billing API may be unavailable", {
         customerId,
@@ -603,27 +599,15 @@ export class AutumnService {
   }
 
   /**
-   * Tracks a hosted MCP charge, all of it on MCP_CREDITS_FEATURE_ID: Autumn
-   * spends the customer's MCP credits first and takes the rest from the
-   * balances they fall back to, in one step. Resolves whether it was tracked
-   * and how much of it the MCP credits paid, from the deductions Autumn
-   * reports; 0 when it reports none, as on the firebill route.
+   * The feature a hosted MCP request's charge, hold or check is made on, in
+   * place of `featureId`: MCP credits, which Autumn spends first before
+   * falling back to other balances. A partner-provisioned team keeps
+   * `featureId`: its usage is split with the partner on the regular features.
    */
-  async trackHostedMcpCredits(
-    params: TrackCreditsParams,
-  ): Promise<{ tracked: boolean; mcpCredits: number }> {
-    const deductions = await this.chargeCredits({
-      ...params,
-      featureId: MCP_CREDITS_FEATURE_ID,
-    });
-    if (deductions === false) return { tracked: false, mcpCredits: 0 };
-    const mcpCredits = (deductions ?? [])
-      .filter(deduction => deduction.featureId === MCP_CREDITS_FEATURE_ID)
-      .reduce((sum, deduction) => sum + deduction.value, 0);
-    return {
-      tracked: true,
-      mcpCredits: Math.max(0, Math.min(params.value, mcpCredits)),
-    };
+  async hostedMcpFeatureId(teamId: string, featureId: string): Promise<string> {
+    return (await this.isGatewayProvisioned(teamId))
+      ? featureId
+      : MCP_CREDITS_FEATURE_ID;
   }
 
   /**
@@ -889,12 +873,7 @@ export class AutumnService {
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
    */
-  async trackCredits(params: TrackCreditsParams): Promise<boolean> {
-    return (await this.chargeCredits(params)) !== false;
-  }
-
-  /** trackCredits, resolving what track() does. */
-  private async chargeCredits({
+  async trackCredits({
     teamId,
     value,
     properties,
@@ -903,7 +882,7 @@ export class AutumnService {
     externalRequestId,
     durableRetry,
     orgId,
-  }: TrackCreditsParams): Promise<TrackDeduction[] | undefined | false> {
+  }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
@@ -1008,7 +987,7 @@ export class AutumnService {
         teamId,
         orgId,
       );
-      const refunded = await this.track(
+      return await this.track(
         {
           customerId,
           entityId: billingEntityId(featureId, teamId),
@@ -1021,7 +1000,6 @@ export class AutumnService {
         },
         routed,
       );
-      return refunded !== false;
     } catch (error) {
       logger.error(
         "Autumn refundCredits failed — billing API may be unavailable",

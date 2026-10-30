@@ -3,12 +3,9 @@ import { queueBillingOperation } from "./batch_billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
-  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
-import { randomUUID } from "node:crypto";
-import { tallyAgentMcpCredits } from "./agent-mcp-credits";
 
 /**
  * `org_id` is the team's Autumn customer. It is nullable here and nowhere
@@ -41,15 +38,17 @@ export async function billTeam(
         apiKeyId: api_key_id,
       };
       const featureId = billing.hostedMcp
-        ? MCP_CREDITS_FEATURE_ID
+        ? await autumnService.hostedMcpFeatureId(
+            team_id,
+            featureIdForBillingEndpoint(billing.endpoint),
+          )
         : featureIdForBillingEndpoint(billing.endpoint);
 
       let trackedInRequest = false;
-      let mcpCredits = 0;
       if (org_id !== null) {
         // Stable per-charge key (firebill route only): a caller retry or re-run
         // job with the same chargeId dedupes instead of double-billing.
-        const charge = {
+        trackedInRequest = await autumnService.trackCredits({
           teamId: team_id,
           orgId: org_id,
           value: credits,
@@ -59,14 +58,7 @@ export async function billTeam(
             ? `fc:track:${billing.endpoint}:${billing.chargeId}`
             : undefined,
           externalRequestId: billing.externalRequestId ?? undefined,
-        };
-        // A hosted MCP charge spends the team's MCP credits first.
-        if (billing.hostedMcp) {
-          ({ tracked: trackedInRequest, mcpCredits } =
-            await autumnService.trackHostedMcpCredits(charge));
-        } else {
-          trackedInRequest = await autumnService.trackCredits(charge);
-        }
+        });
       } else if (team_id !== "preview" && !team_id.startsWith("preview_")) {
         // Preview teams are never tracked anyway; a real team arriving without
         // an org is not expected, and its usage is about to go unmetered.
@@ -81,13 +73,12 @@ export async function billTeam(
         org_id,
         credits,
         api_key_id,
-        mcpCredits > 0 ? { ...billing, mcpCredits } : billing,
+        billing,
         false,
         trackedInRequest,
       );
 
       // A track only happens with an org in hand; named again so the type says so.
-      let refunded = false;
       if (!result.success && trackedInRequest && org_id !== null) {
         if (await autumnService.isRoutedThroughFirebill(team_id, org_id)) {
           // No compensating refund on the firebill route: the tracked charge
@@ -112,16 +103,7 @@ export async function billTeam(
               : undefined,
             externalRequestId: billing.externalRequestId ?? undefined,
           });
-          refunded = true;
         }
-      }
-
-      if (!refunded) {
-        await tallyAgentMcpCredits(
-          billing,
-          billing.chargeId ?? randomUUID(),
-          mcpCredits,
-        );
       }
 
       return result;

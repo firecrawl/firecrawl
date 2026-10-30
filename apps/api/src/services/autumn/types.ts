@@ -28,9 +28,6 @@ export type CreateEntityParams = {
   path: string;
 };
 
-/** One balance a tracked event drew on, as Autumn reports it. */
-export type TrackDeduction = { featureId: string; value: number };
-
 export type TrackParams = {
   customerId: string;
   entityId?: string;

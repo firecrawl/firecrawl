@@ -12,7 +12,6 @@ import { logger } from "../../lib/logger";
 import {
   autumnService,
   featureIdForBillingEndpoint,
-  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import type { LockCreditsResult } from "../autumn/types";
 import {
@@ -260,7 +259,10 @@ export async function retrieveProviders(input: {
   }
 
   const featureId = input.hostedMcp
-    ? MCP_CREDITS_FEATURE_ID
+    ? await autumnService.hostedMcpFeatureId(
+        input.teamId,
+        featureIdForBillingEndpoint("scrape"),
+      )
     : featureIdForBillingEndpoint("scrape");
   const properties = {
     source: "alexandria",
@@ -619,7 +621,10 @@ async function recordLedgerUsage(
           orgId,
           value: credits,
           featureId: hostedMcp
-            ? MCP_CREDITS_FEATURE_ID
+            ? await autumnService.hostedMcpFeatureId(
+                teamId,
+                featureIdForBillingEndpoint("scrape"),
+              )
             : featureIdForBillingEndpoint("scrape"),
           properties: {
             source: "alexandria",
