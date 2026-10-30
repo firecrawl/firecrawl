@@ -326,6 +326,15 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run Vercel Marketplace OIDC auth regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/__tests__/vercel-marketplace-oidc.test.ts
+          src/controllers/__tests__/auth-vercel-oidc.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run agent location regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/controllers/v2/__tests__/agent-location.test.ts --reporter=default

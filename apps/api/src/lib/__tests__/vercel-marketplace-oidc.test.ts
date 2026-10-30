@@ -152,6 +152,24 @@ describe("verifyVercelOidcToken", () => {
   it("rejects a token without an act claim", async () => {
     await expectInvalid(await sign({ claims: { act: undefined } }));
   });
+
+  it("accepts a resource claim that matches sub", async () => {
+    await expect(
+      verifyVercelOidcToken(await sign({ claims: { resource: "res_1" } }), {
+        integrationId: INTEGRATION_ID,
+        getKey: staticJwks(),
+      }),
+    ).resolves.toMatchObject({ sub: "res_1" });
+  });
+
+  it("rejects a token whose resource claim disagrees with sub", async () => {
+    await expect(
+      verifyVercelOidcToken(await sign({ claims: { resource: "res_2" } }), {
+        integrationId: INTEGRATION_ID,
+        getKey: staticJwks(),
+      }),
+    ).rejects.toMatchObject({ reason: "resource_sub_mismatch" });
+  });
 });
 
 describe("createVercelJwks", () => {

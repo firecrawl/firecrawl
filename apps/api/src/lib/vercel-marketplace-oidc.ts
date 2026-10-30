@@ -168,7 +168,7 @@ export function createVercelJwks(
       return await local!(protectedHeader, token);
     } catch (error) {
       if (error instanceof joseErrors.JWKSNoMatchingKey) {
-        if (!coolingDown()) {
+        if (pending || !coolingDown()) {
           if (!(await refresh())) throw new VercelJwksUnavailableError();
           return local!(protectedHeader, token);
         }
@@ -186,7 +186,7 @@ function optionalString(value: unknown): string | undefined {
 /**
  * Verifies a Vercel Marketplace OIDC resource token: RS256 only, exact issuer
  * for our integration, a single-string aud (the installation id), sub (our
- * resource id) and act.sub. aud is not pinned here because it varies per
+ * resource id, matching `resource` when present) and act.sub. aud is not pinned here because it varies per
  * installation; the caller checks it against the stored installation.
  */
 export async function verifyVercelOidcToken(
@@ -216,6 +216,11 @@ export async function verifyVercelOidcToken(
   }
   if (typeof payload.sub !== "string" || payload.sub.length === 0) {
     throw new VercelOidcTokenInvalidError("missing_sub");
+  }
+  // Vercel's earlier contract carried the resource id in `resource` and a role
+  // in `sub`. A token where the two disagree is never bound to a resource.
+  if (payload.resource !== undefined && payload.resource !== payload.sub) {
+    throw new VercelOidcTokenInvalidError("resource_sub_mismatch");
   }
   const actor = optionalString((payload.act as { sub?: unknown } | null)?.sub);
   if (!actor) {

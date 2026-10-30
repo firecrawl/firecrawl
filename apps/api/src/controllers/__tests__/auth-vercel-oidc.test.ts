@@ -107,6 +107,7 @@ async function sign(
     aud?: string;
     resource?: string;
     alg?: string;
+    kid?: string;
     key?: KeyPair["privateKey"];
     expSecondsFromNow?: number;
   } = {},
@@ -116,7 +117,10 @@ async function sign(
     act: { sub: "owner:team_vercel:project:prj_1:environment:production" },
     environment: "production",
   })
-    .setProtectedHeader({ alg: overrides.alg ?? "RS256", kid: "k1" })
+    .setProtectedHeader({
+      alg: overrides.alg ?? "RS256",
+      kid: overrides.kid ?? "k1",
+    })
     .setIssuer(overrides.iss ?? ISSUER)
     .setAudience(overrides.aud ?? "icfg_1")
     .setSubject(overrides.resource ?? "res_1")
@@ -185,6 +189,7 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
   afterEach(() => {
     config.USE_DB_AUTHENTICATION = originalUseDbAuth;
     config.VERCEL_MARKETPLACE_INTEGRATION_ID = originalIntegrationId;
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -325,10 +330,54 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
       }),
     );
     expect(authCreditUsageChunk).not.toHaveBeenCalled();
-    const negative = vi
-      .mocked(setValue)
-      .mock.calls.find(([key]) => key.startsWith("vercel_oidc_token:"));
-    expect(negative?.[2]).toBe(60);
+    expect(
+      vi
+        .mocked(setValue)
+        .mock.calls.some(([key]) => key.startsWith("vercel_oidc_token:")),
+    ).toBe(false);
+  });
+
+  it("does not cache an unknown-kid rejection and accepts the key after a refetch", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+    const integrationId = "oac_rotation";
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID = integrationId;
+    const rotated = await generateKeyPair("RS256");
+    const rotatedJwk = {
+      ...(await exportJWK(rotated.publicKey)),
+      kid: "k2",
+      alg: "RS256",
+    };
+    const token = await sign({
+      iss: `https://integrations.vercel.com/${integrationId}`,
+      kid: "k2",
+      key: rotated.privateKey,
+    });
+
+    expect(
+      await authenticateUser(request(token), {}, RateLimiterMode.Scrape),
+    ).toEqual(UNAUTHORIZED);
+    expect(
+      vi
+        .mocked(setValue)
+        .mock.calls.some(([key]) => key.startsWith("vercel_oidc_token:")),
+    ).toBe(false);
+
+    jwksFetch.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ keys: [jwk, rotatedJwk] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.setSystemTime(Date.now() + 31_000);
+
+    const auth = await authenticateUser(
+      request(token),
+      {},
+      RateLimiterMode.Scrape,
+    );
+    expect(auth.success).toBe(true);
+    expect(jwksFetch).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a non-RS256 token with 401", async () => {
