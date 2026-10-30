@@ -938,10 +938,11 @@ describe("Keyless credit window", () => {
   const key = `keyless_credits:${ip}`;
   const teamId = keylessTeamId(ip);
 
-  async function expectWindowKept(maxSeconds: number) {
+  async function expectWindowKept(previousTtl: number) {
     const ttl = await redisRateLimitClient.ttl(key);
     expect(ttl).toBeGreaterThan(0);
-    expect(ttl).toBeLessThanOrEqual(maxSeconds);
+    expect(ttl).toBeLessThanOrEqual(previousTtl);
+    return ttl;
   }
 
   beforeEach(async () => {
@@ -956,10 +957,15 @@ describe("Keyless credit window", () => {
     await redisRateLimitClient.set(key, "5", "EX", 600);
 
     expect(await adjustKeylessCredits(teamId, 3)).toBe(8);
-    await expectWindowKept(600);
+    const ttl = await expectWindowKept(600);
 
     expect(await adjustKeylessCredits(teamId, -20)).toBe(0);
-    await expectWindowKept(600);
+    await expectWindowKept(ttl);
+  });
+
+  it("does not open a window when a refund finds no counter", async () => {
+    expect(await adjustKeylessCredits(teamId, -3)).toBe(0);
+    expect(await redisRateLimitClient.exists(key)).toBe(0);
   });
 
   it("opens the window when reconciliation finds none", async () => {
