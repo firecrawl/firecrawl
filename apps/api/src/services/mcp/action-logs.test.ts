@@ -239,6 +239,7 @@ describe("MCP action log contract", () => {
       llm_model: null,
       duration_ms: null,
       invalid_arguments: [],
+      rate_limit_retry: null,
     });
     expect(
       input({
@@ -260,6 +261,16 @@ describe("MCP action log contract", () => {
       invalid_arguments: ["limit:invalid_type", "*:unrecognized_keys"],
     });
     expect(input({ duration_ms: 0 }).duration_ms).toBe(0);
+    for (const rate_limit_retry of [
+      "recovered",
+      "failed",
+      "over_cap",
+      "not_retryable",
+    ]) {
+      expect(input({ rate_limit_retry }).rate_limit_retry).toBe(
+        rate_limit_retry,
+      );
+    }
     expect(input({ invalid_arguments: ["(root):invalid_type"] })).toMatchObject(
       { invalid_arguments: ["(root):invalid_type"] },
     );
@@ -283,6 +294,11 @@ describe("MCP action log contract", () => {
     ]) {
       expect(() => input({ invalid_arguments })).toThrow(
         "invalid_arguments must be at most 10 <argument>:<issue> labels",
+      );
+    }
+    for (const rate_limit_retry of ["retrying", "RECOVERED", 1]) {
+      expect(() => input({ rate_limit_retry })).toThrow(
+        "rate_limit_retry must be recovered, failed, over_cap or not_retryable",
       );
     }
     expect(() => input({ llm_model: "m".repeat(129) })).toThrow(
@@ -375,6 +391,7 @@ describe("MCP action log contract", () => {
           llm_model: "gpt-6.1-sol",
           duration_ms: 55,
           invalid_arguments: ["limit:invalid_type"],
+          rate_limit_retry: "recovered",
         }),
       ),
     ).resolves.toEqual({ disposition: "accepted", id: REQUEST_ID });
@@ -393,6 +410,7 @@ describe("MCP action log contract", () => {
       llm_model: "gpt-6.1-sol",
       duration_ms: 55,
       invalid_arguments: ["limit:invalid_type"],
+      rate_limit_retry: "recovered",
     });
     expect(row).not.toHaveProperty("user_agent");
 

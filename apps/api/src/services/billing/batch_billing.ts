@@ -5,6 +5,7 @@ import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
 import {
   resolveBillingMetadata,
@@ -83,6 +84,9 @@ const BATCH_LOCK_KEY = "billing_batch_lock";
 const BATCH_SIZE = 5000; // Batch size for processing
 const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
+// The ledger's tag for usage the team's MCP credits paid. bill_team_7 stores it
+// in credit_usage.subscription_id, which it passes through as a tag.
+const MCP_CREDITS_LEDGER_TAG = "mcp_credits";
 
 // Define interfaces for billing operations
 interface BillingOperation {
@@ -115,6 +119,7 @@ interface GroupedBillingOperation {
   billing: BillingMetadata;
   is_extract: boolean;
   api_key_id: number | null;
+  ledger_tag?: string;
   operations: BillingOperation[];
 }
 
@@ -186,7 +191,11 @@ async function refundRequestTrackedCredits(
         ...toAutumnBillingProperties(group.billing),
         apiKeyId: group.api_key_id,
       },
-      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
+      // The part MCP credits paid goes back to them.
+      featureId:
+        group.ledger_tag === MCP_CREDITS_LEDGER_TAG
+          ? MCP_CREDITS_FEATURE_ID
+          : featureIdForBillingEndpoint(group.billing.endpoint),
     });
   } catch (error) {
     logger.warn("Failed to refund Autumn request-tracked credits", {
@@ -211,8 +220,11 @@ export async function processBillingBatch() {
   }
 
   // Exchange operations whose debit committed this run; their ledger
-  // confirmations are delivered after the lock is released.
+  // confirmations are delivered after the lock is released. An operation
+  // MCP credits paid part of is split across ledger rows, so each access
+  // counts the rows it spans.
   const committedExchangeOps: BillingOperation[] = [];
+  const exchangeRowCounts = new Map<string, number>();
 
   try {
     // Get all operations from Redis list
@@ -287,23 +299,51 @@ export async function processBillingBatch() {
       } else {
         orgId = op.org_id;
       }
-      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
+      // The part the team's MCP credits paid is its own ledger row, tagged so
+      // MCP-paid usage is counted apart from regular credits used.
+      const mcpCredits = Math.min(billing.mcpCredits ?? 0, op.credits);
+      const parts = [
+        ...(mcpCredits === 0 || mcpCredits < op.credits
+          ? [{ credits: op.credits - mcpCredits, ledger_tag: undefined }]
+          : []),
+        ...(mcpCredits > 0
+          ? [{ credits: mcpCredits, ledger_tag: MCP_CREDITS_LEDGER_TAG }]
+          : []),
+      ];
+      if (op.exchange_access_event_id !== undefined) {
+        exchangeRowCounts.set(
+          op.exchange_access_event_id,
+          (exchangeRowCounts.get(op.exchange_access_event_id) ?? 0) +
+            parts.length,
+        );
+      }
+      for (const { credits, ledger_tag } of parts) {
+        const key = `${op.team_id}:${orgId}:${billing.endpoint}:${ledger_tag ?? ""}:${op.is_extract}:${op.api_key_id}`;
 
-      if (!groupedOperations.has(key)) {
-        groupedOperations.set(key, {
-          team_id: op.team_id,
-          org_id: orgId,
-          total_credits: 0,
-          billing,
-          is_extract: op.is_extract,
-          api_key_id: op.api_key_id,
-          operations: [],
+        if (!groupedOperations.has(key)) {
+          groupedOperations.set(key, {
+            team_id: op.team_id,
+            org_id: orgId,
+            total_credits: 0,
+            billing,
+            is_extract: op.is_extract,
+            api_key_id: op.api_key_id,
+            ledger_tag,
+            operations: [],
+          });
+        }
+
+        const group = groupedOperations.get(key)!;
+        group.total_credits += credits;
+        // MCP credits are only recorded once their track succeeded, so their
+        // row is refundable even when the rest of the charge was not tracked.
+        group.operations.push({
+          ...op,
+          credits,
+          autumnTrackInRequest:
+            ledger_tag === MCP_CREDITS_LEDGER_TAG || op.autumnTrackInRequest,
         });
       }
-
-      const group = groupedOperations.get(key)!;
-      group.total_credits += op.credits;
-      group.operations.push(op);
     }
 
     if (unresolvedOperations.length > 0) {
@@ -350,6 +390,7 @@ export async function processBillingBatch() {
           group.api_key_id,
           logger,
           group.is_extract,
+          group.ledger_tag ?? null,
         );
 
         if (!billingResult.success) {
@@ -401,7 +442,23 @@ export async function processBillingBatch() {
     await releaseLock();
   }
 
-  await confirmExchangeOutcomes(committedExchangeOps);
+  // An access is confirmed once, and only after every row it spans committed.
+  const committedRows = new Map<string, BillingOperation[]>();
+  for (const op of committedExchangeOps) {
+    const accessEventId = op.exchange_access_event_id!;
+    committedRows.set(accessEventId, [
+      ...(committedRows.get(accessEventId) ?? []),
+      op,
+    ]);
+  }
+  await confirmExchangeOutcomes(
+    [...committedRows]
+      .filter(
+        ([accessEventId, rows]) =>
+          rows.length === exchangeRowCounts.get(accessEventId),
+      )
+      .map(([, rows]) => rows[0]),
+  );
 }
 
 // Start periodic batch processing
@@ -515,6 +572,7 @@ async function supaBillTeam(
   api_key_id: number | null,
   __logger?: any,
   is_extract: boolean = false,
+  subscription_id: string | null = null,
 ) {
   const _logger = (__logger ?? logger).child({
     module: "credit_billing",
@@ -534,7 +592,7 @@ async function supaBillTeam(
   try {
     data = await billTeam7({
       team_id,
-      subscription_id: null,
+      subscription_id,
       credits,
       api_key_id: api_key_id ?? null,
       is_extract,

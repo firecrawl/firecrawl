@@ -50,6 +50,7 @@ overrides:
   shell-quote@<1.11.0: 1.11.0
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   query-string@>=9.0.0 <10.0.0: '>=9.5.0 <10.0.0'
+  decode-uri-component@>=0.5.0 <0.5.1: 0.5.1
   '@ai-sdk/provider-utils@>=4.0.0 <4.0.33': 4.0.51
   '@google-cloud/opentelemetry-cloud-monitoring-exporter': ^0.22.0
   '@opentelemetry/core@<2.9.0': 2.9.0
@@ -278,8 +279,8 @@ importers:
         specifier: ^16.1.0
         version: 16.1.0
       systeminformation:
-        specifier: ^5.31.17
-        version: 5.31.17
+        specifier: ^5.33.17
+        version: 5.33.17
       tldts:
         specifier: ^7.4.10
         version: 7.4.10
@@ -2667,8 +2668,8 @@ packages:
   decimal.js@10.6.0:
     resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
-  decode-uri-component@0.5.0:
-    resolution: {integrity: sha512-1BiQVoK8C9gUbQU6NzAtO/tkz2qOFpEObMWpcFvhx4fYnj4Oc5yzaJN/LD36ihkVUdXyh5ZekzX+yM+ty/SrPg==}
+  decode-uri-component@0.5.1:
+    resolution: {integrity: sha512-vWHQkXgg2cE3BB4rR0c+PYw9BCQzLoNIRMI7AunIkZst74tw/vpPp7VLoYtsR/cy1f55g3XDWUslfeCZjiZJyA==}
     engines: {node: '>=14.16'}
 
   delayed-stream@1.0.0:
@@ -4303,9 +4304,9 @@ packages:
   symbol-tree@3.2.4:
     resolution: {integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==}
 
-  systeminformation@5.31.17:
-    resolution: {integrity: sha512-TvFA9iwDWlMjqZVlKIJ0Cy+Zgm9ttlMx0SMRwJDMNKyhlEKWBMb3+WRwDi/3dvHdWbexpos4Osp4U49p5WjB5g==}
-    engines: {node: '>=8.0.0'}
+  systeminformation@5.33.17:
+    resolution: {integrity: sha512-rHj5RG1XHWNSZrwr6hJqxlu3Lq/srdyFEKcLTRCwwXd38qL8fZ/jDyoBKWpYBrb8w9KjgQJnHFQybYYHP353rg==}
+    engines: {node: '>=10.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
 
@@ -6654,7 +6655,7 @@ snapshots:
 
   decimal.js@10.6.0: {}
 
-  decode-uri-component@0.5.0: {}
+  decode-uri-component@0.5.1: {}
 
   delayed-stream@1.0.0: {}
 
@@ -7956,7 +7957,7 @@ snapshots:
 
   query-string@9.5.0:
     dependencies:
-      decode-uri-component: 0.5.0
+      decode-uri-component: 0.5.1
       filter-obj: 5.1.0
       split-on-first: 3.0.0
 
@@ -8315,7 +8316,7 @@ snapshots:
 
   symbol-tree@3.2.4: {}
 
-  systeminformation@5.31.17: {}
+  systeminformation@5.33.17: {}
 
   tdigest@0.1.2:
     dependencies:

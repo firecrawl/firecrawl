@@ -221,6 +221,11 @@ func (c *Client) GetCrawlStatus(ctx context.Context, jobID string) (*CrawlJob, e
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
+	}
 	return &job, nil
 }
 
@@ -340,21 +345,84 @@ func (c *Client) GetBatchScrapeStatus(ctx context.Context, jobID string) (*Batch
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
+	}
 	return &job, nil
 }
 
+// GetBatchScrapeErrors gets the URLs of a batch scrape job that failed to
+// scrape, along with the URLs blocked by robots.txt.
+//
+// Pages that responded with an HTTP error such as 404 or 429 are not reported
+// here; they are returned as documents with the original status in
+// Metadata["statusCode"].
+func (c *Client) GetBatchScrapeErrors(ctx context.Context, jobID string) (*BatchScrapeErrorsResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/batch/scrape/"+jobID+"/errors")
+	if err != nil {
+		return nil, err
+	}
+
+	// The API returns the payload at the top level; accept a `data` envelope
+	// as well, like the other SDKs do.
+	var envelope struct {
+		BatchScrapeErrorsResponse
+		Data *BatchScrapeErrorsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	resp := envelope.BatchScrapeErrorsResponse
+	if envelope.Data != nil {
+		resp = *envelope.Data
+	}
+	if resp.Errors == nil {
+		resp.Errors = []BatchScrapeError{}
+	}
+	if resp.RobotsBlocked == nil {
+		resp.RobotsBlocked = []string{}
+	}
+	return &resp, nil
+}
+
 // BatchScrape batch-scrapes URLs and waits for completion with auto-polling.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrape(ctx context.Context, urls []string, opts *BatchScrapeOptions) (*BatchScrapeJob, error) {
 	return c.BatchScrapeWithPolling(ctx, urls, opts, defaultPollInterval, defaultJobTimeout)
 }
 
 // BatchScrapeWithPolling batch-scrapes URLs and waits for completion with custom polling settings.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrapeWithPolling(ctx context.Context, urls []string, opts *BatchScrapeOptions, pollIntervalSec, timeoutSec int) (*BatchScrapeJob, error) {
 	start, err := c.StartBatchScrape(ctx, urls, opts)
 	if err != nil {
 		return nil, err
 	}
-	return c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	job, err := c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	if err != nil {
+		return nil, err
+	}
+
+	// The status endpoint only reports successful documents, and its counters
+	// exclude failed URLs, so the errors endpoint is the only place a caller can
+	// learn which URLs were dropped and why.
+	errs, err := c.GetBatchScrapeErrors(ctx, start.ID)
+	if err != nil {
+		return nil, err
+	}
+	job.Errors = errs.Errors
+	job.RobotsBlocked = errs.RobotsBlocked
+	return job, nil
 }
 
 // CancelBatchScrape cancels a running batch scrape job.

@@ -1239,6 +1239,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
       requestId: z.string(),
       shouldBill: z.boolean(),
       boostConcurrency: z.boolean().optional(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -1296,6 +1297,7 @@ const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
       requestId: z.string(),
       shouldBill: z.boolean(),
       boostConcurrency: z.boolean().optional(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
   file: uploadedParseFileSchema,
@@ -1332,6 +1334,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
       auth: z.string(),
       requestId: z.string(),
       shouldBill: z.boolean(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -1357,6 +1360,7 @@ const batchScrapeRequestSchemaNoURLValidationBase =
         auth: z.string(),
         requestId: z.string(),
         shouldBill: z.boolean(),
+        hostedMcp: z.boolean().optional(),
       })
       .optional(),
   });
@@ -2120,6 +2124,10 @@ type AuthObject = {
   // Set only by authMiddleware from the raw request; controllers may re-parse
   // the body and drop `__agentInterop`, so read this instead.
   agentInterop?: AgentInteropStatus;
+  // Set only by authMiddleware, from the hosted MCP verification in
+  // supaAuthenticateUser, or from a trusted agent interop block for an agent
+  // run that verification started; never from an untrusted body or header.
+  hostedMcp?: boolean;
 };
 
 type Account = {
@@ -2690,6 +2698,7 @@ export const searchRequestSchema = z
         auth: z.string(),
         requestId: z.string(),
         shouldBill: z.boolean(),
+        hostedMcp: z.boolean().optional(),
       })
       .optional(),
   })

@@ -480,6 +480,16 @@ describe("calculateCreditsToBeBilled — zero data retention", () => {
   it("is not added on top of lockdown", async () => {
     expect(await bill({ lockdown: true }, true)).toBe(5);
   });
+
+  it.each(["audio", "video"])(
+    "drops the %s surcharge it refuses, but not under lockdown",
+    async type => {
+      const media = { formats: [{ type }] };
+      expect(await bill(media, false)).toBe(5);
+      expect(await bill(media, true)).toBe(2);
+      expect(await bill({ ...media, lockdown: true }, true)).toBe(9);
+    },
+  );
 });
 
 describe("calculateThreatScanCredits", () => {

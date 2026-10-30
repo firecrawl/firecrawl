@@ -1272,7 +1272,11 @@ describe("firebill routing", () => {
 
     // 500 is the funder's pool. Straight to Autumn this would have been the
     // ghost's own balance, and a drained ghost would have been a 402.
-    expect(result).toEqual({ allowed: true, remaining: 500 });
+    expect(result).toEqual({
+      allowed: true,
+      remaining: 500,
+      gatewayProvisioned: true,
+    });
     expect(mockCheck).not.toHaveBeenCalled();
     expect(String(mockFetch.mock.calls[0][0])).toBe(
       "http://firebill.test/v1/check",
