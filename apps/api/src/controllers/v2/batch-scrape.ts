@@ -471,12 +471,12 @@ export async function batchScrapeController(
         error: "Job not found",
       });
     }
-    // Refresh Safe Mode + threat-protection context so appended jobs enforce
-    // the team's current policy, not whatever was stored when the batch was
-    // first created.
+    // Refresh Safe Mode, threat protection, and the caller IP so appended jobs
+    // follow this request, not whatever was stored when the batch was created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    sc.internalOptions.clientIp = req.ip;
   }
 
   if (!req.body.appendToId) {

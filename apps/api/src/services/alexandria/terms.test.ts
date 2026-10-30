@@ -155,36 +155,43 @@ it("rejects acceptance when the caller's country requires no agreement", async (
   );
 });
 
-it("reads the ledger for the caller's country", async () => {
-  mocks.request.mockImplementation(async ({ path }: { path: string }) =>
-    path === "/v1/provider-terms/requirements"
-      ? {
-          status: 200,
-          body: {
-            providers: [
-              {
-                provider: "peopledatalabs",
-                required: true,
-                terms,
-              },
-            ],
-          },
-        }
-      : {
-          status: 200,
-          body: {
-            providers: [
-              {
-                provider: "peopledatalabs",
-                revoked: false,
-                version: terms.version,
-                textHash: terms.digest,
-                acceptedAt: "2026-10-08T12:00:00Z",
-              },
-            ],
-          },
+const statusPath = "/v1/provider-terms/status?organizationId=org";
+
+function ledgerExchange(requirements: {
+  required: boolean;
+  terms: typeof terms | null;
+}) {
+  return async ({ path }: { path: string }) => {
+    if (path === "/v1/provider-terms/requirements") {
+      return {
+        status: 200,
+        body: {
+          providers: [{ provider: "peopledatalabs", ...requirements }],
         },
-  );
+      };
+    }
+    if (path === statusPath) {
+      return {
+        status: 200,
+        body: {
+          providers: [
+            {
+              provider: "peopledatalabs",
+              revoked: false,
+              version: terms.version,
+              textHash: terms.digest,
+              acceptedAt: "2026-10-08T12:00:00Z",
+            },
+          ],
+        },
+      };
+    }
+    throw new Error(`unexpected Exchange path ${path}`);
+  };
+}
+
+it("reads the ledger for the caller's country", async () => {
+  mocks.request.mockImplementation(ledgerExchange({ required: true, terms }));
 
   await expect(
     hasLedgerAcceptance({
@@ -203,37 +210,14 @@ it("reads the ledger for the caller's country", async () => {
       billingCountry: "DE",
     }),
   );
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({ path: statusPath }),
+  );
 });
 
 it("does not treat missing country-scoped terms as accepted", async () => {
-  mocks.request.mockImplementation(async ({ path }: { path: string }) =>
-    path === "/v1/provider-terms/requirements"
-      ? {
-          status: 200,
-          body: {
-            providers: [
-              {
-                provider: "peopledatalabs",
-                required: false,
-                terms: null,
-              },
-            ],
-          },
-        }
-      : {
-          status: 200,
-          body: {
-            providers: [
-              {
-                provider: "peopledatalabs",
-                revoked: false,
-                version: terms.version,
-                textHash: terms.digest,
-                acceptedAt: "2026-10-08T12:00:00Z",
-              },
-            ],
-          },
-        },
+  mocks.request.mockImplementation(
+    ledgerExchange({ required: false, terms: null }),
   );
 
   await expect(
@@ -246,4 +230,7 @@ it("does not treat missing country-scoped terms as accepted", async () => {
       billingCountry: "US",
     }),
   ).resolves.toBe(false);
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({ path: statusPath }),
+  );
 });
