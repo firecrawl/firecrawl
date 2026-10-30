@@ -1,3 +1,4 @@
+use crate::xml::exceeds_element_depth;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use roxmltree::Document;
@@ -8,6 +9,9 @@ const MAX_OOXML_PART_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_OOXML_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_OOXML_PARTS: usize = 256;
 const MAX_HEADER_FOOTER_REFERENCES: usize = 256;
+// roxmltree parses recursively with no depth bound, and a stack overflow is
+// not an error but an abort of the whole process. Matches anydoc's own limit.
+const MAX_XML_DEPTH: usize = 256;
 const WORDPROCESSINGML_NAMESPACES: [&str; 2] = [
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
   "http://purl.oclc.org/ooxml/wordprocessingml/main",
@@ -42,8 +46,29 @@ impl Default for ZipReadBudget {
 /// csv, ...) to GitHub-Flavored Markdown using anydoc. The format is detected
 /// from the file content; `extension_hint` (with or without a leading dot) is
 /// only consulted for signature-less formats like CSV.
+///
+/// Runs on tokio's blocking thread pool, like the PDF functions: conversion is
+/// CPU-bound and would otherwise hold the Node.js event loop for its duration.
 #[napi]
-pub fn convert_document_to_markdown(data: &[u8], extension_hint: Option<String>) -> Result<String> {
+pub async fn convert_document_to_markdown(
+  data: Uint8Array,
+  extension_hint: Option<String>,
+) -> Result<String> {
+  let bytes = data.to_vec();
+  tokio::task::spawn_blocking(move || convert_document_bytes_to_markdown(&bytes, extension_hint))
+    .await
+    .map_err(|e| {
+      Error::new(
+        Status::GenericFailure,
+        format!("Document conversion task failed: {e}"),
+      )
+    })?
+}
+
+fn convert_document_bytes_to_markdown(
+  data: &[u8],
+  extension_hint: Option<String>,
+) -> Result<String> {
   let format = anydoc::Format::from_bytes(data).or_else(|| {
     extension_hint
       .as_deref()
@@ -87,7 +112,7 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
     return (String::new(), String::new());
   };
   let relationships = parse_repeating_relationships(&relationships_xml);
-  let Ok(document) = Document::parse(&document_xml) else {
+  let Some(document) = parse_xml_bounded(&document_xml) else {
     return (String::new(), String::new());
   };
 
@@ -144,6 +169,16 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
   (headers.join("\n\n"), footers.join("\n\n"))
 }
 
+/// Parses an XML part only when its element nesting stays within
+/// `MAX_XML_DEPTH`. The scan is a flat pass over the text, so an over-deep
+/// part is rejected before any recursion happens.
+fn parse_xml_bounded(xml: &str) -> Option<Document<'_>> {
+  if exceeds_element_depth(xml, MAX_XML_DEPTH) {
+    return None;
+  }
+  Document::parse(xml).ok()
+}
+
 fn read_zip_text<R: Read + std::io::Seek>(
   archive: &mut zip::ZipArchive<R>,
   name: &str,
@@ -172,7 +207,7 @@ fn read_zip_text<R: Read + std::io::Seek>(
 }
 
 fn office_document_target(xml: &str) -> Option<String> {
-  let document = Document::parse(xml).ok()?;
+  let document = parse_xml_bounded(xml)?;
   let relationship = document.descendants().find(|node| {
     node.is_element()
       && node.tag_name().name() == "Relationship"
@@ -184,7 +219,7 @@ fn office_document_target(xml: &str) -> Option<String> {
 }
 
 fn parse_repeating_relationships(xml: &str) -> HashMap<String, Relationship> {
-  let Ok(document) = Document::parse(xml) else {
+  let Some(document) = parse_xml_bounded(xml) else {
     return HashMap::new();
   };
 
@@ -246,7 +281,7 @@ fn normalize_part(part: &str) -> Option<String> {
 }
 
 fn extract_wordprocessing_text(xml: &str) -> Option<String> {
-  let document = Document::parse(xml).ok()?;
+  let document = parse_xml_bounded(xml)?;
   let paragraphs = document
     .descendants()
     .filter(|node| {
@@ -288,4 +323,117 @@ fn is_wordprocessing_node(node: roxmltree::Node<'_, '_>) -> bool {
       .tag_name()
       .namespace()
       .is_some_and(|namespace| WORDPROCESSINGML_NAMESPACES.contains(&namespace))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::io::Write;
+  use zip::write::SimpleFileOptions;
+
+  const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+  fn nested(depth: usize, leaf: &str) -> String {
+    let mut xml = String::new();
+    for _ in 0..depth {
+      xml.push_str("<a>");
+    }
+    xml.push_str(leaf);
+    for _ in 0..depth {
+      xml.push_str("</a>");
+    }
+    xml
+  }
+
+  #[test]
+  fn over_deep_part_is_rejected_without_parsing() {
+    assert!(parse_xml_bounded(&nested(MAX_XML_DEPTH + 1, "x")).is_none());
+    assert!(parse_xml_bounded(&nested(MAX_XML_DEPTH, "x")).is_some());
+  }
+
+  #[test]
+  fn deep_header_part_does_not_abort_extraction() {
+    // Deep enough that a recursive parse would exhaust the stack; the depth
+    // scan must turn it away first.
+    let header = format!(
+      "<w:hdr xmlns:w=\"{W}\">{}</w:hdr>",
+      nested(200_000, "<w:p><w:r><w:t>deep</w:t></w:r></w:p>")
+    );
+    assert!(extract_wordprocessing_text(&header).is_none());
+  }
+
+  fn docx_with_header(header_xml: &str) -> Vec<u8> {
+    docx_with_parts(header_xml, None)
+  }
+
+  fn docx_with_parts(header_xml: &str, footer_xml: Option<&str>) -> Vec<u8> {
+    let mut cursor = Cursor::new(Vec::new());
+    {
+      let mut writer = zip::ZipWriter::new(&mut cursor);
+      let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+      let footer_reference = footer_xml
+        .map(|_| "<w:footerReference w:type=\"default\" r:id=\"rId3\"/>")
+        .unwrap_or("");
+      let footer_relationship = footer_xml
+        .map(|_| format!("<Relationship Id=\"rId3\" Type=\"{R}/footer\" Target=\"footer1.xml\"/>"))
+        .unwrap_or_default();
+      let mut parts: Vec<(&str, String)> = vec![
+        (
+          "_rels/.rels",
+          format!(
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"{R}/officeDocument\" Target=\"word/document.xml\"/></Relationships>"
+          ),
+        ),
+        (
+          "word/document.xml",
+          format!(
+            "<w:document xmlns:w=\"{W}\" xmlns:r=\"{R}\"><w:body><w:p><w:r><w:t>body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type=\"default\" r:id=\"rId2\"/>{footer_reference}</w:sectPr></w:body></w:document>"
+          ),
+        ),
+        (
+          "word/_rels/document.xml.rels",
+          format!(
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId2\" Type=\"{R}/header\" Target=\"header1.xml\"/>{footer_relationship}</Relationships>"
+          ),
+        ),
+        ("word/header1.xml", header_xml.to_string()),
+      ];
+      if let Some(footer_xml) = footer_xml {
+        parts.push(("word/footer1.xml", footer_xml.to_string()));
+      }
+      for (name, content) in parts {
+        writer.start_file(name, options).unwrap();
+        writer.write_all(content.as_bytes()).unwrap();
+      }
+      writer.finish().unwrap();
+    }
+    cursor.into_inner()
+  }
+
+  #[test]
+  fn extracts_a_normal_header() {
+    let docx = docx_with_header(&format!(
+      "<w:hdr xmlns:w=\"{W}\"><w:p><w:r><w:t>Company Confidential</w:t></w:r></w:p></w:hdr>"
+    ));
+    let (headers, footers) = extract_docx_headers_and_footers(&docx);
+    assert_eq!(headers, "Company Confidential");
+    assert_eq!(footers, "");
+  }
+
+  #[test]
+  fn skips_an_over_deep_header_and_keeps_going() {
+    let docx = docx_with_parts(
+      &format!(
+        "<w:hdr xmlns:w=\"{W}\">{}</w:hdr>",
+        nested(200_000, "<w:p><w:r><w:t>deep</w:t></w:r></w:p>")
+      ),
+      Some(&format!(
+        "<w:ftr xmlns:w=\"{W}\"><w:p><w:r><w:t>Page 1</w:t></w:r></w:p></w:ftr>"
+      )),
+    );
+    let (headers, footers) = extract_docx_headers_and_footers(&docx);
+    assert_eq!(headers, "");
+    assert_eq!(footers, "Page 1");
+  }
 }
