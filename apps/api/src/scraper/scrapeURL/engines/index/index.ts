@@ -53,6 +53,34 @@ import {
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { hasCustomRequestContext } from "../../lib/request-context";
 
+const AMAZON_HOST = /(^|\.)amazon\.[a-z.]+$/i;
+const AMAZON_INTERSTITIAL_PATH = /^\/(checkpoint\/|errors\/validatecaptcha)/i;
+
+/**
+ * True when a page is a bot-check interstitial served in place of the
+ * requested page. These are often HTTP 200, so they must be kept out of the index.
+ */
+export function isInterstitialPage(
+  url: string | undefined,
+  html: string | undefined,
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url ?? "");
+  } catch {
+    return false;
+  }
+  if (!AMAZON_HOST.test(parsed.hostname)) {
+    return false;
+  }
+  return (
+    AMAZON_INTERSTITIAL_PATH.test(parsed.pathname) ||
+    (html !== undefined &&
+      (html.includes('id="checkpointForm"') ||
+        html.includes("/errors/validateCaptcha")))
+  );
+}
+
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
   const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
@@ -93,7 +121,14 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    !hasCustomRequestContext(meta.options);
+    !hasCustomRequestContext(meta.options) &&
+    !isInterstitialPage(
+      document.metadata.url ??
+        document.metadata.sourceURL ??
+        meta.rewrittenUrl ??
+        meta.url,
+      document.rawHtml,
+    );
 
   if (!shouldCache) {
     return document;
@@ -540,6 +575,12 @@ export async function scrapeURLWithIndex(
     }
     logLookup("warn", "hit", { gcsMiss: true, indexDocumentId: id });
     throw new EngineError("Document not found in GCS");
+  }
+
+  if (isInterstitialPage(doc.url, doc.html)) {
+    deleteCachedIndexEntry(variantKey, id, meta.logger).catch(() => {});
+    logLookup("debug", "hit", { interstitial: true, indexDocumentId: id });
+    throw new IndexMissError();
   }
 
   // Check if the cached content is a PDF base64 (starts with JVBERi)
