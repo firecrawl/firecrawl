@@ -12,7 +12,9 @@ import { logger } from "../../lib/logger";
 import {
   autumnService,
   featureIdForBillingEndpoint,
+  MCP_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
+import { tallyAgentMcpCredits } from "../billing/agent-mcp-credits";
 import type { LockCreditsResult } from "../autumn/types";
 import {
   AGENT_REQUEST_CREDITS_SHARDS,
@@ -52,6 +54,10 @@ type Retrieval = {
   scrapeId: string;
   lockId?: string;
   maximumCredits?: number;
+  // The part of the hold a hosted MCP call's MCP credits took, under its own
+  // lock; the rest of maximumCredits is held under lockId.
+  mcpLockId?: string;
+  mcpHeldCredits?: number;
   response?: ExchangeResponse;
   // Set instead of response under zero data retention.
   responseWithheld?: boolean;
@@ -107,6 +113,8 @@ export async function retrieveProviders(input: {
   requestId: string;
   /** The agent run this call belongs to: its credits join that run's call credits. */
   agentRequestId?: string;
+  /** A verified hosted MCP call: its MCP credits are held and spent first. */
+  hostedMcp?: boolean;
   scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
@@ -275,10 +283,16 @@ export async function retrieveProviders(input: {
   };
 
   let lockId: string | undefined;
+  let mcpLockId: string | undefined;
+  let mcpHeldCredits = 0;
   let maximumCredits: number;
   let refundable = false;
-  const finalize = async (credits: number) => {
-    if (!lockId) return true;
+  const settle = async (
+    lock: string,
+    heldValue: number,
+    credits: number,
+    lockFeatureId: string,
+  ) => {
     const settled = await autumnService.finalizeCreditsLock({
       // Omitted without an org: the settle goes straight to Autumn, the route
       // an unnameable org already took.
@@ -286,22 +300,46 @@ export async function retrieveProviders(input: {
         input.orgId !== null
           ? { teamId: input.teamId, orgId: input.orgId }
           : undefined,
-      lockId,
+      lockId: lock,
       action: credits > 0 ? "confirm" : "release",
       ...(credits > 0 ? { overrideValue: credits } : {}),
-      heldValue: maximumCredits,
-      featureId,
+      heldValue,
+      featureId: lockFeatureId,
       properties,
     });
     if (!settled)
       logger.error("Provider credits were not settled; hold expires unbilled", {
         chargeId: id,
         teamId: input.teamId,
-        lockId,
+        lockId: lock,
         credits,
       });
     return settled;
   };
+  // The MCP credits pay first, up to what they hold; the rest settles on the
+  // scrape feature's hold.
+  const mcpPart = (credits: number) => Math.min(credits, mcpHeldCredits);
+  const finalizeParts = (credits: number) =>
+    Promise.all([
+      mcpLockId
+        ? settle(
+            mcpLockId,
+            mcpHeldCredits,
+            mcpPart(credits),
+            MCP_CREDITS_FEATURE_ID,
+          )
+        : true,
+      lockId
+        ? settle(
+            lockId,
+            maximumCredits - mcpHeldCredits,
+            credits - mcpPart(credits),
+            featureId,
+          )
+        : true,
+    ]);
+  const finalize = async (credits: number) =>
+    (await finalizeParts(credits)).every(Boolean);
 
   try {
     const denied = await authorizeProviders(
@@ -384,16 +422,45 @@ export async function retrieveProviders(input: {
           input.teamId,
           input.orgId,
         ));
-        hold = await autumnService.lockCredits({
-          teamId: input.teamId,
-          orgId: input.orgId,
-          value: maximumCredits,
-          lockId: `alexandria_${id}`,
-          expiresAt: record.deadline + HOLD_GRACE_MS,
-          featureId,
-          properties,
-        });
+        if (input.hostedMcp) {
+          const mcpCredits = await autumnService.mcpCreditsAvailable({
+            teamId: input.teamId,
+            orgId: input.orgId,
+            value: maximumCredits,
+            properties,
+          });
+          const mcpHold =
+            mcpCredits > 0
+              ? await autumnService.lockCredits({
+                  teamId: input.teamId,
+                  orgId: input.orgId,
+                  value: mcpCredits,
+                  lockId: `alexandria_${id}_mcp`,
+                  expiresAt: record.deadline + HOLD_GRACE_MS,
+                  featureId: MCP_CREDITS_FEATURE_ID,
+                  properties,
+                })
+              : undefined;
+          if (mcpHold?.status === "locked") {
+            mcpLockId = mcpHold.lockId;
+            mcpHeldCredits = mcpCredits;
+          }
+        }
+        // Held in full on the MCP credits, nothing is left to hold here.
+        hold =
+          mcpHeldCredits < maximumCredits
+            ? await autumnService.lockCredits({
+                teamId: input.teamId,
+                orgId: input.orgId,
+                value: maximumCredits - mcpHeldCredits,
+                lockId: `alexandria_${id}`,
+                expiresAt: record.deadline + HOLD_GRACE_MS,
+                featureId,
+                properties,
+              })
+            : { status: "locked", lockId: "" };
       }
+      if (hold.status !== "locked" && mcpLockId) await finalize(0);
       if (hold.status === "denied")
         return refuse(
           hold.reason === "gate_unavailable"
@@ -415,16 +482,20 @@ export async function retrieveProviders(input: {
             "Credit reservation is unavailable. No provider was executed.",
           ),
         );
-      lockId = hold.lockId;
+      lockId = hold.lockId || undefined;
     }
 
     // The record is written before the provider runs, so a failed write means
     // nothing ran: the catch below hands back the index calls and the hold.
     record.lockId = lockId;
     record.maximumCredits = maximumCredits;
+    if (mcpLockId) {
+      record.mcpLockId = mcpLockId;
+      record.mcpHeldCredits = mcpHeldCredits;
+    }
     await write(record);
   } catch (error) {
-    if (lockId) await finalize(0).catch(() => false);
+    if (lockId || mcpLockId) await finalize(0).catch(() => false);
     await releaseIndexCalls();
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
@@ -496,10 +567,16 @@ export async function retrieveProviders(input: {
     if (!receiptMatches)
       return fail("Alexandria receipt did not match the request");
 
-    const credits = answer.creditsCost;
-    const settled = await finalize(credits);
+    const [mcpSettled, restSettled] = await finalizeParts(answer.creditsCost);
+    const settled = mcpSettled && restSettled;
+    // A split settle that landed in part records the part that landed; the
+    // rest goes unbilled, as a whole settle that does not land does.
+    const mcpCredits = mcpSettled ? mcpPart(answer.creditsCost) : 0;
+    const credits =
+      mcpCredits +
+      (restSettled ? answer.creditsCost - mcpPart(answer.creditsCost) : 0);
     const recorded =
-      settled && billable && credits > 0
+      billable && credits > 0
         ? await recordLedgerUsage(
             id,
             input.teamId,
@@ -507,13 +584,19 @@ export async function retrieveProviders(input: {
             input.apiKeyId,
             credits,
             refundable,
+            mcpCredits,
           )
         : settled;
-    const charged =
-      settled && billable && credits > 0 && (recorded || !refundable);
-    if (charged && input.agentRequestId)
+    const charged = billable && credits > 0 && (recorded || !refundable);
+    if (charged && input.agentRequestId) {
       await recordAgentCredits(input.agentRequestId, id, credits);
-    if (!billable || recorded)
+      await tallyAgentMcpCredits(
+        { endpoint: "agent", agentRequestId: input.agentRequestId },
+        `alexandria:${id}`,
+        mcpCredits,
+      );
+    }
+    if (!billable || (settled && recorded))
       void reportExchangeUsageBilling({
         requestId: id,
         status: billable ? "confirmed" : "void",
@@ -570,6 +653,7 @@ async function recordLedgerUsage(
   apiKeyId: number | null,
   credits: number,
   refundable: boolean,
+  mcpCredits: number,
 ): Promise<boolean> {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -579,7 +663,11 @@ async function recordLedgerUsage(
           team_id: teamId,
           org_id: orgId,
           credits,
-          billing: { endpoint: "scrape", chargeId: id },
+          billing: {
+            endpoint: "scrape",
+            chargeId: id,
+            ...(mcpCredits > 0 ? { hostedMcp: true, mcpCredits } : {}),
+          },
           is_extract: false,
           timestamp: new Date().toISOString(),
           originating_job_id: id,
@@ -602,8 +690,8 @@ async function recordLedgerUsage(
       );
       // refundable is only ever set with an org in hand; named again so the
       // type says so.
-      if (refundable && orgId !== null)
-        await autumnService.refundCredits({
+      if (refundable && orgId !== null) {
+        const refund = {
           teamId,
           orgId,
           value: credits,
@@ -614,7 +702,12 @@ async function recordLedgerUsage(
             chargeId: id,
           },
           idempotencyKey: `fc:refund:scrape:${id}`,
-        });
+        };
+        // A split charge refunds each part to the balance it was settled on.
+        await (mcpCredits > 0
+          ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
+          : autumnService.refundCredits(refund));
+      }
       return false;
     }
   }

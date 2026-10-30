@@ -11,11 +11,15 @@ describe("fetchProduct", () => {
     vi.clearAllMocks();
   });
 
-  function baseMeta(formats: any[] = [{ type: "product" }]) {
+  function baseMeta(
+    formats: any[] = [{ type: "product" }],
+    zeroDataRetention = false,
+  ) {
     return {
       url: "https://shop.test/p",
       rewrittenUrl: "https://shop.test/p",
       options: { formats },
+      internalOptions: { zeroDataRetention },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     } as any;
   }
@@ -34,6 +38,27 @@ describe("fetchProduct", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(out.product).toBeUndefined();
     expect(out.warning).toMatch(/not available/i);
+  });
+
+  it("refuses the product format under zero data retention without calling the service", async () => {
+    config.PRODUCT_EXTRACTION_SERVICE_URL = "https://product.internal";
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as any;
+    const document: any = {
+      rawHtml: "<html>jsonld</html>",
+      metadata: { url: "https://shop.test/p" },
+    };
+
+    const out = await fetchProduct(
+      baseMeta([{ type: "product" }], true),
+      document,
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(out.product).toBeUndefined();
+    expect(out.warning).toBe(
+      "Product format is not supported with zero data retention.",
+    );
   });
 
   it("posts rawHtml to the service and sets document.product", async () => {

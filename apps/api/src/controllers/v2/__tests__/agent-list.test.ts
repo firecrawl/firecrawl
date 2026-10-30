@@ -107,6 +107,16 @@ describe("agentListController options", () => {
     });
   });
 
+  it("lists safe only for a run that set it", async () => {
+    mockAgentRow(JSON.stringify({ prompt: "p", model: "spark-2", safe: true }));
+    expect(await listOptions()).toMatchObject({ safe: true });
+
+    mockAgentRow(
+      JSON.stringify({ prompt: "p", model: "spark-2", safe: false }),
+    );
+    expect(await listOptions()).not.toHaveProperty("safe");
+  });
+
   it("reads a quoted threadTurn as a number", async () => {
     mockAgentRow(
       JSON.stringify({ prompt: "p", threadId: "thread-1", threadTurn: "3" }),
@@ -195,6 +205,29 @@ describe("agentListController zero data retention rows", () => {
       prompt: "",
       model: "spark-2",
       effort: "high",
+      zeroDataRetention: true,
+    });
+  });
+
+  it("keeps safe on a ZDR row", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => [] }),
+    );
+    mockAgentRow(
+      JSON.stringify({
+        prompt: "secret prompt",
+        model: "spark-2",
+        safe: true,
+        zeroDataRetention: true,
+      }),
+    );
+
+    expect(await listOptions()).toEqual({
+      prompt: "",
+      model: "spark-2",
+      effort: "medium",
+      safe: true,
       zeroDataRetention: true,
     });
   });

@@ -34,18 +34,24 @@ vi.mock("../../services/billing/credit_billing", () => ({
 }));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn() },
+  autumnService: { checkCredits: vi.fn(), mcpCreditsAvailable: vi.fn() },
   CREDITS_FEATURE_ID: "CREDITS",
   SEARCH_CREDITS_FEATURE_ID: "SEARCH_CREDITS",
 }));
 
 const checkCredits = vi.mocked(autumnService.checkCredits);
+const mcpCreditsAvailable = vi.mocked(autumnService.mcpCreditsAvailable);
 
-function appWith(orgId: string | undefined) {
+function appWith(orgId: string | undefined, hostedMcp = false) {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res, next) => {
-    req.auth = { team_id: "team-test", org_id: orgId, plan: "standard" };
+    req.auth = {
+      team_id: "team-test",
+      org_id: orgId,
+      plan: "standard",
+      ...(hostedMcp ? { hostedMcp: true } : {}),
+    };
     req.acuc = { api_key_id: 4 };
     next();
   });
@@ -108,6 +114,19 @@ describe.each([
 
     expect(res.statusCode).toBe(200);
     expect(checkCredits).not.toHaveBeenCalled();
+  });
+
+  it("serves a hosted MCP search the team's MCP credits can cover", async () => {
+    checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
+    mcpCreditsAvailable.mockResolvedValue(2);
+
+    const res = await request(appWith("org-test", true)).get(path);
+
+    expect(res.statusCode).toBe(200);
+    expect(upstreamCalls).toHaveLength(1);
+    expect(mcpCreditsAvailable).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-test", value: 2 }),
+    );
   });
 });
 
