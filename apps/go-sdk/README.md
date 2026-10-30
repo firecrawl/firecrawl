@@ -231,10 +231,35 @@ job, err := client.BatchScrape(ctx, urls, &firecrawl.BatchScrapeOptions{
 		Formats: []string{"markdown"},
 	},
 })
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println("batch", job.ID, "scraped", len(job.Data), "pages")
+
+// Pages that responded with an HTTP error (404, 429, 5xx, ...) are still
+// returned in job.Data, with the original status in metadata.statusCode.
+for _, doc := range job.Data {
+	if status, _ := doc.Metadata["statusCode"].(float64); status >= 400 {
+		fmt.Printf("%s responded with HTTP %d\n", doc.Metadata["sourceURL"], int(status))
+	}
+}
+
+// URLs that could not be scraped at all (DNS errors, timeouts, ...) are
+// listed in job.Errors with a stable code, and robots.txt-blocked URLs in
+// job.RobotsBlocked.
+for _, e := range job.Errors {
+	fmt.Printf("%s failed: %s (%s)\n", e.URL, e.Code, e.Error)
+}
+for _, u := range job.RobotsBlocked {
+	fmt.Println(u, "blocked by robots.txt")
+}
 
 // Or manage manually
 resp, err := client.StartBatchScrape(ctx, urls, nil)
 status, err := client.GetBatchScrapeStatus(ctx, resp.ID)
+errs, err := client.GetBatchScrapeErrors(ctx, resp.ID)
+fmt.Println(len(errs.Errors), "URLs failed,", len(errs.RobotsBlocked), "blocked by robots.txt")
 _, err = client.CancelBatchScrape(ctx, resp.ID)
 ```
 

@@ -407,6 +407,10 @@ type BatchScrapeResponse struct {
 }
 
 // BatchScrapeJob represents the status and results of a batch scrape job.
+//
+// ID is always set to the batch job ID, so callers of the synchronous
+// BatchScrape can still reach the per-job endpoints (GetBatchScrapeErrors,
+// CancelBatchScrape) afterwards.
 type BatchScrapeJob struct {
 	ID          string     `json:"id,omitempty"`
 	Status      string     `json:"status"`
@@ -416,11 +420,49 @@ type BatchScrapeJob struct {
 	ExpiresAt   string     `json:"expiresAt,omitempty"`
 	Next        string     `json:"next,omitempty"`
 	Data        []Document `json:"data,omitempty"`
+
+	// Errors lists the URLs that could not be scraped at all (for example DNS
+	// resolution errors or timeouts). Pages that responded with an HTTP error
+	// such as 404 or 429 are not listed here: they are returned in Data with the
+	// original status in Metadata["statusCode"].
+	//
+	// Populated by BatchScrape and BatchScrapeWithPolling once the job has
+	// finished. GetBatchScrapeStatus leaves it nil; use GetBatchScrapeErrors.
+	Errors []BatchScrapeError `json:"errors,omitempty"`
+	// RobotsBlocked lists the URLs skipped because robots.txt disallowed them.
+	// Populated under the same conditions as Errors.
+	RobotsBlocked []string `json:"robotsBlocked,omitempty"`
 }
 
 // IsDone returns true if the batch scrape job has finished.
 func (b *BatchScrapeJob) IsDone() bool {
 	return b.Status == "completed" || b.Status == "failed" || b.Status == "cancelled"
+}
+
+// BatchScrapeError describes one URL in a batch scrape job that failed to scrape.
+type BatchScrapeError struct {
+	// ID is the ID of the individual scrape job for this URL.
+	ID string `json:"id"`
+	// Timestamp is when the scrape failed, in RFC 3339 format, if known.
+	Timestamp string `json:"timestamp,omitempty"`
+	// URL is the URL that failed to scrape.
+	URL string `json:"url"`
+	// Code is a stable error code, such as "SCRAPE_DNS_RESOLUTION_ERROR" or
+	// "SCRAPE_TIMEOUT". Empty when the failure has no classified code.
+	Code string `json:"code,omitempty"`
+	// Error is the human-readable error message.
+	Error string `json:"error"`
+	// RequiresAction is set when the page needs an out-of-band step first, such
+	// as accepting a data provider's terms.
+	RequiresAction *RequiresAction `json:"requiresAction,omitempty"`
+}
+
+// BatchScrapeErrorsResponse is returned by GetBatchScrapeErrors.
+type BatchScrapeErrorsResponse struct {
+	// Errors lists the URLs that failed to scrape. See BatchScrapeError.
+	Errors []BatchScrapeError `json:"errors"`
+	// RobotsBlocked lists the URLs skipped because robots.txt disallowed them.
+	RobotsBlocked []string `json:"robotsBlocked"`
 }
 
 // LinkResult represents a discovered URL from a map request.
