@@ -267,6 +267,19 @@ export function checkCreditsMiddleware(
             path: req.path,
           },
         );
+        // A Gateway account's credits come from the platform that created
+        // it, so its user has no plan of their own to upgrade.
+        if (
+          !res.headersSent &&
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
+          autumnResult.gatewayProvisioned === true
+        ) {
+          return res.status(402).json({
+            success: false,
+            code: "platform_managed_credits",
+            error: `Insufficient ${currencyName} to perform this request. This account's ${currencyName} are managed by the platform that created it, so contact that platform for more ${currencyName}.`,
+          });
+        }
         if (
           !res.headersSent &&
           req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID

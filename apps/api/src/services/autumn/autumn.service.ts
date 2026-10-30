@@ -481,14 +481,17 @@ export class AutumnService {
   private async resolveBillingRoute(
     teamId: string,
     orgId: string,
-  ): Promise<{ customerId: string; routed: boolean }> {
-    const routed = shouldRouteToFirebill(orgId, {
-      gatewayProvisioned: await this.isGatewayProvisioned(teamId),
-    });
+  ): Promise<{
+    customerId: string;
+    routed: boolean;
+    gatewayProvisioned: boolean;
+  }> {
+    const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
+    const routed = shouldRouteToFirebill(orgId, { gatewayProvisioned });
     if (!routed && !this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
       await this.ensureTeamProvisioned({ teamId, orgId });
     }
-    return { customerId: orgId, routed };
+    return { customerId: orgId, routed, gatewayProvisioned };
   }
 
   /**
@@ -504,15 +507,15 @@ export class AutumnService {
   }: TrackCreditsParams): Promise<{
     allowed: boolean;
     remaining: number;
+    /** Set only for a Gateway account, funded by the platform that created it. */
+    gatewayProvisioned?: boolean;
   } | null> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return null;
     }
     try {
-      const { customerId, routed } = await this.resolveBillingRoute(
-        teamId,
-        orgId,
-      );
+      const { customerId, routed, gatewayProvisioned } =
+        await this.resolveBillingRoute(teamId, orgId);
 
       // Mirrors track() and lockCredits(). Without this branch the gate reads
       // the ghost's balance alone, and a gateway ghost is designed to spend
@@ -539,7 +542,11 @@ export class AutumnService {
           properties,
         });
         if (result.status === "unavailable") return null;
-        return { allowed: result.allowed, remaining: result.remaining };
+        return {
+          allowed: result.allowed,
+          remaining: result.remaining,
+          ...(gatewayProvisioned ? { gatewayProvisioned } : {}),
+        };
       }
 
       const { allowed, balance } = await autumnClient.check({
@@ -560,7 +567,11 @@ export class AutumnService {
         allowed,
         remaining,
       });
-      return { allowed, remaining };
+      return {
+        allowed,
+        remaining,
+        ...(gatewayProvisioned ? { gatewayProvisioned } : {}),
+      };
     } catch (error) {
       logger.error(
         "Autumn checkCredits failed — billing API may be unavailable, falling back",

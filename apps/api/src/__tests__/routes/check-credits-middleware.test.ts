@@ -130,6 +130,36 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     );
   });
 
+  it("tells a Gateway account to contact its platform on a 402", async () => {
+    checkCreditsMock.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      gatewayProvisioned: true,
+    });
+
+    const { res } = await runMiddleware(buildReq());
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: "platform_managed_credits",
+        error: expect.stringContaining("contact that platform"),
+      }),
+    );
+  });
+
+  it("keeps the generic 402 for an account that is not a Gateway account", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+
+    const { res } = await runMiddleware(buildReq());
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.not.objectContaining({ code: expect.anything() }),
+    );
+  });
+
   it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
     checkCreditsMock
       .mockResolvedValueOnce({ allowed: false, remaining: 5 })
