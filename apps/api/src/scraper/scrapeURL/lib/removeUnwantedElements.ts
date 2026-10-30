@@ -48,6 +48,19 @@ const excludeNonMainTags = [
   "#widget",
   ".cookie",
   "#cookie",
+  '[aria-label="Cookie consent" i]',
+  ".grecaptcha-badge",
+  '[data-original-tag="iframe"][src*="google.com/recaptcha/"]',
+  '[data-original-tag="iframe"][src*="recaptcha.net/recaptcha/"]',
+  '[data-original-tag="iframe"][src*="hcaptcha.com"]',
+  '[data-original-tag="iframe"][src*="challenges.cloudflare.com"]',
+];
+
+// Inlined documents of embedded players hold only player chrome, never page content.
+const emptyNonMainFrames = [
+  '[data-original-tag="iframe"][src*="player.vimeo.com/"]',
+  '[data-original-tag="iframe"][src*="youtube.com/embed/"]',
+  '[data-original-tag="iframe"][src*="youtube-nocookie.com/embed/"]',
 ];
 
 const forceIncludeMainTags = [
@@ -171,6 +184,8 @@ export const htmlTransform = async (
 
       elementsToRemove.remove();
     });
+
+    soup(emptyNonMainFrames.join(",")).empty();
   }
 
   // always return biggest image
