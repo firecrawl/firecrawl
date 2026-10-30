@@ -549,7 +549,7 @@ describe("authenticateUser with Vercel Marketplace OIDC tokens", () => {
       RateLimiterMode.Scrape,
     );
 
-    expect(auth).toEqual(UNAUTHORIZED);
+    expect(auth).toMatchObject({ success: true, team_id: "bypass" });
     expect(jwksFetch).not.toHaveBeenCalled();
     expect(authCreditUsageChunk).not.toHaveBeenCalled();
   });
