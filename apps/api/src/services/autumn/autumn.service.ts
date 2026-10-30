@@ -791,8 +791,9 @@ export class AutumnService {
    *
    * A caller that cannot name the org passes no team, and there is no org to
    * ask the rollout about. That settle goes through firebill whenever firebill
-   * is configured: the lock id is all a finalize needs, so nothing is lost by
-   * not knowing the org, and a direct settle would be the one write to Autumn
+   * is configured: the lock id is all a finalize needs, so an ordinary settle
+   * loses nothing by not knowing the org (a run-token settle loses its partner
+   * report, as below), and a direct settle would be the one write to Autumn
    * left outside firebill.
    *
    * **Except with a run token in hand**, where it is a correctness choice: only
