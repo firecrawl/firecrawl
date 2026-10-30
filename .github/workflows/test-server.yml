@@ -245,7 +245,7 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
-      - name: Run Autumn entity provisioning regression tests
+      - name: Run Autumn billing service regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
         working-directory: apps/api
