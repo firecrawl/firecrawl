@@ -6,6 +6,8 @@ import {
 } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
+import { randomUUID } from "node:crypto";
+import { tallyAgentMcpCredits } from "./agent-mcp-credits";
 
 /**
  * `org_id` is the team's Autumn customer. It is nullable here and nowhere
@@ -84,6 +86,7 @@ export async function billTeam(
       // A track only happens with an org in hand; named again so the type says so.
       // A charge the MCP credits paid part of is refundable for that part even
       // when the rest was not tracked.
+      let refunded = false;
       if (
         !result.success &&
         (trackedInRequest || mcpCredits > 0) &&
@@ -118,7 +121,16 @@ export async function billTeam(
           await (mcpCredits > 0
             ? autumnService.refundHostedMcpCredits({ ...refund, mcpCredits })
             : autumnService.refundCredits(refund));
+          refunded = true;
         }
+      }
+
+      if (!refunded) {
+        await tallyAgentMcpCredits(
+          billing,
+          billing.chargeId ?? randomUUID(),
+          mcpCredits,
+        );
       }
 
       return result;

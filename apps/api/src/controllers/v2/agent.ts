@@ -1,5 +1,8 @@
 import { v7 as uuidv7 } from "uuid";
-import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
+import {
+  AGENT_REQUEST_CREDITS_SHARDS,
+  initializeRequestCredits,
+} from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -25,6 +28,7 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { agentMcpCreditsRequestId } from "../../services/billing/agent-mcp-credits";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
 import {
@@ -142,7 +146,12 @@ export async function agentController(
           req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          { endpoint: "agent", jobId: agentId, chargeId: `${agentId}:threat` },
+          {
+            endpoint: "agent",
+            jobId: agentId,
+            chargeId: `${agentId}:threat`,
+            hostedMcp: req.auth.hostedMcp,
+          },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
@@ -254,6 +263,7 @@ export async function agentController(
       orgId: req.auth.org_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
       requestedMaxCredits: req.body.maxCredits,
+      hostedMcp: req.auth.hostedMcp,
     });
     if (!gate.allowed) {
       logger.warn("Insufficient credits to start agent run", {
@@ -288,6 +298,19 @@ export async function agentController(
       : {}),
   });
 
+  // The tally a hosted MCP run's calls add their MCP credits to, so a failed
+  // run can give that part back to MCP credits (see tallyAgentMcpCredits).
+  if (req.auth.hostedMcp) {
+    await initializeRequestCredits(
+      agentMcpCreditsRequestId(agentId),
+      AGENT_REQUEST_CREDITS_SHARDS,
+    ).catch(error =>
+      logger.error("Failed to initialize the agent run's MCP credits tally", {
+        error,
+      }),
+    );
+  }
+
   const passthrough = await fetch(
     config.EXTRACT_V3_BETA_URL + "/internal/extracts",
     {
@@ -317,6 +340,7 @@ export async function agentController(
         exchange: req.body.exchange,
         location: req.body.location,
         safe: req.body.safe,
+        ...(req.auth.hostedMcp ? { hostedMcp: true } : {}),
         ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
         ...(zeroDataRetentionMinutes !== null
           ? { zeroDataRetentionMinutes }

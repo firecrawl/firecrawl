@@ -345,12 +345,20 @@ export function authMiddleware(
         }
       }
 
-      const { team_id, org_id, chunk, hostedMcp } = auth;
+      const { team_id, org_id, chunk } = auth;
+      const agentInterop = agentInteropStatus(req);
+      // An agent run started by a hosted MCP call makes its own calls under
+      // the interop secret, and says so in the interop block. Only a trusted
+      // block may say it: the run itself was verified when it started.
+      const hostedMcp =
+        auth.hostedMcp ||
+        (agentInterop === "trusted" &&
+          (req.body as any)?.__agentInterop?.hostedMcp === true);
 
       req.auth = {
         team_id,
         org_id,
-        agentInterop: agentInteropStatus(req),
+        agentInterop,
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;

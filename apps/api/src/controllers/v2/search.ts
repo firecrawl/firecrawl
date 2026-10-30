@@ -312,7 +312,11 @@ async function searchControllerInner(
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
     const billing: BillingMetadata = {
       ...(req.body.__agentInterop
-        ? { endpoint: "agent" as const, jobId }
+        ? {
+            endpoint: "agent" as const,
+            jobId,
+            agentRequestId: req.body.__agentInterop.requestId,
+          }
         : { endpoint: "search" as const, jobId }),
       externalRequestId: externalRequestId(req),
       hostedMcp: req.auth.hostedMcp,
@@ -523,7 +527,7 @@ async function searchControllerInner(
 
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {
-      billTeam(
+      const charge = billTeam(
         req.auth.team_id,
         req.acuc?.org_id ?? null,
         result.searchCredits,
@@ -536,6 +540,9 @@ async function searchControllerInner(
           error,
         }),
       );
+      // A hosted MCP agent run's call lands its MCP credits part before it
+      // answers, so the run never reads its credits without it.
+      if (billing.hostedMcp && billing.agentRequestId) await charge;
     }
 
     if (reservedKeylessCredits > 0) {
