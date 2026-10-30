@@ -150,6 +150,7 @@ export async function batchScrapeController(
       ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
     externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
   };
   const logger = _logger.child({
     crawlId: id,

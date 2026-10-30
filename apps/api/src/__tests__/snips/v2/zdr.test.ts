@@ -7,8 +7,17 @@ import {
   zdrcleaner,
   idmux,
   searchRaw,
+  Identity,
 } from "./lib";
-import { describeIf, itIf, TEST_PRODUCTION, scrapeTimeout } from "../lib";
+import {
+  describeIf,
+  itIf,
+  concurrentIf,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+  HAS_PRODUCT_SERVICE,
+  scrapeTimeout,
+} from "../lib";
 import {
   getLogs,
   expectScrapeIsCleanedUp,
@@ -224,4 +233,145 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
   }, 60000);
+
+  describe.each(scopes)("%s audio, video and product formats", scope => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: `zdr/${scope}/formats`,
+        credits: 10000,
+        flags: {
+          scrapeZDR: scope === "Team-scoped" ? "forced" : "allowed",
+        },
+      });
+    }, scrapeTimeout);
+
+    const zeroDataRetention = scope === "Request-scoped" ? true : undefined;
+
+    it.concurrent(
+      "refuses the audio format without attempting the download",
+      async () => {
+        // Not a supported media URL: a download attempt would fail the scrape.
+        const response = await scrape(
+          {
+            url: "https://firecrawl.dev",
+            formats: ["markdown", "audio"],
+            zeroDataRetention,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.audio).toBeUndefined();
+        expect(response.warning).toContain(
+          "Audio format is not supported with zero data retention.",
+        );
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "refuses the video format without attempting the download",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://firecrawl.dev",
+            formats: ["markdown", "video"],
+            zeroDataRetention,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.video).toBeUndefined();
+        expect(response.videos).toBeUndefined();
+        expect(response.warning).toContain(
+          "Video format is not supported with zero data retention.",
+        );
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "refuses the product format",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/product`,
+            formats: ["markdown", { type: "product" }],
+            zeroDataRetention,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.product).toBeUndefined();
+        expect(response.warning).toContain(
+          "Product format is not supported with zero data retention.",
+        );
+      },
+      scrapeTimeout,
+    );
+  });
+
+  describe("audio, video and product formats without zero data retention on the request", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "zdr/allowed/formats-without-zdr",
+        credits: 10000,
+        flags: { scrapeZDR: "allowed" },
+      });
+    }, scrapeTimeout);
+
+    it.concurrent(
+      "still returns audio",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            formats: ["audio"],
+          },
+          identity,
+        );
+
+        expect(response.audio).toMatch(/^https:\/\//);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "still returns video",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            formats: ["video"],
+          },
+          identity,
+        );
+
+        expect(response.video).toMatch(/^https:\/\//);
+      },
+      scrapeTimeout * 2,
+    );
+
+    concurrentIf(HAS_PRODUCT_SERVICE)(
+      "still returns the product",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/product`,
+            formats: [{ type: "product" }],
+          },
+          identity,
+        );
+
+        expect(response.product?.title).toBe("Firecrawl Test Widget");
+      },
+      scrapeTimeout,
+    );
+  });
 });

@@ -149,6 +149,7 @@ export async function mapController(
           // map charge below, even if both ever billed the same mapId.
           chargeId: `${mapId}:avgrab`,
           externalRequestId: externalRequestId(req),
+          hostedMcp: req.auth.hostedMcp,
         },
       ).catch(error => {
         logger.error(
@@ -292,6 +293,7 @@ export async function mapController(
       externalRequestId: externalRequestId(req),
       jobId: mapId,
       chargeId: mapId,
+      hostedMcp: req.auth.hostedMcp,
     },
   ).catch(error => {
     logger.error("Failed to bill team for map credits", {

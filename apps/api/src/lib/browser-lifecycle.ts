@@ -212,7 +212,10 @@ async function createBrowserSessionInternal(
       ))
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
-    const browser = await createHangarBrowser(id, req.auth.team_id, options);
+    const browser = await createHangarBrowser(id, req.auth.team_id, {
+      ...options,
+      zeroDataRetention,
+    });
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);
     if (!options.requestId)
