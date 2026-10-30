@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
-import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { config } from "../../config";
+import { getJobFromGCS, idToFilename, storage } from "../../lib/gcs-jobs";
 import { waitForJobLogRows } from "./job-log";
 
 type Identity = { apiKey: string; teamId: string };
@@ -158,6 +159,14 @@ export async function expectScrapesOfRequestAreCleanedUp(
     if (scrape.is_successful) {
       const gcsJob = await getJobFromGCS(String(scrape.id));
       expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
+
+      // customTime arms the bucket's lifecycle backstop for missed cleanups.
+      const [metadata] = await storage
+        .bucket(config.GCS_BUCKET_NAME!)
+        .file(idToFilename(String(scrape.id)))
+        .getMetadata();
+      expect(metadata.customTime).toBeDefined();
+      expect(Date.parse(metadata.customTime!)).toBeLessThanOrEqual(Date.now());
     }
   }
 
