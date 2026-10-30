@@ -145,7 +145,7 @@ func TestBatchScrapeReturnsIDAndErrors(t *testing.T) {
 		t.Errorf("job.Status = %q, want completed", job.Status)
 	}
 	if len(job.Data) != 1 || job.Data[0].Markdown != "# ok" {
-		t.Errorf("unexpected job.Data: %+v", job.Data)
+		t.Fatalf("unexpected job.Data: %+v", job.Data)
 	}
 	if status, _ := job.Data[0].Metadata["statusCode"].(float64); status != 200 {
 		t.Errorf("document should keep its HTTP status code: %+v", job.Data[0].Metadata)

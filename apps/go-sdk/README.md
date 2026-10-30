@@ -259,6 +259,7 @@ for _, u := range job.RobotsBlocked {
 resp, err := client.StartBatchScrape(ctx, urls, nil)
 status, err := client.GetBatchScrapeStatus(ctx, resp.ID)
 errs, err := client.GetBatchScrapeErrors(ctx, resp.ID)
+fmt.Println(len(errs.Errors), "URLs failed,", len(errs.RobotsBlocked), "blocked by robots.txt")
 _, err = client.CancelBatchScrape(ctx, resp.ID)
 ```
 
