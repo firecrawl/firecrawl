@@ -1,3 +1,4 @@
+use crate::xml::exceeds_element_depth;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use roxmltree::Document;
@@ -172,88 +173,10 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
 /// `MAX_XML_DEPTH`. The scan is a flat pass over the text, so an over-deep
 /// part is rejected before any recursion happens.
 fn parse_xml_bounded(xml: &str) -> Option<Document<'_>> {
-  if !xml_depth_within(xml, MAX_XML_DEPTH) {
+  if exceeds_element_depth(xml, MAX_XML_DEPTH) {
     return None;
   }
   Document::parse(xml).ok()
-}
-
-/// Whether the element nesting depth of `xml` stays at or below `max_depth`.
-/// Comments, processing instructions, CDATA and declarations are skipped;
-/// self-closing elements do not add depth. Malformed input is left for the
-/// real parser to reject.
-fn xml_depth_within(xml: &str, max_depth: usize) -> bool {
-  let bytes = xml.as_bytes();
-  let mut depth: usize = 0;
-  let mut i = 0;
-  while i < bytes.len() {
-    if bytes[i] != b'<' {
-      i += 1;
-      continue;
-    }
-    match bytes.get(i + 1) {
-      Some(b'?') => i = skip_past(bytes, i + 2, b"?>"),
-      Some(b'!') => {
-        if bytes[i..].starts_with(b"<!--") {
-          i = skip_past(bytes, i + 4, b"-->");
-        } else if bytes[i..].starts_with(b"<![CDATA[") {
-          i = skip_past(bytes, i + 9, b"]]>");
-        } else {
-          i = skip_past(bytes, i + 2, b">");
-        }
-      }
-      Some(b'/') => {
-        depth = depth.saturating_sub(1);
-        i = skip_past(bytes, i + 2, b">");
-      }
-      _ => {
-        let (end, self_closing) = scan_start_tag(bytes, i + 1);
-        if !self_closing {
-          depth += 1;
-          if depth > max_depth {
-            return false;
-          }
-        }
-        i = end;
-      }
-    }
-  }
-  true
-}
-
-/// Index just past the first occurrence of `needle` at or after `from`, or the
-/// end of the input when it never appears.
-fn skip_past(bytes: &[u8], from: usize, needle: &[u8]) -> usize {
-  bytes[from.min(bytes.len())..]
-    .windows(needle.len())
-    .position(|window| window == needle)
-    .map(|pos| from + pos + needle.len())
-    .unwrap_or(bytes.len())
-}
-
-/// Scans a start tag from just after its `<`, honouring quoted attribute
-/// values. Returns the index past the closing `>` and whether the tag was
-/// self-closing.
-fn scan_start_tag(bytes: &[u8], from: usize) -> (usize, bool) {
-  let mut quote: Option<u8> = None;
-  let mut i = from;
-  while i < bytes.len() {
-    let byte = bytes[i];
-    match quote {
-      Some(open) if byte == open => quote = None,
-      Some(_) => {}
-      None => match byte {
-        b'"' | b'\'' => quote = Some(byte),
-        b'>' => {
-          let self_closing = i > from && bytes[i - 1] == b'/';
-          return (i + 1, self_closing);
-        }
-        _ => {}
-      },
-    }
-    i += 1;
-  }
-  (bytes.len(), false)
 }
 
 fn read_zip_text<R: Read + std::io::Seek>(
@@ -424,23 +347,6 @@ mod tests {
   }
 
   #[test]
-  fn depth_scan_counts_nesting() {
-    assert!(xml_depth_within(&nested(3, "x"), 3));
-    assert!(!xml_depth_within(&nested(4, "x"), 3));
-    assert!(xml_depth_within(&nested(MAX_XML_DEPTH, "x"), MAX_XML_DEPTH));
-    assert!(!xml_depth_within(
-      &nested(MAX_XML_DEPTH + 1, "x"),
-      MAX_XML_DEPTH
-    ));
-  }
-
-  #[test]
-  fn depth_scan_ignores_non_elements() {
-    let xml = "<?xml version=\"1.0\"?><!DOCTYPE a><!-- <a><a><a> --><a><![CDATA[<a><a>]]><b/><c attr=\"<a><a>\" other='>'/></a>";
-    assert!(xml_depth_within(xml, 1));
-  }
-
-  #[test]
   fn over_deep_part_is_rejected_without_parsing() {
     assert!(parse_xml_bounded(&nested(MAX_XML_DEPTH + 1, "x")).is_none());
     assert!(parse_xml_bounded(&nested(MAX_XML_DEPTH, "x")).is_some());
@@ -458,11 +364,21 @@ mod tests {
   }
 
   fn docx_with_header(header_xml: &str) -> Vec<u8> {
+    docx_with_parts(header_xml, None)
+  }
+
+  fn docx_with_parts(header_xml: &str, footer_xml: Option<&str>) -> Vec<u8> {
     let mut cursor = Cursor::new(Vec::new());
     {
       let mut writer = zip::ZipWriter::new(&mut cursor);
       let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-      let parts: [(&str, String); 4] = [
+      let footer_reference = footer_xml
+        .map(|_| "<w:footerReference w:type=\"default\" r:id=\"rId3\"/>")
+        .unwrap_or("");
+      let footer_relationship = footer_xml
+        .map(|_| format!("<Relationship Id=\"rId3\" Type=\"{R}/footer\" Target=\"footer1.xml\"/>"))
+        .unwrap_or_default();
+      let mut parts: Vec<(&str, String)> = vec![
         (
           "_rels/.rels",
           format!(
@@ -472,17 +388,20 @@ mod tests {
         (
           "word/document.xml",
           format!(
-            "<w:document xmlns:w=\"{W}\" xmlns:r=\"{R}\"><w:body><w:p><w:r><w:t>body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type=\"default\" r:id=\"rId2\"/></w:sectPr></w:body></w:document>"
+            "<w:document xmlns:w=\"{W}\" xmlns:r=\"{R}\"><w:body><w:p><w:r><w:t>body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type=\"default\" r:id=\"rId2\"/>{footer_reference}</w:sectPr></w:body></w:document>"
           ),
         ),
         (
           "word/_rels/document.xml.rels",
           format!(
-            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId2\" Type=\"{R}/header\" Target=\"header1.xml\"/></Relationships>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId2\" Type=\"{R}/header\" Target=\"header1.xml\"/>{footer_relationship}</Relationships>"
           ),
         ),
         ("word/header1.xml", header_xml.to_string()),
       ];
+      if let Some(footer_xml) = footer_xml {
+        parts.push(("word/footer1.xml", footer_xml.to_string()));
+      }
       for (name, content) in parts {
         writer.start_file(name, options).unwrap();
         writer.write_all(content.as_bytes()).unwrap();
@@ -504,12 +423,17 @@ mod tests {
 
   #[test]
   fn skips_an_over_deep_header_and_keeps_going() {
-    let docx = docx_with_header(&format!(
-      "<w:hdr xmlns:w=\"{W}\">{}</w:hdr>",
-      nested(200_000, "<w:p><w:r><w:t>deep</w:t></w:r></w:p>")
-    ));
+    let docx = docx_with_parts(
+      &format!(
+        "<w:hdr xmlns:w=\"{W}\">{}</w:hdr>",
+        nested(200_000, "<w:p><w:r><w:t>deep</w:t></w:r></w:p>")
+      ),
+      Some(&format!(
+        "<w:ftr xmlns:w=\"{W}\"><w:p><w:r><w:t>Page 1</w:t></w:r></w:p></w:ftr>"
+      )),
+    );
     let (headers, footers) = extract_docx_headers_and_footers(&docx);
     assert_eq!(headers, "");
-    assert_eq!(footers, "");
+    assert_eq!(footers, "Page 1");
   }
 }

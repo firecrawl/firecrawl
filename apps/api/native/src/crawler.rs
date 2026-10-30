@@ -1,3 +1,4 @@
+use crate::xml::exceeds_element_depth;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use regex::Regex;
@@ -719,63 +720,6 @@ pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
 
 /// Sitemaps nest a handful of levels; anything deeper is malformed.
 const MAX_SITEMAP_DEPTH: usize = 32;
-
-/// roxmltree recurses once per nesting level and overflows the stack on
-/// deeply nested input, which kills the whole process instead of erroring.
-fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
-  let mut depth = 0usize;
-  let mut i = 0;
-  while let Some(offset) = xml[i..].find('<') {
-    i += offset;
-    let rest = &xml[i..];
-    let skip_to = if rest.starts_with("<!--") {
-      Some("-->")
-    } else if rest.starts_with("<![CDATA[") {
-      Some("]]>")
-    } else if rest.starts_with("<?") {
-      Some("?>")
-    } else {
-      None
-    };
-    if let Some(marker) = skip_to {
-      let Some(end) = rest.find(marker) else {
-        return false;
-      };
-      i += end + marker.len();
-      continue;
-    }
-
-    let Some(end) = unquoted_tag_end(rest) else {
-      return false;
-    };
-    let tag = &rest[..end];
-    if tag.starts_with("</") {
-      depth = depth.saturating_sub(1);
-    } else if !tag.starts_with("<!") && !tag.ends_with('/') {
-      depth += 1;
-      if depth > limit {
-        return true;
-      }
-    }
-    i += end + 1;
-  }
-  false
-}
-
-/// Index of the `>` closing the tag at the start of `tag`, ignoring any inside quoted attribute values.
-fn unquoted_tag_end(tag: &str) -> Option<usize> {
-  let mut quote = None;
-  for (i, b) in tag.bytes().enumerate() {
-    match quote {
-      Some(q) if b == q => quote = None,
-      Some(_) => {}
-      None if b == b'"' || b == b'\'' => quote = Some(b),
-      None if b == b'>' => return Some(i),
-      None => {}
-    }
-  }
-  None
-}
 
 fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
   if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
