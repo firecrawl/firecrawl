@@ -1444,12 +1444,14 @@ function splitMarkdownBlocks(markdown: string): string[] {
   for (const line of markdown.split("\n")) {
     const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
     if (fenceMatch) {
+      const marker = fenceMatch[1];
       if (fence === null) {
-        fence = fenceMatch[1];
-      } else if (
-        fenceMatch[1].startsWith(fence) &&
-        line.trim() === fenceMatch[1]
-      ) {
+        if (
+          !(marker[0] === "`" && line.trim().slice(marker.length).includes("`"))
+        ) {
+          fence = marker;
+        }
+      } else if (marker.startsWith(fence) && line.trim() === marker) {
         fence = null;
       }
     } else if (fence === null && line.trim() === "") {
