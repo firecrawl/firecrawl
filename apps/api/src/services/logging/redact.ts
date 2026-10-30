@@ -44,7 +44,7 @@ function redactAction(action: unknown): unknown {
     action.type === "write" &&
     typeof action.text === "string"
   ) {
-    return { ...action, text: REDACTED };
+    return redactLogData({ ...action, text: REDACTED });
   }
   return redactLogData(action);
 }

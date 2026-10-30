@@ -59,7 +59,13 @@ describe("redactLogData", () => {
       options: {
         actions: [
           { type: "click", selector: "#login" },
-          { type: "write", text: "hunter2", selector: "#password" },
+          {
+            type: "write",
+            text: "hunter2",
+            selector: "#password",
+            __internal: "flag",
+            headers: { Authorization: "Bearer x" },
+          },
           { type: "wait", milliseconds: 500 },
         ],
       },
@@ -67,7 +73,12 @@ describe("redactLogData", () => {
 
     expect(row.options.actions).toEqual([
       { type: "click", selector: "#login" },
-      { type: "write", text: REDACTED, selector: "#password" },
+      {
+        type: "write",
+        text: REDACTED,
+        selector: "#password",
+        headers: { Authorization: REDACTED },
+      },
       { type: "wait", milliseconds: 500 },
     ]);
   });
