@@ -58,6 +58,7 @@ const ALLOWED_FIELDS = new Set([
   "mcp_client",
   "mcp_client_source",
   "llm_model",
+  "reported_model",
   "duration_ms",
   "invalid_arguments",
   "rate_limit_retry",
@@ -218,6 +219,7 @@ type McpActionLogInput = {
   mcp_client: string | null;
   mcp_client_source: (typeof MCP_CLIENT_SOURCES)[number] | null;
   llm_model: string | null;
+  reported_model: string | null;
   duration_ms: number | null;
   invalid_arguments: string[];
   rate_limit_retry: (typeof RATE_LIMIT_RETRY_OUTCOMES)[number] | null;
@@ -319,6 +321,7 @@ export function normalizeMcpActionLogInput(
     mcp_client_source:
       mcpClientSource as McpActionLogInput["mcp_client_source"],
     llm_model: text(payload.llm_model, "llm_model"),
+    reported_model: text(payload.reported_model, "reported_model"),
     duration_ms: durationMs(payload.duration_ms),
     invalid_arguments: invalidArguments(payload.invalid_arguments),
     rate_limit_retry: rateLimitRetry as McpActionLogInput["rate_limit_retry"],
