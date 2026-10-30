@@ -527,7 +527,7 @@ async function searchControllerInner(
 
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {
-      billTeam(
+      const charge = billTeam(
         req.auth.team_id,
         req.acuc?.org_id ?? null,
         result.searchCredits,
@@ -540,6 +540,9 @@ async function searchControllerInner(
           error,
         }),
       );
+      // A hosted MCP agent run's call lands its MCP credits part before it
+      // answers, so the run never reads its credits without it.
+      if (billing.hostedMcp && billing.agentRequestId) await charge;
     }
 
     if (reservedKeylessCredits > 0) {

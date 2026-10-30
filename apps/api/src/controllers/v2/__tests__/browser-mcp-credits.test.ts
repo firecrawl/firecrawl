@@ -289,6 +289,31 @@ describe("browser sessions from hosted MCP calls", () => {
     },
   );
 
+  it("finishes billing an agent session before settlement returns", async () => {
+    let billed = false;
+    let billedBeforeTally = false;
+    mocks.billTeam.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      billed = true;
+      return { success: true };
+    });
+    mocks.recordRequestCredits.mockImplementation(async () => {
+      billedBeforeTally = billed;
+      return true;
+    });
+    mocks.settleOnce.mockResolvedValue({
+      creditsBilled: 10,
+      newlySettled: true,
+    });
+    await settleBrowserSession({ ...session, request_id: "agent-run" }, {
+      status: "stopped",
+      created_at: 1000,
+      ended_at: 1300,
+    } as any);
+    expect(billed).toBe(true);
+    expect(billedBeforeTally).toBe(true);
+  });
+
   it("names the agent run on an agent session's charge", async () => {
     mocks.cameFromHostedMcp.mockResolvedValue(true);
     mocks.settleOnce.mockResolvedValue({
