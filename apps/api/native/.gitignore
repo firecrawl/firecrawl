@@ -109,7 +109,6 @@ dist
 
 # Rust
 /target
-Cargo.lock
 
 *.node
 .pnp.*
@@ -118,3 +117,4 @@ Cargo.lock
 index.js
 index.d.ts
 browser.js
+.prebuilt-hash
