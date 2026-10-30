@@ -44,7 +44,7 @@ vi.mock("../autumn/firebill", () => ({
 vi.mock("../autumn/metrics", () => ({
   autumnCustomerGetOrCreateTotal: { inc: vi.fn() },
   autumnEntityCreatedInlineTotal: { inc: vi.fn() },
-  billingRouteTotal: { inc: vi.fn() },
+  billingRouteTotal: { labels: () => ({ inc: vi.fn() }) },
 }));
 vi.mock("../../db/connection", () => ({
   dbRr: {

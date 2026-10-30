@@ -375,8 +375,8 @@ async function billMonitorCheck(params: {
   check: MonitorCheckRow;
   actualCredits: number;
   lockId: string | null;
-  /** The team's org. Null means none could be named, which is how the settle
-   * already behaved then: straight to Autumn, and unreportable to a partner. */
+  /** The team's org. Null means none could be named: the settle still goes
+   * through firebill when it is configured, but is unreportable to a partner. */
   orgId: string | null;
 }): Promise<boolean> {
   let settled = true;
