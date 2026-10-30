@@ -287,8 +287,8 @@ export async function retrieveProviders(input: {
   const finalize = async (credits: number) => {
     if (!lockId) return true;
     const settled = await autumnService.finalizeCreditsLock({
-      // Omitted without an org: the settle goes straight to Autumn, the route
-      // an unnameable org already took.
+      // Omitted without an org: the settle goes through firebill when it is
+      // configured, settled by lock id alone.
       team:
         input.orgId !== null
           ? { teamId: input.teamId, orgId: input.orgId }

@@ -360,7 +360,7 @@ export class AutumnService {
     // to Autumn on failure — firebill may already own the event, and the SDK
     // sends no idempotency key, so the pair could not be deduped.
     if (routed) {
-      billingRouteTotal.labels("firebill").inc();
+      billingRouteTotal.labels("firebill", "track").inc();
       return await firebillTrack({
         customerId,
         entityId,
@@ -373,7 +373,7 @@ export class AutumnService {
       });
     }
 
-    billingRouteTotal.labels("direct").inc();
+    billingRouteTotal.labels("direct", "track").inc();
 
     if (!autumnClient) return false;
 
@@ -789,6 +789,13 @@ export class AutumnService {
    * just expires, leaving a confirm's work unbilled. Either route lands on the
    * same Autumn lock, so routing is a durability choice, not a correctness one.
    *
+   * A caller that cannot name the org passes no team, and there is no org to
+   * ask the rollout about. That settle goes through firebill whenever firebill
+   * is configured: the lock id is all a finalize needs, so an ordinary settle
+   * loses nothing by not knowing the org (a run-token settle loses its partner
+   * report, as below), and a direct settle would be the one write to Autumn
+   * left outside firebill.
+   *
    * **Except with a run token in hand**, where it is a correctness choice: only
    * firebill reports the operation to the partner, and the routing predicate is
    * not stable across the hour between a lock and its finalize. The token is
@@ -807,7 +814,9 @@ export class AutumnService {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (
       gated ||
-      (team && (await this.isRoutedThroughFirebill(team.teamId, team.orgId)))
+      (team
+        ? await this.isRoutedThroughFirebill(team.teamId, team.orgId)
+        : firebillConfigured())
     ) {
       // Named only for a gated settle: firebill needs the org to split the
       // settle and to find the integration to report to. An ordinary finalize
@@ -824,6 +833,7 @@ export class AutumnService {
       // Settling and losing the label is the lesser loss, and firebill counts
       // the lost label as `partner_events_total{outcome="no_customer"}`.
       const customerId = externalRequestId && team ? team.orgId : null;
+      billingRouteTotal.labels("firebill", "finalize").inc();
       // Surfaced, not discarded. firebill answers `false` for a refusal, a
       // timeout, or a non-OK — none of which throw — so a caller that ignores
       // this records a run as billed that nobody billed.
@@ -838,6 +848,8 @@ export class AutumnService {
         heldValue: customerId ? heldValue : null,
       });
     }
+
+    billingRouteTotal.labels("direct", "finalize").inc();
 
     // No client means no hold was ever taken, so nothing can have gone
     // unsettled.

@@ -1,15 +1,18 @@
 import { Counter } from "prom-client";
 
 /**
- * Which path a usage event took. The ratio of `firebill` to `direct` is the
- * live read on the rollout percentage — during a ramp it is the first thing to
- * look at, because a routing bug shows up here long before it shows up in a
- * balance.
+ * Which path a usage event or a lock settle took. The ratio of `firebill` to
+ * `direct` is the live read on the rollout percentage — during a ramp it is the
+ * first thing to look at, because a routing bug shows up here long before it
+ * shows up in a balance. `route="direct"` staying at 0 is the signal that no
+ * usage event or settle goes to Autumn directly any more; direct lock holds
+ * are not counted here.
  */
 export const billingRouteTotal = new Counter({
   name: "firecrawl_billing_route_total",
-  help: "Usage events by the path they took to Autumn",
-  labelNames: ["route"] as const, // firebill | direct
+  help: "Usage events and lock settles by the path they took to Autumn",
+  // route: firebill | direct   operation: track | finalize
+  labelNames: ["route", "operation"] as const,
 });
 
 /**

@@ -212,7 +212,8 @@ async function clearFinishedOrStaleCurrentCheck(
     let released = true;
     if (failed.autumn_lock_id) {
       // The billing service no longer finds the org for itself; without one
-      // the release goes straight to Autumn, as it already did then.
+      // the release goes through firebill when it is configured, settled by
+      // lock id alone.
       const orgId = await orgIdForTeam(monitor.team_id);
       released = await autumnService
         .finalizeCreditsLock({
