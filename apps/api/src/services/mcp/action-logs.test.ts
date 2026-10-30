@@ -341,6 +341,15 @@ describe("MCP action log contract", () => {
       thread_id: "t",
       thread_source: "minted",
     });
+    expect(
+      input({
+        thread_id: "0f8fad5b-d9cb-869f-a165-70867728950e",
+        thread_source: "client",
+      }),
+    ).toMatchObject({
+      thread_id: "0f8fad5b-d9cb-869f-a165-70867728950e",
+      thread_source: "client",
+    });
   });
 
   it("stores a credential-like session or thread id as null instead of rejecting the event", async () => {
@@ -383,6 +392,25 @@ describe("MCP action log contract", () => {
       thread_id: "thread-1",
       thread_source: "minted",
     });
+    for (const id of [
+      "x_fc-FAKESECRET1234567890",
+      "_sk-FAKESECRET1234567890",
+      "s_fcmcp_FAKESECRET1234567890",
+    ]) {
+      expect(
+        input({
+          session_id: id,
+          session_source: "token",
+          thread_id: id,
+          thread_source: "client",
+        }),
+      ).toMatchObject({
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
+      });
+    }
     expect(() =>
       input({
         session_id: "fc-FAKESECRET1234567890",
@@ -404,7 +432,7 @@ describe("MCP action log contract", () => {
       input({ session_id: "abc", session_source: "header" }),
     ).toThrow("session_source must be one of token, trace, sse");
     expect(() => input({ thread_id: "abc", thread_source: "Session" })).toThrow(
-      "thread_source must be one of argument, session, minted",
+      "thread_source must be one of argument, session, minted, client",
     );
     expect(() => input({ session_source: "token" })).toThrow(
       "session_source requires session_id",

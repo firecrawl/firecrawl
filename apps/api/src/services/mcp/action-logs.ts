@@ -30,7 +30,9 @@ const RATE_LIMIT_RETRY_OUTCOMES = [
 const DURATION_MS_MAX = 2_147_483_647;
 const LINEAGE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const SESSION_SOURCES = ["token", "trace", "sse"] as const;
-const THREAD_SOURCES = ["argument", "session", "minted"] as const;
+const THREAD_SOURCES = ["argument", "session", "minted", "client"] as const;
+const LINEAGE_ID_SECRET_PATTERN =
+  /(?:^|[^A-Za-z0-9])(?:sk-|fc-|fco_|fcr_|fcmcp_)/i;
 const INVALID_ARGUMENTS_MAX = 10;
 const INVALID_ARGUMENT_PATTERN =
   /^(?:\(root\)|\*|[A-Za-z0-9_.-]{1,64}):[a-z_]{1,40}$/;
@@ -186,7 +188,10 @@ function lineage<T extends string>(
     invalid(`${kind}_source must be one of ${values.join(", ")}`);
   }
   if (hasSource && !hasId) invalid(`${kind}_source requires ${kind}_id`);
-  const usable = hasId && !SECRET_PATTERN.test(id as string);
+  const usable =
+    hasId &&
+    !SECRET_PATTERN.test(id as string) &&
+    !LINEAGE_ID_SECRET_PATTERN.test(id as string);
   return {
     id: usable ? (id as string) : null,
     source: usable && hasSource ? (source as T) : null,
