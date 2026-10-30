@@ -561,6 +561,55 @@ it("logs find-tools options and result size, and remembers the tools it showed",
   });
 });
 
+it("logs the skill a read-skill call read, and remembers the tools it names", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        provider: "firecrawl",
+        capability: "read-skill",
+        creditsCost: 0,
+        data: {
+          id: "account-firmographic-waterfall",
+          content:
+            "1. Resolve with @[FullEnrich · Company lookup](alexandria:fullenrich/companies/lookup).\n" +
+            "2. Then try @[Apollo · Company enrichment](alexandria:apollo/companies/enrich) (domain).",
+        },
+      },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({
+      alexandria: {
+        provider: "firecrawl",
+        capability: "read-skill",
+        options: { id: "account-firmographic-waterfall" },
+      },
+    });
+  expect(response.status).toBe(200);
+  expect(mocks.recordDiscovered).toHaveBeenCalledWith(
+    "team",
+    "read_skill",
+    "scrape-1",
+    [
+      { provider: "fullenrich", capability: "companies/lookup" },
+      { provider: "apollo", capability: "companies/enrich" },
+    ],
+  );
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+    alexandria: [
+      {
+        provider: "firecrawl",
+        capability: "read-skill",
+        code: null,
+        creditsCost: 0,
+        options: { id: "account-firmographic-waterfall" },
+      },
+    ],
+  });
+});
+
 it("attributes each provider call to the discovery that showed it", async () => {
   mocks.discovery.mockResolvedValue([
     {

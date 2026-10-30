@@ -47,6 +47,23 @@ const findToolsItems = (data: unknown): unknown[] => {
   return Array.isArray(items) ? items : [];
 };
 
+const isReadSkill = (call: { provider?: string; capability?: string }) =>
+  call.provider === "firecrawl" && call.capability === "read-skill";
+
+// A skill names its tools as @[label](alexandria:provider/capability) links.
+const SKILL_TOOL =
+  /@\[[^\]]{1,120}\]\(alexandria:([a-z0-9-]{1,64})\/([^\s)]{1,200})\)/g;
+
+const skillTools = (data: unknown) => {
+  const content = (data as { content?: unknown } | null)?.content;
+  return typeof content === "string"
+    ? [...content.matchAll(SKILL_TOOL)].map(([, provider, capability]) => ({
+        provider,
+        capability,
+      }))
+    : [];
+};
+
 const agentInteropSchema = z.strictObject({
   auth: z.string(),
   requestId: z.string(),
@@ -234,6 +251,15 @@ export async function providerScrapeController(
             : [],
         ),
       );
+    if (served.success && !zeroDataRetention)
+      recordDiscoveredTools(
+        req.auth.team_id,
+        "read_skill",
+        result.scrapeId,
+        served.data.results.flatMap(item =>
+          isReadSkill(item) ? skillTools(item.data) : [],
+        ),
+      );
     // Preserve parent/child ordering without delaying the provider response.
     void (async () => {
       // Bounded so a slow Redis never holds back the activity log.
@@ -291,6 +317,10 @@ export async function providerScrapeController(
                         }
                       : {}),
                   }
+                : {}),
+              ...(isReadSkill({ provider, capability }) &&
+              typeof options.id === "string"
+                ? { options: { id: options.id } }
                 : {}),
               ...(discovered && Object.keys(discovered[i]).length
                 ? { discovery: discovered[i] }
