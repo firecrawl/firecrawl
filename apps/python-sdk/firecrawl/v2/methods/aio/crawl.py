@@ -165,6 +165,10 @@ async def get_crawl_status(
             request_timeout=request_timeout,
         )
 
+    # The first page alone can exceed max_results.
+    if auto_paginate and pagination_config and pagination_config.max_results is not None:
+        documents = documents[:pagination_config.max_results]
+
     return CrawlJob(
         id=job_id,
         status=payload["status"],
