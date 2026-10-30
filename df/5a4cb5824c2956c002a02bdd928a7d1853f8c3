@@ -1,0 +1,25 @@
+apps/api/src/services/logging/log_job.ts
+  s_8fcc4c507e6624::t_2f242bb638e408 30,395-402
+apps/api/src/services/logging/redact.test.ts
+  s_8fcc4c507e6624::t_2f242bb638e408 1-97
+apps/api/src/services/logging/redact.ts
+  s_8fcc4c507e6624::t_2f242bb638e408 1-75
+apps/api/src/services/logging/log_job.test.ts
+  s_8fcc4c507e6624::t_b1f93708cb8e59 317-358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df5a4cb5824c2956c002a02bdd928a7d1853f8c3",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
