@@ -346,6 +346,7 @@ export async function batchScrapeController(
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
           orgId: req.acuc?.org_id ?? null,
+          clientIp: req.ip,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,

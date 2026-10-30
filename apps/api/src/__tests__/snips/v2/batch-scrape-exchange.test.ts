@@ -29,6 +29,9 @@ vi.mock("../../../services/alexandria/client", async importOriginal => ({
   >()),
   exchangeRequest: mocks.exchangeRequest,
 }));
+vi.mock("../../../lib/billing-country", () => ({
+  billingCountryForTeam: vi.fn(async () => undefined),
+}));
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../services/queue-jobs")>()),
   addScrapeJobs: mocks.addScrapeJobs,

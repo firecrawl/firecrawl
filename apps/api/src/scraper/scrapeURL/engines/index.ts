@@ -722,6 +722,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       lockdown: meta.options.lockdown,
       redactPII: meta.options.redactPII,
       flags: meta.internalOptions.teamFlags ?? null,
+      clientIp: meta.internalOptions.clientIp,
     });
     if (exchangeAccess.allowed) {
       meta.exchangeProviderId = exchangeAccess.provider.id;

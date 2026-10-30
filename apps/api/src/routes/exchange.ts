@@ -266,6 +266,8 @@ async function providerTermsAcceptController(req: Request, res: Response) {
         ? null
         : String(authedReq.acuc.api_key_id)),
     body: body.data,
+    clientIp: authedReq.ip,
+    billingCountry: await billingCountryForTeam(authedReq.auth.team_id),
   });
   return res.status(response.status).json(response.body);
 }

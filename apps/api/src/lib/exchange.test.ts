@@ -2,6 +2,7 @@ import { fetch } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { config } from "../config";
+import { billingCountryForTeam } from "./billing-country";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   deserializeTransportableError,
@@ -29,6 +30,10 @@ vi.mock("undici", () => ({
 
 vi.mock("../services/alexandria/client", () => ({
   exchangeRequest: vi.fn(),
+}));
+
+vi.mock("./billing-country", () => ({
+  billingCountryForTeam: vi.fn(async () => undefined),
 }));
 
 const originalConfig = {
@@ -970,6 +975,27 @@ describe("Exchange terms acceptance", () => {
       flags: revokedFlags,
     });
     expect(access.allowed).toBe(true);
+  });
+
+  it("forwards the caller IP and the team's billing country on the terms lookup", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    vi.mocked(billingCountryForTeam).mockResolvedValueOnce("DE");
+
+    await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      teamId: "team-eu",
+      clientIp: "203.0.113.7",
+      flags: { professionalProfileCompanyDataBeta: true },
+    });
+
+    expect(billingCountryForTeam).toHaveBeenCalledWith("team-eu");
+    expect(exchangeRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1/provider-terms/requirements",
+        clientIp: "203.0.113.7",
+        billingCountry: "DE",
+      }),
+    );
   });
 
   it("carries the unsupported-option response through the worker queue", () => {

@@ -122,6 +122,11 @@ export async function acceptedProviders(
  * provider's current terms, recorded after `revocation.disabledAt` when an
  * admin revocation has to be lifted. The API's accept route records
  * acceptance only there. Any failure reads as not accepted.
+ *
+ * Country-scoped terms (required only in some countries) are decided from the
+ * caller's IP and the team's billing country. Both are forwarded, as on the
+ * access check; without them the Exchange treats the caller as outside every
+ * required country.
  */
 export async function hasLedgerAcceptance(input: {
   teamId: string;
@@ -129,6 +134,10 @@ export async function hasLedgerAcceptance(input: {
   provider: string;
   revocation?: { disabledAt: unknown };
   timeoutMs: number;
+  /** Caller's IP as the API sees it; Exchange resolves the country from it. */
+  clientIp?: string;
+  /** Country on the team's billing address, when it has one. */
+  billingCountry?: string;
 }): Promise<boolean> {
   const [requirements, ledger] = await Promise.all([
     exchangeRequest({
@@ -136,6 +145,8 @@ export async function hasLedgerAcceptance(input: {
       path: "/v1/provider-terms/requirements",
       body: { providers: [input.provider] },
       timeoutMs: input.timeoutMs,
+      clientIp: input.clientIp,
+      billingCountry: input.billingCountry,
     }).catch(() => undefined),
     acceptedProviders(input.teamId, input.orgId, input.timeoutMs),
   ]);
@@ -161,6 +172,10 @@ export async function acceptProviderTerms(input: {
   orgId: string;
   apiKeyId: string | null;
   body: AcceptTerms;
+  /** Caller's IP as the API sees it; Exchange resolves the country from it. */
+  clientIp?: string;
+  /** Country on the team's billing address, when it has one. */
+  billingCountry?: string;
 }): Promise<ExchangeResponse> {
   const { provider, version, digest, agent } = input.body;
   const requirements = await exchangeRequest({
@@ -168,6 +183,8 @@ export async function acceptProviderTerms(input: {
     path: "/v1/provider-terms/requirements",
     body: { providers: [provider] },
     timeoutMs: TIMEOUT_MS,
+    clientIp: input.clientIp,
+    billingCountry: input.billingCountry,
   }).catch(() => undefined);
   if (requirements?.status === 404)
     return refusal(404, "Unknown provider.", { code: "unknown_provider" });
@@ -213,6 +230,8 @@ export async function acceptProviderTerms(input: {
       surface: "api",
     },
     timeoutMs: TIMEOUT_MS,
+    clientIp: input.clientIp,
+    billingCountry: input.billingCountry,
   }).catch(() => undefined);
   const recorded = z
     .object({ id: z.string(), occurred_at: z.string() })
