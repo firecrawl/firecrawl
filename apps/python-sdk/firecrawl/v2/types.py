@@ -510,6 +510,7 @@ class Document(BaseModel):
     screenshot: Optional[str] = None
     audio: Optional[str] = None
     video: Optional[str] = None
+    attributes: Optional[List[AttributeResult]] = None
     actions: Optional[Dict[str, Any]] = None
     answer: Optional[str] = None
     highlights: Optional[str] = None
