@@ -1,3 +1,4 @@
+import request from "supertest";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import {
   scrape,
@@ -13,6 +14,7 @@ import {
   describeIf,
   itIf,
   concurrentIf,
+  TEST_API_URL,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
   HAS_PRODUCT_SERVICE,
@@ -233,6 +235,31 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
   }, 60000);
+
+  it.each([
+    ["scrapeZDR", { scrapeZDR: "forced" }],
+    ["searchZDR", { searchZDR: "forced-zdr" }],
+  ] as const)(
+    "should refuse data source discovery when %s is forced",
+    async (flag, flags) => {
+      const identity = await idmux({
+        name: `zdr/discover-${flag}`,
+        credits: 100,
+        flags,
+      });
+
+      const response = await request(TEST_API_URL)
+        .get("/exchange/discover")
+        .query({ q: "company funding rounds" })
+        .set("Authorization", `Bearer ${identity.apiKey}`);
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.error).toBe(
+        "Provider discovery does not support zero data retention.",
+      );
+    },
+    60000,
+  );
 
   describe.each(scopes)("%s audio, video and product formats", scope => {
     let identity: Identity;
