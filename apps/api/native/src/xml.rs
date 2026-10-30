@@ -57,9 +57,10 @@ pub(crate) fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
 }
 
 /// Index of the `>` closing the DOCTYPE declaration at the start of `decl`.
-/// An internal subset (`[...]`) may hold comments and quoted literals, which
-/// are skipped so their contents cannot end the declaration early or hide its
-/// end.
+/// An internal subset (`[...]`) may hold comments, processing instructions
+/// and quoted literals, which are skipped as units so their contents cannot
+/// end the declaration early or hide its end. Works on bytes: every delimiter
+/// is ASCII, and non-ASCII bytes are never split.
 fn doctype_end(decl: &str) -> Option<usize> {
   let bytes = decl.as_bytes();
   let mut quote: Option<u8> = None;
@@ -74,9 +75,15 @@ fn doctype_end(decl: &str) -> Option<usize> {
       i += 1;
       continue;
     }
-    if in_subset && decl[i..].starts_with("<!--") {
-      i += decl[i..].find("-->")? + 3;
-      continue;
+    if in_subset {
+      if bytes[i..].starts_with(b"<!--") {
+        i = find_bytes(bytes, i + 4, b"-->")? + 3;
+        continue;
+      }
+      if bytes[i..].starts_with(b"<?") {
+        i = find_bytes(bytes, i + 2, b"?>")? + 2;
+        continue;
+      }
     }
     match b {
       b'"' | b'\'' => quote = Some(b),
@@ -88,6 +95,15 @@ fn doctype_end(decl: &str) -> Option<usize> {
     i += 1;
   }
   None
+}
+
+/// Byte index of the first occurrence of `needle` at or after `from`.
+fn find_bytes(bytes: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
+  bytes
+    .get(from..)?
+    .windows(needle.len())
+    .position(|window| window == needle)
+    .map(|pos| from + pos)
 }
 
 /// Index of the `>` closing the tag at the start of `tag`, ignoring any inside quoted attribute values.
@@ -136,6 +152,20 @@ mod tests {
   fn skips_a_doctype_internal_subset() {
     let doctype = "<!DOCTYPE a [ <!-- it's a comment with a quote --> <!ELEMENT a ANY> <!ATTLIST a x CDATA \"]>\"> ]>";
     assert!(!exceeds_element_depth(&format!("{doctype}<a><b/></a>"), 1));
+    assert!(exceeds_element_depth(&format!("{doctype}{}", nested(2)), 1));
+  }
+
+  #[test]
+  fn doctype_subset_with_non_ascii_text_does_not_panic() {
+    let doctype = "<!DOCTYPE résumé [ <!ENTITY café \"naïve\"> <!-- 日本語 don't --> ]>";
+    assert!(!exceeds_element_depth(&format!("{doctype}<a>é</a>"), 1));
+    assert!(exceeds_element_depth(&format!("{doctype}{}", nested(2)), 1));
+  }
+
+  #[test]
+  fn doctype_subset_skips_processing_instructions() {
+    let doctype = "<!DOCTYPE a [ <?pi ] > <a><a> ?> <!ELEMENT a ANY> ]>";
+    assert!(!exceeds_element_depth(&format!("{doctype}<a/>"), 1));
     assert!(exceeds_element_depth(&format!("{doctype}{}", nested(2)), 1));
   }
 
