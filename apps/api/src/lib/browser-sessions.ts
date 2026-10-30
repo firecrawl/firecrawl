@@ -6,6 +6,7 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { browserProfileDeletedKey } from "./browser-profiles";
+import { logger } from "./logger";
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
@@ -351,4 +352,32 @@ export async function didBrowserSessionUsePrompt(
   sessionId: string,
 ): Promise<boolean> {
   return (await getValue(promptFlagKey(sessionId))) === "1";
+}
+
+// ---------------------------------------------------------------------------
+// Hosted MCP sessions (Redis)
+// ---------------------------------------------------------------------------
+
+function hostedMcpFlagKey(sessionId: string): string {
+  return `browser_session:hosted_mcp:${sessionId}`;
+}
+
+export async function markBrowserSessionHostedMcp(
+  sessionId: string,
+): Promise<void> {
+  await setValue(hostedMcpFlagKey(sessionId), "1", PROFILE_DELETED_TTL_SECONDS);
+}
+
+/** A flag lost to Redis bills the session as before: on regular credits. */
+export async function didBrowserSessionComeFromHostedMcp(
+  sessionId: string,
+): Promise<boolean> {
+  const flag = await getValue(hostedMcpFlagKey(sessionId)).catch(error => {
+    logger.warn("Failed to read a browser session's hosted MCP flag", {
+      sessionId,
+      error,
+    });
+    return null;
+  });
+  return flag === "1";
 }

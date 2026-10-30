@@ -13,7 +13,8 @@ vi.mock("ioredis", () => ({
 
 import {
   getAutumnRateLimiter,
-  rateLimitExperimentApplies,
+  getHostedMcpConcurrencyLimit,
+  getHostedMcpRateLimiter,
 } from "./rate-limiter";
 
 // import {
@@ -420,72 +421,128 @@ describe("getAutumnRateLimiter", () => {
     ).toBe(10000);
   });
 
-  describe("rate-limit experiment", () => {
-    const limit = (
-      mode: RateLimiterMode,
-      multiplier: number,
-      variant?: "control" | "treatment",
-    ) => getAutumnRateLimiter(mode, multiplier, undefined, variant).points;
-
-    it("raises scrape, search and exchange to the plan's minimum for treatment", () => {
-      for (const mode of [
-        RateLimiterMode.Scrape,
-        RateLimiterMode.Search,
-        RateLimiterMode.Exchange,
-      ]) {
-        expect(limit(mode, 1, "treatment")).toBe(50);
-        expect(limit(mode, 10, "treatment")).toBe(500);
-        expect(limit(mode, 50, "treatment")).toBe(1000);
-        expect(limit(mode, 500, "treatment")).toBe(5000);
+  describe("hosted MCP minimum", () => {
+    it("raises free and hobby to 600 and standard to 2,000 in a bucket of its own", () => {
+      for (const mode of [RateLimiterMode.Scrape, RateLimiterMode.Search]) {
+        // Free, hobby and the ×11 and ×25 variants round down to hobby;
+        // standard and the ×60 to ×199 variants round down to standard.
+        for (const [multiplier, limit] of [
+          [1, 600],
+          [5, 600],
+          [10, 600],
+          [11, 600],
+          [25, 600],
+          [50, 2000],
+          [60, 2000],
+          [199, 2000],
+        ]) {
+          const limiter = getHostedMcpRateLimiter(mode, multiplier);
+          expect(limiter?.points).toBe(limit);
+          expect(limiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        }
       }
     });
 
-    it("keeps base × multiplier for control and without a variant", () => {
-      expect(limit(RateLimiterMode.Scrape, 1, "control")).toBe(10);
-      expect(limit(RateLimiterMode.Search, 10, "control")).toBe(100);
-      expect(limit(RateLimiterMode.Exchange, 50)).toBe(500);
+    it("leaves plans already at or above their minimum on their normal limiter", () => {
+      // A ×200 variant (exactly 2,000), growth and scale.
+      for (const multiplier of [200, 500, 1000]) {
+        expect(
+          getHostedMcpRateLimiter(RateLimiterMode.Scrape, multiplier),
+        ).toBe(undefined);
+      }
     });
 
-    it("rounds an off-tier multiplier down to the tier below it", () => {
-      expect(limit(RateLimiterMode.Scrape, 5, "treatment")).toBe(50);
-      expect(limit(RateLimiterMode.Scrape, 6, "treatment")).toBe(60);
-      expect(limit(RateLimiterMode.Scrape, 20, "treatment")).toBe(500);
-      expect(limit(RateLimiterMode.Scrape, 200, "treatment")).toBe(2000);
+    it("scales every multiplier-scaled mode by the same tier multiplier", () => {
+      // ×60 on free and hobby, ×200 on standard, applied to each mode's base.
+      for (const [mode, free, standard] of [
+        [RateLimiterMode.Map, 600, 2000],
+        [RateLimiterMode.Exchange, 600, 2000],
+        [RateLimiterMode.BrowserExecute, 600, 2000],
+        [RateLimiterMode.Crawl, 120, 400],
+        [RateLimiterMode.Extract, 120, 400],
+        [RateLimiterMode.Browser, 120, 400],
+        [RateLimiterMode.CrawlStatus, 30000, 100000],
+        [RateLimiterMode.ExtractStatus, 30000, 100000],
+      ] as const) {
+        const freeLimiter = getHostedMcpRateLimiter(mode, 1);
+        expect(freeLimiter?.points).toBe(free);
+        expect(freeLimiter?.keyPrefix).toBe(`hostedMcp:${mode}`);
+        expect(getHostedMcpRateLimiter(mode, 10)?.points).toBe(free);
+        expect(getHostedMcpRateLimiter(mode, 50)?.points).toBe(standard);
+        expect(getHostedMcpRateLimiter(mode, 500)).toBe(undefined);
+      }
     });
 
-    it("leaves other modes and overrides alone for treatment", () => {
-      expect(limit(RateLimiterMode.Map, 1, "treatment")).toBe(10);
-      expect(limit(RateLimiterMode.Crawl, 1, "treatment")).toBe(2);
+    it("leaves flat modes and overridden modes alone", () => {
+      for (const mode of [
+        RateLimiterMode.ExchangeDiscover,
+        RateLimiterMode.Account,
+        RateLimiterMode.Research,
+      ]) {
+        expect(getHostedMcpRateLimiter(mode, 1)).toBe(undefined);
+      }
       expect(
-        getAutumnRateLimiter(
-          RateLimiterMode.Scrape,
-          1,
-          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
-          "treatment",
-        ).points,
-      ).toBe(5);
-    });
-
-    it("applies only where the treatment minimum changes the limit", () => {
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 1)).toBe(true);
-      expect(rateLimitExperimentApplies(RateLimiterMode.Search, 10)).toBe(true);
-      expect(rateLimitExperimentApplies(RateLimiterMode.Exchange, 50)).toBe(
-        true,
-      );
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 20)).toBe(true);
-      // 50/min in both variants, or above every minimum.
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 5)).toBe(false);
-      expect(rateLimitExperimentApplies(RateLimiterMode.Scrape, 500)).toBe(
-        false,
-      );
-      expect(rateLimitExperimentApplies(RateLimiterMode.Map, 1)).toBe(false);
-      expect(
-        rateLimitExperimentApplies(
+        getHostedMcpRateLimiter(
           RateLimiterMode.Scrape,
           1,
           flagsWith({ [RateLimiterMode.Scrape]: 5 }),
         ),
-      ).toBe(false);
+      ).toBe(undefined);
+    });
+
+    it("treats a multiplier of zero or below as ×1", () => {
+      expect(getHostedMcpRateLimiter(RateLimiterMode.Scrape, 0)?.points).toBe(
+        600,
+      );
+    });
+  });
+
+  describe("hosted MCP concurrency minimum", () => {
+    it("raises free to 25, hobby to 50 and standard to 75", () => {
+      for (const [multiplier, limit, concurrency] of [
+        [1, 2, 25],
+        [10, 5, 50],
+        [25, 5, 50],
+        [50, 50, 75],
+        [100, 50, 75],
+      ]) {
+        expect(
+          getHostedMcpConcurrencyLimit(
+            RateLimiterMode.Scrape,
+            limit,
+            multiplier,
+          ),
+        ).toBe(concurrency);
+      }
+    });
+
+    it("keeps a team limit already at or above its tier", () => {
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 25, 1)).toBe(
+        undefined,
+      );
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 60, 10)).toBe(
+        undefined,
+      );
+      expect(getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 75, 50)).toBe(
+        undefined,
+      );
+    });
+
+    it("leaves growth and up, other modes and overridden modes alone", () => {
+      expect(
+        getHostedMcpConcurrencyLimit(RateLimiterMode.Scrape, 50, 500),
+      ).toBe(undefined);
+      for (const mode of [RateLimiterMode.Search, RateLimiterMode.Crawl]) {
+        expect(getHostedMcpConcurrencyLimit(mode, 2, 1)).toBe(undefined);
+      }
+      expect(
+        getHostedMcpConcurrencyLimit(
+          RateLimiterMode.Scrape,
+          2,
+          1,
+          flagsWith({ [RateLimiterMode.Scrape]: 5 }),
+        ),
+      ).toBe(undefined);
     });
   });
 

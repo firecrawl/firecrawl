@@ -89,7 +89,7 @@ export function getCustomRobotsAgent(
 }
 
 /** The agent ZDR result retentions an org can be given, in minutes. */
-export const AGENT_ZDR_RETENTION_TIERS_MINUTES = [15, 30, 60, 360, 1440];
+const AGENT_ZDR_RETENTION_TIERS_MINUTES = [15, 30, 60, 360, 1440];
 
 /** The agent service's ZDR result retention when the team flag is unset. */
 export const AGENT_ZDR_DEFAULT_RETENTION_MINUTES = 24 * 60;

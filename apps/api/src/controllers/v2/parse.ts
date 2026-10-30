@@ -372,9 +372,14 @@ export async function parseController(
         (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = {
         ...(req.body.__agentInterop
-          ? { endpoint: "agent" as const, jobId }
+          ? {
+              endpoint: "agent" as const,
+              jobId,
+              agentRequestId: req.body.__agentInterop.requestId,
+            }
           : { endpoint: "parse" as const, jobId }),
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       };
 
       if (
