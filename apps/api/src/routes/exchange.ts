@@ -36,6 +36,7 @@ const FORWARDED_PATH_ROOTS = new Set([
   "enrichment",
   "ingest",
   "platform",
+  "provider-skills",
   "provider-terms",
   "publisher",
   "rates",
@@ -389,6 +390,19 @@ exchangeRouter.patch(
 );
 exchangeRouter.delete(
   "/team-skills{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+// Provider-authored skills. Every team may list and read them, and turn a plugin
+// or one skill on or off. Exchange scopes that toggle by the stamped team.
+exchangeRouter.get(
+  "/provider-skills{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.patch(
+  "/provider-skills{/*path}",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
