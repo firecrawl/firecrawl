@@ -289,7 +289,8 @@ describe("browser sessions from hosted MCP calls", () => {
     },
   );
 
-  it("finishes billing an agent session before settlement returns", async () => {
+  it("finishes billing a hosted agent session before settlement returns", async () => {
+    mocks.cameFromHostedMcp.mockResolvedValue(true);
     let billed = false;
     let billedBeforeTally = false;
     mocks.billTeam.mockImplementation(async () => {

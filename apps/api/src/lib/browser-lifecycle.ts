@@ -376,16 +376,15 @@ async function settleBrowserSessionInternal(
     },
   );
   // Billing follows the receipt commit, like every other endpoint: a retried
-  // settlement never re-queues the debit, and a failed charge is logged. It
-  // completes before settlement returns, so an agent run that reads its
-  // credits next sees the whole charge, MCP credits part included.
+  // settlement never re-queues the debit, and a failed charge is logged.
   if (newlySettled) {
     const agentRequestId =
       session.request_id && session.request_id !== session.id
         ? session.request_id
         : undefined;
     if (session.should_bill) {
-      await billTeam(
+      const hostedMcp = await didBrowserSessionComeFromHostedMcp(session.id);
+      const charge = billTeam(
         session.team_id,
         await orgIdForTeam(session.team_id),
         creditsBilled,
@@ -399,9 +398,7 @@ async function settleBrowserSessionInternal(
           jobId: agentRequestId ?? session.id,
           chargeId: `${session.id}:destroy`,
           ...(agentRequestId ? { agentRequestId } : {}),
-          ...((await didBrowserSessionComeFromHostedMcp(session.id))
-            ? { hostedMcp: true }
-            : {}),
+          ...(hostedMcp ? { hostedMcp: true } : {}),
         },
       ).catch(error =>
         logger.error("Failed to bill browser session", {
@@ -410,6 +407,10 @@ async function settleBrowserSessionInternal(
           error,
         }),
       );
+      // A hosted MCP agent run's charge lands, MCP credits part included,
+      // before the run's credits below, so the run never reads one without
+      // the other.
+      if (hostedMcp && agentRequestId) await charge;
     }
     if (agentRequestId) {
       await recordRequestCredits({
