@@ -475,7 +475,10 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 
     const req = buildReq({ body: { limit: 100, origin: "mcp-fastmcp" } });
-    await runMiddleware(req, spendsMcpCredits);
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(nextCalled).toBe(true);
 
     expect(checkCreditsMock).toHaveBeenCalledWith(
       expect.objectContaining({ featureId: "CREDITS" }),
@@ -486,7 +489,10 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 
     const req = buildReq({ path: "/v2/extract", auth: hostedMcpAuth });
-    await runMiddleware(req);
+    const { res, nextCalled } = await runMiddleware(req);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(nextCalled).toBe(true);
 
     expect(checkCreditsMock).toHaveBeenCalledWith(
       expect.objectContaining({ featureId: "CREDITS" }),
