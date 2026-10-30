@@ -44,7 +44,6 @@ vi.mock("../autumn/autumn.service", () => ({
     hostedMcpFeatureId: async () => "MCP_CREDITS",
     finalizeCreditsLock: mocks.finalize,
     refundCredits: mocks.refund,
-    isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
@@ -129,7 +128,7 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
     expect.objectContaining({
       credits: 3,
       org_id: "org",
-      autumnTrackInRequest: true,
+      autumnTrackInRequest: false,
     }),
     expect.objectContaining({
       jobId: expect.stringMatching(/^alexandria-bill-/),
@@ -296,22 +295,12 @@ it("returns the answer but records nothing when the settle does not land", async
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
-it("refunds the direct-Autumn charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
+it("keeps the charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).toHaveBeenCalledTimes(3);
-  expect(mocks.refund).toHaveBeenCalledWith(
-    expect.objectContaining({ teamId: "team", orgId: "org", value: 3 }),
-  );
+  expect(mocks.refund).not.toHaveBeenCalled();
   expect(mocks.report).not.toHaveBeenCalled();
-});
-
-it("refunds a hosted MCP charge to MCP credits when the ledger enqueue fails", async () => {
-  mocks.billAdd.mockRejectedValue(new Error("queue down"));
-  expect((await run({ hostedMcp: true })).status).toBe(200);
-  expect(mocks.refund).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
-  );
 });
 
 it("treats a team with no org as a skipped hold and executes nothing", async () => {
@@ -757,10 +746,15 @@ it("records nothing on the agent run when nothing was charged", async () => {
   mocks.store.clear();
   mocks.finalize.mockResolvedValueOnce(false);
   await run({ agentRequestId: "agent-run" });
-  mocks.store.clear();
+  expect(mocks.recordCredits).not.toHaveBeenCalled();
+});
+
+it("records an agent call's charge when the ledger enqueue fails, since the charge stands", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   await run({ agentRequestId: "agent-run" });
-  expect(mocks.recordCredits).not.toHaveBeenCalled();
+  expect(mocks.recordCredits).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ requestId: "agent-run", credits: 3 }),
+  );
 });
 
 it("still answers when the agent run's credits cannot be recorded", async () => {
