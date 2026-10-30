@@ -20,7 +20,10 @@ vi.mock("../../../../../services/index-cache", async importOriginal => ({
 }));
 
 import { getIndexFromGCS } from "../../../../../services";
-import { deleteCachedIndexEntry } from "../../../../../services/index-cache";
+import {
+  deleteCachedIndexEntry,
+  getCachedIndexEntries,
+} from "../../../../../services/index-cache";
 import { indexGetRecent5 } from "../../../../../db/rpc";
 import {
   isInterstitialPage,
@@ -86,6 +89,7 @@ describe("isInterstitialPage", () => {
 
 describe("URL index interstitial handling", () => {
   beforeEach(() => {
+    vi.mocked(indexGetRecent5).mockClear();
     vi.mocked(indexGetRecent5).mockResolvedValue([
       {
         id: "row-1",
@@ -97,6 +101,7 @@ describe("URL index interstitial handling", () => {
       },
     ] as any);
     vi.mocked(deleteCachedIndexEntry).mockClear();
+    vi.mocked(getCachedIndexEntries).mockResolvedValue({ status: "miss" });
   });
 
   it.each([
@@ -126,6 +131,37 @@ describe("URL index interstitial handling", () => {
     expect(deleteCachedIndexEntry).toHaveBeenCalledWith(
       expect.any(String),
       "row-1",
+      expect.anything(),
+    );
+  });
+
+  it("reports a miss for a checkpoint page served from the entry cache", async () => {
+    vi.mocked(getCachedIndexEntries).mockResolvedValue({
+      status: "hit",
+      entries: [
+        {
+          id: "row-cached",
+          created_at: new Date().toISOString(),
+          status: 200,
+          has_screenshot: false,
+          has_screenshot_fullscreen: false,
+          wait_time_ms: null,
+        },
+      ],
+    });
+    vi.mocked(getIndexFromGCS).mockResolvedValue({
+      url: checkpointUrl,
+      html: checkpointHtml,
+      statusCode: 200,
+      contentType: "text/html",
+    } as any);
+    await expect(scrapeURLWithIndex(meta())).rejects.toBeInstanceOf(
+      IndexMissError,
+    );
+    expect(indexGetRecent5).not.toHaveBeenCalled();
+    expect(deleteCachedIndexEntry).toHaveBeenCalledWith(
+      expect.any(String),
+      "row-cached",
       expect.anything(),
     );
   });
