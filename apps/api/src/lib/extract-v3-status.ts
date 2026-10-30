@@ -80,5 +80,37 @@ export async function getExtractV3AgentStatus(
     );
   }
 
-  return (await response.json()) as ExtractV3AgentStatus;
+  const agent = (await response.json()) as ExtractV3AgentStatus;
+  // The agent service can persist the terminal result before its credit total.
+  // The trace endpoint may already have the final total at that point.
+  if (agent.status !== "success" || agent.creditsUsed !== undefined) {
+    return agent;
+  }
+
+  try {
+    const traceResponse = await fetch(new URL(`${url.href}/trace`), {
+      headers: {
+        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (traceResponse.ok) {
+      const trace = (await traceResponse.json()) as {
+        success?: boolean;
+        creditsUsed?: unknown;
+      };
+      if (
+        trace.success === true &&
+        typeof trace.creditsUsed === "number" &&
+        Number.isFinite(trace.creditsUsed) &&
+        trace.creditsUsed >= 0
+      ) {
+        agent.creditsUsed = trace.creditsUsed;
+      }
+    }
+  } catch {
+    // A missing trace must not turn a completed result into a failed poll.
+  }
+
+  return agent;
 }
