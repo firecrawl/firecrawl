@@ -106,12 +106,13 @@ async function callerLocation(input: {
   };
 }
 
+/** The organization's current acceptances, or undefined when the ledger could not be read. */
 export async function acceptedProviders(
   teamId: string,
   orgId: string,
   timeoutMs = TIMEOUT_MS,
   location?: CallerLocation,
-): Promise<Map<string, LedgerAcceptance>> {
+): Promise<Map<string, LedgerAcceptance> | undefined> {
   const response = await exchangeRequest({
     teamId,
     path: `/v1/provider-terms/status?organizationId=${encodeURIComponent(orgId)}`,
@@ -123,8 +124,8 @@ export async function acceptedProviders(
     response?.status === 200
       ? statusSchema.safeParse(response.body)
       : undefined;
+  if (!parsed?.success) return undefined;
   const accepted = new Map<string, LedgerAcceptance>();
-  if (!parsed?.success) return accepted;
   for (const item of parsed.data.providers) {
     if (!item.revoked && item.version)
       accepted.set(item.provider, {
@@ -179,7 +180,7 @@ export async function hasLedgerAcceptance(input: {
         ?.terms
     : undefined;
   if (!terms) return false;
-  const accepted = ledger.get(input.provider);
+  const accepted = ledger?.get(input.provider);
   return (
     matchesAcceptance(accepted, terms) &&
     (input.revocation === undefined ||

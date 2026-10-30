@@ -97,6 +97,19 @@ it("refuses a disabled provider and fails closed when agreements are unavailable
   expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
 });
 
+it("answers 503, not a terms prompt, when the acceptance ledger cannot be read", async () => {
+  mocks.request.mockImplementation(async ({ path }) =>
+    path.includes("requirements")
+      ? requirement(true)
+      : { status: 502, body: "bad gateway" },
+  );
+  const denied = await authorizeProviders("team", calls, {}, "org");
+  expect(denied?.status).toBe(503);
+  expect(denied?.body).not.toMatchObject({
+    code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  });
+});
+
 it.each([undefined, false])(
   "allows post-revocation acceptance with Exchange override %s, then blocks a later revocation",
   async exchangeRequired => {
