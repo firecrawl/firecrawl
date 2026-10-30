@@ -1,7 +1,6 @@
-import { AutumnDefaultError } from "autumn-js";
 import type { MonitorCheckRow, MonitorRow } from "./types";
 
-const { sdk, channel, logger, bill } = vi.hoisted(() => {
+const { sdk, firebill, channel, logger, bill } = vi.hoisted(() => {
   const logger = {
     info: vi.fn(),
     warn: vi.fn(),
@@ -12,6 +11,12 @@ const { sdk, channel, logger, bill } = vi.hoisted(() => {
   return {
     logger,
     bill: vi.fn(),
+    firebill: {
+      lock: vi.fn(),
+      finalize: vi.fn(),
+      track: vi.fn(),
+      check: vi.fn(),
+    },
     sdk: {
       check: vi.fn(),
       track: vi.fn(),
@@ -38,12 +43,15 @@ vi.mock("../../config", () => ({
 vi.mock("../../lib/logger", () => ({ logger }));
 vi.mock("../autumn/client", () => ({ autumnClient: sdk }));
 vi.mock("../autumn/firebill", () => ({
-  firebillConfigured: () => false,
+  firebillConfigured: () => true,
+  firebillLock: firebill.lock,
+  firebillFinalize: firebill.finalize,
+  firebillTrack: firebill.track,
+  firebillCheck: firebill.check,
 }));
 vi.mock("../autumn/metrics", () => ({
   autumnCustomerGetOrCreateTotal: { inc: vi.fn() },
   autumnEntityCreatedInlineTotal: { inc: vi.fn() },
-  billingRouteTotal: { labels: () => ({ inc: vi.fn() }) },
 }));
 vi.mock("../../db/connection", () => ({
   dbRr: {
@@ -109,7 +117,6 @@ import {
   processMonitorCheckJob,
   reconcileRunningMonitorChecks,
 } from "./runner";
-import { consumeMonitorCheckJobs } from "./queue";
 import * as store from "./store";
 import { addScrapeJob } from "../queue-jobs";
 import { getACUCTeam } from "../../controllers/auth";
@@ -117,7 +124,6 @@ import { redisEvictConnection } from "../redis";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget } from "./search/run";
 import { config } from "../../config";
-import { autumnService } from "../autumn/autumn.service";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -129,16 +135,7 @@ function deferred<T = void>() {
   return { promise, resolve, reject };
 }
 
-function conflict() {
-  const body = JSON.stringify({ code: "lock_already_exists" });
-  return new AutumnDefaultError("Reservation failed", {
-    request: new Request("https://example.com/check"),
-    response: new Response(body, { status: 409 }),
-    body,
-  });
-}
-
-describe("direct monitor reservation ownership", () => {
+describe("monitor reservation ownership", () => {
   let current: MonitorCheckRow;
   let monitor: MonitorRow;
   let recordedPages: Array<{
@@ -156,8 +153,8 @@ describe("direct monitor reservation ownership", () => {
     addScrapeJob,
     runSearchTarget,
     trackMonitorCheckStartedInterest,
-    sdk.balances.finalize,
-    sdk.track,
+    firebill.finalize,
+    firebill.track,
     bill,
   ];
   const snapshot = () => ({
@@ -190,10 +187,11 @@ describe("direct monitor reservation ownership", () => {
       ],
     } as MonitorRow;
     vi.mocked(getACUCTeam).mockResolvedValue({ org_id: "org-1" } as any);
-    sdk.check.mockResolvedValue({ allowed: true });
-    sdk.balances.finalize.mockResolvedValue(undefined);
-    sdk.customers.getOrCreate.mockResolvedValue({ id: "org-1" });
-    sdk.entities.get.mockResolvedValue({ id: "team-1" });
+    firebill.lock.mockImplementation(async ({ lockId }) => ({
+      status: "locked",
+      lockId,
+    }));
+    firebill.finalize.mockResolvedValue(true);
     vi.mocked(trackMonitorCheckStartedInterest).mockResolvedValue(undefined);
     vi.mocked(store.getMonitorForUpdate).mockImplementation(async () =>
       structuredClone(monitor),
@@ -262,14 +260,14 @@ describe("direct monitor reservation ownership", () => {
       removed_count: Number(status === "removed"),
       error_count: Number(status === "error"),
     });
-    expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect(firebill.finalize).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         lockId: "monitor_check-1",
         action: "confirm",
         overrideValue: credits,
       }),
     );
-    expect(sdk.track).not.toHaveBeenCalled();
+    expect(firebill.track).not.toHaveBeenCalled();
     if (credits > 0) {
       expect(bill).toHaveBeenCalledExactlyOnceWith(
         "bill_team",
@@ -278,120 +276,6 @@ describe("direct monitor reservation ownership", () => {
       );
     } else expect(bill).not.toHaveBeenCalled();
   }
-
-  it.each([false, true])(
-    "leaves a live winner untouched with stored hold=%s",
-    async stored => {
-      const paused = deferred();
-      const resume = deferred();
-      if (stored) {
-        vi.mocked(store.updateMonitorCheckIfRunning)
-          .mockImplementationOnce(async (_id, patch) => {
-            Object.assign(current, patch);
-            return structuredClone(current);
-          })
-          .mockImplementationOnce(async (_id, patch) => {
-            paused.resolve();
-            await resume.promise;
-            Object.assign(current, patch);
-            return structuredClone(current);
-          });
-      } else {
-        sdk.check.mockImplementationOnce(async () => {
-          paused.resolve();
-          await resume.promise;
-          return { allowed: true };
-        });
-      }
-      if (stored) sdk.check.mockResolvedValueOnce({ allowed: true });
-      sdk.check.mockRejectedValueOnce(conflict());
-      const winner = processMonitorCheckJob(job);
-      await paused.promise;
-      const before = snapshot();
-      try {
-        await expect(processMonitorCheckJob(job)).rejects.toMatchObject({
-          name: "ExistingCreditsLockError",
-          lockId: "monitor_check-1",
-        });
-        expect(snapshot()).toEqual(before);
-      } finally {
-        resume.resolve();
-        await winner;
-      }
-      expect(addScrapeJob).toHaveBeenCalledTimes(1);
-      await settleWinner();
-    },
-  );
-
-  it("does not let the queued claimant overwrite a later reservation winner", async () => {
-    const reached = deferred();
-    const pending = deferred<{ allowed: boolean }>();
-    sdk.check
-      .mockImplementationOnce(() => {
-        reached.resolve();
-        return pending.promise;
-      })
-      .mockResolvedValueOnce({ allowed: true });
-    const claimant = processMonitorCheckJob(job);
-    const rejected = expect(claimant).rejects.toMatchObject({
-      name: "ExistingCreditsLockError",
-    });
-    await reached.promise;
-    await processMonitorCheckJob(job);
-    const before = snapshot();
-    pending.reject(conflict());
-    await rejected;
-    expect(snapshot()).toEqual(before);
-    expect(addScrapeJob).toHaveBeenCalledTimes(1);
-    await settleWinner();
-  });
-
-  it("leaves terminal billing untouched when a contender's conflict arrives late", async () => {
-    await processMonitorCheckJob(job);
-    const reached = deferred();
-    const pending = deferred<{ allowed: boolean }>();
-    sdk.check.mockImplementationOnce(() => {
-      reached.resolve();
-      return pending.promise;
-    });
-    const contender = processMonitorCheckJob(job);
-    const rejected = expect(contender).rejects.toMatchObject({
-      name: "ExistingCreditsLockError",
-    });
-    await reached.promise;
-    await settleWinner();
-    const before = snapshot();
-    pending.reject(conflict());
-    await rejected;
-    expect(snapshot()).toEqual(before);
-  });
-
-  it("reconciles a completed persisted search target without redelivery work", async () => {
-    current.status = "running";
-    current.started_at = new Date().toISOString();
-    current.autumn_lock_id = "monitor_check-1";
-    current.billing_status = "reserved";
-    monitor.targets = [
-      { id: "target-1", type: "search" },
-    ] as MonitorRow["targets"];
-    current.target_results = [
-      {
-        targetId: "target-1",
-        type: "search",
-        searchCompleted: true,
-        searchCredits: 1,
-      },
-    ];
-    sdk.check.mockRejectedValueOnce(conflict());
-    const before = snapshot();
-    await expect(processMonitorCheckJob(job)).rejects.toMatchObject({
-      name: "ExistingCreditsLockError",
-    });
-    expect(snapshot()).toEqual(before);
-    await settleWinner();
-    expect(runSearchTarget).not.toHaveBeenCalled();
-    expect(addScrapeJob).not.toHaveBeenCalled();
-  });
 
   it("confirms a successful hold with zero actual credits without a ledger debit", async () => {
     await processMonitorCheckJob(job);
@@ -411,71 +295,8 @@ describe("direct monitor reservation ownership", () => {
       billing_status: "not_applicable",
       autumn_lock_id: null,
     });
-    expect(sdk.check).not.toHaveBeenCalled();
-    expect(sdk.balances.finalize).not.toHaveBeenCalled();
-    expect(bill).not.toHaveBeenCalled();
-  });
-
-  it("dead-letters recovery of an unlinked orphan hold and leaves expiry to the provider", async () => {
-    current.status = "running";
-    current.started_at = new Date().toISOString();
-    const held = new Set<string>();
-    sdk.check.mockImplementation(async ({ lock }) => {
-      if (held.has(lock.lockId)) throw conflict();
-      held.add(lock.lockId);
-      return { allowed: true };
-    });
-    await expect(
-      autumnService.lockCredits({
-        teamId: job.teamId,
-        orgId: "org-1",
-        value: 1,
-        lockId: "monitor_check-1",
-      }),
-    ).resolves.toEqual({ status: "locked", lockId: "monitor_check-1" });
-    expect(held.has("monitor_check-1")).toBe(true);
-    expect(current.autumn_lock_id).toBeNull();
-    await consumeMonitorCheckJobs(processMonitorCheckJob);
-    const message = { content: Buffer.from(JSON.stringify(job)) };
-    const before = snapshot();
-    await channel.consume.mock.calls[0][1](message);
-    expect(snapshot()).toEqual(before);
-    expect(channel.ack).not.toHaveBeenCalled();
-    expect(channel.nack).toHaveBeenCalledExactlyOnceWith(message, false, false);
-    expect(logger.error).toHaveBeenCalledWith(
-      "Monitor check job failed",
-      expect.objectContaining({
-        error: expect.objectContaining({ name: "ExistingCreditsLockError" }),
-      }),
-    );
-    expect(channel.assertExchange).toHaveBeenCalledWith(
-      "monitor.checks.dlx",
-      "direct",
-      { durable: true },
-    );
-    expect(channel.assertQueue).toHaveBeenCalledWith(
-      "monitor.checks",
-      expect.objectContaining({
-        arguments: expect.objectContaining({
-          "x-dead-letter-exchange": "monitor.checks.dlx",
-          "x-dead-letter-routing-key": "monitor.checks",
-        }),
-      }),
-    );
-    expect(channel.bindQueue).toHaveBeenCalledWith(
-      "monitor.checks.dlq",
-      "monitor.checks.dlx",
-      "monitor.checks",
-    );
-    current.started_at = new Date(
-      Date.now() - 2 * 60 * 60 * 1000,
-    ).toISOString();
-    await reconcileRunningMonitorChecks();
-    expect(current).toMatchObject({
-      status: "failed",
-      billing_status: "not_applicable",
-    });
-    expect(sdk.balances.finalize).not.toHaveBeenCalled();
+    expect(firebill.lock).not.toHaveBeenCalled();
+    expect(firebill.finalize).not.toHaveBeenCalled();
     expect(bill).not.toHaveBeenCalled();
   });
 
@@ -488,7 +309,7 @@ describe("direct monitor reservation ownership", () => {
       ];
       await reconcileRunningMonitorChecks();
       expect(current.status).toBe("running");
-      expect(sdk.balances.finalize).not.toHaveBeenCalled();
+      expect(firebill.finalize).not.toHaveBeenCalled();
       expect(bill).not.toHaveBeenCalled();
       await settleWinner(status === "error" ? 0 : 1, status);
     },
@@ -503,7 +324,7 @@ describe("direct monitor reservation ownership", () => {
     const before = snapshot();
     await processMonitorCheckJob(job);
     expect(snapshot()).toEqual(before);
-    expect(sdk.check).not.toHaveBeenCalled();
+    expect(firebill.lock).not.toHaveBeenCalled();
   });
 
   it("does not fail or release a winner when the admission reread is unavailable", async () => {
@@ -518,7 +339,7 @@ describe("direct monitor reservation ownership", () => {
     const before = snapshot();
     await expect(processMonitorCheckJob(job)).rejects.toThrow(failure);
     expect(snapshot()).toEqual(before);
-    expect(sdk.check).not.toHaveBeenCalled();
+    expect(firebill.lock).not.toHaveBeenCalled();
   });
 
   it.each(["queued", "running"] as const)(
@@ -539,7 +360,7 @@ describe("direct monitor reservation ownership", () => {
       pending.resolve({ org_id: "org-1" });
       await delivery;
       expect(snapshot()).toEqual(before);
-      expect(sdk.check).not.toHaveBeenCalled();
+      expect(firebill.lock).not.toHaveBeenCalled();
     },
   );
 
@@ -548,8 +369,8 @@ describe("direct monitor reservation ownership", () => {
     current.autumn_lock_id = "monitor_check-1";
     current.billing_status = "reserved";
     const reached = deferred();
-    const pending = deferred<{ allowed: boolean }>();
-    sdk.check.mockImplementationOnce(() => {
+    const pending = deferred<{ status: "locked"; lockId: string }>();
+    firebill.lock.mockImplementationOnce(() => {
       reached.resolve();
       return pending.promise;
     });
@@ -558,38 +379,13 @@ describe("direct monitor reservation ownership", () => {
     current.status = "completed";
     current.billing_status = "confirmed";
     const terminal = structuredClone(current);
-    pending.resolve({ allowed: true });
+    pending.resolve({ status: "locked", lockId: "monitor_check-1" });
     await delivery;
     expect(current).toEqual(terminal);
     expect(store.markMonitorRunning).not.toHaveBeenCalled();
     expect(trackMonitorCheckStartedInterest).not.toHaveBeenCalled();
-    expect(sdk.balances.finalize).not.toHaveBeenCalled();
+    expect(firebill.finalize).not.toHaveBeenCalled();
     expect(addScrapeJob).not.toHaveBeenCalled();
-    expect(bill).not.toHaveBeenCalled();
-  });
-
-  it("rejects linked orphan recovery and only stale reconciliation releases its hold", async () => {
-    current.status = "running";
-    current.started_at = new Date().toISOString();
-    current.autumn_lock_id = "monitor_check-1";
-    current.billing_status = "reserved";
-    sdk.check.mockRejectedValueOnce(conflict());
-    const before = snapshot();
-    await expect(processMonitorCheckJob(job)).rejects.toMatchObject({
-      name: "ExistingCreditsLockError",
-    });
-    expect(snapshot()).toEqual(before);
-    current.started_at = new Date(
-      Date.now() - 2 * 60 * 60 * 1000,
-    ).toISOString();
-    await reconcileRunningMonitorChecks();
-    expect(current).toMatchObject({
-      status: "failed",
-      billing_status: "released",
-    });
-    expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ lockId: "monitor_check-1", action: "release" }),
-    );
     expect(bill).not.toHaveBeenCalled();
   });
 
@@ -605,7 +401,7 @@ describe("direct monitor reservation ownership", () => {
       billing_status: "released",
       autumn_lock_id: null,
     });
-    expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect(firebill.finalize).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ action: "release", lockId: "monitor_check-1" }),
     );
     expect(addScrapeJob).not.toHaveBeenCalled();
@@ -624,7 +420,7 @@ describe("direct monitor reservation ownership", () => {
       billing_status: "released",
       autumn_lock_id: "monitor_check-1",
     });
-    expect(sdk.balances.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect(firebill.finalize).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ action: "release", lockId: "monitor_check-1" }),
     );
     expect(addScrapeJob).not.toHaveBeenCalled();

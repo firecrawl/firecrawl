@@ -8,29 +8,6 @@
 
 import { vi } from "vitest";
 
-const { mockCheck, mockTrack, mockAutumnClient } = vi.hoisted(() => {
-  const mockCheck = vi
-    .fn<(args: any) => Promise<any>>()
-    .mockResolvedValue({ allowed: true, customerId: "org-1", balance: null });
-  const mockTrack = vi
-    .fn<(args: any) => Promise<void>>()
-    .mockResolvedValue(undefined);
-  return {
-    mockCheck,
-    mockTrack,
-    mockAutumnClient: {
-      customers: { getOrCreate: vi.fn().mockResolvedValue({ id: "org-1" }) },
-      entities: {
-        get: vi.fn().mockResolvedValue({ balances: { CREDITS: { usage: 0 } } }),
-        create: vi.fn().mockResolvedValue({ id: "team-1" }),
-      },
-      balances: { finalize: vi.fn().mockResolvedValue(undefined) },
-      check: mockCheck,
-      track: mockTrack,
-    },
-  };
-});
-
 // The seam: importing either module at all is the failure.
 vi.mock("../../../controllers/auth", () => {
   throw new Error("autumn.service must not import controllers/auth");
@@ -41,7 +18,7 @@ vi.mock("../../../lib/team-org", () => {
 });
 
 vi.mock("../client", () => ({
-  autumnClient: mockAutumnClient,
+  autumnClient: null,
 }));
 
 vi.mock("../../../db/connection", () => ({
@@ -54,13 +31,35 @@ vi.mock("../../../db/connection", () => ({
 
 vi.mock("../../../config", () => ({
   // Stubbed so importing the real config (which parses env) is avoided.
-  config: {},
+  config: {
+    FIREBILL_URL: "http://firebill.test",
+    FIREBILL_SECRET: "fb-secret",
+  },
 }));
 
 // Import AFTER the mocks are wired up.
 import { AutumnService } from "../autumn.service";
 
 const CALLER_ORG = "3f2c1b8e-7a4d-4c1e-9b6a-0d5e8f2a1c74";
+
+const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
+const sentBody = () => JSON.parse(mockFetch.mock.calls[0]![1].body);
+
+beforeEach(() => {
+  mockFetch.mockReset();
+  mockFetch.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({ success: true, allowed: true, remaining: 0 }),
+        { status: 200 },
+      ),
+  );
+  vi.stubGlobal("fetch", mockFetch);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("AutumnService resolves no org of its own", () => {
   it("checks credits against the org the caller handed in", async () => {
@@ -71,9 +70,10 @@ describe("AutumnService resolves no org of its own", () => {
     });
 
     expect(result).toEqual({ allowed: true, remaining: 0 });
-    expect(mockCheck).toHaveBeenCalledWith(
-      expect.objectContaining({ customerId: CALLER_ORG, entityId: "team-1" }),
-    );
+    expect(sentBody()).toMatchObject({
+      customer_id: CALLER_ORG,
+      entity_id: "team-1",
+    });
   });
 
   it("tracks credits against the org the caller handed in", async () => {
@@ -83,8 +83,9 @@ describe("AutumnService resolves no org of its own", () => {
       value: 7,
     });
 
-    expect(mockTrack).toHaveBeenCalledWith(
-      expect.objectContaining({ customerId: CALLER_ORG, entityId: "team-1" }),
-    );
+    expect(sentBody()).toMatchObject({
+      customer_id: CALLER_ORG,
+      entity_id: "team-1",
+    });
   });
 });
