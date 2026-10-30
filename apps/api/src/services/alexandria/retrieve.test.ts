@@ -306,6 +306,14 @@ it("refunds the direct-Autumn charge and leaves the Exchange usage pending when 
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
+it("refunds a hosted MCP charge to MCP credits when the ledger enqueue fails", async () => {
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+  expect((await run({ hostedMcp: true })).status).toBe(200);
+  expect(mocks.refund).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
+  );
+});
+
 it("treats a team with no org as a skipped hold and executes nothing", async () => {
   const refused = await run({ orgId: null });
   expect(refused.status).toBe(503);
