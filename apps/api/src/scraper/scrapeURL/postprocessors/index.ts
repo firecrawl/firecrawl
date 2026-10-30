@@ -1,6 +1,7 @@
 import { Meta } from "..";
 import { EngineScrapeResult } from "../engines";
 import { youtubePostprocessor } from "./youtube";
+import { embeddedPdfPostprocessor } from "./embeddedPdf";
 
 export interface Postprocessor {
   name: string;
@@ -11,4 +12,4 @@ export interface Postprocessor {
   ) => Promise<EngineScrapeResult>;
 }
 
-export const postprocessors: Postprocessor[] = [youtubePostprocessor];
+export const postprocessors: Postprocessor[] = [youtubePostprocessor, embeddedPdfPostprocessor];
