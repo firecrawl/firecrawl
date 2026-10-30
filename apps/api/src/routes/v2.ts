@@ -44,7 +44,7 @@ import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
 import { extractController } from "../controllers/v2/extract";
 import { extractStatusController } from "../controllers/v2/extract-status";
 import {
-  authMiddleware,
+  authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
   scrapeBlocklistMiddleware,
@@ -124,6 +124,12 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+
+// Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
+// in controllers/auth.ts); /v1 routes do not.
+const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
+  sharedAuthMiddleware(mode, { ...options, hostedMcpRateLimit: true });
+
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -207,7 +213,9 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
+    mcpCredits: true,
+  }),
   blocklistMiddleware,
   wrap(searchController),
 );
@@ -251,7 +259,7 @@ v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   parsePayloadMiddleware,
   inferIntegrationMiddleware,
   wrap(parseController),
@@ -265,7 +273,7 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
@@ -298,7 +306,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(batchScrapeController),
 );
@@ -307,7 +315,7 @@ v2Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
   inferIntegrationMiddleware,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(mapController),
 );
@@ -317,7 +325,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Crawl),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),

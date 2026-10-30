@@ -211,6 +211,13 @@ export async function fetchVideo(
     return document;
   }
 
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Video format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
   if (!config.AVGRAB_SERVICE_URL) {
     meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
     document.warning =
