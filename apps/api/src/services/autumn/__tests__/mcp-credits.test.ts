@@ -183,6 +183,16 @@ describe("mcpCreditsAvailable", () => {
     expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(0);
   });
 
+  it("pays nothing when Autumn reports no usable remaining balance", async () => {
+    mcpBalance(Number.NaN);
+    const service = new AutumnService();
+    expect(await service.mcpCreditsAvailable(charge)).toBe(0);
+    expect(await service.trackHostedMcpCredits(charge)).toEqual({
+      tracked: true,
+      mcpCredits: 0,
+    });
+  });
+
   it("pays nothing when Autumn can't answer", async () => {
     mockAutumnClient.customers.get.mockRejectedValue(new Error("ECONNRESET"));
     expect(await new AutumnService().mcpCreditsAvailable(charge)).toBe(0);

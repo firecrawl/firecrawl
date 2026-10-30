@@ -601,6 +601,7 @@ export class AutumnService {
       const balance = customer.balances?.[MCP_CREDITS_FEATURE_ID];
       if (!balance) return 0;
       if (balance.unlimited) return value;
+      if (!Number.isFinite(balance.remaining)) return 0;
       return Math.max(0, Math.min(value, Math.floor(balance.remaining)));
     } catch (error) {
       logger.warn("Failed to read the MCP credits balance", {
