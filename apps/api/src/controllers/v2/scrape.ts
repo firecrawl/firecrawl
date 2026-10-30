@@ -222,11 +222,7 @@ export async function scrapeController(
         });
       const billing: BillingMetadata = {
         ...(req.body.__agentInterop
-          ? {
-              endpoint: "agent" as const,
-              jobId,
-              agentRequestId: req.body.__agentInterop.requestId,
-            }
+          ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,

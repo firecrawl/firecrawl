@@ -41,24 +41,11 @@ export type BillingMetadata = {
   externalRequestId?: string | null;
   /**
    * The hosted MCP made the request, as verified at authentication (see
-   * `AuthObject.hostedMcp`). Its charges spend the team's MCP credits first
-   * (see AutumnService.trackHostedMcpCredits). Rides the job payload like the
-   * rest of this metadata, so a crawl's pages carry it too.
+   * `AuthObject.hostedMcp`). Its charges are made on MCP credits (see
+   * AutumnService.hostedMcpFeatureId). Rides the job payload like the rest of
+   * this metadata, so a crawl's pages carry it too.
    */
   hostedMcp?: boolean;
-  /**
-   * The agent run this charge belongs to, when the agent made the call. The
-   * MCP credits part of a hosted MCP run's charge is tallied under it (see
-   * tallyAgentMcpCredits), so a failed run can give that part back to MCP
-   * credits rather than to regular credits.
-   */
-  agentRequestId?: string;
-  /**
-   * Credits of this charge the team's MCP credits paid, set by the charge that
-   * tracks them to Autumn (billTeam or billScrapeJob). The ledger records them as their own row, tagged apart from
-   * regular credits used (see queueBillingOperation).
-   */
-  mcpCredits?: number;
 };
 
 export function resolveBillingMetadata({

@@ -21,6 +21,12 @@ const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
 const OBJECTIVE_MAX_LENGTH = 1000;
 const ERROR_CODE_PATTERN = /^(?=.{2,64}$)[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const MCP_CLIENT_SOURCES = ["client_info", "user_agent", "oauth"] as const;
+const RATE_LIMIT_RETRY_OUTCOMES = [
+  "recovered",
+  "failed",
+  "over_cap",
+  "not_retryable",
+] as const;
 const DURATION_MS_MAX = 2_147_483_647;
 const INVALID_ARGUMENTS_MAX = 10;
 const INVALID_ARGUMENT_PATTERN =
@@ -49,6 +55,7 @@ const ALLOWED_FIELDS = new Set([
   "llm_model",
   "duration_ms",
   "invalid_arguments",
+  "rate_limit_retry",
 ]);
 
 export class McpActionLogValidationError extends Error {}
@@ -176,6 +183,7 @@ type McpActionLogInput = {
   llm_model: string | null;
   duration_ms: number | null;
   invalid_arguments: string[];
+  rate_limit_retry: (typeof RATE_LIMIT_RETRY_OUTCOMES)[number] | null;
 };
 
 type McpActionLogRow = {
@@ -232,6 +240,17 @@ export function normalizeMcpActionLogInput(
   ) {
     invalid("mcp_client_source must be client_info, user_agent or oauth");
   }
+  const rateLimitRetry = payload.rate_limit_retry ?? null;
+  if (
+    rateLimitRetry !== null &&
+    !RATE_LIMIT_RETRY_OUTCOMES.includes(
+      rateLimitRetry as (typeof RATE_LIMIT_RETRY_OUTCOMES)[number],
+    )
+  ) {
+    invalid(
+      "rate_limit_retry must be recovered, failed, over_cap or not_retryable",
+    );
+  }
   const resource = text(payload.resource, "resource", 128, true)!;
   if (!RESOURCES.has(resource)) {
     invalid("resource must be a canonical hosted MCP URL");
@@ -259,6 +278,7 @@ export function normalizeMcpActionLogInput(
     llm_model: text(payload.llm_model, "llm_model"),
     duration_ms: durationMs(payload.duration_ms),
     invalid_arguments: invalidArguments(payload.invalid_arguments),
+    rate_limit_retry: rateLimitRetry as McpActionLogInput["rate_limit_retry"],
   };
 }
 

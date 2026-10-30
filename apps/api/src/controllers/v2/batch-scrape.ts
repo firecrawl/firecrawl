@@ -147,11 +147,7 @@ export async function batchScrapeController(
   const id = req.body.appendToId ?? uuidv7();
   const billing: BillingMetadata = {
     ...(req.body.__agentInterop
-      ? {
-          endpoint: "agent" as const,
-          jobId: id,
-          agentRequestId: req.body.__agentInterop.requestId,
-        }
+      ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
     externalRequestId: externalRequestId(req),
     hostedMcp: req.auth.hostedMcp,
@@ -305,7 +301,7 @@ export async function batchScrapeController(
         threatScanCredits > 0 &&
         (req.body.__agentInterop?.shouldBill ?? true)
       ) {
-        const charge = billTeam(
+        billTeam(
           req.auth.team_id,
           req.acuc?.org_id ?? null,
           threatScanCredits,
@@ -322,8 +318,6 @@ export async function batchScrapeController(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
           );
         });
-        // See search: a hosted MCP agent run's MCP credits part lands first.
-        if (billing.hostedMcp && billing.agentRequestId) await charge;
       }
       emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({

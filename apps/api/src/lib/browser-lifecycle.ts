@@ -35,6 +35,7 @@ import {
 } from "../services/worker/nuq-router";
 import {
   autumnService,
+  CREDITS_FEATURE_ID,
   DEFAULT_TEAM_LIMITS,
 } from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
@@ -184,17 +185,16 @@ async function createBrowserSessionInternal(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
+      ...(req.auth.hostedMcp
+        ? {
+            featureId: await autumnService.hostedMcpFeatureId(
+              req.auth.team_id,
+              CREDITS_FEATURE_ID,
+            ),
+          }
+        : {}),
     });
-    if (
-      credit !== null &&
-      !credit.allowed &&
-      !(await mcpCreditsCover(
-        req,
-        credit.remaining,
-        estimatedCredits,
-        "browserCreate:mcp",
-      ))
-    )
+    if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
         402,
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
@@ -297,31 +297,6 @@ async function createBrowserSessionInternal(
   }
 }
 
-/**
- * Whether a hosted MCP call's MCP credits pay for what its balance refused.
- * What is left of the balance counts only when the balance is why the check
- * refused; a spend limit refuses with plenty left.
- */
-async function mcpCreditsCover(
-  req: RequestWithAuth<any, any, any>,
-  remaining: number,
-  value: number,
-  source: string,
-): Promise<boolean> {
-  if (!req.auth.hostedMcp || !req.acuc?.org_id) return false;
-  const mcp = await autumnService.mcpCreditsAvailable({
-    teamId: req.auth.team_id,
-    orgId: req.acuc.org_id,
-    value,
-    properties: {
-      source,
-      path: req.path,
-      apiKeyId: req.acuc.api_key_id ?? null,
-    },
-  });
-  return (remaining < value ? Math.max(remaining, 0) : 0) + mcp >= value;
-}
-
 export async function settleBrowserSession(
   session: BrowserSessionRow,
   browser: HangarBrowser,
@@ -387,7 +362,7 @@ async function settleBrowserSessionInternal(
         : undefined;
     if (session.should_bill) {
       const hostedMcp = await didBrowserSessionComeFromHostedMcp(session.id);
-      const charge = billTeam(
+      billTeam(
         session.team_id,
         await orgIdForTeam(session.team_id),
         creditsBilled,
@@ -400,7 +375,6 @@ async function settleBrowserSessionInternal(
               : "browser",
           jobId: agentRequestId ?? session.id,
           chargeId: `${session.id}:destroy`,
-          ...(agentRequestId ? { agentRequestId } : {}),
           ...(hostedMcp ? { hostedMcp: true } : {}),
         },
       ).catch(error =>
@@ -410,10 +384,6 @@ async function settleBrowserSessionInternal(
           error,
         }),
       );
-      // A hosted MCP agent run's charge lands, MCP credits part included,
-      // before the run's credits below, so the run never reads one without
-      // the other.
-      if (hostedMcp && agentRequestId) await charge;
     }
     if (agentRequestId) {
       await recordRequestCredits({
@@ -472,17 +442,16 @@ export async function reserveBrowserPromptCredits(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
+      ...(req.auth.hostedMcp
+        ? {
+            featureId: await autumnService.hostedMcpFeatureId(
+              req.auth.team_id,
+              CREDITS_FEATURE_ID,
+            ),
+          }
+        : {}),
     });
-    if (
-      credit !== null &&
-      !credit.allowed &&
-      !(await mcpCreditsCover(
-        req,
-        credit.remaining,
-        credits,
-        "browserPrompt:mcp",
-      ))
-    )
+    if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
