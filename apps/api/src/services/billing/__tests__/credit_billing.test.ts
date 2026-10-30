@@ -1,20 +1,13 @@
 import { vi } from "vitest";
 
 // vi.mock is hoisted; factory-referenced values must be created in vi.hoisted().
-const {
-  withAuth,
-  queueBillingOperation,
-  trackCredits,
-  refundCredits,
-  isRoutedThroughFirebill,
-} = vi.hoisted(() => ({
-  withAuth: vi.fn((fn: any) => fn),
-  queueBillingOperation: vi.fn<(args: any[]) => Promise<any>>(),
-  trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
-  refundCredits: vi.fn<(args: any) => Promise<void>>(),
-  isRoutedThroughFirebill:
-    vi.fn<(teamId: string, orgId: string) => Promise<boolean>>(),
-}));
+const { withAuth, queueBillingOperation, trackCredits, refundCredits } =
+  vi.hoisted(() => ({
+    withAuth: vi.fn((fn: any) => fn),
+    queueBillingOperation: vi.fn<(args: any[]) => Promise<any>>(),
+    trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
+    refundCredits: vi.fn<(args: any) => Promise<void>>(),
+  }));
 
 vi.mock("../../../lib/withAuth", () => ({
   withAuth,
@@ -28,7 +21,6 @@ vi.mock("../../autumn/autumn.service", () => ({
   autumnService: {
     trackCredits,
     refundCredits,
-    isRoutedThroughFirebill,
     hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
   featureIdForBillingEndpoint: (endpoint?: string) =>
@@ -57,7 +49,6 @@ beforeEach(() => {
   queueBillingOperation.mockResolvedValue({ success: true });
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
-  isRoutedThroughFirebill.mockResolvedValue(false);
 });
 
 describe("billTeam", () => {
@@ -101,8 +92,7 @@ describe("billTeam", () => {
     );
   });
 
-  it("skips the compensating refund on the firebill route — the charge stands", async () => {
-    isRoutedThroughFirebill.mockResolvedValue(true);
+  it("skips the compensating refund when queueing fails — the charge stands", async () => {
     queueBillingOperation.mockResolvedValueOnce({
       success: false,
       message: "enqueue failed",
@@ -116,28 +106,6 @@ describe("billTeam", () => {
     });
 
     expect(refundCredits).not.toHaveBeenCalled();
-  });
-
-  it("gives the compensating refund its own fc:refund key", async () => {
-    queueBillingOperation.mockResolvedValueOnce({
-      success: false,
-      message: "enqueue failed",
-    });
-    trackCredits.mockResolvedValueOnce(true);
-
-    await billTeam("team-1", "org-1", 3, 123, {
-      endpoint: "map",
-      jobId: "map-1",
-      chargeId: "map-1",
-      externalRequestId: "partner-op-42",
-    });
-
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({
-        idempotencyKey: "fc:refund:map:map-1",
-        externalRequestId: "partner-op-42",
-      }),
-    );
   });
 
   it("marks billing as already tracked when request tracking succeeds", async () => {
@@ -156,28 +124,6 @@ describe("billTeam", () => {
       true,
     ]);
     expect(trackCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "search",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-      featureId: "SEARCH_CREDITS",
-    });
-  });
-
-  it("refunds Autumn when queueing fails after request tracking", async () => {
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-
-    await billTeam("team-1", "org-1", 3, 123, {
-      endpoint: "search",
-      jobId: "job-1",
-    });
-
-    expect(refundCredits).toHaveBeenCalledWith({
       teamId: "team-1",
       orgId: "org-1",
       value: 3,
@@ -260,19 +206,5 @@ describe("billTeam for a hosted MCP call", () => {
       false,
       true,
     ]);
-  });
-
-  it("refunds a failed enqueue whole to MCP credits", async () => {
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-
-    await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
-
-    expect(refundCredits).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        value: 3,
-        featureId: "MCP_CREDITS",
-        idempotencyKey: "fc:refund:scrape:job-1",
-      }),
-    );
   });
 });

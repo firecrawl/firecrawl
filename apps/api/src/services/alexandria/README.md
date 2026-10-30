@@ -75,9 +75,8 @@ seven days:
 
 An unsettled confirm returns the answer, writes no ledger row, and sends no
 Exchange confirmation; the run stays pending on the Exchange for
-reconciliation. A ledger commit or enqueue that fails is refunded at Autumn on
-the direct route; on the firebill route the durable charge stands pending
-reconciliation. Provider tools do not support forced zero data retention;
+reconciliation. A ledger commit or enqueue that fails leaves the durable
+Autumn charge standing, pending reconciliation. Provider tools do not support forced zero data retention;
 those teams are refused before any record is written.
 
 ## Runtime
