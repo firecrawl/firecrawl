@@ -34,7 +34,7 @@ const { mockCheck, mockTrack, mockAutumnClient, state, redis } = vi.hoisted(
       mockCheck,
       mockTrack,
       mockAutumnClient,
-      state: { gatewayStubRow: null as unknown },
+      state: { gatewayStubRow: null as unknown, firebill: false },
       redis,
     };
   },
@@ -67,7 +67,18 @@ vi.mock("../../../db/connection", () => ({
 }));
 
 vi.mock("../../../config", () => ({
-  config: { MCP_CREDITS_FEATURE_ID: "MCP_CREDITS_FROM_CONFIG" },
+  get config() {
+    return {
+      MCP_CREDITS_FEATURE_ID: "MCP_CREDITS_FROM_CONFIG",
+      ...(state.firebill
+        ? {
+            FIREBILL_URL: "http://firebill.test",
+            FIREBILL_SECRET: "fb-secret",
+            FIREBILL_ORG_IDS: ["org-1"],
+          }
+        : {}),
+    };
+  },
 }));
 
 import { AutumnService, MCP_CREDITS_FEATURE_ID } from "../autumn.service";
@@ -134,6 +145,7 @@ async function tracksOf(fn: (service: AutumnService) => Promise<unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.gatewayStubRow = null;
+  state.firebill = false;
   redis.store.clear();
   mockTrack.mockResolvedValue(undefined);
   mcpBalance(100);
@@ -434,6 +446,149 @@ describe("hosted MCP charge retries", () => {
     expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
       tracked: true,
       mcpCredits: 3,
+    });
+  });
+});
+
+describe("the entity hosted MCP charges are made against", () => {
+  const lock = {
+    teamId: "team-1",
+    orgId: "org-1",
+    value: 3,
+    lockId: "alexandria_req-1_mcp",
+    expiresAt: Date.now() + 60_000,
+    featureId: MCP_CREDITS_FEATURE_ID,
+  };
+
+  describe("directly in Autumn", () => {
+    it("tracks the MCP part on the customer and the rest on the team", async () => {
+      mcpBalance(3);
+
+      const tracks = await tracksOf(service =>
+        service.trackHostedMcpCredits(charge),
+      );
+
+      expect(tracks).toHaveLength(2);
+      const mcp = tracks.find(t => t.featureId === MCP_CREDITS_FEATURE_ID);
+      const rest = tracks.find(t => t.featureId === "CREDITS");
+      expect(mcp).toMatchObject({ customerId: "org-1", value: 3 });
+      expect(mcp.entityId).toBeUndefined();
+      expect(rest).toMatchObject({
+        customerId: "org-1",
+        entityId: "team-1",
+        value: 2,
+      });
+    });
+
+    it("refunds the MCP part on the customer and the rest on the team", async () => {
+      const tracks = await tracksOf(service =>
+        service.refundHostedMcpCredits({ ...charge, mcpCredits: 3 }),
+      );
+
+      expect(tracks).toHaveLength(2);
+      const mcp = tracks.find(t => t.featureId === MCP_CREDITS_FEATURE_ID);
+      const rest = tracks.find(t => t.featureId === "CREDITS");
+      expect(mcp).toMatchObject({ value: -3 });
+      expect(mcp.entityId).toBeUndefined();
+      expect(rest).toMatchObject({ entityId: "team-1", value: -2 });
+    });
+
+    it("holds MCP credits on the customer and other features on the team", async () => {
+      const service = new AutumnService();
+
+      await service.lockCredits(lock);
+      await service.lockCredits({
+        ...lock,
+        lockId: "alexandria_req-1",
+        featureId: "CREDITS",
+      });
+
+      const [[mcpHold], [rest]] = mockCheck.mock.calls;
+      expect(mcpHold).toMatchObject({
+        customerId: "org-1",
+        featureId: MCP_CREDITS_FEATURE_ID,
+        lock: expect.objectContaining({ lockId: "alexandria_req-1_mcp" }),
+      });
+      expect(mcpHold.entityId).toBeUndefined();
+      expect(rest).toMatchObject({ entityId: "team-1", featureId: "CREDITS" });
+    });
+  });
+
+  describe("through firebill", () => {
+    const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
+    const bodies = (path: string) =>
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith(path))
+        .map(([, init]) => JSON.parse(init.body));
+
+    beforeEach(() => {
+      state.firebill = true;
+      mockFetch.mockReset();
+      vi.stubGlobal("fetch", mockFetch);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("tracks the MCP part with an empty entity and the rest on the team", async () => {
+      mcpBalance(3);
+      mockFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ success: true })),
+      );
+
+      expect(await new AutumnService().trackHostedMcpCredits(charge)).toEqual({
+        tracked: true,
+        mcpCredits: 3,
+      });
+
+      expect(mockTrack).not.toHaveBeenCalled();
+      const tracks = bodies("/v1/track");
+      expect(tracks).toHaveLength(2);
+      expect(tracks).toContainEqual(
+        expect.objectContaining({
+          customer_id: "org-1",
+          entity_id: "",
+          feature_id: MCP_CREDITS_FEATURE_ID,
+          value: 3,
+        }),
+      );
+      expect(tracks).toContainEqual(
+        expect.objectContaining({
+          customer_id: "org-1",
+          entity_id: "team-1",
+          feature_id: "CREDITS",
+          value: 2,
+        }),
+      );
+    });
+
+    it("holds MCP credits with an empty entity", async () => {
+      mockFetch.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              success: true,
+              allowed: true,
+              lock_id: lock.lockId,
+            }),
+          ),
+      );
+
+      expect(await new AutumnService().lockCredits(lock)).toEqual({
+        status: "locked",
+        lockId: lock.lockId,
+      });
+
+      expect(mockCheck).not.toHaveBeenCalled();
+      expect(bodies("/v1/lock")).toEqual([
+        expect.objectContaining({
+          customer_id: "org-1",
+          entity_id: "",
+          feature_id: MCP_CREDITS_FEATURE_ID,
+          value: 3,
+        }),
+      ]);
     });
   });
 });

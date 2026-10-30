@@ -48,6 +48,20 @@ const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
 /**
+ * The Autumn entity a charge on `featureId` is made against. MCP credits are
+ * granted to the customer rather than to a team, so their charges, holds and
+ * refunds carry no entity: with the team's entity, Autumn spends that team's
+ * own balances first, including a team-scoped CREDITS grant, and leaves the
+ * customer's MCP credits untouched.
+ */
+function billingEntityId(
+  featureId: string,
+  teamId: string,
+): string | undefined {
+  return featureId === MCP_CREDITS_FEATURE_ID ? undefined : teamId;
+}
+
+/**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
  * null when it's absent or not a sane finite value. These balances feed
  * directly into rate-limit and concurrency controls, so NaN, Infinity, and
@@ -816,7 +830,7 @@ export class AutumnService {
       if (routed) {
         const result = await firebillLock({
           customerId,
-          entityId: teamId,
+          entityId: billingEntityId(featureId, teamId) ?? "",
           featureId,
           value,
           lockId: resolvedLockId,
@@ -855,10 +869,11 @@ export class AutumnService {
         return { status: "denied", reason: "gate_unavailable" };
       }
 
+      const entityId = billingEntityId(featureId, teamId);
       const { allowed } = await autumnClient
         .check({
           customerId,
-          entityId: teamId,
+          entityId,
           featureId,
           requiredBalance: value,
           properties,
@@ -892,7 +907,7 @@ export class AutumnService {
 
       logger.info("Autumn lockCredits succeeded", {
         customerId,
-        entityId: teamId,
+        entityId,
         featureId,
         value,
         lockId: resolvedLockId,
@@ -1029,7 +1044,7 @@ export class AutumnService {
       return await this.track(
         {
           customerId,
-          entityId: teamId,
+          entityId: billingEntityId(featureId, teamId),
           featureId,
           value,
           properties,
@@ -1125,7 +1140,7 @@ export class AutumnService {
       return await this.track(
         {
           customerId,
-          entityId: teamId,
+          entityId: billingEntityId(featureId, teamId),
           featureId,
           value: -value,
           properties: { ...properties, source: "autumn_refund" },
