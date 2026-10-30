@@ -50,6 +50,7 @@ overrides:
   shell-quote@<1.11.0: 1.11.0
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   query-string@>=9.0.0 <10.0.0: '>=9.5.0 <10.0.0'
+  decode-uri-component@>=0.5.0 <0.5.1: 0.5.1
   '@ai-sdk/provider-utils@>=4.0.0 <4.0.33': 4.0.51
   '@google-cloud/opentelemetry-cloud-monitoring-exporter': ^0.22.0
   '@opentelemetry/core@<2.9.0': 2.9.0
@@ -2667,8 +2668,8 @@ packages:
   decimal.js@10.6.0:
     resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
-  decode-uri-component@0.5.0:
-    resolution: {integrity: sha512-1BiQVoK8C9gUbQU6NzAtO/tkz2qOFpEObMWpcFvhx4fYnj4Oc5yzaJN/LD36ihkVUdXyh5ZekzX+yM+ty/SrPg==}
+  decode-uri-component@0.5.1:
+    resolution: {integrity: sha512-vWHQkXgg2cE3BB4rR0c+PYw9BCQzLoNIRMI7AunIkZst74tw/vpPp7VLoYtsR/cy1f55g3XDWUslfeCZjiZJyA==}
     engines: {node: '>=14.16'}
 
   delayed-stream@1.0.0:
@@ -6654,7 +6655,7 @@ snapshots:
 
   decimal.js@10.6.0: {}
 
-  decode-uri-component@0.5.0: {}
+  decode-uri-component@0.5.1: {}
 
   delayed-stream@1.0.0: {}
 
@@ -7956,7 +7957,7 @@ snapshots:
 
   query-string@9.5.0:
     dependencies:
-      decode-uri-component: 0.5.0
+      decode-uri-component: 0.5.1
       filter-obj: 5.1.0
       split-on-first: 3.0.0
 

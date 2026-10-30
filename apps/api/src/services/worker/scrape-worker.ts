@@ -73,6 +73,7 @@ import {
 } from "../../lib/scrape-billing";
 import { getCrawlScope } from "../../lib/crawl-scope";
 import { billTeam } from "../billing/credit_billing";
+import { tallyAgentMcpCredits } from "../billing/agent-mcp-credits";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
@@ -300,6 +301,7 @@ async function billScrapeJob(
           }
         }
 
+        await tallyAgentMcpCredits(billing, job.id, mcpCredits);
         return creditsToBeBilled;
       } catch (error) {
         logger.error(
@@ -329,6 +331,7 @@ async function billScrapeJob(
                 billing,
               },
             );
+            await tallyAgentMcpCredits(billing, job.id, mcpCredits);
           } else if (orgId) {
             const refund = {
               teamId: job.data.team_id,
