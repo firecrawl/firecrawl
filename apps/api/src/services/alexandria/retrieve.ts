@@ -471,8 +471,16 @@ export async function retrieveProviders(input: {
               )
             : refusal(
                 402,
-                `This request needs up to ${maximumCredits} credits reserved. No provider was executed.`,
-                { code: "insufficient_credits" },
+                `This request can cost up to ${maximumCredits} credits and the available credit balance cannot cover that, so no provider was executed. ` +
+                  "Credits are reserved automatically from the request; no option sets the reservation. " +
+                  (input.calls.length > 1
+                    ? `Add credits, or send fewer of these ${input.calls.length} calls per request to lower the amount reserved.`
+                    : "Add credits, then retry the same request."),
+                {
+                  code: "insufficient_credits",
+                  requiredCredits: maximumCredits,
+                  calls: input.calls.length,
+                },
               ),
         );
       if (hold.status === "skipped")
