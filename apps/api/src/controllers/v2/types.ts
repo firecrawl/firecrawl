@@ -384,7 +384,7 @@ export type JsonFormatWithOptions = Omit<
 >;
 
 // "Deterministic JSON" — same shape as json mode, but extraction is performed by
-// reusable-json-mode (a cached, reusable JS extractor run in the code-sandbox)
+// reusable-json-mode (a cached, reusable JS extractor run in a sandbox)
 // rather than a per-request LLM call. Populates document.json like json mode.
 const deterministicJsonFormatWithOptions = z.strictObject({
   type: z.literal("deterministicJson"),
