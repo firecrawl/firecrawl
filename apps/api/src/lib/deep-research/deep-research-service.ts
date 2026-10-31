@@ -25,6 +25,47 @@ export interface DeepResearchServiceOptions {
   externalRequestId?: string | null;
 }
 
+function buildFallbackAnalysis(
+  topic: string,
+  findings: { text: string; source: string }[],
+): string {
+  const title = topic?.trim() ? topic.trim() : "Research Summary";
+  const header = `# ${title}\n\n`;
+  const trimmedFindings = findings
+    .map(f => ({
+      text: (f.text ?? "").trim(),
+      source: (f.source ?? "").trim(),
+    }))
+    .filter(f => f.text.length > 0)
+    .slice(0, 10);
+
+  if (trimmedFindings.length === 0) {
+    const sources = findings
+      .map(f => (f.source ?? "").trim())
+      .filter(source => source.length > 0)
+      .slice(0, 10);
+    if (sources.length === 0) {
+      return (
+        header +
+        "No findings were collected during this research run, so a detailed analysis could not be generated."
+      );
+    }
+    return (
+      header +
+      "No detailed findings were extracted, but these sources were identified:\n" +
+      sources.map(source => `- ${source}`).join("\n")
+    );
+  }
+
+  return (
+    header +
+    "## Key Findings\n" +
+    trimmedFindings
+      .map(f => `- ${f.text}${f.source ? ` (${f.source})` : ""}`)
+      .join("\n")
+  );
+}
+
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
   const costTracking = new CostTracking();
   const { researchId, teamId, timeLimit, maxUrls, apiKeyId } = options;
@@ -371,7 +412,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
           functionId: "performDeepResearch/finalAnalysisJson",
           deepResearchId: researchId,
         },
-        options.formats,
+        ["json"],
         options.jsonOptions,
       );
     }
@@ -387,8 +428,21 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
           functionId: "performDeepResearch/finalAnalysisMarkdown",
           deepResearchId: researchId,
         },
-        options.formats,
+        ["markdown"],
       );
+      if (
+        typeof finalAnalysis !== "string" ||
+        finalAnalysis.trim().length === 0
+      ) {
+        logger.warn(
+          "[Deep Research] Final analysis was empty, using fallback summary",
+          { findingsCount: state.getFindings().length },
+        );
+        finalAnalysis = buildFallbackAnalysis(
+          options.query,
+          state.getFindings(),
+        );
+      }
     }
 
     await state.addActivity([
