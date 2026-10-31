@@ -161,14 +161,14 @@ export async function getMapResults({
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = url.replace(/^(https?:\/\/)www\./i, "$1");
 
     let mapUrl =
       search && allowExternalLinks
         ? `${search} ${urlWithoutWww}`
         : search
           ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+          : `site:${urlWithoutWww}`;
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
