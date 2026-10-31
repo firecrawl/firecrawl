@@ -35,8 +35,12 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
-import { withZeroDataRetention } from "../../lib/otel-tracer";
+import {
+  isZeroDataRetentionActive,
+  withZeroDataRetention,
+} from "../../lib/otel-tracer";
 import { logger as _logger } from "../../lib/logger";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -103,6 +107,10 @@ export function browserError(
         module: "api/v2",
         method: "browserError",
         teamId: req?.auth.team_id,
+        zeroDataRetention:
+          isZeroDataRetentionActive() ||
+          req?.body?.zeroDataRetention === true ||
+          getScrapeZDR(req?.acuc?.flags) === "forced",
       })
       .error("Unexpected browser operation error", { error });
   }
