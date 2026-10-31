@@ -36,6 +36,7 @@ import {
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { logger as _logger } from "../../lib/logger";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -96,6 +97,15 @@ export function browserError(
   }
   const knownError =
     error instanceof BrowserSessionError || error instanceof HangarError;
+  if (!knownError) {
+    _logger
+      .child({
+        module: "api/v2",
+        method: "browserError",
+        teamId: req?.auth.team_id,
+      })
+      .error("Unexpected browser operation error", { error });
+  }
   return res.status(knownError ? error.status : 502).json({
     success: false,
     error: knownError ? error.message : "Browser operation failed.",
