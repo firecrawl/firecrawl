@@ -30,6 +30,96 @@ updates:
       prefix: "apps/api"
       include: "scope"
 
+  # rust-sdk
+  - package-ecosystem: "cargo"
+    directory: "/apps/rust-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/rust-sdk"
+      include: "scope"
+
+  # go-sdk
+  - package-ecosystem: "gomod"
+    directory: "/apps/go-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/go-sdk"
+      include: "scope"
+
+  # java-sdk
+  - package-ecosystem: "gradle"
+    directory: "/apps/java-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/java-sdk"
+      include: "scope"
+
+  # dot-net-sdk
+  - package-ecosystem: "nuget"
+    directory: "/apps/dot-net-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/dot-net-sdk"
+      include: "scope"
+
+  # ruby-sdk
+  - package-ecosystem: "bundler"
+    directory: "/apps/ruby-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/ruby-sdk"
+      include: "scope"
+
+  # php-sdk
+  - package-ecosystem: "composer"
+    directory: "/apps/php-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0  # Disable version updates
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    commit-message:
+      prefix: "apps/php-sdk"
+      include: "scope"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

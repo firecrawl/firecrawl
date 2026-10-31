@@ -1,5 +1,6 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAge: 4320 # 3 days
 minimumReleaseAgeExclude:
   # GHSA-27r3-jxmh-p828: allow today's patched release through the age gate.
   - body-parser@2.4.0
