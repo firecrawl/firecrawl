@@ -948,6 +948,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             ? Math.min(effectivePageCount, result.pagesProcessed)
             : result.pagesProcessed;
       }
+      // When native detection could not read the page count, use the count
+      // pdf-parse saw so a truncated result still reports its total.
+      if (totalPageCount === undefined && result.pageCount !== undefined) {
+        totalPageCount = result.pageCount;
+      }
     }
 
     return {

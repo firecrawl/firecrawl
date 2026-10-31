@@ -48,6 +48,12 @@ export type PDFProcessorResult = {
    * and fall back to whatever upstream metadata pass set.
    */
   pagesProcessed?: number;
+  /**
+   * Page count the file declares, when the engine reports it. Currently only
+   * pdf-parse does. Used as the document total when native detection could
+   * not determine one.
+   */
+  pageCount?: number;
 };
 
 export type PdfMetadata = {
