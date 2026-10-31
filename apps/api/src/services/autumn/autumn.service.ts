@@ -304,6 +304,15 @@ export class AutumnService {
     partnerJobToken,
     orgId,
   }: LockCreditsParams): Promise<LockCreditsResult> {
+    // Only firebill can ask the partner, so a gated run with no firebill would
+    // silently skip the gate. Refused, as the direct lock path used to.
+    if (partnerJobToken && !firebillConfigured()) {
+      logger.error(
+        "A partner job token reached lockCredits with firebill unconfigured, where no partner can be asked; refusing the hold",
+        { teamId },
+      );
+      return { status: "denied", reason: "gate_unavailable" };
+    }
     if (!firebillConfigured() || this.isPreviewTeam(teamId)) {
       return { status: "skipped" };
     }
