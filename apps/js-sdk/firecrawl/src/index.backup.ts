@@ -1,7 +1,7 @@
 import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from "axios";
 import * as zt from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { TypedEventTarget } from "typescript-event-target";
+import { TypedEventTarget } from "./v1/typed-event-target";
 
 /**
  * Configuration interface for FirecrawlApp.
