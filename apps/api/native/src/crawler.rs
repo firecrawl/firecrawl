@@ -533,8 +533,9 @@ pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
 fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
   let mut full_url = data.href.clone();
 
-  // Handle relative URLs
-  if !data.href.starts_with("http") {
+  // Handle relative URLs. Test for an absolute URL by parsing it, not by its
+  // first characters: "http.client.html" or "https-setup/" are relative.
+  if Url::parse(&data.href).is_err() {
     match Url::parse(&data.url) {
       Ok(base) => match base.join(&data.href) {
         Ok(resolved) => full_url = resolved.to_string(),
@@ -1432,6 +1433,46 @@ mod tests {
       allow_external_content_links: true,
       allow_subdomains: false,
     }
+  }
+
+  // A relative href whose first characters happen to be "http" (Python's
+  // docs link to "http.client.html", "http.server.html", ...) is still a
+  // relative reference and must resolve against the page it was found on.
+  #[test]
+  fn test_filter_url_resolves_relative_href_starting_with_http() {
+    for (href, expected) in [
+      (
+        "http.client.html",
+        "https://docs.python.org/3/library/http.client.html",
+      ),
+      (
+        "https-setup/",
+        "https://docs.python.org/3/library/https-setup/",
+      ),
+      ("httpx", "https://docs.python.org/3/library/httpx"),
+    ] {
+      let mut call = filter_url_call(
+        href,
+        "https://docs.python.org/3/library/internet.html",
+        "https://docs.python.org",
+      );
+      call.allow_external_content_links = false;
+      let result = _filter_url(call).unwrap();
+      assert!(result.allowed, "{href} denied: {:?}", result.denial_reason);
+      assert_eq!(result.url.as_deref(), Some(expected));
+    }
+  }
+
+  #[test]
+  fn test_filter_url_keeps_absolute_href_verbatim() {
+    let result = _filter_url(filter_url_call(
+      "https://example.com/a/b?x=1",
+      "https://example.com/",
+      "https://example.com",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+    assert_eq!(result.url.as_deref(), Some("https://example.com/a/b?x=1"));
   }
 
   // A discovered external link that redirects within its own domain (the
