@@ -193,6 +193,7 @@ export async function getMapResults({
           {
             numResults: resultsPerPage,
             page: page,
+            zeroDataRetention,
           },
           abort,
         );
