@@ -546,37 +546,15 @@ fn _transform_html_inner(
     };
 
     if let Some(srcset) = srcset {
-      let mut sizes: Vec<ImageSource> = srcset
-        .split(',')
-        .filter_map(|x| {
-          let tok: Vec<&str> = x.trim().split(' ').collect();
-          let last_token = tok[tok.len() - 1];
-          let (last_token, last_token_used) = if tok.len() > 1
-            && !last_token.is_empty()
-            && (last_token.ends_with('x') || last_token.ends_with('w'))
-          {
-            (last_token, true)
-          } else {
-            ("1x", false)
-          };
-
-          if let Some((last_index, _)) = last_token.char_indices().last() {
-            if let Ok(parsed_size) = last_token[..last_index].parse() {
-              Some(ImageSource {
-                url: if last_token_used {
-                  tok[0..tok.len() - 1].join(" ")
-                } else {
-                  tok.join(" ")
-                },
-                size: parsed_size,
-                is_x: last_token.ends_with('x'),
-              })
-            } else {
-              None
-            }
-          } else {
-            None
-          }
+      let mut sizes: Vec<ImageSource> = srcset_candidates(&srcset)
+        .into_iter()
+        .filter_map(|(url, descriptors)| {
+          let (size, is_x) = srcset_descriptor_size(descriptors)?;
+          Some(ImageSource {
+            url: url.to_string(),
+            size,
+            is_x,
+          })
         })
         .collect();
 
@@ -654,6 +632,107 @@ fn _transform_html_inner(
   }
 
   Ok(document.to_string())
+}
+
+/// Split a `srcset` into its (URL, descriptors) candidates, as the HTML standard parses it.
+///
+/// A URL runs up to the next whitespace, so a comma inside it (a CDN transform such as
+/// `w_400,h_300`) belongs to the URL; a candidate ends at the comma after its descriptors.
+fn srcset_candidates(srcset: &str) -> Vec<(&str, &str)> {
+  let mut candidates = Vec::new();
+  let mut rest = srcset;
+  loop {
+    rest = rest.trim_start_matches(|c: char| c.is_ascii_whitespace() || c == ',');
+    if rest.is_empty() {
+      return candidates;
+    }
+    let url_end = rest
+      .find(|c: char| c.is_ascii_whitespace())
+      .unwrap_or(rest.len());
+    let url = &rest[..url_end];
+    rest = &rest[url_end..];
+    // A URL that ends in a comma has no descriptors
+    if url.ends_with(',') {
+      candidates.push((url.trim_end_matches(','), ""));
+      continue;
+    }
+    let mut depth = 0usize;
+    let descriptors_end = rest
+      .char_indices()
+      .find(|&(_, c)| match c {
+        '(' => {
+          depth += 1;
+          false
+        }
+        ')' => {
+          depth = depth.saturating_sub(1);
+          false
+        }
+        ',' => depth == 0,
+        _ => false,
+      })
+      .map_or(rest.len(), |(index, _)| index);
+    candidates.push((url, rest[..descriptors_end].trim()));
+    rest = &rest[descriptors_end..];
+  }
+}
+
+/// The size that a srcset candidate's descriptors give it, read as the HTML standard's descriptor
+/// parser reads them: a width (`800w`, with an optional height such as `600h`) or a density
+/// (`2x`), and `1x` when there is neither. Any other descriptor, a second width or density, a
+/// width or height of zero, a negative density or a number written another way (`1.`, `+2`)
+/// is an error, and the standard drops the candidate, so `None`.
+fn srcset_descriptor_size(descriptors: &str) -> Option<(f64, bool)> {
+  let (mut width, mut density, mut height) = (None, None, None);
+  for descriptor in descriptors.split_ascii_whitespace() {
+    let (index, unit) = descriptor.char_indices().last()?;
+    let value = &descriptor[..index];
+    match unit {
+      'w' if width.is_none() && density.is_none() => width = Some(positive_integer(value)?),
+      'x' if width.is_none() && density.is_none() && height.is_none() => {
+        density = Some(non_negative_float(value)?)
+      }
+      'h' if height.is_none() && density.is_none() => height = Some(positive_integer(value)?),
+      _ => return None,
+    }
+  }
+  match (width, density, height) {
+    (Some(width), _, _) => Some((width as f64, false)),
+    (None, _, Some(_)) => None,
+    (None, Some(density), None) => Some((density, true)),
+    (None, None, None) => Some((1.0, true)),
+  }
+}
+
+/// A valid non-negative integer, ASCII digits only, that is not zero.
+fn positive_integer(text: &str) -> Option<u64> {
+  if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+    return None;
+  }
+  text.parse().ok().filter(|&value| value > 0)
+}
+
+/// A valid floating-point number (`2`, `1.5`, `.5`, `1e2`) that is finite and not negative.
+fn non_negative_float(text: &str) -> Option<f64> {
+  let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+  let unsigned = text.strip_prefix('-').unwrap_or(text);
+  let (mantissa, exponent) = match unsigned.split_once(['e', 'E']) {
+    Some((mantissa, exponent)) => (mantissa, Some(exponent)),
+    None => (unsigned, None),
+  };
+  let mantissa_is_valid = match mantissa.split_once('.') {
+    Some((integer, fraction)) => (integer.is_empty() || digits(integer)) && digits(fraction),
+    None => digits(mantissa),
+  };
+  let exponent_is_valid =
+    exponent.is_none_or(|exponent| digits(exponent.strip_prefix(['+', '-']).unwrap_or(exponent)));
+  if !mantissa_is_valid || !exponent_is_valid {
+    return None;
+  }
+  text
+    .parse::<f64>()
+    .ok()
+    .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 /// Transform and clean HTML content based on provided options.
@@ -827,13 +906,9 @@ fn _extract_images(
     }
 
     if let Some(srcset) = attrs.get("srcset") {
-      for part in srcset.split(',') {
-        if let Some(url) = part.split_whitespace().next() {
-          if !url.is_empty() {
-            if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
-            }
-          }
+      for (url, _) in srcset_candidates(srcset) {
+        if let Ok(resolved) = resolve_image_url(url) {
+          images.insert(resolved);
         }
       }
     }
@@ -850,13 +925,9 @@ fn _extract_images(
 
   for source in source_elements {
     if let Some(srcset) = source.attributes.borrow().get("srcset") {
-      for part in srcset.split(',') {
-        if let Some(url) = part.split_whitespace().next() {
-          if !url.is_empty() {
-            if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
-            }
-          }
+      for (url, _) in srcset_candidates(srcset) {
+        if let Ok(resolved) = resolve_image_url(url) {
+          images.insert(resolved);
         }
       }
     }
@@ -1038,4 +1109,41 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::srcset_descriptor_size;
+
+  #[test]
+  fn reads_srcset_descriptors_as_the_html_standard_does() {
+    for (descriptors, expected) in [
+      ("", Some((1.0, true))),
+      ("800w", Some((800.0, false))),
+      ("600w 900h", Some((600.0, false))),
+      ("2x", Some((2.0, true))),
+      ("1.5x", Some((1.5, true))),
+      (".5x", Some((0.5, true))),
+      ("1e1x", Some((10.0, true))),
+      ("0x", Some((0.0, true))),
+      ("400w 9999w", None),
+      ("2x 9999w", None),
+      ("2x 3x", None),
+      ("900h", None),
+      ("2x 900h", None),
+      ("0w", None),
+      ("1.x", None),
+      ("+2x", None),
+      ("-1x", None),
+      ("2q", None),
+      ("2\u{d7}", None),
+      ("1e400x", None),
+    ] {
+      assert_eq!(
+        srcset_descriptor_size(descriptors),
+        expected,
+        "{descriptors:?}"
+      );
+    }
+  }
 }
