@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from "vitest";
-import axios from "axios";
 import FirecrawlApp from "../../../v1";
+import { mockFetch } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 const API_KEY = "fc-test";
@@ -16,9 +16,9 @@ const origins: Array<[string, string]> = [
 
 function mockGet(respond: (url: URL) => unknown) {
   const sent: Array<{ url: string; authorization: unknown }> = [];
-  vi.spyOn(axios, "get").mockImplementation(async (url: string, config?: any) => {
-    sent.push({ url, authorization: config?.headers?.Authorization });
-    return { status: 200, data: respond(new URL(url)) };
+  mockFetch(req => {
+    sent.push({ url: req.url, authorization: req.headers.authorization });
+    return { data: respond(new URL(req.url)) };
   });
   return sent;
 }

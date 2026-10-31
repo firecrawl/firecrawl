@@ -8,7 +8,7 @@ const DOC = { markdown: "# big doc" };
 
 function processingContinues408(retryAfterSeconds = 10) {
   return {
-    isAxiosError: true,
+    isHttpError: true,
     response: {
       status: 408,
       headers: { "retry-after": String(retryAfterSeconds) },
@@ -86,7 +86,7 @@ describe("v2.scrape auto-resume", () => {
 
   test("plain timeouts without the processing signal do not resume", async () => {
     const post = vi.fn().mockRejectedValueOnce({
-      isAxiosError: true,
+      isHttpError: true,
       response: {
         status: 408,
         headers: {},

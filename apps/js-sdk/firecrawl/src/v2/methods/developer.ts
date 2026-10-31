@@ -1,7 +1,7 @@
 import type { DeveloperSearchOptions, DeveloperSearchResponse } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
 } from "../utils/errorHandler";
 
@@ -42,8 +42,8 @@ export async function developerSearch(
     }
     return response.data;
   } catch (error: any) {
-    if (error?.isAxiosError) {
-      return normalizeAxiosError(error, "search developer sources");
+    if (error?.isHttpError) {
+      return normalizeHttpError(error, "search developer sources");
     }
     throw error;
   }

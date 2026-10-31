@@ -45,10 +45,10 @@ function withQuery(
 
 /**
  * Translate the RFC 7807 Problem body returned by the research service into an
- * SdkError. Falls back to the generic axios normalization otherwise.
+ * SdkError. Falls back to the generic HTTP error normalization otherwise.
  */
 function normalizeResearchError(err: any, action: string): never {
-  if (err?.isAxiosError) {
+  if (err?.isHttpError) {
     const status: number | undefined = err.response?.status;
     const body: any = err.response?.data;
     if (body && (body.detail || body.title)) {

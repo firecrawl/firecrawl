@@ -12,7 +12,7 @@ import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { fetchAllPages } from "../utils/pagination";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
   isRetryableError,
 } from "../utils/errorHandler";
@@ -65,8 +65,8 @@ export async function startBatchScrape(
       invalidURLs: res.data.invalidURLs || undefined,
     };
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "start batch scrape");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "start batch scrape");
     throw err;
   }
 }
@@ -122,8 +122,8 @@ export async function getBatchScrapeStatus(
       data: aggregated,
     };
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "get batch scrape status");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "get batch scrape status");
     throw err;
   }
 }
@@ -139,8 +139,8 @@ export async function cancelBatchScrape(
     if (res.status !== 200) throwForBadResponse(res, "cancel batch scrape");
     return res.data?.status === "cancelled";
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "cancel batch scrape");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "cancel batch scrape");
     throw err;
   }
 }
@@ -161,8 +161,8 @@ export async function getBatchScrapeErrors(
       robotsBlocked: payload.robotsBlocked || [],
     };
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "get batch scrape errors");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "get batch scrape errors");
     throw err;
   }
 }

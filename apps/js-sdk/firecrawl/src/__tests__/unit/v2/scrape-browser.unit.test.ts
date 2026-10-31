@@ -112,7 +112,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
     );
   });
 
-  test("interact converts seconds-based body timeout to ms axios timeout", async () => {
+  test("interact converts seconds-based body timeout to ms request timeout", async () => {
     const post = vi.fn(async () => ({
       status: 200,
       data: { success: true, stdout: "ok", exitCode: 0 },

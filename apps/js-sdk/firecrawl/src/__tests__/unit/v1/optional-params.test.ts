@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import axios from "axios";
 import FirecrawlApp from "../../../v1";
+import { mockFetch } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 
@@ -20,14 +20,13 @@ describe("v1 methods work without params", () => {
   beforeEach(() => {
     app = new FirecrawlApp({ apiKey: "fc-test", apiUrl: API_URL });
     posts = [];
-    vi.spyOn(axios, "post").mockImplementation(async (url: string, data?: any) => {
-      posts.push({ url, data });
-      return { status: 200, data: { success: true, id: "job-1", data: [], links: [] } };
+    mockFetch(req => {
+      if (req.method === "post") {
+        posts.push({ url: req.url, data: req.body });
+        return { data: { success: true, id: "job-1", data: [], links: [] } };
+      }
+      return { data: { success: true, status: "completed", data: [{ markdown: "ok" }] } };
     });
-    vi.spyOn(axios, "get").mockImplementation(async () => ({
-      status: 200,
-      data: { success: true, status: "completed", data: [{ markdown: "ok" }] },
-    }));
     (globalThis as any).WebSocket = FakeWebSocket;
   });
 

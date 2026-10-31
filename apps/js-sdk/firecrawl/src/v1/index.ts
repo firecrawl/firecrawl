@@ -1,4 +1,4 @@
-import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from "axios";
+import { httpRequest, type HttpResponse } from "../utils/httpRequest";
 import * as zt from "zod";
 import { zodSchemaToJsonSchema } from "../utils/zodSchemaToJson";
 import { TypedEventTarget } from "typescript-event-target";
@@ -735,10 +735,10 @@ export default class FirecrawlApp {
     url: string,
     params?: ScrapeParams<T, ActionsSchema>
   ): Promise<ScrapeResponse<zt.infer<T>, ActionsSchema extends Action[] ? ActionsResult : never> | ErrorResponse> {
-    const headers: AxiosRequestHeaders = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
-    } as AxiosRequestHeaders;
+    };
     let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     if (jsonData?.extract?.schema) {
       jsonData = {
@@ -760,11 +760,12 @@ export default class FirecrawlApp {
       };
     }
     try {
-      const response: AxiosResponse = await axios.post(
-        this.apiUrl + `/v1/scrape`,
-        jsonData,
-        { headers, timeout: params?.timeout !== undefined ? (params.timeout + 5000) : undefined },
-      );
+      const response: HttpResponse = await httpRequest(this.apiUrl + `/v1/scrape`, {
+        method: "post",
+        headers,
+        body: jsonData,
+        timeoutMs: params?.timeout !== undefined ? (params.timeout + 5000) : undefined,
+      });
       if (response.status === 200) {
         const responseData = response.data;
         if (responseData.success) {
@@ -793,10 +794,10 @@ export default class FirecrawlApp {
    * @returns The response from the search operation.
    */
   async search(query: string, params?: SearchParams | Record<string, any>): Promise<SearchResponse> {
-    const headers: AxiosRequestHeaders = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
-    } as AxiosRequestHeaders;
+    };
 
     let jsonData: any = {
       query,
@@ -825,7 +826,7 @@ export default class FirecrawlApp {
     }
 
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/search`,
         jsonData,
         headers
@@ -872,7 +873,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders(idempotencyKey);
     let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/crawl`,
         jsonData,
         headers
@@ -901,7 +902,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders(idempotencyKey);
     let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/crawl`,
         jsonData,
         headers
@@ -935,7 +936,7 @@ export default class FirecrawlApp {
       throw new FirecrawlError("No crawl ID provided", 400);
     }
 
-    const headers: AxiosRequestHeaders = this.prepareHeaders();
+    const headers: Record<string, string> = this.prepareHeaders();
     const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/crawl/${id}`, this.apiUrl);
     if (skip !== undefined) {
       targetURL.searchParams.set("skip", skip.toString());
@@ -945,7 +946,7 @@ export default class FirecrawlApp {
     }
 
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         targetURL.href,
         headers
       );
@@ -1007,7 +1008,7 @@ export default class FirecrawlApp {
   async checkCrawlErrors(id: string): Promise<CrawlErrorsResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.deleteRequest(
+      const response: HttpResponse = await this.deleteRequest(
         `${this.apiUrl}/v1/crawl/${id}/errors`,
         headers
       );
@@ -1030,7 +1031,7 @@ export default class FirecrawlApp {
   async cancelCrawl(id: string): Promise<ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.deleteRequest(
+      const response: HttpResponse = await this.deleteRequest(
         `${this.apiUrl}/v1/crawl/${id}`,
         headers
       );
@@ -1078,7 +1079,7 @@ export default class FirecrawlApp {
     let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
 
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/map`,
         jsonData,
         headers
@@ -1134,7 +1135,7 @@ export default class FirecrawlApp {
       };
     }
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/batch/scrape`,
         jsonData,
         headers
@@ -1165,7 +1166,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders(idempotencyKey);
     let jsonData: any = { urls, webhook, ignoreInvalidURLs, ...params, origin: this.resolveOrigin(params) };
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/batch/scrape`,
         jsonData,
         headers
@@ -1223,7 +1224,7 @@ export default class FirecrawlApp {
       throw new FirecrawlError("No batch scrape ID provided", 400);
     }
 
-    const headers: AxiosRequestHeaders = this.prepareHeaders();
+    const headers: Record<string, string> = this.prepareHeaders();
     const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/batch/scrape/${id}`, this.apiUrl);
     if (skip !== undefined) {
       targetURL.searchParams.set("skip", skip.toString());
@@ -1233,7 +1234,7 @@ export default class FirecrawlApp {
     }
 
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         targetURL.href,
         headers
       );
@@ -1295,7 +1296,7 @@ export default class FirecrawlApp {
   async checkBatchScrapeErrors(id: string): Promise<CrawlErrorsResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.deleteRequest(
+      const response: HttpResponse = await this.deleteRequest(
         `${this.apiUrl}/v1/batch/scrape/${id}/errors`,
         headers
       );
@@ -1325,7 +1326,7 @@ export default class FirecrawlApp {
     const jsonSchema = params?.schema ? zodSchemaToJsonSchema(params.schema) : undefined;
     
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/extract`,
         { ...jsonData, schema: jsonSchema, origin: this.resolveOrigin(params) },
         headers
@@ -1335,7 +1336,7 @@ export default class FirecrawlApp {
         const jobId = response.data.id;
         let extractStatus;
         do {
-          const statusResponse: AxiosResponse = await this.getRequest(
+          const statusResponse: HttpResponse = await this.getRequest(
             `${this.apiUrl}/v1/extract/${jobId}`,
             headers
           );
@@ -1385,7 +1386,7 @@ export default class FirecrawlApp {
     const jsonSchema = params?.schema ? zodSchemaToJsonSchema(params.schema) : undefined;
 
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         this.apiUrl + `/v1/extract`,
         { ...jsonData, schema: jsonSchema, origin: this.resolveOrigin(params) },
         headers
@@ -1411,7 +1412,7 @@ export default class FirecrawlApp {
    */
   async getExtractStatus(jobId: string): Promise<any> {
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/extract/${jobId}`,
         this.prepareHeaders()
       );
@@ -1431,12 +1432,12 @@ export default class FirecrawlApp {
    * @param idempotencyKey - Optional key to ensure idempotency.
    * @returns The prepared headers.
    */
-  prepareHeaders(idempotencyKey?: string): AxiosRequestHeaders {
+  prepareHeaders(idempotencyKey?: string): Record<string, string> {
     return {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
       ...(idempotencyKey ? { "x-idempotency-key": idempotencyKey } : {}),
-    } as AxiosRequestHeaders & { "x-idempotency-key"?: string };
+    };
   }
 
   /**
@@ -1449,9 +1450,9 @@ export default class FirecrawlApp {
   postRequest(
     url: string,
     data: any,
-    headers: AxiosRequestHeaders
-  ): Promise<AxiosResponse> {
-    return axios.post(url, data, { headers, timeout: (data?.timeout ? (data.timeout + 5000) : undefined) });
+    headers: Record<string, string>
+  ): Promise<HttpResponse> {
+    return httpRequest(url, { method: "post", headers, body: data, timeoutMs: data?.timeout ? data.timeout + 5000 : undefined });
   }
 
   /**
@@ -1462,13 +1463,13 @@ export default class FirecrawlApp {
    */
   async getRequest(
     url: string,
-    headers: AxiosRequestHeaders
-  ): Promise<AxiosResponse> {
+    headers: Record<string, string>
+  ): Promise<HttpResponse> {
     try {
-      return await axios.get(pinToApiOrigin(this.apiUrl, url), { headers });
-    } catch (error) {
-      if (error instanceof AxiosError && error.response) {
-        return error.response as AxiosResponse;
+      return await httpRequest(pinToApiOrigin(this.apiUrl, url), { method: "get", headers });
+    } catch (error: any) {
+      if (error?.isHttpError && error.response) {
+        return error.response as HttpResponse;
       } else {
         throw error;
       }
@@ -1483,13 +1484,13 @@ export default class FirecrawlApp {
    */
   async deleteRequest(
     url: string,
-    headers: AxiosRequestHeaders
-  ): Promise<AxiosResponse> {
+    headers: Record<string, string>
+  ): Promise<HttpResponse> {
     try {
-        return await axios.delete(url, { headers });
-    } catch (error) {
-      if (error instanceof AxiosError && error.response) {
-        return error.response as AxiosResponse;
+        return await httpRequest(url, { method: "delete", headers });
+    } catch (error: any) {
+      if (error?.isHttpError && error.response) {
+        return error.response as HttpResponse;
       } else {
         throw error;
       }
@@ -1506,7 +1507,7 @@ export default class FirecrawlApp {
    */
   async monitorJobStatus(
     id: string,
-    headers: AxiosRequestHeaders,
+    headers: Record<string, string>,
     checkInterval: number,
     jobType: "crawl" | "batch" = "crawl"
   ): Promise<CrawlStatusResponse | ErrorResponse> {
@@ -1518,7 +1519,7 @@ export default class FirecrawlApp {
     
     while (true) {
       try {
-        let statusResponse: AxiosResponse = await this.getRequest(
+        let statusResponse: HttpResponse = await this.getRequest(
           `${this.apiUrl}/v1/${statusPath}/${id}`,
           headers
         );
@@ -1583,7 +1584,7 @@ export default class FirecrawlApp {
    * @returns True if the error should be retried
    */
   private isRetryableError(error: any): boolean {
-    if (error instanceof AxiosError) {
+    if (error?.isHttpError) {
       if (!error.response) {
         const code = error.code;
         const message = error.message?.toLowerCase() || '';
@@ -1628,10 +1629,10 @@ export default class FirecrawlApp {
 
   /**
    * Handles errors from API responses.
-   * @param {AxiosResponse} response - The response from the API.
+   * @param {HttpResponse} response - The response from the API.
    * @param {string} action - The action being performed when the error occurred.
    */
-  handleError(response: AxiosResponse, action: string): never {
+  handleError(response: HttpResponse, action: string): never {
     if (!response) {
       throw new FirecrawlError(
         `No response received while trying to ${action}. This may be a network error or the server is unreachable.`,
@@ -1768,7 +1769,7 @@ export default class FirecrawlApp {
     }
 
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         `${this.apiUrl}/v1/deep-research`,
         jsonData,
         headers
@@ -1798,7 +1799,7 @@ export default class FirecrawlApp {
   async checkDeepResearchStatus(id: string): Promise<DeepResearchStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/deep-research/${id}`,
         headers
       );
@@ -1904,7 +1905,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders();
     try {
       let jsonData: any = { topic, ...params, origin: this.resolveOrigin(params) };
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         `${this.apiUrl}/v1/deep-research`,
         jsonData,
         headers
@@ -1934,7 +1935,7 @@ export default class FirecrawlApp {
   async __checkDeepResearchStatus(id: string): Promise<DeepResearchStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/deep-research/${id}`,
         headers
       );
@@ -2020,7 +2021,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders();
     let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
-      const response: AxiosResponse = await this.postRequest(
+      const response: HttpResponse = await this.postRequest(
         `${this.apiUrl}/v1/llmstxt`,
         jsonData,
         headers
@@ -2050,7 +2051,7 @@ export default class FirecrawlApp {
   async checkGenerateLLMsTextStatus(id: string): Promise<GenerateLLMsTextStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/llmstxt/${id}`,
         headers
       );
@@ -2079,7 +2080,7 @@ export default class FirecrawlApp {
   async getQueueStatus(): Promise<QueueStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
       `${this.apiUrl}/v1/team/queue-status`,
         headers
       );
@@ -2105,7 +2106,7 @@ export default class FirecrawlApp {
   async getCreditUsage(): Promise<CreditUsageResponseV1 | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/team/credit-usage`,
         headers
       );
@@ -2130,7 +2131,7 @@ export default class FirecrawlApp {
   async getTokenUsage(): Promise<TokenUsageResponseV1 | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      const response: AxiosResponse = await this.getRequest(
+      const response: HttpResponse = await this.getRequest(
         `${this.apiUrl}/v1/team/token-usage`,
         headers
       );
@@ -2156,7 +2157,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders();
     try {
       const url = `${this.apiUrl}/v1/team/credit-usage/historical${byApiKey ? "?byApiKey=true" : ""}`;
-      const response: AxiosResponse = await this.getRequest(url, headers);
+      const response: HttpResponse = await this.getRequest(url, headers);
       if (response.status === 200) {
         return response.data as CreditUsageHistoricalResponseV1;
       } else {
@@ -2179,7 +2180,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders();
     try {
       const url = `${this.apiUrl}/v1/team/token-usage/historical${byApiKey ? "?byApiKey=true" : ""}`;
-      const response: AxiosResponse = await this.getRequest(url, headers);
+      const response: HttpResponse = await this.getRequest(url, headers);
       if (response.status === 200) {
         return response.data as TokenUsageHistoricalResponseV1;
       } else {
