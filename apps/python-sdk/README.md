@@ -278,7 +278,8 @@ sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
 Generic `search("food labeling requirements", categories=["gov"])` returns
 index results inside `.web`; like `developer`, it cannot be combined with other
-categories.
+categories, and it takes only the query, so use `gov_search` for the filters
+below.
 
 ```python
 law = firecrawl.gov_search("food labeling requirements", k=5)

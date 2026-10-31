@@ -92,6 +92,20 @@ for %Firecrawl.DeveloperSearch.Result{title: title, url: url} <- results do
   IO.puts("#{title} #{url}")
 end
 
+# Search the Government Index: US statutes, regulations, codes, court opinions
+# and other government publications. The filters are optional: jurisdiction
+# ("us" or "us-" plus a state code), court (a CourtListener court id),
+# court_type (federal-supreme, federal-appellate, federal-district,
+# federal-bankruptcy, federal-special, military, state-supreme, state-appellate,
+# state-trial, state-special, state-attorney-general), cites (a citation such as
+# "42 U.S.C. § 1983") and domain. gov_search_post sends the same options as a
+# JSON body.
+{:ok, response} = Firecrawl.gov_search(
+  query: "qualified immunity",
+  jurisdiction: "us-ca",
+  court_type: "state-supreme"
+)
+
 # Check crawl status
 {:ok, response} = Firecrawl.get_crawl_status("job-uuid")
 

@@ -254,7 +254,8 @@ sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
 Generic `search('food labeling requirements', { categories: ['gov'] })`
 returns index results inside `.web`; like `developer`, it cannot be combined
-with other categories.
+with other categories, and it takes only the query, so use `govSearch` for the
+filters below.
 
 ```js
 const law = await app.govSearch('food labeling requirements', {
