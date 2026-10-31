@@ -68,11 +68,11 @@ describe("change tracking content comparison", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "del",
-          content: `-${previous.split("\n")[0]}`,
+          content: previous.split("\n")[0],
         }),
         expect.objectContaining({
           type: "add",
-          content: `+${current.split("\n")[0]}`,
+          content: current.split("\n")[0],
         }),
       ]),
     );
