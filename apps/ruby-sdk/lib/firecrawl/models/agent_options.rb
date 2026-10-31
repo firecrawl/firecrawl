@@ -36,7 +36,7 @@ module Firecrawl
           "strictConstrainToURLs" => strict_constrain_to_urls,
           "model" => model,
           "effort" => effort,
-          "webhook" => webhook.is_a?(Hash) ? webhook : webhook&.to_h,
+          "webhook" => webhook.is_a?(String) || webhook.is_a?(Hash) ? webhook : webhook&.to_h,
           "auditMetadata" => audit_metadata&.to_h,
           "threadId" => thread_id,
           "mode" => mode,
