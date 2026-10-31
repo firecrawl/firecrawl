@@ -665,6 +665,29 @@ export class MediaAccessDeniedError extends TransportableError {
   }
 }
 
+export class YouTubeUnavailableError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_YOUTUBE_UNAVAILABLE",
+      message ??
+        "YouTube returned an error page instead of the video, and its metadata and transcript could not be retrieved. This is usually transient; retry the scrape.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new YouTubeUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class PromptInjectionDetectedError extends TransportableError {
   constructor(message?: string) {
     super(

@@ -394,6 +394,14 @@ async function scrapeControllerInner(
         });
       }
 
+      if (e.code === "SCRAPE_YOUTUBE_UNAVAILABLE") {
+        return res.status(502).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
         return res.status(403).json({
           success: false,

@@ -1701,6 +1701,30 @@ describe("Scrape tests", () => {
         },
         scrapeTimeout,
       );
+
+      it.concurrent(
+        "never returns YouTube's error page as a successful scrape",
+        async () => {
+          const raw = await scrapeRaw(
+            {
+              url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+              formats: ["markdown"],
+              maxAge: 0,
+            },
+            identity,
+          );
+
+          if (raw.statusCode === 200) {
+            expect(raw.body.data.markdown).not.toMatch(/^Error \d{3} \(/);
+            expect(raw.body.data.markdown).toContain("Me at the zoo");
+          } else {
+            expect(raw.statusCode).toBe(502);
+            expect(raw.body.success).toBe(false);
+            expect(raw.body.code).toBe("SCRAPE_YOUTUBE_UNAVAILABLE");
+          }
+        },
+        scrapeTimeout,
+      );
     });
   });
 

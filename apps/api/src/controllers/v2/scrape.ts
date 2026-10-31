@@ -574,6 +574,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_YOUTUBE_UNAVAILABLE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 502,
+            });
+            return res.status(502).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,

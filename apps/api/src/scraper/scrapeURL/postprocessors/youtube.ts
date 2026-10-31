@@ -2,7 +2,8 @@ import { config } from "../../../config";
 import type { BrowserCookie, Meta } from "..";
 import type { Postprocessor } from ".";
 import type { EngineScrapeResult } from "../engines";
-import { throwIfMediaAccessDenied } from "../error";
+import { throwIfMediaAccessDenied, YouTubeUnavailableError } from "../error";
+import { TransportableError } from "../../../lib/error";
 
 // Transcript enrichment is best-effort: the postprocessor loop swallows its
 // errors and returns the page without a transcript. But an unbounded fetch to
@@ -66,6 +67,23 @@ function isYouTubeVideoPath(url: URL): boolean {
 
   const pathParts = url.pathname.split("/").filter(Boolean);
   return pathParts.length === 2 && pathParts[0] === "live";
+}
+
+// Google's error document ("Error 401 (Bad Request)!!1") rendered into the
+// page, or YouTube's consent interstitial, carries no video content.
+export function isYouTubeErrorPage(page: {
+  html?: string;
+  markdown?: string;
+}): boolean {
+  const html = page.html ?? "";
+  const markdownHead = (page.markdown ?? "").trimStart().slice(0, 1000);
+  return (
+    html.includes('id="af-error-container"') ||
+    /<title>Error \d{3} \([^)]*\)!!1<\/title>/.test(html) ||
+    /^Error \d{3} \([^)]*\)!!1/.test(markdownHead) ||
+    html.includes("Before you continue to YouTube") ||
+    markdownHead.includes("Before you continue to YouTube")
+  );
 }
 
 function buildMarkdown(
@@ -175,7 +193,21 @@ export const youtubePostprocessor: Postprocessor = {
       return engineResult;
     }
 
-    const metadata = await getYouTubeMetadata(meta, engineResult);
+    let metadata: YouTubeMetadataResponse;
+    try {
+      metadata = await getYouTubeMetadata(meta, engineResult);
+    } catch (error) {
+      if (
+        !(error instanceof TransportableError) &&
+        isYouTubeErrorPage(engineResult)
+      ) {
+        meta.logger.warn("YouTube metadata failed on an error page", {
+          error,
+        });
+        throw new YouTubeUnavailableError();
+      }
+      throw error;
+    }
     const markdown = buildMarkdown(metadata, engineResult.url);
 
     return {

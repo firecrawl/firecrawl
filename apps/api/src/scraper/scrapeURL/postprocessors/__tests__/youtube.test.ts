@@ -1,4 +1,5 @@
-import { youtubePostprocessor } from "../youtube";
+import { isYouTubeErrorPage, youtubePostprocessor } from "../youtube";
+import { MediaAccessDeniedError, YouTubeUnavailableError } from "../../error";
 import { config } from "../../../../config";
 
 describe("youtubePostprocessor /metadata fetch timeout", () => {
@@ -107,5 +108,85 @@ describe("youtubePostprocessor.shouldRun", () => {
         ["youtube"],
       ),
     ).toBe(false);
+  });
+});
+
+describe("youtubePostprocessor on YouTube error pages", () => {
+  const originalFetch = global.fetch;
+  const originalUrl = config.AVGRAB_SERVICE_URL;
+  const url = "https://www.youtube.com/watch?v=H4fUJQCIV5E";
+  const errorPage =
+    "Error 401 (Bad Request)!!1\n\n**401.** That’s an error.\n\nThe server cannot process the request because it is malformed. It should not be retried. That’s all we know.\n\nSkip navigation\n\nSearch";
+  const errorHtml =
+    '<html><head><title>Watch - YouTube</title></head><body><iframe></iframe><title>Error 401 (Bad Request)!!1</title><main id="af-error-container" role="main"><p><b>401.</b> <ins>That’s an error.</ins></p></main></body></html>';
+  const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+  const meta: any = {
+    logger: { ...logger, child: () => logger },
+    url,
+    options: { lockdown: false, location: undefined },
+  };
+
+  beforeEach(() => {
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+    global.fetch = vi.fn(async () => ({
+      ok: false,
+      json: async () => ({ detail: "extraction failed" }),
+    })) as any;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    config.AVGRAB_SERVICE_URL = originalUrl;
+    vi.clearAllMocks();
+  });
+
+  it("detects Google's error page and YouTube's consent page", () => {
+    expect(isYouTubeErrorPage({ html: errorHtml })).toBe(true);
+    expect(isYouTubeErrorPage({ markdown: errorPage })).toBe(true);
+    expect(
+      isYouTubeErrorPage({
+        html: "<html><body><h1>Before you continue to YouTube</h1></body></html>",
+      }),
+    ).toBe(true);
+    expect(
+      isYouTubeErrorPage({
+        html: "<html><head><title>Never Gonna Give You Up - YouTube</title></head></html>",
+        markdown: "# Never Gonna Give You Up\n\nRick Astley",
+      }),
+    ).toBe(false);
+    expect(isYouTubeErrorPage({})).toBe(false);
+  });
+
+  it("throws a typed error instead of returning the error page", async () => {
+    const error = await youtubePostprocessor
+      .run(meta, { url, html: errorHtml } as any)
+      .catch(e => e);
+    expect(error).toBeInstanceOf(YouTubeUnavailableError);
+    expect(error.code).toBe("SCRAPE_YOUTUBE_UNAVAILABLE");
+  });
+
+  it("keeps the original error when the page is not an error page", async () => {
+    const error = await youtubePostprocessor
+      .run(meta, {
+        url,
+        html: "<html><head><title>A video - YouTube</title></head></html>",
+      } as any)
+      .catch(e => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain("extraction failed");
+    expect(error).not.toBeInstanceOf(YouTubeUnavailableError);
+  });
+
+  it("keeps a media access denial over the error page", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: false,
+      json: async () => ({
+        detail: { code: "private", message: "This video is private." },
+      }),
+    })) as any;
+    const error = await youtubePostprocessor
+      .run(meta, { url, html: errorHtml } as any)
+      .catch(e => e);
+    expect(error).toBeInstanceOf(MediaAccessDeniedError);
   });
 });

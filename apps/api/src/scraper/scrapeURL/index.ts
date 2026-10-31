@@ -61,6 +61,7 @@ import {
   BrandingNotSupportedError,
   XTwitterConfigurationError,
   ExchangeRefusedError,
+  YouTubeUnavailableError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -1168,6 +1169,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             engineResult,
           );
         } catch (error) {
+          if (error instanceof YouTubeUnavailableError) {
+            throw error;
+          }
           meta.logger.warn(
             "Failed to run postprocessor " + postprocessor.name,
             {
@@ -1942,6 +1946,11 @@ export async function scrapeURL(
               error,
             },
           );
+        } else if (error instanceof YouTubeUnavailableError) {
+          errorType = "YouTubeUnavailableError";
+          meta.logger.warn("scrapeURL: YouTube returned an error page", {
+            error,
+          });
         } else if (error instanceof ProxySelectionError) {
           errorType = "ProxySelectionError";
           meta.logger.warn("scrapeURL: Proxy selection error", { error });
