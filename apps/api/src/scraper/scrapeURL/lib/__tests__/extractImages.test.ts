@@ -212,6 +212,25 @@ describe("extractImages", () => {
     expect(duplicateCount).toBe(1);
   });
 
+  it("should not list the page itself for empty image sources", async () => {
+    const html = `
+      <html>
+        <head>
+          <meta property="og:image" content="">
+        </head>
+        <body>
+          <img src="   " data-src="" alt="Blank">
+          <video poster=""></video>
+          <img src="photo.jpg" alt="Photo">
+        </body>
+      </html>
+    `;
+
+    const images = await extractImages(html, baseUrl);
+
+    expect(images).toEqual(["https://example.com/photo.jpg"]);
+  });
+
   it("should handle invalid URLs gracefully", async () => {
     const html = `
       <html>
