@@ -36,12 +36,15 @@ overrides:
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
   fast-uri: "3.1.9"
-  "glob@>=10.2.0 <10.5.0": ">=10.5.0"
+  # GHSA-3g3m-2fjr-6pw4: every 9.x to 14.0.1 is affected; fixed in 14.0.2.
+  # Bounded <15.0.0.
+  "glob@>=9.0.0 <14.0.2": ">=14.0.2 <15.0.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
   # GHSA-6pq8-jhm2-2vcw: fixed in 6.16.1. Bounded <7.0.0.
   "qs@<6.16.1": ">=6.16.1 <7.0.0"
-  "minimatch@<10.2.3": ">=10.2.3"
+  # GHSA-g3hv-75wg-m249: fixed in 11.0.1. Bounded <12.0.0.
+  "minimatch@<11.0.1": ">=11.0.1 <12.0.0"
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
@@ -80,8 +83,9 @@ overrides:
   "form-data@>=4.0.0 <4.0.6": "4.0.6"
   "@babel/core@>=7.0.0 <7.29.6": "7.29.7"
   # GHSA-Q3JH-WRC6-JGQ8 / GHSA-8R9P-F939-6H3C: fixed in 1.16.1.
+  # GHSA-mrwp-f3q8-3g9p: fixed in 1.16.2.
   # Replacement is bounded <2.0.0; cannot resolve to follow-redirects 2.x.
-  "follow-redirects@<1.16.1": ">=1.16.1 <2.0.0"
+  "follow-redirects@<1.16.2": ">=1.16.2 <2.0.0"
   "uuid@<11.1.1": "11.1.1"
   "js-cookie@<3.0.7": "3.0.7"
   # GHSA-pqg4-j6r4-53mv: fixed in 1.11.0.
