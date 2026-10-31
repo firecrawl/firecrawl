@@ -462,11 +462,13 @@ export async function scrapeStopInteractiveBrowserController(
       .json({ success: false, error: "Browser session not found." });
   if (session.team_id !== req.auth.team_id)
     return res.status(403).json({ success: false, error: "Forbidden." });
-  try {
-    return res.json(await stopBrowserSession(session));
-  } catch (error) {
-    return browserError(res, error, req);
-  }
+  return withZeroDataRetention(session.zero_data_retention, async () => {
+    try {
+      return res.json(await stopBrowserSession(session));
+    } catch (error) {
+      return browserError(res, error, req);
+    }
+  });
 }
 
 async function createSessionForScrape(

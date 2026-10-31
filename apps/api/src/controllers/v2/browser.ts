@@ -191,9 +191,14 @@ export async function browserExecuteController(
     return res
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
+  let zeroDataRetention: boolean;
   try {
-    const zeroDataRetention = getBrowserZDR(req, session);
-    return await withZeroDataRetention(zeroDataRetention, async () => {
+    zeroDataRetention = getBrowserZDR(req, session);
+  } catch (error) {
+    return browserError(res, error, req);
+  }
+  return withZeroDataRetention(zeroDataRetention, async () => {
+    try {
       updateBrowserSessionActivity(session.id).catch(() => {});
       const result = await executeHangarBrowser(session.browser_id, body);
       enqueueBrowserSessionActivity({
@@ -212,10 +217,10 @@ export async function browserExecuteController(
           ? { error: result.stderr || "Execution failed" }
           : {}),
       });
-    });
-  } catch (error) {
-    return browserError(res, error, req);
-  }
+    } catch (error) {
+      return browserError(res, error, req);
+    }
+  });
 }
 
 // DELETE /v2/browser/profiles/:name
@@ -262,11 +267,13 @@ export async function browserDeleteController(
 ) {
   const session = await resolveBrowserSession(req, res);
   if (!session) return;
-  try {
-    return res.json(await stopBrowserSession(session));
-  } catch (error) {
-    return browserError(res, error, req);
-  }
+  return withZeroDataRetention(session.zero_data_retention, async () => {
+    try {
+      return res.json(await stopBrowserSession(session));
+    } catch (error) {
+      return browserError(res, error, req);
+    }
+  });
 }
 
 export async function browserStatusController(
@@ -275,20 +282,22 @@ export async function browserStatusController(
 ) {
   const session = await resolveBrowserSession(req, res);
   if (!session) return;
-  try {
-    const browser = await getHangarBrowser(session.browser_id);
-    const billing = await settleBrowserSession(session, browser);
-    return res.json({
-      success: true,
-      id: session.id,
-      status: browser.status,
-      ...browserSessionLinks(session),
-      ...billing,
-      error: browser.error ?? undefined,
-    });
-  } catch (error) {
-    return browserError(res, error, req);
-  }
+  return withZeroDataRetention(session.zero_data_retention, async () => {
+    try {
+      const browser = await getHangarBrowser(session.browser_id);
+      const billing = await settleBrowserSession(session, browser);
+      return res.json({
+        success: true,
+        id: session.id,
+        status: browser.status,
+        ...browserSessionLinks(session),
+        ...billing,
+        error: browser.error ?? undefined,
+      });
+    } catch (error) {
+      return browserError(res, error, req);
+    }
+  });
 }
 
 export async function browserListController(
