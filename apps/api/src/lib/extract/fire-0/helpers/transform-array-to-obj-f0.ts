@@ -111,9 +111,19 @@ export function transformArrayToObject_F0(
     // Ensure that the currentItem[arrayKey] is an array before mapping
     if (Array.isArray(currentItem[arrayKey])) {
       currentItem[arrayKey].forEach((subItem: any) => {
+        if (Array.isArray(subItem)) {
+          if (
+            parentSchema.properties[arrayKey].uniqueItems !== true ||
+            !isDuplicateObject(currentLevel[arrayKey], subItem)
+          ) {
+            currentLevel[arrayKey].push(subItem);
+          }
+          return;
+        }
         if (
           typeof subItem === "object" &&
           subItem !== null &&
+          !Array.isArray(subItem) &&
           isValidObject(subItem, itemSchema)
         ) {
           // For arrays of objects, add only unique objects

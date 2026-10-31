@@ -585,7 +585,10 @@ export async function performExtraction_F0(
       sourceTracker.trackPreDeduplicationSources_F0(multiEntityResult);
 
       // Apply deduplication and merge
-      multiEntityResult = deduplicateObjectsArray_F0(multiEntityResult);
+      multiEntityResult = deduplicateObjectsArray_F0(
+        multiEntityResult,
+        multiEntitySchema,
+      );
       multiEntityResult = mergeNullValObjs_F0(multiEntityResult);
 
       // Map sources to final deduplicated/merged items
