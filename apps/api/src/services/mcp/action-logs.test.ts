@@ -309,6 +309,139 @@ describe("MCP action log contract", () => {
     );
   });
 
+  it("stores optional session and thread ids with their sources", () => {
+    expect(input()).toMatchObject({
+      session_id: null,
+      session_source: null,
+      thread_id: null,
+      thread_source: null,
+    });
+    expect(
+      input({
+        session_id: "AbC-123_xyz.789:abcdefg",
+        session_source: "token",
+        thread_id: "0b7c9a8e-1f2d-4e3c-9b8a-7f6e5d4c3b2a",
+        thread_source: "argument",
+      }),
+    ).toMatchObject({
+      session_id: "AbC-123_xyz.789:abcdefg",
+      session_source: "token",
+      thread_id: "0b7c9a8e-1f2d-4e3c-9b8a-7f6e5d4c3b2a",
+      thread_source: "argument",
+    });
+    expect(
+      input({
+        session_id: "s".repeat(128),
+        thread_id: "t",
+        thread_source: "minted",
+      }),
+    ).toMatchObject({
+      session_id: "s".repeat(128),
+      session_source: null,
+      thread_id: "t",
+      thread_source: "minted",
+    });
+    expect(
+      input({
+        thread_id: "0f8fad5b-d9cb-869f-a165-70867728950e",
+        thread_source: "client",
+      }),
+    ).toMatchObject({
+      thread_id: "0f8fad5b-d9cb-869f-a165-70867728950e",
+      thread_source: "client",
+    });
+  });
+
+  it("stores a credential-like session or thread id as null instead of rejecting the event", async () => {
+    ch.logMcpActionLog.mockReset().mockResolvedValue(undefined);
+    await expect(
+      recordMcpActionLog(
+        input({
+          session_id: "fc-FAKESECRET1234567890",
+          session_source: "trace",
+        }),
+      ),
+    ).resolves.toEqual({ disposition: "accepted", id: REQUEST_ID });
+    expect(ch.logMcpActionLog.mock.calls[0][0]).toMatchObject({
+      id: REQUEST_ID,
+      session_id: null,
+      session_source: null,
+    });
+
+    expect(
+      input({
+        session_id: "fc-FAKESECRET1234567890",
+        session_source: "token",
+        thread_id: "sk-FAKESECRET1234567890",
+        thread_source: "argument",
+      }),
+    ).toMatchObject({
+      session_id: null,
+      session_source: null,
+      thread_id: null,
+      thread_source: null,
+    });
+    expect(
+      input({
+        session_id: "fc-FAKESECRET1234567890",
+        thread_id: "thread-1",
+        thread_source: "minted",
+      }),
+    ).toMatchObject({
+      session_id: null,
+      thread_id: "thread-1",
+      thread_source: "minted",
+    });
+    for (const id of [
+      "x_fc-FAKESECRET1234567890",
+      "_sk-FAKESECRET1234567890",
+      "s_fcmcp_FAKESECRET1234567890",
+    ]) {
+      expect(
+        input({
+          session_id: id,
+          session_source: "token",
+          thread_id: id,
+          thread_source: "client",
+        }),
+      ).toMatchObject({
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
+      });
+    }
+    expect(() =>
+      input({
+        session_id: "fc-FAKESECRET1234567890",
+        session_source: "header",
+      }),
+    ).toThrow("session_source must be one of token, trace, sse");
+  });
+
+  it("rejects malformed session and thread fields", () => {
+    for (const session_id of ["s".repeat(129), "has space", "a/b", 42]) {
+      expect(() => input({ session_id })).toThrow(
+        "session_id must be 1-128 letters, digits, dots, underscores, colons or hyphens",
+      );
+    }
+    expect(() => input({ thread_id: "é" })).toThrow(
+      "thread_id must be 1-128 letters, digits, dots, underscores, colons or hyphens",
+    );
+    expect(() =>
+      input({ session_id: "abc", session_source: "header" }),
+    ).toThrow("session_source must be one of token, trace, sse");
+    expect(() => input({ thread_id: "abc", thread_source: "Session" })).toThrow(
+      "thread_source must be one of argument, session, minted, client",
+    );
+    expect(() => input({ session_source: "token" })).toThrow(
+      "session_source requires session_id",
+    );
+    expect(() => input({ thread_source: "session" })).toThrow(
+      "thread_source requires thread_id",
+    );
+  });
+
   it("validates API-key and OAuth actors against the claimed team", async () => {
     const apiKeyDb = {
       select: vi.fn(() => ({
@@ -392,6 +525,10 @@ describe("MCP action log contract", () => {
           duration_ms: 55,
           invalid_arguments: ["limit:invalid_type"],
           rate_limit_retry: "recovered",
+          session_id: "AbC-123_xyz.789:abcdefg",
+          session_source: "trace",
+          thread_id: "AbC-123_xyz.789:abcdefg",
+          thread_source: "session",
         }),
       ),
     ).resolves.toEqual({ disposition: "accepted", id: REQUEST_ID });
@@ -411,6 +548,10 @@ describe("MCP action log contract", () => {
       duration_ms: 55,
       invalid_arguments: ["limit:invalid_type"],
       rate_limit_retry: "recovered",
+      session_id: "AbC-123_xyz.789:abcdefg",
+      session_source: "trace",
+      thread_id: "AbC-123_xyz.789:abcdefg",
+      thread_source: "session",
     });
     expect(row).not.toHaveProperty("user_agent");
 
