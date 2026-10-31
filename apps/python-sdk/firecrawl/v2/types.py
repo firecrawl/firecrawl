@@ -1055,15 +1055,21 @@ class CrawlStatusRequest(BaseModel):
 class SearchResultWeb(BaseModel):
     """A web search result with URL, title, description, and position."""
 
+    model_config = {"extra": "allow"}
+
     url: str
     title: Optional[str] = None
     description: Optional[str] = None
     position: Optional[int] = None
     category: Optional[str] = None
+    answer: Optional[str] = None
+    images: Optional[List[str]] = None
 
 
 class SearchResultNews(BaseModel):
     """A news search result with URL, title, snippet, date, image URL, and position."""
+
+    model_config = {"extra": "allow"}
 
     title: Optional[str] = None
     url: Optional[str] = None
@@ -1072,10 +1078,14 @@ class SearchResultNews(BaseModel):
     image_url: Optional[str] = None
     position: Optional[int] = None
     category: Optional[str] = None
+    answer: Optional[str] = None
+    images: Optional[List[str]] = None
 
 
 class SearchResultImages(BaseModel):
     """An image search result with URL, title, image URL, image width, image height, and position."""
+
+    model_config = {"extra": "allow"}
 
     title: Optional[str] = None
     image_url: Optional[str] = None
