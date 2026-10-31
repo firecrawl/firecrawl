@@ -1,0 +1,73 @@
+name: Preview Dispatch
+
+# Runs with secrets on pull_request_target, so it must never check out or run PR code.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [synchronize, closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  dispatch:
+    if: github.event_name == 'pull_request_target' || (github.event.issue.pull_request && startsWith(github.event.comment.body, '/preview'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create app token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.PREVIEW_DISPATCH_APP_ID }}
+          private-key: ${{ secrets.PREVIEW_DISPATCH_APP_PRIVATE_KEY }}
+          repositories: firecrawl-infra
+          permission-contents: write
+          permission-members: read
+
+      - name: Dispatch preview request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          script: |
+            const { payload, repo } = context;
+            const app = getOctokit(process.env.APP_TOKEN);
+            let command = payload.action === 'closed' ? 'closed' : 'sync';
+            let args = '';
+            if (payload.comment) {
+              const match = payload.comment.body.split(/\r?\n/)[0].match(/^\/preview(?:\s+(.*))?$/);
+              if (!match) return;
+              args = (match[1] ?? '').trim();
+              const word = args.split(/\s+/)[0];
+              command = word === 'down' || word === 'extend' ? word : 'deploy';
+            }
+            const actor = payload.sender.login;
+            if (command !== 'closed') {
+              const member = payload.sender.type === 'User' && await app.rest.orgs
+                .checkMembershipForUser({ org: repo.owner, username: actor })
+                .then(() => true, (error) => { if (error.status === 404) return false; throw error; });
+              if (!member) return core.info(`${actor} is not an org member, nothing to do`);
+            }
+            const number = payload.issue?.number ?? payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
+            await app.rest.repos.createDispatchEvent({
+              owner: repo.owner,
+              repo: 'firecrawl-infra',
+              event_type: 'preview',
+              client_payload: {
+                repo: `${repo.owner}/${repo.repo}`,
+                pr: pr.number,
+                head_sha: pr.head.sha,
+                actor,
+                command,
+                args,
+                comment_id: payload.comment?.id ?? null,
+                fork: pr.head.repo?.full_name !== pr.base.repo.full_name,
+              },
+            });
+            if (payload.comment) {
+              await github.rest.reactions.createForIssueComment({ ...repo, comment_id: payload.comment.id, content: 'eyes' });
+            }
