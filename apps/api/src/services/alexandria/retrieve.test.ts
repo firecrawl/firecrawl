@@ -151,6 +151,25 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
   expect(mocks.billAdd).toHaveBeenCalledTimes(1);
 });
 
+it("tells the caller how much a refused hold needed and that no option sets it", async () => {
+  mocks.lock.mockResolvedValueOnce({ status: "denied" });
+  const refused = await run({
+    calls: [call, { ...call, options: { series_id: "CPI" } }],
+  });
+  expect(refused.status).toBe(402);
+  expect(refused.body).toEqual(
+    expect.objectContaining({
+      code: "insufficient_credits",
+      requiredCredits: 5,
+      calls: 2,
+      error: expect.stringMatching(
+        /no option sets the reservation.*Add credits, or send fewer of these 2 calls per request/,
+      ),
+    }),
+  );
+  expect(executions()).toHaveLength(0);
+});
+
 it("holds and settles a hosted MCP call's whole budget on MCP credits", async () => {
   expect(await run({ hostedMcp: true })).toMatchObject({
     status: 200,
