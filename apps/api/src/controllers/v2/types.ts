@@ -2389,6 +2389,7 @@ export function fromV1ScrapeOptions(
   delete spreadScrapeOptions.extract;
   delete spreadScrapeOptions.geolocation;
   delete (spreadScrapeOptions as any).parsePDF;
+  delete (spreadScrapeOptions as any).appendToId;
 
   // Track the original format for v1 backward compatibility
   // Check json first since when user specifies "json", both "json" and "extract" are present
