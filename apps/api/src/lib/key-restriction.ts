@@ -153,7 +153,14 @@ type EndpointClassification =
 // Classifies a request path into an allowlistable endpoint group. Returns
 // null for paths outside the versioned API surface (health, admin, ...).
 export function classifyEndpoint(rawUrl: string): EndpointClassification {
-  const pathname = rawUrl.split("?")[0];
+  // Express routes by the path of the request target, case-insensitively:
+  // "/V2/scrape" and the absolute-form "http://host/v2/scrape" both reach the
+  // "/v2/scrape" handler. Drop the scheme and authority and lowercase the
+  // path so the allowlist sees the same endpoint the router does.
+  const pathname = rawUrl
+    .split("?")[0]
+    .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")
+    .toLowerCase();
   const segments = pathname.split("/").filter(s => s.length > 0);
   const version = segments[0];
   if (version === "v0") {
