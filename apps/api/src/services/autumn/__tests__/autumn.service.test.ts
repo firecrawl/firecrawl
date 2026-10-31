@@ -500,6 +500,18 @@ describe("lockCredits", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  it("denies a gated hold when firebill is not configured, rather than skipping the gate", async () => {
+    state.configRef = {};
+    const result = await makeService().lockCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 10,
+      partnerJobToken: "job-token",
+    });
+    expect(result).toEqual({ status: "denied", reason: "gate_unavailable" });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("returns skipped for preview teams", async () => {
     const svc = makeService();
     const result = await svc.lockCredits({
