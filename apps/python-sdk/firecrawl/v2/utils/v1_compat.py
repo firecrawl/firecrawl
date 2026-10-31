@@ -71,6 +71,66 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
         if name == "scrape_options" and isinstance(value, dict):
             value = ScrapeOptions(**value)
         converted[name] = value
+
+    for opt_key, type_name in (("change_tracking_options", "changeTracking"), ("json_options", "json")):
+        if opt_key in converted:
+            nested_opts = converted.pop(opt_key)
+            if nested_opts is None:
+                continue
+            if hasattr(nested_opts, "model_dump"):
+                nested_opts = nested_opts.model_dump(by_alias=True, exclude_none=True)
+            elif hasattr(nested_opts, "dict"):
+                nested_opts = nested_opts.dict(by_alias=True, exclude_none=True)
+            elif not isinstance(nested_opts, dict):
+                nested_opts = {}
+
+            formats = converted.get("formats")
+            if isinstance(formats, list):
+                new_formats = []
+                replaced = False
+                for fmt in formats:
+                    fmt_obj = fmt
+                    if hasattr(fmt, "model_dump"):
+                        fmt_obj = fmt.model_dump(by_alias=True, exclude_none=True)
+                    elif hasattr(fmt, "dict"):
+                        fmt_obj = fmt.dict(by_alias=True, exclude_none=True)
+
+                    if isinstance(fmt_obj, str) and fmt_obj in (type_name, _snake_case(type_name)):
+                        entry = {"type": type_name}
+                        if isinstance(nested_opts, dict):
+                            entry.update(nested_opts)
+                        new_formats.append(entry)
+                        replaced = True
+                    elif isinstance(fmt_obj, dict) and fmt_obj.get("type") in (type_name, _snake_case(type_name)):
+                        entry = dict(fmt_obj)
+                        if isinstance(nested_opts, dict):
+                            entry.update(nested_opts)
+                        new_formats.append(entry)
+                        replaced = True
+                    else:
+                        new_formats.append(fmt)
+                if not replaced:
+                    entry = {"type": type_name}
+                    if isinstance(nested_opts, dict):
+                        entry.update(nested_opts)
+                    new_formats.append(entry)
+                if type_name == "changeTracking" and not any(
+                    f == "markdown"
+                    or (isinstance(f, dict) and f.get("type") == "markdown")
+                    or (hasattr(f, "type") and getattr(f, "type") == "markdown")
+                    for f in new_formats
+                ):
+                    new_formats.insert(0, "markdown")
+                converted["formats"] = new_formats
+            elif formats is None:
+                entry = {"type": type_name}
+                if isinstance(nested_opts, dict):
+                    entry.update(nested_opts)
+                if type_name == "changeTracking":
+                    converted["formats"] = ["markdown", entry]
+                else:
+                    converted["formats"] = [entry]
+
     return converted
 
 
