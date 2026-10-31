@@ -1,0 +1,165 @@
+---
+title: "Elixir Agent Quickstart"
+description: "Canonical Firecrawl Elixir quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Elixir Agent Quickstart
+
+Canonical quickstart for external agents. Generated from the `firecrawl` Elixir SDK source and the v2 OpenAPI spec.
+
+## Install
+
+Add to `mix.exs`:
+
+```elixir
+{:firecrawl, "~> 1.0"}
+```
+
+## Authenticate
+
+```elixir
+# config/runtime.exs or config.exs
+config :firecrawl, api_key: System.get_env("FIRECRAWL_API_KEY")
+
+# or pass api_key per call
+{:ok, res} = Firecrawl.search_and_scrape([query: "..."], api_key: "fc-your-api-key")
+```
+
+## When To Use What
+
+- **search**: use when you start with a query and need discovery.
+- **scrape**: use when you already have a URL and want page content in one or more formats.
+- **interact**: use when the page needs clicks, forms, or post-scrape browser actions. Requires a job ID from a prior scrape.
+
+## Search
+
+### Why use it
+
+Discover relevant pages from a query, then pick URLs to scrape or interact with. Constrain results to a site with `site:`, for example `site:docs.firecrawl.dev crawl webhooks`.
+
+### Preferred SDK method
+
+`Firecrawl.search_and_scrape(params \\ [], opts \\ [])`
+
+### Example
+
+```elixir
+{:ok, res} = Firecrawl.search_and_scrape(query: "site:docs.firecrawl.dev webhook retries")
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | `string` | Search query. Use `site:example.com` to limit to a domain. |
+| `sources` | `list` | Which sources to search: `"web"`, `"news"`, `"images"` (or atoms `:web`, `:news`, `:images`). |
+| `categories` | `list` | Filter by category: `"github"`, `"research"`, `"pdf"` (or atoms). |
+| `include_domains` | `list(string)` | Whitelist domains. Cannot combine with `exclude_domains`. |
+| `exclude_domains` | `list(string)` | Blacklist domains. Cannot combine with `include_domains`. |
+| `limit` | `integer` | Cap number of results. |
+| `tbs` | `string` | Time-based filter (e.g. `qdr:d`, `qdr:w`, `qdr:m`). |
+| `location` | `string` | Geographic location for localized results. |
+| `country` | `string` | ISO country code for geo-targeting (e.g. `"US"`). |
+| `ignore_invalid_urls` | `boolean` | Drop URLs that cannot be scraped by other endpoints. |
+| `timeout` | `integer` | Request timeout in milliseconds. |
+| `enterprise` | `list(string)` | Enterprise ZDR options: `"zdr"` or `"anon"`. |
+| `scrape_options` | `keyword` | Scrape each search result. Same options as the scrape endpoint. |
+
+## Scrape
+
+### Why use it
+
+Get structured content from a URL in one or more formats (markdown, HTML, JSON extraction, screenshots, etc.).
+
+### Preferred SDK method
+
+`Firecrawl.scrape_and_extract_from_url(params \\ [], opts \\ [])`
+
+### Example
+
+```elixir
+{:ok, res} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://docs.firecrawl.dev",
+  formats: ["markdown"]
+)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | `string` | The URL to scrape. |
+| `formats` | `list` | Output formats. Strings: `"markdown"`, `"html"`, `"rawHtml"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"changeTracking"`, `"json"`, `"branding"`, `"audio"`, `"video"`. Maps: `%{type: "json", prompt: ...}`, `%{type: "question", question: ...}`, `%{type: "highlights", query: ...}`, `%{type: "screenshot", fullPage: true}`, `%{type: "changeTracking", modes: ["git-diff"]}`, `%{type: "attributes", selectors: [...]}`. |
+| `headers` | `map` | Custom HTTP headers. |
+| `include_tags` | `list(string)` | HTML tags to include. |
+| `exclude_tags` | `list(string)` | HTML tags to exclude. |
+| `only_main_content` | `boolean` | Strip nav, footer, and boilerplate. |
+| `timeout` | `integer` | Timeout in milliseconds. Min: 1000, max: 300000. |
+| `wait_for` | `integer` | Wait for page to render (milliseconds). |
+| `mobile` | `boolean` | Emulate mobile viewport. |
+| `parsers` | `list` | File parsing: `"pdf"` or `%{type: "pdf", mode: "fast"\|"auto"\|"ocr", maxPages: integer}`. |
+| `actions` | `list(map)` | Pre-scrape browser actions: `wait`, `click`, `write`, `press`, `scroll`, `scrape`, `screenshot`, `executeJavascript`, `pdf`. |
+| `location` | `keyword` | Geo/language settings: `[country: "US", languages: ["en-US"]]`. |
+| `skip_tls_verification` | `boolean` | Skip TLS verification. |
+| `remove_base64_images` | `boolean` | Drop base64 images from markdown output. |
+| `block_ads` | `boolean` | Ad and cookie popup blocking. |
+| `proxy` | `atom` | Proxy type: `:basic`, `:enhanced`, `:auto`. |
+| `max_age` | `integer` | Max cache age in milliseconds. |
+| `min_age` | `integer` | Only return cached data at least this old (milliseconds). |
+| `store_in_cache` | `boolean` | Cache the result. |
+| `lockdown` | `boolean` | Serve only from cache; never make outbound requests. |
+| `profile` | `keyword` | Persistent browser profile: `[name: "...", save_changes: true]`. |
+| `zero_data_retention` | `boolean` | Enable zero data retention for this scrape. |
+
+## Interact
+
+### Why use it
+
+Execute code in the browser session tied to a scrape job. Use for clicks, form fills, and code execution after a scrape starts.
+
+### Preferred SDK method
+
+`Firecrawl.interact_with_scrape_browser_session(job_id, params \\ [], opts \\ [])`
+
+### Example
+
+```elixir
+{:ok, res} = Firecrawl.interact_with_scrape_browser_session(
+  "<scrapeJobId>",
+  code: "console.log(await page.title());",
+  language: :node,
+  timeout: 60
+)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `job_id` | `string` | Scrape job ID (path parameter). |
+| `code` | `string` | Code to run in the browser session. |
+| `language` | `atom` | Runtime: `:python`, `:node`, `:bash`. |
+| `timeout` | `integer` | Execution timeout in seconds. |
+| `origin` | `string` | Optional origin label for execution telemetry. |
+
+### Stop session
+
+```elixir
+{:ok, res} = Firecrawl.stop_interactive_scrape_browser_session("<scrapeJobId>")
+```
+
+## Notes
+
+- The Elixir client is OpenAPI-generated; function names match the spec operation IDs.
+- This SDK exposes code-based interactions only (no `prompt` parameter on interact).
+- Each function has a bang (`!`) variant that raises on error instead of returning `{:error, _}`.
+- Parameters use snake_case keys; the SDK converts to camelCase for the API.
+- All functions accept an `opts` keyword list for per-call overrides (`api_key:`, `base_url:`).
+- The proxy parameter accepts atoms (`:basic`, `:enhanced`, `:auto`) — no `:stealth` in the Elixir SDK.
+- The legacy `{ type: "query", prompt: "...", mode: "freeform" | "directQuote" }` format is deprecated. Use `question` or `highlights` instead.
+
+## Source Of Truth
+
+- `firecrawl/apps/elixir-sdk/lib/firecrawl.ex`
+- `firecrawl/apps/elixir-sdk/mix.exs`
+- `firecrawl-docs/api-reference/v2-openapi.json`
