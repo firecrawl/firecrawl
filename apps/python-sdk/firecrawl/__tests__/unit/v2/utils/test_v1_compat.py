@@ -231,3 +231,36 @@ def test_scrape_url_maps_pydantic_model_options(client):
         "https://example.com",
         formats=["markdown", {"type": "changeTracking", "modes": ["json"]}],
     )
+
+
+def test_scrape_url_none_options_does_not_add_format(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["markdown"],
+                "changeTrackingOptions": None,
+                "jsonOptions": None,
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown"],
+    )
+
+
+def test_scrape_url_merges_typed_format_objects(client):
+    from firecrawl.v2.types import JsonFormat
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": [JsonFormat(prompt="base prompt")],
+                "jsonOptions": {"schema": {"type": "object"}},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=[{"type": "json", "prompt": "base prompt", "schema": {"type": "object"}}],
+    )
