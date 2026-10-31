@@ -3,6 +3,7 @@ import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
+  abandonBrowserSession,
   getBrowserSession,
   getBrowserSessionFromScrape,
   updateBrowserSessionActivity,
@@ -57,6 +58,7 @@ import {
   browserOptionsFromScrape,
 } from "../../lib/browser-options";
 import { scrapeQueue } from "../../services/worker/nuq-router";
+import { redlock } from "../../services/redlock";
 
 const browserExecuteRequestSchema = z
   .object({
@@ -236,72 +238,159 @@ async function scrapeInteractInternal(
 
   let session = storedSession;
 
-  if (!session && req.body.existingSessionId) {
-    const existing = await withZeroDataRetention(true, () =>
-      getBrowserSession(req.body.existingSessionId!),
-    );
-    if (
-      existing &&
-      existing.team_id === req.auth.team_id &&
-      existing.status === "active"
-    ) {
-      zeroDataRetention = getBrowserZDR(req, existing, zeroDataRetention);
-      logger = logger.child({ zeroDataRetention });
-      await withZeroDataRetention(zeroDataRetention, () =>
-        updateBrowserSessionScrapeId(existing.id, scrapeId),
-      );
-      session = { ...existing, scrape_id: scrapeId };
-      logger.info("Adopted pre-created browser session for scrape", {
-        scrapeId,
-        sessionId: session.id,
-        browserId: session.browser_id,
-      });
-    }
-  }
-
   if (!session) {
-    if (!replayContext) {
-      return res.status(409).json({
+    let creationFailure:
+      | Awaited<ReturnType<typeof createSessionForScrape>>
+      | undefined;
+    try {
+      // The fast lookup can miss in concurrent requests. Recheck under the
+      // shared lease before adopting or creating a billable session.
+      await redlock.using(
+        [`browser:scrape:${scrapeId}:create`],
+        60_000,
+        { retryCount: 200 },
+        async signal => {
+          session = await withZeroDataRetention(true, () =>
+            getBrowserSessionFromScrape(scrapeId),
+          );
+          if (session) return;
+          if (req.body.existingSessionId) {
+            const existing = await withZeroDataRetention(true, () =>
+              getBrowserSession(req.body.existingSessionId!),
+            );
+            if (
+              existing &&
+              existing.team_id === req.auth.team_id &&
+              existing.status === "active"
+            ) {
+              zeroDataRetention = getBrowserZDR(
+                req,
+                existing,
+                zeroDataRetention,
+              );
+              logger = logger.child({ zeroDataRetention });
+              if (signal.aborted) throw signal.error;
+              await withZeroDataRetention(zeroDataRetention, () =>
+                updateBrowserSessionScrapeId(existing.id, scrapeId),
+              );
+              if (signal.aborted) throw signal.error;
+              session = { ...existing, scrape_id: scrapeId };
+              logger.info("Adopted pre-created browser session for scrape", {
+                scrapeId,
+                sessionId: session.id,
+                browserId: session.browser_id,
+              });
+            }
+          }
+          if (session) return;
+          if (signal.aborted) throw signal.error;
+          if (!replayContext) {
+            creationFailure = {
+              error: true,
+              status: 409,
+              body: {
+                success: false,
+                error:
+                  replayError ??
+                  "Replay context is unavailable. Supply url or an existingSessionId to continue without retained scrape context.",
+              },
+            };
+            return;
+          }
+          const browserOptions =
+            state?.browser ??
+            browserOptionsFromScrape(
+              nuqJob?.data.mode === "single_urls"
+                ? nuqJob.data.scrapeOptions
+                : { profile: state?.profile },
+            );
+          const created = await withZeroDataRetention(zeroDataRetention, () =>
+            createSessionForScrape(
+              req,
+              scrapeId,
+              replayContext!,
+              logger,
+              browserOptions,
+              zeroDataRetention,
+            ),
+          );
+          if (created.error === true) {
+            creationFailure = created;
+            return;
+          }
+          const abandonCreatedSession = () =>
+            withZeroDataRetention(
+              created.session.zero_data_retention === true,
+              async () => {
+                // Disable billing and unlink before cleanup; a failed stop can
+                // then be reconciled without charging for an unusable session.
+                const abandoned = await abandonBrowserSession(
+                  created.session.id,
+                );
+                await stopBrowserSession(abandoned).catch(error =>
+                  logger.error("Failed to stop abandoned scrape browser", {
+                    scrapeId,
+                    sessionId: created.session.id,
+                    error,
+                  }),
+                );
+              },
+            );
+          if (signal.aborted) {
+            await abandonCreatedSession();
+            throw signal.error;
+          }
+          try {
+            await withZeroDataRetention(zeroDataRetention, () =>
+              updateBrowserSessionScrapeId(created.session.id, scrapeId),
+            );
+          } catch (error) {
+            await abandonCreatedSession();
+            throw error;
+          }
+          if (signal.aborted) {
+            await abandonCreatedSession();
+            throw signal.error;
+          }
+          session = { ...created.session, scrape_id: scrapeId };
+          logger = logger.child({
+            sessionId: session.id,
+            browserId: session.browser_id,
+          });
+          logger.info("Browser session created for scrape", {
+            scrapeId,
+            sessionId: session.id,
+            browserId: session.browser_id,
+          });
+        },
+      );
+    } catch (error) {
+      // Preserve current privacy/entitlement errors instead of hiding them as
+      // lock availability errors.
+      if (error instanceof BrowserSessionError || error instanceof HangarError)
+        throw error;
+      logger.error("Failed to acquire scrape browser session lock", {
+        scrapeId,
+        error,
+      });
+      return res.status(503).json({
         success: false,
-        error:
-          replayError ??
-          "Replay context is unavailable. Supply url or an existingSessionId to continue without retained scrape context.",
+        error: "Browser session is unavailable. Please retry the interaction.",
       });
     }
-    const browserOptions =
-      state?.browser ??
-      browserOptionsFromScrape(
-        nuqJob?.data.mode === "single_urls"
-          ? nuqJob.data.scrapeOptions
-          : { profile: state?.profile },
-      );
-    const created = await createSessionForScrape(
-      req,
-      scrapeId,
-      replayContext,
-      logger,
-      browserOptions,
-      zeroDataRetention,
-    );
-    if (created.error === true) {
-      // A keyless limit body carries the caller's own link, so match on it
-      // rather than on the message text.
-      if (created.status === 429 && "signup_url" in created.body) {
+    if (creationFailure?.error === true) {
+      if (
+        creationFailure.status === 429 &&
+        "signup_url" in creationFailure.body
+      )
         applyAgentAuthDiscoveryHeader(res);
-      }
-      return res.status(created.status).json(created.body);
+      return res.status(creationFailure.status).json(creationFailure.body);
     }
-    session = created.session;
-
-    logger = logger.child({
-      sessionId: session.id,
-      browserId: session.browser_id,
-    });
-    logger.info("Browser session created for scrape", {
-      scrapeId,
-      sessionId: session.id,
-      browserId: session.browser_id,
-    });
+    if (!session)
+      return res.status(503).json({
+        success: false,
+        error: "Browser session is unavailable. Please retry the interaction.",
+      });
   }
 
   if (session.team_id !== req.auth.team_id) {
@@ -315,8 +404,9 @@ async function scrapeInteractInternal(
 
   zeroDataRetention = getBrowserZDR(req, session, zeroDataRetention);
   logger = logger.child({ zeroDataRetention });
+  const executionSession = session;
   return withZeroDataRetention(zeroDataRetention, async () => {
-    updateBrowserSessionActivity(session.id).catch(() => {});
+    updateBrowserSessionActivity(executionSession.id).catch(() => {});
     // --- Execute: prompt-based agent loop OR direct code ---
     //
     // The persisted session policy applies to every execution, including calls
@@ -348,7 +438,7 @@ async function scrapeInteractInternal(
       logger.info("Starting agent loop from prompt", { prompt, timeout });
 
       try {
-        await reserveBrowserPromptCredits(req, session);
+        await reserveBrowserPromptCredits(req, executionSession);
       } catch (error) {
         return browserError(res, error, req);
       }
@@ -356,11 +446,11 @@ async function scrapeInteractInternal(
       try {
         execResult = await executePromptViaBrowserAgent(
           prompt,
-          session.browser_id,
+          executionSession.browser_id,
           timeout,
           logger,
           {
-            sessionId: session.id,
+            sessionId: executionSession.id,
             scrapeId,
             teamId: req.auth.team_id,
             ...traceIdentity,
@@ -378,7 +468,7 @@ async function scrapeInteractInternal(
 
       enqueueBrowserSessionActivity({
         team_id: req.auth.team_id,
-        session_id: session.id,
+        session_id: executionSession.id,
         source: "interact",
         language: "bash",
         timeout,
@@ -390,10 +480,10 @@ async function scrapeInteractInternal(
 
       try {
         execResult = await executeCodeViaBrowserSession(
-          session.browser_id,
+          executionSession.browser_id,
           { code: rawCode!, language, timeout, origin },
           {
-            sessionId: session.id,
+            sessionId: executionSession.id,
             scrapeId,
             teamId: req.auth.team_id,
             ...traceIdentity,
@@ -413,7 +503,7 @@ async function scrapeInteractInternal(
 
       enqueueBrowserSessionActivity({
         team_id: req.auth.team_id,
-        session_id: session.id,
+        session_id: executionSession.id,
         source: "interact",
         language,
         timeout,
@@ -437,8 +527,8 @@ async function scrapeInteractInternal(
 
     return res.status(200).json({
       success: !hasError,
-      sessionId: session.id,
-      ...browserSessionLinks(session),
+      sessionId: executionSession.id,
+      ...browserSessionLinks(executionSession),
       ...(agentOutput ? { output: agentOutput } : {}),
       stdout: execResult.stdout,
       result: execResult.result,
@@ -484,6 +574,7 @@ async function createSessionForScrape(
       ...browserCreateRequestSchema.parse({}),
       ...browserOptions,
       scrapeId,
+      deferScrapeLink: true,
       zeroDataRetention,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {
