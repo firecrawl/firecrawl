@@ -80,7 +80,9 @@ function resolve(
   }
 
   try {
-    return new URL(candidate, baseUrl).href;
+    const resolved = new URL(candidate, baseUrl);
+    // As in extractLinks: a `javascript:` pseudo-link runs a script instead of naming a page
+    return resolved.protocol === "javascript:" ? null : resolved.href;
   } catch {
     return null;
   }
