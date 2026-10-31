@@ -47,4 +47,16 @@ describe("parseMarkdown", () => {
       await expect(parseMarkdown(html)).resolves.toBe(expected);
     }
   });
+
+  it("should keep the terms and definitions of a definition list apart", async () => {
+    // Without a rule for <dl>, <dt> and <dd>, a term ran into its definition
+    const html =
+      "<p>Glossary:</p><dl><dt>API</dt><dd>Application programming interface.</dd>" +
+      "<dt>SDK</dt><dt>Kit</dt><dd>A set of <b>tools</b>.</dd><dd><p>Also a bundle.</p><p>Of tools.</p></dd>" +
+      "</dl><p>After.</p>";
+    await expect(parseMarkdown(html)).resolves.toBe(
+      "Glossary:\n\nAPI\n:   Application programming interface.\n\n" +
+        "SDK\nKit\n:   A set of **tools**.\n:   Also a bundle.\n\n    Of tools.\n\nAfter.",
+    );
+  });
 });
