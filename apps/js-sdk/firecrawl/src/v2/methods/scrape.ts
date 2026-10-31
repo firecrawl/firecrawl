@@ -171,6 +171,7 @@ export async function interact(
   const body: Record<string, unknown> = {};
   if (hasCode) body.code = args.code;
   if (hasPrompt) body.prompt = args.prompt;
+  if (args.url != null) body.url = args.url;
   body.language = args.language ?? "node";
   if (args.timeout != null) body.timeout = args.timeout;
   if (args.origin) body.origin = args.origin;
