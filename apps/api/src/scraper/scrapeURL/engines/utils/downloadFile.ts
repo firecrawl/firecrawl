@@ -156,11 +156,17 @@ function createSizeLimiter(maxSize: number) {
   });
 }
 
-function checkContentLength(response: undici.Response, maxSize: number) {
+// Rejects a response whose declared size is over the cap. The body is
+// cancelled first so the unread stream does not keep the connection busy.
+async function checkContentLength(
+  response: undici.Response,
+  maxSize: number,
+): Promise<void> {
   const header = response.headers.get("content-length");
   if (header === null) return;
   const declared = Number(header);
   if (Number.isFinite(declared) && declared > maxSize) {
+    await response.body?.cancel().catch(() => {});
     throw new UnsupportedFileError("File exceeds size limit");
   }
 }
@@ -181,7 +187,7 @@ export async function fetchFileToBuffer(
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
     if (maxSize !== undefined) {
-      checkContentLength(response, maxSize);
+      await checkContentLength(response, maxSize);
     }
     if (maxSize === undefined || response.body === null) {
       return {
@@ -235,7 +241,7 @@ export async function downloadFile(
     });
 
     if (maxSize !== undefined) {
-      checkContentLength(response, maxSize);
+      await checkContentLength(response, maxSize);
     }
 
     // This should never happen in the current state of JS/Undici (2024), but let's check anyways.
