@@ -1,5 +1,6 @@
 import { AxiosError } from "axios";
 import { config } from "../../config";
+import { extractBaseDomain } from "../../lib/url-utils";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
@@ -417,13 +418,51 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        // Enforce the same host scoping as the native filter. Hosts are
+        // classified by registrable domain (extractBaseDomain), not by
+        // suffix match, so the apex and sibling subdomains of the initial
+        // host fall in the same class as its subdomains: another host under
+        // the same registrable domain requires allowSubdomains, and a
+        // different registrable domain is external and requires
+        // allowExternalContentLinks. Even with external links allowed, an
+        // external homepage (no path) is rejected, as the native filter
+        // rejects it. Links admitted through either off-host branch are
+        // exempt from the initial-path scope check below: their paths are
+        // not part of the initial URL's hierarchy.
+        const initialBaseDomain = extractBaseDomain(this.initialUrl);
+        const linkBaseDomain = extractBaseDomain(link);
+        const sameDomain =
+          initialBaseDomain !== null &&
+          linkBaseDomain !== null &&
+          initialBaseDomain === linkBaseDomain;
+        let admittedOffHost = false;
+        if (linkHostname !== initialHostname) {
+          if (sameDomain) {
+            if (!this.allowSubdomains) {
+              denialReasons.set(
+                link,
+                `This URL is on another host (${linkHostname}) under the same domain (${initialBaseDomain}) as the initial URL, and subdomain crawling is disabled. To crawl subdomains of the initial domain, set allowSubdomains: true in your crawl request.`,
+              );
+              return false;
+            }
+            admittedOffHost = true;
+          } else {
+            if (!this.allowExternalContentLinks) {
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+            if (
+              normalizedLink.pathname === "" ||
+              normalizedLink.pathname === "/"
+            ) {
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+            admittedOffHost = true;
+          }
+        }
 
-        if (!this.allowBackwardCrawling) {
+        if (!this.allowBackwardCrawling && !admittedOffHost) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
             if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(
@@ -455,7 +494,11 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} FILE FAIL`);
           }
-          const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
+          const extension = link
+            .split(/[?#]/)[0]
+            .split(".")
+            .pop()
+            ?.toLowerCase();
           denialReasons.set(
             link,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
@@ -895,7 +938,7 @@ export class WebCrawler {
     ];
 
     try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
+      const urlWithoutQuery = url.split(/[?#]/)[0].toLowerCase();
       return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
