@@ -96,7 +96,6 @@ export async function processUrl_F0(
   }
 
   const baseUrl = options.url.replace("/*", "");
-  let urlWithoutWww = baseUrl.replace("www.", "");
 
   let searchQuery = options.prompt;
   if (options.prompt) {
