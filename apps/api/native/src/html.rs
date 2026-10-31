@@ -961,10 +961,53 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
 #[napi]
 pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
   let res = task::spawn_blocking(move || {
-    let mut link_open_count = 0usize;
-    let mut out = String::with_capacity(markdown.len());
+    remove_skip_to_content_links(&escape_newlines_in_link_text(&markdown))
+  })
+  .await
+  .map_err(|e| {
+    napi::Error::new(
+      napi::Status::GenericFailure,
+      format!("post_process_markdown join error: {e}"),
+    )
+  })?;
 
-    for ch in markdown.chars() {
+  Ok(res)
+}
+
+/// Escape the line breaks inside link text, so a link whose text spans lines stays one link.
+///
+/// The lines of a fenced code block are left as they are: a `[` there is code (a JSON or
+/// Python array), not the start of a link.
+fn escape_newlines_in_link_text(markdown: &str) -> String {
+  let mut link_open_count = 0usize;
+  // The fence character and length of the code block the current line is in
+  let mut fence: Option<(char, usize)> = None;
+  let mut out = String::with_capacity(markdown.len());
+
+  for line in markdown.split_inclusive('\n') {
+    // A fence may be indented (in a list item) or quoted (in a blockquote)
+    let trimmed = line.trim_start_matches([' ', '\t', '>']);
+    if let Some((fence_char, fence_len)) = fence {
+      let run = trimmed.len() - trimmed.trim_start_matches(fence_char).len();
+      if run >= fence_len && trimmed[run..].trim().is_empty() {
+        fence = None;
+      }
+      out.push_str(line);
+      continue;
+    }
+    if let Some(fence_char) = trimmed.chars().next().filter(|c| matches!(c, '`' | '~')) {
+      let run = trimmed.len() - trimmed.trim_start_matches(fence_char).len();
+      // A backtick fence's info string cannot contain a backtick
+      if run >= 3 && !(fence_char == '`' && trimmed[run..].contains('`')) {
+        fence = Some((fence_char, run));
+        // Link text does not run into a code block: a `[` left open before it was no link
+        link_open_count = 0;
+        out.push_str(line);
+        continue;
+      }
+    }
+
+    for ch in line.chars() {
       match ch {
         '[' => {
           link_open_count += 1;
@@ -983,18 +1026,9 @@ pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
         out.push(ch);
       }
     }
+  }
 
-    remove_skip_to_content_links(&out)
-  })
-  .await
-  .map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("post_process_markdown join error: {e}"),
-    )
-  })?;
-
-  Ok(res)
+  out
 }
 
 fn remove_skip_to_content_links(input: &str) -> String {
