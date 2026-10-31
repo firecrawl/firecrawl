@@ -1582,7 +1582,6 @@ export type Document = {
     language?: string;
     keywords?: string;
     robots?: string;
-    firecrawlAgentRobots?: string;
     ogTitle?: string;
     ogDescription?: string;
     ogUrl?: string;

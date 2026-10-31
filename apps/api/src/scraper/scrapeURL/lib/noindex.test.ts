@@ -15,10 +15,6 @@ describe("hasNoindexDirective", () => {
     expect(hasNoindexDirective({ FireCrawlAgent: ["noindex"] })).toBe(true);
   });
 
-  it("detects the cheerio fallback firecrawlAgentRobots field", () => {
-    expect(hasNoindexDirective({ firecrawlAgentRobots: "noindex" })).toBe(true);
-  });
-
   it("ignores unrelated tags and missing metadata", () => {
     expect(hasNoindexDirective({ description: "noindex" })).toBe(false);
     expect(hasNoindexDirective({ robots: "index, follow" })).toBe(false);

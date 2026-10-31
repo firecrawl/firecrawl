@@ -52,7 +52,6 @@ export async function extractMetadata(
   let language: string | undefined = undefined;
   let keywords: string | undefined = undefined;
   let robots: string | undefined = undefined;
-  let firecrawlAgentContent: string | undefined = undefined;
   let ogTitle: string | undefined = undefined;
   let ogDescription: string | undefined = undefined;
   let ogUrl: string | undefined = undefined;
@@ -101,11 +100,6 @@ export async function extractMetadata(
 
     keywords = soup('meta[name="keywords"]').attr("content") || undefined;
     robots = soup('meta[name="robots"]').attr("content") || undefined;
-    // Check for FirecrawlAgent-specific noindex
-    firecrawlAgentContent =
-      soup('meta[name="FirecrawlAgent"]').attr("content") ||
-      soup('meta[name="FireCrawlAgent"]').attr("content") ||
-      undefined;
     ogTitle = soup('meta[property="og:title"]').attr("content") || undefined;
     ogDescription =
       soup('meta[property="og:description"]').attr("content") || undefined;
@@ -199,7 +193,6 @@ export async function extractMetadata(
     language,
     keywords,
     robots,
-    firecrawlAgentRobots: firecrawlAgentContent,
     ogTitle,
     ogDescription,
     ogUrl,

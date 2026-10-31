@@ -1,11 +1,7 @@
-// Meta tag names whose content can carry a noindex directive for us. The
-// native extractor keys metadata by the raw tag name, while the cheerio
-// fallback also fills firecrawlAgentRobots, so match names case-insensitively.
-const NOINDEX_META_NAMES = new Set([
-  "robots",
-  "firecrawlagent",
-  "firecrawlagentrobots",
-]);
+// Meta tag names whose content can carry a noindex directive for us. Both the
+// native extractor and the cheerio fallback key metadata by the raw tag name
+// and collect repeated tags into arrays, so match names case-insensitively.
+const NOINDEX_META_NAMES = new Set(["robots", "firecrawlagent"]);
 
 function contentValues(value: unknown): string[] {
   if (typeof value === "string") return [value];
