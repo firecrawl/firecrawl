@@ -1619,6 +1619,7 @@ export type Document = {
     error?: string;
     numPages?: number;
     totalPages?: number;
+    noTextFound?: boolean;
     contentType?: string;
     timezone?: string;
     proxyUsed: "basic" | "stealth";

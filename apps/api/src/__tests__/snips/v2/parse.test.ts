@@ -31,6 +31,53 @@ const htmlFixture = `
 </html>
 `;
 
+function blankStripPdf(): Buffer {
+  const width = 1691;
+  const height = 16;
+  const pixels = Buffer.alloc(width * height * 3, 0xff);
+  const content = "q 1440 0 0 13.6 0 0 cm /Im0 Do Q";
+  const parts: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+  const offsets: number[] = [];
+  let length = parts[0].length;
+  const push = (buf: Buffer) => {
+    parts.push(buf);
+    length += buf.length;
+  };
+  [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1440 13.6] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>",
+  ].forEach((body, i) => {
+    offsets.push(length);
+    push(Buffer.from(`${i + 1} 0 obj\n${body}\nendobj\n`));
+  });
+  offsets.push(length);
+  push(
+    Buffer.from(
+      `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${pixels.length} >>\nstream\n`,
+    ),
+  );
+  push(pixels);
+  push(Buffer.from("\nendstream\nendobj\n"));
+  offsets.push(length);
+  push(
+    Buffer.from(
+      `5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`,
+    ),
+  );
+  const xref = length;
+  push(
+    Buffer.from(
+      `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n${offsets
+        .map(o => `${String(o).padStart(10, "0")} 00000 n \n`)
+        .join(
+          "",
+        )}trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
+    ),
+  );
+  return Buffer.concat(parts);
+}
+
 let identity: Identity;
 let pdfFixture: Buffer | null = null;
 const originalParseUploadStorageDriver = config.PARSE_UPLOAD_STORAGE_DRIVER;
@@ -608,6 +655,67 @@ describe("/v2/parse", () => {
       scrapeTimeout * 2,
     );
   });
+
+  describeIf(!process.env.TEST_SUITE_SELF_HOSTED && !!config.FIRE_PDF_BASE_URL)(
+    "PDF upload without text (fire-pdf dependent)",
+    () => {
+      it(
+        "returns an empty document with a warning for a blank page",
+        async () => {
+          const result = await parse(
+            {
+              options: {
+                formats: ["markdown"],
+                parsers: [
+                  {
+                    type: "pdf",
+                    mode: "ocr",
+                    maxPages: 1,
+                    blocks: true,
+                    pageMarkers: true,
+                  },
+                ],
+              },
+              file: {
+                content: blankStripPdf(),
+                filename: "blank.pdf",
+                contentType: "application/pdf",
+              },
+            },
+            identity,
+          );
+
+          expect((result.markdown ?? "").trim()).toBe("");
+          expect(result.metadata.noTextFound).toBe(true);
+          expect(result.warning).toContain("No text was found in this PDF");
+        },
+        scrapeTimeout * 2,
+      );
+
+      it(
+        "still fails for a .pdf upload that is not a PDF",
+        async () => {
+          const failure = await parseWithFailure(
+            {
+              options: {
+                formats: ["markdown"],
+                parsers: [{ type: "pdf", mode: "ocr", maxPages: 1 }],
+              },
+              file: {
+                content: Buffer.from("not-a-pdf at all"),
+                filename: "fake.pdf",
+                contentType: "application/pdf",
+              },
+            },
+            identity,
+          );
+
+          expect(failure.success).toBe(false);
+        },
+        scrapeTimeout,
+      );
+    },
+  );
 
   describeIf(ALLOW_TEST_SUITE_WEBSITE && !!config.FIRE_PDF_BASE_URL)(
     "PDF upload physical page markdown",
