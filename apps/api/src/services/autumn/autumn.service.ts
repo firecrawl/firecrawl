@@ -12,7 +12,6 @@ import {
   firebillTrack,
   firebillCheck,
   firebillConfigured,
-  shouldRouteToFirebill,
 } from "./firebill";
 import {
   autumnCustomerGetOrCreateTotal,
@@ -157,8 +156,7 @@ export class AutumnService {
 
   /**
    * Whether this team is an account a gateway partner provisioned, which is
-   * what makes the partner responsible for part of its usage, and forces it
-   * through firebill.
+   * what makes the partner responsible for part of its usage.
    *
    * Reads `partner_provisioned_accounts` rather than any config, because these
    * are created at runtime by the partner API — an allowlist of org ids cannot
@@ -320,20 +318,15 @@ export class AutumnService {
    * Whether this team's usage is currently routed through firebill. Used by
    * billers to pick route-specific failure handling (on the firebill route a
    * recorded charge stands and dedupes, so compensating refunds and duplicate
-   * enqueues behave differently). Never throws: an error means "not routed",
-   * falling back to the pre-firebill behavior.
+   * enqueues behave differently). Every non-preview team routes whenever
+   * firebill is configured.
    */
   async isRoutedThroughFirebill(
     teamId: string,
-    orgId: string,
+    _orgId: string,
   ): Promise<boolean> {
     if (this.isPreviewTeam(teamId)) return false;
-    try {
-      const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
-      return shouldRouteToFirebill(orgId, { gatewayProvisioned });
-    } catch {
-      return false;
-    }
+    return firebillConfigured();
   }
 
   /**
@@ -355,8 +348,7 @@ export class AutumnService {
     }: TrackParams,
     routed: boolean,
   ): Promise<boolean> {
-    // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
-    // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
+    // Every org bills through firebill when it is configured. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
     // sends no idempotency key, so the pair could not be deduped.
     if (routed) {
@@ -500,7 +492,7 @@ export class AutumnService {
     gatewayProvisioned: boolean;
   }> {
     const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
-    const routed = shouldRouteToFirebill(orgId, { gatewayProvisioned });
+    const routed = firebillConfigured();
     if (!routed && !this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
       await this.ensureTeamProvisioned({ teamId, orgId });
     }
@@ -544,8 +536,7 @@ export class AutumnService {
       // partner-provisioned org that misses firebill on a *charge* is billed to
       // the wrong account; one that misses firebill on the *gate* is refused
       // outright, because Autumn is asked about a balance the org was never
-      // meant to pay from. So the org this most needs to reach firebill is
-      // exactly the one a sampling bucket might leave behind.
+      // meant to pay from.
       if (routed) {
         const result = await firebillCheck({
           customerId,
@@ -671,8 +662,7 @@ export class AutumnService {
         orgId,
       );
 
-      // Gradual firebill rollout, mirroring track(): allowlisted orgs take
-      // their holds through firebill. The hold still lives in Autumn (firebill
+      // Mirroring track(): holds go through firebill when it is configured. The hold still lives in Autumn (firebill
       // keeps no lock state), but only firebill pins the retry/timeout budget
       // around the call. An unavailable answer maps to "skipped" — proceed
       // unlocked — like a direct-Autumn check failure below, except when a
@@ -783,23 +773,18 @@ export class AutumnService {
   /**
    * Finalizes a previously-acquired Autumn lock.
    *
-   * When the caller supplies the lock's team and that team's org is on the
-   * firebill rollout, the settle goes through firebill, which queues it
+   * When firebill is configured the settle goes through it, which queues it
    * durably and retries delivery — a dropped direct finalize means the hold
    * just expires, leaving a confirm's work unbilled. Either route lands on the
    * same Autumn lock, so routing is a durability choice, not a correctness one.
    *
-   * A caller that cannot name the org passes no team, and there is no org to
-   * ask the rollout about. That settle goes through firebill whenever firebill
-   * is configured: the lock id is all a finalize needs, so an ordinary settle
-   * loses nothing by not knowing the org (a run-token settle loses its partner
-   * report, as below), and a direct settle would be the one write to Autumn
-   * left outside firebill.
+   * A caller that cannot name the org passes no team. The lock id is all a
+   * finalize needs, so an ordinary settle loses nothing by not knowing the org
+   * (a run-token settle loses its partner report, as below).
    *
    * **Except with a run token in hand**, where it is a correctness choice: only
-   * firebill reports the operation to the partner, and the routing predicate is
-   * not stable across the hour between a lock and its finalize. The token is
-   * proof of the route the lock took, so it wins over asking again.
+   * firebill reports the operation to the partner. The token is proof of the
+   * route the lock took, so it wins over asking again.
    */
   async finalizeCreditsLock({
     lockId,
