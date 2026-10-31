@@ -71,6 +71,41 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
         if name == "scrape_options" and isinstance(value, dict):
             value = ScrapeOptions(**value)
         converted[name] = value
+
+    for opt_key, type_name in (("change_tracking_options", "changeTracking"), ("json_options", "json")):
+        if opt_key in converted:
+            nested_opts = converted.pop(opt_key)
+            formats = converted.get("formats")
+            if isinstance(formats, list):
+                new_formats = []
+                replaced = False
+                for fmt in formats:
+                    if fmt in (type_name, _snake_case(type_name)):
+                        entry = {"type": type_name}
+                        if isinstance(nested_opts, dict):
+                            entry.update(nested_opts)
+                        new_formats.append(entry)
+                        replaced = True
+                    elif isinstance(fmt, dict) and fmt.get("type") in (type_name, _snake_case(type_name)):
+                        entry = dict(fmt)
+                        if isinstance(nested_opts, dict):
+                            entry.update(nested_opts)
+                        new_formats.append(entry)
+                        replaced = True
+                    else:
+                        new_formats.append(fmt)
+                if not replaced:
+                    entry = {"type": type_name}
+                    if isinstance(nested_opts, dict):
+                        entry.update(nested_opts)
+                    new_formats.append(entry)
+                converted["formats"] = new_formats
+            elif formats is None:
+                entry = {"type": type_name}
+                if isinstance(nested_opts, dict):
+                    entry.update(nested_opts)
+                converted["formats"] = [entry]
+
     return converted
 
 

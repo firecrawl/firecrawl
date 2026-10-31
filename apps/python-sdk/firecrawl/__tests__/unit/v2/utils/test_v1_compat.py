@@ -168,3 +168,33 @@ def test_async_aliases_map_params():
     assert crawl.call_args.kwargs["limit"] == 1
     assert result["success"] is True
     assert result["data"][0]["markdown"] == "# hi"
+
+
+def test_scrape_url_maps_change_tracking_options(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["markdown", "changeTracking"],
+                "changeTrackingOptions": {"modes": ["git-diff", "json"]},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["git-diff", "json"]}],
+    )
+
+
+def test_scrape_url_maps_json_options(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["json"],
+                "jsonOptions": {"prompt": "Extract products", "schema": {"type": "object"}},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=[{"type": "json", "prompt": "Extract products", "schema": {"type": "object"}}],
+    )
