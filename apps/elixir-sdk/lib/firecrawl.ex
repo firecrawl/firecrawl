@@ -1959,7 +1959,7 @@ defmodule Firecrawl do
     formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
     headers: [type: :any, doc: "Headers to send when additional network requests are required."],
     include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
-    integration: [type: :string, doc: "Optional integration identifier."],
+    integration: [type: :string, doc: "Optional integration identifier. When omitted, a valid `X-Integration` request header is used instead; the body value takes precedence."],
     only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc."],
     origin: [type: :string, doc: "Origin identifier for analytics and logging."],
     parsers: [type: {:list, :any}, doc: "Controls file parser behavior when relevant (for example PDF parser mode)."],
@@ -2296,6 +2296,7 @@ defmodule Firecrawl do
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     effort: [type: {:in, ["low", "medium", "high"]}, doc: "Reasoning budget for the agent task. Every run executes on spark-2, so effort can be sent with or without model."],
     exchange: [type: :keyword_list, keys: [approve: [type: :keyword_list, keys: [always: [type: :boolean], approval_id: [type: :string, required: true], call_ids: [type: {:list, :string}]]], decline: [type: :keyword_list, keys: [approval_id: [type: :string, required: true]]], enabled: [type: :boolean], max_calls: [type: :integer], on_terms_required: [type: {:or, [{:in, [:skip, :ask]}, :string]}], require_approval: [type: :boolean], toolkits: [type: {:list, :string}]], doc: "Let the agent call your team's [Alexandria](https://docs.firecrawl.dev/features/alexandria) data providers during the run. Without this object the run uses the web only (a follow-up turn inherits the previous turn's settings). See [Use your connected Alexandria tools](https://docs.firecrawl.dev/features/agent#use-your-connected-alexandria-tools)."],
+    location: [type: :keyword_list, keys: [country: [type: :string, required: true]], doc: "Proxy country for every request the agent makes during the run: scrapes, batch scrapes and browser sessions go out from this country, and the agent cannot change it. Search results are localized to the country. Omitted on a follow-up turn keeps the thread's country. See [Choosing a location](https://docs.firecrawl.dev/features/agent#choosing-a-location)."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
     mode: [type: {:or, [{:in, [:extract, :chat]}, :string]}, doc: "`extract` returns the complete structured result in `data` every turn. `chat` lets a follow-up that asks for no new data get a short reply in `message` instead of a re-run. `exchange.requireApproval` needs `chat` on the same request. Omitted on a follow-up turn keeps the thread's mode."],
     model: [type: {:or, [{:in, [:"spark-2", :"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-2 is the default and the model every run executes on. The Spark 1 model names remain accepted for backwards compatibility but are deprecated and route to spark-2."],
@@ -2305,10 +2306,11 @@ defmodule Firecrawl do
     thread_id: [type: :string, doc: "Continue an existing thread: pass the `threadId` an earlier run returned, and this request runs as that thread's next turn. Omitted `urls`, `schema`, `effort`, `mode` and `exchange` settings carry over from the previous turn. Omit `threadId` to start a new thread."],
     threat_protection: [type: :keyword_list, doc: "Per-request [Threat Protection](https://docs.firecrawl.dev/features/threat-protection) override. Fields you provide replace the corresponding fields of your organization's policy for this request only; omitted fields keep their organization-level values. Requires Threat Protection to be enabled for your team (enterprise feature) — otherwise the request is rejected with a 403. If your organization has disabled request overrides, any request that includes this object is rejected with a 403. If Threat Protection is enforced for your team, `mode` may not be set to `off`."],
     urls: [type: {:list, :string}, doc: "Optional list of URLs to constrain the agent to"],
-    webhook: [type: :keyword_list, doc: "A webhook specification object. Subscribes to agent lifecycle events (agent.started, agent.action, agent.completed, agent.failed, agent.cancelled)."]
+    webhook: [type: :keyword_list, doc: "A webhook specification object. Subscribes to agent lifecycle events (agent.started, agent.action, agent.completed, agent.failed, agent.cancelled)."],
+    zero_data_retention: [type: :boolean, doc: "Run the agent with Zero Data Retention: Firecrawl keeps no prompt, result or step content in logs or storage, only billing and status metadata. The result is kept for 24 hours for retrieval, then deleted. Requires Scrape ZDR and Search ZDR to be enabled for your team, otherwise the request returns 400 `zdr_not_enabled`. Cannot be combined with `threadId`. With `exchange`, only capabilities that support ZDR are used. See [Zero Data Retention](https://docs.firecrawl.dev/features/agent#zero-data-retention-zdr)."]
   ])
 
-  @start_agent_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, effort: "effort", exchange: {"exchange", %{approve: {"approve", %{always: "always", approval_id: "approvalId", call_ids: "callIds"}}, decline: {"decline", %{approval_id: "approvalId"}}, enabled: "enabled", max_calls: "maxCalls", on_terms_required: "onTermsRequired", require_approval: "requireApproval", toolkits: "toolkits"}}, max_credits: "maxCredits", mode: "mode", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", thread_id: "threadId", threat_protection: "threatProtection", urls: "urls", webhook: "webhook"}
+  @start_agent_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, effort: "effort", exchange: {"exchange", %{approve: {"approve", %{always: "always", approval_id: "approvalId", call_ids: "callIds"}}, decline: {"decline", %{approval_id: "approvalId"}}, enabled: "enabled", max_calls: "maxCalls", on_terms_required: "onTermsRequired", require_approval: "requireApproval", toolkits: "toolkits"}}, location: {"location", %{country: "country"}}, max_credits: "maxCredits", mode: "mode", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", thread_id: "threadId", threat_protection: "threatProtection", urls: "urls", webhook: "webhook", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Start an agent task for agentic data extraction
@@ -2382,6 +2384,7 @@ defmodule Firecrawl do
     origin: [type: :string],
     query_suggestions: [type: :string],
     rating: [type: {:or, [{:in, [:good, :partial, :bad]}, :string]}, required: true],
+    valuable_results: [type: {:list, :any}, doc: "Results that were useful, each addressed by the `data` group it appears in and its 1-indexed position within that group. Results are returned grouped (`data.web`, `data.images`, `data.news`) and each group is numbered from 1 independently, so `source` is required. List every useful result; unlisted results are treated as not useful. Positions beyond what the group actually returned are ignored."],
     valuable_sources: [type: {:list, :any}],
     endpoint: [type: {:or, [{:in, [:search, :scrape, :parse, :map]}, :string]}, required: true],
     issues: [type: {:list, :string}],
@@ -2393,7 +2396,7 @@ defmodule Firecrawl do
     url: [type: :string]
   ])
 
-  @submit_endpoint_feedback_key_mapping %{integration: "integration", missing_content: "missingContent", origin: "origin", query_suggestions: "querySuggestions", rating: "rating", valuable_sources: "valuableSources", endpoint: "endpoint", issues: "issues", job_id: "jobId", metadata: "metadata", note: "note", page_numbers: "pageNumbers", tags: "tags", url: "url"}
+  @submit_endpoint_feedback_key_mapping %{integration: "integration", missing_content: "missingContent", origin: "origin", query_suggestions: "querySuggestions", rating: "rating", valuable_results: "valuableResults", valuable_sources: "valuableSources", endpoint: "endpoint", issues: "issues", job_id: "jobId", metadata: "metadata", note: "note", page_numbers: "pageNumbers", tags: "tags", url: "url"}
 
   @doc """
   Submit feedback for a v2 job
@@ -2436,10 +2439,11 @@ defmodule Firecrawl do
     origin: [type: :string],
     query_suggestions: [type: :string],
     rating: [type: {:or, [{:in, [:good, :partial, :bad]}, :string]}, required: true],
+    valuable_results: [type: {:list, :any}, doc: "Results that were useful, each addressed by the `data` group it appears in and its 1-indexed position within that group. Results are returned grouped (`data.web`, `data.images`, `data.news`) and each group is numbered from 1 independently, so `source` is required. List every useful result; unlisted results are treated as not useful. Positions beyond what the group actually returned are ignored."],
     valuable_sources: [type: {:list, :any}]
   ])
 
-  @submit_search_feedback_key_mapping %{integration: "integration", missing_content: "missingContent", origin: "origin", query_suggestions: "querySuggestions", rating: "rating", valuable_sources: "valuableSources"}
+  @submit_search_feedback_key_mapping %{integration: "integration", missing_content: "missingContent", origin: "origin", query_suggestions: "querySuggestions", rating: "rating", valuable_results: "valuableResults", valuable_sources: "valuableSources"}
 
   @doc """
   Submit feedback for a search job

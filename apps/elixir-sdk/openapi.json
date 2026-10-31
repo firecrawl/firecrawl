@@ -3101,6 +3101,26 @@
                     "default": "extract",
                     "description": "`extract` returns the complete structured result in `data` every turn. `chat` lets a follow-up that asks for no new data get a short reply in `message` instead of a re-run. `exchange.requireApproval` needs `chat` on the same request. Omitted on a follow-up turn keeps the thread's mode."
                   },
+                  "zeroDataRetention": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run the agent with Zero Data Retention: Firecrawl keeps no prompt, result or step content in logs or storage, only billing and status metadata. The result is kept for 24 hours for retrieval, then deleted. Requires Scrape ZDR and Search ZDR to be enabled for your team, otherwise the request returns 400 `zdr_not_enabled`. Cannot be combined with `threadId`. With `exchange`, only capabilities that support ZDR are used. See [Zero Data Retention](https://docs.firecrawl.dev/features/agent#zero-data-retention-zdr)."
+                  },
+                  "location": {
+                    "type": "object",
+                    "description": "Proxy country for every request the agent makes during the run: scrapes, batch scrapes and browser sessions go out from this country, and the agent cannot change it. Search results are localized to the country. Omitted on a follow-up turn keeps the thread's country. See [Choosing a location](https://docs.firecrawl.dev/features/agent#choosing-a-location).",
+                    "additionalProperties": false,
+                    "required": [
+                      "country"
+                    ],
+                    "properties": {
+                      "country": {
+                        "type": "string",
+                        "description": "ISO 3166-1 alpha-2 country code, case-insensitive (e.g. `DE`, `gb`). Special values such as `us-generic` and `us-whitelist` are rejected.",
+                        "example": "DE"
+                      }
+                    }
+                  },
                   "exchange": {
                     "type": "object",
                     "description": "Let the agent call your team's [Alexandria](https://docs.firecrawl.dev/features/alexandria) data providers during the run. Without this object the run uses the web only (a follow-up turn inherits the previous turn's settings). See [Use your connected Alexandria tools](https://docs.firecrawl.dev/features/agent#use-your-connected-alexandria-tools).",
@@ -4598,7 +4618,9 @@
                     },
                     "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. Requires the team's Alexandria access to be enabled (403 otherwise).",
                     "default": [
-                      "web"
+                      {
+                        "type": "web"
+                      }
                     ]
                   },
                   "domainTools": {
@@ -6626,7 +6648,7 @@
             "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
             "schema": {
               "type": "string",
-              "pattern": "^us(-[a-zA-Z]{2})?$"
+              "example": "us-ca"
             }
           },
           {
@@ -6707,7 +6729,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including an unknown field"
+            "description": "Invalid request, including an unknown field or an invalid filter value"
           },
           "401": {
             "description": "Invalid bearer token"
@@ -6760,7 +6782,7 @@
                   "jurisdiction": {
                     "type": "string",
                     "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
-                    "pattern": "^us(-[a-zA-Z]{2})?$"
+                    "example": "us-ca"
                   },
                   "court": {
                     "type": "string",
@@ -6815,7 +6837,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including an unknown field"
+            "description": "Invalid request, including an unknown field or an invalid filter value"
           },
           "401": {
             "description": "Invalid bearer token"
@@ -7544,6 +7566,7 @@
                 ]
               },
               "error": {
+                "type": "object",
                 "nullable": true,
                 "allOf": [
                   {
@@ -7666,6 +7689,7 @@
                 "type": "integer"
               },
               "error": {
+                "type": "object",
                 "nullable": true,
                 "allOf": [
                   {
@@ -9260,7 +9284,9 @@
         },
         "description": "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`.",
         "default": [
-          "markdown"
+          {
+            "type": "markdown"
+          }
         ]
       },
       "ParseFormats": {
@@ -9384,7 +9410,9 @@
         },
         "description": "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported.",
         "default": [
-          "markdown"
+          {
+            "type": "markdown"
+          }
         ]
       },
       "ParseOptions": {
@@ -9477,7 +9505,9 @@
               ]
             },
             "default": [
-              "pdf"
+              {
+                "type": "pdf"
+              }
             ]
           },
           "skipTlsVerification": {
@@ -9528,7 +9558,7 @@
           "integration": {
             "type": "string",
             "nullable": true,
-            "description": "Optional integration identifier."
+            "description": "Optional integration identifier. When omitted, a valid `X-Integration` request header is used instead; the body value takes precedence."
           },
           "auditMetadata": {
             "$ref": "#/components/schemas/AuditMetadata"
@@ -10351,18 +10381,19 @@
                     "description": "Description extracted from the page, can be a string or array of strings"
                   },
                   "language": {
-                    "oneOf": [
+                    "anyOf": [
                       {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
                       },
                       {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "nullable": true
                       }
                     ],
-                    "nullable": true,
                     "description": "Language extracted from the page, can be a string or array of strings"
                   },
                   "sourceURL": {
@@ -10463,10 +10494,10 @@
                             "status": {
                               "type": "string",
                               "enum": [
-                              "matched",
-                              "not_found",
-                              "error"
-                            ]
+                                "matched",
+                                "not_found",
+                                "error"
+                              ]
                             },
                             "creditsCost": {
                               "type": "integer"
@@ -11523,6 +11554,7 @@
                 "$ref": "#/components/schemas/AlexandriaCall"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "An `alexandria` call for the next page of this listing, or `null` on the last page."
           }
@@ -11796,18 +11828,19 @@
                       "description": "Description extracted from the page, can be a string or array of strings"
                     },
                     "language": {
-                      "oneOf": [
+                      "anyOf": [
                         {
-                          "type": "string"
+                          "type": "string",
+                          "nullable": true
                         },
                         {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "nullable": true
                         }
                       ],
-                      "nullable": true,
                       "description": "Language extracted from the page, can be a string or array of strings"
                     },
                     "sourceURL": {
@@ -12137,18 +12170,19 @@
                       "description": "Description extracted from the page, can be a string or array of strings"
                     },
                     "language": {
-                      "oneOf": [
+                      "anyOf": [
                         {
-                          "type": "string"
+                          "type": "string",
+                          "nullable": true
                         },
                         {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "nullable": true
                         }
                       ],
-                      "nullable": true,
                       "description": "Language extracted from the page, can be a string or array of strings"
                     },
                     "sourceURL": {
@@ -12336,7 +12370,7 @@
       },
       "SearchFeedbackRequest": {
         "type": "object",
-        "description": "For 'good', include valuableSources. For 'partial', include valuableSources or missingContent. For 'bad', include missingContent or querySuggestions.",
+        "description": "For 'good', include valuableSources or valuableResults. For 'partial', include valuableSources, valuableResults, or missingContent. For 'bad', include missingContent or querySuggestions.",
         "properties": {
           "rating": {
             "type": "string",
@@ -12363,6 +12397,37 @@
               },
               "required": [
                 "url"
+              ]
+            }
+          },
+          "valuableResults": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Results that were useful, each addressed by the `data` group it appears in and its 1-indexed position within that group. Results are returned grouped (`data.web`, `data.images`, `data.news`) and each group is numbered from 1 independently, so `source` is required. List every useful result; unlisted results are treated as not useful. Positions beyond what the group actually returned are ignored.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "images",
+                    "news"
+                  ]
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "source",
+                "position"
               ]
             }
           },
@@ -13016,7 +13081,7 @@
           },
           {
             "type": "object",
-            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, missingContent, querySuggestions, url, or pageNumbers.",
+            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, valuableResults for search, missingContent, querySuggestions, url, or pageNumbers.",
             "properties": {
               "endpoint": {
                 "type": "string",
