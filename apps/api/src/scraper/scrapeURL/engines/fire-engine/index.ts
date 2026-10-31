@@ -61,6 +61,7 @@ import { wantsBrandingScreenshot } from "../../../../lib/branding/jev";
 import { brandingScreenshotCapturesTotal } from "../../../../lib/branding/metrics";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
+import { decodeHtmlBuffer } from "../../utils/decodeHtmlBuffer";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -266,7 +267,7 @@ async function performFireEngineScrape<
           throw new UnsupportedFileError("Failed to decompress gzip content");
         }
       }
-      status.content = buffer.toString("utf8"); // TODO: handle other encodings via Content-Type tag
+      status.content = decodeHtmlBuffer(buffer, contentType).text;
     }
 
     fireEngineDelete(
