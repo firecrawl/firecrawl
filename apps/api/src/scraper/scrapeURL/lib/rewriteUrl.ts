@@ -31,7 +31,7 @@ export function rewriteUrl(url: string): string | undefined {
   ) {
     const id = url.match(/\/file\/d\/([-\w]+)/)?.[1];
     if (id) {
-      return `https://drive.google.com/uc?export=download&id=${id}`;
+      return `https://drive.usercontent.google.com/download?id=${id}&export=download`;
     }
   } else if (
     url.startsWith("https://docs.google.com/spreadsheets/d/") ||
