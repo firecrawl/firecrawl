@@ -127,8 +127,6 @@ export class SearchIndexClient {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       const data = await response.json();
 
       if (!response.ok) {
@@ -143,8 +141,6 @@ export class SearchIndexClient {
 
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
-
       if (error.name === "AbortError") {
         log.error("Search service request timed out", {
           url,
@@ -158,6 +154,8 @@ export class SearchIndexClient {
         url,
       });
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
