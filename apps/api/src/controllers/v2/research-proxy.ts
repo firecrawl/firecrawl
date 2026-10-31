@@ -15,6 +15,7 @@ import {
 } from "../../lib/index-daily-limit";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   logRequest,
   logResearchEndpoint,
@@ -295,6 +296,14 @@ function creditsFor(
   return Math.ceil(resultCount(body) / 10) * perTen;
 }
 
+function forcesZeroDataRetention(req: RequestWithAuth<any, any, any>) {
+  const flags = req.acuc?.flags;
+  return (
+    getScrapeZDR(flags) === "forced" ||
+    getEffectiveSearchForcedKind(flags, undefined) !== null
+  );
+}
+
 function researchError(
   res: Response,
   status: number,
@@ -354,8 +363,7 @@ function createResearchController(
 ): ResearchController {
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
-    const zeroDataRetention =
-      getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
+    const zeroDataRetention = forcesZeroDataRetention(authedReq);
 
     const started = Date.now();
     const jobId = uuidv7();
@@ -559,9 +567,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
         method: req.method,
         path: req.originalUrl,
         requestId: req.headers["x-request-id"],
-        zeroDataRetention:
-          getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !==
-          null,
+        zeroDataRetention: forcesZeroDataRetention(authedReq),
       });
       next();
     });

@@ -134,59 +134,66 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(requestLog?.integration).toBe("_research_test");
   }, 120000);
 
-  it("redacts stored payloads for a forced-ZDR team", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+  it.each([
+    { searchZDR: "forced-zdr" as const },
+    { scrapeZDR: "forced" as const },
+  ])(
+    "redacts stored payloads for a forced-ZDR team (%o)",
+    async flags => {
+      if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
-    const identity = await idmux({
-      name: "developer/forced ZDR retention",
-      credits: 100,
-      flags: { searchZDR: "forced-zdr" },
-    });
+      const identity = await idmux({
+        name: `developer/forced ZDR retention/${Object.keys(flags)[0]}`,
+        credits: 100,
+        flags,
+      });
 
-    const res = await researchRaw(
-      CANONICAL_PATH,
-      {
-        query: `private developer query ${Date.now()}`,
-        k: 1,
-      },
-      identity,
-    );
-    expect(res.statusCode).toBe(200);
+      const res = await researchRaw(
+        CANONICAL_PATH,
+        {
+          query: `private developer query ${Date.now()}`,
+          k: 1,
+        },
+        identity,
+      );
+      expect(res.statusCode).toBe(200);
 
-    const requestLog = await waitForJobLogRow<{
-      id: string;
-      target_hint: string;
-    }>("requests", "team_id = {teamId: UUID} AND kind = 'code_search'", {
-      teamId: identity.teamId,
-    });
+      const requestLog = await waitForJobLogRow<{
+        id: string;
+        target_hint: string;
+      }>("requests", "team_id = {teamId: UUID} AND kind = 'code_search'", {
+        teamId: identity.teamId,
+      });
 
-    expect(requestLog).not.toBeNull();
-    expect(requestLog?.target_hint).toBe(
-      "<redacted due to zero data retention>",
-    );
+      expect(requestLog).not.toBeNull();
+      expect(requestLog?.target_hint).toBe(
+        "<redacted due to zero data retention>",
+      );
 
-    const usageRow = await waitForJobLogRow<{
-      target: string;
-      options: string | null;
-      response: string | null;
-      error: string | null;
-    }>("code_searches", "request_id = {requestId: UUID}", {
-      requestId: requestLog!.id,
-    });
-    const usageLog = usageRow && {
-      target: usageRow.target,
-      options: jobLogJson(usageRow.options),
-      response: jobLogJson(usageRow.response),
-      error: usageRow.error,
-    };
+      const usageRow = await waitForJobLogRow<{
+        target: string;
+        options: string | null;
+        response: string | null;
+        error: string | null;
+      }>("code_searches", "request_id = {requestId: UUID}", {
+        requestId: requestLog!.id,
+      });
+      const usageLog = usageRow && {
+        target: usageRow.target,
+        options: jobLogJson(usageRow.options),
+        response: jobLogJson(usageRow.response),
+        error: usageRow.error,
+      };
 
-    expect(usageLog).toEqual({
-      target: "<redacted due to zero data retention>",
-      options: null,
-      response: null,
-      error: null,
-    });
-  }, 120000);
+      expect(usageLog).toEqual({
+        target: "<redacted due to zero data retention>",
+        options: null,
+        response: null,
+        error: null,
+      });
+    },
+    120000,
+  );
 
   it("writes a usage row with the billed credits", async () => {
     if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
