@@ -156,9 +156,47 @@ export async function scrapeSitemap(
 
   for (const instruction of instructions.instructions) {
     if (instruction.action === "recurse") {
-      sitemapData.sitemaps.push(...instruction.urls.map(url => new URL(url)));
+      let malformedCount = 0;
+      let firstMalformedUrl: string | undefined;
+
+      for (const url of instruction.urls) {
+        try {
+          sitemapData.sitemaps.push(new URL(url));
+        } catch {
+          malformedCount++;
+          if (!firstMalformedUrl) {
+            firstMalformedUrl = url;
+          }
+        }
+      }
+
+      if (malformedCount > 0) {
+        logger.warn("Malformed sitemap URL(s) skipped in sitemap index", {
+          count: malformedCount,
+          sample: firstMalformedUrl,
+        });
+      }
     } else if (instruction.action === "process") {
-      sitemapData.urls.push(...instruction.urls.map(url => new URL(url)));
+      let malformedCount = 0;
+      let firstMalformedUrl: string | undefined;
+
+      for (const url of instruction.urls) {
+        try {
+          sitemapData.urls.push(new URL(url));
+        } catch {
+          malformedCount++;
+          if (!firstMalformedUrl) {
+            firstMalformedUrl = url;
+          }
+        }
+      }
+
+      if (malformedCount > 0) {
+        logger.warn("Malformed page URL(s) skipped in sitemap", {
+          count: malformedCount,
+          sample: firstMalformedUrl,
+        });
+      }
     }
   }
 
