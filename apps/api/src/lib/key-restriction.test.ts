@@ -332,4 +332,35 @@ describe("endpoint allowlist and path case", () => {
     expect(isEndpointAllowed("/v2/SCRAPE", restricted).allowed).toBe(false);
     expect(isEndpointAllowed("/V2/MAP", restricted).allowed).toBe(true);
   });
+
+  it("keeps the legacy v0 denial for uppercase spellings", () => {
+    const restricted = config({ allowedEndpoints: ["map"] });
+    expect(isEndpointAllowed("/v0/scrape", restricted).allowed).toBe(false);
+    expect(isEndpointAllowed("/V0/scrape", restricted).allowed).toBe(false);
+  });
+
+  it("classifies absolute-form request targets by their path", () => {
+    expect(classifyEndpoint("http://api.example.test/v2/scrape")).toEqual(
+      classifyEndpoint("/v2/scrape"),
+    );
+    expect(
+      classifyEndpoint("HTTP://api.example.test:8080/V2/scrape?x=1"),
+    ).toEqual(classifyEndpoint("/v2/scrape"));
+    expect(classifyEndpoint("http://api.example.test/v0/scrape")).toEqual({
+      api: "v0",
+    });
+
+    const restricted = config({ allowedEndpoints: ["map"] });
+    expect(
+      isEndpointAllowed("http://api.example.test/v2/scrape", restricted)
+        .allowed,
+    ).toBe(false);
+    expect(
+      isEndpointAllowed("HTTP://api.example.test:8080/V2/scrape", restricted)
+        .allowed,
+    ).toBe(false);
+    expect(
+      isEndpointAllowed("http://api.example.test/v2/map", restricted).allowed,
+    ).toBe(true);
+  });
 });
