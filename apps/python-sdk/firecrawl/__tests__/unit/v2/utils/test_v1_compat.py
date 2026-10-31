@@ -198,3 +198,36 @@ def test_scrape_url_maps_json_options(client):
         "https://example.com",
         formats=[{"type": "json", "prompt": "Extract products", "schema": {"type": "object"}}],
     )
+
+
+def test_scrape_url_change_tracking_without_formats_includes_markdown(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "changeTrackingOptions": {"modes": ["git-diff"]},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["git-diff"]}],
+    )
+
+
+def test_scrape_url_maps_pydantic_model_options(client):
+    from pydantic import BaseModel
+
+    class DummyChangeTrackingConfig(BaseModel):
+        modes: list[str]
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "changeTrackingOptions": DummyChangeTrackingConfig(modes=["json"]),
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["json"]}],
+    )

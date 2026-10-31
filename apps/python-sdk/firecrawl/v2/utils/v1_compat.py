@@ -75,6 +75,13 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
     for opt_key, type_name in (("change_tracking_options", "changeTracking"), ("json_options", "json")):
         if opt_key in converted:
             nested_opts = converted.pop(opt_key)
+            if hasattr(nested_opts, "model_dump"):
+                nested_opts = nested_opts.model_dump(by_alias=True, exclude_none=True)
+            elif hasattr(nested_opts, "dict"):
+                nested_opts = nested_opts.dict(by_alias=True, exclude_none=True)
+            elif not isinstance(nested_opts, dict):
+                nested_opts = {}
+
             formats = converted.get("formats")
             if isinstance(formats, list):
                 new_formats = []
@@ -99,12 +106,17 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
                     if isinstance(nested_opts, dict):
                         entry.update(nested_opts)
                     new_formats.append(entry)
+                if type_name == "changeTracking" and "markdown" not in new_formats:
+                    new_formats.insert(0, "markdown")
                 converted["formats"] = new_formats
             elif formats is None:
                 entry = {"type": type_name}
                 if isinstance(nested_opts, dict):
                     entry.update(nested_opts)
-                converted["formats"] = [entry]
+                if type_name == "changeTracking":
+                    converted["formats"] = ["markdown", entry]
+                else:
+                    converted["formats"] = [entry]
 
     return converted
 
