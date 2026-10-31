@@ -205,13 +205,13 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = url.replace(/^(https?:\/\/)www\./i, "$1");
     let mapUrl =
       search && allowExternalLinks
         ? `${search} ${urlWithoutWww}`
         : search
           ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+          : `site:${urlWithoutWww}`;
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
