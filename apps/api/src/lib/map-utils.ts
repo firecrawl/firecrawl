@@ -342,9 +342,11 @@ export async function getMapResults({
     })
     .filter(x => x !== null) as MapDocument[];
 
-  mapResults = mapResults.filter(x => isSameDomain(x.url, url));
+  if (!allowExternalLinks) {
+    mapResults = mapResults.filter(x => isSameDomain(x.url, url));
+  }
 
-  if (!includeSubdomains) {
+  if (!includeSubdomains && !allowExternalLinks) {
     mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
   }
 
