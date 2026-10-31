@@ -155,10 +155,22 @@ export async function scrapeSitemap(
   };
 
   for (const instruction of instructions.instructions) {
+    const safeParse = (url: string): URL | null => {
+      try {
+        return new URL(url);
+      } catch {
+        logger.warn("Skipping malformed sitemap URL", { url });
+        return null;
+      }
+    };
     if (instruction.action === "recurse") {
-      sitemapData.sitemaps.push(...instruction.urls.map(url => new URL(url)));
+      sitemapData.sitemaps.push(
+        ...instruction.urls.map(safeParse).filter((u): u is URL => u !== null),
+      );
     } else if (instruction.action === "process") {
-      sitemapData.urls.push(...instruction.urls.map(url => new URL(url)));
+      sitemapData.urls.push(
+        ...instruction.urls.map(safeParse).filter((u): u is URL => u !== null),
+      );
     }
   }
 
