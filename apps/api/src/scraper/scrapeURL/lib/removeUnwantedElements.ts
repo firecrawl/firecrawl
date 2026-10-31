@@ -66,6 +66,56 @@ const forceIncludeMainTags = [
   ".swoogo-agenda",
 ];
 
+const ATTRIBUTION_TEXT_PATTERN =
+  /©|\u00A9|\(c\)\s*\d{4}|Copyright\s+(\(c\)|\d{4})|All\s+Rights\s+Reserved|Creative\s+Commons|creativecommons\.org|CC[\s-]BY([\s-](SA|NC|ND|NC[\s-]SA|NC[\s-]ND))?|CC0|Licensed\s+under|Photo\s+by|Photo\s+credit|Image\s+credit/i;
+
+const ATTRIBUTION_SELECTOR = [
+  'a[rel="license"]',
+  'a[href*="creativecommons.org"]',
+  '[itemprop="copyrightHolder"]',
+  '[itemprop="copyrightYear"]',
+  '[itemprop="author"]',
+  '[itemprop="creator"]',
+  '[class*="copyright"]',
+  '[class*="license"]',
+].join(",");
+
+function containsAttribution(
+  soup: ReturnType<typeof load>,
+  el: AnyNode,
+): boolean {
+  const $el = soup(el);
+  const text = $el.text();
+  if (ATTRIBUTION_TEXT_PATTERN.test(text)) {
+    return true;
+  }
+  if ($el.find(ATTRIBUTION_SELECTOR).length > 0) {
+    return true;
+  }
+  if ($el.is(ATTRIBUTION_SELECTOR)) {
+    return true;
+  }
+  return false;
+}
+
+function stripNonAttributionChildren(
+  soup: ReturnType<typeof load>,
+  el: AnyNode,
+): void {
+  soup(el)
+    .children()
+    .each((_, child) => {
+      if (child.type === "tag") {
+        if (containsAttribution(soup, child)) {
+          stripNonAttributionChildren(soup, child);
+        } else {
+          soup(child).remove();
+        }
+      }
+      // text nodes, comments, etc. are kept as-is
+    });
+}
+
 export const htmlTransform = async (
   html: string,
   url: string,
@@ -165,11 +215,16 @@ export const htmlTransform = async (
 
   if (scrapeOptions.onlyMainContent) {
     excludeNonMainTags.forEach(tag => {
-      const elementsToRemove = soup(tag).filter(
+      const candidates = soup(tag).filter(
         forceIncludeMainTags.map(x => ":not(:has(" + x + "))").join(""),
       );
-
-      elementsToRemove.remove();
+      candidates.each((_, el) => {
+        if (containsAttribution(soup, el)) {
+          stripNonAttributionChildren(soup, el);
+        } else {
+          soup(el).remove();
+        }
+      });
     });
   }
 
