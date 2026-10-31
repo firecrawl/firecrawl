@@ -406,6 +406,51 @@ pub struct TransformHtmlOptions {
   pub omce_signatures: Option<Vec<String>>,
 }
 
+/// Splits a `srcset` value into (URL, descriptors) candidates following the
+/// HTML spec's parsing algorithm: a URL is a run of non-whitespace and may itself
+/// contain commas (e.g. Cloudinary's `w_400,c_fill`); only a comma that ends the
+/// URL, or one that follows the descriptors, separates candidates.
+fn parse_srcset(srcset: &str) -> Vec<(String, String)> {
+  let mut out = Vec::new();
+  let mut rest = srcset;
+  loop {
+    rest = rest.trim_start_matches(|c: char| c.is_ascii_whitespace() || c == ',');
+    if rest.is_empty() {
+      break;
+    }
+    let url_end = rest
+      .find(|c: char| c.is_ascii_whitespace())
+      .unwrap_or(rest.len());
+    let raw_url = &rest[..url_end];
+    rest = &rest[url_end..];
+
+    let url = raw_url.trim_end_matches(',');
+    let mut descriptors = "";
+    if url.len() == raw_url.len() {
+      // Descriptors run up to the next comma outside parentheses.
+      let mut depth = 0usize;
+      let mut end = rest.len();
+      for (i, c) in rest.char_indices() {
+        match c {
+          '(' => depth += 1,
+          ')' => depth = depth.saturating_sub(1),
+          ',' if depth == 0 => {
+            end = i;
+            break;
+          }
+          _ => {}
+        }
+      }
+      descriptors = rest[..end].trim();
+      rest = &rest[end..];
+    }
+    if !url.is_empty() {
+      out.push((url.to_string(), descriptors.to_string()));
+    }
+  }
+  out
+}
+
 struct ImageSource {
   url: String,
   size: f64,
@@ -546,37 +591,22 @@ fn _transform_html_inner(
     };
 
     if let Some(srcset) = srcset {
-      let mut sizes: Vec<ImageSource> = srcset
-        .split(',')
-        .filter_map(|x| {
-          let tok: Vec<&str> = x.trim().split(' ').collect();
-          let last_token = tok[tok.len() - 1];
-          let (last_token, last_token_used) = if tok.len() > 1
-            && !last_token.is_empty()
-            && (last_token.ends_with('x') || last_token.ends_with('w'))
-          {
-            (last_token, true)
-          } else {
-            ("1x", false)
-          };
+      let mut sizes: Vec<ImageSource> = parse_srcset(&srcset)
+        .into_iter()
+        .filter_map(|(url, descriptors)| {
+          let last_token = descriptors
+            .split_whitespace()
+            .last()
+            .filter(|t| t.ends_with('x') || t.ends_with('w'))
+            .unwrap_or("1x");
 
-          if let Some((last_index, _)) = last_token.char_indices().last() {
-            if let Ok(parsed_size) = last_token[..last_index].parse() {
-              Some(ImageSource {
-                url: if last_token_used {
-                  tok[0..tok.len() - 1].join(" ")
-                } else {
-                  tok.join(" ")
-                },
-                size: parsed_size,
-                is_x: last_token.ends_with('x'),
-              })
-            } else {
-              None
-            }
-          } else {
-            None
-          }
+          let (last_index, _) = last_token.char_indices().last()?;
+          let parsed_size = last_token[..last_index].parse().ok()?;
+          Some(ImageSource {
+            url,
+            size: parsed_size,
+            is_x: last_token.ends_with('x'),
+          })
         })
         .collect();
 
@@ -827,13 +857,9 @@ fn _extract_images(
     }
 
     if let Some(srcset) = attrs.get("srcset") {
-      for part in srcset.split(',') {
-        if let Some(url) = part.split_whitespace().next() {
-          if !url.is_empty() {
-            if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
-            }
-          }
+      for (url, _) in parse_srcset(srcset) {
+        if let Ok(resolved) = resolve_image_url(&url) {
+          images.insert(resolved);
         }
       }
     }
@@ -850,13 +876,9 @@ fn _extract_images(
 
   for source in source_elements {
     if let Some(srcset) = source.attributes.borrow().get("srcset") {
-      for part in srcset.split(',') {
-        if let Some(url) = part.split_whitespace().next() {
-          if !url.is_empty() {
-            if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
-            }
-          }
+      for (url, _) in parse_srcset(srcset) {
+        if let Ok(resolved) = resolve_image_url(&url) {
+          images.insert(resolved);
         }
       }
     }
@@ -1038,4 +1060,99 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn transform(html: &str) -> String {
+    _transform_html_inner(TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com/blog/post".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    })
+    .unwrap()
+  }
+
+  // Image CDNs (Cloudinary, imgix-style transforms) put commas inside the URL
+  // path. In srcset only a comma that ends a candidate separates candidates.
+  #[test]
+  fn test_transform_html_srcset_urls_containing_commas() {
+    let out = transform(
+      r#"<img src="https://res.cloudinary.com/demo/image/upload/w_400,c_fill/sample.jpg"
+            srcset="https://res.cloudinary.com/demo/image/upload/w_400,c_fill/sample.jpg 400w,
+                    https://res.cloudinary.com/demo/image/upload/w_800,c_fill/sample.jpg 800w">"#,
+    );
+    assert!(
+      out.contains(r#"src="https://res.cloudinary.com/demo/image/upload/w_800,c_fill/sample.jpg""#),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn test_transform_html_srcset_density_with_commas_and_src() {
+    let out =
+      transform(r#"<img src="/img/a,b.png" srcset="/img/w_2,big.png 2x, /img/w_1,small.png 1x">"#);
+    assert!(
+      out.contains(r#"src="https://example.com/img/w_2,big.png""#),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn test_parse_srcset() {
+    let p = |s: &str| parse_srcset(s);
+    assert_eq!(
+      p("a.png 1x, b.png 2x"),
+      vec![("a.png".into(), "1x".into()), ("b.png".into(), "2x".into())]
+    );
+    assert_eq!(
+      p("/u/w_400,c_fill/x.jpg 400w,/u/w_800,c_fill/x.jpg 800w"),
+      vec![
+        ("/u/w_400,c_fill/x.jpg".into(), "400w".into()),
+        ("/u/w_800,c_fill/x.jpg".into(), "800w".into())
+      ]
+    );
+    assert_eq!(
+      p("a.png,b.png 2x"),
+      vec![("a.png,b.png".into(), "2x".into())]
+    );
+    assert_eq!(
+      p("a.png, b.png"),
+      vec![("a.png".into(), "".into()), ("b.png".into(), "".into())]
+    );
+    assert_eq!(p("  ,, "), Vec::<(String, String)>::new());
+  }
+
+  // Unchanged behavior: ordinary comma-separated candidates.
+  #[test]
+  fn test_transform_html_srcset_plain() {
+    let out = transform(r#"<img srcset="a.png 320w, b.png 1296w">"#);
+    assert!(
+      out.contains(r#"src="https://example.com/blog/b.png""#),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn test_extract_images_srcset_urls_containing_commas() {
+    let images = _extract_images(
+      r#"<img srcset="https://res.cloudinary.com/demo/image/upload/w_400,c_fill/s.jpg 400w, https://res.cloudinary.com/demo/image/upload/w_800,c_fill/s.jpg 800w">"#,
+      "https://example.com/blog/post",
+    )
+    .unwrap();
+    let mut images: Vec<_> = images.into_iter().collect();
+    images.sort();
+    assert_eq!(
+      images,
+      vec![
+        "https://res.cloudinary.com/demo/image/upload/w_400,c_fill/s.jpg".to_string(),
+        "https://res.cloudinary.com/demo/image/upload/w_800,c_fill/s.jpg".to_string(),
+      ]
+    );
+  }
 }
