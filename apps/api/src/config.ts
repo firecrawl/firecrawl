@@ -511,16 +511,7 @@ const configSchema = z.object({
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
   SMART_SCRAPE_API_URL: z.string().optional(),
 
-  // PDF Processing
-  PDF_MU_V2_BASE_URL: z.string().optional(),
-  PDF_MU_V2_API_KEY: z.string().optional(),
-  PDF_MU_V2_EXPERIMENT: z.string().optional(),
-  PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
-
-  // MinerU direct routing (bypass Rust extraction for a % of traffic)
-  MINERU_PERCENT: z.coerce.number().min(0).max(100).default(0),
-
-  // Fire PDF (replaces MinerU for a % of traffic)
+  // Fire PDF (OCR fallback for a % of PDFs)
   FIRE_PDF_ENABLE: z.stringbool().optional(),
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
@@ -542,9 +533,9 @@ const configSchema = z.object({
   // FIRE_PDF_CACHE_BASE_URL and FIRE_PDF_BASE_URL.
   FIRE_PDF_CACHE_BACKGROUND_REFRESH: z.stringbool().default(false),
   // /v2/parse sends every PDF (auto/ocr mode) to FirePDF: no direct
-  // text-layer extraction, no FIRE_PDF_PERCENT sampling, no MinerU
-  // diversion. Explicit `mode: "fast"` keeps direct extraction. FirePDF
-  // failures still fall back to MinerU / pdf-parse. Needs FIRE_PDF_ENABLE.
+  // text-layer extraction, no FIRE_PDF_PERCENT sampling. Explicit
+  // `mode: "fast"` keeps direct extraction. FirePDF failures still fall back
+  // to pdf-parse. Needs FIRE_PDF_ENABLE.
   PARSE_PDF_ALWAYS_FIRE_PDF: z.stringbool().default(true),
   // Table rendering FirePDF applies to /v2/parse documents. `dynamic` keeps
   // pipe tables where they are lossless and HTML where structure needs it
@@ -618,13 +609,8 @@ const configSchema = z.object({
   // `largePdfs` team flag, which grants the same cap without a deploy.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
-  // RunPod
-  RUNPOD_MU_API_KEY: z.string().optional(),
-  RUNPOD_MU_POD_ID: z.string().optional(),
-
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
-  PDF_SHADOW_COMPARISON_ENABLE: z.stringbool().optional(),
 
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),

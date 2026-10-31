@@ -110,7 +110,7 @@ export async function scrapePDFWithFirePDF(
   const pdfSha256 = createPdfCacheKey(base64Content);
   const tableFormat = firePdfTableFormat(meta);
 
-  // Explicit deadline contract with fire-pdf (mirrors mineru-api):
+  // Explicit deadline contract with fire-pdf:
   //   timeout    — remaining scrape-tier budget in ms (from AbortManager)
   //   created_at — epoch ms when we handed the budget over to fire-pdf
   //

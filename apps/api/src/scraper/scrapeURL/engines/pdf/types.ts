@@ -43,8 +43,8 @@ export type PDFProcessorResult = {
   /**
    * Pages the underlying engine actually processed for this request.
    * Currently populated only by fire-pdf (via OcrSuccessBody.pages_processed).
-   * Optional because older fire-pdf builds and the runpodMU / pdf-parse
-   * engines don't report it. Consumers must treat undefined as "no signal"
+   * Optional because older fire-pdf builds and the pdf-parse engine don't
+   * report it. Consumers must treat undefined as "no signal"
    * and fall back to whatever upstream metadata pass set.
    */
   pagesProcessed?: number;
@@ -63,7 +63,6 @@ export type PdfMetadata = {
   title?: string;
 };
 
-export const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
 /** Above this, FirePDF submits go by GCS reference (async /jobs with
  * `input_gcs_uri`) instead of inline base64 — inline bodies are capped by
  * fire-pdf's JSON body limit and V8 string ceilings. */

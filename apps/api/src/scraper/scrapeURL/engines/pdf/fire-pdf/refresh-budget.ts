@@ -11,11 +11,9 @@ import { config } from "../../../../../config";
  * is unreachable, the request is served from the cache like any other and
  * the decision is logged. 0 disables the option entirely.
  *
- * One decision per request. Engines fall back to one another (fire-pdf,
- * then RunPod MU) and each consults the budget, so the decision is
- * remembered by scrape id: a fallback neither spends a second token nor
- * flips to "serve the cached entry" after the first engine was allowed to
- * bypass it. The write path reads the same decision to know whether it
+ * One decision per request, remembered by scrape id: a retry neither
+ * spends a second token nor flips to "serve the cached entry" after the
+ * first attempt was allowed to bypass it. The write path reads the same decision to know whether it
  * may overwrite existing aliases.
  *
  * The rate-limit Redis client is imported lazily so importing the cache
