@@ -1,4 +1,5 @@
 import { isSameDomain, removeDuplicateUrls } from "./validateUrl";
+import { checkUrl } from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
 
 describe("isSameDomain", () => {
@@ -168,4 +169,32 @@ describe("removeDuplicateUrls", () => {
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual(["https://example.com"]);
   });
+
+describe("checkUrl", () => {
+  it("should accept a normal http URL", () => {
+    expect(checkUrl("http://example.com")).toBe("http://example.com");
+  });
+
+  it("should accept a normal https URL", () => {
+    expect(checkUrl("https://example.com/path")).toBe("https://example.com/path");
+  });
+
+  it("should reject a URL with a duplicated protocol", () => {
+    expect(() => checkUrl("http://http://example.com")).toThrow();
+  });
+
+  it("should accept a bracketed IPv6 literal URL", () => {
+    expect(checkUrl("http://[2607:f8b0:4004:c07::71]/")).toBe(
+      "http://[2607:f8b0:4004:c07::71]/",
+    );
+  });
+
+  it("should accept a bracketed IPv6 literal URL with a path", () => {
+    expect(checkUrl("http://[::1]/foo/bar")).toBe("http://[::1]/foo/bar");
+  });
+
+  it("should accept a bracketed IPv6 https URL", () => {
+    expect(checkUrl("https://[2001:db8::1]/")).toBe("https://[2001:db8::1]/");
+  });
+});
 });
