@@ -59,6 +59,7 @@ from .v2.types import (
     SearchResultWeb,
     SearchResultNews,
     SearchResultImages,
+    SearchDocument,
     SearchData,
     DeveloperSearchType,
     DeveloperSearchRequest,
@@ -163,6 +164,7 @@ __all__ = [
     'SearchResultWeb',
     'SearchResultNews',
     'SearchResultImages',
+    'SearchDocument',
     'SearchData',
     'DeveloperSearchType',
     'DeveloperSearchRequest',
@@ -210,4 +212,4 @@ __all__ = [
     # Configuration types
     'ClientConfig',
     'AgentOptions',
-]  
+]
