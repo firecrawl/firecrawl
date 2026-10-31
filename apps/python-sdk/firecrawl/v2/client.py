@@ -102,6 +102,7 @@ _SCRAPE_OPTION_KEYS = frozenset({
     "proxy", "max_age", "store_in_cache", "lockdown", "check_prompt_injection",
     "threat_protection",
     "profile", "audit_metadata",
+    "domain_tools", "tool_detail",
 })
 
 
@@ -693,6 +694,8 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
+        domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
     ) -> CrawlJob:
         """
         Start a crawl job and wait for it to complete.
@@ -765,6 +768,7 @@ class FirecrawlClient:
                 check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
+                domain_tools=domain_tools, tool_detail=tool_detail,
             ).items() if v is not None}
             if scrape_kwargs:
                 scrape_options = ScrapeOptions(**scrape_kwargs)
@@ -855,6 +859,8 @@ class FirecrawlClient:
         deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
         integration: Optional[str] = None,
+        domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
     ) -> CrawlResponse:
         """
         Start an asynchronous crawl job.
@@ -925,6 +931,7 @@ class FirecrawlClient:
                 check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
+                domain_tools=domain_tools, tool_detail=tool_detail,
             ).items() if v is not None}
             if scrape_kwargs:
                 scrape_options = ScrapeOptions(**scrape_kwargs)

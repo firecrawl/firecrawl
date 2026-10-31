@@ -140,7 +140,7 @@ class TestAsyncCrawlDirectKwargs:
         monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
 
         with pytest.raises(ConnectionError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 async_client.start_crawl("https://example.com", formats=["markdown"])
             )
 
@@ -158,7 +158,7 @@ class TestAsyncCrawlDirectKwargs:
         monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
 
         with pytest.raises(ConnectionError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 async_client.start_crawl(
                     "https://example.com",
                     scrape_options=ScrapeOptions(formats=["html"]),
@@ -180,7 +180,7 @@ class TestAsyncCrawlDirectKwargs:
         monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
 
         with pytest.raises(ConnectionError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 async_client.start_crawl(
                     "https://example.com",
                     formats=["markdown"],
@@ -241,7 +241,7 @@ class TestThreatProtectionDirectKwargs:
         monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
 
         with pytest.raises(ConnectionError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 async_client.start_crawl(
                     "https://example.com",
                     threat_protection=self._threat_protection(),
@@ -259,3 +259,59 @@ class TestThreatProtectionDirectKwargs:
 
     def test_threat_protection_in_scrape_option_keys(self):
         assert "threat_protection" in _SCRAPE_OPTION_KEYS
+
+
+class TestDomainToolsDirectKwargs:
+    def test_sync_domain_tools_and_tool_detail_land_in_wire_body(self, client, monkeypatch):
+        captured = {}
+
+        def fake_start_crawl(http, request):
+            captured["request"] = request
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(crawl_mod, "start_crawl", fake_start_crawl)
+
+        with pytest.raises(ConnectionError):
+            client.start_crawl(
+                "https://example.com",
+                domain_tools=True,
+                tool_detail="full",
+            )
+
+        request = captured["request"]
+        assert request.scrape_options is not None
+        assert request.scrape_options.domain_tools is True
+        assert request.scrape_options.tool_detail == "full"
+        wire_body = crawl_mod._prepare_crawl_request(request)
+        assert wire_body["scrapeOptions"]["domainTools"] is True
+        assert wire_body["scrapeOptions"]["toolDetail"] == "full"
+
+    def test_async_domain_tools_and_tool_detail_land_in_wire_body(self, async_client, monkeypatch):
+        captured = {}
+
+        async def fake_start_crawl(http, request):
+            captured["request"] = request
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
+
+        with pytest.raises(ConnectionError):
+            asyncio.run(
+                async_client.start_crawl(
+                    "https://example.com",
+                    domain_tools=True,
+                    tool_detail="full",
+                )
+            )
+
+        request = captured["request"]
+        assert request.scrape_options is not None
+        assert request.scrape_options.domain_tools is True
+        assert request.scrape_options.tool_detail == "full"
+        wire_body = async_crawl_mod._prepare_crawl_request(request)
+        assert wire_body["scrapeOptions"]["domainTools"] is True
+        assert wire_body["scrapeOptions"]["toolDetail"] == "full"
+
+    def test_domain_tools_and_tool_detail_in_scrape_option_keys(self):
+        assert "domain_tools" in _SCRAPE_OPTION_KEYS
+        assert "tool_detail" in _SCRAPE_OPTION_KEYS
