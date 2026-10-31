@@ -72,6 +72,28 @@ describe("MCP action log controllers", () => {
     );
   });
 
+  it("persists no session or thread ids for teams with forced zero-data retention", async () => {
+    mocks.policy.mockResolvedValue({ flags: { scrapeZDR: "forced" } });
+    const res = response();
+    await ingestMcpActionLogController(
+      {
+        body: {
+          team_id: "team",
+          session_id: "session-1",
+          session_source: "token",
+          thread_id: "thread-1",
+          thread_source: "argument",
+        },
+      } as any,
+      res,
+    );
+    expect(mocks.record).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ disposition: "zero-data-retention", id: null }),
+    );
+  });
+
   it("fails closed when team retention policy cannot be resolved", async () => {
     mocks.policy.mockResolvedValue(null);
     const res = response();
