@@ -61,10 +61,8 @@ import {
   recordFirePdfRoute,
 } from "./fire-pdf/routing";
 import { parseAlwaysFirePdf } from "./fire-pdf/request-metadata";
-import {
-  reconcilePageCountWithPdfParse,
-  scrapePDFWithParsePDF,
-} from "./pdfParse";
+import { scrapePDFWithParsePDF } from "./pdfParse";
+import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";

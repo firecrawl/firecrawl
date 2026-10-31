@@ -8,23 +8,6 @@ import type { PDFProcessorResult } from "./types";
 // billions. Cap the walk when the request sets no maxPages of its own.
 export const PDF_PARSE_MAX_PAGES = 1000;
 
-/**
- * Page count to report after the pdf-parse fallback. pdf-parse stops at its
- * page cap, so a count from native detection can only come down to the pages
- * it parsed. A count of 0 (native detection failed) stays 0: that path has
- * always billed the base credit only, and a parser cap must not raise prices.
- *
- * Pure and synchronous so it is unit-testable on its own.
- */
-export function reconcilePageCountWithPdfParse(
-  current: number,
-  pdfParseResult: { pagesProcessed?: number } | null | undefined,
-): number {
-  const parsed = pdfParseResult?.pagesProcessed;
-  if (parsed === undefined || current <= 0) return current;
-  return Math.min(current, parsed);
-}
-
 export async function scrapePDFWithParsePDF(
   meta: Meta,
   tempFilePath: string,
