@@ -46,6 +46,29 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { sampled } from "../lib/rollout";
+
+export const FORCED_DISCOVERY_CAP_MS = 2000;
+
+/**
+ * Arm of the forced-discovery cap experiment, from a stable hash of the team.
+ * Off unless SEARCH_FORCED_DISCOVERY_CAP_PERCENT enrolls the team; enrolled
+ * teams split evenly between control and treatment.
+ */
+export function forcedDiscoveryCapArm(
+  teamId: string,
+): "off" | "control" | "treatment" {
+  if (
+    !sampled(
+      `forced-discovery-cap:${teamId}`,
+      config.SEARCH_FORCED_DISCOVERY_CAP_PERCENT,
+    )
+  )
+    return "off";
+  return sampled(`forced-discovery-cap-arm:${teamId}`, 50)
+    ? "treatment"
+    : "control";
+}
 
 interface SearchOptions {
   query: string;
@@ -69,6 +92,8 @@ interface SearchOptions {
   inferToolQuery?: boolean;
   /** Add compact tools to a search that did not ask for them, when the query needs them. */
   autoTools?: boolean;
+  /** Epoch ms by which all tool discovery must finish, without retries; unset keeps the normal budget. */
+  discoveryDeadline?: number;
   timeout: number;
 }
 
@@ -160,6 +185,7 @@ export async function executeSearch(
                   ? []
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
+              deadline: options.discoveryDeadline,
             },
             logger,
           );
@@ -184,6 +210,7 @@ export async function executeSearch(
                     resolveToolUrls = resolve;
                   }),
             timeoutMs: options.timeout,
+            deadline: options.discoveryDeadline,
           },
           logger,
         )
@@ -387,17 +414,32 @@ export async function executeSearch(
   const waitForExtra = async (alongside?: Promise<unknown>) => {
     if (!extraDiscovery) return null;
     let timer: NodeJS.Timeout | undefined;
+    let capTimer: NodeJS.Timeout | undefined;
     const deadline = new Promise<void>(resolve => {
       timer = setTimeout(resolve, AUTO_TOOLS_WAIT_MS);
       timer.unref();
     });
+    const cap =
+      options.discoveryDeadline === undefined
+        ? []
+        : [
+            new Promise<null>(resolve => {
+              capTimer = setTimeout(
+                () => resolve(null),
+                Math.max(0, options.discoveryDeadline! - Date.now()),
+              );
+              capTimer.unref();
+            }),
+          ];
     try {
       return await Promise.race([
         extraDiscovery,
         Promise.all([deadline, alongside]).then(() => null),
+        ...cap,
       ]);
     } finally {
       clearTimeout(timer);
+      clearTimeout(capTimer);
     }
   };
 
