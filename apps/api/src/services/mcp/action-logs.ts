@@ -19,6 +19,8 @@ const SECRET_PATTERN =
   /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
 const OBJECTIVE_MAX_LENGTH = 1000;
+const ERROR_MESSAGE_MAX_LENGTH = 300;
+const TARGET_MAX_LENGTH = 512;
 const ERROR_CODE_PATTERN = /^(?=.{2,64}$)[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const MCP_CLIENT_SOURCES = ["client_info", "user_agent", "oauth"] as const;
 const RATE_LIMIT_RETRY_OUTCOMES = [
@@ -51,6 +53,8 @@ const ALLOWED_FIELDS = new Set([
   "client_version",
   "error_class",
   "error_code",
+  "error_message",
+  "target",
   "resource",
   "objective",
   "api_job_id",
@@ -125,16 +129,21 @@ function errorCode(value: unknown) {
   return value;
 }
 
-function objective(value: unknown) {
+/**
+ * Free text from the call (objective, error message, target URL or query):
+ * control characters become spaces, secret-like values become [redacted],
+ * and the result is cut to `max` characters rather than rejected.
+ */
+function redactedText(value: unknown, field: string, max: number) {
   if (value == null) return null;
-  if (typeof value !== "string") invalid("objective must be a string");
+  if (typeof value !== "string") invalid(`${field} must be a string`);
   const normalized = value
-    .slice(0, OBJECTIVE_MAX_LENGTH * 4)
+    .slice(0, max * 4)
     .replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ")
     .replace(SECRET_PATTERN_ALL, "[redacted]")
     .replace(/\beyJ[A-Za-z0-9_.-]*$/, "[redacted]")
     .trim()
-    .slice(0, OBJECTIVE_MAX_LENGTH)
+    .slice(0, max)
     .replace(/[\uD800-\uDBFF]$/, "")
     .trim();
   return normalized || null;
@@ -211,6 +220,8 @@ type McpActionLogInput = {
   client_version: string | null;
   error_class: string | null;
   error_code: string | null;
+  error_message: string | null;
+  target: string | null;
   resource: string;
   objective: string | null;
   api_job_id: string | null;
@@ -311,8 +322,18 @@ export function normalizeMcpActionLogInput(
     client_version: text(payload.client_version, "client_version"),
     error_class: text(payload.error_class, "error_class"),
     error_code: errorCode(payload.error_code),
+    error_message: redactedText(
+      payload.error_message,
+      "error_message",
+      ERROR_MESSAGE_MAX_LENGTH,
+    ),
+    target: redactedText(payload.target, "target", TARGET_MAX_LENGTH),
     resource,
-    objective: objective(payload.objective),
+    objective: redactedText(
+      payload.objective,
+      "objective",
+      OBJECTIVE_MAX_LENGTH,
+    ),
     api_job_id: text(payload.api_job_id, "api_job_id"),
     mcp_origin: text(payload.mcp_origin, "mcp_origin"),
     mcp_client: text(payload.mcp_client, "mcp_client"),
@@ -481,8 +502,8 @@ export async function listMcpActionLogs(
   let rows: McpActionLogRow[];
   try {
     const result = await clickhouseClient.query({
-      // The explicit column list is the team-readable contract: objective and
-      // api_job_id stay out of it. Filters name `log.` columns because the
+      // The explicit column list is the team-readable contract: objective,
+      // api_job_id, error_message and target stay out of it. Filters name `log.` columns because the
       // formatted created_at alias would otherwise shadow the stored value.
       query: `SELECT id, user_id, toString(log.api_key_id) AS api_key_id, oauth_client_id, auth_type, tool_name, status, request_id, client_name, client_version, error_class, resource, formatDateTime(log.created_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS created_at FROM mcp_action_logs AS log FINAL WHERE log.team_id = {teamId: UUID} AND log.created_at > now64(9) - INTERVAL ${RETENTION_DAYS} DAY${cursor ? " AND (log.created_at, log.id) < (parseDateTime64BestEffort({before: String}, 9), {beforeId: UUID})" : ""} ORDER BY log.created_at DESC, log.id DESC LIMIT {limit: UInt32}`,
       query_params: {
