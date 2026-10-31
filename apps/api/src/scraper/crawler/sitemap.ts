@@ -111,6 +111,33 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   }
 }
 
+export function parseSitemapUrl(
+  urlStr: string,
+  baseUrl?: string,
+  logger?: Logger,
+): URL | null {
+  const trimmed = urlStr.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    return new URL(trimmed);
+  } catch (_) {
+    if (baseUrl) {
+      try {
+        return new URL(trimmed, baseUrl);
+      } catch (_) {
+        // continue to logging
+      }
+    }
+    logger?.warn("Skipping malformed sitemap URL", {
+      url: urlStr,
+      baseUrl,
+    });
+    return null;
+  }
+}
+
 export async function scrapeSitemap(
   options: SitemapScrapeOptions,
 ): Promise<SitemapData> {
@@ -156,9 +183,19 @@ export async function scrapeSitemap(
 
   for (const instruction of instructions.instructions) {
     if (instruction.action === "recurse") {
-      sitemapData.sitemaps.push(...instruction.urls.map(url => new URL(url)));
+      for (const u of instruction.urls) {
+        const parsed = parseSitemapUrl(u, options.url, logger);
+        if (parsed) {
+          sitemapData.sitemaps.push(parsed);
+        }
+      }
     } else if (instruction.action === "process") {
-      sitemapData.urls.push(...instruction.urls.map(url => new URL(url)));
+      for (const u of instruction.urls) {
+        const parsed = parseSitemapUrl(u, options.url, logger);
+        if (parsed) {
+          sitemapData.urls.push(parsed);
+        }
+      }
     }
   }
 
