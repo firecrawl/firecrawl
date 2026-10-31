@@ -214,6 +214,26 @@ def test_scrape_url_change_tracking_without_formats_includes_markdown(client):
     )
 
 
+def test_scrape_url_change_tracking_with_typed_markdown_does_not_duplicate(client):
+    from pydantic import BaseModel
+
+    class DummyMarkdownFormat(BaseModel):
+        type: str = "markdown"
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": [DummyMarkdownFormat()],
+                "changeTrackingOptions": {"modes": ["git-diff"]},
+            },
+        )
+    args, kwargs = scrape.call_args
+    assert len(kwargs["formats"]) == 2
+    assert kwargs["formats"][0].type == "markdown"
+    assert kwargs["formats"][1] == {"type": "changeTracking", "modes": ["git-diff"]}
+
+
 def test_scrape_url_maps_pydantic_model_options(client):
     from pydantic import BaseModel
 

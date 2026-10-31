@@ -115,7 +115,9 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
                         entry.update(nested_opts)
                     new_formats.append(entry)
                 if type_name == "changeTracking" and not any(
-                    f == "markdown" or (isinstance(f, dict) and f.get("type") == "markdown")
+                    f == "markdown"
+                    or (isinstance(f, dict) and f.get("type") == "markdown")
+                    or (hasattr(f, "type") and getattr(f, "type") == "markdown")
                     for f in new_formats
                 ):
                     new_formats.insert(0, "markdown")
