@@ -143,10 +143,72 @@ jobs:
             --head "$BRANCH" \
             --base main
 
+  supersede:
+    name: Supersede unapproved runs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - uses: ./.github/actions/supersede-waiting-runs
+        continue-on-error: true
+        timeout-minutes: 2
+
+  release-summary:
+    name: Release summary
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Read the version
+        id: version
+        continue-on-error: true
+        run: |
+          local=$(grep '@version' apps/elixir-sdk/mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          published=$(curl -fsS https://hex.pm/api/packages/firecrawl | jq -r '.releases[0].version // "0.0.0"')
+          newest=$(printf '%s\n%s\n' "$local" "$published" | sort -V | tail -1)
+          echo "version=$local" >> "$GITHUB_OUTPUT"
+          if [ "$local" != "$published" ] && [ "$newest" = "$local" ]; then publishes=true; else publishes=false; fi
+          echo "publishes=$publishes" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: publish
+          version: firecrawl ${{ steps.version.outputs.version }} (hex.pm)
+          publishes: ${{ steps.version.outputs.publishes }}
+          published-step: Publish to hex.pm
+          paths: apps/elixir-sdk
+
   publish:
+    needs: release-summary
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     environment: release
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
 

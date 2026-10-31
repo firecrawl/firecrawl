@@ -1,0 +1,10 @@
+name: Supersede unapproved release runs
+description: Cancels earlier runs of this workflow on the same branch that are still waiting for environment approval and whose commit this run includes.
+runs:
+  using: composite
+  steps:
+    - name: Cancel superseded runs waiting for approval
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash "$GITHUB_ACTION_PATH/supersede.sh"

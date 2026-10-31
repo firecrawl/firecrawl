@@ -58,12 +58,57 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: Publish
+  supersede:
+    name: Supersede unapproved runs
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - uses: ./.github/actions/supersede-waiting-runs
+        continue-on-error: true
+        timeout-minutes: 2
+
+  release-summary:
+    name: Release summary
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: Publish
+          version: firecrawl, @mendable/firecrawl-js and @mendable/firecrawl ${{ needs.build.outputs.version }}
+          paths: apps/js-sdk/firecrawl
+
+  publish:
+    name: Publish
+    needs: [build, release-summary]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     environment: release
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       id-token: write
     steps:
