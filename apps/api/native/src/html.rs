@@ -159,7 +159,17 @@ fn _extract_metadata(
     .map_err(|_| "Failed to select title")?
     .next()
   {
-    out.insert("title".to_string(), Value::String(title.text_contents()));
+    // As `document.title` reads it: ASCII whitespace stripped and collapsed. An empty title
+    // is left out, so the fallbacks below can fill it
+    let title = title
+      .text_contents()
+      .split(['\t', '\n', '\x0C', '\r', ' '])
+      .filter(|word| !word.is_empty())
+      .collect::<Vec<_>>()
+      .join(" ");
+    if !title.is_empty() {
+      out.insert("title".to_string(), Value::String(title));
+    }
   }
 
   if let Some(favicon_link) = search_root
@@ -293,14 +303,19 @@ fn _extract_metadata(
     }
   }
 
-  // Backfill title from og:title, twitter:title, or meta[name="title"] if primary extraction failed
-  if !out.contains_key("title") {
-    let fallback_title = out
-      .get("ogTitle")
-      .or_else(|| out.get("og:title"))
-      .or_else(|| out.get("twitter:title"))
-      .and_then(|v| match v {
-        Value::String(s) if !s.is_empty() => Some(s.clone()),
+  // Backfill title from og:title, twitter:title, or meta[name="title"] if primary extraction failed.
+  // A blank title, such as an empty meta[name="title"], counts as missing, and the first fallback
+  // that is not blank wins
+  let title_is_blank = match out.get("title") {
+    Some(Value::String(s)) => s.trim().is_empty(),
+    Some(_) => false,
+    None => true,
+  };
+  if title_is_blank {
+    let fallback_title = ["ogTitle", "og:title", "twitter:title"]
+      .into_iter()
+      .find_map(|key| match out.get(key) {
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
         _ => None,
       });
 
