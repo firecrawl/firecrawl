@@ -205,6 +205,44 @@ describe("MCP action log contract", () => {
     );
   });
 
+  it("stores an optional error message and target, redacted and capped", () => {
+    expect(input()).toMatchObject({ error_message: null, target: null });
+    expect(
+      input({
+        status: "error",
+        error_message: "Request failed with status code 408: Scrape timed out",
+        target: "https://example.com/pricing?plan=pro",
+      }),
+    ).toMatchObject({
+      error_message: "Request failed with status code 408: Scrape timed out",
+      target: "https://example.com/pricing?plan=pro",
+    });
+    expect(input({ error_message: "", target: "  " })).toMatchObject({
+      error_message: null,
+      target: null,
+    });
+    expect(
+      input({ error_message: "Unauthorized:\nBearer abc.def for fc-123abc" })
+        .error_message,
+    ).toBe("Unauthorized: [redacted] for [redacted]");
+    expect(
+      input({ target: "https://example.com/?key=fc-123abc&page=2" }).target,
+    ).toBe("https://example.com/?key=[redacted]&page=2");
+    expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
+      "x".repeat(300),
+    );
+    expect(input({ target: "q".repeat(600) }).target).toBe("q".repeat(512));
+    expect(input({ target: `${"q".repeat(511)}\u{1F600}` }).target).toBe(
+      "q".repeat(511),
+    );
+    expect(() => input({ error_message: 500 })).toThrow(
+      "error_message must be a string",
+    );
+    expect(() => input({ target: ["https://example.com"] })).toThrow(
+      "target must be a string",
+    );
+  });
+
   it("stores an optional coarse error code and rejects anything but snake_case", () => {
     expect(input().error_code).toBeNull();
     expect(
@@ -517,6 +555,8 @@ describe("MCP action log contract", () => {
           objective: "Find the refund policy",
           api_job_id: REQUEST_ID,
           error_code: "rate_limited",
+          error_message: "Rate limit exceeded",
+          target: "firecrawl pricing",
           user_agent: "Claude/1.0",
           mcp_origin: "mcp-ua-codex-cli-rs",
           mcp_client: "codex-cli-rs",
@@ -541,6 +581,8 @@ describe("MCP action log contract", () => {
       objective: "Find the refund policy",
       api_job_id: REQUEST_ID,
       error_code: "rate_limited",
+      error_message: "Rate limit exceeded",
+      target: "firecrawl pricing",
       mcp_origin: "mcp-ua-codex-cli-rs",
       mcp_client: "codex-cli-rs",
       mcp_client_source: "user_agent",
@@ -651,7 +693,7 @@ describe("MCP action log contract", () => {
     expect(complete.nextCursor).toBeNull();
   });
 
-  it("never selects the objective or API job ID for the team-readable list", async () => {
+  it("never selects call content or the API job ID for the team-readable list", async () => {
     ch.client = { query: vi.fn().mockResolvedValue({ json: async () => [] }) };
     await listMcpActionLogs(TEAM_ID);
     const sql = ch.client.query.mock.calls[0][0].query as string;
@@ -659,6 +701,8 @@ describe("MCP action log contract", () => {
     expect(columns).toContain("tool_name");
     expect(columns).not.toContain("objective");
     expect(columns).not.toContain("api_job_id");
+    expect(columns).not.toContain("error_message");
+    expect(columns).not.toMatch(/\btarget\b/);
   });
 
   it("reports storage as unavailable when the read fails", async () => {
