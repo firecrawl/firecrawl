@@ -681,6 +681,8 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         converted_formats.append("summary")
                     if original_formats.links:
                         converted_formats.append("links")
+                    if original_formats.images:
+                        converted_formats.append("images")
                     if original_formats.screenshot:
                         converted_formats.append("screenshot")
                     if original_formats.change_tracking:
