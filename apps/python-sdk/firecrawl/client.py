@@ -370,7 +370,13 @@ class Firecrawl:
     def v1(self) -> V1Proxy:
         """Feature-frozen v1 client, created on first use because it requires an API key on the cloud API."""
         if self._v1 is None:
-            self._v1 = V1Proxy(V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+            try:
+                self._v1 = V1Proxy(V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+            except ValueError as exc:
+                raise ValueError(
+                    "v1 client requires an API key. Set FIRECRAWL_API_KEY or pass "
+                    "api_key=... to Firecrawl(). v2 scrape/search work without a key."
+                ) from exc
         return self._v1
 
     def parse(
@@ -524,7 +530,13 @@ class AsyncFirecrawl:
     def v1(self) -> AsyncV1Proxy:
         """Feature-frozen async v1 client, created on first use because it requires an API key on the cloud API."""
         if self._v1 is None:
-            self._v1 = AsyncV1Proxy(AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+            try:
+                self._v1 = AsyncV1Proxy(AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+            except ValueError as exc:
+                raise ValueError(
+                    "v1 client requires an API key. Set FIRECRAWL_API_KEY or pass "
+                    "api_key=... to AsyncFirecrawl(). v2 scrape/search work without a key."
+                ) from exc
         return self._v1
 
     async def parse(
