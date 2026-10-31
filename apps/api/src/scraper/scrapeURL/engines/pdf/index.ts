@@ -61,7 +61,10 @@ import {
   recordFirePdfRoute,
 } from "./fire-pdf/routing";
 import { parseAlwaysFirePdf } from "./fire-pdf/request-metadata";
-import { scrapePDFWithParsePDF } from "./pdfParse";
+import {
+  reconcilePageCountWithPdfParse,
+  scrapePDFWithParsePDF,
+} from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
@@ -940,14 +943,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         tempFilePath,
         maxPages ?? undefined,
       );
-      // pdf-parse stops at its page cap; report (and bill) only the pages
-      // it parsed.
-      if (result.pagesProcessed !== undefined) {
-        effectivePageCount =
-          effectivePageCount > 0
-            ? Math.min(effectivePageCount, result.pagesProcessed)
-            : result.pagesProcessed;
-      }
+      // pdf-parse stops at its page cap, so a count from native detection
+      // can only come down to the pages it parsed. A failed detection stays
+      // at 0 and keeps billing the base credit.
+      effectivePageCount = reconcilePageCountWithPdfParse(
+        effectivePageCount,
+        result,
+      );
       // When native detection could not read the page count, use the count
       // pdf-parse saw so a truncated result still reports its total.
       if (totalPageCount === undefined && result.pageCount !== undefined) {
