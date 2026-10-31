@@ -634,6 +634,25 @@ fn _transform_html_inner(
     }
   }
 
+  // Deduplicate images by src URL
+  // This handles infinite scroll carousels that duplicate images in the DOM
+  // for seamless looping effects
+  let mut seen_srcs: HashSet<String> = HashSet::new();
+  let images_to_check: Vec<_> = document
+    .select("img[src]")
+    .map_err(|_| "Failed to select images for deduplication")?
+    .collect();
+  for img in images_to_check {
+    if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
+      if seen_srcs.contains(&src) {
+        // Remove duplicate image
+        img.as_node().detach();
+      } else {
+        seen_srcs.insert(src);
+      }
+    }
+  }
+
   let href_anchors: Vec<_> = document
     .select("a[href]")
     .map_err(|_| "Failed to select href anchors")?
@@ -1038,4 +1057,104 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_transform_html_deduplicates_images() {
+    // Simulates infinite scroll carousel with duplicated logos
+    let html = r#"
+      <html>
+        <body>
+          <div class="carousel">
+            <img src="https://example.com/logo1.png" alt="Logo 1">
+            <img src="https://example.com/logo2.png" alt="Logo 2">
+            <img src="https://example.com/logo1.png" alt="Logo 1 copy">
+            <img src="https://example.com/logo2.png" alt="Logo 2 copy">
+            <img src="https://example.com/logo1.png" alt="Logo 1 copy 2">
+          </div>
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // Count occurrences of each image src
+    let logo1_count = result.matches("logo1.png").count();
+    let logo2_count = result.matches("logo2.png").count();
+
+    assert_eq!(logo1_count, 1, "logo1.png should appear only once");
+    assert_eq!(logo2_count, 1, "logo2.png should appear only once");
+  }
+
+  #[test]
+  fn test_transform_html_keeps_unique_images() {
+    let html = r#"
+      <html>
+        <body>
+          <img src="https://example.com/image1.png" alt="Image 1">
+          <img src="https://example.com/image2.png" alt="Image 2">
+          <img src="https://example.com/image3.png" alt="Image 3">
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // All unique images should be preserved
+    assert!(result.contains("image1.png"));
+    assert!(result.contains("image2.png"));
+    assert!(result.contains("image3.png"));
+  }
+
+  #[test]
+  fn test_transform_html_preserves_first_occurrence() {
+    let html = r#"
+      <html>
+        <body>
+          <img src="https://example.com/logo.png" alt="First occurrence">
+          <p>Some text</p>
+          <img src="https://example.com/logo.png" alt="Second occurrence">
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // Should have only one occurrence
+    assert_eq!(result.matches("logo.png").count(), 1);
+    // Should preserve the first alt text
+    assert!(result.contains("First occurrence"));
+    assert!(!result.contains("Second occurrence"));
+  }
 }
