@@ -1105,6 +1105,55 @@ describeIf(IMAGE_OCR_ON)("Image OCR parse upload (fire-pdf dependent)", () => {
   );
 
   it(
+    "returns typed blocks for an uploaded image when the pdf parser asks for them",
+    async () => {
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+            parsers: [{ type: "pdf", blocks: true }],
+          },
+          file: {
+            content: Buffer.from(OCR_FIXTURE_PNG_BASE64, "base64"),
+            filename: "ocr-fixture.png",
+            contentType: "image/png",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toMatch(/firecrawl/i);
+      expect(result.blocks).toHaveLength(1);
+      expect(result.blocks![0].pageNumber).toBe(1);
+      expect(result.blocks![0].items.length).toBeGreaterThan(0);
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "returns no blocks for an uploaded image by default",
+    async () => {
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+          },
+          file: {
+            content: Buffer.from(OCR_FIXTURE_PNG_BASE64, "base64"),
+            filename: "ocr-fixture.png",
+            contentType: "image/png",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toMatch(/firecrawl/i);
+      expect(result.blocks).toBeUndefined();
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "advertises JPEG 2000 among the supported upload types",
     async () => {
       // The rejection message lists every accepted extension, so an
