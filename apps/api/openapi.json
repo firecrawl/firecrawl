@@ -6369,11 +6369,27 @@
               "minLength": 1,
               "example": "irs.gov"
             }
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": false,
+            "description": "Result groups to return. `web` returns plain search results. `law` returns the same results with the index's legal labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as` and `updated_at`. Repeat the parameter to return both.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["web", "law"]
+              },
+              "default": ["web"]
+            },
+            "style": "form",
+            "explode": true
           }
         ],
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6482,6 +6498,16 @@
                     "minLength": 1,
                     "description": "Keep only pages from one site, such as `irs.gov`.",
                     "example": "irs.gov"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": ["web", "law"]
+                    },
+                    "minItems": 1,
+                    "default": ["web"],
+                    "description": "Result groups to return. `web` returns plain search results. `law` returns the same results with the index's legal labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as` and `updated_at`."
                   }
                 }
               },
@@ -6494,7 +6520,7 @@
         },
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12106,6 +12132,60 @@
                     "position": {
                       "type": "integer",
                       "description": "1-based rank in the result list."
+                    }
+                  }
+                }
+              },
+              "law": {
+                "type": "array",
+                "description": "Present when `sources` includes `law`. The same results as `web`, in the same order, with the index's legal labels.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Matched snippet from the source document."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "1-based rank in the result list."
+                    },
+                    "jurisdiction": {
+                      "type": "string",
+                      "description": "Jurisdiction label: `us` for federal, or `us-` plus a two-letter state or territory code. Absent when the index has no label."
+                    },
+                    "court": {
+                      "type": "string",
+                      "description": "CourtListener court id, such as `scotus` or `ca9`. Absent when the index has no label."
+                    },
+                    "court_type": {
+                      "type": "string",
+                      "description": "Type of court, one of the `courtType` filter values. Absent when the index has no label."
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids of the laws and cases the page cites. Absent when none are known."
+                    },
+                    "cited_as": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids other pages cite this page by. Pass one as `cites` to find the pages citing it. Absent when none are known."
+                    },
+                    "updated_at": {
+                      "type": "integer",
+                      "description": "When the page was crawled, in Unix milliseconds. Present for indexed pages, omitted for external web results."
                     }
                   }
                 }

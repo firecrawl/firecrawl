@@ -56,6 +56,7 @@ export async function fetchGovUpstream(options: {
   courtType?: string;
   cites?: string;
   domain?: string;
+  sources?: ("web" | "law")[];
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
@@ -73,6 +74,7 @@ export async function fetchGovUpstream(options: {
       court_type: options.courtType,
       cites: options.cites,
       domain: options.domain,
+      sources: options.sources,
     }),
     signal: AbortSignal.timeout(options.timeoutMs),
     dispatcher,

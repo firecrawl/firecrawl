@@ -165,6 +165,8 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
+const govSource = z.enum(["web", "law"]);
+
 const govSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
@@ -195,6 +197,12 @@ const govSearchSchema = z.strictObject({
     .optional(),
   cites: z.string().trim().min(1).optional(),
   domain: z.string().trim().min(1).optional(),
+  sources: z
+    .union([govSource, z.array(govSource).min(1)])
+    .optional()
+    .transform(value =>
+      value === undefined ? undefined : [...new Set([value].flat())],
+    ),
   ...commonQuery,
 });
 
@@ -273,7 +281,8 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
 
 function resultCount(body: any): number {
   if (Array.isArray(body?.results)) return body.results.length;
-  return Array.isArray(body?.data?.web) ? body.data.web.length : 0;
+  const group = body?.data?.web ?? body?.data?.law;
+  return Array.isArray(group) ? group.length : 0;
 }
 
 function creditsFor(
@@ -710,6 +719,7 @@ export function createGovRouter() {
           courtType: params.courtType,
           cites: params.cites,
           domain: params.domain,
+          sources: params.sources,
           headers,
           timeoutMs: GOV_SEARCH_TIMEOUT_MS,
         }),

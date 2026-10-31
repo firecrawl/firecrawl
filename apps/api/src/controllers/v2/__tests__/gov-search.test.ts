@@ -188,6 +188,9 @@ describe("/v2/search/gov", () => {
     ["GET", { query: "rules", k: "101" }],
     ["GET", { query: "rules", magic: "true" }],
     ["POST", { query: "rules", magic: "true" }],
+    ["GET", { query: "rules", sources: "news" }],
+    ["POST", { query: "rules", sources: [] }],
+    ["POST", { query: "rules", sources: ["web", "news"] }],
   ] as const)(
     "rejects invalid %s input %j before the upstream call",
     async (method, input) => {
@@ -202,6 +205,52 @@ describe("/v2/search/gov", () => {
       expect(mocks.fetchGovUpstream).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["GET", ["law", "law"]],
+    ["GET", "law"],
+    ["POST", ["law"]],
+  ] as const)(
+    "forwards a %s request for law results and counts them",
+    async (method, sources) => {
+      const law = [
+        {
+          ...WEB_RESULT,
+          jurisdiction: "us",
+          cites: ["us:usc:21:343"],
+          updated_at: 1700000000000,
+        },
+      ];
+      mocks.fetchGovUpstream.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => JSON.stringify({ success: true, data: { law } }),
+      });
+      const res = makeRes();
+      await handler(method === "GET" ? "get" : "post")(
+        makeReq(method, { query: "food labeling rules", sources }),
+        res,
+      );
+      await flush();
+
+      expect(mocks.fetchGovUpstream).toHaveBeenCalledWith(
+        expect.objectContaining({ sources: ["law"] }),
+      );
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { law } });
+      expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
+        expect.objectContaining({ num_results: 1, credits_cost: 0 }),
+      );
+    },
+  );
+
+  it("leaves sources out of the upstream call unless sent", async () => {
+    const res = makeRes();
+    await handler("post")(makeReq("POST", { query: "zoning variance" }), res);
+    await flush();
+
+    expect(mocks.fetchGovUpstream.mock.calls[0][0].sources).toBeUndefined();
+  });
 
   it("maps an upstream timeout to 504", async () => {
     mocks.fetchGovUpstream.mockRejectedValue(
