@@ -44,6 +44,7 @@ import {
 } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import { hasCustomRequestContext } from "../lib/request-context";
+import { webBotAuthHeaders } from "../../../lib/web-bot-auth";
 import {
   getExchangeAccessForRequest,
   ThirdPartyDataTermsRequiredError,
@@ -1118,8 +1119,37 @@ export async function scrapeURLWithEngine(
     featureFlags.add("stealthProxy");
   }
 
+  const reachesOrigin =
+    engine.startsWith("fire-engine") ||
+    ["playwright", "fetch", "pdf", "document", "image"].includes(engine);
+  const signatureHeaders = reachesOrigin
+    ? webBotAuthHeaders(
+        meta.rewrittenUrl ?? meta.url,
+        meta.internalOptions.teamId,
+      )
+    : {};
+
+  const options =
+    Object.keys(signatureHeaders).length === 0
+      ? meta.options
+      : {
+          ...meta.options,
+          headers: {
+            ...Object.fromEntries(
+              Object.entries(meta.options.headers ?? {}).filter(
+                ([name]) =>
+                  !["signature-agent", "signature-input", "signature"].includes(
+                    name.toLowerCase(),
+                  ),
+              ),
+            ),
+            ...signatureHeaders,
+          },
+        };
+
   const _meta = {
     ...meta,
+    options,
     logger,
     featureFlags,
   };
