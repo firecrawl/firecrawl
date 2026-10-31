@@ -23,7 +23,7 @@ export type AuthDenialReason =
   | "agent_key_verification_expired";
 
 // Admin routes carry BULL_AUTH_KEY as a path segment.
-function routeOf(req: Request): string | undefined {
+export function routeOf(req: Request): string | undefined {
   if (typeof req.path !== "string") return undefined;
   return `${req.baseUrl ?? ""}${getRoutePattern(req)}`
     .split("/")

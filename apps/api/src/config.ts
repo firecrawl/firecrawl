@@ -398,6 +398,42 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(64 * 1024 * 1024),
+  // Access events (API key use, admin routes) go to this fully qualified topic
+  // (projects/<project>/topics/<topic>) with PUBSUB_CREDENTIALS. Off when unset.
+  ACCESS_EVENTS_TOPIC: emptyStringAsUndefined(
+    z
+      .string()
+      .trim()
+      .regex(
+        /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][\w.~+%-]{2,254}$/,
+      ),
+  ),
+  // Teams whose access events keep the full client IP. Every other team's
+  // events carry the /24 (IPv4) or /48 (IPv6) network only.
+  ACCESS_EVENTS_FULL_IP_TEAM_IDS: delimitedList(",").optional(),
+  // JSON object of SHA-256 hex digests of API keys (lowercase dashed UUID form)
+  // to a short label. Listed keys are refused like unknown keys.
+  API_KEY_DENYLIST: emptyStringAsUndefined(
+    z
+      .string()
+      .transform((value, context) => {
+        try {
+          return JSON.parse(value) as unknown;
+        } catch {
+          context.addIssue({
+            code: "custom",
+            message: "API_KEY_DENYLIST must be a JSON object",
+          });
+          return z.NEVER;
+        }
+      })
+      .pipe(
+        z.record(
+          z.string().regex(/^[0-9a-f]{64}$/),
+          z.string().trim().min(1).max(64),
+        ),
+      ),
+  ),
 
   // Cloud Bigtable operational stores. The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
@@ -868,6 +904,13 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
       path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
       message:
         "EXTRACTION_PROVIDER_ROLLOUT_PERCENT + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100",
+    });
+  }
+  if (value.ACCESS_EVENTS_TOPIC && !value.PUBSUB_CREDENTIALS?.trim()) {
+    context.addIssue({
+      code: "custom",
+      path: ["PUBSUB_CREDENTIALS"],
+      message: "ACCESS_EVENTS_TOPIC requires PUBSUB_CREDENTIALS",
     });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
