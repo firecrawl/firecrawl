@@ -11,6 +11,7 @@ import type {
   LoggedSearch,
 } from "../services/logging/log_job";
 import { config } from "../config";
+import { enqueueZdrCleanupJob } from "./zdr-queue";
 import crypto from "crypto";
 import { Logger } from "winston";
 
@@ -106,6 +107,11 @@ async function saveJobToGCS(params: {
       if (!config.GCS_BUCKET_NAME) {
         setSpanAttributes(span, { "gcs.bucket_configured": false });
         return;
+      }
+
+      // Never write a ZDR blob without its delete already scheduled.
+      if (params.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
+        await enqueueZdrCleanupJob({ blobId: params.id });
       }
 
       const bucket = storageManualRetries.bucket(config.GCS_BUCKET_NAME);
@@ -443,10 +449,14 @@ export async function removeJobFromGCS(
     const blob = bucket.file(idToFilename(jobId));
 
     try {
-      await blob.delete({
+      const [response] = await blob.delete({
         ignoreNotFound: true,
       });
-      setSpanAttributes(span, { "gcs.delete_successful": true });
+      setSpanAttributes(span, {
+        "gcs.delete_successful": true,
+        "gcs.job_not_found":
+          (response as { statusCode?: number } | undefined)?.statusCode === 404,
+      });
     } catch (error) {
       if (
         error instanceof ApiError &&

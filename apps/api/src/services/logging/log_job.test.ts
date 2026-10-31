@@ -667,9 +667,9 @@ describe("logRequest", () => {
       zeroDataRetention: true,
     });
 
-    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith(
-      "019e6f45-7778-727d-adf0-0abe9d5062b6",
-    );
+    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith({
+      requestId: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    });
     expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
       publishMessage.mock.invocationCallOrder[0],
     );

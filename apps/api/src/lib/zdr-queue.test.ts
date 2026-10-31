@@ -94,13 +94,17 @@ vi.mock("./otel-tracer", () => ({
   recordSpanException,
 }));
 
-function message(body: unknown) {
+function message(
+  body: unknown,
+  headers?: Record<string, unknown>,
+  redelivered = false,
+) {
   return {
     content: Buffer.from(
       typeof body === "string" ? body : JSON.stringify(body),
     ),
-    fields: {},
-    properties: {},
+    fields: { redelivered },
+    properties: { headers },
   };
 }
 
@@ -118,7 +122,7 @@ describe("ZDR cleanup queue", () => {
       "./zdr-queue.js"
     );
 
-    await enqueueZdrCleanupJob("request-1");
+    await enqueueZdrCleanupJob({ requestId: "request-1" });
 
     expect(connect).toHaveBeenCalledWith(
       "amqp://rabbitmq",
@@ -135,6 +139,7 @@ describe("ZDR cleanup queue", () => {
         correlationId: expect.any(String),
         timestamp: expect.any(Number),
         mandatory: true,
+        headers: { "zdr-attempt": 1 },
       }),
       expect.any(Function),
     );
@@ -148,6 +153,27 @@ describe("ZDR cleanup queue", () => {
         "zdr.rabbitmq.outcome": "confirmed",
       }),
     });
+    await shutdownZdrQueue();
+  });
+
+  it("publishes a per-blob job to the same 24h delay queue", async () => {
+    const { enqueueZdrCleanupJob, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+
+    await enqueueZdrCleanupJob({ blobId: "blob-1" });
+
+    expect(publishChannel.sendToQueue).toHaveBeenCalledWith(
+      "zdr.cleanup.delayed.24h",
+      Buffer.from(JSON.stringify({ blobId: "blob-1" })),
+      expect.objectContaining({
+        persistent: true,
+        messageId: "blob-1",
+        mandatory: true,
+        headers: { "zdr-attempt": 1 },
+      }),
+      expect.any(Function),
+    );
     await shutdownZdrQueue();
   });
 
@@ -172,7 +198,7 @@ describe("ZDR cleanup queue", () => {
         "./zdr-queue.js"
       );
 
-      const enqueue = enqueueZdrCleanupJob("request-returned");
+      const enqueue = enqueueZdrCleanupJob({ requestId: "request-returned" });
       await vi.runAllTimersAsync();
       await enqueue;
 
@@ -188,7 +214,7 @@ describe("ZDR cleanup queue", () => {
       "./zdr-queue.js"
     );
 
-    await enqueueZdrCleanupJob("request-2");
+    await enqueueZdrCleanupJob({ requestId: "request-2" });
 
     const queueDeclarations = new Map(
       (publishChannel.assertQueue as Mock).mock.calls.map(([name, options]) => [
@@ -213,12 +239,25 @@ describe("ZDR cleanup queue", () => {
         "x-queue-type": "quorum",
         "x-overflow": "reject-publish",
         "x-delivery-limit": -1,
+        "x-dead-letter-exchange": "zdr.cleanup",
+        "x-dead-letter-routing-key": "dead",
+      },
+    });
+    expect(queueDeclarations.get("zdr.cleanup.retry")).toMatchObject({
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum",
+        "x-overflow": "reject-publish",
+        "x-message-ttl": 300_000,
+        "x-dead-letter-strategy": "at-least-once",
+        "x-dead-letter-exchange": "zdr.cleanup",
+        "x-dead-letter-routing-key": "ready",
       },
     });
     await shutdownZdrQueue();
   });
 
-  it("acks completed jobs and requeues failures without a delivery cap", async () => {
+  it("hands request-level and per-blob jobs to the handler and acks them", async () => {
     const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
       "./zdr-queue.js"
     );
@@ -226,30 +265,180 @@ describe("ZDR cleanup queue", () => {
     await consumeZdrCleanupJobs(handler);
     const consume = consumerCallbacks[0];
 
-    const completed = message({ requestId: "request-3" });
-    await consume(completed);
-    expect(handler).toHaveBeenCalledWith({ requestId: "request-3" });
-    expect(consumeChannel.ack).toHaveBeenCalledWith(completed);
-    expect(spans).toContainEqual({
-      name: "zdr.rabbitmq.consume",
-      attributes: expect.objectContaining({
-        "messaging.system": "rabbitmq",
+    const requestJob = message({ requestId: "request-3" });
+    await consume(requestJob);
+    const blobJob = message({ blobId: "blob-3" });
+    await consume(blobJob);
+
+    expect(handler.mock.calls).toEqual([
+      [{ requestId: "request-3" }],
+      [{ blobId: "blob-3" }],
+    ]);
+    expect(consumeChannel.ack).toHaveBeenCalledWith(requestJob);
+    expect(consumeChannel.ack).toHaveBeenCalledWith(blobJob);
+    expect(consumeChannel.nack).not.toHaveBeenCalled();
+    const consumeSpans = spans.filter(
+      span => span.name === "zdr.rabbitmq.consume",
+    );
+    expect(consumeSpans.map(span => span.attributes)).toEqual([
+      expect.objectContaining({
         "messaging.destination.name": "zdr.cleanup.ready",
         "messaging.operation.name": "process",
         "zdr.request_id": "request-3",
+        "zdr.attempt": 1,
         "zdr.rabbitmq.outcome": "acknowledged",
       }),
-    });
+      expect.objectContaining({
+        "zdr.blob_id": "blob-3",
+        "zdr.attempt": 1,
+        "zdr.rabbitmq.outcome": "acknowledged",
+      }),
+    ]);
+    expect(consumeSpans[1].attributes).not.toHaveProperty("zdr.request_id");
+    await shutdownZdrQueue();
+  });
 
-    handler.mockRejectedValueOnce(new Error("GCS unavailable"));
-    const failed = message({ requestId: "request-4" });
-    await consume(failed);
-    expect(consumeChannel.nack).toHaveBeenCalledWith(failed, false, true);
+  it("schedules a delayed retry instead of requeueing a failed job", async () => {
+    const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+    const handler = vi.fn(async () => {
+      throw new Error("GCS unavailable");
+    });
+    await consumeZdrCleanupJobs(handler);
+    const consume = consumerCallbacks[0];
+
+    const firstFailure = message({ blobId: "blob-4" });
+    await consume(firstFailure);
+    const laterFailure = message(
+      { requestId: "request-4" },
+      { "zdr-attempt": 5 },
+    );
+    await consume(laterFailure);
+
+    expect(publishChannel.sendToQueue).toHaveBeenNthCalledWith(
+      1,
+      "zdr.cleanup.retry",
+      Buffer.from(JSON.stringify({ blobId: "blob-4" })),
+      expect.objectContaining({
+        persistent: true,
+        messageId: "blob-4",
+        mandatory: true,
+        headers: { "zdr-attempt": 2 },
+      }),
+      expect.any(Function),
+    );
+    expect(publishChannel.sendToQueue).toHaveBeenNthCalledWith(
+      2,
+      "zdr.cleanup.retry",
+      Buffer.from(JSON.stringify({ requestId: "request-4" })),
+      expect.objectContaining({ headers: { "zdr-attempt": 6 } }),
+      expect.any(Function),
+    );
+    expect(consumeChannel.ack).toHaveBeenCalledWith(firstFailure);
+    expect(consumeChannel.ack).toHaveBeenCalledWith(laterFailure);
+    expect(consumeChannel.nack).not.toHaveBeenCalled();
+    expect(recordSpanException).toHaveBeenCalledTimes(2);
+    expect(spans).toContainEqual({
+      name: "zdr.rabbitmq.consume",
+      attributes: expect.objectContaining({
+        "zdr.blob_id": "blob-4",
+        "zdr.rabbitmq.outcome": "retry_scheduled",
+      }),
+    });
+    await shutdownZdrQueue();
+  });
+
+  it("dead-letters a job that fails its last attempt", async () => {
+    const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+    const handler = vi.fn(async () => {
+      throw new Error("GCS unavailable");
+    });
+    await consumeZdrCleanupJobs(handler);
+    const consume = consumerCallbacks[0];
+
+    const exhausted = message({ blobId: "blob-5" }, { "zdr-attempt": 24 });
+    await consume(exhausted);
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(consumeChannel.nack).toHaveBeenCalledWith(exhausted, false, false);
+    expect(consumeChannel.ack).not.toHaveBeenCalled();
+    expect(publishChannel.sendToQueue).not.toHaveBeenCalled();
+    expect(spans).toContainEqual({
+      name: "zdr.rabbitmq.consume",
+      attributes: expect.objectContaining({
+        "zdr.blob_id": "blob-5",
+        "zdr.attempt": 24,
+        "zdr.rabbitmq.outcome": "dead_lettered",
+      }),
+    });
+    await shutdownZdrQueue();
+  });
+
+  it("counts an unsettled redelivery as a failed attempt", async () => {
+    const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+    const handler = vi.fn(async () => {});
+    await consumeZdrCleanupJobs(handler);
+    const consume = consumerCallbacks[0];
+
+    const redelivered = message(
+      { blobId: "blob-6" },
+      { "zdr-attempt": 3 },
+      true,
+    );
+    await consume(redelivered);
+    const lastRedelivery = message(
+      { blobId: "blob-7" },
+      { "zdr-attempt": 24 },
+      true,
+    );
+    await consume(lastRedelivery);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(publishChannel.sendToQueue).toHaveBeenCalledOnce();
+    expect(publishChannel.sendToQueue).toHaveBeenCalledWith(
+      "zdr.cleanup.retry",
+      Buffer.from(JSON.stringify({ blobId: "blob-6" })),
+      expect.objectContaining({ headers: { "zdr-attempt": 4 } }),
+      expect.any(Function),
+    );
+    expect(consumeChannel.ack).toHaveBeenCalledWith(redelivered);
+    expect(consumeChannel.nack).toHaveBeenCalledWith(
+      lastRedelivery,
+      false,
+      false,
+    );
+    await shutdownZdrQueue();
+  });
+
+  it("dead-letters malformed and invalid jobs without calling the handler", async () => {
+    const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
+      "./zdr-queue.js"
+    );
+    const handler = vi.fn(async () => {});
+    await consumeZdrCleanupJobs(handler);
+    const consume = consumerCallbacks[0];
 
     const malformed = message("not-json");
+    const emptyBlob = message({ blobId: "" });
+    const unknownShape = message({ jobId: "job-1" });
     await consume(malformed);
+    await consume(emptyBlob);
+    await consume(unknownShape);
+
+    expect(handler).not.toHaveBeenCalled();
     expect(consumeChannel.nack).toHaveBeenCalledWith(malformed, false, false);
-    expect(recordSpanException).toHaveBeenCalled();
+    expect(consumeChannel.nack).toHaveBeenCalledWith(emptyBlob, false, false);
+    expect(consumeChannel.nack).toHaveBeenCalledWith(
+      unknownShape,
+      false,
+      false,
+    );
+    expect(recordSpanException).toHaveBeenCalledTimes(3);
     await shutdownZdrQueue();
   });
 });
