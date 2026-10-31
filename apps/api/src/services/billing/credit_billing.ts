@@ -84,7 +84,7 @@ export async function billTeam(
         // deduped by Autumn against the same idempotency key (no new charge)
         // while the ledger enqueue succeeds, leaving Autumn net-zero for
         // billed work.
-        logger?.warn("billing enqueue failed after tracking; charge stands", {
+        logger?.error("billing enqueue failed after tracking; charge stands", {
           team_id,
           credits,
           billing,
