@@ -417,11 +417,53 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        // Ensure host scoping matches the native filter: deny external links
+        // and (unless allowed) other subdomains, mirroring the flags passed to
+        // the Rust filterLinks. See https://github.com/firecrawl/firecrawl/issues/5139
+        const initialBaseDomain = extractBaseDomain(this.initialUrl);
+        const linkBaseDomain = extractBaseDomain(link);
+
+        if (!this.allowExternalContentLinks) {
+          // Require matching non-null base domains unless hostnames are exactly
+          // equal, so IP-based crawls don't admit unrelated hosts.
+          if (
+            initialBaseDomain !== linkBaseDomain &&
+            !(initialBaseDomain === null && linkBaseDomain === null && initialHostname === linkHostname)
+          ) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+              this.logger.debug(`${link} HOSTNAME FAIL`);
+            }
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
+          }
+          if (!this.allowSubdomains && linkHostname !== initialHostname) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+              this.logger.debug(`${link} SUBDOMAIN FAIL`);
+            }
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
+          }
+        } else if (linkHostname !== initialHostname) {
+          // Even when external content links are allowed, reject external root
+          // URLs (homepages) unless subdomains are also allowed (exempt those).
+          if (this.allowSubdomains) {
+            // subdomain homepages are allowed
+          } else {
+            try {
+              const linkUrl = new URL(link);
+              const pathname = linkUrl.pathname.replace(/\/+$/, "") || "/";
+              if (pathname === "/") {
+                if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+                  this.logger.debug(`${link} EXTERNAL ROOT FAIL`);
+                }
+                denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+                return false;
+              }
+            } catch {
+              // ignore parse errors, handled elsewhere
+            }
+          }
+        }
 
         if (!this.allowBackwardCrawling) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
@@ -895,7 +937,7 @@ export class WebCrawler {
     ];
 
     try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
+      const urlWithoutQuery = url.split("?")[0].split("#")[0].toLowerCase();
       return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
