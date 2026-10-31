@@ -1,7 +1,7 @@
 import * as undici from "undici";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
-import { SSLError } from "../../error";
+import { DNSResolutionError, SSLError } from "../../error";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
   getSecureDispatcher,
@@ -205,6 +205,17 @@ export async function scrapeURLWithFetch(
         (error.cause as any).code === "CERT_HAS_EXPIRED"
       ) {
         throw new SSLError(meta.options.skipTlsVerification);
+      } else if (
+        error instanceof Error &&
+        error.cause &&
+        ((error.cause as any).code === "ENOTFOUND" ||
+          (error.cause as any).code === "EAI_AGAIN")
+      ) {
+        let hostname = meta.rewrittenUrl ?? meta.url;
+        try {
+          hostname = new URL(hostname).hostname;
+        } catch {}
+        throw new DNSResolutionError(hostname);
       } else {
         throw error;
       }
