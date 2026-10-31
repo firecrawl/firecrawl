@@ -61,4 +61,20 @@ describe("extractLinks integration", () => {
     const links = await extractLinks(html, "https://example.org/foo/bar");
     expect(links).toContain("https://example.org/foo/page.php");
   });
+
+  it("should strip basic-auth credentials from discovered http links", async () => {
+    const html = `
+      <html>
+        <body>
+          <a href="https://email@example.org/path">Malformed mailto</a>
+          <a href="https://user:pass@example.org/secure">Basic auth</a>
+        </body>
+      </html>
+    `;
+    const links = await extractLinks(html, "https://example.org/foo/bar");
+    expect(links).toContain("https://example.org/path");
+    expect(links).toContain("https://example.org/secure");
+    expect(links).not.toContain("https://email@example.org/path");
+    expect(links).not.toContain("https://user:pass@example.org/secure");
+  });
 });
