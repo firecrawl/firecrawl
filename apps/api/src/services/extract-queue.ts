@@ -1,4 +1,6 @@
 import amqp from "amqplib";
+import type { Logger } from "winston";
+import { AmqpConnection } from "../lib/amqp-connection";
 import { config } from "../config";
 import { logger as _logger } from "../lib/logger";
 
@@ -17,20 +19,7 @@ export type ExtractJobData = {
   externalRequestId?: string | null;
 };
 
-let connection: amqp.ChannelModel | null = null;
-let channel: amqp.Channel | null = null;
-
-async function getChannel(): Promise<amqp.Channel> {
-  if (channel) return channel;
-
-  const url = config.NUQ_RABBITMQ_URL;
-  if (!url) {
-    throw new Error("NUQ_RABBITMQ_URL is not configured");
-  }
-
-  connection = await amqp.connect(url);
-  channel = await connection.createChannel();
-
+async function setupChannel(channel: amqp.Channel): Promise<void> {
   // Set up the dead letter exchange
   await channel.assertExchange(EXTRACT_DLX, "direct", { durable: true });
 
@@ -53,30 +42,38 @@ async function getChannel(): Promise<amqp.Channel> {
       "x-delivery-limit": 1,
     },
   });
-
-  connection.on("close", () => {
-    _logger.warn("Extract queue connection closed");
-    connection = null;
-    channel = null;
-  });
-
-  connection.on("error", err => {
-    _logger.error("Extract queue connection error", { error: err });
-  });
-
-  return channel;
 }
+
+const publisher = new AmqpConnection(
+  () => config.NUQ_RABBITMQ_URL,
+  "Extract publisher",
+  setupChannel,
+);
+let jobsConsumer: AmqpConnection | null = null;
+let dlqConsumer: AmqpConnection | null = null;
 
 export async function addExtractJob(
   extractId: string,
   data: ExtractJobData,
 ): Promise<void> {
-  const ch = await getChannel();
+  const { channel: ch } = await publisher.connect();
   ch.sendToQueue(EXTRACT_QUEUE, Buffer.from(JSON.stringify(data)), {
     persistent: true,
     messageId: extractId,
   });
   _logger.info("Extract job added to queue", { extractId });
+}
+
+// After a broker restart the delivering channel may already be closed; the
+// broker redelivers unsettled messages, so log instead of crashing the worker.
+function settle(logger: Logger, action: string, fn: () => void) {
+  try {
+    fn();
+  } catch (error) {
+    logger.warn(`Could not ${action} extract message on a closed channel`, {
+      error,
+    });
+  }
 }
 
 export async function consumeExtractJobs(
@@ -86,81 +83,107 @@ export async function consumeExtractJobs(
     nack: () => void,
   ) => Promise<void>,
 ): Promise<void> {
-  const ch = await getChannel();
-  await ch.prefetch(1);
+  if (jobsConsumer) {
+    await jobsConsumer.connect();
+    return;
+  }
+  jobsConsumer = new AmqpConnection(
+    () => config.NUQ_RABBITMQ_URL,
+    "Extract consumer",
+    async (ch, invalidate) => {
+      await setupChannel(ch);
+      await ch.prefetch(1);
 
-  await ch.consume(
-    EXTRACT_QUEUE,
-    async msg => {
-      if (!msg) return;
+      await ch.consume(
+        EXTRACT_QUEUE,
+        async msg => {
+          if (!msg) {
+            invalidate();
+            return;
+          }
 
-      const data = JSON.parse(msg.content.toString()) as ExtractJobData;
-      const logger = _logger.child({
-        module: "extract-queue",
-        extractId: data.extractId,
-      });
+          const data = JSON.parse(msg.content.toString()) as ExtractJobData;
+          const logger = _logger.child({
+            module: "extract-queue",
+            extractId: data.extractId,
+          });
 
-      logger.info("Processing extract job");
+          logger.info("Processing extract job");
 
-      try {
-        await handler(
-          data,
-          () => ch.ack(msg),
-          () => ch.nack(msg, false, false), // Don't requeue - send to DLX
-        );
-      } catch (error) {
-        logger.error("Extract job handler threw an error", { error });
-        // Don't requeue - send to DLX
-        ch.nack(msg, false, false);
-      }
+          try {
+            await handler(
+              data,
+              () => settle(logger, "ack", () => ch.ack(msg)),
+              // Don't requeue - send to DLX
+              () => settle(logger, "nack", () => ch.nack(msg, false, false)),
+            );
+          } catch (error) {
+            logger.error("Extract job handler threw an error", { error });
+            // Don't requeue - send to DLX
+            settle(logger, "nack", () => ch.nack(msg, false, false));
+          }
+        },
+        { noAck: false },
+      );
+
+      _logger.info("Started consuming extract jobs");
     },
-    { noAck: false },
   );
-
-  _logger.info("Started consuming extract jobs");
+  await jobsConsumer.connect();
 }
 
 export async function consumeExtractDLQ(
   handler: (data: ExtractJobData) => Promise<void>,
 ): Promise<void> {
-  const ch = await getChannel();
-  await ch.prefetch(1);
+  if (dlqConsumer) {
+    await dlqConsumer.connect();
+    return;
+  }
+  dlqConsumer = new AmqpConnection(
+    () => config.NUQ_RABBITMQ_URL,
+    "Extract DLQ consumer",
+    async (ch, invalidate) => {
+      await setupChannel(ch);
+      await ch.prefetch(1);
 
-  await ch.consume(
-    EXTRACT_DLQ,
-    async msg => {
-      if (!msg) return;
+      await ch.consume(
+        EXTRACT_DLQ,
+        async msg => {
+          if (!msg) {
+            invalidate();
+            return;
+          }
 
-      const data = JSON.parse(msg.content.toString()) as ExtractJobData;
-      const logger = _logger.child({
-        module: "extract-dlq",
-        extractId: data.extractId,
-      });
+          const data = JSON.parse(msg.content.toString()) as ExtractJobData;
+          const logger = _logger.child({
+            module: "extract-dlq",
+            extractId: data.extractId,
+          });
 
-      logger.info("Processing dead-lettered extract job");
+          logger.info("Processing dead-lettered extract job");
 
-      try {
-        await handler(data);
-        ch.ack(msg);
-      } catch (error) {
-        logger.error("DLQ handler threw an error, requeueing", { error });
-        // Requeue DLQ messages on error so we don't lose them
-        ch.nack(msg, false, true);
-      }
+          try {
+            await handler(data);
+            settle(logger, "ack", () => ch.ack(msg));
+          } catch (error) {
+            logger.error("DLQ handler threw an error, requeueing", { error });
+            // Requeue DLQ messages on error so we don't lose them
+            settle(logger, "nack", () => ch.nack(msg, false, true));
+          }
+        },
+        { noAck: false },
+      );
+
+      _logger.info("Started consuming extract DLQ");
     },
-    { noAck: false },
   );
-
-  _logger.info("Started consuming extract DLQ");
+  await dlqConsumer.connect();
 }
 
 export async function shutdownExtractQueue(): Promise<void> {
-  if (channel) {
-    await channel.close();
-    channel = null;
-  }
-  if (connection) {
-    await connection.close();
-    connection = null;
-  }
+  await Promise.all([
+    publisher.close(),
+    jobsConsumer?.close(),
+    dlqConsumer?.close(),
+  ]);
 }
