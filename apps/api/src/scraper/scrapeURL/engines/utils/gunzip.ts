@@ -15,5 +15,9 @@ export async function gunzipBounded(
   buffer: Buffer,
   maxOutputLength: number = MAX_GUNZIPPED_FILE_SIZE,
 ): Promise<Buffer> {
-  return gunzipAsync(buffer, { maxOutputLength });
+  // Callers may tighten the cap but never raise it past the ceiling.
+  const bounded = Number.isFinite(maxOutputLength)
+    ? Math.min(maxOutputLength, MAX_GUNZIPPED_FILE_SIZE)
+    : MAX_GUNZIPPED_FILE_SIZE;
+  return gunzipAsync(buffer, { maxOutputLength: bounded });
 }

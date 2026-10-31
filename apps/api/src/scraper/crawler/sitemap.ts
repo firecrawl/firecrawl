@@ -41,7 +41,17 @@ async function _getSitemapXMLGZ(
     undefined,
     MAX_GUNZIPPED_FILE_SIZE,
   );
-  const decompressed = await gunzipBounded(buffer);
+  let decompressed: Buffer;
+  try {
+    decompressed = await gunzipBounded(buffer);
+  } catch (error) {
+    throw new SitemapError(
+      error instanceof RangeError
+        ? "The gzipped sitemap inflates past the 50 MB limit."
+        : "The gzipped sitemap could not be decompressed.",
+      error,
+    );
+  }
   return decompressed.toString("utf-8");
 }
 
