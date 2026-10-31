@@ -377,6 +377,25 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
   ".fc-decoration",
 ];
 
+/// Selectors from `EXCLUDE_NON_MAIN_TAGS` that are also used by CMSs as the
+/// wrapper of ordinary content blocks (CivicPlus puts every block of a page in
+/// `<div class="widget editor">`). They are only removed outside the page's
+/// main region.
+const EXCLUDE_OUTSIDE_MAIN_ONLY_TAGS: [&str; 2] = [".widget", "#widget"];
+
+fn is_inside_main_region(node: &NodeRef) -> bool {
+  node.ancestors().any(|ancestor| {
+    ancestor.as_element().is_some_and(|el| {
+      &*el.name.local == "main"
+        || el
+          .attributes
+          .borrow()
+          .get("role")
+          .is_some_and(|role| role.trim().eq_ignore_ascii_case("main"))
+    })
+  })
+}
+
 const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   "#main",
   ".swoogo-cols",
@@ -507,12 +526,16 @@ fn _transform_html_inner(
   }
 
   if opts.only_main_content {
-    for x in EXCLUDE_NON_MAIN_TAGS.iter() {
-      let x: Vec<_> = document
-        .select(x)
+    for selector in EXCLUDE_NON_MAIN_TAGS.iter() {
+      let matched: Vec<_> = document
+        .select(selector)
         .map_err(|_| "Failed to select tags")?
         .collect();
-      for tag in x {
+      let outside_main_only = EXCLUDE_OUTSIDE_MAIN_ONLY_TAGS.contains(selector);
+      for tag in matched {
+        if outside_main_only && is_inside_main_region(tag.as_node()) {
+          continue;
+        }
         if !FORCE_INCLUDE_MAIN_TAGS.iter().any(|x| {
           tag
             .as_node()
@@ -1038,4 +1061,54 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn main_content(html: &str) -> String {
+    _transform_html_inner(TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com/".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: true,
+      omce_signatures: None,
+    })
+    .unwrap()
+  }
+
+  #[test]
+  fn keeps_widget_inside_role_main() {
+    let out = main_content(
+      r#"<html><body>
+        <div id="mainWrapTS" class="mainWrap" role="main">
+          <div class="widget editor">No alcoholic beverages allowed.</div>
+        </div>
+        <div class="widget">Sidebar promo</div>
+      </body></html>"#,
+    );
+    assert!(out.contains("No alcoholic beverages allowed."), "{out}");
+    assert!(!out.contains("Sidebar promo"), "{out}");
+  }
+
+  #[test]
+  fn keeps_widget_inside_main_element() {
+    let out =
+      main_content(r#"<html><body><main><div class="widget">Body text</div></main></body></html>"#);
+    assert!(out.contains("Body text"), "{out}");
+  }
+
+  #[test]
+  fn still_removes_widget_outside_main() {
+    let out = main_content(
+      r#"<html><body>
+        <div role="main"><p>Article</p></div>
+        <div class="widget">Sidebar promo</div>
+      </body></html>"#,
+    );
+    assert!(out.contains("Article"), "{out}");
+    assert!(!out.contains("Sidebar promo"), "{out}");
+  }
 }
