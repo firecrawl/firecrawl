@@ -46,9 +46,16 @@ export function parseMonitorScheduleText(input: string): string {
     }
     assertDivides(interval, 60, "Minute");
     const startMinute = parseMinuteStart(minuteMatch[2]);
-    return startMinute === 0
-      ? `*/${interval} * * * *`
-      : `${startMinute}-59/${interval} * * * *`;
+    if (startMinute === 0) {
+      return `*/${interval} * * * *`;
+    }
+    // Build the full list of minutes in the cycle so the schedule wraps
+    // around the hour boundary instead of stopping at minute 59.
+    const minutes: number[] = [];
+    for (let m = startMinute; minutes.length < 60 / interval; m = (m + interval) % 60) {
+      minutes.push(m);
+    }
+    return `${minutes.join(",")} * * * *`;
   }
 
   const hourlyMatch = text.match(
