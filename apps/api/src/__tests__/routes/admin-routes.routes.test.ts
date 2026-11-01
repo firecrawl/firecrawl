@@ -145,6 +145,26 @@ it("redacts a path key in plain or URL-encoded form", async () => {
   );
 });
 
+it("keeps a path key out of metric route labels and not-found bodies", async () => {
+  vi.resetModules();
+  register.clear();
+  const { config } = await import("../../config.js");
+  config.BULL_AUTH_KEY = CURRENT;
+  config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
+  const { getRoutePattern } = await import("../../lib/http-metrics.js");
+  const { notFoundHandler } = await import("../../lib/not-found.js");
+
+  expect(
+    getRoutePattern({ path: `/admin/${PREVIOUS}/queues/api/queues` } as any),
+  ).toBe("/admin/:bullAuthKey/queues/api/queues");
+
+  const app = express();
+  app.use(notFoundHandler);
+  const response = await request(app).get(`/admin/${CURRENT}/nope`);
+  expect(response.status).toBe(404);
+  expect(JSON.stringify(response.body)).not.toContain(CURRENT);
+});
+
 describe("admin routes with the key in the path", () => {
   it("serves the same routes through the same key check and counts each use", async () => {
     const { app, logger } = await adminApp(true);
@@ -200,15 +220,34 @@ it("no caller puts the admin key in a URL", () => {
   const src = path.resolve(__dirname, "../..");
   // The server's own queue UI base path, which goes when the path routes do.
   const allowed = new Set([path.join(src, "index.ts")]);
-  const key = /BULL_AUTH_KEY(?!_PATH_ROUTES)/;
+  const keyRef = /BULL_AUTH_KEY(?!_PATH_ROUTES)/;
+  // Names bound to the key elsewhere in the file, such as `const k = config.BULL_AUTH_KEY`.
+  const alias =
+    /(?:\b(\w+)\s*=(?!=)[^;\n]*|\bBULL_AUTH_KEY(?:_PREVIOUS)?\s*:\s*(\w+)\b)/g;
 
-  const offenders = sourceFiles(src).filter(
-    file =>
-      !allowed.has(file) &&
-      readFileSync(file, "utf8")
-        .split("\n")
-        .some(line => line.includes("/admin/") && key.test(line)),
-  );
+  const offenders = sourceFiles(src).filter(file => {
+    if (allowed.has(file)) return false;
+    const text = readFileSync(file, "utf8");
+    const names = new Set<string>();
+    for (const line of text.split("\n")) {
+      if (!keyRef.test(line)) continue;
+      for (const match of line.matchAll(alias)) {
+        if (match[1] && /=[^;\n]*BULL_AUTH_KEY/.test(line.slice(match.index)))
+          names.add(match[1]);
+        if (match[2]) names.add(match[2]);
+      }
+    }
+    const aliasRef = names.size
+      ? new RegExp(`\\b(?:${[...names].join("|")})\\b`)
+      : null;
+    return text
+      .split("\n")
+      .some(
+        line =>
+          line.includes("/admin/") &&
+          (keyRef.test(line) || (aliasRef?.test(line) ?? false)),
+      );
+  });
 
   expect(offenders).toEqual([]);
 });

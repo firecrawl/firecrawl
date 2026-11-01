@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { redactAdminKey } from "./admin-auth";
 import { markRouteUnmatched } from "./http-metrics";
 
 const NOT_FOUND_DOCUMENTATION_URL =
@@ -113,6 +114,7 @@ export function notFoundHandler(
   // finalhandler's HTML page carried this; res.json does not set it.
   res.setHeader("X-Content-Type-Options", "nosniff");
 
+  const path = redactAdminKey(req.path);
   const allowed = [...allowedMethodsForPath(req.app, req.path)]
     .filter(method => method !== req.method)
     .sort();
@@ -122,7 +124,7 @@ export function notFoundHandler(
     res.status(405).json({
       success: false,
       code: "METHOD_NOT_ALLOWED",
-      error: `${req.method} ${req.path} is not supported. Use ${allowed.join(", ")} instead.`,
+      error: `${req.method} ${path} is not supported. Use ${allowed.join(", ")} instead.`,
       allowed_methods: allowed,
       documentation_url: NOT_FOUND_DOCUMENTATION_URL,
     });
@@ -132,7 +134,7 @@ export function notFoundHandler(
   res.status(404).json({
     success: false,
     code: "NOT_FOUND",
-    error: `${req.method} ${req.path} is not a Firecrawl API endpoint.`,
+    error: `${req.method} ${path} is not a Firecrawl API endpoint.`,
     documentation_url: NOT_FOUND_DOCUMENTATION_URL,
   });
 }
