@@ -10,6 +10,8 @@ const LINKS_RK = "job.links";
 
 const CONNECT_TIMEOUT = 5000;
 const DRAIN_TIMEOUT = 30000;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 type IndexWorkerMessage = {
   id: string;
@@ -23,6 +25,8 @@ class IndexerQueue {
   private publishChannel: amqp.Channel | null = null;
 
   private connectPromise: Promise<void> | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
 
   private closing: boolean = false;
   private noop: boolean | null = null;
@@ -37,6 +41,11 @@ class IndexerQueue {
 
     try {
       await this.connectPromise;
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+      this.reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
     } finally {
       this.connectPromise = null;
     }
@@ -80,15 +89,7 @@ class IndexerQueue {
       });
 
       this.cleanup();
-      setTimeout(
-        () =>
-          this.connect().catch(err =>
-            logger.error("Reconnection failed", {
-              err,
-            }),
-          ),
-        CONNECT_TIMEOUT,
-      );
+      this.scheduleReconnect();
     });
 
     this.connection.on("error", err => {
@@ -102,6 +103,31 @@ class IndexerQueue {
         err,
       });
     });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer || this.closing || this.noop) return;
+
+    const delayMs = this.reconnectDelayMs;
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      if (this.closing || this.noop || (this.connection && this.publishChannel))
+        return;
+
+      try {
+        await this.connect();
+        this.reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
+        logger.info("Index RabbitMQ reconnected successfully");
+      } catch (err) {
+        logger.error("Index RabbitMQ reconnection failed", {
+          err,
+          delayMs,
+        });
+        this.reconnectDelayMs = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+        this.scheduleReconnect();
+      }
+    }, delayMs);
+    this.reconnectTimer.unref?.();
   }
 
   async sendToWorker(message: IndexWorkerMessage): Promise<void> {
@@ -183,6 +209,10 @@ class IndexerQueue {
   async close(): Promise<void> {
     if (this.noop) return;
     this.closing = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
     try {
       await this.publishChannel?.close();
