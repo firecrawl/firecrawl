@@ -370,7 +370,6 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
   "#breadcrumbs",
   ".share",
   "#share",
-  ".widget",
   "#widget",
   ".cookie",
   "#cookie",
