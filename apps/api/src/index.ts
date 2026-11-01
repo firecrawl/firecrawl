@@ -16,7 +16,12 @@ import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
 import { adminInternalRouter, adminRouter } from "./routes/admin";
-import { adminAuth, adminPathKeyAuth, redactAdminKey } from "./lib/admin-auth";
+import {
+  AdminKeySlot,
+  adminAuth,
+  adminPathKeyAuth,
+  redactAdminKey,
+} from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
@@ -98,8 +103,6 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-const serverAdapter = new ExpressAdapter();
-
 const bullBoardQueues = [
   new BullMQAdapter(getGenerateLlmsTxtQueue()),
   new BullMQAdapter(getDeepResearchQueue()),
@@ -109,11 +112,6 @@ const bullBoardQueues = [
   // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
   // management UI, not here.
 ];
-
-const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: bullBoardQueues,
-  serverAdapter: serverAdapter,
-});
 
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
@@ -126,9 +124,22 @@ if (!config.BULL_AUTH_KEY) {
   app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
 
   if (config.BULL_AUTH_KEY_PATH_ROUTES) {
-    serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+    // One board per accepted key, since the UI links to its own base path.
+    const pathBoards: Partial<Record<AdminKeySlot, express.Router>> = {};
+    for (const [slot, key] of [
+      ["current", config.BULL_AUTH_KEY],
+      ["previous", config.BULL_AUTH_KEY_PREVIOUS],
+    ] as const) {
+      if (!key) continue;
+      const board = new ExpressAdapter();
+      board.setBasePath(`/admin/${key}/queues`);
+      createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
+      pathBoards[slot] = board.getRouter();
+    }
     const queuesPathRouter = express.Router({ mergeParams: true });
-    queuesPathRouter.use(adminPathKeyAuth("queues"), serverAdapter.getRouter());
+    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) =>
+      pathBoards[res.locals.adminKeySlot as AdminKeySlot]!(req, res, next),
+    );
     app.use("/admin/:adminKey/queues", queuesPathRouter);
   }
 }
