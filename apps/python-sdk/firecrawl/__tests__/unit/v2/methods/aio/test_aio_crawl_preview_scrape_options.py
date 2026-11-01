@@ -53,13 +53,19 @@ async def test_preview_preserves_nested_scrape_options(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("data", [{}, {"scrapeOptions": None}])
-async def test_preview_accepts_missing_or_null_scrape_options(data):
-    client = AsyncFirecrawlClient(api_key="test-api-key")
-    response = Mock(status_code=200)
+async def test_preview_accepts_missing_or_null_scrape_options(data, asynchronous):
+    client_type = AsyncFirecrawlClient if asynchronous else FirecrawlClient
+    client = client_type(api_key="test-api-key")
+    response = Mock(status_code=200, ok=True)
     response.json.return_value = {"success": True, "data": data}
-    client.async_http_client.post = AsyncMock(return_value=response)
+    http_client = client.async_http_client if asynchronous else client.http_client
+    mock_type = AsyncMock if asynchronous else Mock
+    http_client.post = mock_type(return_value=response)
 
-    preview = await client.crawl_params_preview("https://example.com", "Find articles")
+    preview = client.crawl_params_preview("https://example.com", "Find articles")
+    if asynchronous:
+        preview = await preview
 
     assert preview.scrape_options is None
