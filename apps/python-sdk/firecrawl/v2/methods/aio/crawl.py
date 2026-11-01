@@ -364,7 +364,26 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
     }
     for camel, snake in mapping.items():
         if camel in params_data:
-            converted[snake] = params_data[camel]
+            if camel == "scrapeOptions" and params_data[camel] is not None:
+                # Handle nested scrapeOptions conversion (camelCase -> snake_case)
+                scrape_opts_data = params_data[camel]
+                converted_scrape_opts = {}
+                scrape_field_mappings = {
+                    "includeTags": "include_tags",
+                    "excludeTags": "exclude_tags",
+                    "onlyMainContent": "only_main_content",
+                    "waitFor": "wait_for",
+                    "skipTlsVerification": "skip_tls_verification",
+                    "removeBase64Images": "remove_base64_images",
+                }
+                for scrape_camel, scrape_snake in scrape_field_mappings.items():
+                    if scrape_camel in scrape_opts_data:
+                        converted_scrape_opts[scrape_snake] = scrape_opts_data[scrape_camel]
+                if "formats" in scrape_opts_data:
+                    converted_scrape_opts["formats"] = scrape_opts_data["formats"]
+                converted[snake] = converted_scrape_opts
+            else:
+                converted[snake] = params_data[camel]
     if "webhook" in params_data:
         wk = params_data["webhook"]
         converted["webhook"] = wk
