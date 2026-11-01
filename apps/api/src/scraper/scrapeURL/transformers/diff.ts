@@ -128,9 +128,7 @@ export async function deriveDiff(
       const currentMarkdown = document.markdown!;
 
       const transformer = (x: string) =>
-        [...x.replace(/\s+/g, "").replace(/\[iframe\]\(.+?\)/g, "")]
-          .sort()
-          .join("");
+        x.replace(/\s+/g, "").replace(/\[iframe\]\(.+?\)/g, "");
       const isChanged =
         transformer(previousMarkdown) !== transformer(currentMarkdown);
       const changeStatus =
