@@ -87,10 +87,18 @@ other variables in the API container's environment.
 | `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
 
 Header-authenticated routes: `GET /admin/ops/redis-health`,
-`GET /admin/ops/autumn-health`, `POST /admin/ops/acuc-cache-clear`,
+`GET /admin/ops/autumn-health`, `GET /admin/ops/feng-check`,
+`POST /admin/ops/acuc-cache-clear`,
 `POST /admin/ops/ip-restriction-cache-clear`,
-`POST /admin/ops/key-restriction-cache-clear` and
-`POST /admin/ops/concurrency-queue-backfill`.
+`POST /admin/ops/key-restriction-cache-clear`,
+`POST /admin/ops/concurrency-queue-backfill`, `GET /admin/ops/metrics`,
+`GET /admin/ops/nuq-metrics`, `GET /admin/ops/nuq-fdb-metrics`,
+`GET /admin/ops/index-queue-prometheus`, `GET /admin/ops/precrawl`,
+`POST /admin/ops/fsearch` and the queue UI at `/admin/ops/queues`.
+`POST /admin/ops/crawl-monitor` takes the admin key in the
+`x-firecrawl-admin-key` header, because its `Authorization` header carries a
+team API key. Each `/admin/<key>/...` route serves the same handler through the
+same key check.
 
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
@@ -101,8 +109,8 @@ search) and `POST /admin/crawl-monitor` (still requires an API key and credits).
 Anyone who can reach the port can use them.
 
 The `firecrawl_admin_path_route_requests_total` metric counts requests to the
-`/admin/<key>/...` routes, so you can confirm nothing still uses them before
-turning them off.
+`/admin/<key>/...` routes by `route` and `caller` (never the key), so you can
+confirm nothing still uses them before turning them off.
 
 Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)
