@@ -132,7 +132,7 @@ if (!config.BULL_AUTH_KEY) {
     ] as const) {
       if (!key) continue;
       const board = new ExpressAdapter();
-      board.setBasePath(`/admin/${key}/queues`);
+      board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
       createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
       pathBoards[slot] = board.getRouter();
     }
