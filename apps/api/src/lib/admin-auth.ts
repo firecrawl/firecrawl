@@ -26,8 +26,10 @@ export function secretsMatch(
 
 export const ADMIN_KEY_HEADER = "x-firecrawl-admin-key";
 
+export type AdminKeySlot = "current" | "previous";
+
 // The one admin key check, shared by the header and path forms.
-function matchAdminKey(provided: string | null): "current" | "previous" | null {
+function matchAdminKey(provided: string | null): AdminKeySlot | null {
   if (secretsMatch(provided, config.BULL_AUTH_KEY)) return "current";
   if (secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS)) return "previous";
   return null;
@@ -37,7 +39,15 @@ function matchAdminKey(provided: string | null): "current" | "previous" | null {
 export function redactAdminKey(path: string): string {
   return path
     .split("/")
-    .map(segment => (matchAdminKey(segment) ? ":bullAuthKey" : segment))
+    .map(segment => {
+      let decoded = segment;
+      try {
+        decoded = decodeURIComponent(segment);
+      } catch {}
+      return matchAdminKey(segment) || matchAdminKey(decoded)
+        ? ":bullAuthKey"
+        : segment;
+    })
     .join("/");
 }
 
@@ -141,7 +151,7 @@ function callerOf(req: Request): string {
  * unknown path. Use inside a router created with `mergeParams: true`.
  */
 export function adminPathKeyAuth(route?: "queues") {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const params = req.params as Record<string, string | undefined>;
     const matched = matchAdminKey(params.adminKey ?? null);
     if (!matched) return next("router");
@@ -151,6 +161,7 @@ export function adminPathKeyAuth(route?: "queues") {
       route: route ?? (ADMIN_PATH_ROUTE_NAMES.has(segment) ? segment : "other"),
       caller: callerOf(req),
     });
+    res.locals.adminKeySlot = matched;
     logAdminAuthenticated(req, matched);
     next();
   };

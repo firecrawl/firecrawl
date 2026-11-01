@@ -109,6 +109,19 @@ describe("admin routes with the key in a header", () => {
     }
   });
 
+  it("serves crawl-monitor with either key in the admin key header", async () => {
+    const { app } = await adminApp(false);
+    for (const key of [CURRENT, PREVIOUS]) {
+      const response = await request(app)
+        .post("/admin/ops/crawl-monitor")
+        .set("x-firecrawl-admin-key", key);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ route: "crawl-monitor" });
+    }
+    const missing = await request(app).post("/admin/ops/crawl-monitor");
+    expect(missing.status).toBe(401);
+  });
+
   it("refuses every keyed route under /admin/ops without the key", async () => {
     const { app } = await adminApp(false);
     for (const [method, route] of KEYED_ROUTES) {
@@ -116,6 +129,20 @@ describe("admin routes with the key in a header", () => {
       expect(response.status, route).toBe(401);
     }
   });
+});
+
+it("redacts a path key in plain or URL-encoded form", async () => {
+  vi.resetModules();
+  register.clear();
+  const { config } = await import("../../config.js");
+  config.BULL_AUTH_KEY = "key/with+chars";
+  const { redactAdminKey } = await import("../../lib/admin-auth.js");
+  expect(redactAdminKey("/admin/key%2Fwith%2Bchars/metrics")).toBe(
+    "/admin/:bullAuthKey/metrics",
+  );
+  expect(redactAdminKey("/admin/%E0%A4%A/metrics")).toBe(
+    "/admin/%E0%A4%A/metrics",
+  );
 });
 
 describe("admin routes with the key in the path", () => {
@@ -130,6 +157,10 @@ describe("admin routes with the key in the path", () => {
       expect(response.status, route).toBe(200);
       expect(response.body).toEqual({ route });
     }
+
+    const monitor = await request(app).post(`/admin/${CURRENT}/crawl-monitor`);
+    expect(monitor.status).toBe(200);
+    expect(monitor.body).toEqual({ route: "crawl-monitor" });
 
     const counted = await register.getSingleMetric(COUNTER)!.get();
     expect(counted.values).toContainEqual(
@@ -169,10 +200,14 @@ it("no caller puts the admin key in a URL", () => {
   const src = path.resolve(__dirname, "../..");
   // The server's own queue UI base path, which goes when the path routes do.
   const allowed = new Set([path.join(src, "index.ts")]);
-  const keyInUrl = /\/admin\/\$\{[^}]*BULL_AUTH_KEY[^}]*\}/;
+  const key = /BULL_AUTH_KEY(?!_PATH_ROUTES)/;
 
   const offenders = sourceFiles(src).filter(
-    file => !allowed.has(file) && keyInUrl.test(readFileSync(file, "utf8")),
+    file =>
+      !allowed.has(file) &&
+      readFileSync(file, "utf8")
+        .split("\n")
+        .some(line => line.includes("/admin/") && key.test(line)),
   );
 
   expect(offenders).toEqual([]);
