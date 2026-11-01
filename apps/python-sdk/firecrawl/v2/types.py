@@ -521,6 +521,7 @@ class Document(BaseModel):
     pages: Optional[List[PdfPage]] = None
     blocks: Optional[List[PdfPageBlocks]] = None
     tools: Optional[List["DiscoveredTool"]] = None
+    attributes: Optional[List[Dict[str, Any]]] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
