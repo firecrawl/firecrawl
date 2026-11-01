@@ -89,7 +89,7 @@ For the full checklist, see [references/project-intake.md](references/project-in
 | **Implement single-page extraction**                 | [firecrawl-build-scrape](../firecrawl-build-scrape/SKILL.md)             |
 | **Implement discovery-first flows**                  | [firecrawl-build-search](../firecrawl-build-search/SKILL.md)             |
 | **Implement post-scrape browser actions**            | [firecrawl-build-interact](../firecrawl-build-interact/SKILL.md)         |
-| **Search published research papers (biomedical, clinical, life-science, arXiv)** | [firecrawl-research-index](../firecrawl-research-index/SKILL.md) |
+| **Search published research papers (biomedical, clinical, life-science, arXiv)** | [firecrawl-research-index](https://github.com/firecrawl/skills/tree/main/skills/core/firecrawl-research-index) |
 | **Answer developer questions from issues, PRs, READMEs, or docs** | [firecrawl-developer-index](../firecrawl-developer-index/SKILL.md) |
 | **Verify the integration actually works**            | [references/verification.md](references/verification.md)                 |
 
