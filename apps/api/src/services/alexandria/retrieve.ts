@@ -391,17 +391,17 @@ export async function retrieveProviders(input: {
           input.orgId,
         ));
         const orgId = input.orgId;
-        const lock = (feature: string) =>
+        const lock = (feature: string, lockId: string) =>
           autumnService.lockCredits({
             teamId: input.teamId,
             orgId,
             value: maximumCredits,
-            lockId: `alexandria_${id}`,
+            lockId,
             expiresAt: record.deadline + HOLD_GRACE_MS,
             featureId: feature,
             properties,
           });
-        hold = await lock(featureId);
+        hold = await lock(featureId, `alexandria_${id}`);
         // MCP credits can't reach team-scoped grants such as coupons, so a
         // hosted MCP hold they refuse is tried on the team's own credits.
         if (
@@ -409,7 +409,7 @@ export async function retrieveProviders(input: {
           (!hold.reason || hold.reason === "out_of_credits") &&
           featureId !== teamFeatureId
         ) {
-          hold = await lock(teamFeatureId);
+          hold = await lock(teamFeatureId, `alexandria_${id}_team`);
           if (hold.status === "locked") {
             featureId = teamFeatureId;
             hostedMcp = false;

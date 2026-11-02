@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   checkCredits: vi.fn(),
   markHostedMcp: vi.fn(),
   clearHostedMcp: vi.fn(),
+  markUsedPrompt: vi.fn(),
   cameFromHostedMcp: vi.fn(),
   usedPrompt: vi.fn(),
   settleOnce: vi.fn(),
@@ -82,7 +83,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   ),
   listUnsettledHangarSessions: vi.fn(),
   didBrowserSessionUsePrompt: mocks.usedPrompt,
-  markBrowserSessionUsedPrompt: vi.fn(),
+  markBrowserSessionUsedPrompt: mocks.markUsedPrompt,
   markBrowserSessionHostedMcp: mocks.markHostedMcp,
   clearBrowserSessionHostedMcp: mocks.clearHostedMcp,
   didBrowserSessionComeFromHostedMcp: mocks.cameFromHostedMcp,
@@ -266,6 +267,18 @@ describe("browser sessions from hosted MCP calls", () => {
     await reserveBrowserPromptCredits(makeReq(true) as any, session);
     expect(mocks.markHostedMcp).not.toHaveBeenCalled();
     expect(mocks.clearHostedMcp).toHaveBeenCalledWith("session-1");
+  });
+
+  it("refuses a team-credit prompt whose session can't be moved off MCP credits", async () => {
+    mocks.checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 1000 });
+    mocks.clearHostedMcp.mockRejectedValue(new Error("redis down"));
+
+    await expect(
+      reserveBrowserPromptCredits(makeReq(true) as any, session),
+    ).rejects.toThrow("redis down");
+    expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
   });
 
   it.each([

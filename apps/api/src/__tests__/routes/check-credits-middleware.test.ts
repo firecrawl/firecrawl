@@ -480,6 +480,38 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     ).toEqual(["MCP_CREDITS", "CREDITS", "MCP_CREDITS"]);
   });
 
+  it("clamps the crawl limit against the team's credits when they cover more", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 40 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 40 });
+
+    const req = buildReq({
+      auth: { ...hostedMcpAuth },
+      body: { limit: 100 },
+    });
+    const { res } = await runMiddleware(req, spendsMcpCredits);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.body.limit).toBe(40);
+    expect(req.auth.hostedMcp).toBe(false);
+    expect(
+      checkCreditsMock.mock.calls.map(([check]) => check.featureId),
+    ).toEqual(["MCP_CREDITS", "CREDITS", "CREDITS"]);
+  });
+
+  it("keeps the MCP refusal when the team-credit check can't be answered", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce(null);
+
+    const req = buildReq({ auth: { ...hostedMcpAuth } });
+    const { res, nextCalled } = await runMiddleware(req, spendsMcpCredits);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(nextCalled).toBe(false);
+  });
+
   it("bills a hosted MCP call on the team's own credits when MCP credits can't cover it", async () => {
     checkCreditsMock
       .mockResolvedValueOnce({ allowed: false, remaining: 0 })

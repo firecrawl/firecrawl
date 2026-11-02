@@ -249,16 +249,12 @@ describe("gateAgentCredits for a hosted MCP run", () => {
     ]);
   });
 
-  it("fails open when the team-credit fallback check can't be answered", async () => {
+  it("keeps the MCP refusal when the team-credit check can't be answered", async () => {
     checkCredits
       .mockResolvedValueOnce({ allowed: false, remaining: 0 })
       .mockResolvedValueOnce(null);
 
-    expect(await hostedGate(1000)).toEqual({
-      allowed: true,
-      maxCredits: 1000,
-      stopOnInsufficientCredits: false,
-    });
+    expect(await hostedGate(1000)).toEqual({ allowed: false, balance: 0 });
   });
 
   it("refuses like any run when both checks refuse", async () => {

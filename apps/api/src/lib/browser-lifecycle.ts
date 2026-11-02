@@ -76,13 +76,17 @@ async function checkBrowserCredits(
   req: RequestWithAuth<any, any, any>,
   params: TrackCreditsParams,
 ) {
-  if (!req.auth.hostedMcp) return autumnService.checkCredits(params);
+  if (!req.auth.hostedMcp)
+    return {
+      result: await autumnService.checkCredits(params),
+      onTeamCredits: false,
+    };
   const gate = await checkHostedMcpCredits({
     ...params,
     featureId: CREDITS_FEATURE_ID,
   });
   if (gate.onTeamCredits) req.auth.hostedMcp = false;
-  return gate.result;
+  return gate;
 }
 
 /** Returns the effective session policy and rejects disallowed ZDR requests. */
@@ -196,7 +200,7 @@ async function createBrowserSessionInternal(
       ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
       : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
-    const credit = await checkBrowserCredits(req, {
+    const { result: credit } = await checkBrowserCredits(req, {
       teamId: req.auth.team_id,
       orgId: req.acuc.org_id,
       value: estimatedCredits,
@@ -444,9 +448,9 @@ export async function reserveBrowserPromptCredits(
     session.ttl_total * 1000,
     browserCreditsPerHour(true, session.zero_data_retention),
   );
-  const wasHostedMcp = req.auth.hostedMcp === true;
+  let onTeamCredits = false;
   if (session.should_bill && req.acuc?.org_id) {
-    const credit = await checkBrowserCredits(req, {
+    const gate = await checkBrowserCredits(req, {
       teamId: session.team_id,
       orgId: req.acuc.org_id,
       value: credits,
@@ -456,11 +460,12 @@ export async function reserveBrowserPromptCredits(
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
     });
-    if (credit !== null && !credit.allowed)
+    if (gate.result !== null && !gate.result.allowed)
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
       );
+    onTeamCredits = gate.onTeamCredits;
   }
   // The same row lock guards settlement: a prompt admitted before stop
   // records its rate before billing reads it, and a later prompt cannot
@@ -474,20 +479,16 @@ export async function reserveBrowserPromptCredits(
       !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+    // A hosted prompt on team credits bills the whole session there, and must
+    // not run if the session would still settle on the MCP credits that refused.
+    if (current.should_bill && onTeamCredits)
+      await clearBrowserSessionHostedMcp(current.id);
     await markBrowserSessionUsedPrompt(current.id);
     // The prompt rate is most of a session's charge, so a hosted MCP prompt
     // bills the session as hosted even when another call created it.
     if (current.should_bill && req.auth.hostedMcp)
       await markBrowserSessionHostedMcp(current.id).catch(error =>
         logger.warn("Failed to mark a hosted MCP browser session", {
-          sessionId: current.id,
-          error,
-        }),
-      );
-    // A hosted prompt that fell back to team credits bills the whole session there.
-    if (current.should_bill && wasHostedMcp && !req.auth.hostedMcp)
-      await clearBrowserSessionHostedMcp(current.id).catch(error =>
-        logger.warn("Failed to clear a hosted MCP browser session", {
           sessionId: current.id,
           error,
         }),

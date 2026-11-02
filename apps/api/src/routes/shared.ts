@@ -186,7 +186,7 @@ export function checkCreditsMiddleware(
         featureId,
       };
       // Gated on the balance its charge will be tracked on.
-      const gate =
+      const gate: Awaited<ReturnType<typeof checkHostedMcpCredits>> =
         mcpCredits && req.auth.hostedMcp
           ? await checkHostedMcpCredits(check)
           : {
@@ -208,9 +208,18 @@ export function checkCreditsMiddleware(
       }
 
       const success = autumnResult.allowed;
+      // A hosted call both balances refuse is clamped to whichever covers more.
+      const clampOn =
+        gate.teamRefusal && gate.teamRefusal.remaining > autumnResult.remaining
+          ? { remaining: gate.teamRefusal.remaining, featureId, onTeam: true }
+          : {
+              remaining: autumnResult.remaining,
+              featureId: gateFeatureId,
+              onTeam: false,
+            };
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
-      const remainingCredits = success ? Infinity : autumnResult.remaining;
+      const remainingCredits = success ? Infinity : clampOn.remaining;
       req.account = { remainingCredits };
       if (!success) {
         const requestedLimit = Number((req.body as any)?.limit);
@@ -236,10 +245,11 @@ export function checkCreditsMiddleware(
               path: req.path,
               apiKeyId: req.acuc?.api_key_id ?? null,
             },
-            featureId: gateFeatureId,
+            featureId: clampOn.featureId,
           });
 
           if (clampedResult === null || clampedResult.allowed) {
+            if (clampOn.onTeam) req.auth.hostedMcp = false;
             logger.warn("Adjusting limit to remaining credits", {
               teamId: req.auth.team_id,
               remainingCredits,
@@ -299,7 +309,7 @@ export function checkCreditsMiddleware(
               code: "mcp_credits_exhausted",
               requested_credits: requestedCredits,
               ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance before your plan credits, and together they can't cover this request${resetsAt ? `; it resets at ${resetsAt}` : ""}. To continue now, use the Firecrawl MCP server with an API key, which bills your team's credits directly, or upgrade your plan at https://firecrawl.dev/pricing.`,
+              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`,
             });
           }
 
