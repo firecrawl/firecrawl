@@ -116,8 +116,10 @@ interface InputMetadata {
  * The color of the element's own text as rendered: site builders (Wix,
  * Elementor, Framer) put a button's label in an inner span with its own
  * color, while the button or link itself keeps the page's inherited color.
- * The first descendant that directly holds text decides; the element's own
- * color when it holds the text itself or has none.
+ * The first rendered descendant that directly holds text decides; copies
+ * for screen readers or other breakpoints (display none, visibility hidden,
+ * clipped to a pixel) are passed over. The element's own color when it
+ * holds the text itself or has none.
  */
 export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
   try {
@@ -130,6 +132,18 @@ export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
       }
       return false;
     };
+    const rendered = (node: Element, style: CSSStyleDeclaration): boolean => {
+      if (style.display === "none" || style.visibility === "hidden") {
+        return false;
+      }
+      if (parseFloat(style.opacity) < 0.05) return false;
+      if (style.position === "absolute") {
+        // The visually-hidden pattern: positioned away and clipped to 1px.
+        const r = node.getBoundingClientRect();
+        if (r.width <= 1 || r.height <= 1) return false;
+      }
+      return true;
+    };
     if (hasOwnText(el)) return cs.getPropertyValue("color");
     const queue: Array<{ node: Element; depth: number }> = [{ node: el, depth: 0 }];
     for (let i = 0; i < queue.length && i < 60; i++) {
@@ -137,9 +151,9 @@ export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
       if (depth >= 6) continue;
       for (let c = 0; c < node.children.length; c++) {
         const child = node.children[c];
-        if (hasOwnText(child)) {
-          return getComputedStyleCached(child).getPropertyValue("color");
-        }
+        const childStyle = getComputedStyleCached(child);
+        if (!rendered(child, childStyle)) continue;
+        if (hasOwnText(child)) return childStyle.getPropertyValue("color");
         queue.push({ node: child, depth: depth + 1 });
       }
     }

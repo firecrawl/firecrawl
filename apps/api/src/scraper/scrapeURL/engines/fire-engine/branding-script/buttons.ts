@@ -20,20 +20,16 @@ const isOpaque = (color: string | null | undefined): boolean => {
 // "js-reveal" convention), and attributes that mark the same thing.
 const ENTRANCE_CLASS =
   /(?:^|\s)(?:elementor-invisible|wow|aos-init|animate__animated|[\w-]*reveal[\w-]*|[\w-]*fade-?in[\w-]*)(?:\s|$)/i;
-const ENTRANCE_ATTRS = [
-  "data-aos",
-  "data-framer-appear-id",
-  "data-motion-enter",
-  "data-w-id",
-];
+const ENTRANCE_ATTRS = ["data-aos", "data-framer-appear-id", "data-motion-enter"];
 
 /**
  * An element at opacity 0 (or visibility hidden) that is only waiting for its
  * entrance animation: in normal flow, not a dismissed overlay, and either
  * animated by CSS, slid out of place by a motion script (inline opacity 0 with
- * a transform), or tagged with a reveal class or attribute. A closed menu or
- * dialog is absolutely or fixed positioned, display none, or aria-hidden, and
- * none of these say it will appear.
+ * a translate), or tagged with a reveal class or attribute. A closed menu,
+ * accordion or dialog is absolutely or fixed positioned, display none, or
+ * aria-hidden, and none of these say it will appear. A transition alone is
+ * not proof either: a closed accordion fades too, so it needs a marker.
  */
 const isAppearing = (node: Element, cs: CSSStyleDeclaration): boolean => {
   if (cs.display === "none") return false;
@@ -50,19 +46,10 @@ const isAppearing = (node: Element, cs: CSSStyleDeclaration): boolean => {
 
   const animation = cs.getPropertyValue("animation-name");
   if (animation && animation !== "none") return true;
-  const transition = cs.getPropertyValue("transition-property");
-  const transitionTime = parseFloat(cs.getPropertyValue("transition-duration"));
-  if (
-    transition &&
-    transitionTime > 0 &&
-    /(?:^|,\s*)(?:all|opacity|transform)(?:,|$)/.test(transition)
-  ) {
-    return true;
-  }
   const inline = (node.getAttribute("style") || "").toLowerCase();
   if (
     /opacity:\s*0(?:[;\s]|$)/.test(inline) &&
-    /(?:transform|will-change)/.test(inline)
+    /transform:\s*[^;]*translate/.test(inline)
   ) {
     return true;
   }
@@ -83,20 +70,21 @@ export const isVisibleElement = (el: Element, rect: DOMRect): boolean => {
   if (!(rect.width > 0 && rect.height > 0)) return false;
   const cs = getComputedStyleCached(el);
   if (cs.display === "none") return false;
-  // visibility inherits: `el` reads hidden when any ancestor is. It stays
-  // hidden unless the ancestor that hides it (or `el` itself) is waiting on
-  // an entrance animation, as with Elementor's elementor-invisible.
-  let hiddenVisibility = cs.visibility === "hidden";
+  // visibility inherits: `el` reads hidden when any ancestor is. Each
+  // ancestor that sets it (hidden while its own parent is not) must be
+  // waiting on an entrance animation, as with Elementor's
+  // elementor-invisible; one that merely inherits is not judged, and one
+  // closed for good hides `el` whatever sits between them.
+  const checkVisibility = cs.visibility === "hidden";
   let node: Element | null = el;
   for (let depth = 0; node && depth < 15; depth++) {
     const nodeStyle = getComputedStyleCached(node);
     if (nodeStyle.display === "none") return false;
-    if (
-      hiddenVisibility &&
-      nodeStyle.visibility === "hidden" &&
-      isAppearing(node, nodeStyle)
-    ) {
-      hiddenVisibility = false;
+    if (checkVisibility && nodeStyle.visibility === "hidden") {
+      const parent = node.parentElement;
+      const setsIt =
+        !parent || getComputedStyleCached(parent).visibility !== "hidden";
+      if (setsIt && !isAppearing(node, nodeStyle)) return false;
     }
     if (parseFloat(nodeStyle.opacity) < 0.05) {
       const isPage =
@@ -105,7 +93,7 @@ export const isVisibleElement = (el: Element, rect: DOMRect): boolean => {
     }
     node = node.parentElement;
   }
-  return !hiddenVisibility;
+  return true;
 };
 
 /** Fixed or sticky (itself or an ancestor): its on-screen position doesn't scroll. */

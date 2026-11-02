@@ -120,14 +120,27 @@ describe("branding script button detection", () => {
       `<a href="/go" data-top="300" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 10px 20px; border-radius: 6px">${text}</a>`;
     const snaps = scan(
       `<div style="opacity: 0; position: absolute; transition-property: opacity; transition-duration: 0.3s">${cta("Menu item")}</div>
+       <!-- A closed accordion in normal flow fades too: a transition is not an entrance. -->
+       <div style="opacity: 0; transition-property: opacity; transition-duration: 0.3s">${cta("Accordion item")}</div>
+       <div style="opacity: 0; will-change: transform">${cta("Will change only")}</div>
        <div style="opacity: 0; position: relative" aria-hidden="true">${cta("Slide two")}</div>
        <div style="opacity: 0">${cta("Just transparent")}</div>
-       <div style="opacity: 0; position: fixed; transform: translateY(-100%); pointer-events: none">${cta("Filter bar")}</div>`,
+       <div style="opacity: 0; position: fixed; transform: translateY(-100%); pointer-events: none">${cta("Filter bar")}</div>
+       <!-- A dialog closed for good, with an entrance-animated box inside it. -->
+       <div style="visibility: hidden"><div class="elementor-invisible" style="visibility: hidden">${cta("Inside closed dialog")}</div></div>`,
     );
 
     // Links are sampled for typography regardless, so they appear in the
     // snapshots; what matters is that none of them counts as visible.
-    for (const text of ["Menu item", "Slide two", "Just transparent", "Filter bar"]) {
+    for (const text of [
+      "Menu item",
+      "Accordion item",
+      "Will change only",
+      "Slide two",
+      "Just transparent",
+      "Filter bar",
+      "Inside closed dialog",
+    ]) {
       expect(byText(snaps, text)?.visible, text).toBe(false);
     }
   });
@@ -149,13 +162,18 @@ describe("branding script button detection", () => {
   it("reports the label's color when the button's own color is only inherited", () => {
     const snaps = scan(
       `<button data-top="500" style="background-color: rgb(0, 0, 0); color: rgb(0, 0, 0)"><span style="color: rgb(255, 255, 255)">Subscribe Now</span></button>
-       <a href="/plain" data-top="600" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 8px 16px; border-radius: 6px">Plain label</a>`,
+       <a href="/plain" data-top="600" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 8px 16px; border-radius: 6px">Plain label</a>
+       <button data-top="700" style="background-color: rgb(0, 0, 0); color: rgb(0, 0, 0)"><span style="display: none; color: rgb(255, 0, 0)">Mobile copy</span><span class="sr-only" style="position: absolute; width: 1px; height: 1px; color: rgb(0, 255, 0)">Opens in a new tab</span><span style="color: rgb(255, 255, 255)">Desktop label</span></button>`,
     );
 
     expect(byText(snaps, "Subscribe Now")?.colors).toMatchObject({
       background: "rgb(0, 0, 0)",
       text: "rgb(255, 255, 255)",
     });
+    // Hidden copies for other breakpoints or screen readers are passed over.
+    expect(
+      snaps.find(s => s.text.startsWith("Mobile copy"))?.colors.text,
+    ).toBe("rgb(255, 255, 255)");
     expect(byText(snaps, "Plain label")?.colors.text).toBe("rgb(255, 255, 255)");
   });
 
