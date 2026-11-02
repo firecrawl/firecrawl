@@ -49,6 +49,7 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 
 interface SearchOptions {
   query: string;
@@ -516,10 +517,32 @@ export async function executeSearch(
       const rawContentEligible =
         config.SEARXNG_INCLUDE_RAW_CONTENT &&
         canServeFromRawContent(scrapeOptions) &&
-        !(threatPolicy && threatPolicy.mode !== "off");
+        !(threatPolicy && threatPolicy.mode !== "off") &&
+        // A team that enabled robots.txt checking on scrape must not have
+        // it silently skipped by serving backend-fetched text instead.
+        !flags?.checkRobotsOnScrape;
       const fastPathDocs = new Map<string, DocumentWithCostTracking>();
       const itemsStillToScrape = rawContentEligible
         ? itemsToScrape.filter(item => {
+            // getItemsToScrape already dropped blocklisted result URLs;
+            // re-check here so the fast path never serves a URL the
+            // scrape pipeline would refuse. If the check itself cannot
+            // run, fall back to scraping rather than serving. (The
+            // worker's post-redirect re-check cannot be replicated
+            // here — see the note on canServeFromRawContent.)
+            let blocked = true;
+            try {
+              blocked = isUrlBlocked(item.scrapeInput.url, flags, {
+                team_id: teamId,
+                org_id: orgId ?? null,
+                origin,
+              });
+            } catch {
+              blocked = true;
+            }
+            if (blocked) {
+              return true;
+            }
             const doc = rawContentDocument(item);
             if (doc) {
               fastPathDocs.set(item.scrapeInput.url, doc);
@@ -530,9 +553,10 @@ export async function executeSearch(
         : itemsToScrape;
 
       if (fastPathDocs.size > 0) {
-        logger.info(
-          `Serving ${fastPathDocs.size} search result(s) from backend raw content, scraping ${itemsStillToScrape.length}`,
-        );
+        logger.info("Serving search results from backend raw content", {
+          servedFromRawContent: fastPathDocs.size,
+          scraped: itemsStillToScrape.length,
+        });
       }
 
       const scrapedDocs =
@@ -615,6 +639,23 @@ export async function executeSearch(
       ...result,
       position: index + 1,
     }));
+  }
+
+  // `rawContent` is an internal hand-off from the search backend to the
+  // scrape phase, not part of the API response. Fast-path results have
+  // already had the text copied into `markdown` by mergeScrapedContent;
+  // every other result must not carry it out. Most importantly, it is
+  // unredacted backend text: a request whose scrape ran with redactPII (or
+  // a search with no scrape at all) must not receive it verbatim alongside
+  // — or instead of — the pipeline-processed document.
+  for (const results of [
+    searchResponse.web,
+    searchResponse.news,
+    searchResponse.images,
+  ]) {
+    for (const result of results ?? []) {
+      delete (result as { rawContent?: string }).rawContent;
+    }
   }
 
   const scrapeFormats = scrapeOptions?.formats

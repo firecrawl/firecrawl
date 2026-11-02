@@ -258,7 +258,17 @@ export function calculateScrapeCredits(
  * for a markdown-only request that carries no scrape behaviour of its own —
  * anything that needs the live page (actions, waiting, parsers, a browser
  * profile, custom headers, tag filters, PII redaction, prompt-injection
- * scanning, lockdown, …) must go through the real scrape pipeline.
+ * scanning, lockdown, …) must go through the real scrape pipeline. Because
+ * the text is main-content extraction, it also cannot satisfy a request
+ * that explicitly asked for the full page (`onlyMainContent: false`).
+ *
+ * Blocklist note: result URLs reach the fast path only via
+ * `getItemsToScrape`, which drops `isUrlBlocked` matches, and execute.ts
+ * re-checks the URL before serving. The scrape worker additionally
+ * re-checks the post-redirect final URL; the fast path cannot — the
+ * backend returns page text, not the final URL it fetched — so a result
+ * whose backend fetch was redirected onto a blocked host is a known
+ * residual gap of this path.
  */
 export function canServeFromRawContent(scrapeOptions: ScrapeOptions): boolean {
   const formats = scrapeOptions.formats ?? [];
@@ -267,6 +277,9 @@ export function canServeFromRawContent(scrapeOptions: ScrapeOptions): boolean {
   }
   const types = formats.map((f: any) => (typeof f === "string" ? f : f.type));
   if (!types.every(type => type === "markdown")) {
+    return false;
+  }
+  if (scrapeOptions.onlyMainContent === false) {
     return false;
   }
   if (scrapeOptions.actions && scrapeOptions.actions.length > 0) {

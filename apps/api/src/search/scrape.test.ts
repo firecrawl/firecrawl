@@ -120,6 +120,23 @@ describe("canServeFromRawContent", () => {
       canServeFromRawContent({ formats: markdown, lockdown: true } as any),
     ).toBe(false);
   });
+
+  it("rejects an explicit full-page request (onlyMainContent: false)", () => {
+    // The backend text is main-content extraction, so it cannot stand in
+    // for a request that asked for the whole page.
+    expect(
+      canServeFromRawContent({
+        formats: [{ type: "markdown" }],
+        onlyMainContent: false,
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: [{ type: "markdown" }],
+        onlyMainContent: true,
+      } as any),
+    ).toBe(true);
+  });
 });
 
 describe("rawContentDocument", () => {

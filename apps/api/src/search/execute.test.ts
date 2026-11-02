@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   inferToolIntent: vi.fn(),
   verifyTools: vi.fn(),
   getItemsToScrape: vi.fn(),
+  isUrlBlocked: vi.fn(),
   scrapeSearchResults: vi.fn(),
   mergeScrapedContent: vi.fn(),
   canServeFromRawContent: vi.fn(),
@@ -72,6 +73,9 @@ vi.mock("../lib/threat-protection/request", () => ({
 }));
 vi.mock("../lib/scrape-billing", () => ({
   calculateThreatScanCredits: vi.fn(() => 0),
+}));
+vi.mock("../scraper/WebScraper/utils/blocklist", () => ({
+  isUrlBlocked: mocks.isUrlBlocked,
 }));
 vi.mock("./safe-search", () => ({
   removeExplicitResults: mocks.removeExplicitResults,
@@ -847,6 +851,7 @@ describe("executeSearch query operators", () => {
 describe("executeSearch raw content fast path", () => {
   beforeEach(() => {
     mocks.config.SEARXNG_INCLUDE_RAW_CONTENT = true;
+    mocks.isUrlBlocked.mockReturnValue(false);
   });
 
   const webResult = {
@@ -926,5 +931,75 @@ describe("executeSearch raw content fast path", () => {
 
     expect(mocks.rawContentDocument).not.toHaveBeenCalled();
     expect(mocks.scrapeSearchResults).toHaveBeenCalledTimes(1);
+  });
+
+  it("never uses the fast path when the team checks robots.txt on scrape", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    await executeSearch(
+      { ...options([]), scrapeOptions },
+      { ...context, flags: { checkRobotsOnScrape: true } },
+      logger,
+    );
+
+    expect(mocks.rawContentDocument).not.toHaveBeenCalled();
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to scraping when the result URL is blocklisted", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    mocks.isUrlBlocked.mockReturnValue(true);
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    await executeSearch({ ...options([]), scrapeOptions }, context, logger);
+
+    expect(mocks.rawContentDocument).not.toHaveBeenCalled();
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledWith(
+      [item.scrapeInput],
+      expect.objectContaining({ scrapeOptions }),
+      logger,
+      context.flags,
+    );
+  });
+
+  it("does not expose rawContent on the returned response", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const fastDoc = {
+      document: { url: webResult.url, markdown: "the page text" },
+      costTracking: {},
+    };
+    mocks.rawContentDocument.mockReturnValue(fastDoc);
+
+    const result = await executeSearch(
+      { ...options([]), scrapeOptions },
+      context,
+      logger,
+    );
+
+    expect(result.response.web?.[0]).not.toHaveProperty("rawContent");
+  });
+
+  it("does not expose rawContent when nothing is scraped", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    const result = await executeSearch({ ...options([]) }, context, logger);
+
+    expect(mocks.getItemsToScrape).not.toHaveBeenCalled();
+    expect(result.response.web?.[0]).not.toHaveProperty("rawContent");
   });
 });
