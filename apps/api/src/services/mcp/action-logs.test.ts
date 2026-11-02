@@ -262,6 +262,18 @@ describe("MCP action log contract", () => {
     expect(input({ error_message: "Status code: 500" }).error_message).toBe(
       "Status code: 500",
     );
+    expect(
+      input({
+        error_message:
+          "{'password': 'hunter2', 'api_key': 'abc123secret'} {'Authorization': 'Basic dXNlcjpwYXNz'} {\"token\"=>\"t0k\"}",
+      }).error_message,
+    ).toBe(
+      "{'password': [redacted], 'api_key': [redacted]} {'Authorization': [redacted]} {\"token\"=>[redacted]}",
+    );
+    expect(
+      input({ error_message: "401 for Basic dXNlcjpwYXNz on Basic research" })
+        .error_message,
+    ).toBe("401 for [redacted] on Basic research");
     expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
       "x".repeat(300),
     );

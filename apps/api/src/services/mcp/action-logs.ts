@@ -19,9 +19,12 @@ const SECRET_PATTERN =
   /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
 const DETAIL_SECRET_PAIR = new RegExp(
-  '(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)"?)(\\s*[=:]\\s*)(?:"[^"]*"|\'[^\']*\'|(?:(?<=authorization"?\\s*[=:]\\s*)[A-Za-z]+\\s+)?[^\\s&#"\',;]+)',
+  "(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)[\"']?)(\\s*(?:=>|[=:])\\s*)(?:\"[^\"]*\"|'[^']*'|(?:(?<=authorization[\"']?\\s*(?:=>|[=:])\\s*)[A-Za-z]+\\s+)?[^\\s&#\"',;]+)",
   "gi",
 );
+// A Basic credential is base64 of "user:password"; only one that decodes
+// to a colon pair is redacted, so prose such as "Basic research" is kept.
+const DETAIL_BASIC_AUTH = /\bBasic\s+([A-Za-z0-9+/]{4,}={0,2})/gi;
 const DETAIL_QUERY_PAIR = /([?&][^\s=&#?]+=)[^\s&#]+/g;
 const DETAIL_URL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
 const DETAIL_TOKEN_RUN = /[A-Za-z0-9]{16,}/g;
@@ -190,14 +193,21 @@ function scrubbedUrl(url: string) {
 
 /**
  * Error messages and targets also lose URL userinfo, query values, fragments,
- * token-like path segments, bare query-string values and secret=value pairs.
+ * token-like path segments, bare query-string values, secret=value pairs
+ * (keys bare or quoted, as in JSON or Python and Ruby dicts) and Basic
+ * credentials.
  */
 function scrubbedDetail(text: string) {
   return text
     .replace(SECRET_PATTERN_ALL, "[redacted]")
     .replace(DETAIL_URL, scrubbedUrl)
     .replace(DETAIL_QUERY_PAIR, "$1[redacted]")
-    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]");
+    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]")
+    .replace(DETAIL_BASIC_AUTH, (match, token: string) =>
+      Buffer.from(token, "base64").toString("latin1").includes(":")
+        ? "[redacted]"
+        : match,
+    );
 }
 
 /**
