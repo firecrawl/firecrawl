@@ -262,6 +262,21 @@ async function scrapeInteractInternal(
     }
   }
 
+  // Refused before a session is created or credits are reserved. The model
+  // depends on zeroDataRetention, which no longer changes past this point.
+  if (prompt && !rawCode) {
+    try {
+      getBrowserAgentModel({ zeroDataRetention, teamFlags: req.acuc?.flags });
+    } catch (err) {
+      if (!(err instanceof UsOnlyUnavailableError)) throw err;
+      return res.status(403).json({
+        success: false,
+        code: err.code,
+        error: err.message,
+      });
+    }
+  }
+
   if (!session) {
     if (!replayContext) {
       return res.status(409).json({
@@ -350,27 +365,6 @@ async function scrapeInteractInternal(
     if (prompt && !rawCode) {
       logger.info("Starting agent loop from prompt", { prompt, timeout });
 
-      const agentTrace = {
-        sessionId: session.id,
-        scrapeId,
-        teamId: req.auth.team_id,
-        ...traceIdentity,
-        zeroDataRetention,
-        teamFlags: req.acuc?.flags,
-        ...traceScrapeContext,
-      };
-
-      try {
-        getBrowserAgentModel(agentTrace);
-      } catch (err) {
-        if (!(err instanceof UsOnlyUnavailableError)) throw err;
-        return res.status(403).json({
-          success: false,
-          code: err.code,
-          error: err.message,
-        });
-      }
-
       try {
         await reserveBrowserPromptCredits(req, session);
       } catch (error) {
@@ -383,7 +377,15 @@ async function scrapeInteractInternal(
           session.browser_id,
           timeout,
           logger,
-          agentTrace,
+          {
+            sessionId: session.id,
+            scrapeId,
+            teamId: req.auth.team_id,
+            ...traceIdentity,
+            zeroDataRetention,
+            teamFlags: req.acuc?.flags,
+            ...traceScrapeContext,
+          },
         );
       } catch (err) {
         logger.error("Agent loop failed", { error: err });

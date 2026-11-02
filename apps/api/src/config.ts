@@ -265,11 +265,8 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
-  // Key and endpoint for US-only teams; OPENAI_API_KEY is never used for them.
+  // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
-  OPENAI_US_BASE_URL: emptyStringAsDefault(
-    z.string().url().default("https://us.api.openai.com/v1"),
-  ),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),

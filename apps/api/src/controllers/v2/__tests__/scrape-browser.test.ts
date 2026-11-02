@@ -508,6 +508,8 @@ describe("scrapeInteractController", () => {
       await runPrompt();
       expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
         ignoreModelOverride: true,
+        teamFlags: undefined,
+        feature: "Interact",
       });
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({

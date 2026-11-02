@@ -10,7 +10,10 @@ import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { getTeamIdSyncB } from "../../lib/extract/team-id-sync";
 import { ExtractResult } from "../../lib/extract/types";
-import { performExtraction_F0 } from "../../lib/extract/fire-0/extraction-service-f0";
+import {
+  checkExtractAvailable,
+  performExtraction_F0,
+} from "../../lib/extract/fire-0/extraction-service-f0";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
@@ -97,14 +100,6 @@ async function oldExtract(
       error: error instanceof Error ? error.message : "Unknown error",
     });
 
-    if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({
-        success: false,
-        code: error.code,
-        error: error.message,
-      });
-    }
-
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -132,6 +127,17 @@ export async function extractController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+    });
+  }
+
+  try {
+    checkExtractAvailable(req.acuc?.flags);
+  } catch (error) {
+    if (!(error instanceof UsOnlyUnavailableError)) throw error;
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
     });
   }
 

@@ -70,11 +70,12 @@ const providerList: Record<Provider, any> = {
 };
 
 // Without its own key the US client must not exist: createOpenAI would fall
-// back to the OPENAI_API_KEY environment variable.
+// back to the OPENAI_API_KEY environment variable. The endpoint is fixed so no
+// configuration can send US-only traffic elsewhere.
 const usOpenAI = config.OPENAI_US_API_KEY
   ? createOpenAI({
       apiKey: config.OPENAI_US_API_KEY,
-      baseURL: config.OPENAI_US_BASE_URL,
+      baseURL: "https://us.api.openai.com/v1",
     })
   : undefined;
 

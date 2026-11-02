@@ -109,15 +109,15 @@ export async function enhanceBrandingWithLLM(
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
 
-  if (isUsOnly(input.teamFlags ?? undefined)) {
-    brandingRoutedTotal.inc({ model: "llm", reason: "us_only" });
-  } else if (!isJevBrandingEnabled()) {
+  // US-only teams skip Jev and are counted once getModel finds a US route.
+  const usOnly = isUsOnly(input.teamFlags ?? undefined);
+  if (!usOnly && !isJevBrandingEnabled()) {
     brandingRoutedTotal.inc({
       model: "llm",
       // No key (self-hosted without TypeSafe) is not the switch turned off.
       reason: config.TYPESAFE_API_KEY ? "jev_off" : "jev_no_key",
     });
-  } else {
+  } else if (!usOnly) {
     const jev = await enhanceBrandingWithJev(input);
     if (jev) {
       brandingRoutedTotal.inc({ model: "jev", reason: "jev" });
@@ -150,6 +150,7 @@ export async function enhanceBrandingWithLLM(
     teamFlags: input.teamFlags,
     feature: "Branding format",
   });
+  if (usOnly) brandingRoutedTotal.inc({ model: "llm", reason: "us_only" });
   // getModel honors a MODEL_NAME override; record the model that actually ran.
   const modelId =
     (typeof model === "string" ? model : model.modelId) || modelName;

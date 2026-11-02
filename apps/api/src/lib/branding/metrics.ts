@@ -75,6 +75,7 @@ for (const [model, reason] of [
   ["llm", "jev_off"],
   ["llm", "jev_no_key"],
   ["llm", "jev_unavailable"],
+  ["llm", "us_only"],
 ]) {
   brandingRoutedTotal.inc({ model, reason }, 0);
 }

@@ -246,8 +246,10 @@ function isUntraced(trace: BrowserAgentTraceContext | undefined): boolean {
 }
 
 // Throws UsOnlyUnavailableError when a US-only team has no US route, so
-// callers can refuse before reserving credits.
-export function getBrowserAgentModel(trace?: BrowserAgentTraceContext) {
+// callers can refuse before creating a session or reserving credits.
+export function getBrowserAgentModel(
+  trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
+) {
   const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
   return trace?.zeroDataRetention === true
     ? getModel("gpt-6-luna", "openai", {

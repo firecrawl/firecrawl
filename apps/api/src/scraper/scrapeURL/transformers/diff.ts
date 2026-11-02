@@ -218,11 +218,14 @@ export async function deriveDiff(
             document.changeTracking.json = extract;
           }
         } catch (error) {
-          meta.logger.error("Error generating structured diff with LLM", {
-            error,
-          });
+          const usOnly = error instanceof UsOnlyUnavailableError;
+          if (!usOnly) {
+            meta.logger.error("Error generating structured diff with LLM", {
+              error,
+            });
+          }
           document.warning =
-            (error instanceof UsOnlyUnavailableError
+            (usOnly
               ? "Change tracking JSON mode is not available for teams restricted to US-only processing."
               : "Structured diff generation failed.") +
             (document.warning ? ` ${document.warning}` : "");

@@ -189,6 +189,7 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  warning?: string;
   audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";

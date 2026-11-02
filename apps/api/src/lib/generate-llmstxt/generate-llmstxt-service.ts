@@ -99,6 +99,10 @@ export async function performGenerateLlmsTxt(
   const acuc = await getACUCTeam(teamId);
 
   try {
+    // Built before the cache lookup and the per-page loop, whose errors are
+    // swallowed, so a US-only refusal fails the generation in every case.
+    const descriptionModels = llmsTxtModels(acuc?.flags);
+
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
@@ -147,10 +151,6 @@ export async function performGenerateLlmsTxt(
         },
       };
     }
-
-    // Built before the per-page loop, whose errors are swallowed, so a
-    // US-only refusal fails the generation instead of emptying it.
-    const descriptionModels = llmsTxtModels(acuc?.flags);
 
     // If not in cache, proceed with generation
     // First, get all URLs from the map controller
