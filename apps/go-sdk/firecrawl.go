@@ -675,6 +675,9 @@ func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPap
 		if opts.To != "" {
 			values.Set("to", opts.To)
 		}
+		if opts.Sort != "" {
+			values.Set("sort", opts.Sort)
+		}
 	}
 
 	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())

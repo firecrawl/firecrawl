@@ -68,7 +68,7 @@ GITHUB_SEARCH_DEPRECATION_MSG = (
 
 
 _SEARCH_PAPERS_TEMPLATE = """
-Search the research paper index by abstract relevance.
+Search the research paper index.
 
 Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of the
 corpus — biomedical and life sciences) plus arXiv (physics, mathematics,
@@ -89,6 +89,10 @@ Args:
         ``categories`` argument of ``search()``.
     from_date: Inclusive lower bound on publication date (``YYYY-MM-DD``).
     to_date: Inclusive upper bound on publication date (``YYYY-MM-DD``).
+    sort: ``relevance`` (default) or ``date_desc``, which returns the newest
+        of the most relevant matches, newest first by created date. It does
+        not list every paper in a date range; add ``from_date`` (and
+        ``to_date``) for that.
 
 Returns:
     Raw API ``dict`` with ``success`` and ``results``. Keys are camelCase
@@ -229,7 +233,7 @@ AIO_SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIE
 # ---------------------------------------------------------------------------
 
 _CLIENT_SEARCH_PAPERS_TEMPLATE = """
-Search the research paper index by abstract relevance.
+Search the research paper index.
 
 Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of
 the corpus — biomedical and life sciences) plus arXiv (physics,
@@ -243,6 +247,10 @@ searches the paper index itself and returns ranked paper records.
 Args:
     query: Natural-language query, e.g. ``"CRISPR base editing
         off-target effects in primary human T cells"``.
+    sort: ``relevance`` (default) or ``date_desc``, which returns the newest
+        of the most relevant matches, newest first by created date. It does
+        not list every paper in a date range; add ``from_date`` (and
+        ``to_date``) for that.
     **kwargs: ``k``, ``authors``, ``categories``, ``from_date``,
         ``to_date``.
 

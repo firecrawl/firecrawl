@@ -2265,6 +2265,9 @@ export interface PaperResult {
   ids?: IdMap;
   title: string;
   abstract: string;
+  authors?: string[];
+  createdDate?: string;
+  updateDate?: string;
   /** Final ranking score (post-rerank when enabled). Not normalized. */
   score: number;
   /** Present on similarity results. */
@@ -2395,6 +2398,7 @@ export interface SearchPapersOptions {
   from?: string;
   /** Inclusive upper bound on created/updated date (lexicographic). */
   to?: string;
+  sort?: "relevance" | "date_desc";
 }
 
 /** Options for `research.getPaper`. */

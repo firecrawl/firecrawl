@@ -1,5 +1,13 @@
 ## CHANGELOG
 
+## [2.21.9] - 2026-11-04
+
+### Added
+
+- `SearchPapersOptions::sort` accepts `relevance` or `date_desc`.
+- `PaperResult` includes optional `created_date` and `update_date` strings
+  in `YYYY-MM-DD` format for search and related-paper results.
+
 ## [2.21.8] - 2026-10-20
 
 ### Added

@@ -27,7 +27,7 @@ covering physics, mathematics and computer science.
    ``articleRank``, ``seedOverlap``, ``poolSize`` and so on.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import quote
 import warnings
 
@@ -82,6 +82,7 @@ async def search_papers(
     categories: Optional[List[str]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    sort: Optional[Literal["relevance", "date_desc"]] = None,
 ) -> Dict[str, Any]:
     return await _get(
         client,
@@ -95,6 +96,7 @@ async def search_papers(
                 "categories": categories,
                 "from": from_date,
                 "to": to_date,
+                "sort": sort,
                 "origin": _origin(client),
             }
         ),

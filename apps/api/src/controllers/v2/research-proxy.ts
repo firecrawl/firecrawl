@@ -89,6 +89,7 @@ const searchPapersSchema = z.strictObject({
   categories: multiString,
   from: dateSchema,
   to: dateSchema,
+  sort: z.enum(["relevance", "date_desc"]).optional(),
   ...commonQuery,
 });
 
@@ -572,7 +573,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
     wrap(
       createResearchController(
         searchPapersSchema,
-        ["query", "k", "authors", "categories", "from", "to"],
+        ["query", "k", "authors", "categories", "from", "to", "sort"],
         {
           kind: "research_paper_search",
           table: "research_paper_searches",

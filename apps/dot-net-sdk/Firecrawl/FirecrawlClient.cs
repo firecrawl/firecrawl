@@ -555,7 +555,8 @@ public class FirecrawlClient
                 ["authors"] = options?.Authors,
                 ["categories"] = options?.Categories,
                 ["from"] = options?.From,
-                ["to"] = options?.To
+                ["to"] = options?.To,
+                ["sort"] = options?.Sort
             }),
             cancellationToken);
     }
@@ -921,7 +922,7 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
-    private const string SdkOrigin = "dotnet-sdk@1.15.1";
+    private const string SdkOrigin = "dotnet-sdk@1.15.2";
 
     private static Dictionary<string, object> BuildBody(object? options)
     {

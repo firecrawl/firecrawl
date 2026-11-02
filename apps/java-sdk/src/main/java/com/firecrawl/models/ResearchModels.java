@@ -20,6 +20,10 @@ public final class ResearchModels {
         public Double score;
         public Integer year;
         public List<String> authors;
+        @JsonProperty("createdDate")
+        public String createdDate;
+        @JsonProperty("updateDate")
+        public String updateDate;
         public String venue;
         public String url;
         public Map<String, Object> signals;
@@ -101,6 +105,12 @@ public final class ResearchModels {
         public List<String> categories;
         public String from;
         public String to;
+        /**
+         * "relevance" (default) or "date_desc", which returns the newest of the most
+         * relevant matches, newest first by created date. It does not list every paper
+         * in a date range. Set {@code from} (and {@code to}) for that.
+         */
+        public String sort;
     }
 
     public static class ReadPaperOptions {
