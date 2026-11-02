@@ -696,13 +696,12 @@ async function scrapeURLLoopIter(
         error instanceof SiteError &&
         error.isProxyError &&
         meta.options.proxy === "auto" &&
-        !meta.featureFlags.has("stealthProxy")
+        !meta.featureFlags.has("stealthProxy") &&
+        !engine.endsWith(";stealth")
       ) {
         meta.logger.info(
-          "Scrape via " +
-            engine +
-            " hit a proxy error. Retrying with stealthProxy flag.",
-          { errorCode: error.errorCode },
+          "Scrape hit a proxy error. Retrying with stealthProxy flag.",
+          { engine, errorCode: error.errorCode },
         );
         throw new AddFeatureError(["stealthProxy"]);
       }
