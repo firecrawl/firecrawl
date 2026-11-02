@@ -28,14 +28,26 @@ async function getChannel(): Promise<amqp.Channel> {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
-  connection = await amqp.connect(url);
-  connection.on("error", err => {
-    _logger.error("Extract queue connection error", { error: err });
-  });
-  channel = await connection.createChannel();
-  channel.on("error", err => {
+  if (!connection) {
+    connection = await amqp.connect(url);
+    connection.on("error", err => {
+      _logger.error("Extract queue connection error", { error: err });
+    });
+    connection.on("close", () => {
+      _logger.warn("Extract queue connection closed");
+      connection = null;
+      channel = null;
+    });
+  }
+
+  const ch = await connection.createChannel();
+  ch.on("error", err => {
     _logger.error("Extract queue channel error", { error: err });
   });
+  ch.on("close", () => {
+    if (channel === ch) channel = null;
+  });
+  channel = ch;
 
   // Set up the dead letter exchange
   await channel.assertExchange(EXTRACT_DLX, "direct", { durable: true });
@@ -58,12 +70,6 @@ async function getChannel(): Promise<amqp.Channel> {
       "x-dead-letter-routing-key": EXTRACT_QUEUE,
       "x-delivery-limit": 1,
     },
-  });
-
-  connection.on("close", () => {
-    _logger.warn("Extract queue connection closed");
-    connection = null;
-    channel = null;
   });
 
   return channel;
