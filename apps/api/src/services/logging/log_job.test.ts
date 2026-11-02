@@ -314,6 +314,48 @@ describe("operational job state logging", () => {
     publishMessage.mockResolvedValue("message-id");
   });
 
+  it("publishes scrape options without credentials or internal fields", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062c1";
+    const options = {
+      formats: ["markdown"],
+      headers: { Authorization: "Bearer secret", cookie: "session=abc" },
+      actions: [
+        { type: "click", selector: "#login" },
+        { type: "write", text: "hunter2", selector: "#password" },
+      ],
+      __searchPreviewToken: "preview-token",
+      __agentInterop: { auth: "s2s-secret", requestId: "r1", shouldBill: true },
+    };
+    await logScrape({
+      id,
+      request_id: id,
+      url: "https://example.com",
+      is_successful: true,
+      time_taken: 1,
+      team_id: "team-id",
+      options: options as any,
+      credits_cost: 1,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
+    expect(published.options).toEqual({
+      formats: ["markdown"],
+      headers: { Authorization: "<redacted>", cookie: "<redacted>" },
+      actions: [
+        { type: "click", selector: "#login" },
+        { type: "write", text: "<redacted>", selector: "#password" },
+      ],
+    });
+    expect(JSON.stringify(published)).not.toContain("secret");
+    expect(JSON.stringify(published)).not.toContain("hunter2");
+    // The caller's object is left as it was.
+    expect(options.headers.Authorization).toBe("Bearer secret");
+  });
+
   it("writes terminal standalone scrape state", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
     await logScrape({
