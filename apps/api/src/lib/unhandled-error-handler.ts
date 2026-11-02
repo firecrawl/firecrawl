@@ -8,6 +8,7 @@ import { getErrorContactMessage } from "./deployment";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
 import { recordUnhandledException } from "./otel-tracer";
+import { isLockdownZeroDataRetention } from "./safe-mode";
 import { getScrapeZDR } from "./zdr-helpers";
 
 /**
@@ -65,10 +66,15 @@ export function unhandledErrorHandler(
   // a span makes the same call here, since an error message can quote the
   // URL. Only the log line is kept for those, as before.
   const body = req.body as
-    | { zeroDataRetention?: unknown; lockdown?: unknown }
+    | { zeroDataRetention?: unknown; lockdown?: unknown; safeMode?: unknown }
     | undefined;
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
+    // Safe Mode lockdown orgs retain nothing either, without a scrapeZDR flag.
+    isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      typeof body?.safeMode === "boolean" ? body.safeMode : undefined,
+    ) ||
     body?.zeroDataRetention === true ||
     body?.lockdown === true;
   if (!zeroDataRetention) {

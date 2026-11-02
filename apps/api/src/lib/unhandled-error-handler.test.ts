@@ -5,18 +5,27 @@ import {
 } from "@opentelemetry/sdk-trace-node";
 import express from "express";
 import request from "supertest";
+import type { TeamFlags } from "../controllers/v2/types";
 import { requestTimingMiddleware } from "../routes/shared";
 import { createTracerProvider, withSpan } from "./otel-tracer";
 import { unhandledErrorHandler } from "./unhandled-error-handler";
 
 // Mirrors how src/index.ts mounts the handler: after the routers, as the
 // terminal error middleware.
-function appUnderTest() {
+function appUnderTest(acuc?: { team_id: string; flags: TeamFlags }) {
   const app = express();
   app.use(express.json());
 
   const v2 = express.Router();
   v2.use(requestTimingMiddleware("v2"));
+  if (acuc) {
+    // Stands in for the auth middleware, which attaches the team's limits
+    // and flags to the request.
+    v2.use((req, _res, next) => {
+      (req as unknown as { acuc: typeof acuc }).acuc = acuc;
+      next();
+    });
+  }
   v2.post("/boom", () => {
     throw new Error("boom");
   });
@@ -129,6 +138,34 @@ describe("unhandledErrorHandler", () => {
     expect(response.status).toBe(500);
     expect(response.body.code).toBe("UNKNOWN_ERROR");
     expect(await exportedSpans()).toHaveLength(0);
+  });
+
+  it("records nothing for a Safe Mode lockdown team", async () => {
+    const lockdownTeam = {
+      team_id: "team-lockdown",
+      flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+    };
+    const response = await request(appUnderTest(lockdownTeam))
+      .post("/v2/boom")
+      .send({});
+
+    expect(response.status).toBe(500);
+    expect(await exportedSpans()).toHaveLength(0);
+  });
+
+  it("records for a team whose flags do not force zero data retention", async () => {
+    const plainTeam = {
+      team_id: "team-plain",
+      flags: { safeMode: true, safeModeConfig: { lockdown: false } },
+    };
+    const response = await request(appUnderTest(plainTeam))
+      .post("/v2/boom")
+      .send({});
+
+    expect(response.status).toBe(500);
+    const spans = await exportedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0].attributes["team.id"]).toBe("team-plain");
   });
 
   it("keeps answering 400 for malformed JSON without recording anything", async () => {
