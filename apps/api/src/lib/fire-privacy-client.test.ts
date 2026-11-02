@@ -770,6 +770,14 @@ describe("redactText for US-only teams", () => {
     ).rejects.toBeInstanceOf(UsOnlyUnavailableError);
   });
 
+  it("throws UsOnlyUnavailableError for a refusal on any status or region field", async () => {
+    handler = capturing({ error_code: "region_unavailable" }, 403).handler;
+
+    await expect(
+      redactText({ text: "Hi Alice", usOnly: true }),
+    ).rejects.toThrow("no US capacity could take this request");
+  });
+
   it("throws UsOnlyUnavailableError when a pinned reply lacks the region echo", async () => {
     handler = capturing({
       redacted_text: "Hi <PERSON>",
@@ -777,9 +785,11 @@ describe("redactText for US-only teams", () => {
       model_status: "ok",
     }).handler;
 
-    await expect(
-      redactText({ text: "Hi Alice", usOnly: true }),
-    ).rejects.toBeInstanceOf(UsOnlyUnavailableError);
+    const error = await redactText({ text: "Hi Alice", usOnly: true }).catch(
+      e => e,
+    );
+    expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+    expect(error.message).toContain("did not confirm US-only processing");
   });
 
   it("keeps an unpinned 503 as failed/service_unavailable", async () => {

@@ -1,8 +1,7 @@
 import type { Meta } from "../../..";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
-import { isUsOnly } from "../../../../../lib/us-only";
-import { isRegionUnavailable } from "./data-region";
+import { isRegionUnavailable, isUsOnly } from "../../../../../lib/us-only";
 import {
   firePdfAsyncCompletedTotal,
   firePdfAsyncLongPollTotal,

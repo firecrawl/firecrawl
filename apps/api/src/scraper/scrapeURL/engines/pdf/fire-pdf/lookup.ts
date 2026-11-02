@@ -8,8 +8,7 @@ import type { Meta } from "../../..";
 import { config } from "../../../../../config";
 import { fetch as undiciFetch } from "undici";
 import { firePdfHeaders } from "./utils";
-import { isUsOnly } from "../../../../../lib/us-only";
-import { US_DATA_REGION } from "./data-region";
+import { isUsOnly, US_DATA_REGION } from "../../../../../lib/us-only";
 
 /** Handle for adopting an existing fire-pdf job instead of submitting a
  * new one. Produced by {@link lookupAdoptableFirePdfJob}: the job was

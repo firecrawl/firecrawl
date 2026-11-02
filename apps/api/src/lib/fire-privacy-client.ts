@@ -6,6 +6,7 @@ import {
 } from "../controllers/v2/types";
 import { chunkMarkdown, type Chunk } from "./fire-privacy-chunker";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import { isRegionUnavailable, US_DATA_REGION } from "./us-only";
 
 type FirePrivacyResponse = {
   redacted_text?: unknown;
@@ -49,7 +50,8 @@ type RedactionReason =
   | "service_unavailable"
   | "timeout"
   | "error"
-  | "region_unavailable";
+  | "region_unavailable"
+  | "region_unconfirmed";
 
 type RedactionResult = {
   status: RedactionStatus;
@@ -234,8 +236,6 @@ type ChunkResult =
     }
   | { ok: false; reason: RedactionReason };
 
-const US_DATA_REGION = "us";
-
 async function redactOnce(
   chunk: Chunk,
   options: RedactPIIOptions,
@@ -277,19 +277,17 @@ async function redactOnce(
     });
     return { ok: false, reason };
   }
+  // Read under the request deadline so a stalled body cannot hang the chunk.
+  const refusal: unknown =
+    usOnly && !response.ok ? await response.json().catch(() => null) : null;
   clearTimeout(timer);
 
   if (!response.ok) {
-    const refusal: unknown =
-      usOnly && response.status === 503
-        ? await response.json().catch(() => null)
-        : null;
-    const reason: RedactionReason =
-      (refusal as { code?: unknown } | null)?.code === "region_unavailable"
-        ? "region_unavailable"
-        : response.status === 503
-          ? "service_unavailable"
-          : "error";
+    const reason: RedactionReason = isRegionUnavailable(refusal)
+      ? "region_unavailable"
+      : response.status === 503
+        ? "service_unavailable"
+        : "error";
     logger?.warn("fire-privacy returned non-2xx", {
       reason,
       httpStatus: response.status,
@@ -327,7 +325,7 @@ async function redactOnce(
       url,
       chunkStart: chunk.start,
     });
-    return { ok: false, reason: "region_unavailable" };
+    return { ok: false, reason: "region_unconfirmed" };
   }
 
   // Lift spans into source coordinates.
@@ -450,9 +448,18 @@ export async function redactText(
     opts.usOnly === true,
   );
 
-  if (results.some(r => !r.ok && r.reason === "region_unavailable")) {
+  const regionFailure = results.find(
+    r =>
+      !r.ok &&
+      (r.reason === "region_unavailable" || r.reason === "region_unconfirmed"),
+  );
+  if (regionFailure && !regionFailure.ok) {
+    const detail =
+      regionFailure.reason === "region_unconfirmed"
+        ? "the redaction service did not confirm US-only processing"
+        : "no US capacity could take this request";
     throw new UsOnlyUnavailableError(
-      "PII redaction is not available for teams restricted to US-only processing right now: no US capacity could take this request. Try again later.",
+      `PII redaction is not available for teams restricted to US-only processing right now: ${detail}. Try again later.`,
     );
   }
 

@@ -142,21 +142,29 @@ describe("FirePDF sync parse for US-only teams", () => {
     expect(error.message).toContain("PDF parsing is not available");
   });
 
-  it("refuses a US-only result that lacks the region echo", async () => {
-    mockedRobustFetch.mockResolvedValue({
-      markdown: "Document",
-      failed_pages: null,
-      pages_processed: 1,
-    } as any);
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+  ])(
+    "refuses a US-only result whose region echo is %s",
+    async (_name, dataRegion) => {
+      mockedRobustFetch.mockResolvedValue({
+        markdown: "Document",
+        failed_pages: null,
+        pages_processed: 1,
+        data_region: dataRegion,
+      } as any);
 
-    const error = await scrapePDFWithFirePDF(
-      makeSyncMeta(usOnlyFlags),
-      "BASE64",
-      1,
-    ).catch(e => e);
+      const error = await scrapePDFWithFirePDF(
+        makeSyncMeta(usOnlyFlags),
+        "BASE64",
+        1,
+      ).catch(e => e);
 
-    expect(error).toBeInstanceOf(UsOnlyUnavailableError);
-  });
+      expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+      expect(error.message).toContain("did not confirm US-only processing");
+    },
+  );
 
   it("names image OCR when a US-only image is refused", async () => {
     mockedRobustFetch.mockRejectedValue(failureStatus(503, regionRefusal));
@@ -291,13 +299,8 @@ describe("FirePDF async jobs for US-only teams", () => {
     expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
   });
 
-  it("refuses a US-only submit the PDF service turned away for lack of US capacity", async () => {
-    const { fetchImpl } = makeFetchFromSequence([
-      {
-        matchUrl: /\/jobs$/,
-        matchMethod: "POST",
-        response: { status: 503, body: regionRefusal },
-      },
+  it("refuses a US-only submit the PDF service turned away for lack of US capacity, without retrying", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
       {
         matchUrl: /\/jobs$/,
         matchMethod: "POST",
@@ -311,6 +314,8 @@ describe("FirePDF async jobs for US-only teams", () => {
     ).catch(e => e);
 
     expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+    expect(error.message).toContain("no US capacity could take this document");
+    expect(calls).toHaveLength(1);
   });
 
   it("refuses a US-only result that lacks the region echo and caches nothing", async () => {

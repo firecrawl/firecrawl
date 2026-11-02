@@ -2,8 +2,11 @@ import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
-import { isUsOnly } from "../../../../../lib/us-only";
-import { isRegionUnavailable, US_DATA_REGION } from "./data-region";
+import {
+  isRegionUnavailable,
+  isUsOnly,
+  US_DATA_REGION,
+} from "../../../../../lib/us-only";
 import {
   buildFirePdfJobTrainingCapture,
   buildFirePdfRequestMetadata,
@@ -220,6 +223,9 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       }
       failPossiblyAccepted(meta, "network_error", { error: String(error) });
     }
+    if (usOnly && isRegionUnavailable(json)) {
+      failAsync(meta, "region_unavailable", { status });
+    }
     const transient503 = attempt === 1 && classifyTransient503(status, json);
     if (transient503) {
       await retryAfterTransient(transient503, { body: json });
@@ -228,9 +234,6 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     break;
   }
 
-  if (usOnly && isRegionUnavailable(json)) {
-    failAsync(meta, "region_unavailable", { status });
-  }
   if (status === 401) failAsync(meta, "http_401");
   if (status === 404) failAsync(meta, "http_404");
   if (status === 410) failAsync(meta, "http_410", { body: json });

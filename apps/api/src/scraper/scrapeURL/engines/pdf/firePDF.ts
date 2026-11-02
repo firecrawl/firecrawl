@@ -6,7 +6,11 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
-import { isUsOnly } from "../../../../lib/us-only";
+import {
+  isRegionUnavailable,
+  isUsOnly,
+  US_DATA_REGION,
+} from "../../../../lib/us-only";
 import {
   maybeSaveResult,
   provenanceFromResponse,
@@ -19,11 +23,7 @@ import {
   firePdfTableFormat,
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
-import {
-  firePdfUsOnlyRefusal,
-  isRegionUnavailable,
-  US_DATA_REGION,
-} from "./fire-pdf/data-region";
+import { firePdfUsOnlyRefusal } from "./fire-pdf/data-region";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -185,7 +185,7 @@ export async function scrapePDFWithFirePDF(
       // the echo is the only proof the fire-pdf build understood the
       // option — older builds ignore unknown request fields and omit it.
       page_markers: z.literal(true).optional(),
-      data_region: z.string().optional(),
+      data_region: z.unknown().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),

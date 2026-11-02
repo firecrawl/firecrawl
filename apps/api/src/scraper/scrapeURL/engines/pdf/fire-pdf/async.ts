@@ -9,8 +9,8 @@ import { scrapePDFWithFirePDF } from "../firePDF";
 import { cancelJob } from "./cancel";
 import { maybeSaveResult, provenanceFromResponse, tryGetCached } from "./cache";
 import { resolvePdfCacheKey } from "../../../../../lib/gcs-pdf-cache";
-import { isUsOnly } from "../../../../../lib/us-only";
-import { firePdfUsOnlyRefusal, US_DATA_REGION } from "./data-region";
+import { isUsOnly, US_DATA_REGION } from "../../../../../lib/us-only";
+import { firePdfUsOnlyRefusal } from "./data-region";
 import {
   firePdfAsyncAbandonedTotal,
   firePdfAsyncTotalDurationSeconds,
