@@ -25,7 +25,11 @@ import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
-import { executeSearch } from "../../search/execute";
+import {
+  executeSearch,
+  FORCED_DISCOVERY_CAP_MS,
+  forcedDiscoveryCapArm,
+} from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import {
@@ -166,6 +170,16 @@ async function searchControllerInner(
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",
     );
+    // Set by the MCP server when it added alexandria to the caller's sources.
+    const forcedAlexandria =
+      wantsTools &&
+      requestOrigin({ origin: rawOrigin }, req)
+        .toLowerCase()
+        .startsWith("mcp") &&
+      req.get("x-firecrawl-implicit-alexandria") === "1" &&
+      !isToolsOnlySearch(req.body.sources, req.body.categories);
+    const discoveryCapArm = forcedDiscoveryCapArm(req.auth.team_id);
+    logger = logger.child({ forcedAlexandria, discoveryCapArm });
     if (
       (wantsTools || req.body.domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
@@ -471,6 +485,10 @@ async function searchControllerInner(
           !req.auth.team_id.startsWith("preview_keyless_") &&
           config.FIRE_EXCHANGE_URL !== undefined &&
           autoToolsEnabled(req.acuc?.flags),
+        discoveryDeadline:
+          forcedAlexandria && discoveryCapArm === "treatment"
+            ? middlewareStartTime + FORCED_DISCOVERY_CAP_MS
+            : undefined,
         timeout: req.body.timeout,
       },
       {
@@ -618,6 +636,8 @@ async function searchControllerInner(
       scrapeCredits: result.scrapeCredits,
       totalCredits: result.totalCredits,
       scrapeful: result.shouldScrape,
+      toolsCount: result.response.tools?.length ?? 0,
+      toolsUnavailable: result.toolsUnavailable === true,
     });
 
     if (result.response.tools) {

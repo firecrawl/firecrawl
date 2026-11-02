@@ -426,6 +426,13 @@ const configSchema = z.object({
   // Stable percentage of non-MCP/CLI cohorts whose generated highlights are
   // returned. The remaining eligible traffic still runs in shadow mode.
   HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Stable percentage of teams in the forced-discovery cap experiment, split
+  // evenly between control and treatment (search/execute.ts). 0 = nobody.
+  SEARCH_FORCED_DISCOVERY_CAP_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
 
   // TypeSafe (Jev): judges search results for the `safe: true` filter.
   TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),

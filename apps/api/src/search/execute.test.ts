@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   removeExplicitResults: vi.fn(),
   inferToolIntent: vi.fn(),
   verifyTools: vi.fn(),
+  exchangeRequest: vi.fn(),
+}));
+
+vi.mock("../services/alexandria/client", () => ({
+  exchangeRequest: mocks.exchangeRequest,
 }));
 
 vi.mock("./tool-intent", () => ({
@@ -65,8 +70,13 @@ vi.mock("./safe-search", () => ({
   removeExplicitResults: mocks.removeExplicitResults,
 }));
 
-import { executeSearch } from "./execute";
+import {
+  executeSearch,
+  FORCED_DISCOVERY_CAP_MS,
+  forcedDiscoveryCapArm,
+} from "./execute";
 import { searchRequestSchema } from "../controllers/v2/types";
+import { config } from "../config";
 
 const logger = {
   info: vi.fn(),
@@ -825,5 +835,205 @@ describe("executeSearch query operators", () => {
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({ tbs, type: ["web"] }),
     );
+  });
+});
+
+describe("executeSearch forced discovery cap", () => {
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "An example page.",
+  };
+  const contract = {
+    name: "Tool",
+    description: "A tool.",
+    creditsCost: 5,
+    perRecord: false,
+  };
+  const semanticTool = {
+    ...contract,
+    provider: "fred",
+    capability: "series/observations",
+  };
+  const domainTool = {
+    ...contract,
+    provider: "sec-gov",
+    capability: "filings/filings",
+  };
+  const compact = (tool: typeof semanticTool) => ({
+    provider: tool.provider,
+    capability: tool.capability,
+    description: tool.description,
+  });
+  const after = <T>(ms: number, value: T, timeoutMs = Infinity) =>
+    new Promise<T>((resolve, reject) => {
+      setTimeout(() => resolve(value), ms);
+      if (timeoutMs < ms)
+        setTimeout(() => reject(new Error("aborted")), timeoutMs);
+    });
+  const found = (items: unknown[]) => ({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items } },
+  });
+  // Times in ms: each semantic attempt in turn (null answers 503), the domain
+  // resolve, and the domain tool lookup.
+  const exchange = (timing: {
+    semantic: Array<number | null>;
+    resolve: number;
+    lookup: number;
+  }) => {
+    let semanticAttempt = 0;
+    mocks.exchangeRequest.mockImplementation(({ path, body, timeoutMs }) => {
+      if (path === "/v1/skills/resolve")
+        return after(
+          timing.resolve,
+          {
+            status: 200,
+            body: {
+              skills: [{ id: "sec-gov", matchedDomains: ["example.com"] }],
+            },
+          },
+          timeoutMs,
+        );
+      if (!body.options.query)
+        return after(timing.lookup, found([domainTool]), timeoutMs);
+      const delay = timing.semantic[semanticAttempt++];
+      return delay === null
+        ? Promise.resolve({ status: 503, body: {} })
+        : after(delay, found([semanticTool]), timeoutMs);
+    });
+  };
+  const forced = {
+    ...options([]),
+    timeout: 60_000,
+    sources: [{ type: "web" }, { type: "alexandria" }],
+    domainTools: true,
+  };
+  const run = (discoveryDeadline?: number) => {
+    let done = false;
+    const pending = executeSearch(
+      { ...forced, discoveryDeadline },
+      context,
+      logger,
+    ).finally(() => {
+      done = true;
+    });
+    return { pending, done: () => done };
+  };
+  const calls = (path: string) =>
+    mocks.exchangeRequest.mock.calls.filter(([input]) => input.path === path)
+      .length;
+
+  beforeEach(async () => {
+    const actual =
+      await vi.importActual<typeof import("./alexandria")>("./alexandria");
+    mocks.discoverTools.mockImplementation(actual.discoverTools);
+    vi.useFakeTimers();
+    mocks.search.mockImplementation(() => after(300, { web: [webResult] }));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns both legs under the cap in treatment when they fit", async () => {
+    exchange({ semantic: [500], resolve: 400, lookup: 200 });
+    const search = run(Date.now() + FORCED_DISCOVERY_CAP_MS);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(search.done()).toBe(true);
+    const result = await search.pending;
+    expect(result.response.web).toHaveLength(1);
+    expect(result.response.tools).toEqual([
+      compact(semanticTool),
+      compact(domainTool),
+    ]);
+    expect(result.toolsUnavailable).toBe(false);
+  });
+
+  it("drops the leg still running at the cap and never retries it", async () => {
+    exchange({ semantic: [500], resolve: 5_000, lookup: 200 });
+    const search = run(Date.now() + FORCED_DISCOVERY_CAP_MS);
+    await vi.advanceTimersByTimeAsync(FORCED_DISCOVERY_CAP_MS - 1);
+    expect(search.done()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(search.done()).toBe(true);
+    const result = await search.pending;
+    expect(result.response.tools).toEqual([compact(semanticTool)]);
+    expect(result.toolsUnavailable).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls("/v1/skills/resolve")).toBe(1);
+  });
+
+  it("returns web results with toolsUnavailable when discovery is slower than the cap", async () => {
+    exchange({ semantic: [5_000], resolve: 5_000, lookup: 200 });
+    const search = run(Date.now() + FORCED_DISCOVERY_CAP_MS);
+    await vi.advanceTimersByTimeAsync(FORCED_DISCOVERY_CAP_MS);
+    expect(search.done()).toBe(true);
+    const result = await search.pending;
+    expect(result.response.web).toEqual([
+      expect.objectContaining({ url: webResult.url }),
+    ]);
+    expect(result.response.tools).toEqual([]);
+    expect(result.toolsUnavailable).toBe(true);
+    expect(result.toolsWarning).toBe(
+      "Some tool discovery results are unavailable.",
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls("/v1/retrieve")).toBe(1);
+  });
+
+  it("warns when the web results arrive after the cap and the domain leg never runs", async () => {
+    exchange({ semantic: [500], resolve: 200, lookup: 100 });
+    mocks.search.mockImplementation(() => after(3_000, { web: [webResult] }));
+    const search = run(Date.now() + FORCED_DISCOVERY_CAP_MS);
+    await vi.advanceTimersByTimeAsync(3_000);
+    const result = await search.pending;
+    expect(result.response.tools).toEqual([compact(semanticTool)]);
+    expect(result.toolsWarning).toBe(
+      "Some tool discovery results are unavailable.",
+    );
+    expect(calls("/v1/skills/resolve")).toBe(0);
+  });
+
+  it("leaves caller-requested discovery on its full budget with retries", async () => {
+    exchange({ semantic: [null, 3_000], resolve: 2_500, lookup: 100 });
+    const search = run();
+    await vi.advanceTimersByTimeAsync(FORCED_DISCOVERY_CAP_MS);
+    expect(search.done()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(search.done()).toBe(true);
+    const result = await search.pending;
+    expect(result.response.tools).toEqual([
+      compact(semanticTool),
+      compact(domainTool),
+    ]);
+    expect(
+      mocks.exchangeRequest.mock.calls.filter(
+        ([input]) => input.body?.options?.query,
+      ),
+    ).toHaveLength(2);
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({ deadline: undefined }),
+      logger,
+    );
+  });
+
+  it("puts nobody in an arm while the flag is off, and splits teams stably when on", () => {
+    const teams = Array.from({ length: 200 }, (_, index) => `team-${index}`);
+    const original = config.SEARCH_FORCED_DISCOVERY_CAP_PERCENT;
+    try {
+      config.SEARCH_FORCED_DISCOVERY_CAP_PERCENT = 0;
+      expect(new Set(teams.map(forcedDiscoveryCapArm))).toEqual(
+        new Set(["off"]),
+      );
+      config.SEARCH_FORCED_DISCOVERY_CAP_PERCENT = 100;
+      const arms = teams.map(forcedDiscoveryCapArm);
+      const treated = arms.filter(arm => arm === "treatment").length;
+      expect(arms.every(arm => arm !== "off")).toBe(true);
+      expect(treated).toBeGreaterThan(70);
+      expect(treated).toBeLessThan(130);
+      expect(teams.map(forcedDiscoveryCapArm)).toEqual(arms);
+    } finally {
+      config.SEARCH_FORCED_DISCOVERY_CAP_PERCENT = original;
+    }
   });
 });
