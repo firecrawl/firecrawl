@@ -261,8 +261,10 @@ describe("gateAgentCredits for a hosted MCP run", () => {
     });
   });
 
-  it("refuses like any run when the check refuses", async () => {
-    checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 0 });
+  it("refuses like any run when both checks refuse", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 });
 
     expect(await hostedGate()).toEqual({ allowed: false, balance: 0 });
   });
