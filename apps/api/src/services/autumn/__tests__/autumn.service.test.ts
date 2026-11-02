@@ -976,6 +976,37 @@ describe("firebill requests", () => {
     });
   });
 
+  // The reset time the out-of-credits 402 names. Every org is routed, so this
+  // is the only path it can come from.
+  it("carries firebill's reset time on a check", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          allowed: false,
+          remaining: 3,
+          resets_at: 1_798_761_600_000,
+        }),
+        { status: 200 },
+      ),
+    );
+    const svc = makeService();
+
+    const result = await svc.checkCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 100,
+      properties: {},
+    });
+
+    expect(result).toEqual({
+      allowed: false,
+      remaining: 3,
+      resetsAt: 1_798_761_600_000,
+    });
+  });
+
   // The same property as the charge paths, and it bites harder on the gate: a
   // provisioned org that misses firebill on a charge is billed to the wrong
   // account, but one that misses firebill on the *gate* is refused outright —

@@ -311,6 +311,45 @@ describe("monitor reservation ownership", () => {
     },
   );
 
+  it("skips a check without running it when firebill denies the hold", async () => {
+    firebill.lock.mockResolvedValue({ status: "denied" });
+    await processMonitorCheckJob(job);
+    expect(current).toMatchObject({
+      status: "skipped_no_credits",
+      billing_status: "not_applicable",
+      autumn_lock_id: null,
+    });
+    expect(addScrapeJob).not.toHaveBeenCalled();
+    expect(firebill.finalize).not.toHaveBeenCalled();
+    expect(bill).not.toHaveBeenCalled();
+  });
+
+  it("runs a check unlocked when firebill cannot be reached for the hold", async () => {
+    firebill.lock.mockResolvedValue({ status: "unavailable" });
+    await processMonitorCheckJob(job);
+    expect(current).toMatchObject({ status: "running", autumn_lock_id: null });
+    expect(addScrapeJob).toHaveBeenCalledTimes(1);
+    expect(firebill.finalize).not.toHaveBeenCalled();
+  });
+
+  it("releases a stale check's linked hold through firebill", async () => {
+    current.status = "running";
+    current.started_at = new Date(
+      Date.now() - 2 * 60 * 60 * 1000,
+    ).toISOString();
+    current.autumn_lock_id = "monitor_check-1";
+    current.billing_status = "reserved";
+    await reconcileRunningMonitorChecks();
+    expect(current).toMatchObject({
+      status: "failed",
+      billing_status: "released",
+    });
+    expect(firebill.finalize).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ lockId: "monitor_check-1", action: "release" }),
+    );
+    expect(bill).not.toHaveBeenCalled();
+  });
+
   it("does not reserve a running delivery that became terminal after its initial read", async () => {
     current.status = "running";
     const initial = structuredClone(current);
