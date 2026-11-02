@@ -18,8 +18,10 @@ const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
 const SECRET_PATTERN =
   /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
+// After any secret key, a leading auth scheme (Basic, Bearer, Token, ...) is
+// consumed with its credential so no part of "password=>Basic <b64>" survives.
 const DETAIL_SECRET_PAIR = new RegExp(
-  "(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)[\"']?)(\\s*(?:=>|[=:])\\s*)(?:\"[^\"]*\"|'[^']*'|(?:(?<=authorization[\"']?\\s*(?:=>|[=:])\\s*)[A-Za-z]+\\s+)?[^\\s&#\"',;]+)",
+  "(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)[\"']?)(\\s*(?:=>|[=:])\\s*)(?:\"[^\"]*\"|'[^']*'|(?:(?:(?<=authorization[\"']?\\s*(?:=>|[=:])\\s*)[A-Za-z]+|Basic|Bearer|Token|Digest|Bot|ApiKey|Negotiate|NTLM)\\s+)?[^\\s&#\"',;]+)",
   "gi",
 );
 // A Basic credential is base64 of "user:password"; only one that decodes

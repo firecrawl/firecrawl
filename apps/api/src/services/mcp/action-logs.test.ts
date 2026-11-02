@@ -282,6 +282,16 @@ describe("MCP action log contract", () => {
     expect(input({ error_message: "401 for Basic YTo=" }).error_message).toBe(
       "401 for [redacted]",
     );
+    for (const [message, expected] of [
+      ["password=Basic dXNlcjpwYXNz", "password=[redacted]"],
+      ["x-auth: Basic dXNlcjpwYXNz", "x-auth: [redacted]"],
+      ["password=Basic c2VjcmV0dG9rZW4", "password=[redacted]"],
+      ["auth_token: Token abc123tok", "auth_token: [redacted]"],
+      ["secret=Bearer abc123tok", "secret=[redacted]"],
+      ["password=hunter2 Basic research", "password=[redacted] Basic research"],
+    ]) {
+      expect(input({ error_message: message }).error_message).toBe(expected);
+    }
     expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
       "x".repeat(300),
     );
