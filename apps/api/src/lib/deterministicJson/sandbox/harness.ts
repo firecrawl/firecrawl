@@ -1,5 +1,5 @@
 // Runs as the body of `async (input, host, require) => { ... }` in the
-// code-sandbox jail. input is { code, html, url }: build a jsdom Document, run the
+// extractor sandbox. input is { code, html, url }: build a jsdom Document, run the
 // generated extract(doc, askLlm) in jsdom's VM context, and bridge askLlm back to
 // the API worker over host().
 export const EXTRACTOR_HARNESS = String.raw`

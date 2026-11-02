@@ -3,7 +3,6 @@ import { config } from "../../config";
 export const CODEGEN_MODEL = config.EXTRACT_CODEGEN_MODEL;
 export const ANCHOR_MODEL = config.EXTRACT_ANCHOR_MODEL;
 export const LIGHT_MODEL = config.EXTRACT_LIGHT_MODEL;
-export const CODE_SANDBOX_URL = config.CODE_SANDBOX_URL;
 
 // Bump to invalidate every cached extractor at once.
 export const CACHE_VERSION = 1;
