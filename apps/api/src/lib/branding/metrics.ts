@@ -4,7 +4,7 @@ import { Counter, Histogram } from "prom-client";
 
 export const brandingRoutedTotal = new Counter({
   name: "firecrawl_branding_routed_total",
-  help: "Each branding request once, by the model it was finally sent to and why: jev, or llm when BRANDING_JEV=false (jev_off), no TYPESAFE_API_KEY is set (jev_no_key), Jev was unavailable (failed or breaker open), or the team is restricted to US-only processing (us_only); every Jev attempt is in firecrawl_branding_jev_calls_total",
+  help: "Each branding request once, by the model it was finally sent to and why: jev, or llm when BRANDING_JEV=false (jev_off), no TYPESAFE_API_KEY is set (jev_no_key), or Jev was unavailable (failed or breaker open); every Jev attempt is in firecrawl_branding_jev_calls_total",
   labelNames: ["model", "reason"],
 });
 
@@ -75,7 +75,6 @@ for (const [model, reason] of [
   ["llm", "jev_off"],
   ["llm", "jev_no_key"],
   ["llm", "jev_unavailable"],
-  ["llm", "us_only"],
 ]) {
   brandingRoutedTotal.inc({ model, reason }, 0);
 }
