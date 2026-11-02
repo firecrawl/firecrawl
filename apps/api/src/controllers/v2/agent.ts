@@ -272,6 +272,7 @@ export async function agentController(
     }
     maxCredits = gate.maxCredits;
     stopOnInsufficientCredits = gate.stopOnInsufficientCredits;
+    if (gate.onTeamCredits) req.auth.hostedMcp = false;
   }
 
   await logRequest({

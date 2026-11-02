@@ -2037,7 +2037,7 @@ export interface MapDocument {
 
 // V2 Map Response with dictionary format
 export type MapResponse =
-  | ErrorResponse
+  | (ErrorResponse & { id?: string })
   | {
       success: true;
       id: string;
