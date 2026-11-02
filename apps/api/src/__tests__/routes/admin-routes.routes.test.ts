@@ -12,9 +12,6 @@ const { stub } = vi.hoisted(() => ({
 vi.mock("../../controllers/v0/admin/redis-health", () => ({
   redisHealthController: stub("redis-health"),
 }));
-vi.mock("../../controllers/v0/admin/autumn-health", () => ({
-  autumnHealthController: stub("autumn-health"),
-}));
 vi.mock("../../controllers/v0/admin/check-fire-engine", () => ({
   checkFireEngine: stub("feng-check"),
 }));
@@ -62,7 +59,6 @@ const COUNTER = "firecrawl_admin_path_route_requests_total";
 
 const KEYED_ROUTES: Array<["get" | "post", string]> = [
   ["get", "redis-health"],
-  ["get", "autumn-health"],
   ["get", "feng-check"],
   ["post", "acuc-cache-clear"],
   ["post", "ip-restriction-cache-clear"],

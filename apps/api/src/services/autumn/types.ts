@@ -1,33 +1,3 @@
-export class ExistingCreditsLockError extends Error {
-  constructor(readonly lockId: string) {
-    super(
-      "Credit reservation already exists; execution ownership is unresolved.",
-    );
-    this.name = "ExistingCreditsLockError";
-  }
-}
-
-export type GetOrCreateCustomerParams = {
-  customerId: string;
-  name?: string | null;
-  email?: string | null;
-  autoEnablePlanId?: string;
-};
-
-export type GetEntityParams = {
-  customerId: string;
-  entityId: string;
-};
-
-export type CreateEntityParams = {
-  customerId: string;
-  entityId: string;
-  featureId: string;
-  name?: string | null;
-  /** Method doing the creation, for the inline-creation counter's `path`. */
-  path: string;
-};
-
 export type TrackParams = {
   customerId: string;
   entityId?: string;
@@ -36,38 +6,23 @@ export type TrackParams = {
   properties?: Record<string, unknown>;
   /**
    * The partner's own operation id (the caller's `External-Request-Id`).
-   * firebill route only: sent as `external_request_id`, so firebill reports
-   * the operation under it without a lookup. Opaque, forwarded verbatim.
+   * Sent to firebill as `external_request_id`, so firebill reports the
+   * operation under it without a lookup. Opaque, forwarded verbatim.
    */
   externalRequestId?: string | null;
   /**
-   * Stable per-charge identity, honored on the firebill route only (the
-   * direct Autumn SDK does not expose its Idempotency-Key header). When set,
-   * a caller retry — or a requeued job re-billing the same work — dedupes
+   * Stable per-charge identity, sent to firebill as the idempotency key. When
+   * set, a caller retry — or a requeued job re-billing the same work — dedupes
    * instead of double-billing. Must be unique per CHARGE, never a shared id
    * like a crawl id (every page shares it: collision = underbilling).
    */
   idempotencyKey?: string;
   /**
-   * firebill route only. `false` keeps an unanswered event out of the durable
-   * retry, for a caller that treats `false` as "did not happen" and releases
-   * something on it: a late retry landing would bill what it already undid.
-   * Defaults to retrying.
+   * `false` keeps an unanswered event out of the durable retry, for a caller
+   * that treats `false` as "did not happen" and releases something on it: a
+   * late retry landing would bill what it already undid. Defaults to retrying.
    */
   durableRetry?: boolean;
-};
-
-export type EnsureOrgProvisionedParams = {
-  orgId: string;
-  name?: string | null;
-  email?: string | null;
-};
-
-export type EnsureTeamProvisionedParams = {
-  teamId: string;
-  /** See TrackCreditsParams.orgId. */
-  orgId: string;
-  name?: string | null;
 };
 
 export type LockCreditsParams = {
@@ -148,8 +103,3 @@ export type TrackCreditsParams = {
    */
   orgId: string;
 };
-
-export type CreateEntityResult =
-  | { ok: true; entity: unknown }
-  | { ok: false; conflict: true }
-  | { ok: false; conflict: false };

@@ -6,7 +6,6 @@ import express, {
 } from "express";
 import { config } from "../config";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
-import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
 import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
 import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
@@ -48,7 +47,6 @@ const keyedRoutes: Array<{
   handler: RequestHandler;
 }> = [
   { method: "get", path: "/redis-health", handler: redisHealthController },
-  { method: "get", path: "/autumn-health", handler: autumnHealthController },
   { method: "get", path: "/feng-check", handler: wrap(checkFireEngine) },
   {
     method: "post",
@@ -167,8 +165,6 @@ if (config.BULL_AUTH_KEY && config.BULL_AUTH_KEY_PATH_ROUTES) {
 export const adminInternalRouter = express.Router();
 
 adminInternalRouter.get("/admin/redis-health", redisHealthController);
-
-adminInternalRouter.get("/admin/autumn-health", autumnHealthController);
 
 adminInternalRouter.get("/admin/feng-check", wrap(checkFireEngine));
 

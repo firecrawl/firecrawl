@@ -122,7 +122,6 @@ const adminPathRouteRequests = new Counter({
 
 const ADMIN_PATH_ROUTE_NAMES: ReadonlySet<string> = new Set([
   "redis-health",
-  "autumn-health",
   "acuc-cache-clear",
   "ip-restriction-cache-clear",
   "key-restriction-cache-clear",

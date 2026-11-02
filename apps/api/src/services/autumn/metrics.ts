@@ -1,21 +1,6 @@
 import { Counter } from "prom-client";
 
 /**
- * Which path a usage event or a lock settle took. The ratio of `firebill` to
- * `direct` is the live read on the rollout percentage — during a ramp it is the
- * first thing to look at, because a routing bug shows up here long before it
- * shows up in a balance. `route="direct"` staying at 0 is the signal that no
- * usage event or settle goes to Autumn directly any more; direct lock holds
- * are not counted here.
- */
-export const billingRouteTotal = new Counter({
-  name: "firecrawl_billing_route_total",
-  help: "Usage events and lock settles by the path they took to Autumn",
-  // route: firebill | direct   operation: track | finalize
-  labelNames: ["route", "operation"] as const,
-});
-
-/**
  * What firebill said. `refused` is an explicit `success: false` — firebill does
  * not own the event and nobody else does, so usage is being dropped.
  * `ambiguous` is a transport failure: firebill may have accepted it before the
@@ -114,28 +99,4 @@ export const firebillCheckTotal = new Counter({
   name: "firecrawl_firebill_check_total",
   help: "Outcomes of credit checks sent to firebill",
   labelNames: ["outcome"] as const, // allowed | denied | unavailable
-});
-
-/**
- * Entities the request path had to create for itself, by the method that did
- * it. Provisioning is meant to happen at team creation, so anything counted
- * here is the back-fill still being needed, and is what the per-request
- * provisioning prefix is buying. A 409 is not counted: the entity was already
- * there.
- */
-export const autumnEntityCreatedInlineTotal = new Counter({
-  name: "firecrawl_autumn_entity_created_inline_total",
-  help: "Autumn entities created inline on a billing path",
-  labelNames: ["path"] as const, // the method that created it
-});
-
-/**
- * Calls to `customers.get_or_create` attempted against Autumn, counted before
- * the response so a failure counts too. Deliberately not "created": the
- * endpoint answers 200 either way and autumn-js parses only the customer body,
- * so nothing in the response tells a creation from a get.
- */
-export const autumnCustomerGetOrCreateTotal = new Counter({
-  name: "firecrawl_autumn_customer_get_or_create_total",
-  help: "Autumn customers.get_or_create calls attempted from a billing path",
 });

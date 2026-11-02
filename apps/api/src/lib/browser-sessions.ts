@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, like, lte, ne, sql } from "drizzle-orm";
-import { getValue, setValue } from "../services/redis";
+import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
@@ -366,6 +366,12 @@ export async function markBrowserSessionHostedMcp(
   sessionId: string,
 ): Promise<void> {
   await setValue(hostedMcpFlagKey(sessionId), "1", PROFILE_DELETED_TTL_SECONDS);
+}
+
+export async function clearBrowserSessionHostedMcp(
+  sessionId: string,
+): Promise<void> {
+  await deleteKey(hostedMcpFlagKey(sessionId));
 }
 
 /** A flag lost to Redis bills the session as before: on regular credits. */
