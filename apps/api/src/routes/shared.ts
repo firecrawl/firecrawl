@@ -208,55 +208,66 @@ export function checkCreditsMiddleware(
       }
 
       const success = autumnResult.allowed;
-      // A hosted call both balances refuse is clamped to whichever covers more.
-      const clampOn =
+      const onGateFeature = {
+        remaining: autumnResult.remaining,
+        featureId: gateFeatureId,
+        onTeam: false,
+      };
+      // A hosted call both balances refuse tries the team clamp first when the
+      // team covers more, then MCP credits.
+      const clamps =
         gate.teamRefusal && gate.teamRefusal.remaining > autumnResult.remaining
-          ? { remaining: gate.teamRefusal.remaining, featureId, onTeam: true }
-          : {
-              remaining: autumnResult.remaining,
-              featureId: gateFeatureId,
-              onTeam: false,
-            };
+          ? [
+              {
+                remaining: gate.teamRefusal.remaining,
+                featureId,
+                onTeam: true,
+              },
+              onGateFeature,
+            ]
+          : [onGateFeature];
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
-      const remainingCredits = success ? Infinity : clampOn.remaining;
+      const remainingCredits = success ? Infinity : clamps[0].remaining;
       req.account = { remainingCredits };
       if (!success) {
         const requestedLimit = Number((req.body as any)?.limit);
-        const clampedLimit = Math.min(requestedLimit, remainingCredits);
-        if (
-          !_minimum &&
-          req.body &&
-          (req.body as any).limit !== undefined &&
-          Number.isFinite(clampedLimit) &&
-          clampedLimit > 0
-        ) {
-          // `remaining` is the team's credit balance, and a per-API-key spend
-          // limit never lowers it, so a key over its own cap still reports a
-          // healthy balance here. Re-check the clamped limit so only a genuinely
-          // low team balance gets shrunk to fit; a per-key denial falls through
-          // to the 402 below. A null re-check keeps the fail-open behavior.
-          const clampedResult = await autumnService.checkCredits({
-            teamId: req.auth.team_id,
-            orgId,
-            value: clampedLimit,
-            properties: {
-              source: "checkCreditsMiddleware:clamp",
-              path: req.path,
-              apiKeyId: req.acuc?.api_key_id ?? null,
-            },
-            featureId: clampOn.featureId,
-          });
-
-          if (clampedResult === null || clampedResult.allowed) {
-            if (clampOn.onTeam) req.auth.hostedMcp = false;
-            logger.warn("Adjusting limit to remaining credits", {
+        for (const clampOn of clamps) {
+          const clampedLimit = Math.min(requestedLimit, clampOn.remaining);
+          if (
+            !_minimum &&
+            req.body &&
+            (req.body as any).limit !== undefined &&
+            Number.isFinite(clampedLimit) &&
+            clampedLimit > 0
+          ) {
+            // `remaining` is the team's credit balance, and a per-API-key spend
+            // limit never lowers it, so a key over its own cap still reports a
+            // healthy balance here. Re-check the clamped limit so only a genuinely
+            // low team balance gets shrunk to fit; a per-key denial falls through
+            // to the 402 below. A null re-check keeps the fail-open behavior.
+            const clampedResult = await autumnService.checkCredits({
               teamId: req.auth.team_id,
-              remainingCredits,
-              clampedLimit,
+              orgId,
+              value: clampedLimit,
+              properties: {
+                source: "checkCreditsMiddleware:clamp",
+                path: req.path,
+                apiKeyId: req.acuc?.api_key_id ?? null,
+              },
+              featureId: clampOn.featureId,
             });
-            (req.body as any).limit = clampedLimit;
-            return next();
+
+            if (clampedResult === null || clampedResult.allowed) {
+              if (clampOn.onTeam) req.auth.hostedMcp = false;
+              logger.warn("Adjusting limit to remaining credits", {
+                teamId: req.auth.team_id,
+                remainingCredits: clampOn.remaining,
+                clampedLimit,
+              });
+              (req.body as any).limit = clampedLimit;
+              return next();
+            }
           }
         }
 

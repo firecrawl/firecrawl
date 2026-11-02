@@ -84,7 +84,11 @@ export async function gateAgentCredits({
     ? hosted.result
     : await check(AGENT_MIN_CREDITS, "agentCreditGate");
   if (minimum === null) return runs;
-  if (!minimum.allowed) return { allowed: false, balance: minimum.remaining };
+  if (!minimum.allowed)
+    return {
+      allowed: false,
+      balance: (hosted?.teamRefusal ?? minimum).remaining,
+    };
 
   // An unlimited balance comes back as int64 max. Probing past it overflows
   // the billing service's integer, so treat it as unlimited and skip the probe.

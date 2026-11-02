@@ -500,6 +500,29 @@ describe("checkCreditsMiddleware – MCP credits", () => {
     ).toEqual(["MCP_CREDITS", "CREDITS", "CREDITS"]);
   });
 
+  it("falls back to the MCP clamp when the team clamp is refused", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 40 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 40 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
+
+    const req = buildReq({
+      auth: { ...hostedMcpAuth },
+      body: { limit: 100 },
+    });
+    const { res } = await runMiddleware(req, spendsMcpCredits);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.body.limit).toBe(5);
+    expect(req.auth.hostedMcp).toBe(true);
+    expect(
+      checkCreditsMock.mock.calls.map(([check]) => check.featureId),
+    ).toEqual(["MCP_CREDITS", "CREDITS", "CREDITS", "MCP_CREDITS"]);
+    expect(checkCreditsMock.mock.calls[2][0].value).toBe(40);
+    expect(checkCreditsMock.mock.calls[3][0].value).toBe(5);
+  });
+
   it("keeps the MCP refusal when the team-credit check can't be answered", async () => {
     checkCreditsMock
       .mockResolvedValueOnce({ allowed: false, remaining: 0 })

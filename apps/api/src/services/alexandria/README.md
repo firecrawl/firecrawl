@@ -48,7 +48,8 @@ cannot be known (no org, preview team, Autumn error): this read fails closed
 where the rate limiter fails open (Benzinga Schedule C.4: full text, WIIM,
 analyst ratings), quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
-`alexandria_<chargeId>`), execute `/v1/retrieve` with the budget and deadline
+`alexandria_<chargeId>`, or `alexandria_<chargeId>_team` for a hosted MCP hold
+that MCP credits refuse and team credits cover), execute `/v1/retrieve` with the budget and deadline
 headers, settle the receipt (`finalizeCreditsLock`), enqueue the ledger write
 on the billing queue with job id `alexandria-bill-<chargeId>`, and report to
 `/v1/usage-events/billing`. Paid requests fail closed when authorization,
