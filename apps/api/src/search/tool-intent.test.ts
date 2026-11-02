@@ -126,7 +126,7 @@ describe("feature gates", () => {
     config.TYPESAFE_API_KEY = "key";
   });
 
-  it("skip the rewrite for tool searches only when configured", () => {
+  it("turn query inference off when configured, leaving auto tools on", () => {
     config.ANTHROPIC_API_KEY = "key";
     config.ALEXANDRIA_SKIP_QUERY_REWRITE = true;
     expect(queryInferenceEnabled()).toBe(false);

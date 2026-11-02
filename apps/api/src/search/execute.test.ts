@@ -195,6 +195,26 @@ describe("executeSearch tool intent", () => {
     );
   });
 
+  it("looks tools up on the query as typed when the rewrite is off", async () => {
+    await executeSearch(
+      {
+        ...options([]),
+        query: "who owns apple stock",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: false,
+      },
+      context,
+      logger,
+    );
+    expect(mocks.inferToolIntent).not.toHaveBeenCalled();
+    expect(mocks.verifyTools).not.toHaveBeenCalled();
+    expect(mocks.discoverTools).toHaveBeenCalledTimes(1);
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({ queries: ["who owns apple stock"] }),
+      logger,
+    );
+  });
+
   it("adds no tool the fit check rejects", async () => {
     const own = { provider: "sec-gov", capability: "filings/filings" };
     const extra = { provider: "apps-apple-com", capability: "apps/app" };
