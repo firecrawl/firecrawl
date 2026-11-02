@@ -332,7 +332,7 @@ pub async fn extract_metadata(html: Option<String>) -> napi::Result<HashMap<Stri
   })?
 }
 
-const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
+const EXCLUDE_NON_MAIN_TAGS: [&str; 48] = [
   "header",
   "footer",
   "nav",
@@ -374,7 +374,20 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 42] = [
   "#widget",
   ".cookie",
   "#cookie",
+  "[aria-label=\"Cookie consent\" i]",
   ".fc-decoration",
+  ".grecaptcha-badge",
+  "[data-original-tag=\"iframe\"][src*=\"google.com/recaptcha/\"]",
+  "[data-original-tag=\"iframe\"][src*=\"recaptcha.net/recaptcha/\"]",
+  "[data-original-tag=\"iframe\"][src*=\"hcaptcha.com\"]",
+  "[data-original-tag=\"iframe\"][src*=\"challenges.cloudflare.com\"]",
+];
+
+// Inlined documents of embedded players hold only player chrome, never page content.
+const EMPTY_NON_MAIN_FRAMES: [&str; 3] = [
+  "[data-original-tag=\"iframe\"][src*=\"player.vimeo.com/\"]",
+  "[data-original-tag=\"iframe\"][src*=\"youtube.com/embed/\"]",
+  "[data-original-tag=\"iframe\"][src*=\"youtube-nocookie.com/embed/\"]",
 ];
 
 const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
@@ -520,6 +533,18 @@ fn _transform_html_inner(
             .is_ok_and(|mut x| x.next().is_some())
         }) {
           tag.as_node().detach();
+        }
+      }
+    }
+
+    for x in EMPTY_NON_MAIN_FRAMES.iter() {
+      let frames: Vec<_> = document
+        .select(x)
+        .map_err(|_| "Failed to select frames")?
+        .collect();
+      for frame in frames {
+        while let Some(child) = frame.as_node().first_child() {
+          child.detach();
         }
       }
     }
