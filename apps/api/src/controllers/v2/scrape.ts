@@ -541,7 +541,10 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "unsafe_domain_blocked") {
+          if (
+            e.code === "unsafe_domain_blocked" ||
+            e.code === "US_ONLY_UNAVAILABLE"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });

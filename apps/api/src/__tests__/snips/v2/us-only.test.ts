@@ -1,11 +1,5 @@
 import { describeIf, TEST_PRODUCTION } from "../lib";
-import {
-  scrape,
-  scrapeWithFailure,
-  scrapeTimeout,
-  idmux,
-  Identity,
-} from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
 
 describeIf(TEST_PRODUCTION)("US-only teams", () => {
   let identity: Identity;
@@ -68,12 +62,15 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
   it.concurrent(
     "refuses X/Twitter URLs",
     async () => {
-      const response = await scrapeWithFailure(
+      const response = await scrapeRaw(
         { url: "https://x.com/NASA", timeout: scrapeTimeout },
         identity,
       );
 
-      expect(response.error).toContain(
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
+      expect(response.body.error).toContain(
         "X/Twitter scraping is not available for teams restricted to US-only processing.",
       );
     },
