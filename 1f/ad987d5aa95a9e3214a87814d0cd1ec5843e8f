@@ -1,0 +1,24 @@
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_588e9c474193f0 4-8,589-680
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_e96b8d79c0b53f 15-19,75-88,1253-1255,1262-1264,1270,1289-1290,1298,1304-1325,1387
+  s_3002048a2ce37a::t_dfe6e40a12e166 14
+apps/api/src/lib/branding/metrics.ts
+  s_3002048a2ce37a::t_e96b8d79c0b53f 70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1fad987d5aa95a9e3214a87814d0cd1ec5843e8f",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
