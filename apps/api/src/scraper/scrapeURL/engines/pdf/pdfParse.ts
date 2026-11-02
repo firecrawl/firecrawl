@@ -4,11 +4,20 @@ import PdfParse from "pdf-parse";
 import { readFile } from "node:fs/promises";
 import type { PDFProcessorResult } from "./types";
 
+// pdf-parse walks every page the file declares; a tiny file can declare
+// billions. Cap the walk when the request sets no maxPages of its own.
+export const PDF_PARSE_MAX_PAGES = 1000;
+
 export async function scrapePDFWithParsePDF(
   meta: Meta,
   tempFilePath: string,
+  maxPages?: number,
 ): Promise<PDFProcessorResult> {
-  meta.logger.debug("Processing PDF document with parse-pdf", { tempFilePath });
+  const max = maxPages ?? PDF_PARSE_MAX_PAGES;
+  meta.logger.debug("Processing PDF document with parse-pdf", {
+    tempFilePath,
+    maxPages: max,
+  });
 
   try {
     const startedAt = Date.now();
@@ -24,7 +33,7 @@ export async function scrapePDFWithParsePDF(
     // which owns its ArrayBuffer. (@types/pdf-parse declares Buffer, but
     // pdf.js accepts any Uint8Array.)
     const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
-    const result = await PdfParse(bytes as Buffer);
+    const result = await PdfParse(bytes as Buffer, { max });
     const durationMs = Date.now() - startedAt;
     const escaped = escapeHtml(result.text);
 
@@ -32,11 +41,13 @@ export async function scrapePDFWithParsePDF(
       durationMs,
       markdownLength: escaped.length,
       numPages: result.numpages,
+      ...(result.numpages > max ? { truncatedToPages: max } : {}),
     });
 
     return {
       markdown: escaped,
       html: escaped,
+      pagesProcessed: Math.min(result.numpages, max),
     };
   } catch (error) {
     meta.logger.error("pdfParse failed", { error });

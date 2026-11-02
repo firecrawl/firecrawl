@@ -174,6 +174,7 @@ v1Router.post(
   authMiddleware(RateLimiterMode.Scrape),
   deprecationMiddleware("v1_llmstxt"),
   restrictedOptionsCountryCheck,
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(generateLLMsTextController),
 );

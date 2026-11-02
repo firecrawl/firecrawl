@@ -311,3 +311,25 @@ describe("format/action extraction helpers", () => {
     expect(normalizeFormatForRestriction("markdown")).toBe("markdown");
   });
 });
+
+describe("endpoint allowlist and path case", () => {
+  it("classifies uppercase spellings the same as lowercase ones", () => {
+    expect(classifyEndpoint("/V2/scrape")).toEqual(
+      classifyEndpoint("/v2/scrape"),
+    );
+    expect(classifyEndpoint("/v2/SCRAPE")).toEqual(
+      classifyEndpoint("/v2/scrape"),
+    );
+    expect(classifyEndpoint("/v2/scrape/abc-123/INTERACT")).toMatchObject({
+      group: "browser",
+    });
+  });
+
+  it("blocks an uppercase spelling of a disallowed endpoint", () => {
+    const restricted = config({ allowedEndpoints: ["map"] });
+    expect(isEndpointAllowed("/v2/scrape", restricted).allowed).toBe(false);
+    expect(isEndpointAllowed("/V2/scrape", restricted).allowed).toBe(false);
+    expect(isEndpointAllowed("/v2/SCRAPE", restricted).allowed).toBe(false);
+    expect(isEndpointAllowed("/V2/MAP", restricted).allowed).toBe(true);
+  });
+});

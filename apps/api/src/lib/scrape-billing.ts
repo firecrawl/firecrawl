@@ -197,7 +197,7 @@ export async function calculateCreditsToBeBilled(
   }
 
   if (
-    internalOptions.v1Agent?.model === "fire-1" ||
+    internalOptions.v1Agent?.model?.toLowerCase() === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
   ) {
     creditsToBeBilled =

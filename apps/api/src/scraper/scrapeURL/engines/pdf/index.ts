@@ -938,7 +938,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }),
         },
         tempFilePath,
+        maxPages ?? undefined,
       );
+      // pdf-parse stops at its page cap; report (and bill) only the pages
+      // it parsed.
+      if (result.pagesProcessed !== undefined) {
+        effectivePageCount =
+          effectivePageCount > 0
+            ? Math.min(effectivePageCount, result.pagesProcessed)
+            : result.pagesProcessed;
+      }
     }
 
     return {
