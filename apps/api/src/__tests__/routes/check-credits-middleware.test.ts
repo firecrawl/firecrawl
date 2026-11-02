@@ -160,7 +160,10 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
 
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.json).toHaveBeenCalledWith(
-      expect.not.objectContaining({ code: expect.anything() }),
+      expect.objectContaining({
+        code: "insufficient_credits",
+        error: expect.not.stringContaining("contact that platform"),
+      }),
     );
   });
 
