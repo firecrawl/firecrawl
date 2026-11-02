@@ -2,6 +2,8 @@ import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
+import { isUsOnly } from "../../../../../lib/us-only";
+import { isRegionUnavailable, US_DATA_REGION } from "./data-region";
 import {
   buildFirePdfJobTrainingCapture,
   buildFirePdfRequestMetadata,
@@ -118,6 +120,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     fetchImpl,
   } = args;
   const scrapeId = meta.id;
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
 
   if (
     input.kind === "byReference" &&
@@ -164,6 +167,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       tableFormat: firePdfTableFormat(meta),
       trainingCapture: buildFirePdfJobTrainingCapture(meta),
     }),
+    ...(usOnly && { data_region: US_DATA_REGION }),
   };
 
   // The retry does reach a different instance: Fastify's shutdown 503
@@ -224,6 +228,9 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     break;
   }
 
+  if (usOnly && isRegionUnavailable(json)) {
+    failAsync(meta, "region_unavailable", { status });
+  }
   if (status === 401) failAsync(meta, "http_401");
   if (status === 404) failAsync(meta, "http_404");
   if (status === 410) failAsync(meta, "http_410", { body: json });

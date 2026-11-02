@@ -6,6 +6,7 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
+import { isUsOnly } from "../../../../lib/us-only";
 import {
   maybeSaveResult,
   provenanceFromResponse,
@@ -18,6 +19,11 @@ import {
   firePdfTableFormat,
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
+import {
+  firePdfUsOnlyRefusal,
+  isRegionUnavailable,
+  US_DATA_REGION,
+} from "./fire-pdf/data-region";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -107,6 +113,7 @@ export async function scrapePDFWithFirePDF(
   });
 
   const zdr = meta.internalOptions.zeroDataRetention === true;
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
   const pdfSha256 = createPdfCacheKey(base64Content);
   const tableFormat = firePdfTableFormat(meta);
 
@@ -157,6 +164,7 @@ export async function scrapePDFWithFirePDF(
       zdr,
       training_capture: buildFirePdfTrainingCapture(meta),
       ...deadlineFields,
+      ...(usOnly && { data_region: US_DATA_REGION }),
     },
     logger,
     schema: z.object({
@@ -177,10 +185,27 @@ export async function scrapePDFWithFirePDF(
       // the echo is the only proof the fire-pdf build understood the
       // option — older builds ignore unknown request fields and omit it.
       page_markers: z.literal(true).optional(),
+      data_region: z.string().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
+  }).catch(error => {
+    if (
+      usOnly &&
+      isRegionUnavailable(
+        (error as { cause?: { response?: { body?: unknown } } })?.cause
+          ?.response?.body,
+      )
+    ) {
+      throw firePdfUsOnlyRefusal(meta, "region_unavailable", sourceKind);
+    }
+    throw error;
   });
+  // A build that ignores the pin answers without the echo; its result may
+  // have come from GPU capacity outside the US.
+  if (usOnly && resp.data_region !== US_DATA_REGION) {
+    throw firePdfUsOnlyRefusal(meta, "region_unconfirmed", sourceKind);
+  }
 
   const durationMs = Date.now() - startedAt;
   if (includePageMarkdown && resp.pages === undefined) {

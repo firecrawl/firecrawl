@@ -1,6 +1,8 @@
 import type { Meta } from "../../..";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
+import { isUsOnly } from "../../../../../lib/us-only";
+import { isRegionUnavailable } from "./data-region";
 import {
   firePdfAsyncCompletedTotal,
   firePdfAsyncLongPollTotal,
@@ -170,6 +172,16 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
 
     const pollStatus = pollResp.status;
     const pollBody = await pollResp.json().catch(() => ({}));
+
+    if (
+      isUsOnly(meta.internalOptions.teamFlags ?? undefined) &&
+      isRegionUnavailable(pollBody)
+    ) {
+      if (waitMs > 0) firePdfAsyncLongPollTotal.labels("terminal").inc();
+      firePdfAsyncPollCount.observe(pollCount);
+      firePdfAsyncCompletedTotal.labels("failed").inc();
+      failAsync(meta, "region_unavailable", { pollCount, body: pollBody });
+    }
 
     if (pollStatus === 401) {
       firePdfAsyncPollCount.observe(pollCount);

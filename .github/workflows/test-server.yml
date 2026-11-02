@@ -357,6 +357,21 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run US-only PDF, image OCR and PII redaction regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFUsOnly.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/usOnlyPdfRouting.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFBackgroundRefresh.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/parseFirePdfRouting.test.ts
+          src/lib/fire-privacy-client.test.ts
+          src/scraper/scrapeURL/transformers/redactPII.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run country check route regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/__tests__/routes/country-check.routes.test.ts --reporter=default

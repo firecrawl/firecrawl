@@ -5,11 +5,13 @@ import {
   type RedactPIIEntity,
 } from "../controllers/v2/types";
 import { chunkMarkdown, type Chunk } from "./fire-privacy-chunker";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 type FirePrivacyResponse = {
   redacted_text?: unknown;
   spans?: unknown;
   model_status?: unknown;
+  data_region?: unknown;
 };
 
 type RedactOptions = {
@@ -22,6 +24,9 @@ type RedactOptions = {
   // wouldn't trigger this code path at all (transformer skips when
   // meta.options.redactPII is falsy).
   options?: RedactPIIOptions;
+  // Pins the model call to US capacity; a refusal or a reply without the
+  // region echo throws UsOnlyUnavailableError.
+  usOnly?: boolean;
 };
 
 type RedactionSource = "model" | "heuristics" | "unknown";
@@ -43,7 +48,8 @@ type RedactionReason =
   | "upstream_skipped"
   | "service_unavailable"
   | "timeout"
-  | "error";
+  | "error"
+  | "region_unavailable";
 
 type RedactionResult = {
   status: RedactionStatus;
@@ -228,12 +234,15 @@ type ChunkResult =
     }
   | { ok: false; reason: RedactionReason };
 
+const US_DATA_REGION = "us";
+
 async function redactOnce(
   chunk: Chunk,
   options: RedactPIIOptions,
   url: string | undefined,
   timeoutMs: number,
   logger: Logger | undefined,
+  usOnly: boolean,
 ): Promise<ChunkResult> {
   const controller = new AbortController();
   let timedOut = false;
@@ -252,6 +261,7 @@ async function redactOnce(
         mode: MODE_MAP[options.mode],
         operator: REPLACE_MAP[options.replaceStyle],
         language: DEFAULTS.language,
+        ...(usOnly && { data_region: US_DATA_REGION }),
       }),
       signal: controller.signal,
     });
@@ -270,8 +280,16 @@ async function redactOnce(
   clearTimeout(timer);
 
   if (!response.ok) {
+    const refusal: unknown =
+      usOnly && response.status === 503
+        ? await response.json().catch(() => null)
+        : null;
     const reason: RedactionReason =
-      response.status === 503 ? "service_unavailable" : "error";
+      (refusal as { code?: unknown } | null)?.code === "region_unavailable"
+        ? "region_unavailable"
+        : response.status === 503
+          ? "service_unavailable"
+          : "error";
     logger?.warn("fire-privacy returned non-2xx", {
       reason,
       httpStatus: response.status,
@@ -302,6 +320,16 @@ async function redactOnce(
     return { ok: false, reason: "error" };
   }
 
+  // A build that ignores the pin answers without the echo; its model call
+  // may have run outside the US.
+  if (usOnly && body.data_region !== US_DATA_REGION) {
+    logger?.warn("fire-privacy did not confirm US-only processing", {
+      url,
+      chunkStart: chunk.start,
+    });
+    return { ok: false, reason: "region_unavailable" };
+  }
+
   // Lift spans into source coordinates.
   const spans = rawSpans.map(s => ({
     ...s,
@@ -325,6 +353,7 @@ async function runChunks(
   url: string | undefined,
   timeoutMs: number,
   logger: Logger | undefined,
+  usOnly: boolean,
 ): Promise<ChunkResult[]> {
   const results = new Array<ChunkResult>(chunks.length);
   let next = 0;
@@ -333,7 +362,14 @@ async function runChunks(
     while (true) {
       const i = next++;
       if (i >= chunks.length) return;
-      results[i] = await redactOnce(chunks[i], options, url, timeoutMs, logger);
+      results[i] = await redactOnce(
+        chunks[i],
+        options,
+        url,
+        timeoutMs,
+        logger,
+        usOnly,
+      );
     }
   };
 
@@ -405,7 +441,20 @@ export async function redactText(
   }
 
   const chunks = chunkMarkdown(text);
-  const results = await runChunks(chunks, options, opts.url, timeoutMs, logger);
+  const results = await runChunks(
+    chunks,
+    options,
+    opts.url,
+    timeoutMs,
+    logger,
+    opts.usOnly === true,
+  );
+
+  if (results.some(r => !r.ok && r.reason === "region_unavailable")) {
+    throw new UsOnlyUnavailableError(
+      "PII redaction is not available for teams restricted to US-only processing right now: no US capacity could take this request. Try again later.",
+    );
+  }
 
   // All-or-nothing: any chunk failure poisons the whole response. Partial
   // redaction is worse than no redaction — callers can't tell which
