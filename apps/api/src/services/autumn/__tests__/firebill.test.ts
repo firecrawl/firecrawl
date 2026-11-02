@@ -851,6 +851,45 @@ describe("firebillCheck", () => {
     });
   });
 
+  // What a 402 names as the time credits come back.
+  it("passes through the balance's reset time", async () => {
+    answer({
+      success: true,
+      allowed: false,
+      remaining: 0,
+      resets_at: 1_798_761_600_000,
+    });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 0,
+      resetsAt: 1_798_761_600_000,
+    });
+  });
+
+  // A reset time is decoration on the answer, never a reason to fail open.
+  it.each([
+    ["a string", "2026-12-01T00:00:00Z"],
+    ["a fraction", 1.5],
+    ["zero", 0],
+    ["null", null],
+  ])(
+    "drops a resets_at that is %s and keeps the answer",
+    async (_label, resetsAt) => {
+      answer({
+        success: true,
+        allowed: false,
+        remaining: 0,
+        resets_at: resetsAt,
+      });
+      await expect(firebillCheck(checkParams)).resolves.toEqual({
+        status: "answered",
+        allowed: false,
+        remaining: 0,
+      });
+    },
+  );
+
   it("treats an absent remaining on an ALLOWED check as unbounded, not zero", async () => {
     answer({ success: true, allowed: true });
     await expect(firebillCheck(checkParams)).resolves.toEqual({
