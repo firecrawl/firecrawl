@@ -174,6 +174,7 @@ describe("branding script button detection", () => {
     expect(
       snaps.find(s => s.text.startsWith("Mobile copy"))?.colors.text,
     ).toBe("rgb(255, 255, 255)");
+    expect(byText(snaps, "Plain label")?.colors.text).toBe("rgb(255, 255, 255)");
   });
 
   it("still reads the label inside a button waiting on its entrance animation", () => {
@@ -188,7 +189,6 @@ describe("branding script button detection", () => {
       visible: true,
       colors: { background: "rgb(200, 30, 30)", text: "rgb(255, 255, 255)" },
     });
-    expect(byText(snaps, "Plain label")?.colors.text).toBe("rgb(255, 255, 255)");
   });
 
   it("leaves out hidden copies of buttons", () => {
