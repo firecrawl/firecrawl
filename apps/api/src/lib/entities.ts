@@ -150,6 +150,11 @@ export interface WebSearchResult {
   description: string;
   position?: number;
   category?: string;
+  // Page text returned by the search backend itself (SearXNG-compatible
+  // `raw_content`, only present when SEARXNG_INCLUDE_RAW_CONTENT is on and
+  // the backend supports it). Plain extracted text — not Markdown — and
+  // only ever populated for the backend's top results.
+  rawContent?: string;
   // Scraped content fields
   markdown?: string;
   html?: string;

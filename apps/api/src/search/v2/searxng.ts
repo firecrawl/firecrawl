@@ -12,6 +12,7 @@ interface SearchOptions {
   safe?: boolean;
   num_results: number;
   page?: number;
+  include_raw_content?: boolean;
 }
 
 export async function searxng_search(
@@ -39,6 +40,10 @@ export async function searxng_search(
       format: "json",
       // 2 = strict; omitted otherwise so the instance default applies
       ...(options.safe ? { safesearch: 2 } : {}),
+      // SearXNG-compatible extension (e.g. RustXNG): the backend fetches
+      // the top results' page text itself and returns it as `raw_content`.
+      // Backends that do not know the parameter simply ignore it.
+      ...(options.include_raw_content ? { include_raw_content: 1 } : {}),
     };
 
     const response = await axios.get(finalUrl, {
@@ -55,6 +60,9 @@ export async function searxng_search(
         url: a.url,
         title: a.title,
         description: a.content,
+        ...(typeof a.raw_content === "string" && a.raw_content.length > 0
+          ? { rawContent: a.raw_content }
+          : {}),
       }));
     }
 

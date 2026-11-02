@@ -78,6 +78,7 @@ export async function search({
         country,
         location,
         safe,
+        include_raw_content: config.SEARXNG_INCLUDE_RAW_CONTENT,
       });
       if (results.web && results.web.length > 0) return results;
     }

@@ -25,6 +25,9 @@ import {
   scrapeSearchResults,
   mergeScrapedContent,
   calculateScrapeCredits,
+  canServeFromRawContent,
+  rawContentDocument,
+  type DocumentWithCostTracking,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import { searchGovCategory, wantsGovCategory } from "./gov";
@@ -503,11 +506,54 @@ export async function executeSearch(
         safeModeBypassed: context.safeModeBypassed ?? false,
       };
 
-      const allDocsWithCostTracking = await scrapeSearchResults(
-        itemsToScrape.map(i => i.scrapeInput),
-        scrapeOpts,
-        logger,
-        flags,
+      // Fast path: when the operator opted in (SEARXNG_INCLUDE_RAW_CONTENT)
+      // and the search backend already returned a result's page text (raw
+      // content), and the request is a plain markdown-only scrape, serve
+      // that result from the text instead of spawning a scrape job for it.
+      // Results without raw content — and any request an active
+      // threat-protection policy must scan through the scrape pipeline —
+      // fall back to the regular scrape below.
+      const rawContentEligible =
+        config.SEARXNG_INCLUDE_RAW_CONTENT &&
+        canServeFromRawContent(scrapeOptions) &&
+        !(threatPolicy && threatPolicy.mode !== "off");
+      const fastPathDocs = new Map<string, DocumentWithCostTracking>();
+      const itemsStillToScrape = rawContentEligible
+        ? itemsToScrape.filter(item => {
+            const doc = rawContentDocument(item);
+            if (doc) {
+              fastPathDocs.set(item.scrapeInput.url, doc);
+              return false;
+            }
+            return true;
+          })
+        : itemsToScrape;
+
+      if (fastPathDocs.size > 0) {
+        logger.info(
+          `Serving ${fastPathDocs.size} search result(s) from backend raw content, scraping ${itemsStillToScrape.length}`,
+        );
+      }
+
+      const scrapedDocs =
+        itemsStillToScrape.length > 0
+          ? await scrapeSearchResults(
+              itemsStillToScrape.map(i => i.scrapeInput),
+              scrapeOpts,
+              logger,
+              flags,
+            )
+          : [];
+      const scrapedByUrl = new Map(
+        itemsStillToScrape.map((item, index) => [
+          item.scrapeInput.url,
+          scrapedDocs[index],
+        ]),
+      );
+      const allDocsWithCostTracking = itemsToScrape.map(
+        item =>
+          fastPathDocs.get(item.scrapeInput.url) ??
+          scrapedByUrl.get(item.scrapeInput.url)!,
       );
 
       mergeScrapedContent(scrapeTarget, itemsToScrape, allDocsWithCostTracking);
