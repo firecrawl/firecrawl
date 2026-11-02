@@ -10,6 +10,14 @@ import {
 import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
 
+const TLS_CERT_ERROR_CODES = new Set([
+  "CERT_HAS_EXPIRED",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
 function decodeHtmlBuffer(
   buf: Buffer,
   contentType?: string,
@@ -202,7 +210,7 @@ export async function scrapeURLWithFetch(
         error instanceof Error &&
         error.message === "fetch failed" &&
         error.cause &&
-        (error.cause as any).code === "CERT_HAS_EXPIRED"
+        TLS_CERT_ERROR_CODES.has((error.cause as any).code)
       ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
