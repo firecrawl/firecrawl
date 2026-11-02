@@ -11,7 +11,12 @@ import { formatHex, hsl, parse, wcagContrast } from "culori";
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
 import { getTypeSafeClient } from "../typesafe";
-import { APITimeoutError, Image, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APIError,
+  APITimeoutError,
+  Image,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 import {
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
@@ -65,6 +70,20 @@ let breakerOpenUntil = 0;
 
 function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
+}
+
+/**
+ * TypeSafe turning the image away: a 529 (it sheds load on the image lane
+ * first, text calls keep answering) or a 5xx whose message names the image,
+ * such as "503 Image processing is unavailable". A plain 5xx or a timeout
+ * is a failure of the call itself and is handled as before.
+ */
+function isImageRejection(error: unknown): boolean {
+  return (
+    error instanceof APIError &&
+    (error.status === 529 ||
+      (error.status >= 500 && /\bimage/i.test(error.message)))
+  );
 }
 
 function recordJevFailure(input: BrandingLLMInput): void {
@@ -1231,24 +1250,24 @@ export async function enhanceBrandingWithJev(
   let request: JevRequest;
   let response: JevResponse;
   let called = false;
-  try {
-    request = buildJevRequest(input, screenshot);
-    response = await withSpan(
+  let imageRetried = false;
+  const callJev = (req: JevRequest) =>
+    withSpan(
       "typesafe.systemone",
       async span => {
         called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
-            state: request.state,
-            questions: request.questions,
-            ...(request.assets ? { assets: request.assets } : {}),
+            state: req.state,
+            questions: req.questions,
+            ...(req.assets ? { assets: req.assets } : {}),
           },
           {
             timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
             retry: JEV_RETRY,
             // Image input is opt-in per request.
-            ...(request.assets
+            ...(req.assets
               ? { headers: { "TypeSafe-Danger-Zone-Images": "true" } }
               : {}),
           },
@@ -1267,8 +1286,8 @@ export async function enhanceBrandingWithJev(
         zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
-          "branding.jev.questions": Object.keys(request.questions).length,
-          "branding.jev.screenshot": !!screenshot,
+          "branding.jev.questions": Object.keys(req.questions).length,
+          "branding.jev.screenshot": !!req.assets,
           "branding.jev.screenshot_outcome": firstScreen.outcome,
           ...(firstScreen.bytes !== undefined
             ? { "branding.jev.screenshot_bytes": firstScreen.bytes }
@@ -1276,11 +1295,34 @@ export async function enhanceBrandingWithJev(
           ...(firstScreen.outcome !== "none"
             ? { "branding.jev.screenshot_load_ms": firstScreen.loadMs }
             : {}),
+          ...(imageRetried ? { "branding.jev.image_retry": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
+  try {
+    request = buildJevRequest(input, screenshot);
+    try {
+      response = await callJev(request);
+    } catch (error) {
+      if (!called || !screenshot || !isImageRejection(error)) throw error;
+      // TypeSafe's image lane is the part that is overloaded (its text calls
+      // keep answering), so ask again from the text alone. Jev without the
+      // first screen is still a far better answer per dollar than the LLM
+      // fallback, and a refused image says nothing about Jev's health, so
+      // it doesn't count toward the breaker.
+      count("image_rejected");
+      input.logger.info("Jev refused the first screen, asking without it", {
+        error: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - started,
+        ...screenshotLog,
+      });
+      imageRetried = true;
+      called = false;
+      request = buildJevRequest(input, undefined);
+      response = await callJev(request);
+    }
   } catch (error) {
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
@@ -1342,6 +1384,7 @@ export async function enhanceBrandingWithJev(
     questions: Object.keys(request.questions).length,
     logoConfidence: result.logoConfidence,
     ...screenshotLog,
+    ...(imageRetried ? { imageRetried } : {}),
   });
   return result;
 }
