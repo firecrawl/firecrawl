@@ -1,6 +1,7 @@
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import {
   scrape,
+  scrapeRaw,
   crawl,
   batchScrape,
   scrapeStatusRaw,
@@ -26,7 +27,7 @@ import {
   expectScrapesAreFullyCleanedAfterZDRCleaner,
   expectBatchScrapeIsCleanedUp,
 } from "../zdr-helpers";
-import { HAS_JOB_LOG } from "../job-log";
+import { HAS_JOB_LOG, waitForJobLogRows } from "../job-log";
 
 describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
   const scopes = ["Team-scoped", "Request-scoped"] as const;
@@ -63,6 +64,43 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         expect(status.statusCode).toBe(404);
       }
     }, 60000);
+
+    it(
+      "should keep no error text for a failed scrape",
+      async () => {
+        const identity = await idmux({
+          name: `zdr/${scope}/failed-scrape`,
+          credits: 10000,
+          flags: {
+            scrapeZDR: scope === "Team-scoped" ? "forced" : "allowed",
+          },
+        });
+
+        // An unresolvable host fails the scrape with an error naming the host.
+        const hostname = `zdr-error-${crypto.randomUUID()}.invalid`;
+        const response = await scrapeRaw(
+          {
+            url: `https://${hostname}/`,
+            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+          },
+          identity,
+        );
+        expect(response.body.success).toBe(false);
+
+        const rows = await waitForJobLogRows(
+          "scrapes",
+          "team_id = {teamId: UUID}",
+          { teamId: identity.teamId! },
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0].is_successful).toBe(false);
+        expect(rows[0].error).toBeTruthy();
+        expect(String(rows[0].error)).not.toContain(hostname);
+
+        await expectScrapeIsCleanedUp(String(rows[0].id));
+      },
+      scrapeTimeout,
+    );
 
     it(
       "should clean up a crawl",

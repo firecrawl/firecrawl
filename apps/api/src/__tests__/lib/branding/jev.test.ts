@@ -1,7 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import { generateObject } from "ai";
-import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APITimeoutError,
+  InternalServerError,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 
 const mocks = vi.hoisted(() => ({ systemOne: vi.fn() }));
 
@@ -581,6 +585,131 @@ describe("branding with Jev", () => {
       expect(
         result.buttonClassification.primaryButtonIndex,
       ).toBeGreaterThanOrEqual(0);
+    });
+
+    const callCount = async (outcome: string) =>
+      (await brandingJevCallsTotal.get()).values.find(
+        v => v.labels.outcome === outcome,
+      )?.value ?? 0;
+    const refused = (status: number, message: string) =>
+      new InternalServerError(status, {}, new Headers(), message);
+    const withScreen = () => {
+      const input = baseInput(new CostTracking());
+      input.firstScreen = `data:image/png;base64,${PNG}`;
+      return input;
+    };
+
+    it("asks again from the text alone when TypeSafe refuses the image, instead of paying for the LLM", async () => {
+      for (const refusal of [
+        refused(503, "503 Image processing is unavailable."),
+        refused(
+          529,
+          "529 We are currently experiencing high traffic and cannot process your request.",
+        ),
+      ]) {
+        mocks.systemOne.mockReset();
+        mocks.systemOne
+          .mockRejectedValueOnce(refusal)
+          .mockResolvedValueOnce(jevResponse());
+        const before = {
+          rejected: await callCount("image_rejected"),
+          ok: await callCount("ok"),
+        };
+
+        const result = await enhanceBrandingWithLLM(withScreen());
+
+        expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+        const [first, firstOptions] = mocks.systemOne.mock.calls[0];
+        const [second, secondOptions] = mocks.systemOne.mock.calls[1];
+        expect(first.assets).toBeDefined();
+        expect(firstOptions.headers).toEqual({
+          "TypeSafe-Danger-Zone-Images": "true",
+        });
+        expect(second.assets).toBeUndefined();
+        expect(second.state.page.first_screen).toBeUndefined();
+        expect(second.questions.primary_button.instructions).not.toContain(
+          "<screenshot>",
+        );
+        expect(secondOptions.headers).toBeUndefined();
+        expect(generateObject).not.toHaveBeenCalled();
+        expect(
+          result.buttonClassification.primaryButtonIndex,
+        ).toBeGreaterThanOrEqual(0);
+        expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+        expect(await callCount("ok")).toBe(before.ok + 1);
+      }
+    });
+
+    it("does not count a refused image toward the breaker", async () => {
+      // Five failures in a row would open it; five refused images must not.
+      mocks.systemOne.mockReset();
+      for (let i = 0; i < 5; i++) {
+        mocks.systemOne
+          .mockRejectedValueOnce(
+            refused(503, "503 Image processing is unavailable."),
+          )
+          .mockResolvedValueOnce(jevResponse());
+      }
+      for (let i = 0; i < 5; i++) await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(10);
+      expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(11);
+      expect(generateObject).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the LLM when the text-only retry fails too, and that failure counts toward the breaker", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne
+        .mockRejectedValueOnce(
+          refused(503, "503 Image processing is unavailable."),
+        )
+        .mockRejectedValueOnce(refused(500, "500 Internal server error"));
+      const before = {
+        rejected: await callCount("image_rejected"),
+        error: await callCount("error"),
+      };
+
+      await enhanceBrandingWithLLM(withScreen());
+
+      expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+      expect(await callCount("error")).toBe(before.error + 1);
+
+      // That failure was the first of five: four more plain failures open
+      // the breaker, which a refused image alone would not have done.
+      mocks.systemOne.mockRejectedValue(
+        refused(500, "500 Internal server error"),
+      );
+      for (let i = 0; i < 4; i++) {
+        await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      }
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      expect(generateObject).toHaveBeenCalledTimes(6);
+    });
+
+    it("still falls back to the LLM on a server error that is not about the image, or a refusal without one", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(500, "500 Internal server error"),
+      );
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+
+      // A 529 on a text-only call is TypeSafe asking us to back off: no retry.
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(529, "529 We are currently experiencing high traffic"),
+      );
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(2);
     });
   });
 
