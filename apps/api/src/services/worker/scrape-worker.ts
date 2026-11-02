@@ -101,6 +101,8 @@ import {
   withSpan,
   withZeroDataRetention,
   setSpanAttributes,
+  isExpectedError,
+  markExpectedError,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
@@ -1909,11 +1911,18 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
     if (job.data.skipNuq) {
       throw error;
     } else {
-      if (error instanceof TransportableError) {
-        throw new Error(serializeTransportableError(error));
-      } else {
-        throw new Error(serializeTransportableError(new UnknownError(error)));
-      }
+      // The queue stores the failure as a serialized TransportableError. The
+      // carrier keeps the code and expected-ness so the worker span's
+      // exception is still grouped by code and filtered like the original.
+      const transportable =
+        error instanceof TransportableError ? error : new UnknownError(error);
+      const carrier = Object.assign(
+        new Error(serializeTransportableError(transportable)),
+        { code: transportable.code, stack: transportable.stack },
+      );
+      throw isExpectedError(transportable)
+        ? markExpectedError(carrier)
+        : carrier;
     }
   }
 }

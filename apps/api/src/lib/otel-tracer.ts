@@ -31,6 +31,7 @@ import {
   resourceFromAttributes,
 } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { ZodError } from "zod";
 
 export { SpanKind } from "@opentelemetry/api";
 export type { Span } from "@opentelemetry/api";
@@ -284,6 +285,42 @@ function cleanAttributes(
 
 // Spans marked failed by `recordSpanException`; `withSpan` keeps their error status.
 const erroredSpans = new WeakSet<Span>();
+// Errors already attached to some span, so a later catch-all (the Express
+// error handler) does not record the same failure a second time.
+const recordedErrors = new WeakSet<object>();
+
+/**
+ * Marks an error class whose instances are a normal outcome rather than a
+ * defect: user-facing scrape failures, engine-loop control flow, timeouts,
+ * cancellations, request validation. Such errors still fail their span and are
+ * recorded on it, but with `error.expected = true`, so error dashboards and
+ * alerts can leave them out and show the unexpected rest. Declare it as a class
+ * field (`[EXPECTED_ERROR] = true`) or set it on an instance with
+ * `markExpectedError`.
+ */
+export const EXPECTED_ERROR: unique symbol = Symbol.for(
+  "firecrawl.otel.expected_error",
+);
+
+export function markExpectedError<T extends object>(error: T): T {
+  Object.defineProperty(error, EXPECTED_ERROR, {
+    value: true,
+    enumerable: false,
+    configurable: true,
+  });
+  return error;
+}
+
+export function isExpectedError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  if ((error as { [EXPECTED_ERROR]?: unknown })[EXPECTED_ERROR] === true) {
+    return true;
+  }
+  // Request validation failures answer 400 and are not ours to fix.
+  return error instanceof ZodError;
+}
 
 interface SpanOptions {
   attributes?: SpanAttributeInput;
@@ -327,14 +364,65 @@ export async function withSpan<T>(
 /**
  * Marks a span as failed and attaches the error as an exception event, for
  * failures that are handled (returned) rather than thrown out of `withSpan`.
+ * The span also gets `error.expected` (see `EXPECTED_ERROR`) and, for errors
+ * that carry a string `code` such as `TransportableError`, `error.code`.
  */
 export function recordSpanException(span: Span, error: unknown): void {
   erroredSpans.add(span);
+  if (typeof error === "object" && error !== null) {
+    recordedErrors.add(error);
+  }
   span.recordException(error instanceof Error ? error : String(error));
   span.setStatus({
     code: SpanStatusCode.ERROR,
     message: error instanceof Error ? error.message : String(error),
   });
+
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  span.setAttributes({
+    "error.expected": isExpectedError(error),
+    ...(typeof code === "string" ? { "error.code": code } : {}),
+  });
+}
+
+/**
+ * Records an error that escaped every handler, such as an Express 500. An
+ * error that a `withSpan` already recorded (a traced controller that threw)
+ * is left alone; the Express error handler runs after that span ended, so
+ * recording it again would count the failure twice. Otherwise it goes on the
+ * active span when there is one, or on a standalone `api.unhandled_error`
+ * span, so routes without a root span still produce an exception event.
+ */
+export function recordUnhandledException(
+  error: unknown,
+  attributes?: SpanAttributeInput,
+): void {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    recordedErrors.has(error)
+  ) {
+    return;
+  }
+
+  const active = trace.getActiveSpan();
+  if (active) {
+    recordSpanException(active, error);
+    if (attributes) {
+      setSpanAttributes(active, attributes);
+    }
+    return;
+  }
+
+  const span = trace.getTracer(TRACER_NAME).startSpan("api.unhandled_error", {
+    kind: SpanKind.SERVER,
+    attributes: cleanAttributes(attributes),
+  });
+  recordSpanException(span, error);
+  span.end();
 }
 
 export function setSpanAttributes(
