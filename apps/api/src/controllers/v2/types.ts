@@ -2189,6 +2189,9 @@ export type TeamFlags = {
   // The org's contract bars training on its data: FirePDF never captures its
   // documents (buildFirePdfTrainingCapture).
   trainingRestricted?: boolean;
+  // Every request is processed by US-based vendors only. A route with no US
+  // vendor is refused or skipped with a warning.
+  usOnly?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {
