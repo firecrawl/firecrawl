@@ -292,4 +292,40 @@ describe("NuQ RabbitMQ listener and sender reconnect recovery (#5401)", () => {
       vi.useRealTimers();
     }
   });
+
+  it("closes leaked resources and does not leave stale listener on consume failure", async () => {
+    const { NuQ } = await freshNuQModule();
+    const q = new NuQ("test_queue", {});
+
+    channelMock.consume.mockRejectedValueOnce(new Error("consume failed"));
+
+    await expect((q as any).startListener()).rejects.toThrow("consume failed");
+
+    expect((q as any).listener).toBeNull();
+    expect(channelMock.close).toHaveBeenCalled();
+    expect(connectionMock.close).toHaveBeenCalled();
+
+    await q.shutdown();
+  });
+
+  it("awaits in-flight listener and sender startups on shutdown", async () => {
+    const { NuQ } = await freshNuQModule();
+    const q = new NuQ("test_queue", {});
+
+    let resolveConnect: ((val: any) => void) | null = null;
+    const delayedConnect = new Promise(resolve => {
+      resolveConnect = resolve;
+    });
+    connectMock.mockReturnValueOnce(delayedConnect);
+
+    const listenerPromise = (q as any).startListener();
+    const shutdownPromise = q.shutdown();
+
+    // Resolve after shutdown started
+    resolveConnect!(connectionMock);
+
+    await Promise.all([listenerPromise, shutdownPromise]);
+
+    expect((q as any).listener).toBeNull();
+  });
 });

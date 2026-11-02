@@ -48,6 +48,13 @@ function getConnectionCloseHandler(): () => void {
   return call?.[1] as () => void;
 }
 
+function getChannelCloseHandler(): () => void {
+  const call = (channelMock.on as Mock).mock.calls.find(
+    c => c[0] === "close",
+  );
+  return call?.[1] as () => void;
+}
+
 async function freshIndexerQueueModule() {
   vi.resetModules();
   return import("./indexer-queue.js");
@@ -100,8 +107,40 @@ describe("IndexerQueue RabbitMQ reconnect resilience", () => {
 
       // Second attempt succeeds after backoff (2000ms)
       connectMock.mockResolvedValueOnce(connectionMock);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(connectMock).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
       expect(connectMock).toHaveBeenCalledTimes(3);
+
+      expect(channelMock.checkQueue).toHaveBeenCalled();
+      await indexerQueue.sendToWorker({
+        id: "idx_2",
+        type: "links",
+        discovery_url: "https://example.com/2",
+        urls: ["https://example.com/c"],
+      });
+      expect(channelMock.publish).toHaveBeenCalled();
+
+      await indexerQueue.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconnects when publish channel closes independently", async () => {
+    vi.useFakeTimers();
+    try {
+      const { indexerQueue } = await freshIndexerQueueModule();
+      await indexerQueue.connect();
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(1);
+
+      const onChannelClose = getChannelCloseHandler();
+      expect(onChannelClose).toBeTypeOf("function");
+
+      onChannelClose();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(2);
 
       await indexerQueue.close();
     } finally {

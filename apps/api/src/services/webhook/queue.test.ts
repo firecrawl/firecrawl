@@ -48,6 +48,13 @@ function getConnectionCloseHandler(): () => void {
   return call?.[1] as () => void;
 }
 
+function getChannelCloseHandler(): () => void {
+  const call = (channelMock.on as Mock).mock.calls.find(
+    c => c[0] === "close",
+  );
+  return call?.[1] as () => void;
+}
+
 async function freshWebhookQueueModule() {
   vi.resetModules();
   return import("./queue.js");
@@ -100,8 +107,40 @@ describe("WebhookQueue RabbitMQ reconnect resilience", () => {
 
       // Second attempt succeeds after backoff (2000ms)
       connectMock.mockResolvedValueOnce(connectionMock);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(connectMock).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
       expect(connectMock).toHaveBeenCalledTimes(3);
+
+      expect(channelMock.checkQueue).toHaveBeenCalled();
+      await webhookQueue.publish({
+        webhookId: "wh_2",
+        url: "https://example.com/webhook2",
+        event: "test2",
+        data: { hello: "world2" },
+      } as any);
+      expect(channelMock.sendToQueue).toHaveBeenCalled();
+
+      await webhookQueue.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconnects when channel closes independently", async () => {
+    vi.useFakeTimers();
+    try {
+      const { webhookQueue } = await freshWebhookQueueModule();
+      await webhookQueue.connect();
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(1);
+
+      const onChannelClose = getChannelCloseHandler();
+      expect(onChannelClose).toBeTypeOf("function");
+
+      onChannelClose();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(2);
 
       await webhookQueue.close();
     } finally {

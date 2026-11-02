@@ -41,6 +41,12 @@ class IndexerQueue {
 
     try {
       await this.connectPromise;
+      if (this.closing) {
+        await this.publishChannel?.close().catch(() => {});
+        await this.connection?.close().catch(() => {});
+        this.cleanup();
+        return;
+      }
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -58,19 +64,39 @@ class IndexerQueue {
       return;
     }
 
+    let connection: amqp.ChannelModel | null = this.connection;
+    let channel: amqp.Channel | null = null;
+
     try {
       logger.info("Connecting to index RabbitMQ");
 
-      this.connection = await amqp.connect(config.INDEXER_RABBITMQ_URL);
-      this.publishChannel = await this.connection.createChannel();
+      if (!connection) {
+        connection = await amqp.connect(config.INDEXER_RABBITMQ_URL);
+      }
+      channel = await connection.createChannel();
 
       // NOTE: this queue is already created by another service
-      await this.publishChannel.checkQueue(LINKS_QUEUE_NAME);
+      await channel.checkQueue(LINKS_QUEUE_NAME);
+
+      if (this.closing) {
+        await channel.close().catch(() => {});
+        await connection.close().catch(() => {});
+        return;
+      }
+
+      this.connection = connection;
+      this.publishChannel = channel;
 
       this._registerConnectionEvents();
 
       logger.info("Connected to index RabbitMQ");
     } catch (err) {
+      if (channel) {
+        await channel.close().catch(() => {});
+      }
+      if (connection) {
+        await connection.close().catch(() => {});
+      }
       this.connection = null;
       this.publishChannel = null;
       throw err;
@@ -96,6 +122,16 @@ class IndexerQueue {
       logger.error("Index RabbitMQ connection error", {
         err,
       });
+    });
+
+    this.publishChannel.on("close", () => {
+      logger.warn("Index RabbitMQ channel closed", {
+        module: "index-queue",
+      });
+      this.publishChannel = null;
+      if (!this.closing) {
+        this.scheduleReconnect();
+      }
     });
 
     this.publishChannel.on("error", err => {
@@ -212,6 +248,11 @@ class IndexerQueue {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.connectPromise) {
+      try {
+        await this.connectPromise;
+      } catch {}
     }
 
     try {

@@ -27,6 +27,12 @@ class WebhookQueue {
 
     try {
       await this.connectPromise;
+      if (this.closing) {
+        await this.channel?.close().catch(() => {});
+        await this.connection?.close().catch(() => {});
+        this.cleanup();
+        return;
+      }
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -42,15 +48,29 @@ class WebhookQueue {
       throw new Error("NUQ_RABBITMQ_URL is not configured");
     }
 
+    let connection: amqp.ChannelModel | null = this.connection;
+    let channel: amqp.Channel | null = null;
+
     try {
       _logger.info("Connecting to webhook RabbitMQ", {
         module: "webhook-queue",
       });
 
-      this.connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
-      this.channel = await this.connection.createChannel();
+      if (!connection) {
+        connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+      }
+      channel = await connection.createChannel();
 
-      await this.channel.checkQueue(WEBHOOK_QUEUE_NAME);
+      await channel.checkQueue(WEBHOOK_QUEUE_NAME);
+
+      if (this.closing) {
+        await channel.close().catch(() => {});
+        await connection.close().catch(() => {});
+        return;
+      }
+
+      this.connection = connection;
+      this.channel = channel;
 
       this._registerConnectionEvents();
 
@@ -58,6 +78,12 @@ class WebhookQueue {
         module: "webhook-queue",
       });
     } catch (err) {
+      if (channel) {
+        await channel.close().catch(() => {});
+      }
+      if (connection) {
+        await connection.close().catch(() => {});
+      }
       this.connection = null;
       this.channel = null;
       throw err;
@@ -82,6 +108,16 @@ class WebhookQueue {
         module: "webhook-queue",
         err,
       });
+    });
+
+    this.channel.on("close", () => {
+      _logger.warn("Webhook RabbitMQ channel closed", {
+        module: "webhook-queue",
+      });
+      this.channel = null;
+      if (!this.closing) {
+        this.scheduleReconnect();
+      }
     });
 
     this.channel.on("error", err => {
@@ -193,6 +229,11 @@ class WebhookQueue {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.connectPromise) {
+      try {
+        await this.connectPromise;
+      } catch {}
     }
     try {
       await this.channel?.close();
