@@ -1471,6 +1471,7 @@ export async function scrapeURL(
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
                       location: options.location,
+                      skipTlsVerification: options.skipTlsVerification,
                     },
                     id,
                     meta.logger,
