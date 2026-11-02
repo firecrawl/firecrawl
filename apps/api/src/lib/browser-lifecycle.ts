@@ -21,6 +21,7 @@ import {
   didBrowserSessionUsePrompt,
   didBrowserSessionComeFromHostedMcp,
   markBrowserSessionHostedMcp,
+  clearBrowserSessionHostedMcp,
   listUnsettledHangarSessions,
   BrowserSessionRow,
 } from "./browser-sessions";
@@ -443,6 +444,7 @@ export async function reserveBrowserPromptCredits(
     session.ttl_total * 1000,
     browserCreditsPerHour(true, session.zero_data_retention),
   );
+  const wasHostedMcp = req.auth.hostedMcp === true;
   if (session.should_bill && req.acuc?.org_id) {
     const credit = await checkBrowserCredits(req, {
       teamId: session.team_id,
@@ -478,6 +480,14 @@ export async function reserveBrowserPromptCredits(
     if (current.should_bill && req.auth.hostedMcp)
       await markBrowserSessionHostedMcp(current.id).catch(error =>
         logger.warn("Failed to mark a hosted MCP browser session", {
+          sessionId: current.id,
+          error,
+        }),
+      );
+    // A hosted prompt that fell back to team credits bills the whole session there.
+    if (current.should_bill && wasHostedMcp && !req.auth.hostedMcp)
+      await clearBrowserSessionHostedMcp(current.id).catch(error =>
+        logger.warn("Failed to clear a hosted MCP browser session", {
           sessionId: current.id,
           error,
         }),

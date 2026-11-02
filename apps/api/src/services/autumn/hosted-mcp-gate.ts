@@ -8,6 +8,7 @@ type CheckResult = Awaited<ReturnType<typeof autumnService.checkCredits>>;
  * when they refuse it, on the team's own `featureId` balance, where team-scoped
  * grants such as coupons live out of reach of the MCP credits check.
  * `onTeamCredits` means the charge must then be billed like an API-key call.
+ * A null `result` means billing was unavailable for whichever check decided.
  */
 export async function checkHostedMcpCredits(
   params: TrackCreditsParams & { featureId: string },
@@ -29,7 +30,8 @@ export async function checkHostedMcpCredits(
     return onMcpCredits;
 
   const onTeam = await autumnService.checkCredits(params);
-  return onTeam?.allowed
+  if (onTeam === null) return { ...onMcpCredits, result: null };
+  return onTeam.allowed
     ? { result: onTeam, featureId: params.featureId, onTeamCredits: true }
     : onMcpCredits;
 }

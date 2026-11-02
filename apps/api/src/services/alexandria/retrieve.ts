@@ -409,9 +409,8 @@ export async function retrieveProviders(input: {
           (!hold.reason || hold.reason === "out_of_credits") &&
           featureId !== teamFeatureId
         ) {
-          const onTeam = await lock(teamFeatureId);
-          if (onTeam.status === "locked") {
-            hold = onTeam;
+          hold = await lock(teamFeatureId);
+          if (hold.status === "locked") {
             featureId = teamFeatureId;
             hostedMcp = false;
           }

@@ -202,6 +202,16 @@ it("holds a hosted MCP call MCP credits refuse on the team's own credits", async
   );
 });
 
+it("reports billing unavailable when the team-credit fallback hold can't be placed", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied", reason: "out_of_credits" })
+    .mockResolvedValueOnce({ status: "denied", reason: "gate_unavailable" });
+
+  const refused = await run({ hostedMcp: true });
+  expect(refused).toMatchObject({ status: 503, executed: false });
+  expect(executions()).toHaveLength(0);
+});
+
 it("refuses a different payload under the same x-request-id", async () => {
   await run();
   const other = await run({

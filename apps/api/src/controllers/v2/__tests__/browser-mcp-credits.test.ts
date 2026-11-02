@@ -3,6 +3,7 @@ import type { Response } from "express";
 const mocks = vi.hoisted(() => ({
   checkCredits: vi.fn(),
   markHostedMcp: vi.fn(),
+  clearHostedMcp: vi.fn(),
   cameFromHostedMcp: vi.fn(),
   usedPrompt: vi.fn(),
   settleOnce: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   didBrowserSessionUsePrompt: mocks.usedPrompt,
   markBrowserSessionUsedPrompt: vi.fn(),
   markBrowserSessionHostedMcp: mocks.markHostedMcp,
+  clearBrowserSessionHostedMcp: mocks.clearHostedMcp,
   didBrowserSessionComeFromHostedMcp: mocks.cameFromHostedMcp,
   upsertBrowserProfile: vi.fn(),
   deleteBrowserProfile: vi.fn(),
@@ -176,6 +178,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.checkCredits.mockResolvedValue({ allowed: true, remaining: 1000 });
   mocks.markHostedMcp.mockResolvedValue(undefined);
+  mocks.clearHostedMcp.mockResolvedValue(undefined);
   mocks.cameFromHostedMcp.mockResolvedValue(false);
   mocks.usedPrompt.mockResolvedValue(false);
   mocks.billTeam.mockResolvedValue({ success: true });
@@ -253,6 +256,16 @@ describe("browser sessions from hosted MCP calls", () => {
     mocks.markHostedMcp.mockClear();
     await reserveBrowserPromptCredits(makeReq(false) as any, session);
     expect(mocks.markHostedMcp).not.toHaveBeenCalled();
+  });
+
+  it("bills the session on team credits when a hosted prompt falls back to them", async () => {
+    mocks.checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 1000 });
+
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.markHostedMcp).not.toHaveBeenCalled();
+    expect(mocks.clearHostedMcp).toHaveBeenCalledWith("session-1");
   });
 
   it.each([
