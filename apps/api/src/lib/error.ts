@@ -275,7 +275,10 @@ export class UnknownError extends TransportableError {
   }
 
   serialize() {
-    return super.serialize();
+    // The wrapped error does not survive the queue, so its classification
+    // travels explicitly; otherwise a cancelled job revived on the API side
+    // would look like a defect.
+    return { ...super.serialize(), expected: this[EXPECTED_ERROR] };
   }
 
   static deserialize(
@@ -285,6 +288,7 @@ export class UnknownError extends TransportableError {
     const x = new UnknownError("dummy");
     x.message = data.message;
     x.stack = data.stack;
+    x[EXPECTED_ERROR] = data.expected === true;
     return x;
   }
 }

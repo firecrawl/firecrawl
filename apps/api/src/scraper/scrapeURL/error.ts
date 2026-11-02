@@ -4,8 +4,9 @@ import { Engine, FeatureFlag } from "./engines";
 import { isSelfHosted } from "../../lib/deployment";
 import { EXPECTED_ERROR } from "../../lib/otel-tracer";
 
+// Not expected as a class: engines also raise it for index, storage and temp
+// file failures. Sites that report a remote scrape outcome mark the instance.
 export class EngineError extends Error {
-  [EXPECTED_ERROR] = true;
   constructor(message?: string, options?: ErrorOptions) {
     super(message, options);
   }

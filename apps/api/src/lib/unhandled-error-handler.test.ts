@@ -153,6 +153,28 @@ describe("unhandledErrorHandler", () => {
     expect(await exportedSpans()).toHaveLength(0);
   });
 
+  it("records nothing for a team whose search is forced zero data retention", async () => {
+    const searchZdrTeam = {
+      team_id: "team-search-zdr",
+      flags: { searchZDR: "forced-zdr" as const },
+    };
+    const response = await request(appUnderTest(searchZdrTeam))
+      .post("/v2/boom")
+      .send({});
+
+    expect(response.status).toBe(500);
+    expect(await exportedSpans()).toHaveLength(0);
+  });
+
+  it("records nothing when the request asks for enterprise anonymous handling", async () => {
+    const response = await request(appUnderTest())
+      .post("/v2/boom")
+      .send({ enterprise: ["anon"] });
+
+    expect(response.status).toBe(500);
+    expect(await exportedSpans()).toHaveLength(0);
+  });
+
   it("records for a team whose flags do not force zero data retention", async () => {
     const plainTeam = {
       team_id: "team-plain",

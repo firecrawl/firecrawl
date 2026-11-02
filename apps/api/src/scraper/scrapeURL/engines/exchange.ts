@@ -9,7 +9,11 @@ import {
   getExchangeResponseLogContext,
   ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
-import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
+import {
+  markExpectedError,
+  setSpanAttributes,
+  withSpan,
+} from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
 import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
 import { EngineError, ExchangeRefusedError } from "../error";
@@ -258,7 +262,8 @@ export async function scrapeURLWithExchange(
               : message,
           );
         }
-        throw new EngineError("Exchange request failed");
+        // The provider could not serve the page; a normal engine outcome.
+        throw markExpectedError(new EngineError("Exchange request failed"));
       }
 
       const responseLogContext = getExchangeResponseLogContext(

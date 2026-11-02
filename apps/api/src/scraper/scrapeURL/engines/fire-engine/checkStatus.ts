@@ -18,6 +18,7 @@ import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
+import { markExpectedError } from "../../../../lib/otel-tracer";
 import { Meta } from "../..";
 
 const browserCookieSchema = z
@@ -259,12 +260,15 @@ export async function fireEngineCheckStatus(
         : status.error;
       throw new ActionError(errorMessage);
     } else {
-      throw new EngineError("Scrape job failed", {
-        cause: {
-          status,
-          jobId,
-        },
-      });
+      // A remote scrape outcome, not a defect (see scrape.ts).
+      throw markExpectedError(
+        new EngineError("Scrape job failed", {
+          cause: {
+            status,
+            jobId,
+          },
+        }),
+      );
     }
   } else {
     logger.debug("Check status returned response not matched by any schema", {
