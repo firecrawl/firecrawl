@@ -9,6 +9,7 @@ import { brandingRoutedTotal } from "./metrics";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
+import { isUsOnly } from "../us-only";
 
 const JSON_SCHEMA_TYPES = new Set([
   "string",
@@ -108,7 +109,9 @@ export async function enhanceBrandingWithLLM(
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
 
-  if (!isJevBrandingEnabled()) {
+  if (isUsOnly(input.teamFlags ?? undefined)) {
+    brandingRoutedTotal.inc({ model: "llm", reason: "us_only" });
+  } else if (!isJevBrandingEnabled()) {
     brandingRoutedTotal.inc({
       model: "llm",
       // No key (self-hosted without TypeSafe) is not the switch turned off.
@@ -143,7 +146,10 @@ export async function enhanceBrandingWithLLM(
     promptLength > 8000;
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
-  const model = getModel(modelName);
+  const model = getModel(modelName, undefined, {
+    teamFlags: input.teamFlags,
+    feature: "Branding format",
+  });
   // getModel honors a MODEL_NAME override; record the model that actually ran.
   const modelId =
     (typeof model === "string" ? model : model.modelId) || modelName;

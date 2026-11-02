@@ -33,6 +33,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { isSdkOrigin } from "../../lib/sdk-origin";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -95,6 +96,14 @@ async function oldExtract(
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
     });
+
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
 
     return res.status(500).json({
       success: false,

@@ -30,11 +30,13 @@ import {
 } from "../../lib/scrape-interact/scrape-replay";
 import {
   executePromptViaBrowserAgent,
+  getBrowserAgentModel,
   executeCodeViaBrowserSession,
   selectBrowserAgentTab,
   AgentResult,
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import {
@@ -97,6 +99,7 @@ interface BrowserExecuteResponse {
   stderr?: string;
   exitCode?: number;
   killed?: boolean;
+  code?: string;
   error?: string;
 }
 
@@ -347,6 +350,27 @@ async function scrapeInteractInternal(
     if (prompt && !rawCode) {
       logger.info("Starting agent loop from prompt", { prompt, timeout });
 
+      const agentTrace = {
+        sessionId: session.id,
+        scrapeId,
+        teamId: req.auth.team_id,
+        ...traceIdentity,
+        zeroDataRetention,
+        teamFlags: req.acuc?.flags,
+        ...traceScrapeContext,
+      };
+
+      try {
+        getBrowserAgentModel(agentTrace);
+      } catch (err) {
+        if (!(err instanceof UsOnlyUnavailableError)) throw err;
+        return res.status(403).json({
+          success: false,
+          code: err.code,
+          error: err.message,
+        });
+      }
+
       try {
         await reserveBrowserPromptCredits(req, session);
       } catch (error) {
@@ -359,14 +383,7 @@ async function scrapeInteractInternal(
           session.browser_id,
           timeout,
           logger,
-          {
-            sessionId: session.id,
-            scrapeId,
-            teamId: req.auth.team_id,
-            ...traceIdentity,
-            zeroDataRetention,
-            ...traceScrapeContext,
-          },
+          agentTrace,
         );
       } catch (err) {
         logger.error("Agent loop failed", { error: err });
@@ -398,6 +415,7 @@ async function scrapeInteractInternal(
             teamId: req.auth.team_id,
             ...traceIdentity,
             zeroDataRetention,
+            teamFlags: req.acuc?.flags,
             ...traceScrapeContext,
           },
         );

@@ -153,6 +153,7 @@ vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
   selectBrowserAgentTab: vi.fn(async () => {}),
   executePromptViaBrowserAgent: vi.fn(),
   executeCodeViaBrowserSession: vi.fn(),
+  getBrowserAgentModel: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-session-activity", () => ({
