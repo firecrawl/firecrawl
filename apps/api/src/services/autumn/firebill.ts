@@ -248,6 +248,16 @@ const checkAnswerSchema = z.discriminatedUnion("success", [
     success: z.literal(true),
     allowed: z.boolean(),
     remaining: z.number().finite().optional().catch(undefined),
+    // Epoch ms, within what a Date can hold: the 402 renders it with
+    // toISOString(). Caught to undefined: a mis-shaped reset time must not turn
+    // an answer into a fail-open.
+    resets_at: z
+      .number()
+      .int()
+      .positive()
+      .max(8_640_000_000_000_000)
+      .optional()
+      .catch(undefined),
   }),
   z.object({ success: z.literal(false) }),
 ]);
@@ -660,7 +670,13 @@ async function firebillAttempt(
  * yes/no, `unavailable` means firebill could not answer at all.
  */
 type FirebillCheckResult =
-  | { status: "answered"; allowed: boolean; remaining: number }
+  | {
+      status: "answered";
+      allowed: boolean;
+      remaining: number;
+      /** When the balance behind the answer next resets, in epoch ms. */
+      resetsAt?: number;
+    }
   | { status: "unavailable" };
 
 /**
@@ -795,7 +811,12 @@ export async function firebillCheck({
         remaining,
       });
     }
-    return { status: "answered", allowed: body.allowed, remaining };
+    return {
+      status: "answered",
+      allowed: body.allowed,
+      remaining,
+      ...(body.resets_at ? { resetsAt: body.resets_at } : {}),
+    };
   } catch (error) {
     const failure = classifyTransportError(error);
     // **Not "firebill is unavailable".** The request never completed, which is

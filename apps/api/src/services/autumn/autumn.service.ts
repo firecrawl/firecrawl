@@ -551,6 +551,7 @@ export class AutumnService {
         return {
           allowed: result.allowed,
           remaining: result.remaining,
+          ...(result.resetsAt ? { resetsAt: result.resetsAt } : {}),
           ...(gatewayProvisioned ? { gatewayProvisioned } : {}),
         };
       }
