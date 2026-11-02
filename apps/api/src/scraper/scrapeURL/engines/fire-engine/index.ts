@@ -722,6 +722,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       scrapeId: meta.id,
       engine: "tlsclient",
       instantReturn: false,
+      skipTlsVerification: meta.options.skipTlsVerification,
 
       headers: meta.options.headers,
       priority: meta.internalOptions.priority,

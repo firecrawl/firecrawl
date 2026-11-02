@@ -498,9 +498,8 @@ const engineOptions: {
   },
   // The file engines (pdf, document, image) pass skipTlsVerification through
   // to their direct downloads, and a browser handoff already applied it
-  // upstream, so they declare it supported: otherwise every cache-miss file
-  // scrape carries a misleading "may be partial" warning, since v2 defaults
-  // the option to true.
+  // upstream, so they declare it supported: otherwise every file scrape that
+  // sets it carries a misleading "may be partial" warning.
   pdf: {
     features: {
       actions: false,
