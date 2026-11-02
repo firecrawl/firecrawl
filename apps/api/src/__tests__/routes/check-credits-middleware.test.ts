@@ -510,6 +510,9 @@ describe("checkCreditsMiddleware – MCP credits", () => {
 
     expect(res.status).toHaveBeenCalledWith(402);
     expect(nextCalled).toBe(false);
+    expect(
+      checkCreditsMock.mock.calls.map(([check]) => check.featureId),
+    ).toEqual(["MCP_CREDITS", "CREDITS"]);
   });
 
   it("bills a hosted MCP call on the team's own credits when MCP credits can't cover it", async () => {
