@@ -6,6 +6,7 @@ import { Meta } from "..";
 import { getModel } from "../../../lib/generic-ai";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 import {
@@ -392,6 +393,14 @@ export async function performQuery(
     document.warning =
       "Query mode is not supported with zero data retention." +
       (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    addWarning(
+      document,
+      "Query mode is not supported for teams restricted to US-only processing.",
+    );
     return document;
   }
 

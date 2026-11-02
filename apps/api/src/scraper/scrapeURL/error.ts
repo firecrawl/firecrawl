@@ -31,6 +31,22 @@ export class XTwitterConfigurationError extends TransportableError {
   }
 }
 
+/** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
+export class UsOnlyUnavailableError extends TransportableError {
+  constructor(message: string) {
+    super("US_ONLY_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new UsOnlyUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class NoEnginesLeftError extends TransportableError {
   public fallbackList: Engine[];
 
