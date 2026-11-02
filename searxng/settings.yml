@@ -1,0 +1,45 @@
+# SearXNG configuration for the self-hosted Firecrawl search backend.
+# Only the differences from the SearXNG defaults are listed here.
+# The secret key comes from the SEARXNG_SECRET environment variable
+# (see docker-compose.yaml); do not commit a real secret to this file.
+use_default_settings: true
+
+general:
+  instance_name: "firecrawl-searxng"
+
+server:
+  # Firecrawl is the only client and sends bursts of requests from one IP;
+  # the built-in limiter would throttle it.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  # Firecrawl calls /search?format=json; without "json" SearXNG answers 403.
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+
+# Make sure the engines listed in SEARXNG_ENGINES are enabled, so that one
+# provider blocking us (e.g. DuckDuckGo's anti-bot page) does not empty
+# the result set.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: wikipedia
+    disabled: false

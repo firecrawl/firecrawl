@@ -70,6 +70,22 @@ security, availability, capacity, upgrades, data retention, and compliance.
 Treat the Kubernetes and Helm examples as versioned starting points, not as
 evidence that these production decisions have been made for you.
 
+## Web search (SearXNG)
+
+`/v2/search` uses the bundled `searxng` service (`docker-compose.yaml`), a
+metasearch engine that queries several engines at once. DuckDuckGo alone tends
+to answer bursts of queries from one IP with an anti-bot page.
+
+- Settings live in `searxng/settings.yml` (JSON output on, limiter off).
+- Set `SEARXNG_SECRET` in `.env` to a random string.
+- `SEARXNG_ENGINES` picks the engines (default
+  `google,bing,brave,startpage,duckduckgo,qwant,wikipedia`).
+- Time filters (`tbs: qdr:d|w|m|y`) map to SearXNG's `time_range`.
+- If SearXNG returns nothing the API falls back to DuckDuckGo. If every provider
+  fails, the API answers `503 SEARCH_PROVIDERS_UNAVAILABLE` with the reason
+  instead of an empty result.
+- To use DuckDuckGo only, set `SEARXNG_ENDPOINT=` (empty) in `.env`.
+
 ## Admin routes
 
 The key-protected routes on the main API port, `/admin/ops/...` and

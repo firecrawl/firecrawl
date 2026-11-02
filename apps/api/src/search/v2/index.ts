@@ -5,6 +5,24 @@ import { searxng_search } from "./searxng";
 import { ddgSearch } from "./ddgsearch";
 import { Logger } from "winston";
 
+/**
+ * Thrown when every search provider that was tried failed (as opposed to
+ * returning no results). Lets the API answer 503 with the reason instead of
+ * an empty success that is indistinguishable from "nothing found".
+ */
+export class SearchProvidersUnavailableError extends Error {
+  public readonly code = "SEARCH_PROVIDERS_UNAVAILABLE" as const;
+
+  constructor(public readonly providerErrors: string[]) {
+    super(`All search providers failed: ${providerErrors.join("; ")}`);
+    this.name = "SearchProvidersUnavailableError";
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function search({
   query,
   logger,
@@ -68,33 +86,58 @@ export async function search({
     // includeDomains/excludeDomains are enforced on returned URLs only on
     // the fire engine path above; the fallback providers below receive them
     // solely as the site: chain baked into the query.
+    const providerErrors: string[] = [];
+    let providersTried = 0;
+
     if (config.SEARXNG_ENDPOINT) {
+      providersTried += 1;
       logger.info("Using searxng search");
-      const results = await searxng_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-        safe,
-      });
-      if (results.web && results.web.length > 0) return results;
+      try {
+        const results = await searxng_search(query, {
+          num_results,
+          tbs,
+          filter,
+          lang,
+          country,
+          location,
+          safe,
+        });
+        if (results.web && results.web.length > 0) return results;
+        logger.info("SearXNG returned no results, falling back to DuckDuckGo");
+      } catch (error) {
+        providerErrors.push(`SearXNG: ${errorMessage(error)}`);
+      }
     }
 
+    providersTried += 1;
     logger.info("Using DuckDuckGo search");
-    const ddgResults = await ddgSearch(query, num_results, {
-      tbs,
-      lang,
-      country,
-      proxy,
-      timeout,
-    });
-    if (ddgResults.web && ddgResults.web.length > 0) return ddgResults;
+    try {
+      const ddgResults = await ddgSearch(query, num_results, {
+        tbs,
+        lang,
+        country,
+        proxy,
+        timeout,
+      });
+      if (ddgResults.web && ddgResults.web.length > 0) return ddgResults;
+    } catch (error) {
+      providerErrors.push(`DuckDuckGo: ${errorMessage(error)}`);
+    }
 
-    // Fallback to empty response
+    // Every provider errored: report it instead of an empty "success".
+    if (providerErrors.length === providersTried) {
+      throw new SearchProvidersUnavailableError(providerErrors);
+    }
+
+    // At least one provider answered and genuinely found nothing.
     return {};
   } catch (error) {
+    if (error instanceof SearchProvidersUnavailableError) {
+      logger.error("All search providers failed", {
+        errors: error.providerErrors,
+      });
+      throw error;
+    }
     logger.error(`Error in search function`, { error });
     return {};
   }

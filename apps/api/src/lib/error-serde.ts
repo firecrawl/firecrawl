@@ -105,6 +105,7 @@ const errorMap: Record<ErrorCodes, any> = {
   BAD_REQUEST_INVALID_JSON: null,
   INDEX_DAILY_LIMIT: null,
   TOOL_DISCOVERY_UNAVAILABLE: null,
+  SEARCH_PROVIDERS_UNAVAILABLE: null,
   PARSE_UNSUPPORTED_OPTIONS: null,
 
   // Agent thread rejections are API-level, never transported through workers.

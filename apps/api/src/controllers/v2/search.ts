@@ -58,6 +58,7 @@ import {
   reserveIndexCalls,
 } from "../../lib/index-daily-limit";
 import { requestOrigin } from "../../lib/request-origin";
+import { SearchProvidersUnavailableError } from "../../search/v2/index";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyNotice, type Notice } from "../../lib/deprecations";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
@@ -654,6 +655,15 @@ async function searchControllerInner(
 
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof SearchProvidersUnavailableError) {
+      setSpanAttributes(span, { "search.status_code": 503 });
+      return res.status(503).json({
         success: false,
         code: error.code,
         error: error.message,

@@ -52,8 +52,10 @@ x-common-env: &common-env
   PROXY_SERVER: ${PROXY_SERVER}
   PROXY_USERNAME: ${PROXY_USERNAME}
   PROXY_PASSWORD: ${PROXY_PASSWORD}
-  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
-  SEARXNG_ENGINES: ${SEARXNG_ENGINES}
+  # Bundled SearXNG metasearch (see the searxng service below). Set
+  # SEARXNG_ENDPOINT to an empty value in .env to fall back to DuckDuckGo only.
+  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT-http://searxng:8080}
+  SEARXNG_ENGINES: ${SEARXNG_ENGINES:-google,bing,brave,startpage,duckduckgo,qwant,wikipedia}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
   # Some sites (e.g. Yahoo Finance) send >16KB of response headers; undici's
   # default limit makes the fetch engine fail with UND_ERR_HEADERS_OVERFLOW.
@@ -121,6 +123,9 @@ services:
       nuq-postgres:
         condition: service_healthy
         required: false
+      searxng:
+        condition: service_started
+        required: false
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     volumes:
@@ -131,6 +136,32 @@ services:
     cpus: 4.0
     mem_limit: 8G
     memswap_limit: 8G
+
+  # Self-hosted metasearch for /v2/search. Queries several engines at once, so a
+  # single engine blocking us (DuckDuckGo's anti-bot page) no longer empties the
+  # results. Reachable only on the backend network.
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-firecrawl-searxng-change-me}
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    networks:
+      - backend
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
 
   redis:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
