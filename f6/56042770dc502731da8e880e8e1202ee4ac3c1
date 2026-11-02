@@ -1,0 +1,40 @@
+apps/api/src/lib/unhandled-error-handler.test.ts
+  s_6a7201d5c4fd9c::t_ca9217f842586c 156-177
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_6a7201d5c4fd9c::t_6ab8d2e1813bee 263-271
+  s_6a7201d5c4fd9c::t_94c329e6a9275f 21
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.ts
+  s_6a7201d5c4fd9c::t_efa07a86b5a73d 348-356
+  s_6a7201d5c4fd9c::t_7ca687d131a735 8-11
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_6609d511857340 54
+  s_6a7201d5c4fd9c::t_0d3bfcb59b04bd 12
+  s_6a7201d5c4fd9c::t_63272e3414d328 55-60,64-67,69-75,77-80,83,86,89-91
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_4ec26ccfa7a13b 7-8
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_e4101eff6ab770 278-281,291
+apps/api/src/lib/error.test.ts
+  s_6a7201d5c4fd9c::t_9aa93c51631bab 20-22
+  s_6a7201d5c4fd9c::t_484642ff24d9c6 2-5
+  s_6a7201d5c4fd9c::t_fcc0c4066a3e85 16-19,23-27
+apps/api/src/scraper/scrapeURL/engines/exchange.ts
+  s_6a7201d5c4fd9c::t_d239be5bec46e9 265-266
+  s_6a7201d5c4fd9c::t_9ea731bdeaa0f5 12-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f656042770dc502731da8e880e8e1202ee4ac3c1",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
