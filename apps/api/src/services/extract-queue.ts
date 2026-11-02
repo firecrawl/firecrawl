@@ -29,7 +29,13 @@ async function getChannel(): Promise<amqp.Channel> {
   }
 
   connection = await amqp.connect(url);
+  connection.on("error", err => {
+    _logger.error("Extract queue connection error", { error: err });
+  });
   channel = await connection.createChannel();
+  channel.on("error", err => {
+    _logger.error("Extract queue channel error", { error: err });
+  });
 
   // Set up the dead letter exchange
   await channel.assertExchange(EXTRACT_DLX, "direct", { durable: true });
@@ -58,10 +64,6 @@ async function getChannel(): Promise<amqp.Channel> {
     _logger.warn("Extract queue connection closed");
     connection = null;
     channel = null;
-  });
-
-  connection.on("error", err => {
-    _logger.error("Extract queue connection error", { error: err });
   });
 
   return channel;
