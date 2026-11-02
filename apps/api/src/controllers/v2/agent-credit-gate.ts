@@ -38,7 +38,8 @@ export type AgentCreditGate =
  * or on the team's own credits when MCP credits can't cover it.
  *
  * Fails open: whenever Autumn or firebill can't answer, the run starts as
- * requested.
+ * requested, except a hosted run MCP credits refuse, which stays refused when
+ * the team check can't answer.
  */
 export async function gateAgentCredits({
   teamId,
