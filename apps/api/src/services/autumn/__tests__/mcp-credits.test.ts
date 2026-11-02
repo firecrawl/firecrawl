@@ -56,7 +56,6 @@ vi.mock("../../../config", () => ({
         ? {
             FIREBILL_URL: "http://firebill.test",
             FIREBILL_SECRET: "fb-secret",
-            FIREBILL_ORG_IDS: ["org-1"],
           }
         : {}),
     };

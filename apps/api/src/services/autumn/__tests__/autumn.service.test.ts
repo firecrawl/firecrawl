@@ -1048,7 +1048,7 @@ describe("getTeamLimits", () => {
 });
 
 // ---------------------------------------------------------------------------
-// firebill routing (gradual rollout by org allowlist)
+// firebill routing
 // ---------------------------------------------------------------------------
 
 describe("firebill routing", () => {
@@ -1057,7 +1057,6 @@ describe("firebill routing", () => {
   const firebillConfig = () => ({
     FIREBILL_URL: "http://firebill.test",
     FIREBILL_SECRET: "fb-secret",
-    FIREBILL_ORG_IDS: ["org-1", "org-2"],
   });
 
   const firebillResponse = (success: boolean) =>
@@ -1158,7 +1157,7 @@ describe("firebill routing", () => {
     expect(trackKey).not.toBe(refundKey);
   });
 
-  it("routes trackCredits for an allowlisted org to firebill, not Autumn", async () => {
+  it("routes trackCredits to firebill, not Autumn", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
 
@@ -1220,7 +1219,7 @@ describe("firebill routing", () => {
   // Autumn about the ghost's balance alone — and a gateway ghost is designed to
   // spend credits it does not have, so it 402'd exactly the requests the
   // partner pool exists to fund.
-  it("routes checkCredits for an allowlisted org to /v1/check, not Autumn", async () => {
+  it("routes checkCredits to /v1/check, not Autumn", async () => {
     state.configRef = firebillConfig();
     mockFetch.mockResolvedValue(
       new Response(
@@ -1256,14 +1255,9 @@ describe("firebill routing", () => {
   // The same property as the charge paths, and it bites harder on the gate: a
   // provisioned org that misses firebill on a charge is billed to the wrong
   // account, but one that misses firebill on the *gate* is refused outright —
-  // Autumn is asked about a balance the org was never meant to pay from. So a
-  // sampling bucket must not decide it.
-  it("routes a gateway-provisioned team's CHECK off the allowlist and at 0 percent", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-      FIREBILL_ROLLOUT_PERCENT: 0,
-    };
+  // Autumn is asked about a balance the org was never meant to pay from.
+  it("routes a gateway-provisioned team's CHECK through firebill, flagged as gateway", async () => {
+    state.configRef = firebillConfig();
     state.gatewayStubRow = { team_id: "team-1" };
     mockFetch.mockResolvedValue(
       new Response(
@@ -1313,11 +1307,8 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("checks directly in Autumn for orgs NOT on the allowlist", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
+  it("checks directly in Autumn when firebill is not configured", async () => {
+    state.configRef = {};
     const svc = makeService();
 
     await svc.checkCredits({
@@ -1354,88 +1345,33 @@ describe("firebill routing", () => {
     expect(body.properties.endpoint).toBe("extract");
   });
 
-  it("routes a gateway-provisioned team even when it is off the allowlist and at 0 percent", async () => {
-    // The property the whole branch exists for: a partner's usage cannot depend
-    // on a sampling bucket. Only firebill knows how to split it between the
-    // provisioned org's balance and the partner's pool.
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-      FIREBILL_ROLLOUT_PERCENT: 0,
-    };
+  it("caches a positive gateway lookup without re-querying, since provisioning is one-way", async () => {
+    state.configRef = firebillConfig();
     state.gatewayStubRow = { team_id: "team-1" };
     const svc = makeService();
 
-    const result = await svc.trackCredits({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 42,
-    });
-
-    expect(result).toBe(true);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(mockTrack).not.toHaveBeenCalled();
-  });
-
-  it("caches a positive without re-querying, since provisioning is one-way", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: [],
-      FIREBILL_ROLLOUT_PERCENT: 0,
-    };
-    state.gatewayStubRow = { team_id: "team-1" };
-    // A fresh Response per call: firebill reads the body, and a reused one looks
-    // like a failure and triggers its retry.
-    mockFetch.mockImplementation(async () => firebillResponse(true));
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
-    // The row vanishing must not un-route the team: provisioning is one-way,
+    expect(await svc.hostedMcpFeatureId("team-1", "CREDITS")).toBe("CREDITS");
+    // The row vanishing must not un-flag the team: provisioning is one-way,
     // and re-reading would put a query on every billing event.
     state.gatewayStubRow = null;
-    await svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
-
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockTrack).not.toHaveBeenCalled();
+    expect(await svc.hostedMcpFeatureId("team-1", "CREDITS")).toBe("CREDITS");
   });
 
-  it("does not cache a negative when the lookup fails", async () => {
+  it("does not cache a negative when the gateway lookup fails", async () => {
     // A blip must not become a TTL's worth of partner usage billed to the
-    // provisioned account alone: that event routes direct, the next asks again.
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: [],
-      FIREBILL_ROLLOUT_PERCENT: 0,
-    };
+    // provisioned account alone: that call answers "not gateway", the next
+    // asks again.
+    state.configRef = firebillConfig();
     state.gatewayStubThrows = true;
     state.gatewayStubRow = { team_id: "team-1" };
-    mockFetch.mockImplementation(async () => firebillResponse(true));
     const svc = makeService();
 
-    await svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(await svc.hostedMcpFeatureId("team-1", "CREDITS")).not.toBe(
+      "CREDITS",
+    );
 
     state.gatewayStubThrows = false;
-    await svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses the direct Autumn path for orgs NOT on the allowlist", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
-    const svc = makeService();
-
-    const result = await svc.trackCredits({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 42,
-    });
-
-    expect(result).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockTrack).toHaveBeenCalledTimes(1);
+    expect(await svc.hostedMcpFeatureId("team-1", "CREDITS")).toBe("CREDITS");
   });
 
   it("uses the direct Autumn path when FIREBILL_SECRET is missing", async () => {
@@ -1446,19 +1382,6 @@ describe("firebill routing", () => {
 
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockTrack).toHaveBeenCalledTimes(1);
-  });
-
-  it("trims whitespace and ignores empty entries in FIREBILL_ORG_IDS", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["  org-1  ", "", "  "],
-    };
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
-
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(mockTrack).not.toHaveBeenCalled();
   });
 
   it("returns false when firebill responds success:false — no Autumn fallback", async () => {
@@ -1515,7 +1438,7 @@ describe("firebill routing", () => {
   const lockResponse = (body: Record<string, unknown>) =>
     new Response(JSON.stringify(body), { status: 200 });
 
-  it("routes lockCredits for an allowlisted org to /v1/lock, not Autumn", async () => {
+  it("routes lockCredits to /v1/lock, not Autumn", async () => {
     state.configRef = firebillConfig();
     mockFetch.mockResolvedValue(
       lockResponse({
@@ -1796,10 +1719,7 @@ describe("firebill routing", () => {
 
   // Unreachable (#4403), but a token here would silently skip the gate.
   it("refuses a hold when a job token reaches the direct-Autumn path", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
+    state.configRef = {};
     const svc = makeService();
 
     expect(
@@ -1863,33 +1783,6 @@ describe("firebill routing", () => {
         lockId: "lock-1",
       }),
     ).toEqual({ status: "skipped" });
-  });
-
-  // Routing can flip in the hour between a lock and its finalize; going direct
-  // would drop the partner's only report of the run.
-  it("follows the run token to firebill even when routing says otherwise", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
-    const svc = makeService();
-
-    await svc.finalizeCreditsLock({
-      lockId: "monitor_check-1",
-      action: "confirm",
-      overrideValue: 7,
-      team: { teamId: "team-1", orgId: "org-1" },
-      externalRequestId: "run-42",
-    });
-
-    expect(mockFinalize).not.toHaveBeenCalled();
-    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
-      String(url).endsWith("/v1/finalize"),
-    );
-    expect(finalizeCall).toBeDefined();
-    expect(JSON.parse(finalizeCall![1].body).external_request_id).toBe(
-      "run-42",
-    );
   });
 
   it("hands the run token back on the finalize as the operation id", async () => {
@@ -2055,11 +1948,8 @@ describe("firebill routing", () => {
     );
   });
 
-  it("uses the direct Autumn lock path for orgs NOT on the allowlist", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
+  it("uses the direct Autumn lock path when firebill is not configured", async () => {
+    state.configRef = {};
     const svc = makeService();
 
     const result = await svc.lockCredits({
@@ -2074,7 +1964,7 @@ describe("firebill routing", () => {
     expect(mockCheck).toHaveBeenCalledTimes(1);
   });
 
-  it("routes finalizeCreditsLock through /v1/finalize when teamId is on the rollout", async () => {
+  it("routes finalizeCreditsLock through /v1/finalize for a team", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
 
@@ -2146,17 +2036,6 @@ describe("firebill routing", () => {
     expect(await routeCount("firebill", "finalize")).toBe(before + 1);
   });
 
-  it("routes an orgless finalize through firebill even when no org is on the rollout", async () => {
-    state.configRef = { ...firebillConfig(), FIREBILL_ORG_IDS: [] };
-    const svc = makeService();
-
-    await svc.finalizeCreditsLock({ lockId: "lock-1", action: "release" });
-
-    expect(mockFinalize).not.toHaveBeenCalled();
-    const body = JSON.parse(mockFetch.mock.calls[0]![1].body);
-    expect(body.idempotency_key).toBe("fc:finalize:release:lock-1");
-  });
-
   // Same contract as the direct settle it replaces: one attempt, and `false`
   // back to the caller when it did not land. No retry is added here.
   it("answers false for an orgless finalize firebill did not take, after one attempt", async () => {
@@ -2188,11 +2067,8 @@ describe("firebill routing", () => {
     expect(await routeCount("direct", "finalize")).toBe(before + 1);
   });
 
-  it("finalizes directly in Autumn when the team's org is NOT on the allowlist", async () => {
-    state.configRef = {
-      ...firebillConfig(),
-      FIREBILL_ORG_IDS: ["some-other-org"],
-    };
+  it("finalizes a team's lock directly in Autumn when firebill is not configured", async () => {
+    state.configRef = {};
     const svc = makeService();
 
     await svc.finalizeCreditsLock({
@@ -2243,7 +2119,6 @@ describe("the org the caller supplies", () => {
     state.configRef = {
       FIREBILL_URL: "http://firebill.test",
       FIREBILL_SECRET: "fb-secret",
-      FIREBILL_ORG_IDS: [CALLER_ORG],
     };
 
     try {
@@ -2343,16 +2218,11 @@ describe("provisioning by route", () => {
   const firebillConfig = () => ({
     FIREBILL_URL: "http://firebill.test",
     FIREBILL_SECRET: "fb-secret",
-    FIREBILL_ORG_IDS: ["org-1"],
   });
 
-  // The same team, off the allowlist and at 0 percent, so it bills straight to
-  // Autumn. The route is the only thing that differs between the two halves.
-  const directConfig = () => ({
-    ...firebillConfig(),
-    FIREBILL_ORG_IDS: ["some-other-org"],
-    FIREBILL_ROLLOUT_PERCENT: 0,
-  });
+  // The same team with firebill unconfigured, so it bills straight to Autumn.
+  // The route is the only thing that differs between the two halves.
+  const directConfig = () => ({});
 
   // A fresh Response per call: firebill reads the body, and a reused one looks
   // like a failure and triggers its retry.

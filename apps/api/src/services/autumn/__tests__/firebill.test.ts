@@ -7,7 +7,6 @@ import {
   firebillLock,
   firebillTrack,
   processFirebillTrackRetry,
-  shouldRouteToFirebill,
 } from "../firebill";
 import { logger } from "../../../lib/logger";
 import {
@@ -24,8 +23,6 @@ const { configState } = vi.hoisted(() => ({
   configState: {
     FIREBILL_URL: "https://firebill.test",
     FIREBILL_SECRET: "secret",
-    FIREBILL_ORG_IDS: ["allow-listed-org"] as string[] | undefined,
-    FIREBILL_ROLLOUT_PERCENT: 0,
     FIRECRAWL_BUILD_SHA: undefined as string | undefined,
   },
 }));
@@ -78,8 +75,6 @@ const params = {
 beforeEach(() => {
   configState.FIREBILL_URL = "https://firebill.test";
   configState.FIREBILL_SECRET = "secret";
-  configState.FIREBILL_ORG_IDS = ["allow-listed-org"];
-  configState.FIREBILL_ROLLOUT_PERCENT = 0;
   configState.FIRECRAWL_BUILD_SHA = undefined;
   firebillTrackTotal.reset();
   firebillRetryTotal.reset();
@@ -94,45 +89,6 @@ beforeEach(() => {
   vi.mocked(logger.error).mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
-
-describe("shouldRouteToFirebill", () => {
-  it("routes the allowlist even at 0 percent", () => {
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(true);
-  });
-
-  it("routes nobody else at 0 percent — the kill switch", () => {
-    const others = Array.from({ length: 200 }, (_, i) => `other-${i}`);
-    expect(others.some(orgId => shouldRouteToFirebill(orgId))).toBe(false);
-  });
-
-  it("routes roughly the configured share once ramped", () => {
-    const orgs = Array.from({ length: 1000 }, (_, i) => `ramp-${i}`);
-    configState.FIREBILL_ROLLOUT_PERCENT = 30;
-    const share =
-      (orgs.filter(orgId => shouldRouteToFirebill(orgId)).length /
-        orgs.length) *
-      100;
-    expect(Math.abs(share - 30)).toBeLessThan(6);
-  });
-
-  it("ignores a non-object second argument, so callback use cannot route everyone", () => {
-    // `orgs.filter(shouldRouteToFirebill)` would pass the array index as the
-    // options argument. TypeScript rejects that now, but the runtime must be
-    // safe too: destructuring a field off a number yields undefined.
-    configState.FIREBILL_ROLLOUT_PERCENT = 0;
-    const asCallback = shouldRouteToFirebill as unknown as (
-      orgId: string,
-      index: number,
-    ) => boolean;
-    expect(asCallback("not-allow-listed", 7)).toBe(false);
-  });
-
-  it("stays off entirely when firebill is not configured", () => {
-    configState.FIREBILL_ROLLOUT_PERCENT = 100;
-    configState.FIREBILL_SECRET = "";
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(false);
-  });
-});
 
 /**
  * The outcome counter alone — the one the alerts read, which must keep exactly

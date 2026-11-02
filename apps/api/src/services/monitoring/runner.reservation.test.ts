@@ -38,7 +38,6 @@ vi.mock("../../config", () => ({
 vi.mock("../../lib/logger", () => ({ logger }));
 vi.mock("../autumn/client", () => ({ autumnClient: sdk }));
 vi.mock("../autumn/firebill", () => ({
-  shouldRouteToFirebill: () => false,
   firebillConfigured: () => false,
 }));
 vi.mock("../autumn/metrics", () => ({

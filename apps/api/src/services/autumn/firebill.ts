@@ -3,7 +3,6 @@ import type { Job } from "bullmq";
 import { z } from "zod";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
-import { sampled } from "../../lib/rollout";
 import {
   getFirebillTrackRetryQueue,
   type FirebillTrackRetryJobData,
@@ -266,67 +265,12 @@ const lockAnswerSchema = z.discriminatedUnion("success", [
   z.object({ success: z.literal(false) }),
 ]);
 
-// FIREBILL_ORG_IDS is decoded once at startup by the config schema; the Set is
-// built lazily on first use and cached, keyed on the decoded array reference.
-let allowlistCache: { source: string[] | undefined; ids: Set<string> } | null =
-  null;
-
-function firebillOrgIds(): Set<string> {
-  const source = config.FIREBILL_ORG_IDS;
-  if (!allowlistCache || allowlistCache.source !== source) {
-    allowlistCache = {
-      source,
-      ids: new Set(
-        (source ?? []).map(id => id.trim()).filter(id => id.length > 0),
-      ),
-    };
-  }
-  return allowlistCache.ids;
-}
-
 /**
- * Configured, without the rollout question — a finalize carrying a run token
- * follows the lock through firebill whatever the ramp says.
+ * Whether firebill is configured. When it is, every org's usage goes through
+ * firebill rather than straight to Autumn.
  */
 export function firebillConfigured(): boolean {
   return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
-}
-
-/**
- * Whether this org's usage goes through firebill rather than straight to Autumn.
- * Needs firebill configured, then any of: the allowlist, being
- * partner-provisioned, or the sticky percentage.
- *
- * `gatewayProvisioned` is deliberately a parameter rather than a lookup in here:
- * this stays a pure function of config so it can be reasoned about and tested
- * without a database, and the caller already has the answer cached.
- *
- * It arrives in an options object rather than as a second positional argument
- * because this predicate is used as a callback — `orgs.filter(shouldRouteToFirebill)`
- * would otherwise pass the array *index* as it, routing everything but element
- * zero. Destructuring a field off a number yields undefined, so the object form
- * cannot be fooled that way.
- *
- * **This whole gateway branch is meant to be deleted.** It exists only because
- * the ramp is below 100: a gateway partner's usage must route deterministically,
- * and a sticky sample is a probability. At `FIREBILL_ROLLOUT_PERCENT=100` every
- * org routes anyway, the branch stops changing any outcome, and it — along with
- * the lookup feeding it — should go.
- */
-export function shouldRouteToFirebill(
-  orgId: string,
-  opts?: { gatewayProvisioned?: boolean },
-): boolean {
-  if (!firebillConfigured()) return false;
-  // Always-on set: test orgs stay routed even at 0 percent.
-  if (firebillOrgIds().has(orgId)) return true;
-  // A partner-provisioned org always routes: firebill is the only thing that
-  // knows how to split its usage between that org's own balance and the
-  // partner's, so a charge that misses firebill is billed wholly to an account
-  // nobody pays for, and the partner is silently never charged.
-  if (opts?.gatewayProvisioned) return true;
-  // Sticky by org, so a ramp only ever adds and 0 is the kill switch.
-  return sampled(orgId, config.FIREBILL_ROLLOUT_PERCENT);
 }
 
 // Plain concatenation rather than new URL(path, base): a leading-slash path
