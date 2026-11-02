@@ -660,6 +660,39 @@ describe("branding with Jev", () => {
       expect(generateObject).not.toHaveBeenCalled();
     });
 
+    it("falls back to the LLM when the text-only retry fails too, and that failure counts toward the breaker", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne
+        .mockRejectedValueOnce(
+          refused(503, "503 Image processing is unavailable."),
+        )
+        .mockRejectedValueOnce(refused(500, "500 Internal server error"));
+      const before = {
+        rejected: await callCount("image_rejected"),
+        error: await callCount("error"),
+      };
+
+      await enhanceBrandingWithLLM(withScreen());
+
+      expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+      expect(await callCount("error")).toBe(before.error + 1);
+
+      // That failure was the first of five: four more plain failures open
+      // the breaker, which a refused image alone would not have done.
+      mocks.systemOne.mockRejectedValue(
+        refused(500, "500 Internal server error"),
+      );
+      for (let i = 0; i < 4; i++) {
+        await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      }
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      expect(generateObject).toHaveBeenCalledTimes(6);
+    });
+
     it("still falls back to the LLM on a server error that is not about the image, or a refusal without one", async () => {
       mocks.systemOne.mockReset();
       mocks.systemOne.mockRejectedValueOnce(

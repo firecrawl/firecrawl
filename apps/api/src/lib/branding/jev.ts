@@ -1343,6 +1343,7 @@ export async function enhanceBrandingWithJev(
       error,
       elapsedMs: Date.now() - started,
       ...screenshotLog,
+      ...(imageRetried ? { imageRetried } : {}),
     });
     return null;
   }

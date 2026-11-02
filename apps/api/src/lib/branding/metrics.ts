@@ -87,6 +87,7 @@ for (const outcome of [
   "error",
   "unusable",
   "breaker_open",
+  "image_rejected",
 ] satisfies JevCallOutcome[]) {
   brandingJevCallsTotal.inc({ outcome }, 0);
 }
