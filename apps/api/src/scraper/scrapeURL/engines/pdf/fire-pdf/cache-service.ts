@@ -8,6 +8,7 @@ import {
 } from "../../../../../lib/gcs-pdf-cache";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { robustFetch } from "../../../lib/fetch";
+import { isUsOnly } from "../../../../../lib/us-only";
 import {
   recordSpanException,
   type Span,
@@ -193,12 +194,14 @@ async function lookupWithinSpan(
   meta.abort.throwIfAborted();
   // Background refresh is only offered when this client could act on a
   // grant: it needs the bytes (inline, not by reference) of a PDF (images
-  // are only parsed through the sync endpoint), outside zero data retention.
+  // are only parsed through the sync endpoint), outside zero data retention
+  // and outside US-only teams.
   const canRefreshInBackground =
     config.FIRE_PDF_CACHE_BACKGROUND_REFRESH === true &&
     typeof input === "string" &&
     sourceKind === "pdf" &&
-    meta.internalOptions.zeroDataRetention !== true;
+    meta.internalOptions.zeroDataRetention !== true &&
+    !isUsOnly(meta.internalOptions.teamFlags ?? undefined);
   const keys = await cacheLookupKeys(input);
   if (
     sourceKind === "pdf" &&

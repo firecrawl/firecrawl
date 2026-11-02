@@ -3,6 +3,11 @@ import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import {
+  isRegionUnavailable,
+  isUsOnly,
+  US_DATA_REGION,
+} from "../../../../../lib/us-only";
+import {
   buildFirePdfJobTrainingCapture,
   buildFirePdfRequestMetadata,
   firePdfTableFormat,
@@ -118,6 +123,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     fetchImpl,
   } = args;
   const scrapeId = meta.id;
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
 
   if (
     input.kind === "byReference" &&
@@ -164,6 +170,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       tableFormat: firePdfTableFormat(meta),
       trainingCapture: buildFirePdfJobTrainingCapture(meta),
     }),
+    ...(usOnly && { data_region: US_DATA_REGION }),
   };
 
   // The retry does reach a different instance: Fastify's shutdown 503
@@ -215,6 +222,9 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
         continue;
       }
       failPossiblyAccepted(meta, "network_error", { error: String(error) });
+    }
+    if (usOnly && isRegionUnavailable(json)) {
+      failAsync(meta, "region_unavailable", { status });
     }
     const transient503 = attempt === 1 && classifyTransient503(status, json);
     if (transient503) {
