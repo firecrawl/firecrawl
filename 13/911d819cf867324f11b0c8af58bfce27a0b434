@@ -1,0 +1,24 @@
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_5b009b778f0298 11
+  s_6a7201d5c4fd9c::t_5064ddce1b40a5 69,73-77
+apps/api/src/lib/unhandled-error-handler.test.ts
+  s_6a7201d5c4fd9c::t_64a0e07830c718 15,21-28
+  s_6a7201d5c4fd9c::t_dbeb6a2277b9bf 143-170
+  s_6a7201d5c4fd9c::t_21263e93de206f 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13911d819cf867324f11b0c8af58bfce27a0b434",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
