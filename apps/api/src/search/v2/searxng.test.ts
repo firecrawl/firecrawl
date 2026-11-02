@@ -70,7 +70,7 @@ describe("searxng_search raw content", () => {
     });
   });
 
-  it("ignores empty or non-string raw_content values", async () => {
+  it("ignores empty, whitespace-only or non-string raw_content values", async () => {
     mockedGet.mockResolvedValue({
       data: {
         results: [
@@ -86,6 +86,12 @@ describe("searxng_search raw content", () => {
             content: "s",
             raw_content: 42,
           },
+          {
+            url: "https://example.com/e",
+            title: "E",
+            content: "s",
+            raw_content: "  \n\t ",
+          },
         ],
       },
     });
@@ -97,5 +103,6 @@ describe("searxng_search raw content", () => {
 
     expect(results.web?.[0].rawContent).toBeUndefined();
     expect(results.web?.[1].rawContent).toBeUndefined();
+    expect(results.web?.[2].rawContent).toBeUndefined();
   });
 });

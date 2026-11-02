@@ -883,11 +883,211 @@ describe("executeSearch raw content fast path", () => {
 
     await executeSearch({ ...options([]), scrapeOptions }, context, logger);
 
+    // The backend is asked for the page text only because this request
+    // can serve from it.
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ includeRawContent: true }),
+    );
     expect(mocks.scrapeSearchResults).not.toHaveBeenCalled();
     expect(mocks.mergeScrapedContent).toHaveBeenCalledWith(
       expect.objectContaining({ web: [webResult] }),
       [item],
       [fastDoc],
+    );
+  });
+
+  it("does not ask the backend for raw content the request cannot use", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(false);
+
+    // Ineligible scrape options: the provider is not asked for the text.
+    await executeSearch({ ...options([]), scrapeOptions }, context, logger);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ includeRawContent: false }),
+    );
+
+    // No scrape options at all: nothing could consume the text either.
+    await executeSearch({ ...options([]) }, context, logger);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ includeRawContent: false }),
+    );
+  });
+
+  it("never uses the fast path when a threat-protection policy is active", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      decisionsByUrl: new Map(),
+    });
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    await executeSearch(
+      { ...options([]), scrapeOptions },
+      { ...context, threatProtectionPolicy: { mode: "block" } } as any,
+      logger,
+    );
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ includeRawContent: false }),
+    );
+    expect(mocks.rawContentDocument).not.toHaveBeenCalled();
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledWith(
+      [item.scrapeInput],
+      expect.objectContaining({ scrapeOptions }),
+      logger,
+      context.flags,
+    );
+    expect(mocks.mergeScrapedContent).toHaveBeenCalledWith(
+      expect.anything(),
+      [item],
+      [scrapedDoc],
+    );
+  });
+
+  it("never uses the fast path for a Safe Mode lockdown team", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    // The lockdown is forced by the team flags; the request's own
+    // scrapeOptions carry no `lockdown` (the search controller resolves
+    // Safe Mode but never stamps it onto them), while the real scrape
+    // pipeline would serve this team cache-only.
+    await executeSearch(
+      { ...options([]), scrapeOptions },
+      {
+        ...context,
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+      } as any,
+      logger,
+    );
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ includeRawContent: false }),
+    );
+    expect(mocks.rawContentDocument).not.toHaveBeenCalled();
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the fast path for a lockdown team whose bypass was honored", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue([item]);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const fastDoc = {
+      document: { url: webResult.url, markdown: "the page text" },
+      costTracking: {},
+    };
+    mocks.rawContentDocument.mockReturnValue(fastDoc);
+
+    await executeSearch(
+      { ...options([]), scrapeOptions },
+      {
+        ...context,
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+        safeModeBypassed: true,
+      } as any,
+      logger,
+    );
+
+    expect(mocks.scrapeSearchResults).not.toHaveBeenCalled();
+    expect(mocks.mergeScrapedContent).toHaveBeenCalledWith(
+      expect.anything(),
+      [item],
+      [fastDoc],
+    );
+  });
+
+  it("keeps duplicate-URL items' documents apart (raw first, scraped second)", async () => {
+    const twin = {
+      item: { ...webResult, rawContent: undefined },
+      type: "news" as const,
+      scrapeInput: { ...item.scrapeInput },
+    };
+    const items = [item, twin];
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue(items);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const fastDoc = {
+      document: { url: webResult.url, markdown: "the page text" },
+      costTracking: {},
+    };
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.rawContentDocument.mockImplementation((candidate: any) =>
+      candidate === item ? fastDoc : null,
+    );
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    await executeSearch({ ...options([]), scrapeOptions }, context, logger);
+
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledWith(
+      [twin.scrapeInput],
+      expect.anything(),
+      logger,
+      context.flags,
+    );
+    // Each item gets its own document, in item order — the scraped twin
+    // must not receive the raw document via the shared URL.
+    expect(mocks.mergeScrapedContent).toHaveBeenCalledWith(
+      expect.anything(),
+      items,
+      [fastDoc, scrapedDoc],
+    );
+  });
+
+  it("keeps duplicate-URL items' documents apart (scraped first, raw second)", async () => {
+    const rawTwin = {
+      item: webResult,
+      type: "news" as const,
+      scrapeInput: { ...item.scrapeInput },
+    };
+    const plainItem = {
+      item: { ...webResult, rawContent: undefined },
+      type: "web" as const,
+      scrapeInput: { ...item.scrapeInput },
+    };
+    const items = [plainItem, rawTwin];
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.getItemsToScrape.mockReturnValue(items);
+    mocks.canServeFromRawContent.mockReturnValue(true);
+    const fastDoc = {
+      document: { url: webResult.url, markdown: "the page text" },
+      costTracking: {},
+    };
+    const scrapedDoc = {
+      document: { url: webResult.url, markdown: "scraped" },
+      costTracking: {},
+    };
+    mocks.rawContentDocument.mockImplementation((candidate: any) =>
+      candidate === rawTwin ? fastDoc : null,
+    );
+    mocks.scrapeSearchResults.mockResolvedValue([scrapedDoc]);
+
+    await executeSearch({ ...options([]), scrapeOptions }, context, logger);
+
+    expect(mocks.scrapeSearchResults).toHaveBeenCalledWith(
+      [plainItem.scrapeInput],
+      expect.anything(),
+      logger,
+      context.flags,
+    );
+    expect(mocks.mergeScrapedContent).toHaveBeenCalledWith(
+      expect.anything(),
+      items,
+      [scrapedDoc, fastDoc],
     );
   });
 

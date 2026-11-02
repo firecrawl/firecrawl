@@ -60,7 +60,7 @@ export async function searxng_search(
         url: a.url,
         title: a.title,
         description: a.content,
-        ...(typeof a.raw_content === "string" && a.raw_content.length > 0
+        ...(typeof a.raw_content === "string" && a.raw_content.trim().length > 0
           ? { rawContent: a.raw_content }
           : {}),
       }));

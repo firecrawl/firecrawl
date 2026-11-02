@@ -260,7 +260,23 @@ export function calculateScrapeCredits(
  * profile, custom headers, tag filters, PII redaction, prompt-injection
  * scanning, lockdown, …) must go through the real scrape pipeline. Because
  * the text is main-content extraction, it also cannot satisfy a request
- * that explicitly asked for the full page (`onlyMainContent: false`).
+ * that explicitly asked for the full page (`onlyMainContent: false`) or
+ * for page furniture an extraction strips (ads kept via
+ * `blockAds: false`, base64 images kept via
+ * `removeBase64Images: false`).
+ *
+ * The same applies to requests that constrain the content itself rather
+ * than the scrape mechanics: a location (the backend fetched from its own
+ * egress, in its own locale), a freshness bound (`maxAge` / `minAge` —
+ * the text's fetch time is the backend's, unverifiable here, and the
+ * pipeline's cache/index engines are what honour those bounds), a
+ * stealth/enhanced proxy (a different egress class that can see different
+ * content), the `onlyCleanContent` LLM cleaning pass, fast mode's engine
+ * selection, or a mock response. Options that change none of the produced
+ * content — the scrape `timeout` budget, `skipTlsVerification` (fetch
+ * success only; text exists only when a fetch already succeeded),
+ * `storeInCache` (a cache side effect; this path writes nothing) — do not
+ * disqualify.
  *
  * Blocklist note: result URLs reach the fast path only via
  * `getItemsToScrape`, which drops `isUrlBlocked` matches, and execute.ts
@@ -312,6 +328,50 @@ export function canServeFromRawContent(scrapeOptions: ScrapeOptions): boolean {
   if (scrapeOptions.redactPII !== undefined) {
     return false;
   }
+  // A location asks for content as seen from that country / in those
+  // languages; the backend text was fetched from the backend's own egress.
+  // (`country: "us-generic"` is the schema's implicit default for an
+  // otherwise empty location object and carries no localization intent.)
+  const location = scrapeOptions.location;
+  if (
+    location &&
+    ((location.languages?.length ?? 0) > 0 ||
+      (location.country !== undefined && location.country !== "us-generic"))
+  ) {
+    return false;
+  }
+  // Freshness bounds are honoured by the pipeline's cache/index engines
+  // against Firecrawl-side fetch times; the backend text's age is unknown.
+  if (scrapeOptions.maxAge !== undefined) {
+    return false;
+  }
+  if (scrapeOptions.minAge !== undefined) {
+    return false;
+  }
+  if (scrapeOptions.onlyCleanContent) {
+    return false;
+  }
+  if (scrapeOptions.fastMode) {
+    return false;
+  }
+  if (scrapeOptions.proxy === "stealth" || scrapeOptions.proxy === "enhanced") {
+    return false;
+  }
+  if (scrapeOptions.useMock !== undefined) {
+    return false;
+  }
+  if (scrapeOptions.blockAds === false) {
+    return false;
+  }
+  if (scrapeOptions.removeBase64Images === false) {
+    return false;
+  }
+  if (scrapeOptions.__experimental_omce) {
+    return false;
+  }
+  if (scrapeOptions.__experimental_engpicker) {
+    return false;
+  }
   return true;
 }
 
@@ -330,7 +390,7 @@ export function rawContentDocument(
   item: ScrapeItem,
 ): DocumentWithCostTracking | null {
   const rawContent: unknown = item.item?.rawContent;
-  if (typeof rawContent !== "string" || rawContent.length === 0) {
+  if (typeof rawContent !== "string" || rawContent.trim().length === 0) {
     return null;
   }
 

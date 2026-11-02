@@ -110,6 +110,24 @@ describe("canServeFromRawContent", () => {
     expect(
       canServeFromRawContent({
         formats: markdown,
+        excludeTags: ["nav"],
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        profile: { name: "profile-1" },
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        redactPII: true,
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
         checkPromptInjection: true,
       } as any),
     ).toBe(false);
@@ -119,6 +137,88 @@ describe("canServeFromRawContent", () => {
     expect(
       canServeFromRawContent({ formats: markdown, lockdown: true } as any),
     ).toBe(false);
+  });
+
+  it("rejects requests that constrain the content, its freshness or its locale", () => {
+    const markdown = [{ type: "markdown" }];
+    // The backend fetched from its own egress: a requested location
+    // (country or languages) cannot be honored.
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        location: { country: "de" },
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        location: { languages: ["fr"] },
+      } as any),
+    ).toBe(false);
+    // The schema's implicit default country carries no localization intent.
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        location: { country: "us-generic" },
+      } as any),
+    ).toBe(true);
+    // Freshness bounds are checked against Firecrawl-side fetch times by
+    // the cache/index engines; the backend text's age is unverifiable.
+    expect(
+      canServeFromRawContent({ formats: markdown, maxAge: 0 } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({ formats: markdown, minAge: 60_000 } as any),
+    ).toBe(false);
+    // The onlyCleanContent LLM pass and fast mode's engine selection
+    // change what the pipeline would produce.
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        onlyCleanContent: true,
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({ formats: markdown, fastMode: true } as any),
+    ).toBe(false);
+    // Stealth/enhanced proxies are a different egress class; basic/auto
+    // are not.
+    expect(
+      canServeFromRawContent({ formats: markdown, proxy: "stealth" } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({ formats: markdown, proxy: "enhanced" } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({ formats: markdown, proxy: "basic" } as any),
+    ).toBe(true);
+    expect(
+      canServeFromRawContent({ formats: markdown, proxy: "auto" } as any),
+    ).toBe(true);
+    // A mock response is by definition not the backend's fetched text.
+    expect(
+      canServeFromRawContent({ formats: markdown, useMock: "mock-1" } as any),
+    ).toBe(false);
+    // Explicitly keeping page furniture an extraction strips (ads,
+    // base64 images) cannot be honored; the defaults can.
+    expect(
+      canServeFromRawContent({ formats: markdown, blockAds: false } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({ formats: markdown, blockAds: true } as any),
+    ).toBe(true);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        removeBase64Images: false,
+      } as any),
+    ).toBe(false);
+    expect(
+      canServeFromRawContent({
+        formats: markdown,
+        removeBase64Images: true,
+      } as any),
+    ).toBe(true);
   });
 
   it("rejects an explicit full-page request (onlyMainContent: false)", () => {
@@ -169,6 +269,8 @@ describe("rawContentDocument", () => {
   it("returns null when the result carries no usable raw content", () => {
     expect(rawContentDocument(item())).toBeNull();
     expect(rawContentDocument(item(""))).toBeNull();
+    // Whitespace-only text would serve as blank markdown.
+    expect(rawContentDocument(item("  \n\t "))).toBeNull();
     expect(rawContentDocument(item(42))).toBeNull();
   });
 });
