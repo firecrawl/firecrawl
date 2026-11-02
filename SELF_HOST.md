@@ -68,8 +68,9 @@ service:
    `docker compose --profile rustxng up`.
 
 `SEARXNG_ENGINES` and `SEARXNG_CATEGORIES` apply to it exactly as they do
-to a SearXNG instance. The service is not published to the host; only the
-API container reaches it, over the `backend` network.
+to a SearXNG instance. The service's port is not published to the host;
+it is reachable over the shared `backend` network, and the API container
+is its intended consumer.
 
 Known limitation: current RustXNG releases ignore the `language` search
 parameter that the API forwards, so language-scoped searches can return
