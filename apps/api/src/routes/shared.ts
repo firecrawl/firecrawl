@@ -30,6 +30,7 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
+import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
 import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
@@ -266,20 +267,65 @@ export function checkCreditsMiddleware(
         }
         if (
           !res.headersSent &&
-          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
+          currencyName === "tokens"
         ) {
           return res.status(402).json({
             success: false,
             error:
-              "Insufficient " +
-              currencyName +
-              " to perform this request. For more " +
-              currencyName +
-              ", you can upgrade your plan at " +
-              (currencyName === "credits"
-                ? "https://firecrawl.dev/pricing or try changing the request limit to a lower value"
-                : "https://www.firecrawl.dev/extract#pricing") +
-              ".",
+              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://www.firecrawl.dev/extract#pricing.",
+          });
+        }
+        if (
+          !res.headersSent &&
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID
+        ) {
+          // Name the limit that refused the request: the balance alone can't
+          // explain a refusal that leaves credits on the dashboard.
+          const resetsAt = autumnResult.resetsAt
+            ? new Date(autumnResult.resetsAt).toISOString()
+            : undefined;
+          if (gateFeatureId !== featureId) {
+            return res.status(402).json({
+              success: false,
+              code: "mcp_credits_exhausted",
+              requested_credits: requestedCredits,
+              ...(resetsAt ? { resets_at: resetsAt } : {}),
+              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance before your plan credits, and together they can't cover this request${resetsAt ? `; it resets at ${resetsAt}` : ""}. To continue now, use the Firecrawl MCP server with an API key, which bills your team's credits directly, or upgrade your plan at https://firecrawl.dev/pricing.`,
+            });
+          }
+
+          const apiKeyId = req.acuc?.api_key_id;
+          const keyLimit =
+            apiKeyId && autumnResult.remaining >= requestedCredits
+              ? await getApiKeySpendLimit(apiKeyId)
+              : null;
+          if (keyLimit) {
+            return res.status(402).json({
+              success: false,
+              code: "api_key_spend_limit",
+              requested_credits: requestedCredits,
+              remaining_credits: autumnResult.remaining,
+              limit: {
+                type: "api_key",
+                credits: keyLimit.credits,
+                interval: keyLimit.interval,
+              },
+              error:
+                `This API key has reached its spend limit of ${keyLimit.credits} credits per ${keyLimit.interval}, while your team still has ${autumnResult.remaining} credits. ` +
+                (requestedCredits > keyLimit.credits
+                  ? `This request can use up to ${requestedCredits} credits, more than the key's whole limit, so lower the request's limit or raise the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys.`
+                  : `Raise or remove the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys, use another key, or wait for the limit to reset next ${keyLimit.interval}.`),
+            });
+          }
+
+          return res.status(402).json({
+            success: false,
+            code: "insufficient_credits",
+            requested_credits: requestedCredits,
+            remaining_credits: autumnResult.remaining,
+            ...(resetsAt ? { resets_at: resetsAt } : {}),
+            error: `Insufficient credits to perform this request: it can use up to ${requestedCredits} credits and your team has ${autumnResult.remaining} left${resetsAt ? `, with plan credits resetting at ${resetsAt}` : ""}. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing or try changing the request limit to a lower value.`,
           });
         }
       }
