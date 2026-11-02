@@ -171,11 +171,6 @@ export const youtubePostprocessor: Postprocessor = {
       return engineResult;
     }
 
-    if (!config.AVGRAB_SERVICE_URL) {
-      meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
-      return engineResult;
-    }
-
     // Uses the same media service as the audio and video formats.
     if (isUsOnly(meta.internalOptions?.teamFlags ?? undefined)) {
       return {
@@ -183,6 +178,11 @@ export const youtubePostprocessor: Postprocessor = {
         warning:
           "YouTube metadata and transcripts are not available for teams restricted to US-only processing.",
       };
+    }
+
+    if (!config.AVGRAB_SERVICE_URL) {
+      meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
+      return engineResult;
     }
 
     const metadata = await getYouTubeMetadata(meta, engineResult);
