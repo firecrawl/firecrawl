@@ -17,6 +17,7 @@ vi.mock("./tool-intent", () => ({
 
 vi.mock("./alexandria", () => ({
   discoverTools: mocks.discoverTools,
+  usOnlyToolsWarning: (excluded: number) => `${excluded} tools hidden`,
   isAlexandriaSource: (source: { type: string }) =>
     source.type === "alexandria",
 }));
@@ -245,6 +246,32 @@ describe("executeSearch tool intent", () => {
     expect(result.toolsAuto).toBe(true);
     expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
     expect(result.searchCredits).toBe(2);
+  });
+
+  it("warns a US-only team about tools hidden from automatic discovery", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["US unemployment rate statistics"],
+      domains: [],
+      needsTools: true,
+    });
+    mocks.discoverTools.mockResolvedValue({
+      items: [{ id: "fred/series/observations" }],
+      usOnlyExcluded: 2,
+    });
+    const result = await executeSearch(
+      { ...options([]), autoTools: true },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+    );
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
+    );
+    expect(result.toolsWarning).toBe("2 tools hidden");
   });
 
   it("leaves a default search alone when the query does not need tools", async () => {

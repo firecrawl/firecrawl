@@ -16,6 +16,7 @@ import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
+import { isUsOnly } from "../lib/us-only";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -181,6 +182,9 @@ function exchangeProxy(
           ...(authedReq.acuc?.flags?.exchangeRetrieve
             ? { "x-exchange-connectors": "true" }
             : {}),
+          ...(isUsOnly(authedReq.acuc?.flags)
+            ? { "x-exchange-us-only": "true" }
+            : {}),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -229,6 +233,9 @@ async function recommendationsController(req: Request, res: Response) {
         ...forwardedRequestHeaders(req),
         "content-type": "application/json",
         "x-exchange-team-id": teamId,
+        ...(isUsOnly(authedReq.acuc?.flags)
+          ? { "x-exchange-us-only": "true" }
+          : {}),
       },
       body: JSON.stringify(signals),
       signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
