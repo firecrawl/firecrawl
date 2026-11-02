@@ -18,6 +18,15 @@ const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
 const SECRET_PATTERN =
   /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
+const DETAIL_SECRET_PAIR = new RegExp(
+  '(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)"?)(\\s*[=:]\\s*)(?:"[^"]*"|\'[^\']*\'|(?:(?<=authorization"?\\s*[=:]\\s*)[A-Za-z]+\\s+)?[^\\s&#"\',;]+)',
+  "gi",
+);
+const DETAIL_QUERY_PAIR = /([?&][^\s=&#?]+=)[^\s&#]+/g;
+const DETAIL_URL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
+const DETAIL_TOKEN_RUN = /[A-Za-z0-9]{16,}/g;
+const DETAIL_TOKEN_PATH =
+  /^(?:s|share|shared|invite|invitation|reset|reset[_-]?password|password[_-]?reset|verify|verification|confirm|confirmation|activate|magic|magic[_-]?link|token|auth|login|unsubscribe|callback|otp)$/i;
 const OBJECTIVE_MAX_LENGTH = 1000;
 const ERROR_MESSAGE_MAX_LENGTH = 300;
 const TARGET_MAX_LENGTH = 512;
@@ -129,17 +138,84 @@ function errorCode(value: unknown) {
   return value;
 }
 
+function tokenLikeSegment(segment: string) {
+  return (segment.match(DETAIL_TOKEN_RUN) ?? []).some(
+    run => /\d/.test(run) && /[A-Za-z]/.test(run),
+  );
+}
+
 /**
- * Free text from the call (objective, error message, target URL or query):
+ * Keeps a URL's scheme, host and plain path: userinfo, every query value, the
+ * fragment and token-like path segments become [redacted].
+ */
+function scrubbedUrl(url: string) {
+  const hashAt = url.indexOf("#");
+  const fragment =
+    hashAt === -1 || hashAt === url.length - 1 ? "" : "#[redacted]";
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const queryAt = beforeHash.indexOf("?");
+  const base = queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt);
+  const query =
+    queryAt === -1
+      ? ""
+      : "?" +
+        beforeHash
+          .slice(queryAt + 1)
+          .split("&")
+          .map(pair => {
+            const eq = pair.indexOf("=");
+            if (eq === -1) return pair && "[redacted]";
+            return eq === pair.length - 1
+              ? pair
+              : pair.slice(0, eq + 1) + "[redacted]";
+          })
+          .join("&");
+  const match = /^([^:]+:\/\/)([^/]*)(.*)$/.exec(base);
+  if (!match) return base + query + fragment;
+  const [, scheme, authority, path] = match;
+  const host = authority.includes("@")
+    ? "[redacted]" + authority.slice(authority.lastIndexOf("@"))
+    : authority;
+  const segments = path.split("/");
+  const scrubbedPath = segments
+    .map((segment, i) =>
+      tokenLikeSegment(segment) ||
+      (i > 0 && DETAIL_TOKEN_PATH.test(segments[i - 1]))
+        ? "[redacted]"
+        : segment,
+    )
+    .join("/");
+  return scheme + host + scrubbedPath + query + fragment;
+}
+
+/**
+ * Error messages and targets also lose URL userinfo, query values, fragments,
+ * token-like path segments, bare query-string values and secret=value pairs.
+ */
+function scrubbedDetail(text: string) {
+  return text
+    .replace(SECRET_PATTERN_ALL, "[redacted]")
+    .replace(DETAIL_URL, scrubbedUrl)
+    .replace(DETAIL_QUERY_PAIR, "$1[redacted]")
+    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]");
+}
+
+/**
+ * Free text from the call (objective, error message, target URL):
  * control characters become spaces, secret-like values become [redacted],
  * and the result is cut to `max` characters rather than rejected.
  */
-function redactedText(value: unknown, field: string, max: number) {
+function redactedText(
+  value: unknown,
+  field: string,
+  max: number,
+  scrub: (text: string) => string = text => text,
+) {
   if (value == null) return null;
   if (typeof value !== "string") invalid(`${field} must be a string`);
-  const normalized = value
-    .slice(0, max * 4)
-    .replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ")
+  const normalized = scrub(
+    value.slice(0, max * 4).replace(/[\u0000-\u001F\u007F-\u009F]+/g, " "),
+  )
     .replace(SECRET_PATTERN_ALL, "[redacted]")
     .replace(/\beyJ[A-Za-z0-9_.-]*$/, "[redacted]")
     .trim()
@@ -326,8 +402,14 @@ export function normalizeMcpActionLogInput(
       payload.error_message,
       "error_message",
       ERROR_MESSAGE_MAX_LENGTH,
+      scrubbedDetail,
     ),
-    target: redactedText(payload.target, "target", TARGET_MAX_LENGTH),
+    target: redactedText(
+      payload.target,
+      "target",
+      TARGET_MAX_LENGTH,
+      scrubbedDetail,
+    ),
     resource,
     objective: redactedText(
       payload.objective,

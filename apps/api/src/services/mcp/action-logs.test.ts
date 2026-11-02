@@ -211,11 +211,11 @@ describe("MCP action log contract", () => {
       input({
         status: "error",
         error_message: "Request failed with status code 408: Scrape timed out",
-        target: "https://example.com/pricing?plan=pro",
+        target: "https://example.com/pricing",
       }),
     ).toMatchObject({
       error_message: "Request failed with status code 408: Scrape timed out",
-      target: "https://example.com/pricing?plan=pro",
+      target: "https://example.com/pricing",
     });
     expect(input({ error_message: "", target: "  " })).toMatchObject({
       error_message: null,
@@ -227,7 +227,41 @@ describe("MCP action log contract", () => {
     ).toBe("Unauthorized: [redacted] for [redacted]");
     expect(
       input({ target: "https://example.com/?key=fc-123abc&page=2" }).target,
-    ).toBe("https://example.com/?key=[redacted]&page=2");
+    ).toBe("https://example.com/?key=[redacted]&page=[redacted]");
+    expect(
+      input({
+        target:
+          "https://user:pw@example.com/oauth/callback?code=c0de&state=s7ate&flag#access_token=t",
+      }).target,
+    ).toBe(
+      "https://[redacted]@example.com/oauth/callback?code=[redacted]&state=[redacted]&[redacted]#[redacted]",
+    );
+    expect(
+      input({
+        target:
+          "https://files.example.com/scl/fi/k8sj2h4l9q0w1e3r5t7y/report.pdf?dl=0",
+      }).target,
+    ).toBe(
+      "https://files.example.com/scl/fi/[redacted]/report.pdf?dl=[redacted]",
+    );
+    expect(
+      input({ target: "https://example.com/reset-password/abc" }).target,
+    ).toBe("https://example.com/reset-password/[redacted]");
+    expect(
+      input({ target: "https://example.com/blog/how-to-build-an-api-in-2024" })
+        .target,
+    ).toBe("https://example.com/blog/how-to-build-an-api-in-2024");
+    expect(
+      input({
+        error_message:
+          "Authorization: Basic dXNlcjpwYXNz; otp=123456 resetToken: r3s3t verification_code=99 bad ?code=abc&state=def",
+      }).error_message,
+    ).toBe(
+      "Authorization: [redacted]; otp=[redacted] resetToken: [redacted] verification_code=[redacted] bad ?code=[redacted]&state=[redacted]",
+    );
+    expect(input({ error_message: "Status code: 500" }).error_message).toBe(
+      "Status code: 500",
+    );
     expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
       "x".repeat(300),
     );
@@ -556,7 +590,7 @@ describe("MCP action log contract", () => {
           api_job_id: REQUEST_ID,
           error_code: "rate_limited",
           error_message: "Rate limit exceeded",
-          target: "firecrawl pricing",
+          target: "https://example.com/pricing",
           user_agent: "Claude/1.0",
           mcp_origin: "mcp-ua-codex-cli-rs",
           mcp_client: "codex-cli-rs",
@@ -582,7 +616,7 @@ describe("MCP action log contract", () => {
       api_job_id: REQUEST_ID,
       error_code: "rate_limited",
       error_message: "Rate limit exceeded",
-      target: "firecrawl pricing",
+      target: "https://example.com/pricing",
       mcp_origin: "mcp-ua-codex-cli-rs",
       mcp_client: "codex-cli-rs",
       mcp_client_source: "user_agent",
