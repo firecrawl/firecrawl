@@ -396,6 +396,8 @@ export class AutumnService {
   }: TrackCreditsParams): Promise<{
     allowed: boolean;
     remaining: number;
+    /** When the checked balance next resets, in epoch ms; absent when unknown. */
+    resetsAt?: number;
     /** Set only for a Gateway account, funded by the platform that created it. */
     gatewayProvisioned?: boolean;
   } | null> {

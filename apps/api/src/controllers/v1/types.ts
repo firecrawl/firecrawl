@@ -1320,6 +1320,7 @@ type AuthObject = {
   agentInterop?: AgentInteropStatus;
   // Set only by authMiddleware, from the hosted MCP verification in
   // supaAuthenticateUser; never from the request body or headers directly.
+  // A credit gate clears it when the call is billed on the team's own credits.
   hostedMcp?: boolean;
 };
 

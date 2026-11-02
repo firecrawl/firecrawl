@@ -87,7 +87,10 @@ export async function authorizeProviders(
         item.terms &&
         orgId !== null
       ) {
-        ledger ??= await acceptedProviders(teamId, orgId);
+        ledger ??= await acceptedProviders(teamId, orgId, undefined, {
+          clientIp,
+          billingCountry,
+        });
         const accepted = ledger.get(item.provider);
         if (
           matchesAcceptance(accepted, item.terms) &&
@@ -111,7 +114,10 @@ export async function authorizeProviders(
     )
       continue;
     if (orgId !== null) {
-      ledger ??= await acceptedProviders(teamId, orgId);
+      ledger ??= await acceptedProviders(teamId, orgId, undefined, {
+        clientIp,
+        billingCountry,
+      });
       const accepted = ledger.get(item.provider);
       if (matchesAcceptance(accepted, item.terms)) continue;
     }
