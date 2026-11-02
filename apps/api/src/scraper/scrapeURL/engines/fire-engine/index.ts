@@ -492,6 +492,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
+      blockAds: meta.options.blockAds,
       headers: meta.options.headers,
       ...(actions.length > 0
         ? {

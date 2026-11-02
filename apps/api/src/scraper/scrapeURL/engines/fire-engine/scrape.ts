@@ -95,6 +95,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   pdfMaxSize?: number;
   actions?: InternalAction[];
   blockMedia?: boolean;
+  blockAds?: boolean;
   /** Opt out of render-engine routing (blockMedia: false normally forces it). */
   forceNonRender?: boolean;
   mobile?: boolean;
