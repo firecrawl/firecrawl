@@ -176,6 +176,32 @@ it("holds and settles a hosted MCP call's whole budget on MCP credits", async ()
   );
 });
 
+it("holds a hosted MCP call MCP credits refuse on the team's own credits", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied" })
+    .mockResolvedValueOnce({ status: "locked", lockId: "held" });
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+
+  expect((await run({ hostedMcp: true })).status).toBe(200);
+  expect(mocks.lock.mock.calls.map(([hold]) => hold.featureId)).toEqual([
+    "MCP_CREDITS",
+    "credits",
+  ]);
+  expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ featureId: "credits" }),
+  );
+  expect(mocks.billAdd).toHaveBeenCalledWith(
+    "bill_team",
+    expect.objectContaining({
+      billing: expect.not.objectContaining({ hostedMcp: true }),
+    }),
+    expect.anything(),
+  );
+  expect(mocks.refund).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ value: 3, featureId: "credits" }),
+  );
+});
+
 it("refuses a different payload under the same x-request-id", async () => {
   await run();
   const other = await run({

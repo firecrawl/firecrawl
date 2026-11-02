@@ -30,6 +30,7 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
+import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
 import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
 import {
   ThirdPartyDataTermsRequiredError,
@@ -160,11 +161,6 @@ export function checkCreditsMiddleware(
       }
 
       const requestedCredits = minimum ?? 1;
-      // Gated on the balance its charge will be tracked on.
-      const gateFeatureId =
-        mcpCredits && req.auth.hostedMcp
-          ? await autumnService.hostedMcpFeatureId(req.auth.team_id, featureId)
-          : featureId;
 
       // No org means no billable identity to gate: keyless and preview teams
       // carry none, and neither does the DB-authentication bypass. `checkCredits`
@@ -176,7 +172,7 @@ export function checkCreditsMiddleware(
         return next();
       }
 
-      const autumnResult = await autumnService.checkCredits({
+      const check = {
         teamId: req.auth.team_id,
         // The ACUC already carries the org, so the credit check does not have
         // to read `teams.org_id` for it.
@@ -187,8 +183,20 @@ export function checkCreditsMiddleware(
           path: req.path,
           apiKeyId: req.acuc?.api_key_id ?? null,
         },
-        featureId: gateFeatureId,
-      });
+        featureId,
+      };
+      // Gated on the balance its charge will be tracked on.
+      const gate =
+        mcpCredits && req.auth.hostedMcp
+          ? await checkHostedMcpCredits(check)
+          : {
+              result: await autumnService.checkCredits(check),
+              featureId,
+              onTeamCredits: false,
+            };
+      if (gate.onTeamCredits) req.auth.hostedMcp = false;
+      const autumnResult = gate.result;
+      const gateFeatureId = gate.featureId;
 
       // Autumn is the source of truth for credits. If it's unavailable
       // (returns null), fail open — matches the behavior in browser.ts /

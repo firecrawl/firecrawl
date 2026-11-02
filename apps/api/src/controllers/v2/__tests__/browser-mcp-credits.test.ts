@@ -205,6 +205,18 @@ describe("browser sessions from hosted MCP calls", () => {
     expect(mocks.markHostedMcp).not.toHaveBeenCalled();
   });
 
+  it("bills a hosted session MCP credits can't cover on the team's credits", async () => {
+    mocks.checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 1000 });
+
+    expect((await create(true)).statusCode).toBe(200);
+    expect(mocks.checkCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ featureId: "CREDITS" }),
+    );
+    expect(mocks.markHostedMcp).not.toHaveBeenCalled();
+  });
+
   it("leaves a session not from the hosted MCP as it was", async () => {
     mocks.checkCredits.mockResolvedValue({ allowed: false, remaining: 5 });
     expect((await create(false)).statusCode).toBe(402);

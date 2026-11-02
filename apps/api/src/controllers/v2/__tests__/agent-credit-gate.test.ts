@@ -230,6 +230,25 @@ describe("gateAgentCredits for a hosted MCP run", () => {
     }
   });
 
+  it("gates a run MCP credits can't cover on the team's own credits", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 300 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 300 });
+
+    expect(await hostedGate(1000)).toEqual({
+      allowed: true,
+      maxCredits: 300,
+      stopOnInsufficientCredits: true,
+      onTeamCredits: true,
+    });
+    expect(checkCredits.mock.calls.map(([check]) => check.featureId)).toEqual([
+      "MCP_CREDITS",
+      "CREDITS",
+      "CREDITS",
+    ]);
+  });
+
   it("refuses like any run when the check refuses", async () => {
     checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 0 });
 
