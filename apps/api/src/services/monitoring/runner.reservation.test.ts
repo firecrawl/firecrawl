@@ -49,10 +49,6 @@ vi.mock("../autumn/firebill", () => ({
   firebillTrack: firebill.track,
   firebillCheck: firebill.check,
 }));
-vi.mock("../autumn/metrics", () => ({
-  autumnCustomerGetOrCreateTotal: { inc: vi.fn() },
-  autumnEntityCreatedInlineTotal: { inc: vi.fn() },
-}));
 vi.mock("../../db/connection", () => ({
   dbRr: {
     select: () => ({

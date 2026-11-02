@@ -12,18 +12,8 @@ import {
   firebillCheck,
   firebillConfigured,
 } from "./firebill";
-import {
-  autumnCustomerGetOrCreateTotal,
-  autumnEntityCreatedInlineTotal,
-} from "./metrics";
 import type {
-  CreateEntityParams,
-  CreateEntityResult,
-  EnsureOrgProvisionedParams,
-  EnsureTeamProvisionedParams,
   FinalizeCreditsLockParams,
-  GetEntityParams,
-  GetOrCreateCustomerParams,
   LockCreditsParams,
   LockCreditsResult,
   TrackCreditsParams,
@@ -132,19 +122,12 @@ export class BoundedSet<V> extends Set<V> {
 }
 
 /**
- * Wraps Autumn customer/entity provisioning and usage tracking for team credit billing.
+ * Team credit billing through firebill, plus the Autumn reads (limits, auto
+ * top-up) that sit beside it.
  */
 export class AutumnService {
   private gatewayTeams = new BoundedSet<string>(50_000);
   private nonGatewayTeamsUntil = new BoundedMap<string, number>(50_000);
-  private ensuredOrgs = new BoundedSet<string>(50_000);
-  // Keyed by org AND team: an entity lives under one customer, so a team that
-  // moves orgs has to be provisioned again under the new one.
-  private ensuredTeams = new BoundedSet<string>(50_000);
-
-  private ensuredTeamKey(orgId: string, teamId: string): string {
-    return `${orgId}:${teamId}`;
-  }
 
   private isPreviewTeam(teamId: string): boolean {
     return teamId === "preview" || teamId.startsWith("preview_");
@@ -210,176 +193,6 @@ export class AutumnService {
     if (typeof status === "number") return status;
     const responseStatus = (error as any)?.response?.status;
     return typeof responseStatus === "number" ? responseStatus : undefined;
-  }
-
-  private async getOrCreateCustomer({
-    customerId,
-    name,
-    email,
-    autoEnablePlanId = AUTUMN_DEFAULT_PLAN_ID,
-  }: GetOrCreateCustomerParams): Promise<unknown | null> {
-    if (!autumnClient) return null;
-    if (!customerId) return null;
-
-    try {
-      // Counted before the await so a call that reached Autumn and failed is
-      // still counted; the counter measures attempts, not successes.
-      autumnCustomerGetOrCreateTotal.inc();
-      const customer = await autumnClient.customers.getOrCreate({
-        customerId,
-        name: name ?? undefined,
-        email: email ?? undefined,
-        autoEnablePlanId,
-      });
-      logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
-      return customer;
-    } catch (error) {
-      logger.error(
-        "Autumn getOrCreateCustomer failed — billing API may be unavailable",
-        { customerId, error },
-      );
-      return null;
-    }
-  }
-
-  private async getEntity({
-    customerId,
-    entityId,
-  }: GetEntityParams): Promise<unknown | null> {
-    if (!autumnClient) return null;
-
-    try {
-      return await autumnClient.entities.get({ customerId, entityId });
-    } catch (error) {
-      const status = this.getErrorStatus(error);
-      if (status === 404) {
-        return null;
-      }
-
-      logger.error("Autumn getEntity failed — billing API may be unavailable", {
-        customerId,
-        entityId,
-        error,
-      });
-      // Only a 404 establishes that the entity is missing. Let provisioning's
-      // catch handle other failures without attempting to create the entity.
-      throw error;
-    }
-  }
-
-  private async createEntity({
-    customerId,
-    entityId,
-    featureId,
-    name,
-    path,
-  }: CreateEntityParams): Promise<CreateEntityResult> {
-    if (!autumnClient) return { ok: false, conflict: false };
-
-    try {
-      const entity = await autumnClient.entities.create({
-        customerId,
-        entityId,
-        featureId,
-        name: name ?? undefined,
-      });
-      autumnEntityCreatedInlineTotal.labels(path).inc();
-      logger.info("Autumn createEntity succeeded", {
-        customerId,
-        entityId,
-        featureId,
-      });
-      return { ok: true, entity };
-    } catch (error) {
-      const status = this.getErrorStatus(error);
-      if (status === 409) {
-        // Entity already exists — treat as success for provisioning purposes.
-        return { ok: false, conflict: true };
-      }
-
-      logger.error(
-        "Autumn createEntity failed — billing API may be unavailable",
-        {
-          customerId,
-          entityId,
-          featureId,
-          error,
-        },
-      );
-      return { ok: false, conflict: false };
-    }
-  }
-
-  /**
-   * Ensures the Autumn customer exists for an org, caching successful lookups in-process.
-   */
-  async ensureOrgProvisioned({
-    orgId,
-    name,
-    email,
-  }: EnsureOrgProvisionedParams): Promise<void> {
-    if (this.ensuredOrgs.has(orgId)) return;
-    const customer = await this.getOrCreateCustomer({
-      customerId: orgId,
-      name,
-      email,
-    });
-    if (customer) {
-      this.ensuredOrgs.add(orgId);
-    }
-  }
-
-  /**
-   * Ensures the Autumn entity exists for a team under its org customer.
-   *
-   * The `ensuredTeams` check runs before any Autumn call so that a team already
-   * provisioned under its current org incurs no HTTP round-trips — not even
-   * `ensureOrgProvisioned`.
-   */
-  async ensureTeamProvisioned({
-    teamId,
-    orgId,
-    name,
-  }: EnsureTeamProvisionedParams): Promise<void> {
-    if (!autumnClient) return;
-    if (this.isPreviewTeam(teamId)) return;
-
-    try {
-      // Fast path: team is already fully provisioned under this org.
-      if (this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
-        return;
-      }
-      await this.ensureOrgProvisioned({ orgId });
-
-      const entity = await this.getEntity({
-        customerId: orgId,
-        entityId: teamId,
-      });
-
-      if (!entity) {
-        const result = await this.createEntity({
-          customerId: orgId,
-          entityId: teamId,
-          featureId: TEAM_FEATURE_ID,
-          name,
-          path: "ensureTeamProvisioned",
-        });
-        if (result.ok || ("conflict" in result && result.conflict)) {
-          // Entity was just created, or already existed (409 race) — either way
-          // it's present. No need for a second getEntity confirmation call.
-          this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
-        }
-        // Genuine error: leave ensuredTeams empty so the next request retries.
-        return;
-      }
-
-      this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
-    } catch (error) {
-      logger.error(
-        "Autumn ensureTeamProvisioned failed — billing API may be unavailable",
-        { teamId, error },
-      );
-    }
   }
 
   /**
