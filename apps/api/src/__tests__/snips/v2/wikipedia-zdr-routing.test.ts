@@ -43,7 +43,11 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
     }
   });
 
-  const buildStubMeta = (url: string, zeroDataRetention: boolean) =>
+  const buildStubMeta = (
+    url: string,
+    zeroDataRetention: boolean,
+    forceEngine?: string[],
+  ) =>
     ({
       id: "test",
       url,
@@ -51,7 +55,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
         formats: [],
         maxAge: 0,
       },
-      internalOptions: { teamId: "test", zeroDataRetention },
+      internalOptions: { teamId: "test", zeroDataRetention, forceEngine },
       featureFlags: new Set(),
       mock: null,
       logger: {
@@ -85,6 +89,22 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
 
     expect(engines).not.toContain("wikipedia");
     expect(engines).toContain("fire-engine;chrome-cdp");
+  });
+
+  it("skips a forced Wikipedia engine under zero data retention", async () => {
+    const meta = (zeroDataRetention: boolean) =>
+      buildStubMeta(
+        "https://en.wikipedia.org/wiki/Web_scraping",
+        zeroDataRetention,
+        ["wikipedia", "fire-engine;chrome-cdp"],
+      );
+
+    const forced = (await buildFallbackList(meta(false))).map(f => f.engine);
+    expect(forced).toContain("wikipedia");
+
+    const zdr = (await buildFallbackList(meta(true))).map(f => f.engine);
+    expect(zdr).not.toContain("wikipedia");
+    expect(zdr).toContain("fire-engine;chrome-cdp");
   });
 
   it("leaves non-Wikimedia URLs off the Wikipedia engine either way", async () => {

@@ -950,12 +950,7 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  // Zero data retention scrapes stay on the engines that fetch the page directly.
-  if (
-    meta.internalOptions.zeroDataRetention ||
-    !isWikimediaUrl(meta.url) ||
-    Math.random() >= 0.5
-  ) {
+  if (!isWikimediaUrl(meta.url) || Math.random() >= 0.5) {
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
       _engines.splice(wikiIndex, 1);
@@ -995,6 +990,11 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
+    // Zero data retention scrapes, forced engines included, never use the
+    // Wikipedia engine: they stay on the engines that fetch the page directly.
+    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
+      continue;
+
     // A profile must never fall back to fetching anonymous content. File parsers
     // may consume bytes already fetched by the authenticated browser.
     if (
