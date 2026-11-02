@@ -27,6 +27,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
+import { isUsOnly } from "../../lib/us-only";
 import {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,
@@ -329,6 +330,7 @@ export async function agentController(
         ...(zeroDataRetentionMinutes !== null
           ? { zeroDataRetentionMinutes }
           : {}),
+        ...(isUsOnly(req.acuc?.flags) ? { usOnly: true } : {}),
       }),
     },
   );

@@ -6,7 +6,9 @@ import { logger as rootLogger } from "../../lib/logger";
 import {
   fetchGovUpstream,
   fetchResearchUpstream,
+  usOnlySkippedWarning,
 } from "../../lib/research-upstream";
+import { isUsOnly } from "../../lib/us-only";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import {
   indexDailyLimitRefusal,
@@ -332,6 +334,7 @@ async function fetchForRequest(
   }
   headers["firecrawl-team-id"] = req.auth.team_id;
   headers["firecrawl-zero-data-retention"] = String(zeroDataRetention);
+  if (isUsOnly(req.acuc?.flags)) headers["firecrawl-us-only"] = "true";
 
   if ("fetchUpstream" in endpoint) {
     return endpoint.fetchUpstream(params, headers);
@@ -501,6 +504,16 @@ function createResearchController(
         options.legacy && upstream.ok
           ? addLegacySnakeCaseAliases(responseBody)
           : responseBody;
+      const usOnlyWarning =
+        upstream.ok && isUsOnly(authedReq.acuc?.flags)
+          ? usOnlySkippedWarning(upstream.headers)
+          : undefined;
+      if (usOnlyWarning && !Array.isArray(response)) {
+        response.warning =
+          typeof response.warning === "string" && response.warning.length > 0
+            ? `${response.warning} ${usOnlyWarning}`
+            : usOnlyWarning;
+      }
       return res.status(statusCode).json(response);
     } catch (err: unknown) {
       if (isResearchTimeoutError(err)) {

@@ -18,6 +18,7 @@ export async function fire_engine_search(
     location?: string;
     numResults: number;
     page?: number;
+    usOnly?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
@@ -33,6 +34,7 @@ export async function fire_engine_search(
     tbs: options.tbs,
     numResults: options.numResults,
     page: options.page ?? 1,
+    ...(options.usOnly ? { usOnly: true } : {}),
   };
 
   const url = `${config.FIRE_ENGINE_BETA_URL}/search`;
@@ -57,6 +59,7 @@ export async function fireEngineMap(
     location?: string;
     numResults: number;
     page?: number;
+    usOnly?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
@@ -75,6 +78,7 @@ export async function fireEngineMap(
     tbs: options.tbs,
     numResults: options.numResults,
     page: options.page ?? 1,
+    ...(options.usOnly ? { usOnly: true } : {}),
   };
 
   const url = `${config.FIRE_ENGINE_BETA_URL}/map`;
