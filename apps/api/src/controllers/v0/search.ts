@@ -331,7 +331,7 @@ export async function searchController(req: Request, res: Response) {
       return res.status(408).json({ error: error.message });
     }
     if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({ error: error.message });
+      return res.status(403).json({ code: error.code, error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", { error });
