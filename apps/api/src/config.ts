@@ -773,9 +773,9 @@ const configSchema = z.object({
 
   // Billing
   AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
-  // firebill — durable usage-event store that sits in front of Autumn. When
-  // both URL and SECRET are set, every org's usage is routed through firebill
-  // instead of directly to Autumn.
+  // firebill — durable usage-event store that sits in front of Autumn. Every
+  // billing write (check, lock, track, refund, finalize) goes through it;
+  // without both URL and SECRET set, billing is skipped.
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   // How long "this team is not partner-provisioned" is trusted. Only the

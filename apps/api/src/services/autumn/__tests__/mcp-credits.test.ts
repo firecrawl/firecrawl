@@ -102,68 +102,6 @@ describe("hostedMcpFeatureId", () => {
 });
 
 describe("the entity a charge is made against", () => {
-  it("tracks an MCP credits charge once, whole, on the customer", async () => {
-    expect(
-      await new AutumnService().trackCredits({
-        ...charge,
-        featureId: MCP_CREDITS_FEATURE_ID,
-      }),
-    ).toBe(true);
-
-    expect(mockTrack).toHaveBeenCalledOnce();
-    const [track] = mockTrack.mock.calls[0];
-    expect(track).toMatchObject({
-      customerId: "org-1",
-      featureId: MCP_CREDITS_FEATURE_ID,
-      value: 5,
-      overageBehavior: "overflow",
-    });
-    expect(track.entityId).toBeUndefined();
-    expect(mockAutumnClient.customers.get).not.toHaveBeenCalled();
-  });
-
-  it("refunds MCP credits on the customer and other features on the team", async () => {
-    const service = new AutumnService();
-
-    await service.refundCredits({
-      ...charge,
-      featureId: MCP_CREDITS_FEATURE_ID,
-    });
-    await service.refundCredits(charge);
-
-    const [[mcp], [search]] = mockTrack.mock.calls;
-    expect(mcp).toMatchObject({ featureId: MCP_CREDITS_FEATURE_ID, value: -5 });
-    expect(mcp.entityId).toBeUndefined();
-    expect(search).toMatchObject({
-      featureId: "SEARCH_CREDITS",
-      entityId: "team-1",
-      value: -5,
-    });
-  });
-
-  it("checks and holds MCP credits on the customer and other features on the team", async () => {
-    const service = new AutumnService();
-
-    await service.checkCredits({
-      ...charge,
-      featureId: MCP_CREDITS_FEATURE_ID,
-    });
-    await service.lockCredits({ ...charge, featureId: MCP_CREDITS_FEATURE_ID });
-    await service.checkCredits(charge);
-
-    const [[check], [hold], [search]] = mockCheck.mock.calls;
-    expect(check.entityId).toBeUndefined();
-    expect(hold).toMatchObject({
-      featureId: MCP_CREDITS_FEATURE_ID,
-      lock: expect.objectContaining({ enabled: true }),
-    });
-    expect(hold.entityId).toBeUndefined();
-    expect(search).toMatchObject({
-      featureId: "SEARCH_CREDITS",
-      entityId: "team-1",
-    });
-  });
-
   describe("through firebill", () => {
     const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
     const bodies = (path: string) =>
@@ -204,6 +142,33 @@ describe("the entity a charge is made against", () => {
       ]);
     });
 
+    it("refunds MCP credits with an empty entity and other features on the team", async () => {
+      mockFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ success: true })),
+      );
+      const service = new AutumnService();
+
+      await service.refundCredits({
+        ...charge,
+        featureId: MCP_CREDITS_FEATURE_ID,
+      });
+      await service.refundCredits(charge);
+
+      expect(mockTrack).not.toHaveBeenCalled();
+      expect(bodies("/v1/refund")).toEqual([
+        expect.objectContaining({
+          entity_id: "",
+          feature_id: MCP_CREDITS_FEATURE_ID,
+          value: 5,
+        }),
+        expect.objectContaining({
+          entity_id: "team-1",
+          feature_id: "SEARCH_CREDITS",
+          value: 5,
+        }),
+      ]);
+    });
+
     it("carries the MCP allowance's reset time from firebill", async () => {
       mockFetch.mockImplementation(
         async () =>
@@ -230,7 +195,7 @@ describe("the entity a charge is made against", () => {
       );
     });
 
-    it("checks and holds MCP credits with an empty entity", async () => {
+    it("checks and holds MCP credits with an empty entity and other features on the team", async () => {
       mockFetch.mockImplementation(
         async () =>
           new Response(
@@ -253,12 +218,17 @@ describe("the entity a charge is made against", () => {
         featureId: MCP_CREDITS_FEATURE_ID,
         lockId: "lock-1",
       });
+      await service.checkCredits(charge);
 
       expect(mockCheck).not.toHaveBeenCalled();
       expect(bodies("/v1/check")).toEqual([
         expect.objectContaining({
           entity_id: "",
           feature_id: MCP_CREDITS_FEATURE_ID,
+        }),
+        expect.objectContaining({
+          entity_id: "team-1",
+          feature_id: "SEARCH_CREDITS",
         }),
       ]);
       expect(bodies("/v1/lock")).toEqual([
