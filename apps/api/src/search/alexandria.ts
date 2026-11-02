@@ -13,6 +13,8 @@ export const isAlexandriaSource = (source: { type: string }) =>
 type ToolDiscovery = {
   items: DiscoveredTool[];
   warning?: string;
+  /** Tools the Exchange hid from a US-only team; set only when it hid some. */
+  usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
 };
@@ -38,6 +40,10 @@ export function isToolsOnlySearch(
   )
     return false;
   return true;
+}
+
+export function usOnlyToolsWarning(excluded: number): string {
+  return `${excluded} ${excluded === 1 ? "tool is" : "tools are"} not available for teams restricted to US-only processing.`;
 }
 
 export async function discoverTools(
@@ -281,16 +287,6 @@ export async function discoverTools(
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
   for (const tool of semanticTools ?? []) merge(tool, "semantic");
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
-  const warning = [
-    ...(answered < attempted
-      ? ["Some tool discovery results are unavailable."]
-      : []),
-    ...(input.usOnly && usOnlyExcluded > 0
-      ? [
-          `${usOnlyExcluded} ${usOnlyExcluded === 1 ? "tool is" : "tools are"} not available for teams restricted to US-only processing.`,
-        ]
-      : []),
-  ].join(" ");
   return {
     items: [...items.values()].map(tool =>
       input.toolDetail === "compact"
@@ -301,7 +297,10 @@ export async function discoverTools(
           }
         : tool,
     ),
-    ...(warning ? { warning } : {}),
+    ...(answered < attempted
+      ? { warning: "Some tool discovery results are unavailable." }
+      : {}),
+    ...(input.usOnly && usOnlyExcluded > 0 ? { usOnlyExcluded } : {}),
     ...(attempted && !answered && !items.size
       ? { unavailable: true as const }
       : {}),

@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
-import { discoverTools } from "../../search/alexandria";
+import { discoverTools, usOnlyToolsWarning } from "../../search/alexandria";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
@@ -785,6 +785,14 @@ export async function scrapeController(
             })
           : undefined;
       if (tools) markAlexandriaActivity(req.auth.team_id);
+      const toolsWarning = [
+        tools?.warning,
+        tools?.usOnlyExcluded
+          ? usOnlyToolsWarning(tools.usOnlyExcluded)
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       return res.status(200).json({
         success: true,
@@ -799,7 +807,7 @@ export async function scrapeController(
           },
           ...(tools ? { tools: tools.items } : {}),
         },
-        ...(tools?.warning ? { warning: tools.warning } : {}),
+        ...(toolsWarning ? { warning: toolsWarning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

@@ -219,7 +219,8 @@ export async function getMapResults({
       Math.min(maxFireEngineResults, limit) / resultsPerPage,
     );
 
-    const cacheKey = `fireEngineMap:${mapUrl}`;
+    const usOnly = isUsOnly(flags);
+    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache
       ? null
       : await redisEvictConnection.get(cacheKey);
@@ -230,7 +231,7 @@ export async function getMapResults({
         {
           numResults: resultsPerPage,
           page,
-          usOnly: isUsOnly(flags),
+          usOnly,
         },
         abort,
       );

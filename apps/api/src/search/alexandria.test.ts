@@ -258,7 +258,7 @@ it("keeps the results of queries that answered", async () => {
   expect(result.warning).toBeUndefined();
 });
 
-it("warns a US-only team about the tools the Exchange hid", async () => {
+it("reports the tools the Exchange hid from a US-only team", async () => {
   request.mockResolvedValue({
     status: 200,
     body: {
@@ -270,17 +270,16 @@ it("warns a US-only team about the tools the Exchange hid", async () => {
   const result = await discoverTools({ ...input, usOnly: true }, logger);
   expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
   expect(result.items).toHaveLength(1);
-  expect(result.warning).toBe(
-    "3 tools are not available for teams restricted to US-only processing.",
-  );
+  expect(result.usOnlyExcluded).toBe(3);
+  expect(result).not.toHaveProperty("warning");
 });
 
-it("adds no US-only warning when the Exchange hid nothing", async () => {
+it("reports no hidden tools when the Exchange hid nothing", async () => {
   request.mockResolvedValue({
     status: 200,
     body: { success: true, creditsCost: 0, data: { items: [tool] } },
   });
   const result = await discoverTools({ ...input, usOnly: true }, logger);
   expect(result.items).toHaveLength(1);
-  expect(result).not.toHaveProperty("warning");
+  expect(result).not.toHaveProperty("usOnlyExcluded");
 });

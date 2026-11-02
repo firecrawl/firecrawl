@@ -33,6 +33,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly } from "../../lib/us-only";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 async function searchHelper(
   jobId: string,
@@ -328,6 +329,9 @@ export async function searchController(req: Request, res: Response) {
   } catch (error) {
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({ error: error.message });
+    }
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({ error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", { error });

@@ -47,6 +47,7 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly } from "../../lib/us-only";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -424,6 +425,14 @@ export async function searchController(
 
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({
         success: false,
         code: error.code,
         error: error.message,

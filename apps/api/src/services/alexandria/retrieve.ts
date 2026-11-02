@@ -188,12 +188,13 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
-  // Appended only when set so existing non-ZDR fingerprints stay stable.
+  // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
       ? [input.calls, billable, termsIdentity ?? null]
       : [input.calls, billable]),
     ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
+    ...(usOnly ? [{ usOnly }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,

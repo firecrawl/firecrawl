@@ -1,5 +1,9 @@
 import type { Logger } from "winston";
-import { discoverTools, isAlexandriaSource } from "./alexandria";
+import {
+  discoverTools,
+  isAlexandriaSource,
+  usOnlyToolsWarning,
+} from "./alexandria";
 import {
   AUTO_TOOLS_WAIT_MS,
   inferToolIntent,
@@ -169,7 +173,10 @@ export async function executeSearch(
             },
             logger,
           );
-          return verifyTools(query, found.items, logger);
+          return {
+            items: await verifyTools(query, found.items, logger),
+            usOnlyExcluded: found.usOnlyExcluded ?? 0,
+          };
         })
         .catch(() => null)
     : null;
@@ -428,7 +435,7 @@ export async function executeSearch(
         tool,
       ]),
     );
-    for (const tool of extra ?? []) {
+    for (const tool of extra?.items ?? []) {
       const key = `${tool.provider}/${tool.capability}`;
       const previous = merged.get(key);
       merged.set(
@@ -453,13 +460,27 @@ export async function executeSearch(
       );
     }
     searchResponse.tools = [...merged.values()];
-    toolsWarning = discovery.warning;
-    toolsUnavailable = discovery.unavailable === true && !extra?.length;
+    // Both legs can hide the same tools, so the larger count is reported.
+    const usOnlyExcluded = Math.max(
+      discovery.usOnlyExcluded ?? 0,
+      extra?.usOnlyExcluded ?? 0,
+    );
+    toolsWarning =
+      [
+        discovery.warning,
+        usOnlyExcluded > 0 ? usOnlyToolsWarning(usOnlyExcluded) : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined;
+    toolsUnavailable = discovery.unavailable === true && !extra?.items.length;
   } else if (extraDiscovery) {
     const extra = await waitForExtra();
-    if (extra?.length) {
-      searchResponse.tools = extra;
+    if (extra?.items.length) {
+      searchResponse.tools = extra.items;
       toolsAuto = true;
+    }
+    if (extra?.usOnlyExcluded) {
+      toolsWarning = usOnlyToolsWarning(extra.usOnlyExcluded);
     }
   }
 

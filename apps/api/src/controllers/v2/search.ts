@@ -68,6 +68,7 @@ import {
 } from "../../search/tool-intent";
 import { isUsOnly } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -688,6 +689,15 @@ async function searchControllerInner(
 
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUnavailableError) {
+      setSpanAttributes(span, { "search.status_code": 403 });
+      return res.status(403).json({
         success: false,
         code: error.code,
         error: error.message,
