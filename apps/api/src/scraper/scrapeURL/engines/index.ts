@@ -950,7 +950,12 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (!isWikimediaUrl(meta.url) || Math.random() >= 0.5) {
+  // Zero data retention scrapes stay on the engines that fetch the page directly.
+  if (
+    meta.internalOptions.zeroDataRetention ||
+    !isWikimediaUrl(meta.url) ||
+    Math.random() >= 0.5
+  ) {
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
       _engines.splice(wikiIndex, 1);
