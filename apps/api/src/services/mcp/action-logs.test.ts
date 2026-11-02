@@ -274,6 +274,14 @@ describe("MCP action log contract", () => {
       input({ error_message: "401 for Basic dXNlcjpwYXNz on Basic research" })
         .error_message,
     ).toBe("401 for [redacted] on Basic research");
+    expect(
+      input({
+        error_message: "password=>Basic dXNlcjpwYXNz cred: Basic dXNlcjpwYXNz",
+      }).error_message,
+    ).toBe("password=>[redacted] cred: [redacted]");
+    expect(input({ error_message: "401 for Basic YTo=" }).error_message).toBe(
+      "401 for [redacted]",
+    );
     expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
       "x".repeat(300),
     );

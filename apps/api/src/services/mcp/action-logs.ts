@@ -24,7 +24,7 @@ const DETAIL_SECRET_PAIR = new RegExp(
 );
 // A Basic credential is base64 of "user:password"; only one that decodes
 // to a colon pair is redacted, so prose such as "Basic research" is kept.
-const DETAIL_BASIC_AUTH = /\bBasic\s+([A-Za-z0-9+/]{4,}={0,2})/gi;
+const DETAIL_BASIC_AUTH = /\bBasic\s+([A-Za-z0-9+/]{2,}={0,2})/gi;
 const DETAIL_QUERY_PAIR = /([?&][^\s=&#?]+=)[^\s&#]+/g;
 const DETAIL_URL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
 const DETAIL_TOKEN_RUN = /[A-Za-z0-9]{16,}/g;
@@ -202,12 +202,12 @@ function scrubbedDetail(text: string) {
     .replace(SECRET_PATTERN_ALL, "[redacted]")
     .replace(DETAIL_URL, scrubbedUrl)
     .replace(DETAIL_QUERY_PAIR, "$1[redacted]")
-    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]")
     .replace(DETAIL_BASIC_AUTH, (match, token: string) =>
       Buffer.from(token, "base64").toString("latin1").includes(":")
         ? "[redacted]"
         : match,
-    );
+    )
+    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]");
 }
 
 /**
