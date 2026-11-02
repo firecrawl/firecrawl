@@ -78,7 +78,7 @@ function isJevBreakerOpen(now = Date.now()): boolean {
  * such as "503 Image processing is unavailable". A plain 5xx or a timeout
  * is a failure of the call itself and is handled as before.
  */
-function isImageRejection(error: unknown): boolean {
+function isImageRejection(error: unknown): error is APIError {
   return (
     error instanceof APIError &&
     (error.status === 529 ||
@@ -1307,14 +1307,19 @@ export async function enhanceBrandingWithJev(
       response = await callJev(request);
     } catch (error) {
       if (!called || !screenshot || !isImageRejection(error)) throw error;
+      error satisfies APIError;
       // TypeSafe's image lane is the part that is overloaded (its text calls
       // keep answering), so ask again from the text alone. Jev without the
       // first screen is still a far better answer per dollar than the LLM
       // fallback, and a refused image says nothing about Jev's health, so
       // it doesn't count toward the breaker.
       count("image_rejected");
-      input.logger.info("Jev refused the first screen, asking without it", {
-        error: error instanceof Error ? error.message : String(error),
+      // A warning with a fixed message and the vendor's status, so a log
+      // metric can count refusals and page us before the fallback bill does.
+      input.logger.warn("TypeSafe refused the first screen", {
+        vendor: "typesafe",
+        status: error.status,
+        error: error.message,
         elapsedMs: Date.now() - started,
         ...screenshotLog,
       });
