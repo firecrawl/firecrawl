@@ -248,9 +248,16 @@ const checkAnswerSchema = z.discriminatedUnion("success", [
     success: z.literal(true),
     allowed: z.boolean(),
     remaining: z.number().finite().optional().catch(undefined),
-    // Epoch ms. Caught to undefined: a mis-shaped reset time must not turn an
-    // answer into a fail-open.
-    resets_at: z.number().int().positive().optional().catch(undefined),
+    // Epoch ms, within what a Date can hold: the 402 renders it with
+    // toISOString(). Caught to undefined: a mis-shaped reset time must not turn
+    // an answer into a fail-open.
+    resets_at: z
+      .number()
+      .int()
+      .positive()
+      .max(8_640_000_000_000_000)
+      .optional()
+      .catch(undefined),
   }),
   z.object({ success: z.literal(false) }),
 ]);

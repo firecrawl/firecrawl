@@ -872,6 +872,7 @@ describe("firebillCheck", () => {
     ["a string", "2026-12-01T00:00:00Z"],
     ["a fraction", 1.5],
     ["zero", 0],
+    ["past what a Date can hold", 8_640_000_000_000_001],
     ["null", null],
   ])(
     "drops a resets_at that is %s and keeps the answer",
