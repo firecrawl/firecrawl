@@ -82,7 +82,7 @@ other variables in the API container's environment.
 | --- | --- | --- |
 | `BULL_AUTH_KEY` | unset | Turns on the key-protected admin routes. Routes under `/admin/ops/` accept `Authorization: Bearer <BULL_AUTH_KEY>`. |
 | `BULL_AUTH_KEY_PREVIOUS` | unset | A second accepted bearer value, so callers can move to a new key without downtime. Clear it once every caller sends the new key. |
-| `BULL_AUTH_KEY_PATH_ROUTES` | `true` | Keeps the routes that take the key as a path segment, `/admin/<key>/...`, including the queue UI at `/admin/<key>/queues`. Set `false` once callers use `/admin/ops/` or the internal listener. |
+| `BULL_AUTH_KEY_PATH_ROUTES` | `false` | Set `true` to keep the old routes that take the key as a path segment, `/admin/<key>/...`, including the queue UI at `/admin/<key>/queues`, for callers not yet on `/admin/ops/` or the internal listener. |
 | `ADMIN_INTERNAL_PORT` | unset | Starts a second listener on this port that serves the routes below with no key. Never publish this port. |
 | `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
 
