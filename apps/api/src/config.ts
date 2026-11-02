@@ -435,6 +435,9 @@ const configSchema = z.object({
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+  // Skip the rewrite for searches that ask for tools, leaving tool lookup on
+  // the query as typed and the result URLs.
+  ALEXANDRIA_SKIP_QUERY_REWRITE: z.stringbool().default(false),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),

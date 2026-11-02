@@ -10,6 +10,7 @@ const config = vi.hoisted(() => ({
   ANTHROPIC_API_KEY: undefined as string | undefined,
   TYPESAFE_API_KEY: "key" as string | undefined,
   ALEXANDRIA_AUTO_TOOLS: false,
+  ALEXANDRIA_SKIP_QUERY_REWRITE: false,
 }));
 
 vi.mock("ai", () => ({ generateObject: mocks.generateObject }));
@@ -123,6 +124,15 @@ describe("feature gates", () => {
     config.TYPESAFE_API_KEY = undefined;
     expect(queryInferenceEnabled()).toBe(false);
     config.TYPESAFE_API_KEY = "key";
+  });
+
+  it("skip the rewrite for tool searches only when configured", () => {
+    config.ANTHROPIC_API_KEY = "key";
+    config.ALEXANDRIA_SKIP_QUERY_REWRITE = true;
+    expect(queryInferenceEnabled()).toBe(false);
+    expect(autoToolsEnabled({ alexandriaAutoTools: true })).toBe(true);
+    config.ALEXANDRIA_SKIP_QUERY_REWRITE = false;
+    expect(queryInferenceEnabled()).toBe(true);
   });
 });
 
