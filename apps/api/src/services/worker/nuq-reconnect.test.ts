@@ -328,4 +328,57 @@ describe("NuQ RabbitMQ listener and sender reconnect recovery (#5401)", () => {
 
     expect((q as any).listener).toBeNull();
   });
+
+  it("acknowledges message delivered during consume callback without dropping it", async () => {
+    const { NuQ } = await freshNuQModule();
+    const q = new NuQ("test_queue", {});
+
+    channelMock.consume.mockImplementationOnce(async (_queue: string, cb: any) => {
+      // Simulate message delivered synchronously or right during consume setup
+      cb({
+        properties: { correlationId: "job-sync-1" },
+        content: Buffer.from("completed"),
+      });
+      return { consumerTag: "tag1" };
+    });
+
+    const jobListener = vi.fn();
+    (q as any).listens["job-sync-1"] = [jobListener];
+
+    await (q as any).startListener();
+
+    expect(jobListener).toHaveBeenCalledWith("completed");
+    expect(channelMock.ack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: { correlationId: "job-sync-1" },
+      }),
+    );
+
+    await q.shutdown();
+  });
+
+  it("clears registered listeners in listens map when listener startup resolves during shutdown", async () => {
+    const { NuQ } = await freshNuQModule();
+    const q = new NuQ("test_queue", {});
+
+    let resolveConnect: ((val: any) => void) | null = null;
+    const delayedConnect = new Promise(resolve => {
+      resolveConnect = resolve;
+    });
+    connectMock.mockReturnValueOnce(delayedConnect);
+
+    const waiter = vi.fn();
+    (q as any).listens["job-orphaned"] = [waiter];
+
+    const listenerPromise = (q as any).startListener();
+    const shutdownPromise = q.shutdown();
+
+    // Resolve after shutdown started
+    resolveConnect!(connectionMock);
+
+    await Promise.all([listenerPromise, shutdownPromise]);
+
+    expect((q as any).listener).toBeNull();
+    expect((q as any).listens).toEqual({});
+  });
 });

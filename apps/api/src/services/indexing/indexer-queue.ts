@@ -64,6 +64,7 @@ class IndexerQueue {
       return;
     }
 
+    const isNewConnection = !this.connection;
     let connection: amqp.ChannelModel | null = this.connection;
     let channel: amqp.Channel | null = null;
 
@@ -87,7 +88,10 @@ class IndexerQueue {
       this.connection = connection;
       this.publishChannel = channel;
 
-      this._registerConnectionEvents();
+      if (isNewConnection) {
+        this._registerConnectionEvents(connection);
+      }
+      this._registerChannelEvents(channel);
 
       logger.info("Connected to index RabbitMQ");
     } catch (err) {
@@ -103,11 +107,10 @@ class IndexerQueue {
     }
   }
 
-  private _registerConnectionEvents() {
+  private _registerConnectionEvents(connection: amqp.ChannelModel) {
     if (this.noop) return;
-    if (!this.connection || !this.publishChannel) return;
 
-    this.connection.on("close", () => {
+    connection.on("close", () => {
       if (this.closing) return;
 
       logger.warn("Index RabbitMQ connection closed", {
@@ -118,13 +121,17 @@ class IndexerQueue {
       this.scheduleReconnect();
     });
 
-    this.connection.on("error", err => {
+    connection.on("error", err => {
       logger.error("Index RabbitMQ connection error", {
         err,
       });
     });
+  }
 
-    this.publishChannel.on("close", () => {
+  private _registerChannelEvents(channel: amqp.Channel) {
+    if (this.noop) return;
+
+    channel.on("close", () => {
       logger.warn("Index RabbitMQ channel closed", {
         module: "index-queue",
       });
@@ -134,7 +141,7 @@ class IndexerQueue {
       }
     });
 
-    this.publishChannel.on("error", err => {
+    channel.on("error", err => {
       logger.error("Index RabbitMQ channel error", {
         err,
       });
@@ -251,7 +258,10 @@ class IndexerQueue {
     }
     if (this.connectPromise) {
       try {
-        await this.connectPromise;
+        await Promise.race([
+          this.connectPromise,
+          new Promise(resolve => setTimeout(resolve, CONNECT_TIMEOUT)),
+        ]);
       } catch {}
     }
 

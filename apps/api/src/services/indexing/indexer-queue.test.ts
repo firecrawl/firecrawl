@@ -171,4 +171,47 @@ describe("IndexerQueue RabbitMQ reconnect resilience", () => {
       vi.useRealTimers();
     }
   });
+
+  it("does not accumulate connection listeners on channel-only reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const { indexerQueue } = await freshIndexerQueueModule();
+      await indexerQueue.connect();
+
+      const initialConnectionOnCalls = (connectionMock.on as Mock).mock.calls.length;
+
+      const onChannelClose = getChannelCloseHandler();
+      expect(onChannelClose).toBeTypeOf("function");
+
+      onChannelClose();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(2);
+      expect((connectionMock.on as Mock).mock.calls.length).toBe(initialConnectionOnCalls);
+
+      await indexerQueue.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds close wait on in-flight connectPromise to prevent hanging shutdown", async () => {
+    vi.useFakeTimers();
+    try {
+      const { indexerQueue } = await freshIndexerQueueModule();
+
+      // Hanging connect
+      connectMock.mockReturnValueOnce(new Promise(() => {}));
+
+      const connectPromise = indexerQueue.connect();
+      const closePromise = indexerQueue.close();
+
+      // Advance past CONNECT_TIMEOUT (5000ms)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await expect(closePromise).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

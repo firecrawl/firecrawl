@@ -164,6 +164,7 @@ export class NuQ<JobData = any, JobReturnValue = any> {
       const currentListener: any = (this as any).listener;
       if (this.shuttingDown && currentListener) {
         this.listener = null;
+        this.listens = {};
         if (currentListener.type === "postgres") {
           await currentListener.client.end().catch(() => {});
         } else {
@@ -238,6 +239,13 @@ export class NuQ<JobData = any, JobReturnValue = any> {
         });
         connection.on("close", onClose);
 
+        this.listener = {
+          type: "rabbitmq",
+          connection,
+          channel,
+          queue: queue.queue,
+        };
+
         await channel.consume(
           queue.queue,
           ((msg: amqp.ConsumeMessage | null) => {
@@ -268,13 +276,6 @@ export class NuQ<JobData = any, JobReturnValue = any> {
             noAck: false,
           },
         );
-
-        this.listener = {
-          type: "rabbitmq",
-          connection,
-          channel,
-          queue: queue.queue,
-        };
       } catch (err) {
         if (channel) {
           await channel.close().catch(() => {});
@@ -1659,18 +1660,24 @@ export class NuQ<JobData = any, JobReturnValue = any> {
     }
     if (this.listenerPromise) {
       try {
-        await this.listenerPromise;
+        await Promise.race([
+          this.listenerPromise,
+          new Promise(resolve => setTimeout(resolve, 5000)),
+        ]);
       } catch {}
     }
     if (this.senderPromise) {
       try {
-        await this.senderPromise;
+        await Promise.race([
+          this.senderPromise,
+          new Promise(resolve => setTimeout(resolve, 5000)),
+        ]);
       } catch {}
     }
+    this.listens = {};
     if (this.listener) {
       const nl = this.listener;
       this.listener = null;
-      this.listens = {};
       if (nl.type === "postgres") {
         await nl.client.query(`UNLISTEN "${this.queueName}";`);
         await nl.client.end();

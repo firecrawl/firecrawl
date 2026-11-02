@@ -171,4 +171,47 @@ describe("WebhookQueue RabbitMQ reconnect resilience", () => {
       vi.useRealTimers();
     }
   });
+
+  it("does not accumulate connection listeners on channel-only reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const { webhookQueue } = await freshWebhookQueueModule();
+      await webhookQueue.connect();
+
+      const initialConnectionOnCalls = (connectionMock.on as Mock).mock.calls.length;
+
+      const onChannelClose = getChannelCloseHandler();
+      expect(onChannelClose).toBeTypeOf("function");
+
+      onChannelClose();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(connectionMock.createChannel).toHaveBeenCalledTimes(2);
+      expect((connectionMock.on as Mock).mock.calls.length).toBe(initialConnectionOnCalls);
+
+      await webhookQueue.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds close wait on in-flight connectPromise to prevent hanging shutdown", async () => {
+    vi.useFakeTimers();
+    try {
+      const { webhookQueue } = await freshWebhookQueueModule();
+
+      // Hanging connect
+      connectMock.mockReturnValueOnce(new Promise(() => {}));
+
+      const connectPromise = webhookQueue.connect();
+      const closePromise = webhookQueue.close();
+
+      // Advance past CONNECT_TIMEOUT (5000ms)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await expect(closePromise).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

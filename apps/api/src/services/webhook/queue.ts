@@ -48,6 +48,7 @@ class WebhookQueue {
       throw new Error("NUQ_RABBITMQ_URL is not configured");
     }
 
+    const isNewConnection = !this.connection;
     let connection: amqp.ChannelModel | null = this.connection;
     let channel: amqp.Channel | null = null;
 
@@ -72,7 +73,10 @@ class WebhookQueue {
       this.connection = connection;
       this.channel = channel;
 
-      this._registerConnectionEvents();
+      if (isNewConnection) {
+        this._registerConnectionEvents(connection);
+      }
+      this._registerChannelEvents(channel);
 
       _logger.info("Connected to webhook RabbitMQ", {
         module: "webhook-queue",
@@ -90,10 +94,8 @@ class WebhookQueue {
     }
   }
 
-  private _registerConnectionEvents() {
-    if (!this.connection || !this.channel) return;
-
-    this.connection.on("close", () => {
+  private _registerConnectionEvents(connection: amqp.ChannelModel) {
+    connection.on("close", () => {
       _logger.warn("Webhook RabbitMQ connection closed", {
         module: "webhook-queue",
       });
@@ -103,14 +105,16 @@ class WebhookQueue {
       }
     });
 
-    this.connection.on("error", err => {
+    connection.on("error", err => {
       _logger.error("Webhook RabbitMQ connection error", {
         module: "webhook-queue",
         err,
       });
     });
+  }
 
-    this.channel.on("close", () => {
+  private _registerChannelEvents(channel: amqp.Channel) {
+    channel.on("close", () => {
       _logger.warn("Webhook RabbitMQ channel closed", {
         module: "webhook-queue",
       });
@@ -120,7 +124,7 @@ class WebhookQueue {
       }
     });
 
-    this.channel.on("error", err => {
+    channel.on("error", err => {
       _logger.error("Webhook RabbitMQ channel error", {
         module: "webhook-queue",
         err,
@@ -232,7 +236,10 @@ class WebhookQueue {
     }
     if (this.connectPromise) {
       try {
-        await this.connectPromise;
+        await Promise.race([
+          this.connectPromise,
+          new Promise(resolve => setTimeout(resolve, CONNECT_TIMEOUT)),
+        ]);
       } catch {}
     }
     try {
