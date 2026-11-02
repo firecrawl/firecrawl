@@ -25,6 +25,10 @@ import {
   scrapeSearchResults,
   mergeScrapedContent,
   calculateScrapeCredits,
+  canServeFromRawContent,
+  rawContentDocument,
+  type DocumentWithCostTracking,
+  type ScrapeItem,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import { searchGovCategory, wantsGovCategory } from "./gov";
@@ -45,7 +49,9 @@ import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
+import { resolveSafeMode } from "../lib/safe-mode";
 import { logger as rootLogger } from "../lib/logger";
+import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 
 interface SearchOptions {
   query: string;
@@ -126,6 +132,36 @@ export async function executeSearch(
     zeroDataRetention,
     billing,
   } = context;
+
+  // The raw-content fast path (serving a result from the page text the
+  // search backend already fetched) is decided once, up front: the same
+  // verdict gates both asking the backend for the text (the search call
+  // below) and serving from it (the scrape phase), so the backend is
+  // never asked to fetch text this request cannot use.
+  //
+  // Safe Mode lockdown is resolved from the team flags, mirroring the
+  // scrape pipeline's own resolution for search sub-scrapes
+  // (scrapeURL/index.ts): the search controllers resolve Safe Mode but
+  // never stamp the forced lockdown onto the request's scrapeOptions, so
+  // the per-request `lockdown` option that canServeFromRawContent checks
+  // stays unset for a lockdown team — while the real pipeline would serve
+  // that team's scrapes cache-only. A request whose Safe Mode bypass was
+  // honored at the controller is exempt, exactly as in the pipeline.
+  const safeModeLockdown =
+    context.safeModeBypassed !== true &&
+    resolveSafeMode(flags, undefined).safeMode?.lockdown === true;
+  const rawContentEligible =
+    config.SEARXNG_INCLUDE_RAW_CONTENT &&
+    scrapeOptions !== undefined &&
+    canServeFromRawContent(scrapeOptions) &&
+    !(
+      context.threatProtectionPolicy &&
+      context.threatProtectionPolicy.mode !== "off"
+    ) &&
+    // A team that enabled robots.txt checking on scrape must not have
+    // it silently skipped by serving backend-fetched text instead.
+    !flags?.checkRobotsOnScrape &&
+    !safeModeLockdown;
 
   const num_results_buffer = Math.floor(limit * 2);
 
@@ -250,6 +286,7 @@ export async function executeSearch(
           safe: options.safe,
           type: searchTypes,
           enterprise: options.enterprise,
+          includeRawContent: rawContentEligible,
           includeDomains: options.includeDomains?.length
             ? options.includeDomains
             : nonEmpty(siteHostnames(operators.sites)),
@@ -503,11 +540,71 @@ export async function executeSearch(
         safeModeBypassed: context.safeModeBypassed ?? false,
       };
 
-      const allDocsWithCostTracking = await scrapeSearchResults(
-        itemsToScrape.map(i => i.scrapeInput),
-        scrapeOpts,
-        logger,
-        flags,
+      // Fast path: when the request was decided eligible up front
+      // (rawContentEligible — operator opt-in, plain markdown-only scrape,
+      // no threat-protection policy to scan through the pipeline, no
+      // robots check, no Safe Mode lockdown) and the search backend
+      // already returned a result's page text, serve that result from the
+      // text instead of spawning a scrape job for it. Results without raw
+      // content fall back to the regular scrape below.
+      //
+      // Documents are keyed by item identity, not URL: the same URL can
+      // appear more than once among the items (e.g. in both the web and
+      // news groups), with only one of them carrying raw content — a
+      // URL-keyed map would hand the raw document to the scraped twin (or
+      // the reverse), dropping the scrape result and its credits.
+      const fastPathDocs = new Map<ScrapeItem, DocumentWithCostTracking>();
+      const itemsStillToScrape = rawContentEligible
+        ? itemsToScrape.filter(item => {
+            // getItemsToScrape already dropped blocklisted result URLs;
+            // re-check here so the fast path never serves a URL the
+            // scrape pipeline would refuse. If the check itself cannot
+            // run, fall back to scraping rather than serving. (The
+            // worker's post-redirect re-check cannot be replicated
+            // here — see the note on canServeFromRawContent.)
+            let blocked = true;
+            try {
+              blocked = isUrlBlocked(item.scrapeInput.url, flags, {
+                team_id: teamId,
+                org_id: orgId ?? null,
+                origin,
+              });
+            } catch {
+              blocked = true;
+            }
+            if (blocked) {
+              return true;
+            }
+            const doc = rawContentDocument(item);
+            if (doc) {
+              fastPathDocs.set(item, doc);
+              return false;
+            }
+            return true;
+          })
+        : itemsToScrape;
+
+      if (fastPathDocs.size > 0) {
+        logger.info("Serving search results from backend raw content", {
+          servedFromRawContent: fastPathDocs.size,
+          scraped: itemsStillToScrape.length,
+        });
+      }
+
+      const scrapedDocs =
+        itemsStillToScrape.length > 0
+          ? await scrapeSearchResults(
+              itemsStillToScrape.map(i => i.scrapeInput),
+              scrapeOpts,
+              logger,
+              flags,
+            )
+          : [];
+      const scrapedByItem = new Map(
+        itemsStillToScrape.map((item, index) => [item, scrapedDocs[index]]),
+      );
+      const allDocsWithCostTracking = itemsToScrape.map(
+        item => fastPathDocs.get(item) ?? scrapedByItem.get(item)!,
       );
 
       mergeScrapedContent(scrapeTarget, itemsToScrape, allDocsWithCostTracking);
@@ -569,6 +666,23 @@ export async function executeSearch(
       ...result,
       position: index + 1,
     }));
+  }
+
+  // `rawContent` is an internal hand-off from the search backend to the
+  // scrape phase, not part of the API response. Fast-path results have
+  // already had the text copied into `markdown` by mergeScrapedContent;
+  // every other result must not carry it out. Most importantly, it is
+  // unredacted backend text: a request whose scrape ran with redactPII (or
+  // a search with no scrape at all) must not receive it verbatim alongside
+  // — or instead of — the pipeline-processed document.
+  for (const results of [
+    searchResponse.web,
+    searchResponse.news,
+    searchResponse.images,
+  ]) {
+    for (const result of results ?? []) {
+      delete (result as { rawContent?: string }).rawContent;
+    }
   }
 
   const scrapeFormats = scrapeOptions?.formats

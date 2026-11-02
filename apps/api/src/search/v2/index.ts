@@ -24,6 +24,7 @@ export async function search({
   enterprise = undefined,
   includeDomains = undefined,
   excludeDomains = undefined,
+  includeRawContent = false,
 }: {
   query: string;
   logger: Logger;
@@ -43,6 +44,13 @@ export async function search({
   enterprise?: ("default" | "anon" | "zdr")[];
   includeDomains?: string[];
   excludeDomains?: string[];
+  /**
+   * Resolved by the caller (executeSearch): the operator opted in via
+   * SEARXNG_INCLUDE_RAW_CONTENT AND this request can actually serve
+   * scrapes from backend raw content. Kept request-scoped so the backend
+   * is not asked to fetch page text for requests that can never use it.
+   */
+  includeRawContent?: boolean;
 }): Promise<SearchV2Response> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
@@ -78,6 +86,10 @@ export async function search({
         country,
         location,
         safe,
+        // The operator flag stays authoritative at this layer too: a
+        // caller verdict can only narrow it, never widen it.
+        include_raw_content:
+          config.SEARXNG_INCLUDE_RAW_CONTENT && includeRawContent,
       });
       if (results.web && results.web.length > 0) return results;
     }
