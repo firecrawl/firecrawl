@@ -133,8 +133,18 @@ export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
       return false;
     };
     const rendered = (node: Element, style: CSSStyleDeclaration): boolean => {
-      if (style.display === "none" || style.visibility === "hidden") {
-        return false;
+      if (style.display === "none") return false;
+      // visibility inherits: a label inside a button that is itself hidden
+      // (waiting on an entrance animation) is still its label. Only a
+      // descendant that hides itself is passed over.
+      if (style.visibility === "hidden") {
+        const parent = node.parentElement;
+        if (
+          !parent ||
+          getComputedStyleCached(parent).visibility !== "hidden"
+        ) {
+          return false;
+        }
       }
       if (parseFloat(style.opacity) < 0.05) return false;
       if (style.position === "absolute") {
