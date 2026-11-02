@@ -5,6 +5,7 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
+import { serializeTraceContext } from "../../../../lib/otel-tracer";
 import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,
@@ -226,10 +227,14 @@ export async function fireEngineScrape<
   abort?: AbortSignal,
   baseUrl: string = fireEngineURL,
 ): Promise<z.infer<typeof processingSchema> | FireEngineCheckStatusSuccess> {
+  const { traceparent, tracestate } = serializeTraceContext();
   let status = await robustFetch({
     url: `${baseUrl}/scrape`,
     method: "POST",
-    headers: {},
+    headers: {
+      ...(traceparent ? { traceparent } : {}),
+      ...(tracestate ? { tracestate } : {}),
+    },
     body: request,
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
     tryCount: 3,

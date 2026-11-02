@@ -52,6 +52,15 @@ async function matchesResolveRegex(url: string): Promise<boolean> {
   }
 }
 
+export class AvgrabResolveError extends MapFailedError {
+  constructor(
+    message: string,
+    public readonly upstreamStatus: number,
+  ) {
+    super(message);
+  }
+}
+
 interface AvgrabResolvedPost {
   url: string;
   title: string;
@@ -98,7 +107,7 @@ export async function resolveViaAvgrab(
       status: response.status,
       detail,
     });
-    throw new MapFailedError(detail);
+    throw new AvgrabResolveError(detail, response.status);
   }
 
   const data = (await response.json()) as AvgrabResolveResponse;
