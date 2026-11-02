@@ -18,6 +18,7 @@ import {
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
+import { isUsOnly } from "../../lib/us-only";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -193,6 +194,7 @@ export async function getMapResults({
           {
             numResults: resultsPerPage,
             page: page,
+            usOnly: isUsOnly(flags),
           },
           abort,
         );

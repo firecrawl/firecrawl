@@ -66,6 +66,11 @@ import {
   autoToolsEnabled,
   queryInferenceEnabled,
 } from "../../search/tool-intent";
+import { isUsOnly } from "../../lib/us-only";
+import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
+
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
@@ -249,6 +254,27 @@ async function searchControllerInner(
         success: false,
         error: "Agent interop is not enabled.",
       });
+    }
+
+    // Image search has no US-only route: it is dropped with a warning, or
+    // refused when nothing else was asked for.
+    let usOnlyImagesWarning: string | undefined;
+    const sources = req.body.sources as Array<{ type: string }>;
+    if (
+      isUsOnly(req.acuc?.flags) &&
+      sources.some(source => source.type === "images")
+    ) {
+      req.body.sources = sources.filter(
+        source => source.type !== "images",
+      ) as SearchRequest["sources"];
+      if (req.body.sources.length === 0 && !indexCategory) {
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+        });
+      }
+      usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
     }
 
     // Safe Mode: validate the per-request param up front and reject scrape
@@ -629,12 +655,19 @@ async function searchControllerInner(
         result.response.tools,
       );
     }
+    const warning = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
-      ...(result.toolsWarning ? { warning: result.toolsWarning } : {}),
+      ...(warning ? { warning } : {}),
     });
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
@@ -657,6 +690,17 @@ async function searchControllerInner(
       return res.status(408).json({
         success: false,
         code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUpstreamRefusalError) {
+      setSpanAttributes(span, { "search.status_code": error.status });
+      return res.status(error.status).json({
+        success: false,
+        ...(error.status === 403
+          ? { code: "US_ONLY_UNAVAILABLE" as const }
+          : {}),
         error: error.message,
       });
     }

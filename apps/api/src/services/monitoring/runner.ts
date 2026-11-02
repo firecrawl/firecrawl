@@ -76,6 +76,7 @@ import { monitorTelemetryMetadata } from "./search/tuning";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import {
@@ -887,6 +888,7 @@ async function runMonitorSearchTarget(params: {
     knownPages,
     knownEvents,
     zeroDataRetention: false,
+    usOnly: isUsOnly(teamFlags),
     logger: logger.child({
       monitorId: monitor.id,
       checkId: check.id,

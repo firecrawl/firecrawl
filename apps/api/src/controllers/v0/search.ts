@@ -32,6 +32,7 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly } from "../../lib/us-only";
 
 async function searchHelper(
   jobId: string,
@@ -76,6 +77,7 @@ async function searchHelper(
     lang: searchOptions.lang ?? "en",
     country: searchOptions.country ?? "us",
     location: searchOptions.location,
+    usOnly: isUsOnly(flags),
   });
 
   let justSearch = pageOptions.fetchPageContent === false;

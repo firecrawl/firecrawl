@@ -46,6 +46,7 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { isUsOnly } from "../lib/us-only";
 
 interface SearchOptions {
   query: string;
@@ -94,6 +95,8 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  /** Parts of the search a US-only team could not be served. */
+  usOnlyWarning?: string;
   toolsWarning?: string;
   /** The tools were added automatically, not requested. */
   toolsAuto?: boolean;
@@ -128,6 +131,8 @@ export async function executeSearch(
   } = context;
 
   const num_results_buffer = Math.floor(limit * 2);
+  const usOnly = isUsOnly(flags);
+  const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
 
@@ -151,6 +156,7 @@ export async function executeSearch(
               toolDetail: options.toolDetail ?? "compact",
               teamId,
               connectors: flags?.exchangeRetrieve === true,
+              usOnly,
               limit,
               queries: wantsTools
                 ? intent.toolQueries
@@ -175,6 +181,7 @@ export async function executeSearch(
             toolDetail: options.toolDetail ?? "compact",
             teamId,
             connectors: flags?.exchangeRetrieve === true,
+            usOnly,
             limit,
             queries: wantsTools ? [query] : undefined,
             urls:
@@ -226,6 +233,7 @@ export async function executeSearch(
             options.enterprise?.some(
               mode => mode === "zdr" || mode === "anon",
             ) === true,
+          ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
         },
         logger,
       )
@@ -257,6 +265,7 @@ export async function executeSearch(
             ...(options.excludeDomains ?? []),
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
+          usOnly,
         })) as SearchV2Response);
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
@@ -611,6 +620,9 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    ...(usOnlyWarnings.length > 0
+      ? { usOnlyWarning: usOnlyWarnings.join(" ") }
+      : {}),
     toolsWarning,
     toolsUnavailable,
     toolsAuto,

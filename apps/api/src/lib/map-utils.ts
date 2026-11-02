@@ -16,6 +16,7 @@ import {
   resolveRedirects,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
+import { isUsOnly } from "./us-only";
 import { redisEvictConnection } from "../services/redis";
 import {
   generateURLSplits,
@@ -229,6 +230,7 @@ export async function getMapResults({
         {
           numResults: resultsPerPage,
           page,
+          usOnly: isUsOnly(flags),
         },
         abort,
       );

@@ -46,6 +46,7 @@ import {
 } from "../../lib/keyless";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly } from "../../lib/us-only";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -67,6 +68,7 @@ export async function searchAndScrapeSearchResult(
       query,
       logger,
       num_results: 5,
+      usOnly: isUsOnly(flags),
     });
 
     const { scrapeOptions } = fromV1ScrapeOptions(

@@ -41,6 +41,7 @@ import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
 import { orgIdFromAcuc } from "../../team-org";
 import { resolveThreatProtection } from "../../threat-protection/request";
+import { isUsOnly } from "../../us-only";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
@@ -128,6 +129,7 @@ export async function performExtraction_F0(
       query: rephrasedPrompt.replace('"', "").replace("'", ""),
       logger,
       num_results: 10,
+      usOnly: isUsOnly(acuc?.flags),
     });
 
     request.urls = searchResults.map(result => result.url) as string[];

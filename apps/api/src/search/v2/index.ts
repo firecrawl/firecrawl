@@ -24,6 +24,7 @@ export async function search({
   enterprise = undefined,
   includeDomains = undefined,
   excludeDomains = undefined,
+  usOnly = false,
 }: {
   query: string;
   logger: Logger;
@@ -43,6 +44,7 @@ export async function search({
   enterprise?: ("default" | "anon" | "zdr")[];
   includeDomains?: string[];
   excludeDomains?: string[];
+  usOnly?: boolean;
 }): Promise<SearchV2Response> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
@@ -60,6 +62,7 @@ export async function search({
         enterprise,
         includeDomains,
         excludeDomains,
+        usOnly,
       });
 
       return results;

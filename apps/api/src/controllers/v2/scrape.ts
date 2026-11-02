@@ -54,6 +54,7 @@ import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { isUsOnly } from "../../lib/us-only";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -763,6 +764,7 @@ export async function scrapeController(
               {
                 teamId: req.auth.team_id,
                 connectors: req.acuc?.flags?.exchangeRetrieve === true,
+                usOnly: isUsOnly(req.acuc?.flags),
                 toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(

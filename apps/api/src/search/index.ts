@@ -18,6 +18,7 @@ export async function search({
   proxy = undefined,
   sleep_interval = 0,
   timeout = 5000,
+  usOnly = false,
 }: {
   query: string;
   logger: Logger;
@@ -31,6 +32,7 @@ export async function search({
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
+  usOnly?: boolean;
 }): Promise<SearchResult[]> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
@@ -42,6 +44,7 @@ export async function search({
         lang,
         country,
         location,
+        usOnly,
       });
       return results;
     }
