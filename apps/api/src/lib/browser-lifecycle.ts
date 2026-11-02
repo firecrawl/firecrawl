@@ -21,6 +21,7 @@ import {
   didBrowserSessionUsePrompt,
   didBrowserSessionComeFromHostedMcp,
   markBrowserSessionHostedMcp,
+  clearBrowserSessionHostedMcp,
   listUnsettledHangarSessions,
   BrowserSessionRow,
 } from "./browser-sessions";
@@ -39,6 +40,8 @@ import {
   DEFAULT_TEAM_LIMITS,
 } from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
+import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
+import type { TrackCreditsParams } from "../services/autumn/types";
 import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
@@ -63,6 +66,27 @@ export class BrowserSessionError extends Error {
     super(message);
     this.name = "BrowserSessionError";
   }
+}
+
+/**
+ * A browser charge's credit check. A hosted MCP call that MCP credits can't
+ * cover is billed on the team's own credits from here on, like an API-key call.
+ */
+async function checkBrowserCredits(
+  req: RequestWithAuth<any, any, any>,
+  params: TrackCreditsParams,
+) {
+  if (!req.auth.hostedMcp)
+    return {
+      result: await autumnService.checkCredits(params),
+      onTeamCredits: false,
+    };
+  const gate = await checkHostedMcpCredits({
+    ...params,
+    featureId: CREDITS_FEATURE_ID,
+  });
+  if (gate.onTeamCredits) req.auth.hostedMcp = false;
+  return gate;
 }
 
 /** Returns the effective session policy and rejects disallowed ZDR requests. */
@@ -176,7 +200,7 @@ async function createBrowserSessionInternal(
       ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
       : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
-    const credit = await autumnService.checkCredits({
+    const { result: credit } = await checkBrowserCredits(req, {
       teamId: req.auth.team_id,
       orgId: req.acuc.org_id,
       value: estimatedCredits,
@@ -185,14 +209,6 @@ async function createBrowserSessionInternal(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
-      ...(req.auth.hostedMcp
-        ? {
-            featureId: await autumnService.hostedMcpFeatureId(
-              req.auth.team_id,
-              CREDITS_FEATURE_ID,
-            ),
-          }
-        : {}),
     });
     if (credit !== null && !credit.allowed)
       throw new BrowserSessionError(
@@ -432,8 +448,9 @@ export async function reserveBrowserPromptCredits(
     session.ttl_total * 1000,
     browserCreditsPerHour(true, session.zero_data_retention),
   );
+  let onTeamCredits = false;
   if (session.should_bill && req.acuc?.org_id) {
-    const credit = await autumnService.checkCredits({
+    const gate = await checkBrowserCredits(req, {
       teamId: session.team_id,
       orgId: req.acuc.org_id,
       value: credits,
@@ -442,20 +459,13 @@ export async function reserveBrowserPromptCredits(
         path: req.path,
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
-      ...(req.auth.hostedMcp
-        ? {
-            featureId: await autumnService.hostedMcpFeatureId(
-              req.auth.team_id,
-              CREDITS_FEATURE_ID,
-            ),
-          }
-        : {}),
     });
-    if (credit !== null && !credit.allowed)
+    if (gate.result !== null && !gate.result.allowed)
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
       );
+    onTeamCredits = gate.onTeamCredits;
   }
   // The same row lock guards settlement: a prompt admitted before stop
   // records its rate before billing reads it, and a later prompt cannot
@@ -469,6 +479,10 @@ export async function reserveBrowserPromptCredits(
       !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+    // A hosted prompt on team credits bills the whole session there, and must
+    // not run if the session would still settle on the MCP credits that refused.
+    if (current.should_bill && onTeamCredits)
+      await clearBrowserSessionHostedMcp(current.id);
     await markBrowserSessionUsedPrompt(current.id);
     // The prompt rate is most of a session's charge, so a hosted MCP prompt
     // bills the session as hosted even when another call created it.
