@@ -60,6 +60,7 @@ export async function fireEngineMap(
     numResults: number;
     page?: number;
     usOnly?: boolean;
+    zeroDataRetention?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
@@ -79,6 +80,7 @@ export async function fireEngineMap(
     numResults: options.numResults,
     page: options.page ?? 1,
     ...(options.usOnly ? { usOnly: true } : {}),
+    ...(options.zeroDataRetention ? { zeroDataRetention: true } : {}),
   };
 
   const url = `${config.FIRE_ENGINE_BETA_URL}/map`;

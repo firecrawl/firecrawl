@@ -232,6 +232,7 @@ export async function getMapResults({
           numResults: resultsPerPage,
           page,
           usOnly,
+          zeroDataRetention,
         },
         abort,
       );
