@@ -508,6 +508,12 @@ const configSchema = z.object({
 
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
+  // Lightweight browser tiers served by the playwright microservice over
+  // CDP (see scraper/scrapeURL/engines/lightbrowser). Opt-in: the engines
+  // only enter the scrape waterfall when these are true AND the
+  // microservice has the matching CDP endpoint configured.
+  LIGHTPANDA_ENABLED: z.stringbool().optional(),
+  MOLI_ENABLED: z.stringbool().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
   SMART_SCRAPE_API_URL: z.string().optional(),
 
