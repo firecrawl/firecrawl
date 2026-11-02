@@ -144,12 +144,19 @@ export async function executeSearch(
   const toolsAllowed =
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
-  const toolIntent =
+  const expandTools =
     toolsAllowed &&
     (wantsTools ? options.inferToolQuery : options.autoTools) &&
-    query.trim()
-      ? inferToolIntent(query, logger)
-      : null;
+    query.trim() !== "";
+  // Expanded tools are kept only once the content classifier confirms them,
+  // and US-only teams never reach it, so they skip the expansion.
+  if (expandTools && usOnly && wantsTools) {
+    usOnlyWarnings.push(
+      "Query expansion for tool discovery is not available for teams restricted to US-only processing.",
+    );
+  }
+  const toolIntent =
+    expandTools && !usOnly ? inferToolIntent(query, logger) : null;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -160,7 +167,6 @@ export async function executeSearch(
               toolDetail: options.toolDetail ?? "compact",
               teamId,
               connectors: flags?.exchangeRetrieve === true,
-              usOnly,
               limit,
               queries: wantsTools
                 ? intent.toolQueries
@@ -173,10 +179,7 @@ export async function executeSearch(
             },
             logger,
           );
-          return {
-            items: await verifyTools(query, found.items, logger),
-            usOnlyExcluded: found.usOnlyExcluded ?? 0,
-          };
+          return verifyTools(query, found.items, logger);
         })
         .catch(() => null)
     : null;
@@ -336,10 +339,16 @@ export async function executeSearch(
     }
   }
 
-  // The filter shares results with TypeSafe, so zero data retention and
-  // anonymous requests skip it.
+  // The filter shares results with the content classifier, so zero data
+  // retention, anonymous and US-only requests skip it.
+  if (options.safe && usOnly) {
+    usOnlyWarnings.push(
+      "Additional safe search filtering is not available for teams restricted to US-only processing.",
+    );
+  }
   if (
     options.safe &&
+    !usOnly &&
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
   ) {
@@ -435,7 +444,7 @@ export async function executeSearch(
         tool,
       ]),
     );
-    for (const tool of extra?.items ?? []) {
+    for (const tool of extra ?? []) {
       const key = `${tool.provider}/${tool.capability}`;
       const previous = merged.get(key);
       merged.set(
@@ -460,27 +469,21 @@ export async function executeSearch(
       );
     }
     searchResponse.tools = [...merged.values()];
-    // Both legs can hide the same tools, so the larger count is reported.
-    const usOnlyExcluded = Math.max(
-      discovery.usOnlyExcluded ?? 0,
-      extra?.usOnlyExcluded ?? 0,
-    );
     toolsWarning =
       [
         discovery.warning,
-        usOnlyExcluded > 0 ? usOnlyToolsWarning(usOnlyExcluded) : undefined,
+        discovery.usOnlyExcluded
+          ? usOnlyToolsWarning(discovery.usOnlyExcluded)
+          : undefined,
       ]
         .filter(Boolean)
         .join(" ") || undefined;
-    toolsUnavailable = discovery.unavailable === true && !extra?.items.length;
+    toolsUnavailable = discovery.unavailable === true && !extra?.length;
   } else if (extraDiscovery) {
     const extra = await waitForExtra();
-    if (extra?.items.length) {
-      searchResponse.tools = extra.items;
+    if (extra?.length) {
+      searchResponse.tools = extra;
       toolsAuto = true;
-    }
-    if (extra?.usOnlyExcluded) {
-      toolsWarning = usOnlyToolsWarning(extra.usOnlyExcluded);
     }
   }
 

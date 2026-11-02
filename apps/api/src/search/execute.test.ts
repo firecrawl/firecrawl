@@ -248,17 +248,8 @@ describe("executeSearch tool intent", () => {
     expect(result.searchCredits).toBe(2);
   });
 
-  it("warns a US-only team about tools hidden from automatic discovery", async () => {
+  it("adds no automatic tools for a US-only team and says nothing about it", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
-    mocks.inferToolIntent.mockResolvedValue({
-      toolQueries: ["US unemployment rate statistics"],
-      domains: [],
-      needsTools: true,
-    });
-    mocks.discoverTools.mockResolvedValue({
-      items: [{ id: "fred/series/observations" }],
-      usOnlyExcluded: 2,
-    });
     const result = await executeSearch(
       { ...options([]), autoTools: true },
       { ...context, flags: { usOnly: true } },
@@ -267,9 +258,41 @@ describe("executeSearch tool intent", () => {
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({ usOnly: true }),
     );
-    expect(mocks.discoverTools).toHaveBeenCalledWith(
-      expect.objectContaining({ usOnly: true }),
+    expect(mocks.inferToolIntent).not.toHaveBeenCalled();
+    expect(mocks.discoverTools).not.toHaveBeenCalled();
+    expect(mocks.verifyTools).not.toHaveBeenCalled();
+    expect(result.response.tools).toBeUndefined();
+    expect(result.usOnlyWarning).toBeUndefined();
+  });
+
+  it("matches a US-only team's requested tools on its query alone and says so", async () => {
+    mocks.discoverTools.mockResolvedValue({
+      items: [{ id: "fred/series/observations" }],
+      usOnlyExcluded: 2,
+    });
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "who owns apple stock",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      { ...context, flags: { usOnly: true } },
       logger,
+    );
+    expect(mocks.inferToolIntent).not.toHaveBeenCalled();
+    expect(mocks.verifyTools).not.toHaveBeenCalled();
+    expect(mocks.discoverTools).toHaveBeenCalledTimes(1);
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queries: ["who owns apple stock"],
+        usOnly: true,
+      }),
+      logger,
+    );
+    expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
+    expect(result.usOnlyWarning).toBe(
+      "Query expansion for tool discovery is not available for teams restricted to US-only processing.",
     );
     expect(result.toolsWarning).toBe("2 tools hidden");
   });
@@ -418,6 +441,25 @@ describe("executeSearch safe search", () => {
     );
 
     expect(mocks.removeExplicitResults).not.toHaveBeenCalled();
+  });
+
+  it("skips the filter for a US-only team and says so when safe was asked for", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    const usOnlyContext = { ...context, flags: { usOnly: true } };
+
+    const safe = await executeSearch(
+      { ...options([]), safe: true },
+      usOnlyContext,
+      logger,
+    );
+    const unsafe = await executeSearch(options([]), usOnlyContext, logger);
+
+    expect(mocks.removeExplicitResults).not.toHaveBeenCalled();
+    expect(safe.response.web).toEqual([webResult]);
+    expect(safe.usOnlyWarning).toBe(
+      "Additional safe search filtering is not available for teams restricted to US-only processing.",
+    );
+    expect(unsafe.usOnlyWarning).toBeUndefined();
   });
 });
 
