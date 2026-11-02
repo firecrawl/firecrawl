@@ -19,7 +19,6 @@ import type {
   TrackCreditsParams,
 } from "./types";
 
-export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
 /**
