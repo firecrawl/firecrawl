@@ -1,5 +1,9 @@
 import express from "express";
 import request from "supertest";
+import { createResearchRouter } from "../../controllers/v2/research-proxy";
+import { v2Router } from "../../routes/v2";
+
+const loggedRows: any[] = [];
 
 // The real v2 router with the research proxy configured. Auth is stubbed to
 // answer 401, so a 410 can only come from ahead of auth, rate limiting, the
@@ -21,10 +25,48 @@ vi.mock("../../routes/shared", async importOriginal => {
   };
 });
 
-import { v2Router } from "../../routes/v2";
+// The paper routes run through the real research router against a stubbed
+// upstream.
+vi.mock("../../lib/research-upstream", () => ({
+  fetchResearchUpstream: async () => ({
+    status: 200,
+    ok: true,
+    headers: new Headers(),
+    text: async () => JSON.stringify({ success: true, results: [] }),
+  }),
+}));
+
+vi.mock("../../services/logging/log_job", () => ({
+  logRequest: async () => {},
+  logResearchEndpoint: async (row: any) => {
+    loggedRows.push(row);
+  },
+}));
+
+vi.mock("../../lib/keyless", () => ({
+  chargeKeylessCredits: async () => {},
+}));
+
+// The limiter needs Redis, so here it admits every call.
+vi.mock("../../lib/index-daily-limit", () => ({
+  reserveIndexCalls: vi.fn(async () => ({ ok: true, release: async () => {} })),
+  indexDailyLimitRefusal: vi.fn(),
+}));
+
+vi.mock("../../services/billing/credit_billing", () => ({
+  billTeam: async () => {},
+}));
 
 const app = express();
 app.use("/v2", v2Router);
+
+const canonical = express();
+canonical.use((req: any, _res, next) => {
+  req.auth = { team_id: "team-test", plan: "standard" };
+  req.acuc = { api_key_id: null };
+  next();
+});
+canonical.use("/v2/search/research", createResearchRouter());
 
 describe.each([
   ["canonical", "/v2/search/research/github"],
@@ -62,9 +104,17 @@ describe.each([
   });
 });
 
-it("leaves the paper routes on the same mount behind auth", async () => {
-  const res = await request(app).get("/v2/search/research/papers?query=rag");
+it("leaves the paper routes on the same router alone", async () => {
+  const res = await request(canonical).get(
+    "/v2/search/research/papers?query=rag",
+  );
 
-  expect(res.statusCode).toBe(401);
+  expect(res.statusCode).toBe(200);
   expect(res.headers["deprecation"]).toBeUndefined();
+  expect(res.headers["sunset"]).toBeUndefined();
+  expect(res.headers["link"]).toBeUndefined();
+  expect(res.headers["warning"]).toBeUndefined();
+  expect(res.body.warnings).toBeUndefined();
+  expect(res.body.replacement).toBeUndefined();
+  expect(loggedRows[0].response.warnings).toBeUndefined();
 });
