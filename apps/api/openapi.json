@@ -12018,6 +12018,10 @@
                 "repo": {
                   "type": "string"
                 },
+                "canonicalRepo": {
+                  "type": "string",
+                  "description": "The current indexed slug when `repo` is a superseded alias. Absent otherwise."
+                },
                 "indexed": {
                   "type": "boolean"
                 },
