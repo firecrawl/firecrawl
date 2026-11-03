@@ -64,7 +64,8 @@ export async function discoverSkills(
   try {
     const result = await exchangeRequest({
       teamId: input.teamId,
-      path: `/v1/discover/skills?${params.toString()}`,
+      // Skill cards. /v1/discover/skills is a different, older route.
+      path: `/v1/discover/skill-cards?${params.toString()}`,
       timeoutMs: Math.max(
         1,
         Math.min(input.timeoutMs, SKILLS_DISCOVERY_TIMEOUT_MS),
@@ -75,7 +76,10 @@ export async function discoverSkills(
       return [];
     }
     const parsed = z
-      .object({ skills: z.array(z.unknown()) })
+      .object({
+        query: z.string(),
+        skills: z.array(z.unknown()),
+      })
       .safeParse(result.body);
     if (!parsed.success) {
       logger.warn("Skill discovery returned an unexpected body");

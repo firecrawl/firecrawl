@@ -41,7 +41,7 @@ it("maps a successful discover response onto short cards", async () => {
   expect(request).toHaveBeenCalledTimes(1);
   expect(request.mock.calls[0][0]).toEqual({
     teamId: "team",
-    path: "/v1/discover/skills?q=records&limit=3",
+    path: "/v1/discover/skill-cards?q=records&limit=3",
     timeoutMs: 3000,
   });
   expect(request.mock.calls[0][0]).not.toHaveProperty("body");
@@ -98,10 +98,26 @@ it("omits similarity and provider when the match did not include them", async ()
   expect(cards[0]).not.toHaveProperty("provider");
 });
 
+it("returns no cards when the body is not the skill-card envelope", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { skills: [{ name: "cohort" }] },
+  });
+
+  await expect(
+    discoverSkills(
+      { teamId: "team", query: "records", timeoutMs: 1000 },
+      logger,
+    ),
+  ).resolves.toEqual([]);
+  expect(logger.warn).toHaveBeenCalled();
+});
+
 it("drops invalid cards and keeps the valid ones", async () => {
   request.mockResolvedValue({
     status: 200,
     body: {
+      query: "records",
       skills: [
         { id: "", name: "Missing", description: "no", source: "official" },
         official,

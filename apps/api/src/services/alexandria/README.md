@@ -18,7 +18,7 @@ Search returns contracts in `data.tools`, up to `limit` per discovery source
 URL matching only.
 
 `sources` may also include `alexandria-skills`. That asks Exchange
-`GET /v1/discover/skills` with the search query and returns up to 3 short cards
+`GET /v1/discover/skill-cards` with the search query and returns up to 3 short cards
 on `data.skills` (`id`, `name`, `description`, `source`, and when present
 `provider` and `similarity`). It is free, uses the same access rules as
 `alexandria`, and a timeout or error yields `data.skills: []` without failing
