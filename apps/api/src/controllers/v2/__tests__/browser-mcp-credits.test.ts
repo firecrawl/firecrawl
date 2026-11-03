@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   billTeam: vi.fn(),
   recordRequestCredits: vi.fn(),
   getHangarBrowser: vi.fn(),
+  createHangarBrowser: vi.fn(),
+  capLifetime: vi.fn(),
+  insertSession: vi.fn(),
 }));
 
 vi.mock("../../../config", async importOriginal => {
@@ -46,26 +49,15 @@ vi.mock("../../../lib/hangar", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../lib/hangar")>();
   return {
     ...actual,
-    createHangarBrowser: vi.fn(async (key: string) => ({
-      id: `browser-${key}`,
-      cdp_url: "wss://cdp.test",
-      view_url: null,
-      control_url: null,
-      playlist_url: null,
-      max_expires_at: null,
-    })),
+    createHangarBrowser: mocks.createHangarBrowser,
     getHangarBrowser: mocks.getHangarBrowser,
+    capHangarBrowserLifetime: mocks.capLifetime,
     stopHangarBrowser: vi.fn(async () => {}),
   };
 });
 
 vi.mock("../../../lib/browser-sessions", () => ({
-  insertBrowserSession: vi.fn(async (row: { id: string }) => ({
-    ...row,
-    cdp_url: "wss://cdp.test",
-    cdp_path: "",
-    cdp_interactive_path: "",
-  })),
+  insertBrowserSession: mocks.insertSession,
   completeBrowserSessionSettlement: vi.fn(),
   getBrowserSession: vi.fn(),
   getBrowserSessionFromScrape: vi.fn(),
@@ -109,7 +101,8 @@ vi.mock("../../../services/logging/log_job", () => ({
   logRequest: vi.fn(async () => {}),
 }));
 
-import { browserCreateController } from "../browser";
+import { browserCreateController, browserError } from "../browser";
+import { HangarError } from "../../../lib/hangar";
 import {
   reserveBrowserPromptCredits,
   settleBrowserSession,
@@ -184,8 +177,47 @@ beforeEach(() => {
   mocks.usedPrompt.mockResolvedValue(false);
   mocks.billTeam.mockResolvedValue({ success: true });
   mocks.recordRequestCredits.mockResolvedValue(true);
-  mocks.getHangarBrowser.mockResolvedValue({ status: "running" });
+  mocks.getHangarBrowser.mockResolvedValue({
+    status: "running",
+    created_at: Math.floor(Date.now() / 1000),
+  });
+  mocks.createHangarBrowser.mockImplementation(async (key: string) => ({
+    id: `browser-${key}`,
+    cdp_url: "wss://cdp.test",
+    view_url: null,
+    control_url: null,
+    playlist_url: null,
+    max_expires_at: null,
+  }));
+  mocks.capLifetime.mockResolvedValue({ status: "running" });
+  mocks.insertSession.mockImplementation(async (row: { id: string }) => ({
+    ...row,
+    cdp_url: "wss://cdp.test",
+    cdp_path: "",
+    cdp_interactive_path: "",
+  }));
 });
+
+const RESETS_AT = Date.parse("2026-11-04T00:00:00.000Z");
+
+// Autumn answers an MCP credits check from MCP credits plus the org's own
+// credits, and a team credits check from the team's grants plus the org's.
+function balances({
+  mcp = 0,
+  org = 0,
+  team = 0,
+}: {
+  mcp?: number;
+  org?: number;
+  team?: number;
+}) {
+  mocks.checkCredits.mockImplementation(
+    async ({ featureId, value }: { featureId?: string; value: number }) => {
+      const remaining = featureId === "MCP_CREDITS" ? mcp + org : team + org;
+      return { allowed: value <= remaining, remaining, resetsAt: RESETS_AT };
+    },
+  );
+}
 
 describe("browser sessions from hosted MCP calls", () => {
   it("checks MCP credits for a hosted session and marks it hosted", async () => {
@@ -305,4 +337,135 @@ describe("browser sessions from hosted MCP calls", () => {
       });
     },
   );
+});
+
+describe("hosted MCP browser sessions under the full charge", () => {
+  it("runs the full session when MCP credits cover it", async () => {
+    balances({ mcp: 100 });
+
+    expect((await create(true)).statusCode).toBe(200);
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 600 }),
+    );
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.capLifetime).not.toHaveBeenCalled();
+    expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
+  });
+
+  it("shortens a new session to the MCP credits left", async () => {
+    balances({ mcp: 12 });
+
+    const res = await create(true);
+    expect(res.statusCode).toBe(200);
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 360 }),
+    );
+    expect(mocks.insertSession).toHaveBeenCalledWith(
+      expect.objectContaining({ ttl_total: 360 }),
+    );
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith(res.body.id);
+  });
+
+  it("caps a prompt session at the MCP credits left", async () => {
+    balances({ mcp: 45 });
+
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 385);
+    expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+    expect(mocks.clearHostedMcp).not.toHaveBeenCalled();
+  });
+
+  it("counts the org's own credits after MCP credits toward a prompt", async () => {
+    balances({ mcp: 40, org: 40 });
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.capLifetime).not.toHaveBeenCalled();
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+
+    vi.clearAllMocks();
+    balances({ mcp: 20, org: 30 });
+    mocks.capLifetime.mockResolvedValue({ status: "running" });
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 428);
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+  });
+
+  it("caps a prompt on a team grant at what the grant covers", async () => {
+    balances({ mcp: 10, team: 40 });
+
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 342);
+    expect(mocks.clearHostedMcp).toHaveBeenCalledWith("session-1");
+    expect(mocks.markHostedMcp).not.toHaveBeenCalled();
+  });
+
+  it("refuses a prompt below the minimum and names the daily allowance", async () => {
+    balances({ mcp: 5 });
+
+    const res = makeRes();
+    const error = await reserveBrowserPromptCredits(
+      makeReq(true) as any,
+      session,
+    ).catch(error => error);
+    browserError(res as unknown as Response, error);
+    expect(res.statusCode).toBe(402);
+    expect(res.body).toMatchObject({
+      success: false,
+      code: "mcp_credits_exhausted",
+    });
+    expect(res.body.error).toContain("daily MCP credit allowance");
+    expect(res.body.error).toContain("resets at 2026-11-04T00:00:00.000Z");
+    expect(mocks.capLifetime).not.toHaveBeenCalled();
+    expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
+  });
+
+  it("refuses a prompt whose session has run past what the credits cover", async () => {
+    balances({ mcp: 20 });
+    mocks.getHangarBrowser.mockResolvedValue({
+      status: "running",
+      created_at: Math.floor(Date.now() / 1000) - 300,
+    });
+
+    await expect(
+      reserveBrowserPromptCredits(makeReq(true) as any, session),
+    ).rejects.toMatchObject({ status: 402 });
+    expect(mocks.capLifetime).not.toHaveBeenCalled();
+  });
+
+  it("refuses a capped prompt when Hangar can't shorten the session", async () => {
+    balances({ mcp: 45 });
+    mocks.capLifetime.mockRejectedValue(
+      new HangarError(502, "Hangar request failed."),
+    );
+
+    await expect(
+      reserveBrowserPromptCredits(makeReq(true) as any, session),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
+  });
+
+  it("bills a capped session for the duration Hangar stopped it at", async () => {
+    mocks.cameFromHostedMcp.mockResolvedValue(true);
+    mocks.usedPrompt.mockResolvedValue(true);
+    mocks.settleOnce.mockImplementation(async (_id: string, compute: any) => ({
+      creditsBilled: await compute({ ...session, should_bill: true }),
+      newlySettled: true,
+    }));
+
+    await settleBrowserSession({ ...session, scrape_id: "scrape-1" }, {
+      status: "stopped",
+      created_at: 1000,
+      ended_at: 1385,
+    } as any);
+    expect(mocks.billTeam).toHaveBeenCalledWith(TEAM_ID, "org-1", 45, null, {
+      endpoint: "interact",
+      jobId: "session-1",
+      chargeId: "session-1:destroy",
+      hostedMcp: true,
+    });
+  });
 });

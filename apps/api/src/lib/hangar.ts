@@ -104,6 +104,14 @@ export const getHangarBrowser = (id: string, wait = 0, timeout?: number) =>
 export const stopHangarBrowser = (id: string) =>
   request<HangarBrowser>("POST", `/${encodeURIComponent(id)}/stop`);
 
+export const capHangarBrowserLifetime = (
+  id: string,
+  maxLifetimeSeconds: number,
+) =>
+  request<HangarBrowser>("POST", `/${encodeURIComponent(id)}/lifetime`, {
+    max_lifetime_seconds: maxLifetimeSeconds,
+  });
+
 export async function createHangarBrowser(
   key: string,
   teamId: string,
