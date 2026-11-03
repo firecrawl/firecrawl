@@ -535,6 +535,29 @@ describe("Exchange routing", () => {
     });
   });
 
+  it("never routes Exchange-originated requests back to the Exchange", async () => {
+    const request = {
+      url: "https://facts.example/records/1",
+      formats: [{ type: "markdown" }],
+      flags: { professionalProfileCompanyDataBeta: true },
+    };
+
+    await expect(
+      canUseExchangeForRequest({ ...request, origin: "api" }),
+    ).resolves.toBe(true);
+    await expect(
+      getExchangeAccessForRequest({ ...request, origin: "exchange" }),
+    ).resolves.toEqual({ allowed: false, termsRequired: false });
+    // A blocked URL stays refused rather than offered to the Exchange.
+    await expect(
+      getExchangeAccessForRequest({
+        ...request,
+        origin: "exchange",
+        blocked: true,
+      }),
+    ).resolves.toEqual({ allowed: false, termsRequired: false });
+  });
+
   it("does not route unless the Exchange is configured", async () => {
     config.FIRE_EXCHANGE_URL = undefined;
 
