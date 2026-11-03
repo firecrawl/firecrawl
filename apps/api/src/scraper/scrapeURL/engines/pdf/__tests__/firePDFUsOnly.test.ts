@@ -323,6 +323,27 @@ describe("FirePDF async jobs for US-only teams", () => {
     expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
   });
 
+  it("keeps a US-only job that finished in the region despite refused acquires", async () => {
+    const { fetchImpl } = makeFetchFromSequence([
+      submitAccepted,
+      {
+        ...pollDone,
+        response: {
+          status: 200,
+          body: {
+            ...pollDone.response.body,
+            data_region_refusals: { region_cap: 1 },
+          },
+        },
+      },
+      resultWith({ data_region_applied: "us" }),
+    ]);
+
+    const result = await runAsync(makeUsOnlyAsyncMeta(usOnlyFlags), fetchImpl);
+
+    expect(result.markdown).toBe("# Async");
+  });
+
   it("keeps a US-only job failure without region refusals off the US-only refusal", async () => {
     const { fetchImpl } = makeFetchFromSequence([
       submitAccepted,

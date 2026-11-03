@@ -175,6 +175,7 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
 
     if (
       isUsOnly(meta.internalOptions.teamFlags ?? undefined) &&
+      (pollBody as { status?: unknown }).status === "failed" &&
       firePdfRegionRefused(pollBody)
     ) {
       if (waitMs > 0) firePdfAsyncLongPollTotal.labels("terminal").inc();

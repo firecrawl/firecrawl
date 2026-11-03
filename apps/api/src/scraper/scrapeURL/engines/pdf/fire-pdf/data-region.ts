@@ -5,7 +5,8 @@ import type { FirePdfSourceKind } from "./request-metadata";
 /**
  * Whether a pinned PDF service failure says the GPU acquires it needed in the
  * region were refused: `data_region_refusals` on a sync error body, or the
- * refusal note a failed job appends to its `error_message`.
+ * refusal note a failed job appends to its `error_message`. Only call it on a
+ * failure: a job that finished in the region can still report refused acquires.
  */
 export function firePdfRegionRefused(body: unknown): boolean {
   let parsed = body;
@@ -21,7 +22,12 @@ export function firePdfRegionRefused(body: unknown): boolean {
     string,
     unknown
   >;
-  if (typeof data_region_refusals === "object" && data_region_refusals !== null)
+  if (
+    typeof data_region_refusals === "object" &&
+    data_region_refusals !== null &&
+    !Array.isArray(data_region_refusals) &&
+    Object.keys(data_region_refusals).length > 0
+  )
     return true;
   return (
     typeof error_message === "string" &&
