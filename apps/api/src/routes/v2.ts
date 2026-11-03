@@ -735,13 +735,13 @@ v2Router.post(
   wrap(supportProxyController),
 );
 
-if (config.RESEARCH_PROXY_URL) {
-  // Register before the /search/research and /research mounts so the 410 answers ahead of their auth.
-  v2Router.get(
-    ["/search/research/github", "/research/github"],
-    removedEndpointHandler("v2_research_github_search"),
-  );
+// Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.
+v2Router.get(
+  ["/search/research/github", "/research/github"],
+  removedEndpointHandler("v2_research_github_search"),
+);
 
+if (config.RESEARCH_PROXY_URL) {
   v2Router.use(
     "/search/research",
     authMiddleware(RateLimiterMode.Research, {
