@@ -28,6 +28,13 @@ import {
   JevScreenshotOutcome,
 } from "./metrics";
 import { sampled } from "../rollout";
+import {
+  GENERIC_FONTS,
+  knownFamily,
+  normalizeVendorName,
+  renderedFamily,
+  titleCase,
+} from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -239,24 +246,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-const GENERIC_FONTS = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "-apple-system",
-  "blinkmacsystemfont",
-  "inherit",
-  "initial",
-  "emoji",
-  "math",
-]);
 
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
@@ -313,15 +302,23 @@ const splitCamelCase = (name: string) =>
     .join(" ");
 
 export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack ("system-ui, sans-serif") reports its first family.
-  let name = raw
-    .split(",")[0]
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name || /^var\(/i.test(name)) return undefined;
+  // A whole stack reports the family it renders: past hashed aliases, none
+  // for a system stack ("-apple-system, BlinkMacSystemFont, Segoe UI").
+  let name = renderedFamily(raw.split(",")) ?? "";
+  if (!name) return undefined;
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
+  // Vendor spellings and build suffixes: "orig_libre_baskerville",
+  // "helvetica-w01-roman", "inter-variable-web".
+  name = normalizeVendorName(name);
+  // A name that is only a weight ("Regular", "semibold") is not a family.
+  if (FONT_WEIGHT.test(name)) return undefined;
+  // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
+  const glued = name.match(
+    /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
+  );
+  if (glued) name = knownFamily(glued[1]) ?? glued[1];
   // "Roboto_Black": the weight goes before underscores turn into spaces.
   while (DELIMITED_WEIGHT_SUFFIX.test(name))
     name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
@@ -336,10 +333,10 @@ export function cleanFontFamily(raw: string): string | undefined {
   while (FONT_WEIGHT_SUFFIX.test(name))
     name = name.replace(FONT_WEIGHT_SUFFIX, "");
   name = splitCamelCase(name);
+  // A known family can only be matched once its weight is gone.
+  name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (name === name.toLowerCase()) name = titleCase(name);
   return name;
 }
 
@@ -359,7 +356,8 @@ function typographyRole(
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    const raw = Array.isArray(value) ? value[0] : value;
+    // A stack names the family it renders, not its first entry.
+    const raw = Array.isArray(value) ? renderedFamily(value) : value;
     const cleaned = raw ? cleanFontFamily(raw) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
