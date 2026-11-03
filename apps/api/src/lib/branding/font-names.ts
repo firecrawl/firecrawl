@@ -39,19 +39,16 @@ const SYSTEM_STACK_HEADS = new Set([
  * real name further down the stack: Wix's `wfont_<site>_<hash>` and
  * `wf_<hash>`, then `orig_<family>`. The alias says nothing about the font.
  */
-export const isHashedAlias = (family: string): boolean =>
+const isHashedAlias = (family: string): boolean =>
   /^wfont_[0-9a-f]{6}_[0-9a-f]{32}$/i.test(family) ||
   /^wf_[0-9a-f]{20,}$/i.test(family) ||
   /^[a-z]{1,6}_[0-9a-f]{24,}$/i.test(family);
 
 const unquote = (family: string) =>
-  family.trim().replace(/^["']|["']$/g, "").trim();
-
-/** A stack that asks for the visitor's system font. */
-export const isSystemStack = (stack: readonly string[]): boolean => {
-  const first = stack.map(unquote).find(Boolean);
-  return !!first && SYSTEM_STACK_HEADS.has(first.toLowerCase());
-};
+  family
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim();
 
 /**
  * What a stack is set in when it names no brand face: the system font
@@ -135,7 +132,10 @@ export const titleCase = (name: string): string =>
  * floor the processor's own output also meets.
  */
 export function displayFamily(name: string): string {
-  let out = normalizeVendorName(name).replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  let out = normalizeVendorName(name)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (out && out === out.toLowerCase()) out = titleCase(out);
   return knownFamily(out) ?? out;
 }

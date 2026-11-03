@@ -713,6 +713,18 @@ const configSchema = z.object({
     .min(0)
     .max(100)
     .default(0),
+  // Rollout percentage for schemas with $ref/$defs (the ones the default
+  // path sends to its larger model); unset = same as ROLLOUT_PERCENT.
+  EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: blankStringAsUnset(
+    z.coerce.number().int().min(0).max(100).optional(),
+  ),
+  // A provider answer whose arrays are all empty, for a page long enough to
+  // plausibly hold items, counts as a failure and falls back to the default
+  // model for that request.
+  EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS: z
+    .stringbool()
+    .optional()
+    .default(true),
   EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
   // Let any team pick the provider per request (json format `model`); off =
   // only teams in TEAM_IDS may.
@@ -852,17 +864,21 @@ const configSchema = z.object({
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
-  if (
-    value.EXTRACTION_PROVIDER_ROLLOUT_PERCENT +
-      value.EXTRACTION_PROVIDER_SHADOW_PERCENT >
-    100
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
-      message:
-        "EXTRACTION_PROVIDER_ROLLOUT_PERCENT + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100",
-    });
+  for (const key of [
+    "EXTRACTION_PROVIDER_ROLLOUT_PERCENT",
+    "EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT",
+  ] as const) {
+    const rollout = value[key];
+    if (
+      rollout !== undefined &&
+      rollout + value.EXTRACTION_PROVIDER_SHADOW_PERCENT > 100
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
+        message: `${key} + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100`,
+      });
+    }
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
     context.addIssue({
