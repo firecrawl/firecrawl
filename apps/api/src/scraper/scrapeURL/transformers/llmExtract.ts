@@ -33,7 +33,9 @@ import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import {
+  EMPTY_LIST_FALLBACK_MIN_CHARS,
   extractionProviderCost,
+  isEmptyListAnswer,
   selectExtractionRoute,
 } from "../../../lib/extraction-provider";
 import { config } from "../../../config";
@@ -1105,6 +1107,7 @@ export async function performLLMExtract(
               isZeroDataRetentionActive(),
             inputBytes: Buffer.byteLength(document.markdown ?? "", "utf8"),
             requestedModel: jsonFormat.model,
+            refSchema: modelSelection.reason === "recursive_schema_detected",
           });
     if (jsonFormat.model !== undefined && route !== "provider") {
       document.warning =
@@ -1143,6 +1146,14 @@ export async function performLLMExtract(
         attempt = await extractWith(providerOptions());
         if (attempt.warning?.includes(PROVIDER_FAILURE)) {
           failure = attempt.warning;
+        } else if (
+          config.EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS &&
+          (document.markdown?.length ?? 0) >= EMPTY_LIST_FALLBACK_MIN_CHARS &&
+          isEmptyListAnswer(
+            attempt.extractedDataArray[attempt.extractedDataArray.length - 1],
+          )
+        ) {
+          failure = "provider returned only empty lists";
         }
       } catch (error) {
         failure = (error as Error).message;
