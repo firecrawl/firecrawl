@@ -6102,10 +6102,10 @@
                 },
                 "example": {
                   "success": true,
+                  "partial": false,
                   "results": [
                     {
                       "id": "issue:firecrawl/firecrawl#1234",
-                      "type": "issue",
                       "url": "https://github.com/firecrawl/firecrawl/issues/1234",
                       "title": "Retries are not applied to 429 responses",
                       "passages": [
@@ -6114,14 +6114,7 @@
                         }
                       ]
                     }
-                  ],
-                  "coverage": {
-                    "doc": "ok",
-                    "issue": "ok",
-                    "pull_request": "ok",
-                    "readme": "ok"
-                  },
-                  "reranked": true
+                  ]
                 }
               }
             }
@@ -12006,37 +11999,15 @@
           "success": {
             "type": "boolean"
           },
+          "partial": {
+            "type": "boolean",
+            "description": "True when the deadline passed before every best-effort stage finished, so the response holds the work completed by then."
+          },
           "results": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeveloperSearchResult"
             }
-          },
-          "coverage": {
-            "type": "object",
-            "description": "Outcome for each result type. Check this when an expected result type is missing: `skipped` means your `types` value did not ask for that type, while `degraded` or `unavailable` means the gap came from the index or from a filter, not from the query. A repository filter is one such cause — see [how the repository filters scope a search](/api-reference/endpoint/developer-search#how-the-repository-filters-scope-a-search).",
-            "properties": {
-              "doc": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "issue": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "pull_request": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "readme": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              }
-            }
-          },
-          "reranked": {
-            "type": "boolean",
-            "description": "Whether the ranked list went through the reranking stage."
           },
           "repos": {
             "type": "array",
