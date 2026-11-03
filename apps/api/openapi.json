@@ -11942,13 +11942,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`.",
+            "description": "Stable result id. Its prefix names the result kind, such as `issue:owner/repo#123` or `doc:<page URL>`.",
             "example": "issue:firecrawl/firecrawl#1234"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["doc", "issue", "pull_request", "readme"],
-            "description": "Result kind."
           },
           "url": {
             "type": "string",
@@ -11966,9 +11961,42 @@
               "properties": {
                 "text": {
                   "type": "string"
+                },
+                "citation_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Link to the passage's own location, such as a section anchor, when it differs from the result `url`."
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "True when `text` omits part of the full passage. Absent when false."
+                },
+                "served_span": {
+                  "type": "object",
+                  "description": "Byte offsets of `text` within the full passage, present when `text` is one contiguous span.",
+                  "required": ["start", "end"],
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "full_tokens_est": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Approximate token count of the full passage."
                 }
               }
             }
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known."
           }
         }
       },
