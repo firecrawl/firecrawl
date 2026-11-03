@@ -533,16 +533,10 @@ const GITHUB_SUNSET = "Tue, 03 Nov 2026 23:59:59 GMT";
 
 describeIf(HAS_RESEARCH)("Research API github search removal", () => {
   it("answers 410 with the deprecation headers on the canonical mount", async () => {
-    const identity = await idmux({
-      name: "research/github deprecation canonical",
-      credits: 100,
+    const res = await researchRaw("/v2/search/research/github", {
+      query: "milvus hybrid search",
+      k: 3,
     });
-
-    const res = await researchRaw(
-      "/v2/search/research/github",
-      { query: "milvus hybrid search", k: 3 },
-      identity,
-    );
 
     expect(res.statusCode).toBe(410);
     expect(res.body.success).toBe(false);
@@ -580,16 +574,10 @@ describeIf(HAS_RESEARCH)("Research API github search removal", () => {
   }, 120000);
 
   it("answers 410 on the legacy mount too", async () => {
-    const identity = await idmux({
-      name: "research/github deprecation legacy",
-      credits: 100,
+    const res = await researchRaw("/v2/research/github", {
+      query: "milvus hybrid search",
+      k: 3,
     });
-
-    const res = await researchRaw(
-      "/v2/research/github",
-      { query: "milvus hybrid search", k: 3 },
-      identity,
-    );
 
     expect(res.statusCode).toBe(410);
     expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);

@@ -736,8 +736,7 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
-  // Removed after its 2026-11-03 sunset. Registered before the mounts below so
-  // the 410 answers ahead of their auth.
+  // Register before the /search/research and /research mounts so the 410 answers ahead of their auth.
   v2Router.get(
     ["/search/research/github", "/research/github"],
     removedEndpointHandler("v2_research_github_search"),

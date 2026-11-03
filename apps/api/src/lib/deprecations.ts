@@ -46,7 +46,7 @@ const DEPRECATIONS = {
   },
   v2_research_github_search: {
     message:
-      "The research index GitHub search (GET /v2/search/research/github, legacy GET /v2/research/github) was removed after 2026-11-03. Send the same query and k to GET or POST /v2/search/developer instead: it searches GitHub issues, pull requests and READMEs plus curated documentation sources, returns matched passages, and adds filters for repo, language, license and stars. Response changes: 'snippet' becomes 'passages' and results gain an 'id'.",
+      "The research index GitHub search (GET /v2/search/research/github, legacy GET /v2/research/github) was removed after 2026-11-03. Send the same query and k to GET or POST /v2/search/developer instead. See https://docs.firecrawl.dev/features/developer.",
     replacement: "/v2/search/developer",
     docs: "https://docs.firecrawl.dev/features/developer",
     deprecatedAt: "@1788393600",
