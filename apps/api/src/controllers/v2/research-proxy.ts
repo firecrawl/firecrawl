@@ -7,6 +7,7 @@ import {
   fetchGovUpstream,
   fetchResearchUpstream,
   usOnlySkippedWarning,
+  usOnlyUpstreamRefusal,
 } from "../../lib/research-upstream";
 import { isUsOnly } from "../../lib/us-only";
 import { chargeKeylessCredits } from "../../lib/keyless";
@@ -451,6 +452,19 @@ function createResearchController(
       for (const h of FORWARDED_RESPONSE_HEADERS) {
         const value = upstream.headers.get(h);
         if (value) res.setHeader(h, value);
+      }
+
+      if (isUsOnly(authedReq.acuc?.flags) && upstream.status === 403) {
+        const refusal = await usOnlyUpstreamRefusal(
+          upstream,
+          "This endpoint is not available for teams restricted to US-only processing.",
+        );
+        error = refusal.message;
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: refusal.message,
+        });
       }
 
       const text = await upstream.text();
