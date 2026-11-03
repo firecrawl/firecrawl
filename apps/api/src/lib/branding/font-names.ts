@@ -124,6 +124,10 @@ export function normalizeVendorName(name: string): string {
   return knownFamily(out) ?? out;
 }
 
+/** First letter of each word up, in any script: "über grotesk" → "Über Grotesk". */
+export const titleCase = (name: string): string =>
+  name.replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+
 /**
  * A family name as the API reports it: vendor spellings resolved,
  * underscores read as spaces, and an all-lowercase alias title-cased.
@@ -132,8 +136,6 @@ export function normalizeVendorName(name: string): string {
  */
 export function displayFamily(name: string): string {
   let out = normalizeVendorName(name).replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  if (out && out === out.toLowerCase()) {
-    out = out.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (out && out === out.toLowerCase()) out = titleCase(out);
   return knownFamily(out) ?? out;
 }

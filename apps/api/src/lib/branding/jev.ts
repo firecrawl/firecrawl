@@ -33,6 +33,7 @@ import {
   knownFamily,
   normalizeVendorName,
   renderedFamily,
+  titleCase,
 } from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
@@ -335,9 +336,7 @@ export function cleanFontFamily(raw: string): string | undefined {
   // A known family can only be matched once its weight is gone.
   name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (name === name.toLowerCase()) name = titleCase(name);
   return name;
 }
 

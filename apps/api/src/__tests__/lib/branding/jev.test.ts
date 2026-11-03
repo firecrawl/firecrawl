@@ -1348,8 +1348,9 @@ describe("Jev request building", () => {
     // once its glued weight is gone.
     expect(cleanFontFamily("semibold")).toBeUndefined();
     expect(cleanFontFamily("proximanovabold")).toBe("Proxima Nova");
-    // Non-Latin faces are families too.
+    // Non-Latin faces are families too, and title case works past ASCII.
     expect(cleanFontFamily("思源黑体, sans-serif")).toBe("思源黑体");
+    expect(cleanFontFamily("über grotesk")).toBe("Über Grotesk");
     // A system stack asks for the visitor's font: Segoe UI and Roboto are
     // its spellings per platform, not the brand's choice.
     expect(
