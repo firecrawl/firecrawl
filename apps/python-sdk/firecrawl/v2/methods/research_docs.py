@@ -189,10 +189,9 @@ Args:
     query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
     k: Maximum number of results to return.
 
-Returns:
-    Raw API ``dict`` with ``success`` and ``results``. Keys are camelCase and
-    are **not** normalized to snake_case — expect ``repo``, ``url``,
-    ``pageType``, ``number`` and ``snippet``.
+Raises:
+    FirecrawlError: The hosted API now answers with an error carrying the
+        removal message.
 """
 
 SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
@@ -306,9 +305,9 @@ Args:
     query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
     **kwargs: ``k``.
 
-Returns:
-    Raw API ``dict`` with ``success`` and ``results``. Keys are
-    camelCase, **not** snake_case-normalized.
+Raises:
+    FirecrawlError: The hosted API now answers with an error carrying the
+        removal message.
 """
 
 CLIENT_SEARCH_PAPERS_DOC = _CLIENT_SEARCH_PAPERS_TEMPLATE.replace(_AWAIT, "")
