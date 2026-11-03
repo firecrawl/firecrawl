@@ -313,13 +313,9 @@ const related = await app.research.similarPapers('pmid:<id>', {
 });
 ```
 
-> **`app.research.searchGithub` is deprecated.** The research index GitHub
-> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
-> instead: it searches GitHub issues, pull requests and readmes plus curated
-> documentation sources, returns matched passages, and adds filters for repo,
-> language, license and stars. It does not carry over the `scores` breakdown
-> or the `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
+> The research index GitHub search was removed after 2026-11-03. To search
+> GitHub issues, pull requests and READMEs, use `app.developerSearch` (see
+> Developer search above).
 
 ### Scrape-bound interactive browsing (v2)
 

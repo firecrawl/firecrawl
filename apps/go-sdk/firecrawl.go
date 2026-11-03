@@ -767,8 +767,8 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 
 // SearchGitHub searches GitHub research content.
 //
-// Deprecated: stops responding after 2026-11-03. Use DeveloperSearch, which
-// does not carry over the score breakdown or the web fallback results.
+// Deprecated: the research index GitHub search endpoint was removed after
+// 2026-11-03. Use DeveloperSearch instead.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}

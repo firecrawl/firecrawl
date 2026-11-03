@@ -378,10 +378,10 @@ defmodule Firecrawl do
 
   `GET /search/research/github`
 
-  Deprecated: stops responding after 2026-11-03. Use `search_developer/2`, which
-  does not carry over the score breakdown or the web fallback results.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer/2` instead.
   """
-  @deprecated "Use search_developer/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "Use search_developer/2; the endpoint was removed after 2026-11-03"
   @spec search_github(keyword(), keyword()) :: response()
   def search_github(params \\ [], opts \\ []) do
     with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
@@ -394,7 +394,7 @@ defmodule Firecrawl do
 
   Deprecated: use `search_developer!/2`.
   """
-  @deprecated "Use search_developer!/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "Use search_developer!/2; the endpoint was removed after 2026-11-03"
   @spec search_github!(keyword(), keyword()) :: Req.Response.t()
   def search_github!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @research_search_github_schema)
@@ -422,7 +422,8 @@ defmodule Firecrawl do
 
   @doc """
   Search the developer index: public repositories, GitHub issues, merged pull
-  requests, READMEs and code documentation. Replaces the deprecated `search_github/2`.
+  requests, READMEs and code documentation. Replaces `search_github/2`, whose
+  endpoint was removed after 2026-11-03.
 
   `POST /search/developer`
 

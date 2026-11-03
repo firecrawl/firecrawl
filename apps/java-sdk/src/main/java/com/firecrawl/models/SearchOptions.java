@@ -60,7 +60,7 @@ public class SearchOptions {
 
         /** Source types: "web", "news", "images" as strings or {type: "web"} maps. */
         public Builder sources(List<Object> sources) { this.sources = sources; return this; }
-        /** Categories: "github", "research", "pdf". */
+        /** Categories: "research", "pdf". The "github" category is removed; use "developer" instead. */
         public Builder categories(List<Object> categories) { this.categories = categories; return this; }
         /** Domains to include in search results. */
         public Builder includeDomains(List<String> includeDomains) { this.includeDomains = includeDomains; return this; }

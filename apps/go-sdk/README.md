@@ -290,7 +290,7 @@ results, err := client.Search(ctx, "firecrawl web scraping", &firecrawl.SearchOp
 
 ### Developer Search
 
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `DeveloperSearch` replaces the deprecated `SearchGitHub`.
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
 
 ```go
 resp, err := client.DeveloperSearch(ctx, "retry an http request with exponential backoff", &firecrawl.DeveloperSearchOptions{

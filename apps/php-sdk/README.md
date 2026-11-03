@@ -243,7 +243,7 @@ foreach ($result->getWeb() as $item) {
 
 ### Developer search
 
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `developerSearch` replaces the deprecated `searchGithub`.
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
 
 ```php
 use Firecrawl\Models\DeveloperSearchOptions;
