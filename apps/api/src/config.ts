@@ -48,16 +48,8 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
-// "github" is out of the default and the true/all shorthand, so keyless
-// behaviour is unchanged until someone names it. An explicit list replaces the
-// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
-const RESEARCH_KEYLESS_OPERATIONS = [
-  ...RESEARCH_PAPER_OPERATIONS,
-  "github",
-] as const;
-
 export type ResearchKeylessOperation =
-  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
+  (typeof RESEARCH_PAPER_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -74,7 +66,7 @@ const researchKeylessDisabled = z.preprocess(
       .filter(Boolean);
   },
   z
-    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
+    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
