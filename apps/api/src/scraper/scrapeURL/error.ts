@@ -79,7 +79,6 @@ export class NoEnginesLeftError extends TransportableError {
 
 export class AddFeatureError extends Error {
   public featureFlags: FeatureFlag[];
-  public statusCode?: number;
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
   public imagePrefetch: Meta["imagePrefetch"];
