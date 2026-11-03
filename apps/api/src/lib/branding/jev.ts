@@ -459,7 +459,7 @@ function fileName(src: string): string {
 // The scan flags buttons inside a consent container; this catches the rest
 // by their label or their consent manager's class, in the languages we see.
 const CONSENT =
-  /cookie|consent|gdpr|cmplz|cookiebot|onetrust|ot-sdk|didomi|osano|iubenda|qc-cmp|termly|borlabs|cky-|usercentrics|accept all|reject all|allow all|decline|\b(?:manage|view|save) (?:preferences|settings)|préférences|preferencias|preferenze|preferências|einstellungen|voorkeuren|tout accepter|tout refuser|personnaliser|akzeptieren|ablehnen|anpassen|accepter|refuser|aceptar|rechazar|configurar|accetta|rifiuta|aceitar|recusar|accepteren|weigeren/i;
+  /cookie|consent|gdpr|cmplz|cookiebot|onetrust|ot-sdk|didomi|osano|iubenda|qc-cmp|termly|borlabs|cky-consent|cky-btn|cky-modal|usercentrics|accept all|reject all|allow all|decline|\b(?:manage|view|save) (?:preferences|settings)|préférences|preferencias|preferenze|preferências|einstellungen|voorkeuren|tout accepter|tout refuser|personnaliser|akzeptieren|ablehnen|anpassen|accepter|refuser|aceptar|rechazar|configurar|accetta|rifiuta|aceitar|recusar|accepteren|weigeren/i;
 const isConsentButton = (button: { text?: string; classes?: string }) =>
   CONSENT.test(`${button.text ?? ""} ${button.classes ?? ""}`);
 

@@ -239,6 +239,17 @@ describe("branding script button detection", () => {
     );
     expect(byText(tagged, "Accepter")?.isConsent).toBe(true);
     expect(byText(tagged, "Demander un devis")?.isConsent).toBe(false);
+
+    // Consent-manager prefixes must not match look-alike classes: Elementor's
+    // sticky sections contain "cky-", and "trusted-by" contains "truste".
+    const lookalike = scan(
+      `<section class="elementor-section elementor-sticky--active">${cta("Order now")}</section>
+       <div class="trusted-by">${cta("View menu")}</div>
+       <div class="cky-consent-container">${cta("Accept all")}</div>`,
+    );
+    expect(byText(lookalike, "Order now")?.isConsent).toBe(false);
+    expect(byText(lookalike, "View menu")?.isConsent).toBe(false);
+    expect(byText(lookalike, "Accept all")?.isConsent).toBe(true);
   });
 
   it("leaves out hidden copies of buttons", () => {

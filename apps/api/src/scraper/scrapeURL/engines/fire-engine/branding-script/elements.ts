@@ -32,9 +32,14 @@ const CONSENT_CONTAINER = [
   "qc-cmp",
   "termly",
   "borlabs",
-  "cky-",
+  // Full prefixes only: "cky-" alone is inside Elementor's "sticky-" classes
+  // and "truste" inside "trusted-by".
+  "cky-consent",
+  "cky-btn",
+  "cky-modal",
   "usercentrics",
-  "truste",
+  "trustarc",
+  "truste-",
   "privacy-banner",
   "privacy-notice",
 ]
