@@ -1,0 +1,25 @@
+apps/api/.env.example
+  s_55eb374d574d1c::t_b5039f697dbbec 91
+apps/api/src/config.ts
+  s_55eb374d574d1c::t_8c982e6c80d94a 728-732,879-891,893,897
+apps/api/src/lib/extraction-provider.test.ts
+  s_55eb374d574d1c::t_b037b06a8683a5 267-309
+apps/api/src/lib/extraction-provider.ts
+  s_55eb374d574d1c::t_e9ca07a63f6d03 18-20,79-83,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea21a96e1a595d9623a55dbe329afc43d8eb3914",
+  "prompts": {},
+  "sessions": {
+    "s_55eb374d574d1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23d62988-955b-47cc-bd5a-28edb2957b32",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
