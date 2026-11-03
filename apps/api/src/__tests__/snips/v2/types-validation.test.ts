@@ -1512,13 +1512,13 @@ describe("V2 Types Validation", () => {
     it("should accept search request with simple categories array", () => {
       const input: SearchRequestInput = {
         query: "test",
-        categories: ["github", "research"],
+        categories: ["pdf", "research"],
       };
 
       const result = searchRequestSchema.parse(input);
       // Categories are transformed from string array to object array
       expect(result.categories).toEqual([
-        { type: "github" },
+        { type: "pdf" },
         { type: "research" },
       ]);
     });
@@ -1625,7 +1625,7 @@ describe("V2 Types Validation", () => {
       expect(() =>
         searchRequestSchema.parse({
           query: "test",
-          categories: ["docs", "github", "developer_index"],
+          categories: ["docs", "pdf", "developer_index"],
         }),
       ).toThrow(/cannot be combined/);
     });
@@ -1654,9 +1654,6 @@ describe("V2 Types Validation", () => {
       const input: SearchRequestInput = {
         query: "test",
         categories: [
-          {
-            type: "github",
-          },
           {
             type: "research",
           },

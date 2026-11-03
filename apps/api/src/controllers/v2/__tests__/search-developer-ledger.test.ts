@@ -216,7 +216,7 @@ describe("developer category code_searches ledger", () => {
       executeResult({ response: { web: [] } }),
     );
 
-    for (const categories of [undefined, ["github"]]) {
+    for (const categories of [undefined, ["pdf"]]) {
       mockLogResearchEndpoint.mockClear();
       const req = makeReq({
         query: "http client",
