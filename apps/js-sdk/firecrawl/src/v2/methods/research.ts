@@ -53,7 +53,7 @@ function normalizeResearchError(err: any, action: string): never {
     const body: any = err.response?.data;
     if (body && (body.detail || body.title)) {
       const message = body.detail || body.title;
-      throw new SdkError(message, status, body.type, body);
+      throw new SdkError(message, status, body.code ?? body.type, body);
     }
     throw new SdkError(
       err.message || `Request failed while trying to ${action}`,
