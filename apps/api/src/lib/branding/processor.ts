@@ -10,7 +10,7 @@ import {
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
 import { displayFamily, genericFamily, renderedFamily } from "./font-names";
-import { parse, rgb, formatHex } from "culori";
+import { parse, rgb, formatHex, wcagContrast } from "culori";
 
 // Export for testing
 export function hexify(
@@ -456,6 +456,8 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       if (!s.isButton) return false;
       // Hidden copies (mobile menus, closed dialogs) aren't what visitors see.
       if (s.visible === false) return false;
+      // Consent dialogs are page chrome, not the brand's buttons.
+      if (s.isConsent) return false;
       if (s.rect.w < 30 || s.rect.h < 24) return false;
       if (!s.text || s.text.trim().length === 0) return false;
 
@@ -605,13 +607,24 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       s.borderRadius,
     );
 
+    // Text with no contrast against its own fill is not what visitors read:
+    // a deferred stylesheet that hadn't landed, or a label color set on an
+    // inner element the scan couldn't see. Report the readable one.
+    let textColor = hexify(s.colors.text, pageBackground) || "#000000";
+    if (
+      bgHex !== "transparent" &&
+      wcagContrast(bgHex, textColor) < 1.25
+    ) {
+      textColor = contrastYIQ(bgHex) >= 128 ? "#000000" : "#FFFFFF";
+    }
+
     return {
       index: idx,
       text: s.text || "",
       html: "",
       classes: s.classes || "",
       background: bgHex,
-      textColor: hexify(s.colors.text, pageBackground) || "#000000",
+      textColor,
       borderColor: borderHex,
       borderRadius: representativeBorderRadius,
       borderRadiusCorners: corners,

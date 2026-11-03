@@ -177,6 +177,22 @@ export const pageTop = (el: Element, rect: DOMRect): number => {
   return isTallWindow() ? toScreenPosition(top) : top;
 };
 
+/**
+ * The color a CSS gradient reads as: its last stop, the side a left-to-right
+ * or top-to-bottom gradient ends on, which is where the eye settles. Page
+ * builders paint buttons this way (Divi, Elementor, Tailwind's bg-gradient)
+ * with a transparent background-color, so without this they have no fill.
+ * Null for an image or no gradient.
+ */
+export const gradientFill = (backgroundImage: string | null | undefined): string | null => {
+  if (!backgroundImage || !/gradient\(/i.test(backgroundImage)) return null;
+  const colors = backgroundImage.match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/gi) || [];
+  for (let i = colors.length - 1; i >= 0; i--) {
+    if (isOpaque(colors[i])) return colors[i];
+  }
+  return null;
+};
+
 /** The first opaque background behind an element (its ancestors'), white if none. */
 const getBackgroundBehind = (el: Element): string => {
   let parent = el.parentElement;
@@ -196,8 +212,11 @@ const getBackgroundBehind = (el: Element): string => {
  */
 export const getEffectiveFill = (el: Element): string | null => {
   try {
-    const own = getComputedStyleCached(el).backgroundColor;
+    const ownStyle = getComputedStyleCached(el);
+    const own = ownStyle.backgroundColor;
     if (isOpaque(own)) return own;
+    const gradient = gradientFill(ownStyle.backgroundImage);
+    if (gradient) return gradient;
     for (const pseudo of ["::before", "::after"]) {
       const ps = getPseudoStyle(el, pseudo);
       // Hover-only layers sit at opacity 0 until hovered: not a fill.
