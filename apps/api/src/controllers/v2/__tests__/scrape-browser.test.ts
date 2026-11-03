@@ -153,6 +153,7 @@ vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
   selectBrowserAgentTab: vi.fn(async () => {}),
   executePromptViaBrowserAgent: vi.fn(),
   executeCodeViaBrowserSession: vi.fn(),
+  getBrowserAgentModel: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-session-activity", () => ({
@@ -507,6 +508,8 @@ describe("scrapeInteractController", () => {
       await runPrompt();
       expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
         ignoreModelOverride: true,
+        teamFlags: undefined,
+        feature: "Interact",
       });
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({

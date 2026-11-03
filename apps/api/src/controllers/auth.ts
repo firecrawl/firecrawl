@@ -52,6 +52,14 @@ import {
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import {
+  looksLikeJwt,
+  VercelJwksUnavailableError,
+} from "../lib/vercel-marketplace-oidc";
+import {
+  resolveVercelOidcToken,
+  type VercelOidcResolution,
+} from "../services/vercel-marketplace-oidc";
+import {
   autumnService,
   DEFAULT_TEAM_LIMITS,
   type TeamLimits,
@@ -1028,6 +1036,71 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      chunk,
+      mode,
+      minRateMultiplier,
+    );
+  } else if (
+    config.USE_DB_AUTHENTICATION === true &&
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID &&
+    looksLikeJwt(token)
+  ) {
+    // Vercel Marketplace OIDC resource token. It resolves to the API key issued
+    // for the resource, so per-key behavior and billing stay on the key path.
+    let resolution: VercelOidcResolution;
+    try {
+      resolution = await resolveVercelOidcToken(
+        token,
+        config.VERCEL_MARKETPLACE_INTEGRATION_ID,
+      );
+    } catch (error) {
+      if (error instanceof VercelJwksUnavailableError) {
+        return {
+          success: false,
+          error: "Vercel authentication is temporarily unavailable",
+          status: 503,
+        };
+      }
+      throw error;
+    }
+    if (!resolution.ok) {
+      return denied(req, "invalid_vercel_oidc_token", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+
+    chunk = await getACUC(
+      resolution.apiKey,
+      false,
+      true,
+      RateLimiterMode.Scrape,
+      "general",
+    );
+    if (chunk === null) {
+      return denied(req, "unknown_key", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+    if (chunk.team_id !== resolution.teamId) {
+      return denied(
+        req,
+        "vercel_oidc_team_mismatch",
+        {
+          success: false,
+          error: "Unauthorized: Invalid token",
+          status: 401,
+        },
+        chunk,
+      );
+    }
+
+    teamId = chunk.team_id;
+    subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,

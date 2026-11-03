@@ -60,6 +60,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  UsOnlyUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
@@ -606,6 +607,7 @@ async function buildMetaObject(
 export type InternalOptions = {
   teamId: string;
   crawlId?: string;
+  origin?: string;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
@@ -798,9 +800,7 @@ async function scrapeURLLoopIter(
           length: engineResult.html?.trim().length ?? 0,
         },
       );
-      throw Object.assign(new AddFeatureError(["stealthProxy"]), {
-        statusCode: engineResult.statusCode,
-      });
+      throw new AddFeatureError(["stealthProxy"]);
     }
 
     // NOTE: TODO: what to do when status code is bad is tough...
@@ -1007,11 +1007,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 error: error.error,
               });
               if (testArm) {
-                if (
-                  experiment === "skip-enhanced-retry-after-site-protection"
-                ) {
-                  remainingEngines.shift();
-                }
                 enginePromises = enginePromises.filter(
                   x => x.engine !== error.engine,
                 );
@@ -1070,6 +1065,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof UsOnlyUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
@@ -1216,6 +1212,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     let document: Document = {
       markdown: engineResult.markdown,
+      warning: engineResult.warning,
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
@@ -1364,8 +1361,8 @@ export async function scrapeURL(
         }
       }
 
-      // ZDR always verifies TLS, for every engine. Explicit false also wins over
-      // the skip-by-default in applyScrapeOptionsDefaults.
+      // ZDR always verifies TLS, for every engine, even when the request asks
+      // to skip verification.
       if (internalOptions.zeroDataRetention) {
         options.skipTlsVerification = false;
       }
@@ -1471,6 +1468,7 @@ export async function scrapeURL(
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
                       location: options.location,
+                      skipTlsVerification: options.skipTlsVerification,
                     },
                     id,
                     meta.logger,

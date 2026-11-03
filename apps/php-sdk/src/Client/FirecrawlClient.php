@@ -184,9 +184,8 @@ final class FirecrawlClient
     /**
      * Search GitHub research content.
      *
-     * @deprecated Stops responding after 2026-11-03. Use {@see self::developerSearch()},
-     *   which does not carry over the score breakdown or the web fallback
-     *   results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *   2026-11-03. Use {@see self::developerSearch()} instead.
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */

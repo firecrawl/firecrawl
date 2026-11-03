@@ -370,7 +370,10 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "unsafe_domain_blocked") {
+      if (
+        e.code === "unsafe_domain_blocked" ||
+        e.code === "US_ONLY_UNAVAILABLE"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,

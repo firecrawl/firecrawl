@@ -66,12 +66,21 @@ import {
   autoToolsEnabled,
   queryInferenceEnabled,
 } from "../../search/tool-intent";
+import { isUsOnly } from "../../lib/us-only";
+import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
-    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
+    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
   links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
 };
+
+const GITHUB_CATEGORY_REMOVED =
+  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
 
 // Ahead of auth and validation so rejected requests carry the notice too.
 export function researchCategoryNoticeMiddleware(
@@ -159,6 +168,20 @@ async function searchControllerInner(
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
+    if (hasCategory(req.body?.categories, "github")) {
+      logger.warn("Removed search category requested", {
+        module: "deprecations",
+        category: "github",
+        origin: requestOrigin({ origin: rawOrigin }, req),
+      });
+      return res.status(400).json({
+        success: false,
+        code: "CATEGORY_REMOVED",
+        error: GITHUB_CATEGORY_REMOVED,
+        replacement: "developer",
+        documentation_url: "https://docs.firecrawl.dev/features/developer",
+      });
+    }
     const sourcesOmitted =
       (req.body as Record<string, unknown>)?.sources === undefined;
     req.body = searchRequestSchema.parse(req.body);
@@ -249,6 +272,27 @@ async function searchControllerInner(
         success: false,
         error: "Agent interop is not enabled.",
       });
+    }
+
+    // Image search has no US-only route: it is dropped with a warning, or
+    // refused when nothing else was asked for.
+    let usOnlyImagesWarning: string | undefined;
+    const sources = req.body.sources as Array<{ type: string }>;
+    if (
+      isUsOnly(req.acuc?.flags) &&
+      sources.some(source => source.type === "images")
+    ) {
+      req.body.sources = sources.filter(
+        source => source.type !== "images",
+      ) as SearchRequest["sources"];
+      if (req.body.sources.length === 0 && !indexCategory) {
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+        });
+      }
+      usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
     }
 
     // Safe Mode: validate the per-request param up front and reject scrape
@@ -629,12 +673,19 @@ async function searchControllerInner(
         result.response.tools,
       );
     }
+    const warning = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
-      ...(result.toolsWarning ? { warning: result.toolsWarning } : {}),
+      ...(warning ? { warning } : {}),
     });
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
@@ -657,6 +708,26 @@ async function searchControllerInner(
       return res.status(408).json({
         success: false,
         code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUnavailableError) {
+      setSpanAttributes(span, { "search.status_code": 403 });
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUpstreamRefusalError) {
+      setSpanAttributes(span, { "search.status_code": error.status });
+      return res.status(error.status).json({
+        success: false,
+        ...(error.status === 403
+          ? { code: "US_ONLY_UNAVAILABLE" as const }
+          : {}),
         error: error.message,
       });
     }

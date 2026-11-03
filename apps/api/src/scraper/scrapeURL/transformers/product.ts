@@ -2,6 +2,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 
 export async function fetchProduct(
   meta: Meta,
@@ -14,6 +15,13 @@ export async function fetchProduct(
   if (meta.internalOptions.zeroDataRetention) {
     document.warning =
       "Product format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Product format is not supported for teams restricted to US-only processing." +
       (document.warning ? " " + document.warning : "");
     return document;
   }

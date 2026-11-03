@@ -23,6 +23,7 @@ import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
+import { isUsOnly } from "../../lib/us-only";
 import {
   answerSchema,
   refusal,
@@ -186,12 +187,14 @@ export async function retrieveProviders(input: {
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
-  // Appended only when set so existing non-ZDR fingerprints stay stable.
+  const usOnly = isUsOnly(input.flags);
+  // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
       ? [input.calls, billable, termsIdentity ?? null]
       : [input.calls, billable]),
     ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
+    ...(usOnly ? [{ usOnly }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -352,6 +355,7 @@ export async function retrieveProviders(input: {
       billingCountry: input.billingCountry,
       connectors: input.flags?.exchangeRetrieve === true,
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -479,6 +483,7 @@ export async function retrieveProviders(input: {
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);

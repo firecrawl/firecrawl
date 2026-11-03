@@ -500,6 +500,7 @@ export class WebCrawler {
           url: this.robotsTxtUrl,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          skipTlsVerification,
           ...(this.robotsUserAgent
             ? {
                 headers: {

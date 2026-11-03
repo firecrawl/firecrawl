@@ -648,9 +648,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearch} instead.
      */
     @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
@@ -658,9 +657,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearch} instead.
      */
     @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
@@ -1170,9 +1168,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearchAsync} instead.
      */
     @Deprecated
     public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {

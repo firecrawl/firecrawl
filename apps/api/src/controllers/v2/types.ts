@@ -927,12 +927,7 @@ export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
   obj: T,
 ): T & { skipTlsVerification: boolean } => ({
   ...obj,
-  skipTlsVerification:
-    obj.skipTlsVerification ??
-    ((obj.headers && Object.keys(obj.headers).length > 0) ||
-    (obj.actions && obj.actions.length > 0)
-      ? false
-      : true),
+  skipTlsVerification: obj.skipTlsVerification ?? false,
 });
 
 /**
@@ -1662,6 +1657,8 @@ export type ErrorResponse = {
   details?: any;
   sponsor_status?: string;
   login_url?: string;
+  replacement?: string;
+  documentation_url?: string;
 };
 
 export type ScrapeResponse =
@@ -2189,6 +2186,9 @@ export type TeamFlags = {
   // The org's contract bars training on its data: FirePDF never captures its
   // documents (buildFirePdfTrainingCapture).
   trainingRestricted?: boolean;
+  // Every request is processed by US-based vendors only. A route with no US
+  // vendor is refused or skipped with a warning.
+  usOnly?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -2521,10 +2521,6 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 // Category source type definitions
-const githubCategoryOptions = z.strictObject({
-  type: z.literal("github"),
-});
-
 const researchCategoryOptions = z.strictObject({
   type: z.literal("research"),
 });
@@ -2623,10 +2619,9 @@ export const searchRequestSchema = z
       .preprocess(
         normalizeDeveloperCategoryAliases,
         z.union([
-          z.array(z.enum(["github", "research", "pdf", "developer", "gov"])),
+          z.array(z.enum(["research", "pdf", "developer", "gov"])),
           z.array(
             z.union([
-              githubCategoryOptions,
               researchCategoryOptions,
               pdfCategoryOptions,
               developerCategoryOptions,
@@ -2781,10 +2776,6 @@ export const searchRequestSchema = z
         // It's a string array, transform to object array
         categories = (categories as string[]).map(c => {
           switch (c) {
-            case "github":
-              return {
-                type: "github" as const,
-              };
             case "research":
               return {
                 type: "research" as const,

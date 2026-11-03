@@ -627,7 +627,7 @@ public class FirecrawlClient
     /// <summary>
     /// Searches GitHub research content.
     /// </summary>
-    [Obsolete("Stops responding after 2026-11-03. Use DeveloperSearchAsync, which does not carry over the score breakdown or the web fallback results.")]
+    [Obsolete("The research index GitHub search endpoint was removed after 2026-11-03. Use DeveloperSearchAsync instead.")]
     public async Task<GitHubSearchResponse> SearchGitHubAsync(
         string query,
         SearchGitHubOptions? options = null,

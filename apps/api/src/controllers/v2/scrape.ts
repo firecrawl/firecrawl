@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
-import { discoverTools } from "../../search/alexandria";
+import { discoverTools, usOnlyToolsWarning } from "../../search/alexandria";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
@@ -54,6 +54,7 @@ import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { isUsOnly } from "../../lib/us-only";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -541,7 +542,10 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "unsafe_domain_blocked") {
+          if (
+            e.code === "unsafe_domain_blocked" ||
+            e.code === "US_ONLY_UNAVAILABLE"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
@@ -760,6 +764,7 @@ export async function scrapeController(
               {
                 teamId: req.auth.team_id,
                 connectors: req.acuc?.flags?.exchangeRetrieve === true,
+                usOnly: isUsOnly(req.acuc?.flags),
                 toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(
@@ -780,6 +785,14 @@ export async function scrapeController(
             })
           : undefined;
       if (tools) markAlexandriaActivity(req.auth.team_id);
+      const toolsWarning = [
+        tools?.warning,
+        tools?.usOnlyExcluded
+          ? usOnlyToolsWarning(tools.usOnlyExcluded)
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       return res.status(200).json({
         success: true,
@@ -794,7 +807,7 @@ export async function scrapeController(
           },
           ...(tools ? { tools: tools.items } : {}),
         },
-        ...(tools?.warning ? { warning: tools.warning } : {}),
+        ...(toolsWarning ? { warning: toolsWarning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

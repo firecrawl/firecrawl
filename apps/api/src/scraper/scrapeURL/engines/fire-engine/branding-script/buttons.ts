@@ -15,17 +15,82 @@ const isOpaque = (color: string | null | undefined): boolean => {
   return alpha > CONSTANTS.MIN_ALPHA_THRESHOLD;
 };
 
+// Classes site builders and reveal scripts put on content that is faded out
+// only until it scrolls into view (Elementor, WOW.js, AOS, animate.css, the
+// "js-reveal" convention), and attributes that mark the same thing.
+const ENTRANCE_CLASS =
+  /(?:^|\s)(?:elementor-invisible|wow|aos-init|animate__animated|[\w-]*reveal[\w-]*|[\w-]*fade-?in[\w-]*)(?:\s|$)/i;
+const ENTRANCE_ATTRS = ["data-aos", "data-framer-appear-id", "data-motion-enter"];
+
+/**
+ * An element at opacity 0 (or visibility hidden) that is only waiting for its
+ * entrance animation: in normal flow, not a dismissed overlay, and either
+ * animated by CSS, slid out of place by a motion script (inline opacity 0 with
+ * a translate), or tagged with a reveal class or attribute. A closed menu,
+ * accordion or dialog is absolutely or fixed positioned, display none, or
+ * aria-hidden, and none of these say it will appear. A transition alone is
+ * not proof either: a closed accordion fades too, so it needs a marker.
+ */
+const isAppearing = (node: Element, cs: CSSStyleDeclaration): boolean => {
+  if (cs.display === "none") return false;
+  if (
+    node.getAttribute("aria-hidden") === "true" ||
+    node.hasAttribute("hidden") ||
+    node.hasAttribute("inert")
+  ) {
+    return false;
+  }
+  const position = cs.position;
+  if (position === "fixed" || position === "absolute") return false;
+  if (cs.pointerEvents === "none") return false;
+
+  const animation = cs.getPropertyValue("animation-name");
+  if (animation && animation !== "none") return true;
+  const inline = (node.getAttribute("style") || "").toLowerCase();
+  if (
+    /opacity:\s*0(?:[;\s]|$)/.test(inline) &&
+    /transform:\s*[^;]*translate/.test(inline)
+  ) {
+    return true;
+  }
+  const className = node.getAttribute("class") || "";
+  if (ENTRANCE_CLASS.test(className)) return true;
+  return ENTRANCE_ATTRS.some(attr => node.hasAttribute(attr));
+};
+
 /**
  * Rendered, with a size, and not hidden or fully transparent. Opacity doesn't
- * inherit, so a faded-out ancestor (a closed menu) is checked too.
+ * inherit, so a faded-out ancestor (a closed menu) is checked too. Two kinds
+ * of transparency don't count: the page itself at opacity 0 (a load-time fade
+ * on html or body that headless rendering never finishes), and content faded
+ * out only until it scrolls into view, which the scan's tall window never
+ * triggers. Visitors see both.
  */
 export const isVisibleElement = (el: Element, rect: DOMRect): boolean => {
   if (!(rect.width > 0 && rect.height > 0)) return false;
   const cs = getComputedStyleCached(el);
-  if (cs.display === "none" || cs.visibility === "hidden") return false;
+  if (cs.display === "none") return false;
+  // visibility inherits: `el` reads hidden when any ancestor is. Each
+  // ancestor that sets it (hidden while its own parent is not) must be
+  // waiting on an entrance animation, as with Elementor's
+  // elementor-invisible; one that merely inherits is not judged, and one
+  // closed for good hides `el` whatever sits between them.
+  const checkVisibility = cs.visibility === "hidden";
   let node: Element | null = el;
   for (let depth = 0; node && depth < 15; depth++) {
-    if (parseFloat(getComputedStyleCached(node).opacity) < 0.05) return false;
+    const nodeStyle = getComputedStyleCached(node);
+    if (nodeStyle.display === "none") return false;
+    if (checkVisibility && nodeStyle.visibility === "hidden") {
+      const parent = node.parentElement;
+      const setsIt =
+        !parent || getComputedStyleCached(parent).visibility !== "hidden";
+      if (setsIt && !isAppearing(node, nodeStyle)) return false;
+    }
+    if (parseFloat(nodeStyle.opacity) < 0.05) {
+      const isPage =
+        node === document.documentElement || node === document.body;
+      if (!isPage && !isAppearing(node, nodeStyle)) return false;
+    }
     node = node.parentElement;
   }
   return true;
