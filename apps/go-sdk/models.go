@@ -728,6 +728,17 @@ type SearchData struct {
 	News    []map[string]interface{} `json:"news,omitempty"`
 	Images  []map[string]interface{} `json:"images,omitempty"`
 	Tools   []DiscoveredTool         `json:"tools,omitempty"`
+	Skills  []SkillCard              `json:"skills,omitempty"`
+}
+
+// SkillCard is a short skill card from the alexandria-skills search source.
+type SkillCard struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Source      string   `json:"source"`
+	Provider    string   `json:"provider,omitempty"`
+	Similarity  *float64 `json:"similarity,omitempty"`
 }
 
 type AlexandriaCall struct {

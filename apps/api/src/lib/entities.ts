@@ -165,6 +165,7 @@ export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
   tools?: import("../services/alexandria/contracts").DiscoveredTool[];
+  skills?: import("../search/alexandria-skills").SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
@@ -175,10 +176,12 @@ export interface SearchV2Response {
  * group is present and non-negative — a source that was not requested, or that
  * returned nothing, counts 0. Persisted per search so position-based feedback
  * can be bounded exactly per source rather than against a combined total.
- * `tools` is present only when provider discovery ran.
+ * `tools` is present only when provider discovery ran. `skills` is present
+ * only when skill discovery ran.
  */
 export type SearchResultCountsBySource = Record<SearchResultType, number> & {
   tools?: number;
+  skills?: number;
 };
 
 export function countSearchResultsBySource(
@@ -189,6 +192,7 @@ export function countSearchResultsBySource(
     images: response.images?.length ?? 0,
     news: response.news?.length ?? 0,
     ...(response.tools ? { tools: response.tools.length } : {}),
+    ...(response.skills ? { skills: response.skills.length } : {}),
   };
 }
 

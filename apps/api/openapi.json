@@ -4377,10 +4377,22 @@
                           },
                           "required": ["type"],
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "title": "Alexandria skills",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": ["alexandria-skills"]
+                            }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": false
                         }
                       ]
                     },
-                    "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. Requires the team's Alexandria access to be enabled (403 otherwise). When `sources` is omitted, an authenticated search may also return compact tools in `data.tools` for queries that ask for structured data; pass `sources` explicitly to turn this off.",
+                    "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\", \"alexandria-skills\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. The `alexandria-skills` source returns up to 3 short skill cards in `data.skills` (`id`, `name`, `description`, `source` of `official` or `provider`, plus `provider` when the skill belongs to a provider and `similarity` when the match was semantic). It is free, is never counted in `creditsUsed`, and uses the same access rules as `alexandria`. A timeout or upstream error returns an empty `data.skills` array and does not fail the search. The card is not the full skill; load that separately with the card `id`. Requires the team's Alexandria access to be enabled (403 otherwise). When `sources` is omitted, an authenticated search may also return compact tools in `data.tools` for queries that ask for structured data; pass `sources` explicitly to turn this off.",
                     "default": [
                       {
                         "type": "web"
@@ -4768,6 +4780,38 @@
                           "description": "Tool contracts discovered from the Alexandria catalogue. Present when `alexandria` is among the sources, when `domainTools` was requested, or when `sources` was omitted and the query asks for structured data; up to `limit` results per discovery source (semantic matches from the `alexandria` source, domain matches from `domainTools`).",
                           "items": {
                             "$ref": "#/components/schemas/DiscoveredTool"
+                          }
+                        },
+                        "skills": {
+                          "type": "array",
+                          "description": "Short skill cards from the Alexandria catalogue. Present when `alexandria-skills` is among the sources, including when nothing matched or the lookup failed. At most 3 cards. Free, and never counted in `creditsUsed`.",
+                          "items": {
+                            "type": "object",
+                            "required": ["id", "name", "description", "source"],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "Skill id. The full skill is loaded separately with this id."
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": ["official", "provider"]
+                              },
+                              "provider": {
+                                "type": "string",
+                                "description": "Publisher slug. Present when `source` is `provider`."
+                              },
+                              "similarity": {
+                                "type": "number",
+                                "description": "Semantic match score. Omitted when the card came from a word match."
+                              }
+                            }
                           }
                         }
                       },

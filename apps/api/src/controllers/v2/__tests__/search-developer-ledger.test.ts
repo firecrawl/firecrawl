@@ -419,3 +419,108 @@ describe("tool discovery availability", () => {
     );
   });
 });
+
+describe("skill discovery source", () => {
+  const card = {
+    id: "official/search",
+    name: "Search",
+    description: "Find records",
+    source: "official",
+  };
+
+  it("returns skill cards without billing or reserving keyless credits", async () => {
+    mockProjectSearchTotalCredits.mockReturnValue(2);
+    mockExecuteSearch.mockResolvedValue(
+      executeResult({
+        response: { skills: [card] },
+        totalResultsCount: 0,
+        indexResultsCount: 0,
+        searchCredits: 0,
+        totalCredits: 0,
+      }),
+    );
+    const res = makeRes();
+
+    await searchController(
+      makeReq({ query: "records", sources: ["alexandria-skills"] }),
+      res,
+    );
+
+    expect(mockReserveKeylessCredits).not.toHaveBeenCalled();
+    expect(mockExecuteSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [{ type: "alexandria-skills" }],
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        creditsUsed: 0,
+        data: { skills: [card] },
+      }),
+    );
+  });
+
+  it("answers 200 with empty cards when discovery produced nothing", async () => {
+    mockExecuteSearch.mockResolvedValue(
+      executeResult({
+        response: { skills: [] },
+        totalResultsCount: 0,
+        indexResultsCount: 0,
+        searchCredits: 0,
+        totalCredits: 0,
+        toolsUnavailable: true,
+      }),
+    );
+    const res = makeRes();
+
+    await searchController(
+      makeReq({ query: "records", sources: [{ type: "alexandria-skills" }] }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: { skills: [] } }),
+    );
+  });
+
+  it("requires a query", async () => {
+    const res = makeRes();
+
+    await searchController(
+      makeReq({ query: "  ", sources: ["alexandria-skills"] }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockExecuteSearch).not.toHaveBeenCalled();
+  });
+
+  it("refuses keyless and zero data retention the same way tool search does", async () => {
+    const keyless = makeRes();
+    await searchController(
+      {
+        ...makeReq({ query: "records", sources: ["alexandria-skills"] }),
+        auth: { team_id: "preview_keyless_203.0.113.8" },
+      },
+      keyless,
+    );
+    expect(keyless.status).toHaveBeenCalledWith(403);
+
+    const zdr = makeRes();
+    await searchController(
+      makeReq({
+        query: "records",
+        sources: ["alexandria-skills"],
+        enterprise: ["zdr"],
+      }),
+      zdr,
+    );
+    expect(zdr.status).toHaveBeenCalledWith(403);
+    expect(mockExecuteSearch).not.toHaveBeenCalled();
+  });
+});

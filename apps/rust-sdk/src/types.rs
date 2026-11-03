@@ -1218,6 +1218,8 @@ pub enum SearchSource {
     News,
     Images,
     Alexandria,
+    #[serde(rename = "alexandria-skills")]
+    AlexandriaSkills,
 }
 
 /// Search category types.

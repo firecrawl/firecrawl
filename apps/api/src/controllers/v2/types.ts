@@ -2601,7 +2601,9 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "alexandria"])),
+        z.array(
+          z.enum(["web", "images", "news", "alexandria", "alexandria-skills"]),
+        ),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2610,6 +2612,9 @@ export const searchRequestSchema = z
             newsSearchSourceOptions,
             z.strictObject({
               type: z.literal("alexandria"),
+            }),
+            z.strictObject({
+              type: z.literal("alexandria-skills"),
             }),
           ]),
         ),

@@ -1,0 +1,194 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { discoverSkills } from "./alexandria-skills";
+import { isFreeCatalogueSearch, isToolsOnlySearch } from "./alexandria";
+import { exchangeRequest } from "../services/alexandria/client";
+
+vi.mock("../services/alexandria/client", () => ({ exchangeRequest: vi.fn() }));
+const request = vi.mocked(exchangeRequest);
+const logger = { warn: vi.fn() } as any;
+
+const official = {
+  id: "official/search",
+  name: "Search",
+  description: "Find records",
+  source: "official" as const,
+  similarity: 0.82,
+  body: "full skill text",
+};
+const provider = {
+  id: "acme/brief",
+  name: "Brief",
+  description: "A provider skill",
+  source: "provider" as const,
+  provider: "acme",
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+it("maps a successful discover response onto short cards", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { query: "records", skills: [official, provider] },
+  });
+
+  const cards = await discoverSkills(
+    { teamId: "team", query: "  records  ", timeoutMs: 9000 },
+    logger,
+  );
+
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls[0][0]).toEqual({
+    teamId: "team",
+    path: "/v1/discover/skills?q=records&limit=3",
+    timeoutMs: 3000,
+  });
+  expect(request.mock.calls[0][0]).not.toHaveProperty("body");
+  expect(cards).toEqual([
+    {
+      id: "official/search",
+      name: "Search",
+      description: "Find records",
+      source: "official",
+      similarity: 0.82,
+    },
+    {
+      id: "acme/brief",
+      name: "Brief",
+      description: "A provider skill",
+      source: "provider",
+      provider: "acme",
+    },
+  ]);
+});
+
+it("omits similarity and provider when the match did not include them", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      query: "records",
+      skills: [
+        {
+          id: "official/search",
+          name: "Search",
+          description: "Find records",
+          source: "official",
+          provider: null,
+          similarity: null,
+        },
+      ],
+    },
+  });
+
+  const cards = await discoverSkills(
+    { teamId: "team", query: "records", timeoutMs: 1000 },
+    logger,
+  );
+
+  expect(cards).toEqual([
+    {
+      id: "official/search",
+      name: "Search",
+      description: "Find records",
+      source: "official",
+    },
+  ]);
+  expect(cards[0]).not.toHaveProperty("similarity");
+  expect(cards[0]).not.toHaveProperty("provider");
+});
+
+it("drops invalid cards and keeps the valid ones", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      skills: [
+        { id: "", name: "Missing", description: "no", source: "official" },
+        official,
+      ],
+    },
+  });
+
+  const cards = await discoverSkills(
+    { teamId: "team", query: "records", timeoutMs: 1000 },
+    logger,
+  );
+
+  expect(cards).toHaveLength(1);
+  expect(cards[0].id).toBe("official/search");
+  expect(logger.warn).toHaveBeenCalled();
+});
+
+it.each([400, 500])(
+  "returns no cards when discover answers %s",
+  async status => {
+    request.mockResolvedValue({ status, body: { error: "nope" } });
+
+    await expect(
+      discoverSkills(
+        { teamId: "team", query: "records", timeoutMs: 1000 },
+        logger,
+      ),
+    ).resolves.toEqual([]);
+    expect(logger.warn).toHaveBeenCalled();
+  },
+);
+
+it("returns no cards when the exchange call times out", async () => {
+  request.mockRejectedValue(
+    Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    }),
+  );
+
+  await expect(
+    discoverSkills(
+      { teamId: "team", query: "records", timeoutMs: 3000 },
+      logger,
+    ),
+  ).resolves.toEqual([]);
+  expect(logger.warn).toHaveBeenCalled();
+});
+
+it("returns no cards for an empty or over-long query without calling exchange", async () => {
+  await expect(
+    discoverSkills({ teamId: "team", query: "   ", timeoutMs: 1000 }, logger),
+  ).resolves.toEqual([]);
+  await expect(
+    discoverSkills(
+      { teamId: "team", query: "x".repeat(2001), timeoutMs: 1000 },
+      logger,
+    ),
+  ).resolves.toEqual([]);
+  expect(request).not.toHaveBeenCalled();
+});
+
+describe("catalogue search billing gate", () => {
+  it("treats skill cards as free catalogue search without making them tools-only", () => {
+    expect(
+      isFreeCatalogueSearch([{ type: "alexandria-skills" }], undefined),
+    ).toBe(true);
+    expect(isToolsOnlySearch([{ type: "alexandria-skills" }], undefined)).toBe(
+      false,
+    );
+    expect(
+      isFreeCatalogueSearch(
+        ["alexandria", { type: "alexandria-skills" }],
+        undefined,
+      ),
+    ).toBe(true);
+    expect(
+      isFreeCatalogueSearch(
+        [{ type: "web" }, { type: "alexandria-skills" }],
+        undefined,
+      ),
+    ).toBe(false);
+    expect(
+      isFreeCatalogueSearch(["alexandria-skills"], [{ type: "developer" }]),
+    ).toBe(false);
+    expect(isFreeCatalogueSearch(["alexandria"], [{ type: "gov" }])).toBe(
+      false,
+    );
+    expect(isToolsOnlySearch(["alexandria"], undefined)).toBe(true);
+  });
+});

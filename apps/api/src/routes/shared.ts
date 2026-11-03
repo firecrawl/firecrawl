@@ -37,7 +37,7 @@ import {
   ThirdPartyDataUnsupportedOptionError,
 } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
-import { isToolsOnlySearch } from "../search/alexandria";
+import { isFreeCatalogueSearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 import { isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
@@ -131,15 +131,15 @@ export function checkCreditsMiddleware(
         // If verified, fall through to normal credit check (key is now on real account)
       }
 
-      // Tool discovery is free; provider execution reserves its own credits.
+      // Catalogue discovery is free; provider execution reserves its own credits.
       const sources = (req.body as any)?.sources;
       const categories = (req.body as any)?.categories;
-      const toolsOnly =
-        req.path === "/search" && isToolsOnlySearch(sources, categories);
+      const freeCatalogue =
+        req.path === "/search" && isFreeCatalogueSearch(sources, categories);
       if (
         (req.path === "/scrape" &&
           (req.body as any)?.alexandria !== undefined) ||
-        toolsOnly
+        freeCatalogue
       ) {
         req.account = { remainingCredits: Infinity };
         return next();

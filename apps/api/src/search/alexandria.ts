@@ -25,20 +25,41 @@ type CategoryLike = string | { type: string };
 const typeOf = (value: SourceLike | CategoryLike) =>
   typeof value === "string" ? value : value?.type;
 
+const CATALOGUE_SOURCES = new Set(["alexandria", "alexandria-skills"]);
+
+function excludesIndexCategory(categories: unknown): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(category => {
+      const type = typeOf(category);
+      return type === "developer" || type === "gov";
+    })
+  );
+}
+
 export function isToolsOnlySearch(
   sources: unknown,
   categories: unknown,
 ): boolean {
   if (!Array.isArray(sources) || sources.length === 0) return false;
   if (!sources.every(source => typeOf(source) === "alexandria")) return false;
-  if (
-    Array.isArray(categories) &&
-    categories.some(category => {
-      const type = typeOf(category);
-      return type === "developer" || type === "gov";
-    })
-  )
+  if (excludesIndexCategory(categories)) return false;
+  return true;
+}
+
+/**
+ * Search that only asks the Alexandria catalogue for tools and/or skill cards.
+ * Both are free, so the credit check is skipped the same way as a tools-only
+ * search. An index category still has its own billable path.
+ */
+export function isFreeCatalogueSearch(
+  sources: unknown,
+  categories: unknown,
+): boolean {
+  if (!Array.isArray(sources) || sources.length === 0) return false;
+  if (!sources.every(source => CATALOGUE_SOURCES.has(typeOf(source) ?? "")))
     return false;
+  if (excludesIndexCategory(categories)) return false;
   return true;
 }
 

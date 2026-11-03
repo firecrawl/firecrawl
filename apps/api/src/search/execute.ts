@@ -5,6 +5,12 @@ import {
   usOnlyToolsWarning,
 } from "./alexandria";
 import {
+  discoverSkills,
+  isAlexandriaSkillsSource,
+  SKILLS_DISCOVERY_TIMEOUT_MS,
+  type SkillCard,
+} from "./alexandria-skills";
+import {
   AUTO_TOOLS_WAIT_MS,
   inferToolIntent,
   verifyTools,
@@ -141,9 +147,24 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const wantsTools = sources.some(isAlexandriaSource);
+  const wantsSkills = sources.some(isAlexandriaSkillsSource);
   const toolsAllowed =
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
+  const skillsPromise =
+    toolsAllowed && wantsSkills && query.trim()
+      ? discoverSkills(
+          {
+            teamId,
+            query,
+            timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
+          },
+          logger,
+        ).catch(error => {
+          logger.warn("Skill discovery failed", { error });
+          return [] as SkillCard[];
+        })
+      : null;
   const toolIntent =
     toolsAllowed &&
     (wantsTools ? options.inferToolQuery : options.autoTools) &&
@@ -205,7 +226,10 @@ export async function executeSearch(
   const searchTypes = [
     ...new Set(
       sources
-        .filter(source => !isAlexandriaSource(source))
+        .filter(
+          source =>
+            !isAlexandriaSource(source) && !isAlexandriaSkillsSource(source),
+        )
         .map(source => source.type as SearchResultType),
     ),
   ];
@@ -247,7 +271,8 @@ export async function executeSearch(
     : null;
 
   const searchResponse =
-    (wantsTools && !searchTypes.length) || indexResultsPromise !== null
+    ((wantsTools || wantsSkills) && !searchTypes.length) ||
+    indexResultsPromise !== null
       ? ({} as SearchV2Response)
       : ((await search({
           query: searchQuery,
@@ -599,6 +624,10 @@ export async function executeSearch(
       ...result,
       position: index + 1,
     }));
+  }
+
+  if (skillsPromise) {
+    searchResponse.skills = await skillsPromise;
   }
 
   const scrapeFormats = scrapeOptions?.formats
