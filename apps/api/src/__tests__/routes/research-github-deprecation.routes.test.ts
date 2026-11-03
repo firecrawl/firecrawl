@@ -86,7 +86,7 @@ describe.each([
       replacement: "/v2/search/developer",
       documentation_url: "https://docs.firecrawl.dev/features/developer",
     });
-    expect(res.body.error).toContain("removed after 2026-11-03");
+    expect(res.body.error).toContain("removed on 2026-11-03");
   });
 
   it("keeps the deprecation headers", async () => {

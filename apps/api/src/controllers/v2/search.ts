@@ -80,7 +80,7 @@ const RESEARCH_CATEGORY_NOTICE: Notice = {
 };
 
 const GITHUB_CATEGORY_REMOVED =
-  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, use the 'developer' category or GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
+  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
 
 // Ahead of auth and validation so rejected requests carry the notice too.
 export function researchCategoryNoticeMiddleware(
@@ -176,7 +176,10 @@ async function searchControllerInner(
       });
       return res.status(400).json({
         success: false,
+        code: "CATEGORY_REMOVED",
         error: GITHUB_CATEGORY_REMOVED,
+        replacement: "developer",
+        documentation_url: "https://docs.firecrawl.dev/features/developer",
       });
     }
     const sourcesOmitted =

@@ -1657,6 +1657,8 @@ export type ErrorResponse = {
   details?: any;
   sponsor_status?: string;
   login_url?: string;
+  replacement?: string;
+  documentation_url?: string;
 };
 
 export type ScrapeResponse =
