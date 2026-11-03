@@ -228,7 +228,8 @@ results = firecrawl.search(
 )
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer and gov
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
