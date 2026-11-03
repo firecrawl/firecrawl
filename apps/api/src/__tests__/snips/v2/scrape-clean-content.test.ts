@@ -61,6 +61,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && HAS_AI && DELETION_CLEANER)(
         const plainBlocks = blocksOf(plain.markdown!);
         const cleanBlocks = blocksOf(clean.markdown!);
         expect(cleanBlocks.length).toBeGreaterThan(0);
+        expect(cleanBlocks.length).toBeLessThan(plainBlocks.length);
         let plainIndex = 0;
         for (const block of cleanBlocks) {
           while (
@@ -75,9 +76,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && HAS_AI && DELETION_CLEANER)(
 
         const protectedBlocks = plainBlocks.filter(isProtectedBlock);
         expect(protectedBlocks.length).toBeGreaterThan(0);
-        const cleanSet = new Set(cleanBlocks);
+        const remainingBlocks = [...cleanBlocks];
         for (const block of protectedBlocks) {
-          expect(cleanSet.has(block)).toBe(true);
+          const index = remainingBlocks.indexOf(block);
+          expect(index).toBeGreaterThanOrEqual(0);
+          remainingBlocks.splice(index, 1);
         }
       },
       scrapeTimeout * 2,

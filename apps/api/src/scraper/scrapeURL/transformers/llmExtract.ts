@@ -1386,7 +1386,7 @@ export async function performCleanContent(
       const legacyMs = Date.now() - legacyStartedAt;
       const legacyChars = document.markdown?.length ?? 0;
       shadow
-        .then(({ result, ms }) =>
+        .then(({ result, ms, costTracking }) =>
           meta.logger.info("onlyCleanContent shadow comparison", {
             ...result.stats,
             skipped: result.skipped,
@@ -1397,6 +1397,7 @@ export async function performCleanContent(
             deletionChars: result.markdown.length,
             deletionRatio: result.markdown.length / original.length,
             deletionMs: ms,
+            deletionCost: costTracking.toJSON().totalCost,
           }),
         )
         .catch(error =>
@@ -1414,13 +1415,14 @@ let cleanContentShadowsInFlight = 0;
 function startCleanContentShadow(meta: Meta, markdown: string) {
   cleanContentShadowsInFlight++;
   const startedAt = Date.now();
+  const costTracking = new CostTracking();
   return cleanContentByDeletion(
     meta,
     markdown,
-    new CostTracking(),
+    costTracking,
     "performCleanContentShadow",
   )
-    .then(result => ({ result, ms: Date.now() - startedAt }))
+    .then(result => ({ result, ms: Date.now() - startedAt, costTracking }))
     .finally(() => {
       cleanContentShadowsInFlight--;
     });
@@ -1631,13 +1633,14 @@ async function cleanContentByDeletion(
       .map((block, i) => `<block id="${i}">\n${block}\n</block>`)
       .join("\n");
 
-    // generateCompletions trims content past 80% of the context window; skip
-    // instead, since a trimmed page would hide blocks from the model.
-    const maxPromptTokens = Math.floor(
-      getModelLimits("gpt-4o-mini").maxInputTokens * 0.8,
-    );
+    // generateCompletions trims content past 80% of the model's context
+    // window; skip instead, since a trimmed page would hide blocks from the model.
+    const modelId = typeof model === "string" ? model : model.modelId;
+    const maxInputTokens = modelPrices[modelId]?.max_input_tokens;
+    const maxPromptTokens = maxInputTokens && Math.floor(maxInputTokens * 0.8);
     if (
-      trimToTokenLimit(prompt, maxPromptTokens, "gpt-4o-mini").text !== prompt
+      maxPromptTokens &&
+      trimToTokenLimit(prompt, maxPromptTokens, modelId).text !== prompt
     ) {
       return {
         markdown,
