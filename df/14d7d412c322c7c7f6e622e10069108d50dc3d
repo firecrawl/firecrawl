@@ -1,0 +1,37 @@
+apps/api/src/__tests__/lib/branding/processor-consent.test.ts
+  s_3002048a2ce37a::t_974e4df4f91ca3 1-78
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_96bb5cea7a9517 459-460,462
+apps/api/src/lib/branding/types.ts
+  s_3002048a2ce37a::t_96bb5cea7a9517 177-178
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/buttons.ts
+  s_3002048a2ce37a::t_96bb5cea7a9517 180-195,215-216,218-219
+apps/api/src/__tests__/lib/branding/branding-script-buttons.test.ts
+  s_3002048a2ce37a::t_974e4df4f91ca3 5,52,196-230,242
+  s_3002048a2ce37a::t_21de72a1c22103 231-241
+  s_3002048a2ce37a::t_6d5b9a96d8e7b2 243
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_974e4df4f91ca3 398-401
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_3002048a2ce37a::t_21de72a1c22103 291-297
+  s_3002048a2ce37a::t_96bb5cea7a9517 10,17-44,131,247,250-251,286-290,298-300,456
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_96bb5cea7a9517 459-460
+  s_3002048a2ce37a::t_72021d0094f4f4 13,610-620,627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df14d7d412c322c7c7f6e622e10069108d50dc3d",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
