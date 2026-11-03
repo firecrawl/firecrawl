@@ -5,19 +5,16 @@ import * as undici from "undici";
 import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
-import IPAddr from "ipaddr.js";
-export class InsecureConnectionError extends Error {
-  constructor() {
-    super("Connection violated security rules.");
-  }
-}
-
-export function isIPPrivate(address: string): boolean {
-  if (!IPAddr.isValid(address)) return false;
-
-  const addr = IPAddr.parse(address);
-  return addr.range() !== "unicast";
-}
+import {
+  assertSafeOutboundUrl,
+  createSafeLookup,
+  InsecureConnectionError,
+  isIPPrivate,
+} from "../../../../lib/outbound-url";
+export {
+  InsecureConnectionError,
+  isIPPrivate,
+} from "../../../../lib/outbound-url";
 
 /**
  * Reject private IP literals and localhost names before dispatch, on the
@@ -27,22 +24,16 @@ export function isIPPrivate(address: string): boolean {
  */
 export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
   dispatch => (options, handler) => {
-    if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
-      return dispatch(options, handler);
-    }
-
     let privateTarget = false;
 
     try {
-      const origin =
-        options.origin instanceof URL
-          ? options.origin
-          : new URL(options.origin.toString());
-      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
-      privateTarget =
-        isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
+      if (options.origin === undefined) throw new InsecureConnectionError();
+      assertSafeOutboundUrl(
+        options.origin.toString(),
+        config.ALLOW_LOCAL_WEBHOOKS === true,
+      );
     } catch {
-      // Let Undici report malformed origins through its normal path.
+      privateTarget = true;
     }
 
     if (privateTarget) {
@@ -80,6 +71,7 @@ function createBaseAgent(skipTlsVerification: boolean) {
       })
     : new undici.Agent({
         connect: {
+          lookup: createSafeLookup(() => config.ALLOW_LOCAL_WEBHOOKS === true),
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
       });

@@ -70,6 +70,26 @@ security, availability, capacity, upgrades, data retention, and compliance.
 Treat the Kubernetes and Helm examples as versioned starting points, not as
 evidence that these production decisions have been made for you.
 
+## Outbound destination security
+
+User-supplied scrape and webhook URLs must use HTTP or HTTPS. By default the
+API rejects loopback, private, link-local (including cloud metadata), and other
+non-public IP destinations. It validates DNS before scrape and webhook handoffs,
+and checks the actual DNS answers used for direct HTTP connections. Redirects
+through the API's secure dispatcher are checked again.
+
+`ALLOW_LOCAL_WEBHOOKS=true` is a deployment-level override. Despite its name,
+it permits local destinations for both webhooks and scraping, including the
+Playwright service. Leave it unset on deployments accepting untrusted requests.
+Enable it only through administrator-controlled deployment configuration on an
+isolated, access-controlled instance; API request parameters cannot enable it.
+The override does not permit non-HTTP(S) URLs.
+
+Remote scraping engines, webhook consumers, and upstream proxies must enforce
+their own destination policy on every connection and redirect. API-side DNS
+validation cannot pin the IP address a different service later resolves. Use
+egress network restrictions as well, especially for cloud metadata services.
+
 ## Admin routes
 
 The key-protected routes on the main API port, `/admin/ops/...` and

@@ -320,7 +320,7 @@ describe("Scrape tests", () => {
   concurrentIf(
     TEST_SELF_HOST && HAS_PLAYWRIGHT && !playwrightAllowsLocalTargets,
   )(
-    "playwright blocks local-network targets resolved via DNS",
+    "blocks DNS-resolved local-network targets before the Playwright handoff",
     async () => {
       const raw = await scrapeRaw(
         {
@@ -330,12 +330,9 @@ describe("Scrape tests", () => {
         identity,
       );
 
-      expect(raw.statusCode).toBe(200);
-      expect(raw.body.success).toBe(true);
-      expect(raw.body.data?.metadata?.statusCode).toBe(403);
-      expect(raw.body.data?.metadata?.error).toContain(
-        "Blocked insecure target URL",
-      );
+      expect(raw.statusCode).toBe(403);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_UNSAFE_DESTINATION");
     },
     scrapeTimeout,
   );

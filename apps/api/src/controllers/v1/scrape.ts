@@ -381,7 +381,10 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "UNSUPPORTED_SITE") {
+      if (
+        e.code === "UNSUPPORTED_SITE" ||
+        e.code === "SCRAPE_UNSAFE_DESTINATION"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,

@@ -2,10 +2,8 @@ import undici from "undici";
 import { config } from "../../config";
 import { createHmac } from "crypto";
 import { logger as _logger, logger } from "../../lib/logger";
-import {
-  getSecureDispatcherNoCookies,
-  isIPPrivate,
-} from "../../scraper/scrapeURL/engines/utils/safeFetch";
+import { getSecureDispatcherNoCookies } from "../../scraper/scrapeURL/engines/utils/safeFetch";
+import { assertSafeOutboundDestination } from "../../lib/outbound-url";
 import type {
   WebhookConfig,
   WebhookEvent,
@@ -119,11 +117,18 @@ export class WebhookSender {
     payload: any,
     scrapeId?: string,
   ): Promise<Omit<WebhookSendResult, "attempted">> {
-    const webhookHost = new URL(this.config.url).hostname;
-    if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
-      this.logger.warn("Aborting webhook call to private IP address", {
-        webhookUrl: this.config.url,
-      });
+    try {
+      await assertSafeOutboundDestination(
+        this.config.url,
+        config.ALLOW_LOCAL_WEBHOOKS === true,
+      );
+    } catch {
+      this.logger.warn(
+        "Aborting webhook call to unsafe or unresolved destination",
+        {
+          webhookUrl: this.config.url,
+        },
+      );
       return { delivered: false, skipped: true };
     }
 
