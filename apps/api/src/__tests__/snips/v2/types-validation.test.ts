@@ -46,7 +46,7 @@ describe("V2 Types Validation", () => {
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
       expect(result.formats).toEqual([{ type: "markdown" }]);
-      expect(result.skipTlsVerification).toBe(true);
+      expect(result.skipTlsVerification).toBe(false);
     });
 
     it("should preserve explicit skipTlsVerification false", () => {
