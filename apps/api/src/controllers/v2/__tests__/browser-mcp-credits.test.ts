@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   recordRequestCredits: vi.fn(),
   getHangarBrowser: vi.fn(),
   createHangarBrowser: vi.fn(),
-  capLifetime: vi.fn(),
   insertSession: vi.fn(),
 }));
 
@@ -51,7 +50,6 @@ vi.mock("../../../lib/hangar", async importOriginal => {
     ...actual,
     createHangarBrowser: mocks.createHangarBrowser,
     getHangarBrowser: mocks.getHangarBrowser,
-    capHangarBrowserLifetime: mocks.capLifetime,
     stopHangarBrowser: vi.fn(async () => {}),
   };
 });
@@ -102,8 +100,8 @@ vi.mock("../../../services/logging/log_job", () => ({
 }));
 
 import { browserCreateController, browserError } from "../browser";
-import { HangarError } from "../../../lib/hangar";
 import {
+  createBrowserSession,
   reserveBrowserPromptCredits,
   settleBrowserSession,
 } from "../../../lib/browser-lifecycle";
@@ -189,7 +187,6 @@ beforeEach(() => {
     playlist_url: null,
     max_expires_at: null,
   }));
-  mocks.capLifetime.mockResolvedValue({ status: "running" });
   mocks.insertSession.mockImplementation(async (row: { id: string }) => ({
     ...row,
     cdp_url: "wss://cdp.test",
@@ -340,6 +337,23 @@ describe("browser sessions from hosted MCP calls", () => {
 });
 
 describe("hosted MCP browser sessions under the full charge", () => {
+  const createOptions = {
+    blockAds: true,
+    ttl: 600,
+    activityTtl: 300,
+    streamWebView: false,
+    recordSession: false,
+  };
+
+  async function createForPrompt() {
+    const req = makeReq(true);
+    const { session } = await createBrowserSession(req as any, {
+      ...createOptions,
+      prompt: true,
+    });
+    return { req, session };
+  }
+
   it("runs the full session when MCP credits cover it", async () => {
     balances({ mcp: 100 });
 
@@ -350,7 +364,6 @@ describe("hosted MCP browser sessions under the full charge", () => {
       expect.objectContaining({ ttl: 600 }),
     );
     await reserveBrowserPromptCredits(makeReq(true) as any, session);
-    expect(mocks.capLifetime).not.toHaveBeenCalled();
     expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
   });
 
@@ -370,47 +383,59 @@ describe("hosted MCP browser sessions under the full charge", () => {
     expect(mocks.markHostedMcp).toHaveBeenCalledWith(res.body.id);
   });
 
-  it("caps a prompt session at the MCP credits left", async () => {
+  it("sizes a session about to be prompted for the MCP credits left", async () => {
     balances({ mcp: 45 });
 
-    await reserveBrowserPromptCredits(makeReq(true) as any, session);
-    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 385);
+    const { req, session: created } = await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 385 }),
+    );
+    expect(created.ttl_total).toBe(385);
+
+    await reserveBrowserPromptCredits(req as any, {
+      ...session,
+      ttl_total: created.ttl_total,
+    });
+    expect(mocks.checkCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ value: 45, featureId: "MCP_CREDITS" }),
+    );
     expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
     expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
-    expect(mocks.clearHostedMcp).not.toHaveBeenCalled();
   });
 
-  it("counts the org's own credits after MCP credits toward a prompt", async () => {
+  it("counts the org's own credits after MCP credits", async () => {
     balances({ mcp: 40, org: 40 });
-    await reserveBrowserPromptCredits(makeReq(true) as any, session);
-    expect(mocks.capLifetime).not.toHaveBeenCalled();
-    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+    await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenLastCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 600 }),
+    );
 
-    vi.clearAllMocks();
     balances({ mcp: 20, org: 30 });
-    mocks.capLifetime.mockResolvedValue({ status: "running" });
-    await reserveBrowserPromptCredits(makeReq(true) as any, session);
-    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 428);
-    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+    await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenLastCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 428 }),
+    );
   });
 
-  it("caps a prompt on a team grant at what the grant covers", async () => {
+  it("sizes a session on a team grant to what the grant covers", async () => {
     balances({ mcp: 10, team: 40 });
 
-    await reserveBrowserPromptCredits(makeReq(true) as any, session);
-    expect(mocks.capLifetime).toHaveBeenCalledWith("browser-1", 342);
-    expect(mocks.clearHostedMcp).toHaveBeenCalledWith("session-1");
+    const { session: created } = await createForPrompt();
+    expect(created.ttl_total).toBe(342);
     expect(mocks.markHostedMcp).not.toHaveBeenCalled();
   });
 
-  it("refuses a prompt below the minimum and names the daily allowance", async () => {
+  it("refuses a session below the minimum and names the daily allowance", async () => {
     balances({ mcp: 5 });
 
     const res = makeRes();
-    const error = await reserveBrowserPromptCredits(
-      makeReq(true) as any,
-      session,
-    ).catch(error => error);
+    const error = await createForPrompt().catch(error => error);
     browserError(res as unknown as Response, error);
     expect(res.statusCode).toBe(402);
     expect(res.body).toMatchObject({
@@ -419,36 +444,25 @@ describe("hosted MCP browser sessions under the full charge", () => {
     });
     expect(res.body.error).toContain("daily MCP credit allowance");
     expect(res.body.error).toContain("resets at 2026-11-04T00:00:00.000Z");
-    expect(mocks.capLifetime).not.toHaveBeenCalled();
-    expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
+    expect(mocks.createHangarBrowser).not.toHaveBeenCalled();
   });
 
-  it("refuses a prompt whose session has run past what the credits cover", async () => {
-    balances({ mcp: 20 });
-    mocks.getHangarBrowser.mockResolvedValue({
-      status: "running",
-      created_at: Math.floor(Date.now() / 1000) - 300,
-    });
-
-    await expect(
-      reserveBrowserPromptCredits(makeReq(true) as any, session),
-    ).rejects.toMatchObject({ status: 402 });
-    expect(mocks.capLifetime).not.toHaveBeenCalled();
-  });
-
-  it("refuses a capped prompt when Hangar can't shorten the session", async () => {
+  it("refuses a prompt on a running session the credits can't fully cover", async () => {
     balances({ mcp: 45 });
-    mocks.capLifetime.mockRejectedValue(
-      new HangarError(502, "Hangar request failed."),
-    );
 
-    await expect(
-      reserveBrowserPromptCredits(makeReq(true) as any, session),
-    ).rejects.toMatchObject({ status: 502 });
+    const res = makeRes();
+    const error = await reserveBrowserPromptCredits(
+      makeReq(true) as any,
+      session,
+    ).catch(error => error);
+    browserError(res as unknown as Response, error);
+    expect(res.statusCode).toBe(402);
+    expect(res.body.code).toBe("mcp_credits_exhausted");
+    expect(res.body.error).toContain("daily MCP credit allowance");
     expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
   });
 
-  it("bills a capped session for the duration Hangar stopped it at", async () => {
+  it("bills a shortened session for no more than its lifetime", async () => {
     mocks.cameFromHostedMcp.mockResolvedValue(true);
     mocks.usedPrompt.mockResolvedValue(true);
     mocks.settleOnce.mockImplementation(async (_id: string, compute: any) => ({

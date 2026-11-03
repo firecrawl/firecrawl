@@ -9,7 +9,6 @@ import {
   createHangarBrowser,
   getHangarBrowser,
   stopHangarBrowser,
-  capHangarBrowserLifetime,
   HangarBrowser,
   HangarError,
 } from "./hangar";
@@ -193,6 +192,8 @@ export async function createBrowserSession(
     recordSession: boolean;
     zeroDataRetention?: boolean;
     scrapeId?: string;
+    /** Size the session for the prompt rate, for a call about to prompt it. */
+    prompt?: boolean;
     shouldBill?: boolean;
     requestId?: string;
     initialize?: (browserId: string) => Promise<void>;
@@ -225,7 +226,10 @@ async function createBrowserSessionInternal(
   const invalidInterop = invalidAgentInteropError(req);
   if (invalidInterop) throw invalidInterop;
   const shouldBill = options.shouldBill ?? true;
-  const creditsPerHour = browserCreditsPerHour(false, zeroDataRetention);
+  const creditsPerHour = browserCreditsPerHour(
+    options.prompt === true,
+    zeroDataRetention,
+  );
   let ttl = options.ttl;
   let estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(ttl * 1000, creditsPerHour)
@@ -489,23 +493,15 @@ export async function reserveBrowserPromptCredits(
   if (["stopping", "stopped", "failed"].includes(browser.status)) throw closed;
   // The interact rate is reserved once per session; later prompts add nothing.
   if (await didBrowserSessionUsePrompt(session.id)) return;
-  const creditsPerHour = browserCreditsPerHour(
-    true,
-    session.zero_data_retention,
-  );
   const credits = calculateBrowserSessionCredits(
     session.ttl_total * 1000,
-    creditsPerHour,
+    browserCreditsPerHour(true, session.zero_data_retention),
   );
   let onTeamCredits = false;
   if (session.should_bill && req.acuc?.org_id) {
-    // The prompt rate applies to the whole session, so the least a prompt can
-    // be admitted for covers the time already run plus one more minute.
-    const minimum = calculateBrowserSessionCredits(
-      Math.max(0, Date.now() - browser.created_at * 1000) + 60_000,
-      creditsPerHour,
-    );
-    const reserved = await reserveBrowserCredits(
+    // Hangar can't shorten a running browser, so a prompt needs the whole
+    // session's charge at the prompt rate.
+    ({ onTeamCredits } = await reserveBrowserCredits(
       req,
       {
         teamId: session.team_id,
@@ -517,17 +513,9 @@ export async function reserveBrowserPromptCredits(
           apiKeyId: req.acuc?.api_key_id ?? null,
         },
       },
-      Math.min(minimum, credits),
+      credits,
       "Insufficient credits for a browser prompt session.",
-    );
-    onTeamCredits = reserved.onTeamCredits;
-    // Hangar caps the billed duration at the browser's lifetime, so a session
-    // shortened here can't cost more than the credits that admitted it.
-    if (reserved.credits < credits)
-      await capHangarBrowserLifetime(
-        session.browser_id,
-        browserSecondsForCredits(reserved.credits, creditsPerHour),
-      );
+    ));
   }
   // The same row lock guards settlement: a prompt admitted before stop
   // records its rate before billing reads it, and a later prompt cannot

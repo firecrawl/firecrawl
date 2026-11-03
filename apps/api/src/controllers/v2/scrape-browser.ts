@@ -300,6 +300,7 @@ async function scrapeInteractInternal(
       logger,
       browserOptions,
       zeroDataRetention,
+      Boolean(prompt && !rawCode),
     );
     if (created.error === true) {
       // A keyless limit body carries the caller's own link, so match on it
@@ -498,6 +499,7 @@ async function createSessionForScrape(
   logger: typeof _logger,
   browserOptions: BrowserOptions,
   zeroDataRetention: boolean,
+  prompt: boolean,
 ) {
   try {
     const { session } = await createBrowserSession(req, {
@@ -505,6 +507,7 @@ async function createSessionForScrape(
       ...browserOptions,
       scrapeId,
       zeroDataRetention,
+      prompt,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {
           code: buildReplayScript(replayContext),
