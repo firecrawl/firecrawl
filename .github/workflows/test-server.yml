@@ -63,6 +63,7 @@ jobs:
       FDB_CLUSTER_FILE: ${{ matrix.nuq == 'fdb' && '/tmp/fdb.cluster' || '' }}
       FDB_VERSION: 7.3.63
       USE_GO_MARKDOWN_PARSER: true
+      ONLY_CLEAN_CONTENT_MODE: "on"
       ALLOW_LOCAL_WEBHOOKS: true
       FIRECRAWL_LOG_TO_FILE: true
       # Exercise the parse upload-ref path in self-hosted CI. The snips run
@@ -379,6 +380,11 @@ jobs:
           src/lib/fire-privacy-client.test.ts
           src/scraper/scrapeURL/transformers/redactPII.test.ts
           --reporter=default
+        working-directory: apps/api
+
+      - name: Run onlyCleanContent cleaner unit tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/scraper/scrapeURL/transformers/cleanContent.test.ts --reporter=default
         working-directory: apps/api
 
       - name: Run country check route regression tests
