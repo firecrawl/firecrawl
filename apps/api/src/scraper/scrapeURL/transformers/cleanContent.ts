@@ -27,7 +27,7 @@ export function selectCleanContentRoute(
   }
 }
 
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const ATX_HEADING = /^\s{0,3}#{1,6}(\s|$)/;
 const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/;
 const TABLE_DELIMITER = /^\s*\|?(\s*:?-+:?\s*\|)+\s*(:?-+:?)?\s*$/;
@@ -93,12 +93,11 @@ export function stripHeadingAnchorLinks(block: string): string {
   return lines
     .map(line => {
       if (!ATX_HEADING.test(line)) return line;
-      return line
-        .replace(ANCHOR_LINK, (link, label: string) =>
-          ANCHOR_LABEL.test(label) ? "" : link,
-        )
-        .replace(/^(\s{0,3}#{1,6})\s+/, "$1 ")
-        .trimEnd();
+      const stripped = line.replace(ANCHOR_LINK, (link, label: string) =>
+        ANCHOR_LABEL.test(label) ? "" : link,
+      );
+      if (stripped === line) return line;
+      return stripped.replace(/^(\s{0,3}#{1,6})\s+/, "$1 ").trimEnd();
     })
     .join("\n");
 }
@@ -113,7 +112,7 @@ export type BlockRemovalStats = {
 /**
  * Rebuilds the page from the blocks the model did not ask to remove. Ids that
  * point at protected blocks are ignored and counted. When nothing is removed,
- * or everything would be, the original markdown is returned.
+ * or every removable block would be, the original markdown is returned.
  */
 export function applyBlockRemovals(
   original: string,
@@ -148,11 +147,12 @@ export function applyBlockRemovals(
       stats,
     };
   }
-  if (removed.size === blocks.length) {
+  const removable = blocks.filter(block => !isProtectedBlock(block)).length;
+  if (removed.size === removable) {
     return {
       markdown: original,
       warning:
-        "Content cleaning would have removed the whole page. The original markdown has been preserved.",
+        "Content cleaning would have removed all of the page's text outside headings, code and tables. The original markdown has been preserved.",
       stats,
     };
   }

@@ -60,12 +60,17 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && HAS_AI && DELETION_CLEANER)(
 
         const plainBlocks = blocksOf(plain.markdown!);
         const cleanBlocks = blocksOf(clean.markdown!);
-        const plainSet = new Set(plainBlocks);
-
         expect(cleanBlocks.length).toBeGreaterThan(0);
-        expect(cleanBlocks.length).toBeLessThanOrEqual(plainBlocks.length);
+        let plainIndex = 0;
         for (const block of cleanBlocks) {
-          expect(plainSet.has(block)).toBe(true);
+          while (
+            plainIndex < plainBlocks.length &&
+            plainBlocks[plainIndex] !== block
+          ) {
+            plainIndex++;
+          }
+          expect(plainIndex).toBeLessThan(plainBlocks.length);
+          plainIndex++;
         }
 
         const protectedBlocks = plainBlocks.filter(isProtectedBlock);

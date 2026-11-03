@@ -706,7 +706,9 @@ const configSchema = z.object({
   ONLY_CLEAN_CONTENT_MODE: emptyStringAsDefault(
     z.enum(["off", "shadow", "on"]).default("off"),
   ),
-  ONLY_CLEAN_CONTENT_PERCENT: z.coerce.number().min(0).max(100).default(100),
+  ONLY_CLEAN_CONTENT_PERCENT: emptyStringAsDefault(
+    z.coerce.number().min(0).max(100).default(100),
+  ),
   // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
   // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
   // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls

@@ -32,6 +32,18 @@ describe("splitMarkdownBlocks", () => {
     ]);
   });
 
+  it("keeps an indented fence inside a list item in one block", () => {
+    const md =
+      "1. Run:\n\n    ```sh\n    npm i\n\n    npm test\n    ```\n\nAfter";
+    const blocks = splitMarkdownBlocks(md);
+    expect(blocks).toEqual([
+      "1. Run:",
+      "    ```sh\n    npm i\n\n    npm test\n    ```",
+      "After",
+    ]);
+    expect(isProtectedBlock(blocks[1])).toBe(true);
+  });
+
   it("does not open a fence on an inline triple-backtick line", () => {
     const md = "```inline``` code\n\nNext";
     expect(splitMarkdownBlocks(md)).toEqual(["```inline``` code", "Next"]);
@@ -101,6 +113,12 @@ describe("stripHeadingAnchorLinks", () => {
     );
   });
 
+  it("leaves headings without anchor links byte for byte", () => {
+    expect(stripHeadingAnchorLinks("##   Spaced title  ")).toBe(
+      "##   Spaced title  ",
+    );
+  });
+
   it("leaves blocks with fenced code untouched", () => {
     const block = "```md\n## A [#](#a)\n```";
     expect(stripHeadingAnchorLinks(block)).toBe(block);
@@ -156,11 +174,11 @@ describe("applyBlockRemovals", () => {
     }
   });
 
-  it("keeps the original and warns when every block would be removed", () => {
-    const plain = ["Nav", "Text", "Footer"];
-    const result = applyBlockRemovals(plain.join("\n\n"), plain, [0, 1, 2]);
-    expect(result.markdown).toBe(plain.join("\n\n"));
-    expect(result.warning).toContain("whole page");
+  it("keeps the original and warns when every removable block would be removed", () => {
+    const result = applyBlockRemovals(original, blocks, [0, 1, 2, 3, 4]);
+    expect(result.markdown).toBe(original);
+    expect(result.warning).toContain("all of the page's text");
+    expect(result.stats.protectedHits).toBe(2);
   });
 
   it("warns when most of the page's text is removed", () => {
