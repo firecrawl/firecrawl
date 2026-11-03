@@ -569,7 +569,7 @@ export class WebCrawler {
    * @param abort Optional signal that cancels sitemap discovery.
    * @param mock Optional scrape fixture used for sitemap requests.
    * @param maxAge Maximum cache age for sitemap responses, in milliseconds.
-   * @returns The number of discovered URLs dispatched to the caller.
+   * @returns The aggregate count reported by sitemap processing, which may differ from URLs delivered to the caller.
    */
   public async tryGetSitemap(
     urlsHandler: (urls: string[]) => unknown,
