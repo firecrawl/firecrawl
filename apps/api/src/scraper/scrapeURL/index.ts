@@ -607,6 +607,7 @@ async function buildMetaObject(
 export type InternalOptions = {
   teamId: string;
   crawlId?: string;
+  origin?: string;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];

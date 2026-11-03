@@ -28,6 +28,7 @@ type RouteInput = {
   orgId?: string | null;
   /** The URL is on the team's blocklist, so the Exchange is the only way to serve it. */
   blocked?: boolean;
+  origin?: string | null;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -541,6 +542,11 @@ async function getProviderAccessDecision(
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
+  // The Exchange scrapes through Firecrawl; routing those back would loop.
+  if (input.origin === "exchange") {
+    return false;
+  }
+
   // Blocked URLs go to the Exchange for every team, since nothing else may
   // serve them; elsewhere it replaces a normal scrape only for the beta.
   if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {

@@ -706,6 +706,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
       blocked,
+      origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
       headers: meta.options.headers,
