@@ -8,7 +8,7 @@ import {
   discoverSkills,
   isAlexandriaSkillsSource,
   SKILLS_DISCOVERY_TIMEOUT_MS,
-  type SkillCard,
+  type SkillDiscovery,
 } from "./alexandria-skills";
 import {
   AUTO_TOOLS_WAIT_MS,
@@ -111,6 +111,8 @@ interface SearchExecuteResult {
   /** The tools were added automatically, not requested. */
   toolsAuto?: boolean;
   toolsUnavailable?: boolean;
+  /** Skill-card lookup returned the Exchange envelope, including an empty one. */
+  skillsDiscovered?: boolean;
   response: SearchV2Response;
   totalResultsCount: number;
   resultCountsBySource: SearchResultCountsBySource;
@@ -151,6 +153,7 @@ export async function executeSearch(
   const toolsAllowed =
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
+  const missedSkills: SkillDiscovery = { skills: [], succeeded: false };
   const skillsPromise =
     toolsAllowed && wantsSkills && query.trim()
       ? discoverSkills(
@@ -158,11 +161,12 @@ export async function executeSearch(
             teamId,
             query,
             timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
+            usOnly,
           },
           logger,
         ).catch(error => {
           logger.warn("Skill discovery failed", { error });
-          return [] as SkillCard[];
+          return missedSkills;
         })
       : null;
   const toolIntent =
@@ -626,8 +630,11 @@ export async function executeSearch(
     }));
   }
 
+  let skillsDiscovered = false;
   if (skillsPromise) {
-    searchResponse.skills = await skillsPromise;
+    const found = await skillsPromise;
+    searchResponse.skills = found.skills;
+    skillsDiscovered = found.succeeded;
   }
 
   const scrapeFormats = scrapeOptions?.formats
@@ -676,6 +683,7 @@ export async function executeSearch(
     toolsWarning,
     toolsUnavailable,
     toolsAuto,
+    skillsDiscovered,
     totalResultsCount,
     // Counted from the final response — after scraping and highlights — so it
     // matches exactly what the client can address by position.

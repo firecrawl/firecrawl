@@ -33,6 +33,16 @@ export type SkillCard = {
   similarity?: number;
 };
 
+export type SkillDiscovery = {
+  skills: SkillCard[];
+  /** True only when Exchange returned the skill-card envelope. */
+  succeeded: boolean;
+};
+
+function missed(): SkillDiscovery {
+  return { skills: [], succeeded: false };
+}
+
 function toCard(value: z.infer<typeof skillCardSchema>): SkillCard {
   return {
     id: value.id,
@@ -49,14 +59,21 @@ function toCard(value: z.infer<typeof skillCardSchema>): SkillCard {
 /**
  * Short skill cards for a search query. Failures, including timeouts and a
  * missing Exchange, resolve to an empty list so the rest of the search can
- * still succeed. Only the query is sent.
+ * still succeed. `succeeded` is false for those paths and for a query that
+ * is empty or longer than Exchange accepts. Only the query is sent.
  */
 export async function discoverSkills(
-  input: { teamId: string; query: string; timeoutMs: number },
+  input: {
+    teamId: string;
+    query: string;
+    timeoutMs: number;
+    /** The team may only be served by US-based providers. */
+    usOnly?: boolean;
+  },
   logger: Logger,
-): Promise<SkillCard[]> {
+): Promise<SkillDiscovery> {
   const query = input.query.trim();
-  if (!query || query.length > MAX_QUERY_CHARS) return [];
+  if (!query || query.length > MAX_QUERY_CHARS) return missed();
   const params = new URLSearchParams({
     q: query,
     limit: String(SKILLS_DISCOVERY_LIMIT),
@@ -70,10 +87,11 @@ export async function discoverSkills(
         1,
         Math.min(input.timeoutMs, SKILLS_DISCOVERY_TIMEOUT_MS),
       ),
+      usOnly: input.usOnly === true,
     });
     if (result.status !== 200) {
       logger.warn("Skill discovery unavailable", { status: result.status });
-      return [];
+      return missed();
     }
     const parsed = z
       .object({
@@ -83,7 +101,7 @@ export async function discoverSkills(
       .safeParse(result.body);
     if (!parsed.success) {
       logger.warn("Skill discovery returned an unexpected body");
-      return [];
+      return missed();
     }
     const cards: SkillCard[] = [];
     let dropped = 0;
@@ -98,9 +116,9 @@ export async function discoverSkills(
     }
     if (dropped)
       logger.warn("Skill discovery dropped invalid cards", { dropped });
-    return cards;
+    return { skills: cards, succeeded: true };
   } catch (error) {
     logger.warn("Skill discovery failed", { error });
-    return [];
+    return missed();
   }
 }

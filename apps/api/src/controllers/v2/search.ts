@@ -676,7 +676,7 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
-    if (result.response.tools || result.response.skills) {
+    if (result.response.tools || result.skillsDiscovered) {
       markAlexandriaActivity(req.auth.team_id);
     }
     if (result.response.tools) {

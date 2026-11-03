@@ -1,4 +1,5 @@
 import type { Action } from "../controllers/v1/types";
+import type { SkillCard } from "../search/alexandria-skills";
 import type { BrandingProfile } from "../types/branding";
 
 export type PageOptions = {
@@ -165,7 +166,7 @@ export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
   tools?: import("../services/alexandria/contracts").DiscoveredTool[];
-  skills?: import("../search/alexandria-skills").SkillCard[];
+  skills?: SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];

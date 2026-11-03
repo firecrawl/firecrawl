@@ -66,6 +66,7 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { searchController } from "../search";
+import { markAlexandriaActivity } from "../../../lib/alexandria-activity";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -433,6 +434,7 @@ describe("skill discovery source", () => {
     mockExecuteSearch.mockResolvedValue(
       executeResult({
         response: { skills: [card] },
+        skillsDiscovered: true,
         totalResultsCount: 0,
         indexResultsCount: 0,
         searchCredits: 0,
@@ -462,12 +464,14 @@ describe("skill discovery source", () => {
         data: { skills: [card] },
       }),
     );
+    expect(markAlexandriaActivity).toHaveBeenCalledWith(TEAM_ID);
   });
 
   it("answers 200 with empty cards when discovery produced nothing", async () => {
     mockExecuteSearch.mockResolvedValue(
       executeResult({
         response: { skills: [] },
+        skillsDiscovered: false,
         totalResultsCount: 0,
         indexResultsCount: 0,
         searchCredits: 0,
@@ -486,6 +490,28 @@ describe("skill discovery source", () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true, data: { skills: [] } }),
     );
+    expect(markAlexandriaActivity).not.toHaveBeenCalled();
+  });
+
+  it("opens the feedback window for a successful lookup that matched nothing", async () => {
+    mockExecuteSearch.mockResolvedValue(
+      executeResult({
+        response: { skills: [] },
+        skillsDiscovered: true,
+        totalResultsCount: 0,
+        indexResultsCount: 0,
+        searchCredits: 0,
+        totalCredits: 0,
+      }),
+    );
+    const res = makeRes();
+
+    await searchController(
+      makeReq({ query: "records", sources: ["alexandria-skills"] }),
+      res,
+    );
+
+    expect(markAlexandriaActivity).toHaveBeenCalledWith(TEAM_ID);
   });
 
   it("requires a query", async () => {

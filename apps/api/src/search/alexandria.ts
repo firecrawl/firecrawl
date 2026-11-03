@@ -27,12 +27,28 @@ const typeOf = (value: SourceLike | CategoryLike) =>
 
 const CATALOGUE_SOURCES = new Set(["alexandria", "alexandria-skills"]);
 
+// Same strings the search schema rewrites to "developer" before the controller
+// runs. The credit middleware sees the raw body, so the aliases have to count
+// here too.
+const DEVELOPER_CATEGORY_ALIASES = new Set([
+  "repo",
+  "code",
+  "developer",
+  "docs",
+  "devdex",
+  "repo_search",
+  "developer_index",
+]);
+
 function excludesIndexCategory(categories: unknown): boolean {
   return (
     Array.isArray(categories) &&
     categories.some(category => {
       const type = typeOf(category);
-      return type === "developer" || type === "gov";
+      return (
+        type === "gov" ||
+        (type !== undefined && DEVELOPER_CATEGORY_ALIASES.has(type))
+      );
     })
   );
 }

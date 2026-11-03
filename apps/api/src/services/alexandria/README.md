@@ -20,9 +20,12 @@ URL matching only.
 `sources` may also include `alexandria-skills`. That asks Exchange
 `GET /v1/discover/skill-cards` with the search query and returns up to 3 short cards
 on `data.skills` (`id`, `name`, `description`, `source`, and when present
-`provider` and `similarity`). It is free, uses the same access rules as
-`alexandria`, and a timeout or error yields `data.skills: []` without failing
-the search. The card is not the full skill; the `id` is how that skill is
+`provider` and `similarity`). It is free and uses the same access rules as
+`alexandria`. A timeout, a non-200, an unexpected body, or a card that fails
+validation yields `data.skills: []` without failing the search. Invalid cards
+are dropped, and a response whose cards are all invalid is an empty list. A
+query longer than 2000 characters skips the lookup and yields the same empty
+list. The card is not the full skill; the `id` is how that skill is
 loaded later. Tool discovery does not read skills from find-tools.
 
 ```json

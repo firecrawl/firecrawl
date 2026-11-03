@@ -120,7 +120,7 @@ beforeEach(() => {
     status: "available",
     items: [{ id: "fred/series/observations" }],
   });
-  mocks.discoverSkills.mockResolvedValue([]);
+  mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: false });
   mocks.verifyTools.mockImplementation(async (_query, items) => items);
 });
 
@@ -885,7 +885,10 @@ describe("executeSearch skill cards", () => {
 
   it("starts skill discovery before the web search and maps the cards", async () => {
     const order: string[] = [];
-    let releaseSkills: (cards: unknown[]) => void = () => {};
+    let releaseSkills: (found: {
+      skills: unknown[];
+      succeeded: boolean;
+    }) => void = () => {};
     mocks.discoverSkills.mockImplementation(
       () =>
         new Promise(resolve => {
@@ -895,7 +898,7 @@ describe("executeSearch skill cards", () => {
     );
     mocks.search.mockImplementation(async () => {
       order.push("web");
-      releaseSkills([card]);
+      releaseSkills({ skills: [card], succeeded: true });
       return { web: [developerResult] };
     });
 
@@ -914,6 +917,7 @@ describe("executeSearch skill cards", () => {
         teamId: "team-1",
         query: "retries",
         timeoutMs: 1000,
+        usOnly: false,
       }),
       logger,
     );
@@ -921,6 +925,7 @@ describe("executeSearch skill cards", () => {
       expect.objectContaining({ type: ["web"] }),
     );
     expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
     expect(result.response.web).toHaveLength(1);
     expect(result.searchCredits).toBe(2);
   });
@@ -940,11 +945,15 @@ describe("executeSearch skill cards", () => {
 
     expect(result.response.web).toHaveLength(1);
     expect(result.response.skills).toEqual([]);
+    expect(result.skillsDiscovered).toBe(false);
     expect(result.searchCredits).toBe(2);
   });
 
   it("does not run or bill web search for a skills-only request", async () => {
-    mocks.discoverSkills.mockResolvedValue([card]);
+    mocks.discoverSkills.mockResolvedValue({
+      skills: [card],
+      succeeded: true,
+    });
 
     const result = await executeSearch(
       { ...options([]), sources: [{ type: "alexandria-skills" }] },
@@ -954,7 +963,65 @@ describe("executeSearch skill cards", () => {
 
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
     expect(result.searchCredits).toBe(0);
     expect(result.totalCredits).toBe(0);
+  });
+
+  it.each([
+    ["zero data retention", { zeroDataRetention: true }, {}],
+    ["zdr enterprise mode", {}, { enterprise: ["zdr"] }],
+    ["anon enterprise mode", {}, { enterprise: ["anon"] }],
+  ])(
+    "skips skill discovery under %s",
+    async (_label, contextOverrides, optionOverrides) => {
+      mocks.search.mockResolvedValue({ web: [developerResult] });
+
+      const result = await executeSearch(
+        {
+          ...options([]),
+          sources: [{ type: "web" }, { type: "alexandria-skills" }],
+          ...optionOverrides,
+        },
+        { ...context, ...contextOverrides },
+        logger,
+      );
+
+      expect(mocks.discoverSkills).not.toHaveBeenCalled();
+      expect(result.response).not.toHaveProperty("skills");
+      expect(result.skillsDiscovered).toBe(false);
+    },
+  );
+
+  it("skips skill discovery when the query is empty", async () => {
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "   ",
+        sources: [{ type: "alexandria-skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(mocks.discoverSkills).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).not.toHaveProperty("skills");
+    expect(result.skillsDiscovered).toBe(false);
+  });
+
+  it("forwards a US-only team to skill discovery", async () => {
+    mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: true });
+
+    await executeSearch(
+      { ...options([]), sources: [{ type: "alexandria-skills" }] },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+
+    expect(mocks.discoverSkills).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
+    );
   });
 });
