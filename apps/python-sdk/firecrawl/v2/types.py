@@ -626,7 +626,6 @@ class Category(BaseModel):
     `search()` to their own index.
 
     Supported categories:
-    - "github": Restrict web results to github.com (a `site:` filter)
     - "research": Restrict web results to a fixed list of ~14 academic
       *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
       ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). This is a
@@ -637,6 +636,9 @@ class Category(BaseModel):
       documentation) served in `web`; cannot be combined with other categories
     - "gov": Government Index results served in `web`; cannot be combined
       with other categories
+
+    The "github" category is removed. Use "developer" for GitHub issues, pull
+    requests and READMEs.
 
     .. warning::
        ``categories=["research"]`` is **not** Firecrawl's research paper index.

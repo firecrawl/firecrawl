@@ -307,7 +307,7 @@ var results = await client.SearchAsync("firecrawl web scraping",
 
 ### Developer Search
 
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `DeveloperSearchAsync` replaces the deprecated `SearchGitHubAsync`.
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
 
 ```csharp
 var response = await client.DeveloperSearchAsync("retry an http request with exponential backoff",

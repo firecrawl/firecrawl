@@ -409,8 +409,11 @@ impl Client {
 
     /// Search the research index GitHub slice.
     ///
-    /// Stops responding after 2026-11-03. Use [`Client::developer_search`].
-    #[deprecated(note = "Use Client::developer_search; sunset 2026-11-03")]
+    /// The research index GitHub search endpoint was removed after 2026-11-03.
+    /// Use [`Client::developer_search`] instead.
+    #[deprecated(
+        note = "The research index GitHub search endpoint was removed after 2026-11-03. Use Client::developer_search instead."
+    )]
     pub async fn search_github(
         &self,
         query_text: impl AsRef<str>,

@@ -243,6 +243,10 @@ results = firecrawl.search("nanopore basecalling accuracy", categories=["researc
 
 ### Developer search
 
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
 Use `developer_search` for the dedicated developer index and its complete
 filter and response contract. Generic `search(categories=["developer"])`
 returns only the first passage as a description and does not accept these
@@ -335,14 +339,6 @@ related = firecrawl.related_papers(
     k=20,
 )
 ```
-
-> **`search_github` is deprecated.** The research index GitHub endpoint stops
-> responding after 2026-11-03. Use `developer_search` instead: it searches
-> GitHub issues, pull requests and readmes plus curated documentation sources,
-> returns matched passages, and adds filters for repo, language, license and
-> stars. It does not carry over the `scores` breakdown or the
-> `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 > **Response keys are camelCase.** Unlike the rest of the SDK, the research
 > methods return the raw JSON body as a `dict` — they are not parsed into typed
