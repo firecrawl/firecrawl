@@ -1324,6 +1324,39 @@ describe("Jev request building", () => {
     expect(describeColor("#1A73E8")).toBe("vivid blue");
   });
 
+  it("names the family a stack renders, not its alias or its system fallbacks", () => {
+    // Wix serves a licensed face under a per-site alias and keeps the real
+    // name further down the stack.
+    expect(
+      cleanFontFamily(
+        "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
+      ),
+    ).toBe("Libre Baskerville");
+    expect(cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd")).toBeUndefined();
+    // Monotype spellings on Wix.
+    expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
+    expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
+    expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
+    expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe("DIN Neuzeit Grotesk");
+    // Self-hosted builds and a weight glued onto a lowercase alias.
+    expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
+    expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
+    expect(cleanFontFamily("orig_graphikextralight")).toBe("Graphik");
+    expect(cleanFontFamily("Cooper Black")).toBe("Cooper Black");
+    // A system stack asks for the visitor's font: Segoe UI and Roboto are
+    // its spellings per platform, not the brand's choice.
+    expect(
+      cleanFontFamily("-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"),
+    ).toBeUndefined();
+    expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
+    // A real face ahead of the system stack is still that face (hyphenated
+    // self-hosted names keep their spelling).
+    expect(
+      cleanFontFamily("Salesforce-Sans, system-ui, -apple-system, Segoe UI"),
+    ).toBe("Salesforce-Sans");
+  });
+
   it("cleans font names in code", () => {
     expect(cleanFontFamily("__Roboto_Mono_c8ca7d")).toBe("Roboto Mono");
     expect(cleanFontFamily("__suisse_6d5c28")).toBe("Suisse");
