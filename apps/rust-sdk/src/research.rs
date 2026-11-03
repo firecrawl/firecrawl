@@ -412,7 +412,7 @@ impl Client {
     /// The research index GitHub search endpoint was removed after 2026-11-03.
     /// Use [`Client::developer_search`] instead.
     #[deprecated(
-        note = "The research index GitHub search endpoint was removed after 2026-11-03; use Client::developer_search"
+        note = "The research index GitHub search endpoint was removed after 2026-11-03. Use Client::developer_search instead."
     )]
     pub async fn search_github(
         &self,

@@ -2328,7 +2328,7 @@ export interface SimilarPapersResponse {
 }
 
 /**
- * Component scores. The research index GitHub search no longer returns them.
+ * Component scores.
  *
  * @deprecated The research index GitHub search endpoint was removed after
  * 2026-11-03. Use `developerSearch()` instead. See

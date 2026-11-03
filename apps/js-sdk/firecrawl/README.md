@@ -218,6 +218,10 @@ const results = await app.search('nanopore basecalling accuracy', {
 
 ### Developer search
 
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
 Use `developerSearch` for the dedicated developer index and its complete filter
 and response contract. Generic `search(..., { categories: ['developer'] })`
 returns developer results inside `.web` in the ordinary web-result shape
@@ -312,10 +316,6 @@ const related = await app.research.similarPapers('pmid:<id>', {
   k: 20,
 });
 ```
-
-> The research index GitHub search was removed after 2026-11-03. To search
-> GitHub issues, pull requests and READMEs, use `app.developerSearch` (see
-> Developer search above).
 
 ### Scrape-bound interactive browsing (v2)
 

@@ -2,7 +2,7 @@
 
 ## [2.21.9] - 2026-11-04
 
-### Deprecated
+### Changed
 
 - `Client::search_github`: the research index GitHub search endpoint it calls
   was removed after 2026-11-03. Use `Client::developer_search` instead. The

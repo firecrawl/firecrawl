@@ -190,8 +190,7 @@ Args:
     k: Maximum number of results to return.
 
 Raises:
-    FirecrawlError: The hosted API now answers with an error carrying the
-        removal message.
+    FirecrawlError: Always. The API answers 410 Gone with the removal message.
 """
 
 SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
@@ -306,8 +305,7 @@ Args:
     **kwargs: ``k``.
 
 Raises:
-    FirecrawlError: The hosted API now answers with an error carrying the
-        removal message.
+    FirecrawlError: Always. The API answers 410 Gone with the removal message.
 """
 
 CLIENT_SEARCH_PAPERS_DOC = _CLIENT_SEARCH_PAPERS_TEMPLATE.replace(_AWAIT, "")

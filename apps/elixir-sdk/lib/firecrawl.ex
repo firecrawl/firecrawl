@@ -381,7 +381,7 @@ defmodule Firecrawl do
   Deprecated: the research index GitHub search endpoint was removed after
   2026-11-03. Use `search_developer/2` instead.
   """
-  @deprecated "Use search_developer/2; the endpoint was removed after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer/2 instead."
   @spec search_github(keyword(), keyword()) :: response()
   def search_github(params \\ [], opts \\ []) do
     with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
@@ -392,9 +392,10 @@ defmodule Firecrawl do
   @doc """
   Bang variant of `search_github`. Raises on error.
 
-  Deprecated: use `search_developer!/2`.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer!/2` instead.
   """
-  @deprecated "Use search_developer!/2; the endpoint was removed after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer!/2 instead."
   @spec search_github!(keyword(), keyword()) :: Req.Response.t()
   def search_github!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @research_search_github_schema)

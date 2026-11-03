@@ -27,7 +27,8 @@ pub struct SearchOptions {
     /// Discovery response detail; defaults to compact.
     pub tool_detail: Option<crate::types::ToolDetail>,
 
-    /// Categories to filter results (research, pdf). `Github` is removed.
+    /// Categories to filter results (research, pdf). `Github` was removed; use
+    /// `Client::developer_search` instead.
     pub categories: Option<Vec<SearchCategory>>,
 
     /// Domains to include in search results.
