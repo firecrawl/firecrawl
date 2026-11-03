@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 from .agent_hints import agent_hint_metadata
 
 PROVIDER_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED"
+CATEGORY_REMOVED_CODE = "CATEGORY_REMOVED"
 
 
 class FirecrawlError(Exception):
@@ -167,7 +168,9 @@ def handle_response_error(response: requests.Response, action: str) -> None:
             message = f"{message} - {error_details}"
         raise error_class(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
 
-    if response.status_code == 400:
+    if response.status_code == 400 and code == CATEGORY_REMOVED_CODE:
+        raise BadRequestError(error_message, response.status_code, response, code=code, charge_id=charge_id, **hints)
+    elif response.status_code == 400:
         message = f"Bad Request: Failed to {action}. {error_message} - {error_details}"
         raise BadRequestError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 401:
@@ -184,6 +187,8 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     elif response.status_code == 408:
         message = f"Request Timeout: Failed to {action} as the request timed out. {error_message} - {error_details}"
         raise RequestTimeoutError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
+    elif response.status_code == 410:
+        raise FirecrawlError(error_message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 429:
         message = f"Rate Limit Exceeded: Failed to {action}. {error_message} - {error_details}"
         raise RateLimitError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
