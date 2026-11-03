@@ -479,11 +479,10 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
       "stays silent for every other category",
       async () => {
         const raw = await searchRaw(
-          { query: "firecrawl", categories: ["github"] } as any,
+          { query: "firecrawl", categories: ["pdf"] },
           identity,
         );
-        expect(raw.statusCode).toBe(400);
-        expect(raw.body.error).toContain("/v2/search/developer");
+        expect(raw.statusCode).toBe(200);
         expect(raw.headers["warning"]).toBeUndefined();
         expect(raw.body.warnings).toBeUndefined();
       },

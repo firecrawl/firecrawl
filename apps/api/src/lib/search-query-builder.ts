@@ -38,7 +38,10 @@ const DEFAULT_RESEARCH_SITES = [
   "medrxiv.org",
 ];
 
-export function hasCategory(categories: unknown, type: string): boolean {
+export function hasCategory(
+  categories: unknown,
+  type: CategoryInput["type"] | "github",
+): boolean {
   return (
     Array.isArray(categories) &&
     categories.some(c => (typeof c === "string" ? c : c?.type) === type)

@@ -169,7 +169,9 @@ async function searchControllerInner(
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {
-      logger.warn("Removed github search category requested", {
+      logger.warn("Removed search category requested", {
+        module: "deprecations",
+        category: "github",
         origin: requestOrigin({ origin: rawOrigin }, req),
       });
       return res.status(400).json({
