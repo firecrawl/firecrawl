@@ -800,9 +800,7 @@ async function scrapeURLLoopIter(
           length: engineResult.html?.trim().length ?? 0,
         },
       );
-      throw Object.assign(new AddFeatureError(["stealthProxy"]), {
-        statusCode: engineResult.statusCode,
-      });
+      throw new AddFeatureError(["stealthProxy"]);
     }
 
     // NOTE: TODO: what to do when status code is bad is tough...
@@ -1009,11 +1007,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 error: error.error,
               });
               if (testArm) {
-                if (
-                  experiment === "skip-enhanced-retry-after-site-protection"
-                ) {
-                  remainingEngines.shift();
-                }
                 enginePromises = enginePromises.filter(
                   x => x.engine !== error.engine,
                 );
