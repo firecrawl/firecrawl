@@ -10108,6 +10108,10 @@
                           "type": "string",
                           "description": "The variant SKU."
                         },
+                        "gtin": {
+                          "type": "string",
+                          "description": "The variant's GTIN (EAN, UPC or ISBN), digits only. Present only when the page or store states one."
+                        },
                         "title": {
                           "type": "string",
                           "description": "The variant title."

@@ -577,6 +577,7 @@ export interface ProductSale {
 export interface ProductVariant {
   id?: string;
   sku?: string;
+  gtin?: string;
   title?: string;
   values?: Record<string, unknown>;
   price?: ProductPrice;

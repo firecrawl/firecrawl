@@ -329,6 +329,7 @@ class ProductVariant(BaseModel):
 
     id: Optional[str] = None
     sku: Optional[str] = None
+    gtin: Optional[str] = None
     title: Optional[str] = None
     values: Optional[Dict[str, Any]] = None
     price: Optional[ProductPrice] = None
