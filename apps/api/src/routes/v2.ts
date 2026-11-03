@@ -60,7 +60,10 @@ import {
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
@@ -733,6 +736,13 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
+  // Removed after its 2026-11-03 sunset. Registered before the mounts below so
+  // the 410 answers ahead of their auth.
+  v2Router.get(
+    ["/search/research/github", "/research/github"],
+    removedEndpointHandler("v2_research_github_search"),
+  );
+
   v2Router.use(
     "/search/research",
     authMiddleware(RateLimiterMode.Research, {
