@@ -161,7 +161,7 @@ export function buildFirePdfJobOptions(args: {
   pageMarkers: boolean;
   tableFormat: string | undefined;
   trainingCapture: FirePdfTrainingCapture | undefined;
-  dataRegion?: string;
+  dataRegion: string | undefined;
 }): Record<string, unknown> {
   return {
     // fire-pdf accepts only a positive integer here. When the router has no

@@ -367,7 +367,7 @@ describe("FirePDF async jobs for US-only teams", () => {
     expect(savePdfResultToCache).not.toHaveBeenCalled();
   });
 
-  it("puts data_region in the content lookup's job options only for a US-only team", async () => {
+  it("forwards data_region from the caller's job options to the content lookup", async () => {
     const lookupHit = {
       matchUrl: /\/jobs\/lookup$/,
       matchMethod: "POST" as const,
