@@ -24,6 +24,8 @@ const productVariantSchema = z.object({
   id: z.string().optional(),
   sku: z.string().optional(),
   gtin: z.string().optional(),
+  mpn: z.string().optional(),
+  condition: z.enum(["new", "used", "refurbished", "damaged"]).optional(),
   title: z.string().optional(),
   values: z.record(z.string(), z.unknown()).optional(),
   price: productPriceSchema.optional(),
