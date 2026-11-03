@@ -125,6 +125,10 @@ describe.each([
         headers: expect.objectContaining({ "firecrawl-us-only": "true" }),
       }),
     );
+    expect(res.setHeader).toHaveBeenLastCalledWith(
+      "content-type",
+      "application/json",
+    );
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
       success: false,

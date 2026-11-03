@@ -460,6 +460,7 @@ function createResearchController(
           "This endpoint is not available for teams restricted to US-only processing.",
         );
         error = refusal.message;
+        res.setHeader("content-type", "application/json");
         return res.status(403).json({
           success: false,
           code: "US_ONLY_UNAVAILABLE",
