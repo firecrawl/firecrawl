@@ -591,7 +591,7 @@ describe("executeSearch developer category", () => {
   it("rejects developer combined with other categories at the schema", () => {
     const mixed = searchRequestSchema.safeParse({
       query: "retries",
-      categories: ["developer", "github"],
+      categories: ["developer", "pdf"],
     });
     expect(mixed.success).toBe(false);
     if (!mixed.success) {
