@@ -1344,6 +1344,12 @@ describe("Jev request building", () => {
     expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
     expect(cleanFontFamily("orig_graphikextralight")).toBe("Graphik");
     expect(cleanFontFamily("Cooper Black")).toBe("Cooper Black");
+    // A weight alone is still no family, and a known family is matched
+    // once its glued weight is gone.
+    expect(cleanFontFamily("semibold")).toBeUndefined();
+    expect(cleanFontFamily("proximanovabold")).toBe("Proxima Nova");
+    // Non-Latin faces are families too.
+    expect(cleanFontFamily("思源黑体, sans-serif")).toBe("思源黑体");
     // A system stack asks for the visitor's font: Segoe UI and Roboto are
     // its spellings per platform, not the brand's choice.
     expect(

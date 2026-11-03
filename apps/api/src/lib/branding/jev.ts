@@ -30,6 +30,7 @@ import {
 import { sampled } from "../rollout";
 import {
   GENERIC_FONTS,
+  knownFamily,
   normalizeVendorName,
   renderedFamily,
 } from "./font-names";
@@ -307,15 +308,16 @@ export function cleanFontFamily(raw: string): string | undefined {
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
-  // Vendor spellings: "orig_libre_baskerville", "helvetica-w01-roman".
+  // Vendor spellings and build suffixes: "orig_libre_baskerville",
+  // "helvetica-w01-roman", "inter-variable-web".
   name = normalizeVendorName(name);
-  // Self-hosted builds: "inter-variable-web", "recoleta-web", "Gotham-Webfont".
-  name = name.replace(/(?:[-_]+(?:variable|vf|web|webfont))+$/i, "");
+  // A name that is only a weight ("Regular", "semibold") is not a family.
+  if (FONT_WEIGHT.test(name)) return undefined;
   // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
   const glued = name.match(
     /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
   );
-  if (glued) name = glued[1];
+  if (glued) name = knownFamily(glued[1]) ?? glued[1];
   // "Roboto_Black": the weight goes before underscores turn into spaces.
   while (DELIMITED_WEIGHT_SUFFIX.test(name))
     name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
@@ -330,6 +332,8 @@ export function cleanFontFamily(raw: string): string | undefined {
   while (FONT_WEIGHT_SUFFIX.test(name))
     name = name.replace(FONT_WEIGHT_SUFFIX, "");
   name = splitCamelCase(name);
+  // A known family can only be matched once its weight is gone.
+  name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
   if (name === name.toLowerCase()) {
     name = name.replace(/\b\w/g, ch => ch.toUpperCase());

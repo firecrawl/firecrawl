@@ -54,13 +54,19 @@ export const isSystemStack = (stack: readonly string[]): boolean => {
 };
 
 /**
- * What a stack is set in when it names no brand face: the system font, or
- * its generic family ("sans-serif"). For reporting a page's typography.
+ * What a stack is set in when it names no brand face: the system font
+ * ("-apple-system" and "BlinkMacSystemFont" are system-ui; "ui-serif" and
+ * "ui-monospace" are themselves), or its generic family ("sans-serif").
+ * For reporting a page's typography.
  */
 export const genericFamily = (stack: readonly string[]): string | undefined => {
-  if (isSystemStack(stack)) return "system-ui";
   const first = stack.map(unquote).find(Boolean);
-  return first && GENERIC_FONTS.has(first.toLowerCase()) ? first : undefined;
+  if (!first) return undefined;
+  const head = first.toLowerCase();
+  if (head === "-apple-system" || head === "blinkmacsystemfont") {
+    return "system-ui";
+  }
+  return GENERIC_FONTS.has(head) ? head : undefined;
 };
 
 /**
@@ -75,8 +81,9 @@ export function renderedFamily(stack: readonly string[]): string | undefined {
   for (const family of families) {
     if (/^var\(/i.test(family)) continue;
     if (isHashedAlias(family)) continue;
-    // A one-letter or digits-only "family" is a broken declaration.
-    if (!/[a-z].*[a-z]/i.test(family)) continue;
+    // A one-letter or digits-only "family" is a broken declaration. Any
+    // script counts: brands set in CJK or Cyrillic faces name them as such.
+    if (!/\p{L}.*\p{L}/u.test(family)) continue;
     if (GENERIC_FONTS.has(family.toLowerCase())) return undefined;
     return family;
   }
@@ -88,23 +95,45 @@ export function renderedFamily(stack: readonly string[]): string | undefined {
 // `orig_` prefix Wix puts on the face behind an alias.
 const VENDOR_SUFFIX =
   /(?:[-_]?lt)?[-_]?w0\d(?:[-_]?(?:regular|reg|roman|book|bold|light|medium|italic|it))?[-_]*$/i;
-const KNOWN_FAMILIES: Record<string, string> = {
-  dinneuzeitgrotesk: "DIN Neuzeit Grotesk",
-  proximan: "Proxima Nova",
-  proximanova: "Proxima Nova",
-  helveticaneue: "Helvetica Neue",
-  avenir: "Avenir",
-  avenirnext: "Avenir Next",
-  futura: "Futura",
-  opensans: "Open Sans",
-};
+const KNOWN_FAMILIES = new Map<string, string>([
+  ["dinneuzeitgrotesk", "DIN Neuzeit Grotesk"],
+  ["proximan", "Proxima Nova"],
+  ["proximanova", "Proxima Nova"],
+  ["helveticaneue", "Helvetica Neue"],
+  ["avenir", "Avenir"],
+  ["avenirnext", "Avenir Next"],
+  ["futura", "Futura"],
+  ["opensans", "Open Sans"],
+]);
 
-/** Strips vendor prefixes and suffixes; a name that matches a known family gets its proper spelling. */
+/** The proper spelling of a family the vendor spells its own way, if we know it. */
+export const knownFamily = (name: string): string | undefined =>
+  KNOWN_FAMILIES.get(name.toLowerCase().replace(/[\s_-]/g, ""));
+
+/**
+ * Strips vendor prefixes and suffixes (orig_, -v2, -w01-roman, build
+ * suffixes such as -variable-web); a name that matches a known family gets
+ * its proper spelling.
+ */
 export function normalizeVendorName(name: string): string {
   let out = name.replace(/^orig_/i, "").replace(/-v\d+$/i, "");
   if (VENDOR_SUFFIX.test(out) && out.replace(VENDOR_SUFFIX, "").length >= 3) {
     out = out.replace(VENDOR_SUFFIX, "");
   }
-  const key = out.toLowerCase().replace(/[\s_-]/g, "");
-  return KNOWN_FAMILIES[key] ?? out;
+  out = out.replace(/(?:[-_]+(?:variable|vf|web|webfont))+$/i, "");
+  return knownFamily(out) ?? out;
+}
+
+/**
+ * A family name as the API reports it: vendor spellings resolved,
+ * underscores read as spaces, and an all-lowercase alias title-cased.
+ * The Jev client goes further (weights, camel case); this is the shared
+ * floor the processor's own output also meets.
+ */
+export function displayFamily(name: string): string {
+  let out = normalizeVendorName(name).replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  if (out && out === out.toLowerCase()) {
+    out = out.replace(/\b\w/g, ch => ch.toUpperCase());
+  }
+  return knownFamily(out) ?? out;
 }

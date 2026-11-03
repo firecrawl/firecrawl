@@ -69,12 +69,9 @@ describe("fonts the page renders", () => {
     );
 
     // Not "Segoe UI" or "Roboto": a system stack names no brand font, and
-    // the fallbacks of a styled stack are not what it renders.
-    expect(families(profile)).toEqual([
-      "inter-variable-web:4",
-      "recoleta-web:1",
-      "Georgia:1",
-    ]);
+    // the fallbacks of a styled stack are not what it renders. Build
+    // suffixes come off the names the API reports.
+    expect(families(profile)).toEqual(["Inter:4", "Recoleta:1", "Georgia:1"]);
   });
 
   it("looks past a site builder's hashed alias to the face behind it", () => {
@@ -90,7 +87,8 @@ describe("fonts the page renders", () => {
       ),
     );
 
-    expect(families(profile)).toEqual(["orig_libre_baskerville:4", "Arial:1"]);
+    // The alias resolves to the face behind it, spelled as a family name.
+    expect(families(profile)).toEqual(["Libre Baskerville:4", "Arial:1"]);
   });
 
   it("reports a page set entirely in generic or system fonts as such, not as its fallbacks", () => {
@@ -114,5 +112,13 @@ describe("fonts the page renders", () => {
       primary: "system-ui",
       heading: "system-ui",
     });
+
+    // An empty body measurement: the fallback still comes from another stack,
+    // and a ui-monospace stack is reported as itself, not as system-ui.
+    const mono = ["ui-monospace", "Menlo", "monospace"];
+    const code = processRawBranding(
+      raw({ body: [], heading: mono, paragraph: [] }, [snap(mono)]),
+    );
+    expect(families(code)).toEqual(["ui-monospace:1"]);
   });
 });

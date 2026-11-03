@@ -9,7 +9,7 @@ import {
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
-import { genericFamily, renderedFamily } from "./font-names";
+import { displayFamily, genericFamily, renderedFamily } from "./font-names";
 import { parse, rgb, formatHex } from "culori";
 
 // Export for testing
@@ -362,7 +362,8 @@ function inferFontsList(
 ): Array<{ family: string; count: number }> {
   const freq: Record<string, number> = {};
   for (const stack of fontStacks) {
-    const f = renderedFamily(stack);
+    const rendered = renderedFamily(stack);
+    const f = rendered ? displayFamily(rendered) : undefined;
     if (f) freq[f] = (freq[f] || 0) + 1;
   }
 
@@ -394,8 +395,10 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 
   // Typography: the family each stack renders, or what it is set in when
   // that is the system font or a generic ("-apple-system, …" is system-ui).
-  const familyOf = (stack: string[]) =>
-    renderedFamily(stack) ?? genericFamily(stack);
+  const familyOf = (stack: string[]) => {
+    const rendered = renderedFamily(stack);
+    return rendered ? displayFamily(rendered) : genericFamily(stack);
+  };
   const typography = {
     fontFamilies: {
       primary:
@@ -419,13 +422,19 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   // Fonts list: the page's measured stacks and every sampled element's. A
   // page that names no brand face is reported as set in its system or
   // generic font rather than with no font at all.
-  let fontsList = inferFontsList([
+  const measuredStacks = [
     ...Object.values(raw.typography.stacks),
     ...raw.snapshots.map(s => s.typography.fontStack),
-  ]);
+  ];
+  let fontsList = inferFontsList(measuredStacks);
   if (fontsList.length === 0) {
-    const generic = genericFamily(raw.typography.stacks.body);
-    if (generic) fontsList = [{ family: generic, count: 1 }];
+    for (const stack of measuredStacks) {
+      const generic = genericFamily(stack);
+      if (generic) {
+        fontsList = [{ family: generic, count: 1 }];
+        break;
+      }
+    }
   }
 
   // Images
