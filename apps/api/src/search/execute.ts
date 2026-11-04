@@ -5,6 +5,12 @@ import {
   usOnlyToolsWarning,
 } from "./alexandria";
 import {
+  discoverSkills,
+  isSkillsSource,
+  SKILLS_DISCOVERY_TIMEOUT_MS,
+  type SkillDiscovery,
+} from "./skill-cards";
+import {
   AUTO_TOOLS_WAIT_MS,
   inferToolIntent,
   verifyTools,
@@ -105,6 +111,8 @@ interface SearchExecuteResult {
   /** The tools were added automatically, not requested. */
   toolsAuto?: boolean;
   toolsUnavailable?: boolean;
+  /** Skill-card lookup returned the Exchange envelope, including an empty one. */
+  skillsDiscovered?: boolean;
   response: SearchV2Response;
   totalResultsCount: number;
   resultCountsBySource: SearchResultCountsBySource;
@@ -141,9 +149,26 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const wantsTools = sources.some(isAlexandriaSource);
+  const wantsSkills = sources.some(isSkillsSource);
   const toolsAllowed =
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
+  const missedSkills: SkillDiscovery = { skills: [], succeeded: false };
+  const skillsPromise =
+    toolsAllowed && wantsSkills && query.trim()
+      ? discoverSkills(
+          {
+            teamId,
+            query,
+            timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
+            usOnly,
+          },
+          logger,
+        ).catch(error => {
+          logger.warn("Skill discovery failed", { error });
+          return missedSkills;
+        })
+      : null;
   const toolIntent =
     toolsAllowed &&
     (wantsTools ? options.inferToolQuery : options.autoTools) &&
@@ -205,7 +230,9 @@ export async function executeSearch(
   const searchTypes = [
     ...new Set(
       sources
-        .filter(source => !isAlexandriaSource(source))
+        .filter(
+          source => !isAlexandriaSource(source) && !isSkillsSource(source),
+        )
         .map(source => source.type as SearchResultType),
     ),
   ];
@@ -247,7 +274,8 @@ export async function executeSearch(
     : null;
 
   const searchResponse =
-    (wantsTools && !searchTypes.length) || indexResultsPromise !== null
+    ((wantsTools || wantsSkills) && !searchTypes.length) ||
+    indexResultsPromise !== null
       ? ({} as SearchV2Response)
       : ((await search({
           query: searchQuery,
@@ -601,6 +629,13 @@ export async function executeSearch(
     }));
   }
 
+  let skillsDiscovered = false;
+  if (skillsPromise) {
+    const found = await skillsPromise;
+    searchResponse.skills = found.skills;
+    skillsDiscovered = found.succeeded;
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -647,6 +682,7 @@ export async function executeSearch(
     toolsWarning,
     toolsUnavailable,
     toolsAuto,
+    skillsDiscovered,
     totalResultsCount,
     // Counted from the final response — after scraping and highlights — so it
     // matches exactly what the client can address by position.

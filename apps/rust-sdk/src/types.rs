@@ -1218,6 +1218,7 @@ pub enum SearchSource {
     News,
     Images,
     Alexandria,
+    Skills,
 }
 
 /// Search category types.

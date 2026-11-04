@@ -2562,6 +2562,19 @@ class LinkResult(BaseModel):
 SearchResult = LinkResult
 
 
+class SkillCard(BaseModel):
+    """Short skill card returned by the skills search source."""
+
+    model_config = {"extra": "ignore"}
+
+    id: str
+    name: str
+    description: str
+    source: Literal["official", "provider"]
+    provider: Optional[str] = None
+    similarity: Optional[float] = None
+
+
 class SearchData(BaseModel):
     """Search results grouped by source type."""
 
@@ -2571,6 +2584,7 @@ class SearchData(BaseModel):
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
     tools: Optional[List[DiscoveredTool]] = None
+    skills: Optional[List[SkillCard]] = None
 
     @property
     def data(self):
@@ -2583,7 +2597,9 @@ class SearchData(BaseModel):
             parts.append(f".images ({len(self.images)} results)")
         if self.tools:
             parts.append(f".tools ({len(self.tools)} results)")
-        available = ", ".join(parts) if parts else ".web, .news, .images, or .tools"
+        if self.skills:
+            parts.append(f".skills ({len(self.skills)} results)")
+        available = ", ".join(parts) if parts else ".web, .news, .images, .tools, or .skills"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"
         )

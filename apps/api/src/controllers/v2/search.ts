@@ -38,7 +38,10 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { isToolsOnlySearch } from "../../search/alexandria";
+import {
+  isFreeCatalogueSearch,
+  isToolsOnlySearch,
+} from "../../search/alexandria";
 import {
   resolveSafeMode,
   isLockdownZeroDataRetention,
@@ -189,8 +192,11 @@ async function searchControllerInner(
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",
     );
+    const wantsSkills = req.body.sources.some(
+      source => source.type === "skills",
+    );
     if (
-      (wantsTools || req.body.domainTools) &&
+      (wantsTools || wantsSkills || req.body.domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
     ) {
       return res.status(403).json({
@@ -198,13 +204,15 @@ async function searchControllerInner(
         error: "An API key is required for provider tools.",
       });
     }
-    if (wantsTools && !req.body.query.trim())
+    if ((wantsTools || wantsSkills) && !req.body.query.trim())
       return res.status(400).json({
         success: false,
-        error: "A query is required for tool search.",
+        error: wantsTools
+          ? "A query is required for tool search."
+          : "A query is required for skill search.",
       });
     if (
-      (wantsTools || req.body.domainTools) &&
+      (wantsTools || wantsSkills || req.body.domainTools) &&
       (teamForcedKind ||
         req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
     )
@@ -427,11 +435,15 @@ async function searchControllerInner(
     }
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      req.body.sources,
+      req.body.categories,
+    );
     const govSearch = wantsGovCategory(categories);
     const projectedKeylessCredits =
       !isSearchPreview &&
       shouldBill &&
-      !toolsOnly &&
+      !freeCatalogue &&
       (!govSearch || requestedFormats.length > 0)
         ? projectSearchTotalCredits(
             {
@@ -664,8 +676,10 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
-    if (result.response.tools) {
+    if (result.response.tools || result.skillsDiscovered) {
       markAlexandriaActivity(req.auth.team_id);
+    }
+    if (result.response.tools) {
       recordDiscoveredTools(
         req.auth.team_id,
         result.toolsAuto ? "auto_search" : "search",

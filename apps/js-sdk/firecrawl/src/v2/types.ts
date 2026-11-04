@@ -894,6 +894,15 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface SkillCard {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+}
+
 export interface SearchData {
   agent_hints?: string[];
   warning?: string;
@@ -901,6 +910,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   tools?: DiscoveredTool[];
+  skills?: SkillCard[];
 }
 
 /** A complete tool contract returned by semantic or contextual discovery. */
@@ -1062,7 +1072,8 @@ export interface SearchRequest {
     | "news"
     | "images"
     | "alexandria"
-    | { type: "web" | "news" | "images" | "alexandria" }
+    | "skills"
+    | { type: "web" | "news" | "images" | "alexandria" | "skills" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
