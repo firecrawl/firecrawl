@@ -1,12 +1,21 @@
-export function deduplicateObjectsArray(objArray: { [key: string]: any[] }): {
-  [key: string]: any[];
-} {
+export function deduplicateObjectsArray(
+  objArray: { [key: string]: any[] },
+  schema?: any,
+): { [key: string]: any[] } {
   const deduplicatedObjArray: { [key: string]: any[] } = {};
 
   for (const key in objArray) {
     if (Array.isArray(objArray[key])) {
       const seen = new Set();
       deduplicatedObjArray[key] = objArray[key].filter(item => {
+        // Matrix rows are positional values unless the schema requires uniqueness.
+        if (
+          Array.isArray(item) &&
+          schema?.properties?.[key] &&
+          schema.properties[key].uniqueItems !== true
+        ) {
+          return true;
+        }
         // Create a unique identifier for each item based on its properties
         const identifier = JSON.stringify(item);
 
