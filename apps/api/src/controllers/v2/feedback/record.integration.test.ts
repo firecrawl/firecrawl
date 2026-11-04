@@ -21,6 +21,7 @@ vi.mock("../../../lib/feedback-job-store", () => ({
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   CREDITS_FEATURE_ID: "CREDITS",
+  SEARCH_CREDITS_FEATURE_ID: "SEARCH_CREDITS",
   featureIdForBillingEndpoint: () => "CREDITS",
   autumnService: { refundCredits: fixture.refundCredits },
 }));
@@ -165,12 +166,12 @@ suite("repeated feedback submissions against PostgreSQL", () => {
       const jobId = addJob(refundClass);
 
       const first = await submit(jobId);
-      expect(first.status).toBe(200);
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
       expect(first.body).toMatchObject({ success: true, creditsRefunded: 1 });
       expect(first.body.alreadySubmitted).toBeUndefined();
 
       const second = await submit(jobId);
-      expect(second.status).toBe(200);
+      expect(second.status, JSON.stringify(second.body)).toBe(200);
       expect(second.body).toMatchObject({
         success: true,
         alreadySubmitted: true,
@@ -198,7 +199,10 @@ suite("repeated feedback submissions against PostgreSQL", () => {
       const jobId = addJob(refundClass);
 
       const responses = await Promise.all([submit(jobId), submit(jobId)]);
-      expect(responses.map(response => response.status)).toEqual([200, 200]);
+      expect(
+        responses.map(response => response.status),
+        JSON.stringify(responses.map(response => response.body)),
+      ).toEqual([200, 200]);
       const winners = responses.filter(
         response => !response.body.alreadySubmitted,
       );
