@@ -392,6 +392,7 @@ type CrawlResponse struct {
 type CrawlJob struct {
 	ID          string     `json:"id,omitempty"`
 	Status      string     `json:"status"`
+	Error       string     `json:"error,omitempty"`
 	Total       int        `json:"total"`
 	Completed   int        `json:"completed"`
 	CreditsUsed *int       `json:"creditsUsed,omitempty"`
@@ -420,6 +421,7 @@ type BatchScrapeResponse struct {
 type BatchScrapeJob struct {
 	ID          string     `json:"id,omitempty"`
 	Status      string     `json:"status"`
+	Error       string     `json:"error,omitempty"`
 	Total       int        `json:"total"`
 	Completed   int        `json:"completed"`
 	CreditsUsed *int       `json:"creditsUsed,omitempty"`
