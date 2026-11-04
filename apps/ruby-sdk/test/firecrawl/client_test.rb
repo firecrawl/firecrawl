@@ -458,6 +458,58 @@ class ClientTest < Minitest::Test
     assert_equal "# Page", job.data.first.markdown
   end
 
+  def test_crawl_and_batch_report_terminal_failures_with_partial_results
+    { "crawl" => ["/v2/crawl", "/v2/crawl/job-1", -> { @client.crawl("https://example.com", nil, poll_interval: 0, timeout: 10) }],
+      "batch" => ["/v2/batch/scrape", "/v2/batch/scrape/job-1", -> { @client.batch_scrape(["https://example.com"], nil, poll_interval: 0, timeout: 10) }] }.each do |kind, (start_path, status_path, run)|
+      %w[failed cancelled].each do |status|
+        stub_request(:post, "#{BASE_URL}#{start_path}")
+          .to_return(status: 200, body: JSON.generate(id: "job-1"), headers: { "Content-Type" => "application/json" })
+        stub_request(:get, "#{BASE_URL}#{status_path}")
+          .to_return(status: 200, body: JSON.generate(id: "job-1", status: status, error: "origin unavailable", data: [{ markdown: "partial" }]), headers: { "Content-Type" => "application/json" })
+
+        error = assert_raises(Firecrawl::JobFailedError, "#{kind} #{status}") { run.call }
+        assert_equal status, error.job.status
+        assert_equal "partial", error.job.data.first.markdown
+        assert_includes error.message, "origin unavailable"
+        WebMock.reset!
+      end
+    end
+  end
+
+  def test_failed_crawl_keeps_partial_data_when_pagination_fails
+    @client = Firecrawl::Client.new(api_key: API_KEY, max_retries: 0)
+    stub_request(:post, "#{BASE_URL}/v2/crawl")
+      .to_return(status: 200, body: JSON.generate(id: "job-1"), headers: { "Content-Type" => "application/json" })
+    stub_request(:get, "#{BASE_URL}/v2/crawl/job-1")
+      .to_return(status: 200, body: JSON.generate(id: "job-1", status: "failed", data: [{ markdown: "partial" }], next: "#{BASE_URL}/v2/crawl/job-1?skip=1"), headers: { "Content-Type" => "application/json" })
+    stub_request(:get, "#{BASE_URL}/v2/crawl/job-1?skip=1")
+      .to_return(status: 503, body: JSON.generate(error: "page unavailable"), headers: { "Content-Type" => "application/json" })
+
+    error = assert_raises(Firecrawl::JobFailedError) { @client.crawl("https://example.com", nil, poll_interval: 0, timeout: 10) }
+    assert_equal "failed", error.job.status
+    assert_equal "partial", error.job.data.first.markdown
+    assert_instance_of Firecrawl::FirecrawlError, error.pagination_error
+    assert_includes error.message, "page unavailable"
+  end
+
+  def test_failed_batch_keeps_terminal_status_when_next_page_is_malformed
+    ["{bad JSON", JSON.generate(data: "not an array")].each do |body|
+      stub_request(:post, "#{BASE_URL}/v2/batch/scrape")
+        .to_return(status: 200, body: JSON.generate(id: "job-1"), headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{BASE_URL}/v2/batch/scrape/job-1")
+        .to_return(status: 200, body: JSON.generate(id: "job-1", status: "failed", data: [{ markdown: "partial" }], next: "#{BASE_URL}/next"), headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{BASE_URL}/next")
+        .to_return(status: 200, body: body, headers: { "Content-Type" => "application/json" })
+
+      error = assert_raises(Firecrawl::JobFailedError) { @client.batch_scrape(["https://example.com"], nil, poll_interval: 0, timeout: 10) }
+      assert_equal "failed", error.job.status
+      assert_equal "partial", error.job.data.first.markdown
+      assert_instance_of(body.start_with?("{bad") ? JSON::ParserError : NoMethodError, error.pagination_error)
+      assert_includes error.message, "partial results could not be fully fetched"
+      WebMock.reset!
+    end
+  end
+
   def test_crawl_with_options
     stub_request(:post, "#{BASE_URL}/v2/crawl")
       .with { |req| body = JSON.parse(req.body); body["limit"] == 10 && body["excludePaths"] == ["/private"] }

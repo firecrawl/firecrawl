@@ -37,4 +37,19 @@ module Firecrawl
       super("#{label} #{job_id} timed out after #{timeout_seconds} seconds")
     end
   end
+
+  # Raised when an async job terminates without completing successfully.
+  # The job retains any partial results returned by the API.
+  class JobFailedError < FirecrawlError
+    attr_reader :job, :pagination_error
+
+    def initialize(job, label, pagination_error: nil)
+      @job = job
+      @pagination_error = pagination_error
+      reason = job.error.is_a?(String) && !job.error.empty? ? ": #{job.error}" : ""
+      message = "#{label} #{job.id} #{job.status}#{reason}"
+      message += " (partial results could not be fully fetched: #{pagination_error.message})" if pagination_error
+      super(message)
+    end
+  end
 end
