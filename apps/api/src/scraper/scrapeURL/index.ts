@@ -1316,12 +1316,15 @@ export async function scrapeURL(
         );
       } catch (error) {
         const unsafeDestination = error instanceof InsecureConnectionError;
-        _logger.warn("Scrape destination validation failed", {
-          scrapeId: id,
-          url,
-          error,
-          unsafeDestination,
-        });
+        _logger[unsafeDestination ? "warn" : "debug"](
+          "Scrape destination validation failed",
+          {
+            scrapeId: id,
+            url: stripUrlUserinfo(url),
+            error,
+            unsafeDestination,
+          },
+        );
         setSpanAttributes(span, {
           "scrape.success": false,
           "scrape.blocked_by_destination_policy": unsafeDestination,
