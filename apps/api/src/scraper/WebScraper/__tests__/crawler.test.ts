@@ -1,6 +1,7 @@
 import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
 import { WebCrawler } from "../crawler";
+import { startUrlOnHost } from "../../../lib/crawl-scope";
 import axios from "axios";
 import robotsParser from "robots-parser";
 
@@ -73,6 +74,33 @@ describe("WebCrawler", () => {
 
     expect(filteredLinks.links.length).toBe(limit); // Check if the number of results respects the limit
     expect(filteredLinks.links).toEqual([initialUrl, initialUrl + "/page1"]);
+  });
+
+  it("follows the start page's links after it redirects to another host", async () => {
+    // A crawl of https://example.com/ whose start page redirected to
+    // https://relocated.com/start. Its links are filtered on the new host,
+    // with the scope of the URL the crawl was started from.
+    const redirected = "https://relocated.com/start";
+    crawler = new WebCrawler({
+      jobId: "TEST",
+      initialUrl: startUrlOnHost("https://example.com/", redirected),
+      includes: [],
+      excludes: [],
+      limit: 10,
+      maxCrawledDepth: 10,
+    });
+    crawler.setBaseUrl(redirected);
+
+    const filteredLinks = await crawler.filterLinks(
+      ["https://relocated.com/about", "https://relocated.com/start/child"],
+      10,
+      10,
+    );
+
+    expect(filteredLinks.links).toEqual([
+      "https://relocated.com/about",
+      "https://relocated.com/start/child",
+    ]);
   });
 
   it("should filter subdomain URLs with includePaths when allowSubdomains is true", async () => {
