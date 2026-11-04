@@ -1023,7 +1023,8 @@ export interface AlexandriaOptions {
  * Narrows ordinary **web search**. A category does not switch `search()` to a
  * different index.
  *
- * - `github` — restrict web results to github.com (a `site:` filter).
+ * - `github` — removed. Use `developer` for GitHub issues, pull requests and
+ *   READMEs.
  * - `research` — restrict web results to a fixed list of ~14 academic
  *   *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
@@ -2265,6 +2266,9 @@ export interface PaperResult {
   ids?: IdMap;
   title: string;
   abstract: string;
+  authors?: string[];
+  createdDate?: string;
+  updateDate?: string;
   /** Final ranking score (post-rerank when enabled). Not normalized. */
   score: number;
   /** Present on similarity results. */
@@ -2327,11 +2331,10 @@ export interface SimilarPapersResponse {
 }
 
 /**
- * Component scores; each field is present only when that signal contributed.
+ * Component scores.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. The developer index does not
- * expose a score breakdown. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubScoreBreakdown {
@@ -2343,8 +2346,8 @@ export interface GitHubScoreBreakdown {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchItem {
@@ -2370,8 +2373,8 @@ export interface GitHubSearchItem {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchResponse {
@@ -2395,6 +2398,7 @@ export interface SearchPapersOptions {
   from?: string;
   /** Inclusive upper bound on created/updated date (lexicographic). */
   to?: string;
+  sort?: "relevance" | "date_desc";
 }
 
 /** Options for `research.getPaper`. */
@@ -2422,8 +2426,8 @@ export interface SimilarPapersOptions {
 /**
  * Options for `research.searchGithub`.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface SearchGithubOptions {

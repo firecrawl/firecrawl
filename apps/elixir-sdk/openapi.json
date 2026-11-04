@@ -12812,18 +12812,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`.",
+            "description": "Stable result id, such as `issue:owner/repo#123`. The prefix is the result kind.",
             "example": "issue:firecrawl/firecrawl#1234"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "doc",
-              "issue",
-              "pull_request",
-              "readme"
-            ],
-            "description": "Result kind."
           },
           "url": {
             "type": "string",
@@ -12841,9 +12831,46 @@
               "properties": {
                 "text": {
                   "type": "string"
+                },
+                "citation_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "URL to cite for this passage."
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "Present and true when `text` omits bytes from the full passage."
+                },
+                "served_span": {
+                  "type": "object",
+                  "description": "Byte offsets of `text` within the full passage when it is one contiguous span. Absent for table context assembled from separate rows.",
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "full_tokens_est": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Approximate token count of the full passage."
                 }
               }
             }
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known.",
+            "example": "MIT"
           }
         }
       },

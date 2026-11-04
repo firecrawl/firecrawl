@@ -107,6 +107,7 @@ const errorMap: Record<ErrorCodes, any> = {
   // Zod errors
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
+  CATEGORY_REMOVED: null,
   INDEX_DAILY_LIMIT: null,
   TOOL_DISCOVERY_UNAVAILABLE: null,
   PARSE_UNSUPPORTED_OPTIONS: null,

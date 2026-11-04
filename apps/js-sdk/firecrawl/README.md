@@ -218,6 +218,10 @@ const results = await app.search('nanopore basecalling accuracy', {
 
 ### Developer search
 
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
 Use `developerSearch` for the dedicated developer index and its complete filter
 and response contract. Generic `search(..., { categories: ['developer'] })`
 returns developer results inside `.web` in the ordinary web-result shape
@@ -312,14 +316,6 @@ const related = await app.research.similarPapers('pmid:<id>', {
   k: 20,
 });
 ```
-
-> **`app.research.searchGithub` is deprecated.** The research index GitHub
-> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
-> instead: it searches GitHub issues, pull requests and readmes plus curated
-> documentation sources, returns matched passages, and adds filters for repo,
-> language, license and stars. It does not carry over the `scores` breakdown
-> or the `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 ### Scrape-bound interactive browsing (v2)
 

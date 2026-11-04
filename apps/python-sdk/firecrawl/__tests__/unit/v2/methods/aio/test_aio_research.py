@@ -59,6 +59,7 @@ async def test_search_papers_builds_query_string_with_exploded_arrays():
         categories=["cs.LG", "stat.ML"],
         from_date="2020-01-01",
         to_date="2024-12-31",
+        sort="date_desc",
     )
     path, qs = split(client.last_path)
     assert path == "/v2/search/research/papers"
@@ -68,6 +69,7 @@ async def test_search_papers_builds_query_string_with_exploded_arrays():
     assert qs["categories"] == ["cs.LG", "stat.ML"]
     assert qs["from"] == ["2020-01-01"]
     assert qs["to"] == ["2024-12-31"]
+    assert qs["sort"] == ["date_desc"]
 
 
 @pytest.mark.asyncio
@@ -200,10 +202,11 @@ async def test_async_client_exposes_research_methods():
     client.async_http_client = FakeAsyncHttpClient(
         FakeResponse(200, {"success": True, "results": []})
     )
-    await client.search_papers("tau aggregation inhibitors", k=5)
+    await client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
     path, qs = split(client.async_http_client.last_path)
     assert path == "/v2/search/research/papers"
     assert qs["k"] == ["5"]
+    assert qs["sort"] == ["date_desc"]
 
 
 @pytest.mark.asyncio
@@ -254,10 +257,11 @@ async def test_unified_async_client_delegates_all_research_methods():
     client = _unified_client(FakeResponse(200, {"success": True, "results": []}))
     http = client._v2_client.async_http_client
 
-    await client.search_papers("tau aggregation inhibitors", k=5)
+    await client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
     path, qs = split(http.last_path)
     assert path == "/v2/search/research/papers"
     assert qs["k"] == ["5"]
+    assert qs["sort"] == ["date_desc"]
 
     await client.inspect_paper("pmid:12345678")
     path, _ = split(http.last_path)

@@ -104,6 +104,7 @@ export type FireEngineScrapeRequestChromeCDP = {
 
 export type FireEngineScrapeRequestTLSClient = {
   engine: "tlsclient";
+  skipTlsVerification?: boolean;
   atsv?: boolean; // v0 only, default: false
   disableJsDom?: boolean; // v0 only, default: false
 };

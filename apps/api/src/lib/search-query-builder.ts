@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf" | "developer" | "gov";
+  type: "research" | "pdf" | "developer" | "gov";
   sites?: string[];
 }
 
@@ -40,7 +40,7 @@ const DEFAULT_RESEARCH_SITES = [
 
 export function hasCategory(
   categories: unknown,
-  type: CategoryInput["type"],
+  type: CategoryInput["type"] | "github",
 ): boolean {
   return (
     Array.isArray(categories) &&
@@ -67,10 +67,7 @@ export function buildSearchQuery(
   for (const category of categories ?? []) {
     if (typeof category === "string") {
       // Simple string format
-      if (category === "github") {
-        siteFilters.push("site:github.com");
-        categoryMap.set("github.com", "github");
-      } else if (category === "research") {
+      if (category === "research") {
         // Use default research sites
         for (const site of DEFAULT_RESEARCH_SITES) {
           siteFilters.push(`site:${site}`);
@@ -82,10 +79,7 @@ export function buildSearchQuery(
       }
     } else {
       // Object format with options
-      if (category.type === "github") {
-        siteFilters.push("site:github.com");
-        categoryMap.set("github.com", "github");
-      } else if (category.type === "research") {
+      if (category.type === "research") {
         // Use custom sites if provided, otherwise defaults
         const sites = category.sites || DEFAULT_RESEARCH_SITES;
         for (const site of sites) {
