@@ -193,7 +193,7 @@ async function searchControllerInner(
       source => source.type === "alexandria",
     );
     const wantsSkills = req.body.sources.some(
-      source => source.type === "alexandria-skills",
+      source => source.type === "skills",
     );
     if (
       (wantsTools || wantsSkills || req.body.domainTools) &&

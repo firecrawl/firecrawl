@@ -68,7 +68,7 @@ class TestSearchValidation:
             _validate_search_request(request)
 
         request = SearchRequest(
-            query="test", sources=["web", "alexandria-skills"]
+            query="test", sources=["web", "skills"]
         )
         assert _validate_search_request(request) == request
 

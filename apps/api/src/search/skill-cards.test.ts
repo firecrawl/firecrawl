@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { discoverSkills } from "./alexandria-skills";
+import { discoverSkills } from "./skill-cards";
 import { isFreeCatalogueSearch, isToolsOnlySearch } from "./alexandria";
 import { exchangeRequest } from "../services/alexandria/client";
 
@@ -225,27 +225,17 @@ it("returns no cards for an empty or over-long query without calling exchange", 
 
 describe("catalogue search billing gate", () => {
   it("treats skill cards as free catalogue search without making them tools-only", () => {
+    expect(isFreeCatalogueSearch([{ type: "skills" }], undefined)).toBe(true);
+    expect(isToolsOnlySearch([{ type: "skills" }], undefined)).toBe(false);
     expect(
-      isFreeCatalogueSearch([{ type: "alexandria-skills" }], undefined),
+      isFreeCatalogueSearch(["alexandria", { type: "skills" }], undefined),
     ).toBe(true);
-    expect(isToolsOnlySearch([{ type: "alexandria-skills" }], undefined)).toBe(
+    expect(
+      isFreeCatalogueSearch([{ type: "web" }, { type: "skills" }], undefined),
+    ).toBe(false);
+    expect(isFreeCatalogueSearch(["skills"], [{ type: "developer" }])).toBe(
       false,
     );
-    expect(
-      isFreeCatalogueSearch(
-        ["alexandria", { type: "alexandria-skills" }],
-        undefined,
-      ),
-    ).toBe(true);
-    expect(
-      isFreeCatalogueSearch(
-        [{ type: "web" }, { type: "alexandria-skills" }],
-        undefined,
-      ),
-    ).toBe(false);
-    expect(
-      isFreeCatalogueSearch(["alexandria-skills"], [{ type: "developer" }]),
-    ).toBe(false);
     for (const alias of [
       "docs",
       "repo",

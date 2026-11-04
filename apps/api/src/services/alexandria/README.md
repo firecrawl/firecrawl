@@ -17,7 +17,7 @@ Search returns contracts in `data.tools`, up to `limit` per discovery source
 `creditsUsed`; web results are billed as before. `domainTools: false` disables
 URL matching only.
 
-`sources` may also include `alexandria-skills`. That asks Exchange
+`sources` may also include `skills`. That asks Exchange
 `GET /v1/discover/skill-cards` with the search query and returns up to 3 short cards
 on `data.skills` (`id`, `name`, `description`, `source`, and when present
 `provider` and `similarity`). It is free and uses the same access rules as

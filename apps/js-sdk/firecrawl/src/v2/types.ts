@@ -1069,8 +1069,8 @@ export interface SearchRequest {
     | "news"
     | "images"
     | "alexandria"
-    | "alexandria-skills"
-    | { type: "web" | "news" | "images" | "alexandria" | "alexandria-skills" }
+    | "skills"
+    | { type: "web" | "news" | "images" | "alexandria" | "skills" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.

@@ -23,10 +23,9 @@ vi.mock("./alexandria", () => ({
     source.type === "alexandria",
 }));
 
-vi.mock("./alexandria-skills", () => ({
+vi.mock("./skill-cards", () => ({
   discoverSkills: mocks.discoverSkills,
-  isAlexandriaSkillsSource: (source: { type: string }) =>
-    source.type === "alexandria-skills",
+  isSkillsSource: (source: { type: string }) => source.type === "skills",
   SKILLS_DISCOVERY_TIMEOUT_MS: 3000,
 }));
 
@@ -905,7 +904,7 @@ describe("executeSearch skill cards", () => {
     const result = await executeSearch(
       {
         ...options([]),
-        sources: [{ type: "web" }, { type: "alexandria-skills" }],
+        sources: [{ type: "web" }, { type: "skills" }],
       },
       context,
       logger,
@@ -937,7 +936,7 @@ describe("executeSearch skill cards", () => {
     const result = await executeSearch(
       {
         ...options([]),
-        sources: [{ type: "web" }, { type: "alexandria-skills" }],
+        sources: [{ type: "web" }, { type: "skills" }],
       },
       context,
       logger,
@@ -956,7 +955,7 @@ describe("executeSearch skill cards", () => {
     });
 
     const result = await executeSearch(
-      { ...options([]), sources: [{ type: "alexandria-skills" }] },
+      { ...options([]), sources: [{ type: "skills" }] },
       context,
       logger,
     );
@@ -980,7 +979,7 @@ describe("executeSearch skill cards", () => {
       const result = await executeSearch(
         {
           ...options([]),
-          sources: [{ type: "web" }, { type: "alexandria-skills" }],
+          sources: [{ type: "web" }, { type: "skills" }],
           ...optionOverrides,
         },
         { ...context, ...contextOverrides },
@@ -998,7 +997,7 @@ describe("executeSearch skill cards", () => {
       {
         ...options([]),
         query: "   ",
-        sources: [{ type: "alexandria-skills" }],
+        sources: [{ type: "skills" }],
       },
       context,
       logger,
@@ -1014,7 +1013,7 @@ describe("executeSearch skill cards", () => {
     mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: true });
 
     await executeSearch(
-      { ...options([]), sources: [{ type: "alexandria-skills" }] },
+      { ...options([]), sources: [{ type: "skills" }] },
       { ...context, flags: { usOnly: true } },
       logger,
     );

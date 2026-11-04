@@ -2,15 +2,15 @@ import { z } from "zod";
 import type { Logger } from "winston";
 import { exchangeRequest } from "../services/alexandria/client";
 
-const ALEXANDRIA_SKILLS_SOURCE = "alexandria-skills";
+const SKILLS_SOURCE = "skills";
 /** Exchange default and maximum this search asks for. The search `limit` is not forwarded. */
 const SKILLS_DISCOVERY_LIMIT = 3;
 /** Kept short so a slow catalogue lookup cannot hold the rest of the search. */
 export const SKILLS_DISCOVERY_TIMEOUT_MS = 3000;
 const MAX_QUERY_CHARS = 2000;
 
-export const isAlexandriaSkillsSource = (source: { type: string }) =>
-  source.type === ALEXANDRIA_SKILLS_SOURCE;
+export const isSkillsSource = (source: { type: string }) =>
+  source.type === SKILLS_SOURCE;
 
 const skillCardSchema = z.object({
   id: z.string().min(1),

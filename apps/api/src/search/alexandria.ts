@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Logger } from "winston";
+import { developerCategoryAliases } from "../lib/developer-category";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   toolSchema,
@@ -25,20 +26,7 @@ type CategoryLike = string | { type: string };
 const typeOf = (value: SourceLike | CategoryLike) =>
   typeof value === "string" ? value : value?.type;
 
-const CATALOGUE_SOURCES = new Set(["alexandria", "alexandria-skills"]);
-
-// Same strings the search schema rewrites to "developer" before the controller
-// runs. The credit middleware sees the raw body, so the aliases have to count
-// here too.
-const DEVELOPER_CATEGORY_ALIASES = new Set([
-  "repo",
-  "code",
-  "developer",
-  "docs",
-  "devdex",
-  "repo_search",
-  "developer_index",
-]);
+const CATALOGUE_SOURCES = new Set(["alexandria", "skills"]);
 
 function excludesIndexCategory(categories: unknown): boolean {
   return (
@@ -47,7 +35,7 @@ function excludesIndexCategory(categories: unknown): boolean {
       const type = typeOf(category);
       return (
         type === "gov" ||
-        (type !== undefined && DEVELOPER_CATEGORY_ALIASES.has(type))
+        (type !== undefined && developerCategoryAliases.has(type))
       );
     })
   );

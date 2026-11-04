@@ -731,7 +731,7 @@ type SearchData struct {
 	Skills  []SkillCard              `json:"skills,omitempty"`
 }
 
-// SkillCard is a short skill card from the alexandria-skills search source.
+// SkillCard is a short skill card from the skills search source.
 type SkillCard struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`

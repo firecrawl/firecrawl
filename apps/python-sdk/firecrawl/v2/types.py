@@ -2560,7 +2560,7 @@ SearchResult = LinkResult
 
 
 class SkillCard(BaseModel):
-    """Short skill card returned by the alexandria-skills search source."""
+    """Short skill card returned by the skills search source."""
 
     model_config = {"extra": "ignore"}
 

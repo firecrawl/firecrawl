@@ -444,14 +444,14 @@ describe("skill discovery source", () => {
     const res = makeRes();
 
     await searchController(
-      makeReq({ query: "records", sources: ["alexandria-skills"] }),
+      makeReq({ query: "records", sources: ["skills"] }),
       res,
     );
 
     expect(mockReserveKeylessCredits).not.toHaveBeenCalled();
     expect(mockExecuteSearch).toHaveBeenCalledWith(
       expect.objectContaining({
-        sources: [{ type: "alexandria-skills" }],
+        sources: [{ type: "skills" }],
       }),
       expect.anything(),
       expect.anything(),
@@ -482,7 +482,7 @@ describe("skill discovery source", () => {
     const res = makeRes();
 
     await searchController(
-      makeReq({ query: "records", sources: [{ type: "alexandria-skills" }] }),
+      makeReq({ query: "records", sources: [{ type: "skills" }] }),
       res,
     );
 
@@ -507,7 +507,7 @@ describe("skill discovery source", () => {
     const res = makeRes();
 
     await searchController(
-      makeReq({ query: "records", sources: ["alexandria-skills"] }),
+      makeReq({ query: "records", sources: ["skills"] }),
       res,
     );
 
@@ -517,10 +517,7 @@ describe("skill discovery source", () => {
   it("requires a query", async () => {
     const res = makeRes();
 
-    await searchController(
-      makeReq({ query: "  ", sources: ["alexandria-skills"] }),
-      res,
-    );
+    await searchController(makeReq({ query: "  ", sources: ["skills"] }), res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockExecuteSearch).not.toHaveBeenCalled();
@@ -530,7 +527,7 @@ describe("skill discovery source", () => {
     const keyless = makeRes();
     await searchController(
       {
-        ...makeReq({ query: "records", sources: ["alexandria-skills"] }),
+        ...makeReq({ query: "records", sources: ["skills"] }),
         auth: { team_id: "preview_keyless_203.0.113.8" },
       },
       keyless,
@@ -541,7 +538,7 @@ describe("skill discovery source", () => {
     await searchController(
       makeReq({
         query: "records",
-        sources: ["alexandria-skills"],
+        sources: ["skills"],
         enterprise: ["zdr"],
       }),
       zdr,

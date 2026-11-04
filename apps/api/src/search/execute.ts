@@ -6,10 +6,10 @@ import {
 } from "./alexandria";
 import {
   discoverSkills,
-  isAlexandriaSkillsSource,
+  isSkillsSource,
   SKILLS_DISCOVERY_TIMEOUT_MS,
   type SkillDiscovery,
-} from "./alexandria-skills";
+} from "./skill-cards";
 import {
   AUTO_TOOLS_WAIT_MS,
   inferToolIntent,
@@ -149,7 +149,7 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const wantsTools = sources.some(isAlexandriaSource);
-  const wantsSkills = sources.some(isAlexandriaSkillsSource);
+  const wantsSkills = sources.some(isSkillsSource);
   const toolsAllowed =
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
@@ -231,8 +231,7 @@ export async function executeSearch(
     ...new Set(
       sources
         .filter(
-          source =>
-            !isAlexandriaSource(source) && !isAlexandriaSkillsSource(source),
+          source => !isAlexandriaSource(source) && !isSkillsSource(source),
         )
         .map(source => source.type as SearchResultType),
     ),

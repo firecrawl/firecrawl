@@ -11,6 +11,7 @@ import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
+import { isDeveloperCategoryAlias } from "../../lib/developer-category";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 import {
   ExtractorOptions,
@@ -2537,20 +2538,6 @@ const govCategoryOptions = z.strictObject({
   type: z.literal("gov"),
 });
 
-const developerCategoryAliases = new Set([
-  "repo",
-  "code",
-  "developer",
-  "docs",
-  "devdex",
-  "repo_search",
-  "developer_index",
-]);
-
-function isDeveloperCategoryAlias(value: unknown): value is string {
-  return typeof value === "string" && developerCategoryAliases.has(value);
-}
-
 function normalizeDeveloperCategoryAliases(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   let seenString = false;
@@ -2601,9 +2588,7 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(
-          z.enum(["web", "images", "news", "alexandria", "alexandria-skills"]),
-        ),
+        z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2614,7 +2599,7 @@ export const searchRequestSchema = z
               type: z.literal("alexandria"),
             }),
             z.strictObject({
-              type: z.literal("alexandria-skills"),
+              type: z.literal("skills"),
             }),
           ]),
         ),

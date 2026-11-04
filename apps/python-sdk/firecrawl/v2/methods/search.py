@@ -131,7 +131,7 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
             "news",
             "images",
             "alexandria",
-            "alexandria-skills",
+            "skills",
         }
         for source in request.sources:
             if isinstance(source, str):
