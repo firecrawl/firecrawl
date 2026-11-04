@@ -10101,6 +10101,19 @@
                           "type": "string",
                           "description": "The variant SKU."
                         },
+                        "gtin": {
+                          "type": "string",
+                          "description": "The variant's GTIN (EAN, UPC or ISBN), digits only, with a valid check digit. Present only when the page or store states one."
+                        },
+                        "mpn": {
+                          "type": "string",
+                          "description": "The variant's manufacturer part number. Present only when the page states one."
+                        },
+                        "condition": {
+                          "type": "string",
+                          "enum": ["new", "used", "refurbished", "damaged"],
+                          "description": "The variant's item condition. Present only when the page states one; never assumed to be new."
+                        },
                         "title": {
                           "type": "string",
                           "description": "The variant title."
