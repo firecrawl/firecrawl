@@ -172,6 +172,8 @@ module Firecrawl
 
     def extract_error_message(body, status_code)
       parsed = JSON.parse(body)
+      return "HTTP #{status_code} error" unless parsed.is_a?(Hash)
+
       parsed["error"] || parsed["message"] || "HTTP #{status_code} error"
     rescue JSON::ParserError
       "HTTP #{status_code} error"
@@ -179,6 +181,8 @@ module Firecrawl
 
     def extract_error_code(body)
       parsed = JSON.parse(body)
+      return nil unless parsed.is_a?(Hash)
+
       code = parsed["code"]
       code&.to_s
     rescue JSON::ParserError
