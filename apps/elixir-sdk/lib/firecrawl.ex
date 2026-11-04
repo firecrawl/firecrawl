@@ -257,13 +257,18 @@ defmodule Firecrawl do
     from: [type: :string],
     k: [type: :integer],
     query: [type: :string, required: true],
+    sort: [type: {:in, [:relevance, :date_desc, "relevance", "date_desc"]}],
     to: [type: :string]
   ])
 
-  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", sort: "sort", to: "to"}
 
   @doc """
   Search research papers.
+
+  `sort` accepts `relevance` (default) or `date_desc`, which returns the newest
+  of the most relevant matches, newest first by created date. It does not list
+  every paper in a date range; add `from` (and `to`) for that.
 
   `GET /search/research/papers`
   """

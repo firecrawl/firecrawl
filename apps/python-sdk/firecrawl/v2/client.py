@@ -316,8 +316,14 @@ class FirecrawlClient:
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return research_module.search_papers(self.http_client, query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return research_module.search_papers(self.http_client, query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):

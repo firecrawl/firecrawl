@@ -38,6 +38,7 @@ describe("research.searchPapers", () => {
       categories: ["cs.LG", "stat.ML"],
       from: "2020-01-01",
       to: "2024-12-31",
+      sort: "date_desc",
     });
     const url = calls[0];
     expect(url.startsWith("/v2/search/research/papers?")).toBe(true);
@@ -48,6 +49,7 @@ describe("research.searchPapers", () => {
     expect(qs.getAll("categories")).toEqual(["cs.LG", "stat.ML"]);
     expect(qs.get("from")).toBe("2020-01-01");
     expect(qs.get("to")).toBe("2024-12-31");
+    expect(qs.get("sort")).toBe("date_desc");
   });
 
   test("omits absent options", async () => {

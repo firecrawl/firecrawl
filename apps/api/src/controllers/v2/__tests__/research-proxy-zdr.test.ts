@@ -166,6 +166,28 @@ describe.each([
   });
 });
 
+describe("paper search sort", () => {
+  it("forwards sort=date_desc upstream", async () => {
+    await callRoute(
+      createResearchRouter(),
+      "/papers",
+      { query: "graph databases", sort: "date_desc" },
+      {},
+    );
+
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v2/research/papers",
+        params: expect.objectContaining({
+          query: "graph databases",
+          sort: "date_desc",
+        }),
+        queryKeys: expect.arrayContaining(["sort"]),
+      }),
+    );
+  });
+});
+
 describe("legacy research mount notice", () => {
   function logNotice(flags: Record<string, unknown>) {
     const req = makeReq({ query: "private research query" }, flags);
