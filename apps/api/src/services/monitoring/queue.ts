@@ -1,6 +1,7 @@
 import amqp from "amqplib";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
+import { randomUUID } from "crypto";
 
 const MONITOR_CHECK_QUEUE = "monitor.checks";
 const MONITOR_CHECK_DLX = "monitor.checks.dlx";
@@ -10,6 +11,10 @@ const MONITOR_CHECK_DLQ = "monitor.checks.dlq";
 const MONITOR_SEARCH_CHECK_QUEUE = "monitor.checks.search";
 const MONITOR_SEARCH_CHECK_DLX = "monitor.checks.search.dlx";
 const MONITOR_SEARCH_CHECK_DLQ = "monitor.checks.search.dlq";
+// A scheduler claims up to 10 monitors for 60 seconds by default. Keep the
+// worst-case serial broker stall well below that lease so another worker
+// cannot reclaim the same checks while this batch is still publishing.
+const PUBLISH_CONFIRM_TIMEOUT_MS = 3000;
 
 const logger = _logger.child({ module: "monitoring-queue" });
 
@@ -26,12 +31,16 @@ let connection: amqp.ChannelModel | null = null;
 // (and orphan) duplicate connections.
 let connectionPromise: Promise<amqp.ChannelModel> | null = null;
 // Separate publish/consume channels so an exception on one can't tear down the other.
-let publishChannel: amqp.Channel | null = null;
+let publishChannel: amqp.ConfirmChannel | null = null;
 let consumeChannel: amqp.Channel | null = null;
 // Memoized creation promises serialize concurrent callers onto one channel; without
 // this, two callers racing during the async asserts would each create one and orphan one.
-let publishChannelPromise: Promise<amqp.Channel> | null = null;
+let publishChannelPromise: Promise<amqp.ConfirmChannel> | null = null;
 let consumeChannelPromise: Promise<amqp.Channel> | null = null;
+const pendingPublishes = new WeakMap<
+  amqp.ConfirmChannel,
+  Map<string, { returned: boolean }>
+>();
 
 // Registry of consumers so a reconnect can re-attach them; the worker never produces,
 // so without this it goes permanently deaf after any RabbitMQ blip until restart.
@@ -180,10 +189,28 @@ async function openConnection(): Promise<amqp.ChannelModel> {
   return conn;
 }
 
-async function createChannel(label: string): Promise<amqp.Channel> {
+async function createChannel(label: "publish"): Promise<amqp.ConfirmChannel>;
+async function createChannel(label: "consume"): Promise<amqp.Channel>;
+async function createChannel(
+  label: "publish" | "consume",
+): Promise<amqp.Channel | amqp.ConfirmChannel> {
   const conn = await getConnection();
-  const ch = await conn.createChannel();
+  const ch =
+    label === "publish"
+      ? await conn.createConfirmChannel()
+      : await conn.createChannel();
   await assertTopology(ch);
+  if (label === "publish") {
+    const pending = new Map<string, { returned: boolean }>();
+    pendingPublishes.set(ch as amqp.ConfirmChannel, pending);
+    ch.on("return", message => {
+      const correlationId = message.properties.correlationId;
+      if (correlationId) {
+        const publish = pending.get(correlationId);
+        if (publish) publish.returned = true;
+      }
+    });
+  }
   // Channels can close independently of the connection (e.g. PRECONDITION_FAILED);
   // without this the cached channel stays non-null and every send/consume throws forever.
   ch.on("close", () => {
@@ -203,7 +230,7 @@ async function createChannel(label: string): Promise<amqp.Channel> {
   return ch;
 }
 
-async function getPublishChannel(): Promise<amqp.Channel> {
+async function getPublishChannel(): Promise<amqp.ConfirmChannel> {
   if (publishChannel) return publishChannel;
   if (!publishChannelPromise) {
     publishChannelPromise = createChannel("publish")
@@ -217,6 +244,75 @@ async function getPublishChannel(): Promise<amqp.Channel> {
       });
   }
   return publishChannelPromise;
+}
+
+function publishConfirmed(
+  ch: amqp.ConfirmChannel,
+  queue: string,
+  data: MonitorCheckJobData,
+): Promise<void> {
+  const correlationId = randomUUID();
+  const publish = { returned: false };
+  const pending = pendingPublishes.get(ch);
+  if (!pending) throw new Error("Monitor publish channel is not initialized");
+  pending.set(correlationId, publish);
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timeout: NodeJS.Timeout;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      pending.delete(correlationId);
+      if (error) reject(error);
+      else resolve();
+    };
+    timeout = setTimeout(
+      () =>
+        finish(
+          new Error(
+            `Monitor check publish confirmation timed out after ${PUBLISH_CONFIRM_TIMEOUT_MS}ms`,
+          ),
+        ),
+      PUBLISH_CONFIRM_TIMEOUT_MS,
+    );
+
+    try {
+      const sent = ch.sendToQueue(
+        queue,
+        Buffer.from(JSON.stringify(data)),
+        {
+          persistent: true,
+          mandatory: true,
+          contentType: "application/json",
+          messageId: data.checkId,
+          correlationId,
+        },
+        error => {
+          // RabbitMQ sends basic.return before basic.ack for an unroutable
+          // mandatory message. Let amqplib dispatch the return first.
+          setImmediate(() =>
+            finish(
+              error ??
+                (publish.returned
+                  ? new Error("RabbitMQ returned unroutable monitor check job")
+                  : undefined),
+            ),
+          );
+        },
+      );
+      if (!sent) {
+        logger.warn("Monitor check message buffer full", {
+          monitorId: data.monitorId,
+          checkId: data.checkId,
+          queue,
+        });
+      }
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }
 
 async function getConsumeChannel(): Promise<amqp.Channel> {
@@ -241,19 +337,7 @@ export async function addMonitorCheckJob(
 ): Promise<void> {
   const ch = await getPublishChannel();
   const queue = opts.search ? MONITOR_SEARCH_CHECK_QUEUE : MONITOR_CHECK_QUEUE;
-  const sent = ch.sendToQueue(queue, Buffer.from(JSON.stringify(data)), {
-    persistent: true,
-    contentType: "application/json",
-    messageId: data.checkId,
-  });
-
-  if (!sent) {
-    logger.warn("Monitor check message buffer full", {
-      monitorId: data.monitorId,
-      checkId: data.checkId,
-      queue,
-    });
-  }
+  await publishConfirmed(ch, queue, data);
 
   logger.info("Monitor check job added to queue", {
     monitorId: data.monitorId,
