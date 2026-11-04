@@ -102,7 +102,11 @@ def _prepare_file_payload(
         else:
             file_bytes = bytes(raw_bytes)
         guessed_name = getattr(file, "name", None)
-        resolved_filename = filename or (Path(guessed_name).name if guessed_name else "upload")
+        # Binary streams opened from file descriptors have an integer `name`.
+        # Only filesystem names can supply an upload basename.
+        resolved_filename = filename or (
+            Path(guessed_name).name if isinstance(guessed_name, (str, Path)) and guessed_name else "upload"
+        )
     else:
         raise ValueError("Unsupported file input type. Use a file path, bytes, bytearray, or binary file object.")
 
