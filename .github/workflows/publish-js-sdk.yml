@@ -126,7 +126,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           for name in firecrawl @mendable/firecrawl-js @mendable/firecrawl; do
-            file="dist/$(echo "$name" | sed 's#^@##; s#/#-#')-$VERSION.tgz"
+            file="./dist/$(echo "$name" | sed 's#^@##; s#/#-#')-$VERSION.tgz"
             if [ "$(npm view "$name@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
               echo "$name@$VERSION is already on npm; skipping"
               continue
