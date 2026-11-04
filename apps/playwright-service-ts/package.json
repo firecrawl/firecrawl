@@ -7,7 +7,8 @@
     "start": "node dist/api.js",
     "build": "tsc",
     "dev": "tsx api.ts",
-    "test": "node --import tsx --test --test-force-exit helpers/*.spec.ts"
+    "test": "node --import tsx --test --test-force-exit helpers/*.spec.ts",
+    "test:media": "node --experimental-test-module-mocks --import tsx --test media.test.cjs"
   },
   "keywords": [],
   "author": "Jeff Pereira",
