@@ -3,9 +3,9 @@ Search functionality for Firecrawl v2 API.
 """
 
 from typing import Dict, Any, Union, List, TypeVar, Type
-from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, DiscoveredTool
+from ..types import SearchRequest, SearchData, Document, SearchDocument, SearchResultWeb, SearchResultNews, SearchResultImages, DiscoveredTool
 from ..utils.agent_hints import agent_hint_metadata
-from ..utils.normalize import normalize_document_input, _map_search_result_keys
+from ..utils.normalize import is_scraped_search_result, normalize_search_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
 T = TypeVar("T")
@@ -62,17 +62,8 @@ def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, 'Doc
     results: List[Union[T, 'Document']] = []
     for item in arr:
         if item and isinstance(item, dict):
-            if (
-                "markdown" in item or
-                "html" in item or
-                "rawHtml" in item or
-                "links" in item or
-                "screenshot" in item or
-                "changeTracking" in item or
-                "summary" in item or
-                "json" in item
-            ):
-                results.append(Document(**normalize_document_input(item)))
+            if is_scraped_search_result(item):
+                results.append(SearchDocument(**normalize_search_document_input(item)))
             else:
                 result_type_name = None
                 if result_type == SearchResultImages:
