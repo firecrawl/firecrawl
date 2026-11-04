@@ -118,7 +118,7 @@ def rank_and_summarize_resources(resources, skills):
         }}"""
 
         response = client.chat.completions.create(
-            model="o3-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are a technical learning resource curator."},
                 {"role": "user", "content": prompt}
