@@ -29,7 +29,7 @@ module Firecrawl
     # @param api_key [String, nil] API key (falls back to FIRECRAWL_API_KEY env var)
     # @param api_url [String] API base URL
     # @param timeout [Integer] HTTP request timeout in seconds
-    # @param max_retries [Integer] maximum automatic retries for transient failures
+    # @param max_retries [Integer] maximum automatic retries for transient GET failures
     # @param backoff_factor [Float] exponential backoff factor in seconds
     def initialize(
       api_key: nil,
