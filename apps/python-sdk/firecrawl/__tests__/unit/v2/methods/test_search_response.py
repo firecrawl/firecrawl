@@ -76,10 +76,10 @@ class TestSearchTransportErrors:
 
     @pytest.mark.asyncio
     async def test_async_timeout_is_reraised(self):
-        import httpx
+        import httpx2
 
         client = Mock()
-        client.post = AsyncMock(side_effect=httpx.ReadTimeout("read timed out"))
+        client.post = AsyncMock(side_effect=httpx2.ReadTimeout("read timed out"))
 
-        with pytest.raises(httpx.ReadTimeout):
+        with pytest.raises(httpx2.ReadTimeout):
             await search_async(client, SearchRequest(query="test"))

@@ -1,5 +1,5 @@
 from unittest.mock import Mock
-import httpx
+import httpx2
 import pytest
 from firecrawl import Firecrawl, AsyncFirecrawl
 
@@ -35,7 +35,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
         try:
-            async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
+            async def post(url, **kwargs): return httpx2.Response(200,json=payload(kwargs['json']))
             monkeypatch.setattr(client._v2_client.async_http_client._client,'post',post)
             search=await client.search('podcasts',sources=['alexandria'],domain_tools=True,tool_detail='full')
             found=await client.find_tools(providers=['particle'],limit=2)
@@ -140,7 +140,7 @@ async def test_find_tools_error_keeps_code(async_client, monkeypatch):
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
         try:
-            async def post(url, **kwargs): return httpx.Response(200, json=body)
+            async def post(url, **kwargs): return httpx2.Response(200, json=body)
             monkeypatch.setattr(client._v2_client.async_http_client._client, 'post', post)
             with pytest.raises(FirecrawlError) as caught:
                 await client.find_tools(providers=['particle'])
