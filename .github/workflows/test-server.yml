@@ -428,6 +428,19 @@ jobs:
           MONITOR_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
           DOTENV_CONFIG_PATH: /dev/null
 
+      - name: Run repeated feedback submission regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          pnpm exec vitest run src/controllers/v2/feedback/record.integration.test.ts --reporter=verbose
+        working-directory: apps/api
+        env:
+          FEEDBACK_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          DOTENV_CONFIG_PATH: /dev/null
+
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'
         run: |
