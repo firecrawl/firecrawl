@@ -85,10 +85,18 @@ Enable it only through administrator-controlled deployment configuration on an
 isolated, access-controlled instance; API request parameters cannot enable it.
 The override does not permit non-HTTP(S) URLs.
 
-Remote scraping engines, webhook consumers, and upstream proxies must enforce
-their own destination policy on every connection and redirect. API-side DNS
-validation cannot pin the IP address a different service later resolves. Use
-egress network restrictions as well, especially for cloud metadata services.
+For API HTTP requests through `PROXY_SERVER`, the default policy requires an
+HTTP(S) CONNECT proxy. Each tunnel targets a validated IP literal while the
+original HTTP Host header and TLS server name are preserved. The proxy does
+not resolve the destination hostname again; private proxy servers themselves
+remain supported as operator-configured infrastructure.
+
+Remote scraping engines and webhook consumers must enforce their own destination
+policy on every connection and redirect. API-side DNS validation cannot pin the
+IP address a different service later resolves. The bundled Playwright service
+pins direct connections; when configured with its own upstream proxy, that proxy
+must enforce the same egress policy. Use egress network restrictions as well,
+especially for cloud metadata services.
 
 ## Admin routes
 

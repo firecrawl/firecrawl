@@ -68,8 +68,25 @@ export async function assertSafeOutboundDestination(
   resolve = (hostname: string) => dns.promises.lookup(hostname, { all: true }),
 ): Promise<void> {
   const url = assertSafeOutboundUrl(value, allowPrivate);
+  if (allowPrivate) return;
+  await resolvePublicOutboundAddresses(url, resolve);
+}
+
+/** Return the same validated addresses the transport must connect to. */
+export async function resolvePublicOutboundAddresses(
+  value: string | URL,
+  resolve = (hostname: string) => dns.promises.lookup(hostname, { all: true }),
+): Promise<dns.LookupAddress[]> {
+  const url = assertSafeOutboundUrl(value);
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  if (allowPrivate || IPAddr.isValid(hostname)) return;
+  if (IPAddr.isValid(hostname)) {
+    return [
+      {
+        address: hostname,
+        family: IPAddr.parse(hostname).kind() === "ipv6" ? 6 : 4,
+      },
+    ];
+  }
   const addresses = await resolve(hostname);
   if (
     !addresses.length ||
@@ -79,6 +96,7 @@ export async function assertSafeOutboundDestination(
   ) {
     throw new InsecureConnectionError();
   }
+  return addresses;
 }
 
 /** Validate the actual lookup result passed to Node's socket connector. Checking
