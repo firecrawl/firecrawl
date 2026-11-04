@@ -1,4 +1,5 @@
 import time
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
@@ -45,9 +46,13 @@ def _prepare_target(target: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _prepare_payload(request: Any) -> Dict[str, Any]:
+    request = deepcopy(request)
     payload = _dump(request)
     if not isinstance(payload, dict):
         raise ValueError("Monitor request must be an object")
+    # Keep typed nested options available to target-specific normalization.
+    if isinstance(request, (MonitorCreateRequest, MonitorUpdateRequest)) and request.targets is not None:
+        payload["targets"] = request.targets
     if "targets" in payload:
         payload["targets"] = [
             _prepare_target(_dump(target))
