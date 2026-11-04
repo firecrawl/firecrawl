@@ -93,6 +93,31 @@ describe("Batch scrape tests", () => {
     scrapeTimeout,
   );
 
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "skips invalid URLs by default",
+    async () => {
+      const start = await request(TEST_API_URL)
+        .post("/v2/batch/scrape")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("Content-Type", "application/json")
+        .send({ urls: [TEST_SUITE_WEBSITE, "not a url"] });
+      expect(start.statusCode).toBe(200);
+      expect(start.body.success).toBe(true);
+      expect(start.body.invalidURLs).toEqual(["not a url"]);
+
+      const strict = await request(TEST_API_URL)
+        .post("/v2/batch/scrape")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("Content-Type", "application/json")
+        .send({
+          urls: [TEST_SUITE_WEBSITE, "not a url"],
+          ignoreInvalidURLs: false,
+        });
+      expect(strict.statusCode).toBe(400);
+    },
+    scrapeTimeout,
+  );
+
   it.concurrent("cancel rejects unknown batch id with 404", async () => {
     const unknownId = "00000000-0000-7000-8000-000000000000";
     const res = await request(TEST_API_URL)
