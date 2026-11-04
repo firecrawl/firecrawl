@@ -6,11 +6,7 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
-import {
-  isRegionUnavailable,
-  isUsOnly,
-  US_DATA_REGION,
-} from "../../../../lib/us-only";
+import { isUsOnly, US_DATA_REGION } from "../../../../lib/us-only";
 import {
   maybeSaveResult,
   provenanceFromResponse,
@@ -23,7 +19,10 @@ import {
   firePdfTableFormat,
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
-import { firePdfUsOnlyRefusal } from "./fire-pdf/data-region";
+import {
+  firePdfRegionRefused,
+  firePdfUsOnlyRefusal,
+} from "./fire-pdf/data-region";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -185,14 +184,14 @@ export async function scrapePDFWithFirePDF(
       // the echo is the only proof the fire-pdf build understood the
       // option — older builds ignore unknown request fields and omit it.
       page_markers: z.literal(true).optional(),
-      data_region: z.unknown().optional(),
+      data_region_applied: z.unknown().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
   }).catch(error => {
     if (
       usOnly &&
-      isRegionUnavailable(
+      firePdfRegionRefused(
         (error as { cause?: { response?: { body?: unknown } } })?.cause
           ?.response?.body,
       )
@@ -203,7 +202,7 @@ export async function scrapePDFWithFirePDF(
   });
   // A build that ignores the pin answers without the echo; its result may
   // have come from GPU capacity outside the US.
-  if (usOnly && resp.data_region !== US_DATA_REGION) {
+  if (usOnly && resp.data_region_applied !== US_DATA_REGION) {
     throw firePdfUsOnlyRefusal(meta, "region_unconfirmed", sourceKind);
   }
 

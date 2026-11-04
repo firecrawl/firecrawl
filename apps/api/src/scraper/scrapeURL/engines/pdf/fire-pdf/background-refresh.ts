@@ -144,6 +144,8 @@ async function submit(
           tableFormat: undefined,
           // Internal work under no team: never offered for training capture.
           trainingCapture: undefined,
+          // US-only teams never reach here: their refreshes are skipped above.
+          dataRegion: undefined,
         }),
         refresh: true,
       },

@@ -482,6 +482,7 @@ describe("FirePDF table format", () => {
       includeBlocks: false,
       pageMarkers: false,
       trainingCapture,
+      dataRegion: undefined,
     };
     expect(buildFirePdfJobOptions({ ...base, tableFormat: "dynamic" })).toEqual(
       {
