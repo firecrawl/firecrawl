@@ -8,6 +8,7 @@ import type { Meta } from "../../..";
 import { config } from "../../../../../config";
 import { fetch as undiciFetch } from "undici";
 import { firePdfHeaders } from "./utils";
+import { isUsOnly, US_DATA_REGION } from "../../../../../lib/us-only";
 
 /** Handle for adopting an existing fire-pdf job instead of submitting a
  * new one. Produced by {@link lookupAdoptableFirePdfJob}: the job was
@@ -71,6 +72,9 @@ export async function lookupAdoptableFirePdfJob(
           team_id: meta.internalOptions.teamId,
         }),
         options,
+        ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined) && {
+          data_region: US_DATA_REGION,
+        }),
       }),
       signal,
     });

@@ -2,6 +2,8 @@ import { generateText } from "ai";
 import type { Logger } from "winston";
 import { withUsageTelemetry } from "../../lib/ai-usage-telemetry";
 import { isZeroDataRetentionActive } from "../../lib/otel-tracer";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import {
   googleModel,
   googleProviderOptions,
@@ -91,6 +93,7 @@ interface JudgeChangeArgs {
   // Turns off AI SDK telemetry for the call, as does running in a zero data
   // retention context.
   zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
 }
 
 function isMeaningfulChangeEvent(
@@ -129,7 +132,6 @@ const JUDGE_ATTEMPT_TIMEOUT_MS = 30_000;
 const JUDGE_MAX_ATTEMPTS = 3;
 const JUDGE_BACKOFF_MS = [300, 800];
 const JUDGE_FUNCTION_ID = "judgeChange";
-const judgeModel = withUsageTelemetry(googleModel(JUDGE_MODEL_NAME));
 
 function judgeTelemetry(
   labels: LlmUsageLabels | undefined,
@@ -146,7 +148,14 @@ async function callGemini(args: {
   userBlock: string;
   labels?: LlmUsageLabels;
   zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
 }): Promise<{ text: string }> {
+  const judgeModel = withUsageTelemetry(
+    googleModel(JUDGE_MODEL_NAME, {
+      teamFlags: args.teamFlags,
+      feature: "The monitor change judge",
+    }),
+  );
   let lastError: unknown;
   for (let attempt = 1; attempt <= JUDGE_MAX_ATTEMPTS; attempt++) {
     const controller = new AbortController();
@@ -193,6 +202,7 @@ export async function judgeChange(
     markdownDiff,
     labels,
     zeroDataRetention,
+    teamFlags,
   } = args;
 
   const parts: string[] = [`MONITOR GOAL:\n${goal.trim()}`];
@@ -226,6 +236,7 @@ export async function judgeChange(
       userBlock,
       labels,
       zeroDataRetention,
+      teamFlags,
     });
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
@@ -278,6 +289,7 @@ export async function judgeChange(
       ),
     };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) throw error;
     logger.error("Judge call failed", { error });
     return {
       meaningful: true,

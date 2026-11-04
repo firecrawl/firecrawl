@@ -53,7 +53,7 @@ function normalizeResearchError(err: any, action: string): never {
     const body: any = err.response?.data;
     if (body && (body.detail || body.title)) {
       const message = body.detail || body.title;
-      throw new SdkError(message, status, body.type, body);
+      throw new SdkError(message, status, body.code ?? body.type, body);
     }
     throw new SdkError(
       err.message || `Request failed while trying to ${action}`,
@@ -67,7 +67,7 @@ function normalizeResearchError(err: any, action: string): never {
 
 /**
  * Client for the v2 research endpoints — Firecrawl's **research paper index**
- * (~43M paper abstracts) plus GitHub history/readmes.
+ * (~43M paper abstracts).
  *
  * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
  * bioRxiv and medRxiv — with arXiv covering physics, mathematics and computer
@@ -217,12 +217,8 @@ export class ResearchClient {
    * Search the research index GitHub slice: issue/PR history and repository
    * readmes.
    *
-   * @deprecated Use `developerSearch()` on the client instead. This
-   * endpoint stops responding after 2026-11-03. The developer index searches
-   * GitHub issues, pull requests and readmes plus curated documentation
-   * sources, returns matched passages, and adds filters for repo, language,
-   * license and stars. It does not carry over the `scores` breakdown or the
-   * `resultType: "web"` fallback results. See
+   * @deprecated The research index GitHub search endpoint was removed after
+   * 2026-11-03. Use `developerSearch()` on the client instead. See
    * https://docs.firecrawl.dev/features/developer.
    * @param query Search query.
    * @param options Optional `k`.

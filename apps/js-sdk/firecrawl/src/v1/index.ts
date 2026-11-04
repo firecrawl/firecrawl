@@ -370,7 +370,7 @@ export interface ExtractParams<LLMSchema extends zt.ZodSchema = any> {
  * Response interface for extracting information from URLs.
  * Defines the structure of the response received after extracting information from URLs.
  */
-export interface ExtractResponse<LLMSchema extends zt.ZodSchema = any> {
+export interface ExtractResponse<LLMSchema = any> {
   success: boolean;
   data: LLMSchema;
   error?: string;

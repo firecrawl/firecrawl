@@ -13,6 +13,7 @@ type ExtractV3AgentStatus = {
   error?: string;
   model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
   effort?: "low" | "medium" | "high";
+  safe?: boolean;
   threadId?: string;
   threadTurn?: number;
   mode?: "extract" | "chat";
@@ -21,6 +22,8 @@ type ExtractV3AgentStatus = {
   pendingApproval?: unknown;
   exchange?: unknown;
   creditsUsed?: number;
+  /** When a finished run reached its terminal state. */
+  completedAt?: string;
 };
 
 /**

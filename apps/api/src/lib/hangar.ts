@@ -112,6 +112,7 @@ export async function createHangarBrowser(
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
+    zeroDataRetention: boolean;
   },
 ): Promise<HangarCreated> {
   const body = {
@@ -124,7 +125,7 @@ export async function createHangarBrowser(
     },
     recording: { enabled: options.recordSession },
     execution: { enabled: true },
-    ...hangarBrowserOptions(options),
+    ...hangarBrowserOptions(options, options.zeroDataRetention),
   };
   let created: HangarCreated | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {

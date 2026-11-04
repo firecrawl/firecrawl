@@ -60,9 +60,14 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  UsOnlyUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
+import {
+  inWaterfallExperimentArm,
+  waterfallExperimentFor,
+} from "./waterfallExperiments";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { shouldCheckRobots } from "./shouldCheckRobots";
@@ -602,6 +607,7 @@ async function buildMetaObject(
 export type InternalOptions = {
   teamId: string;
   crawlId?: string;
+  origin?: string;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
@@ -618,7 +624,9 @@ export type InternalOptions = {
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
-  teamFlags?: TeamFlags;
+  /** null: the team has no flags. Absent: not snapshotted, so a check that
+   * must fail closed treats the org as unresolved. */
+  teamFlags?: TeamFlags | null;
   /** Team's org, snapshotted from the request ACUC at acceptance (same
    * pattern as teamFlags). Rides the job payload so org-scoped blocklist
    * checks work without re-fetching the chunk. Required so a payload
@@ -983,6 +991,31 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
+            const nextEngine = remainingEngines[0]?.engine;
+            const experiment = waterfallExperimentFor(
+              error.engine,
+              error.error,
+              nextEngine,
+            );
+            if (experiment) {
+              const testArm = inWaterfallExperimentArm(meta.id, experiment);
+              meta.logger.info("Waterfall experiment decision", {
+                experiment,
+                arm: testArm ? "test" : "control",
+                engine: error.engine,
+                nextEngine,
+                error: error.error,
+              });
+              if (testArm) {
+                enginePromises = enginePromises.filter(
+                  x => x.engine !== error.engine,
+                );
+                if (enginePromises.length === 0) {
+                  break;
+                }
+                continue;
+              }
+            }
             if (error.engine === "x-twitter") {
               meta.logger.warn("X/Twitter scrape failed fatally.", {
                 error: error.error,
@@ -1032,6 +1065,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof UsOnlyUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
@@ -1178,6 +1212,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     let document: Document = {
       markdown: engineResult.markdown,
+      warning: engineResult.warning,
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
@@ -1326,8 +1361,8 @@ export async function scrapeURL(
         }
       }
 
-      // ZDR always verifies TLS, for every engine. Explicit false also wins over
-      // the skip-by-default in applyScrapeOptionsDefaults.
+      // ZDR always verifies TLS, for every engine, even when the request asks
+      // to skip verification.
       if (internalOptions.zeroDataRetention) {
         options.skipTlsVerification = false;
       }
@@ -1433,6 +1468,7 @@ export async function scrapeURL(
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
                       location: options.location,
+                      skipTlsVerification: options.skipTlsVerification,
                     },
                     id,
                     meta.logger,

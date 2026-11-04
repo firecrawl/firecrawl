@@ -245,7 +245,7 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
-      - name: Run Autumn entity provisioning regression tests
+      - name: Run Autumn billing service regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
         working-directory: apps/api
@@ -264,6 +264,19 @@ jobs:
         run: pnpm exec vitest run src/services/billing/__tests__/batch_billing.test.ts --reporter=default
         working-directory: apps/api
 
+      - name: Run MCP credits billing regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/services/billing/__tests__/credit_billing.test.ts
+          src/services/autumn/__tests__/mcp-credits.test.ts
+          src/controllers/v2/__tests__/agent-credit-gate.test.ts
+          src/controllers/v2/__tests__/browser-mcp-credits.test.ts
+          src/services/alexandria/retrieve.test.ts
+          src/__tests__/routes/hosted-mcp-agent-interop.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run safeFetch SSRF guard regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/scraper/scrapeURL/engines/utils/safeFetch.proxy.test.ts --reporter=default
@@ -276,7 +289,11 @@ jobs:
 
       - name: Run browser options regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
-        run: pnpm exec vitest run src/lib/browser-options.test.ts --reporter=default
+        run: >-
+          pnpm exec vitest run
+          src/lib/browser-options.test.ts
+          src/controllers/v2/__tests__/scrape-browser.test.ts
+          --reporter=default
         working-directory: apps/api
 
       - name: Run search safe filter regression tests
@@ -309,6 +326,15 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run Vercel Marketplace OIDC auth regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/__tests__/vercel-marketplace-oidc.test.ts
+          src/controllers/__tests__/auth-vercel-oidc.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run agent location regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/controllers/v2/__tests__/agent-location.test.ts --reporter=default
@@ -323,6 +349,35 @@ jobs:
           src/controllers/v2/__tests__/agent-rollout.test.ts
           src/controllers/v2/__tests__/agent-list.test.ts
           src/controllers/v2/__tests__/agent-status.test.ts
+          src/lib/agent-job-expiry.test.ts
+          src/lib/job-operational-stores.test.ts
+          src/services/logging/log_job.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run audio, video and product format zero data retention regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/transformers/__tests__/audio.test.ts
+          src/scraper/scrapeURL/transformers/__tests__/video.test.ts
+          src/scraper/scrapeURL/transformers/__tests__/product.test.ts
+          src/lib/scrape-billing.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run US-only PDF, image OCR and PII redaction regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFUsOnly.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/usOnlyPdfRouting.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFBackgroundRefresh.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/parseFirePdfRouting.test.ts
+          src/lib/fire-privacy-client.test.ts
+          src/scraper/scrapeURL/transformers/redactPII.test.ts
           --reporter=default
         working-directory: apps/api
 

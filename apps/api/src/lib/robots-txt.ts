@@ -22,9 +22,11 @@ export async function fetchRobotsTxt(
     location,
     headers,
     skipCache,
+    skipTlsVerification,
   }: {
     url: string;
     zeroDataRetention: boolean;
+    skipTlsVerification?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     skipCache?: boolean;
@@ -71,6 +73,7 @@ export async function fetchRobotsTxt(
       ...(skipCache ? { maxAge: 0 } : { maxAge: ROBOTS_MAX_AGE }),
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
+      ...(skipTlsVerification ? { skipTlsVerification } : {}),
     }),
     {
       forceEngine,

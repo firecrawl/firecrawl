@@ -2,6 +2,7 @@ import { config } from "../config";
 import {
   cohortBucket,
   extractionProviderCost,
+  isEmptyListAnswer,
   isRequestedModelSupported,
   selectExtractionRoute,
 } from "./extraction-provider";
@@ -196,5 +197,82 @@ describe("extraction provider routing", () => {
     withConfig({ ...cfg, EXTRACTION_PROVIDER_BASE_URL: undefined }, () =>
       expect(isRequestedModelSupported("extraction-v1")).toBe(false),
     );
+  });
+});
+
+describe("ref-schema rollout", () => {
+  const provider = {
+    EXTRACTION_PROVIDER_BASE_URL: "http://provider.local/v1",
+    EXTRACTION_PROVIDER_TEAM_IDS: undefined,
+    EXTRACTION_PROVIDER_SHADOW_PERCENT: 0,
+  };
+
+  it("uses REF_SCHEMA_ROLLOUT_PERCENT for ref schemas and ROLLOUT_PERCENT otherwise", () => {
+    withConfig(
+      {
+        ...provider,
+        EXTRACTION_PROVIDER_ROLLOUT_PERCENT: 0,
+        EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: 100,
+      },
+      () => {
+        expect(selectExtractionRoute({ ...base, refSchema: true })).toBe(
+          "provider",
+        );
+        expect(selectExtractionRoute({ ...base, refSchema: false })).toBe(
+          "default",
+        );
+        expect(selectExtractionRoute(base)).toBe("default");
+      },
+    );
+  });
+
+  it("falls back to ROLLOUT_PERCENT when the ref percentage is unset", () => {
+    withConfig(
+      {
+        ...provider,
+        EXTRACTION_PROVIDER_ROLLOUT_PERCENT: 100,
+        EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: undefined,
+      },
+      () =>
+        expect(selectExtractionRoute({ ...base, refSchema: true })).toBe(
+          "provider",
+        ),
+    );
+  });
+
+  it("keeps the shadow band directly above the ref rollout band", () => {
+    withConfig(
+      {
+        ...provider,
+        EXTRACTION_PROVIDER_ROLLOUT_PERCENT: 0,
+        EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: 20,
+        EXTRACTION_PROVIDER_SHADOW_PERCENT: 10,
+      },
+      () => {
+        for (let i = 0; i < 300; i++) {
+          const teamId = `team-${i}`;
+          const b = cohortBucket(teamId);
+          expect(
+            selectExtractionRoute({ ...base, teamId, refSchema: true }),
+          ).toBe(b < 20 ? "provider" : b < 30 ? "shadow" : "default");
+          expect(selectExtractionRoute({ ...base, teamId })).toBe(
+            b < 10 ? "shadow" : "default",
+          );
+        }
+      },
+    );
+  });
+});
+
+describe("isEmptyListAnswer", () => {
+  it("is true only when the answer has arrays and all of them are empty", () => {
+    expect(isEmptyListAnswer({ jobs: [] })).toBe(true);
+    expect(isEmptyListAnswer({ page: { items: [], tags: [] } })).toBe(true);
+    expect(isEmptyListAnswer([])).toBe(true);
+    expect(isEmptyListAnswer({ jobs: [{ title: "Cook" }] })).toBe(false);
+    expect(isEmptyListAnswer({ jobs: [], seen: [1] })).toBe(false);
+    expect(isEmptyListAnswer({ title: "No lists here" })).toBe(false);
+    expect(isEmptyListAnswer(undefined)).toBe(false);
+    expect(isEmptyListAnswer(null)).toBe(false);
   });
 });

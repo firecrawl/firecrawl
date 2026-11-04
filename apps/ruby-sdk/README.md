@@ -195,7 +195,7 @@ results = client.search("latest news",
 
 ### Developer Search
 
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `developer_search` replaces the deprecated `search_github`.
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
 
 ```ruby
 response = client.developer_search(

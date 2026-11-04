@@ -7,13 +7,12 @@
 // carrying the client IP (the durable `keyless_credit_usage` row is deferred
 // to the firecrawl-db migration), writes no DB row, and charges nothing;
 // billable requests keep writing rows exactly as before.
-const { dbInsert, insertValues, redisIncrby, redisExpire } = vi.hoisted(() => {
+const { dbInsert, insertValues, redisEval } = vi.hoisted(() => {
   const insertValues = vi.fn().mockResolvedValue(undefined);
   return {
     insertValues,
     dbInsert: vi.fn(() => ({ values: insertValues })),
-    redisIncrby: vi.fn().mockResolvedValue(1),
-    redisExpire: vi.fn().mockResolvedValue(1),
+    redisEval: vi.fn().mockResolvedValue([1, 1]),
   };
 });
 
@@ -25,12 +24,10 @@ vi.mock("../../db/connection", () => ({
 
 vi.mock("../../services/rate-limiter", () => ({
   redisRateLimitClient: {
-    incrby: redisIncrby,
-    expire: redisExpire,
     get: vi.fn().mockResolvedValue(null),
     incr: vi.fn().mockResolvedValue(1),
     ttl: vi.fn().mockResolvedValue(-1),
-    eval: vi.fn().mockResolvedValue([1, 1]),
+    eval: redisEval,
   },
 }));
 
@@ -161,7 +158,7 @@ describe("chargeKeylessCredits", () => {
 
     await chargeKeylessCredits(KEYLESS_TEAM, 0);
 
-    expect(redisIncrby).not.toHaveBeenCalled();
+    expect(redisEval).not.toHaveBeenCalled();
     expect(dbInsert).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("Keyless zero-credit usage"),
@@ -172,7 +169,13 @@ describe("chargeKeylessCredits", () => {
   it("charges the credit budget for a billable request", async () => {
     await chargeKeylessCredits(KEYLESS_TEAM, 4);
 
-    expect(redisIncrby).toHaveBeenCalledWith(`keyless_credits:${IP}`, 4);
+    expect(redisEval).toHaveBeenCalledWith(
+      expect.any(String),
+      1,
+      `keyless_credits:${IP}`,
+      4,
+      86400,
+    );
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ ip: IP, credits_used: 4 }),
     );
@@ -181,7 +184,7 @@ describe("chargeKeylessCredits", () => {
   it("does nothing at all for a team that is not keyless", async () => {
     await chargeKeylessCredits("some-real-team-id", 5);
 
-    expect(redisIncrby).not.toHaveBeenCalled();
+    expect(redisEval).not.toHaveBeenCalled();
     expect(dbInsert).not.toHaveBeenCalled();
   });
 });

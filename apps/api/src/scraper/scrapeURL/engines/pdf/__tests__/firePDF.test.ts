@@ -469,6 +469,11 @@ describe("FirePDF table format", () => {
   );
 
   it("puts the format in async job options only when set", () => {
+    const trainingCapture = {
+      eligible: true,
+      policy_ref: "firecrawl-org-training-v1",
+      decision_ref: "eligible",
+    } as const;
     const base = {
       maxPages: undefined,
       pagesProcessed: 2,
@@ -476,12 +481,25 @@ describe("FirePDF table format", () => {
       includePageMarkdown: false,
       includeBlocks: false,
       pageMarkers: false,
+      trainingCapture,
     };
     expect(buildFirePdfJobOptions({ ...base, tableFormat: "dynamic" })).toEqual(
-      { pages_estimate: 2, mode: "auto", tableFormat: "dynamic" },
+      {
+        pages_estimate: 2,
+        mode: "auto",
+        tableFormat: "dynamic",
+        training_capture: trainingCapture,
+      },
     );
     expect(buildFirePdfJobOptions({ ...base, tableFormat: undefined })).toEqual(
-      { pages_estimate: 2, mode: "auto" },
+      { pages_estimate: 2, mode: "auto", training_capture: trainingCapture },
     );
+    expect(
+      buildFirePdfJobOptions({
+        ...base,
+        tableFormat: undefined,
+        trainingCapture: undefined,
+      }),
+    ).toEqual({ pages_estimate: 2, mode: "auto" });
   });
 });

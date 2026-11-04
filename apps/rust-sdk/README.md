@@ -236,7 +236,7 @@ match map_result {
 
 ### Developer search
 
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. `developer_search` replaces the deprecated `search_github`.
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
 
 ```rust
 use firecrawl::{Client, DeveloperSearchOptions};
