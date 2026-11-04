@@ -19,7 +19,8 @@ export class InsecureConnectionError extends TransportableError {
 
 export function isIPPrivate(address: string): boolean {
   const host = address.replace(/^\[|\]$/g, "");
-  return IPAddr.isValid(host) && IPAddr.parse(host).range() !== "unicast";
+  // process() converts IPv4-mapped IPv6 to IPv4 before classifying its range.
+  return IPAddr.isValid(host) && IPAddr.process(host).range() !== "unicast";
 }
 
 /** Validate URL syntax and literal destinations before queueing or dispatching.

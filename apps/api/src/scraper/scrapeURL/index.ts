@@ -1315,6 +1315,20 @@ export async function scrapeURL(
           config.ALLOW_LOCAL_WEBHOOKS === true,
         );
       } catch (error) {
+        const unsafeDestination = error instanceof InsecureConnectionError;
+        _logger.warn("Scrape destination validation failed", {
+          scrapeId: id,
+          url,
+          error,
+          unsafeDestination,
+        });
+        setSpanAttributes(span, {
+          "scrape.success": false,
+          "scrape.blocked_by_destination_policy": unsafeDestination,
+          "scrape.error_type": unsafeDestination
+            ? "InsecureConnectionError"
+            : "DNSResolutionError",
+        });
         return {
           success: false,
           error:

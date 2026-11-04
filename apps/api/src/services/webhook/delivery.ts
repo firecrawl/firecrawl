@@ -122,13 +122,23 @@ export class WebhookSender {
         this.config.url,
         config.ALLOW_LOCAL_WEBHOOKS === true,
       );
-    } catch {
+    } catch (error) {
       this.logger.warn(
         "Aborting webhook call to unsafe or unresolved destination",
         {
+          error,
           webhookUrl: this.config.url,
         },
       );
+      await logWebhook({
+        success: false,
+        teamId: this.context.teamId,
+        crawlId: this.context.jobId,
+        scrapeId,
+        url: this.config.url,
+        event: payload.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { delivered: false, skipped: true };
     }
 

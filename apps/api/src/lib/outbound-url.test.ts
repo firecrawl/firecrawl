@@ -8,6 +8,29 @@ import {
 import type dns from "node:dns";
 
 describe("outbound destination policy", () => {
+  it.each([
+    ["::ffff:8.8.8.8", true],
+    ["::ffff:127.0.0.1", false],
+    ["::ffff:169.254.169.254", false],
+  ])(
+    "classifies the mapped DNS answer %s by its IPv4 range",
+    (address, allowed) => {
+      const addresses = [{ address, family: 6 }];
+      const resolve = vi.fn((_host, _options, callback) =>
+        callback(null, addresses),
+      );
+      const lookup = createSafeLookup(
+        () => false,
+        resolve as unknown as typeof dns.lookup,
+      );
+      const callback = vi.fn();
+      lookup("mapped.example", { all: true }, callback);
+      expect(callback).toHaveBeenCalledOnce();
+      expect(callback).toHaveBeenCalledWith(
+        ...(allowed ? [null, addresses] : [expect.any(Error)]),
+      );
+    },
+  );
   it("preserves the security error across worker serialization", () => {
     const error = new InsecureConnectionError();
     const restored = InsecureConnectionError.deserialize(
@@ -29,6 +52,8 @@ describe("outbound destination policy", () => {
     "http://0",
     "http://[::1]",
     "http://[::ffff:127.0.0.1]",
+    "http://[::ffff:169.254.169.254]",
+    "http://[::ffff:192.168.1.1]",
     "http://[fe80::1]",
     "http://[fd00::1]",
     "http://localhost.",
@@ -43,6 +68,7 @@ describe("outbound destination policy", () => {
   it.each([
     "https://example.com/path",
     "http://8.8.8.8",
+    "http://[::ffff:8.8.8.8]",
     "https://[2606:4700:4700::1111]",
   ])("accepts %s", url =>
     expect(() => assertSafeOutboundUrl(url)).not.toThrow(),
@@ -66,6 +92,7 @@ describe("outbound destination policy", () => {
     );
     const callback = vi.fn();
     lookup("mixed.example", { all: true }, callback);
+    expect(callback).toHaveBeenCalledOnce();
     expect(callback).toHaveBeenCalledWith(expect.any(Error));
     expect(resolve).toHaveBeenCalledOnce();
   });
@@ -94,6 +121,7 @@ describe("outbound destination policy", () => {
       );
       const callback = vi.fn();
       lookup("missing.example", { all: true }, callback);
+      expect(callback).toHaveBeenCalledOnce();
       expect(callback).toHaveBeenCalledWith(expect.any(Error));
     }
   });

@@ -8,18 +8,20 @@ const mocks = vi.hoisted(() => ({
   },
   publish: vi.fn().mockResolvedValue(undefined),
   lookup: vi.fn(),
+  rpush: vi.fn().mockResolvedValue(1),
+  warn: vi.fn(),
 }));
 vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("node:dns", () => ({
   default: { promises: { lookup: mocks.lookup } },
 }));
 vi.mock("./queue", () => ({ webhookQueue: { publish: mocks.publish } }));
-vi.mock("../redis", () => ({ redisEvictConnection: {} }));
+vi.mock("../redis", () => ({ redisEvictConnection: { rpush: mocks.rpush } }));
 vi.mock("../../db/connection", () => ({ db: {} }));
 vi.mock("../../db/schema", () => ({}));
 vi.mock("../../lib/logger", () => {
   const logger = {
-    warn: vi.fn(),
+    warn: mocks.warn,
     info: vi.fn(),
     error: vi.fn(),
     child: () => logger,
@@ -60,6 +62,16 @@ it.each([
   expect(await send(url)).toMatchObject({ delivered: false, skipped: true });
   expect(mocks.publish).not.toHaveBeenCalled();
   expect(mocks.lookup).not.toHaveBeenCalled();
+  expect(mocks.rpush).toHaveBeenCalledOnce();
+  const row = JSON.parse(mocks.rpush.mock.calls[0][1]);
+  expect(row).toMatchObject({
+    success: false,
+    team_id: "team",
+    crawl_id: "job",
+    url,
+    event: WebhookEvent.CRAWL_STARTED,
+  });
+  expect(row.error).toBeTruthy();
 });
 
 it("does not publish a webhook whose DNS resolves to a private address", async () => {
@@ -71,11 +83,18 @@ it("does not publish a webhook whose DNS resolves to a private address", async (
 });
 
 it("fails closed on DNS resolution failure", async () => {
-  mocks.lookup.mockRejectedValue(new Error("DNS failed"));
+  const error = new Error("DNS failed");
+  mocks.lookup.mockRejectedValue(error);
   expect(await send("https://missing.example/hook")).toMatchObject({
     skipped: true,
   });
   expect(mocks.publish).not.toHaveBeenCalled();
+  expect(mocks.warn).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ error }),
+  );
+  expect(mocks.rpush).toHaveBeenCalledOnce();
+  expect(JSON.parse(mocks.rpush.mock.calls[0][1]).error).toBe("DNS failed");
 });
 
 it("publishes a public webhook after validating DNS", async () => {

@@ -318,7 +318,7 @@ describe("Scrape tests", () => {
   );
 
   concurrentIf(
-    TEST_SELF_HOST && HAS_PLAYWRIGHT && !playwrightAllowsLocalTargets,
+    TEST_SELF_HOST && HAS_PLAYWRIGHT && config.ALLOW_LOCAL_WEBHOOKS !== true,
   )(
     "blocks DNS-resolved local-network targets before the Playwright handoff",
     async () => {
