@@ -35,7 +35,7 @@ export function transformArrayToObject(
   if (!arrayKeyPath) {
     return arrayData.reduce((acc, item) => {
       for (const key in item) {
-        if (!acc[key]) {
+        if (!Object.prototype.hasOwnProperty.call(acc, key) || acc[key] == null) {
           acc[key] = item[key];
         } else if (
           typeof acc[key] === "object" &&
