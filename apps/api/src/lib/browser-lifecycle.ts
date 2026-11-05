@@ -520,6 +520,35 @@ export async function stopBrowserSession(session: BrowserSessionRow) {
   );
 }
 
+/** Stops the browser and waits for Hangar to release it; null when Hangar does not know it. */
+async function releaseHangarBrowser(browserId: string) {
+  try {
+    let browser = await stopHangarBrowser(browserId);
+    if (!["stopping", "stopped", "failed"].includes(browser.status))
+      throw new HangarError(502, "Hangar did not confirm the stop request.");
+    // A successful public DELETE includes final duration and billing, even
+    // though Hangar's stop endpoint acknowledges cleanup asynchronously.
+    const deadline = Date.now() + 30_000;
+    while (browser.status === "stopping") {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        throw new HangarError(
+          502,
+          "Browser is still stopping. Retry deletion shortly.",
+        );
+      browser = await getHangarBrowser(browserId, 0, Math.min(remaining, 5000));
+      if (browser.status === "stopping")
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    if (browser.status !== "stopped" && browser.status !== "failed")
+      throw new HangarError(502, "Hangar did not confirm session release.");
+    return browser;
+  } catch (error) {
+    if (isUnknownToHangar(error)) return null;
+    throw error;
+  }
+}
+
 async function stopBrowserSessionInternal(session: BrowserSessionRow) {
   if (session.status === "destroyed") {
     return {
@@ -528,39 +557,13 @@ async function stopBrowserSessionInternal(session: BrowserSessionRow) {
       creditsBilled: session.credits_used ?? 0,
     };
   }
-  let browser: HangarBrowser;
-  try {
-    browser = await stopHangarBrowser(session.browser_id);
-  } catch (error) {
-    if (!isUnknownToHangar(error)) throw error;
+  const browser = await releaseHangarBrowser(session.browser_id);
+  if (!browser)
     return {
       success: true,
       status: "stopped",
       ...(await closeUnknownBrowserSession(session)),
     };
-  }
-  if (!["stopping", "stopped", "failed"].includes(browser.status))
-    throw new HangarError(502, "Hangar did not confirm the stop request.");
-  // A successful public DELETE includes final duration and billing, even
-  // though Hangar's stop endpoint acknowledges cleanup asynchronously.
-  const deadline = Date.now() + 30_000;
-  while (browser.status === "stopping") {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0)
-      throw new HangarError(
-        502,
-        "Browser is still stopping. Retry deletion shortly.",
-      );
-    browser = await getHangarBrowser(
-      session.browser_id,
-      0,
-      Math.min(remaining, 5000),
-    );
-    if (browser.status === "stopping")
-      await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  if (browser.status !== "stopped" && browser.status !== "failed")
-    throw new HangarError(502, "Hangar did not confirm session release.");
   const settled = await settleBrowserSession(session, browser);
   return {
     success: true,

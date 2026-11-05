@@ -226,6 +226,41 @@ describe("browser session DELETE on an already destroyed session", () => {
     },
   );
 
+  it("closes an active session without a charge when the stop is accepted but the status poll answers 404", async () => {
+    mocks.getBrowserSession.mockResolvedValue(makeSession("active"));
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: () =>
+          Promise.resolve({ id: "b07ecb961ba4c547", status: "stopping" }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 404, body: null });
+    mocks.settleBrowserSessionOnce.mockImplementation(
+      async (_id: string, bill: () => Promise<number>) => ({
+        creditsBilled: await bill(),
+        newlySettled: true,
+      }),
+    );
+    mocks.mirrorExternalSlotRelease.mockResolvedValue(undefined);
+    const req = {
+      params: { sessionId: SESSION_ID },
+      auth: { team_id: TEAM_ID },
+    } as unknown as RequestWithAuth<{ sessionId: string }>;
+    const res = makeRes();
+
+    await browserDeleteController(req as any, res as any);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      status: "stopped",
+      creditsBilled: 0,
+    });
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
   it("DELETE /v2/scrape/:jobId/interact releases the active row when the scrape also has a destroyed row", async () => {
     const actual = await vi.importActual<
       typeof import("../../../lib/browser-sessions")
