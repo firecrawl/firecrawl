@@ -30,6 +30,7 @@ export async function getLinksFromSitemap(
     zeroDataRetention,
     location,
     headers,
+    usOnly,
   }: {
     sitemapUrl: string;
     urlsHandler(urls: string[]): unknown;
@@ -38,6 +39,7 @@ export async function getLinksFromSitemap(
     zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
+    usOnly?: boolean;
   },
   logger: Logger,
   crawlId: string,
@@ -126,6 +128,7 @@ export async function getLinksFromSitemap(
               : undefined,
             teamId: "sitemap",
             zeroDataRetention,
+            ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
           },
           new CostTracking(),
         );
@@ -216,6 +219,7 @@ export async function getLinksFromSitemap(
               location,
               headers,
               maxAge,
+              usOnly,
             },
             logger,
             crawlId,
@@ -249,6 +253,7 @@ export async function getLinksFromSitemap(
                 location,
                 headers,
                 maxAge,
+                usOnly,
               },
               logger,
               crawlId,
@@ -298,6 +303,7 @@ export async function getLinksFromSitemap(
                 location,
                 headers,
                 maxAge,
+                usOnly,
               },
               logger,
               crawlId,

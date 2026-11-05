@@ -91,6 +91,7 @@ async function searchHelper(
     team_id,
   );
   internalOptions.orgId = org_id;
+  internalOptions.teamFlags = flags;
 
   if (justSearch) {
     const searchCredits = Math.ceil(res.length / 10) * 2;

@@ -115,6 +115,7 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
+import { isUsOnly } from "../../lib/us-only";
 
 configDotenv();
 
@@ -1627,17 +1628,15 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       return { success: false, error: "Crawl not found" };
     }
 
-    const crawler = crawlToCrawler(
-      job.data.crawl_id,
-      sc,
-      (await getACUCTeam(job.data.team_id))?.flags ?? null,
-    );
+    const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
+    const crawler = crawlToCrawler(job.data.crawl_id, sc, teamFlags);
 
     const results = await scrapeSitemap({
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
       zeroDataRetention: job.data.zeroDataRetention ?? false,
       location: job.data.location,
+      usOnly: isUsOnly(sc.internalOptions?.teamFlags ?? teamFlags ?? undefined),
       crawlId: job.data.crawl_id,
       logger,
       isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,

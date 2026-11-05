@@ -88,6 +88,7 @@ export class WebCrawler {
   private location?: ScrapeOptions["location"];
   private headers?: Record<string, string>;
   private robotsUserAgent?: string;
+  private usOnly: boolean;
   // Safe Mode lockdown: no outbound discovery to the target (robots/sitemap).
   private lockdown: boolean = false;
 
@@ -113,6 +114,7 @@ export class WebCrawler {
     headers,
     robotsUserAgent,
     lockdown,
+    usOnly,
   }: {
     jobId: string;
     initialUrl: string;
@@ -135,6 +137,7 @@ export class WebCrawler {
     headers?: Record<string, string>;
     robotsUserAgent?: string;
     lockdown?: boolean;
+    usOnly?: boolean;
   }) {
     this.jobId = jobId;
     this.initialUrl = initialUrl;
@@ -166,6 +169,7 @@ export class WebCrawler {
     this.headers = headers;
     this.robotsUserAgent = robotsUserAgent;
     this.lockdown = lockdown ?? false;
+    this.usOnly = usOnly ?? false;
   }
 
   public setBaseUrl(newBase: string): void {
@@ -500,6 +504,7 @@ export class WebCrawler {
           url: this.robotsTxtUrl,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          usOnly: this.usOnly,
           skipTlsVerification,
           ...(this.robotsUserAgent
             ? {
@@ -941,6 +946,7 @@ export class WebCrawler {
           maxAge,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          usOnly: this.usOnly,
           headers: this.headers,
         },
         this.logger,
@@ -1016,6 +1022,7 @@ export class WebCrawler {
                 maxAge,
                 zeroDataRetention: this.zeroDataRetention,
                 location: this.location,
+                usOnly: this.usOnly,
                 headers: this.headers,
               },
               this.logger,
@@ -1060,6 +1067,7 @@ export class WebCrawler {
             maxAge,
             zeroDataRetention: this.zeroDataRetention,
             location: this.location,
+            usOnly: this.usOnly,
             headers: this.headers,
           },
           this.logger,
@@ -1088,6 +1096,7 @@ export class WebCrawler {
                 maxAge,
                 zeroDataRetention: this.zeroDataRetention,
                 location: this.location,
+                usOnly: this.usOnly,
                 headers: this.headers,
               },
               this.logger,

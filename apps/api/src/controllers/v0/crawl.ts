@@ -253,6 +253,7 @@ export async function crawlController(req: Request, res: Response) {
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     internalOptions.orgId = auth.chunk?.org_id ?? null;
+    internalOptions.teamFlags = auth.chunk?.flags ?? null;
     internalOptions.saveScrapeResultToGCS = process.env
       .GCS_FIRE_ENGINE_BUCKET_NAME
       ? true

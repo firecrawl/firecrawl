@@ -52,6 +52,7 @@ export type FireEngineScrapeRequestCommon = {
   logRequest?: boolean; // default: true
   instantReturn?: boolean; // default: false
   geolocation?: { country?: string; languages?: string[] };
+  usOnly?: boolean;
 
   mobileProxy?: boolean; // leave it undefined if user doesn't specify
   autoProxy?: boolean;

@@ -9,6 +9,7 @@ import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
+import { isUsOnly } from "./us-only";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -1065,6 +1066,7 @@ export function crawlToCrawler(
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
     // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
     lockdown: crawlerSafeMode?.lockdown ?? false,
+    usOnly: isUsOnly(sc.internalOptions?.teamFlags ?? teamFlags ?? undefined),
   });
 
   if (sc.robots !== undefined) {

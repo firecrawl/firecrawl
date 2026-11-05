@@ -2,6 +2,8 @@ import { z } from "zod";
 import { recordRequestCredits } from "./request-credits-store";
 import type { BrowserOptions } from "./browser-options";
 import { upsertBrowserProfile } from "./browser-sessions";
+import { isLocationAllowed, US_ONLY_LOCATION_MESSAGE } from "./us-only";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../config";
 import { RequestWithAuth } from "../controllers/v2/types";
@@ -157,6 +159,10 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  if (
+    !isLocationAllowed(req.acuc?.flags ?? undefined, options.location?.country)
+  )
+    throw new UsOnlyUnavailableError(US_ONLY_LOCATION_MESSAGE);
   const zeroDataRetention =
     getBrowserZDR(req) || options.zeroDataRetention === true;
   if (zeroDataRetention && (options.recordSession || options.profile)) {
