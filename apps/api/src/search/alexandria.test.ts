@@ -251,7 +251,7 @@ describe("domain discovery", () => {
     ]);
   });
 
-  it("falls back to the provider listing when nothing ranks", async () => {
+  it("adds no tools from a matched provider when none fits the query", async () => {
     request.mockImplementation(async args => {
       if (args.path === "/v1/skills/resolve")
         return resolve([{ id: "big", matchedDomains: ["big.example"] }]);
@@ -267,8 +267,26 @@ describe("domain discovery", () => {
       },
       logger,
     );
-    expect(lookups()).toHaveLength(2);
-    expect(lookups()[1]).not.toHaveProperty("query");
+    expect(lookups()).toEqual([
+      expect.objectContaining({ query: "nothing relevant" }),
+    ]);
+    expect(result.items).toEqual([]);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("lists a matched provider's tools when there is no query", async () => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? resolve([{ id: "big", matchedDomains: ["big.example"] }])
+        : answer(toolsOf("big", 2)),
+    );
+    const result = await discoverTools(
+      { ...input, queries: undefined, urls: ["https://big.example/a"] },
+      logger,
+    );
+    expect(lookups()).toEqual([
+      expect.not.objectContaining({ query: expect.anything() }),
+    ]);
     expect(result.items).toHaveLength(2);
   });
 

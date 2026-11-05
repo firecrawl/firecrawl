@@ -244,20 +244,17 @@ export async function discoverTools(
             )
               return [];
             const providers = [match.id];
-            // Without a query Exchange lists a provider's tools alphabetically.
-            const ranked =
+            // Without a query Exchange lists a provider's tools alphabetically,
+            // so a provider with no tool that fits the query adds none.
+            const tools = await lookup(
               !capabilities.length && rankQuery
-                ? await lookup({ providers, query: rankQuery }, deadline)
-                : [];
-            const tools = ranked.length
-              ? ranked
-              : await lookup(
-                  {
+                ? { providers, query: rankQuery }
+                : {
                     providers,
                     ...(capabilities.length ? { capabilities } : {}),
                   },
-                  deadline,
-                );
+              deadline,
+            );
             return tools
               .filter(tool => tool.provider === match.id)
               .map(tool => ({
