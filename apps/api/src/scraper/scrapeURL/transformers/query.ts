@@ -352,6 +352,11 @@ ${escapePromptTags(fitted.text)}
         tokens: { input: inputTokens, output: outputTokens },
       });
 
+      // A blocked response (safety or recitation) comes back as empty text, not an error.
+      if (!result.text.trim()) {
+        throw new Error(`Empty answer (finish reason: ${result.finishReason})`);
+      }
+
       meta.logger.info("performQuery completed", {
         model: name,
         elapsedMs: elapsed,
