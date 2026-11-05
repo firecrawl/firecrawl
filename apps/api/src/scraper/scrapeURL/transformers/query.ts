@@ -440,6 +440,9 @@ export async function performQuery(
 
     if (answer !== null) {
       document.answer = answer;
+      if (answer.trim() === "") {
+        addWarning(document, "Nothing on the page answers the query.");
+      }
     } else {
       document.warning =
         "Query generation failed after all models." +
