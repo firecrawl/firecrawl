@@ -418,6 +418,24 @@ async function settleBrowserSessionInternal(
   return { sessionDurationMs, creditsBilled };
 }
 
+/** Hangar answers 400 for an ID it never issued and 404 for a browser it no longer has. */
+function isUnknownToHangar(error: unknown) {
+  return (
+    error instanceof HangarError &&
+    (error.status === 400 || error.status === 404)
+  );
+}
+
+/** Closes a session whose browser Hangar cannot report on, without a charge. */
+async function closeUnknownBrowserSession(session: BrowserSessionRow) {
+  const { creditsBilled } = await settleBrowserSessionOnce(
+    session.id,
+    async () => 0,
+  );
+  await finalizeBrowserSession(session, creditsBilled);
+  return { creditsBilled };
+}
+
 async function finalizeBrowserSession(
   session: BrowserSessionRow,
   credits: number,
@@ -510,7 +528,17 @@ async function stopBrowserSessionInternal(session: BrowserSessionRow) {
       creditsBilled: session.credits_used ?? 0,
     };
   }
-  let browser = await stopHangarBrowser(session.browser_id);
+  let browser: HangarBrowser;
+  try {
+    browser = await stopHangarBrowser(session.browser_id);
+  } catch (error) {
+    if (!isUnknownToHangar(error)) throw error;
+    return {
+      success: true,
+      status: "stopped",
+      ...(await closeUnknownBrowserSession(session)),
+    };
+  }
   if (!["stopping", "stopped", "failed"].includes(browser.status))
     throw new HangarError(502, "Hangar did not confirm the stop request.");
   // A successful public DELETE includes final duration and billing, even
@@ -584,10 +612,16 @@ export async function reconcileBrowserSessions() {
                 if (session.credits_used !== null) {
                   await finalizeBrowserSession(session, session.credits_used);
                 } else {
-                  await settleBrowserSession(
-                    session,
-                    await getHangarBrowser(session.browser_id, 0, 5000),
-                  );
+                  const browser = await getHangarBrowser(
+                    session.browser_id,
+                    0,
+                    5000,
+                  ).catch(error => {
+                    if (isUnknownToHangar(error)) return null;
+                    throw error;
+                  });
+                  if (browser) await settleBrowserSession(session, browser);
+                  else await closeUnknownBrowserSession(session);
                 }
               } catch (error) {
                 failures = Math.min(Number(state.failures ?? 0) + 1, 5);

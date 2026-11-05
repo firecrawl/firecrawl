@@ -187,6 +187,45 @@ describe("browser session DELETE on an already destroyed session", () => {
     expect(mocks.settleBrowserSessionOnce).not.toHaveBeenCalled();
   });
 
+  it.each([400, 404])(
+    "closes an active session without a charge when Hangar answers %i",
+    async status => {
+      mocks.getBrowserSession.mockResolvedValue(makeSession("active"));
+      fetchMock.mockResolvedValue({ ok: false, status, body: null });
+      mocks.settleBrowserSessionOnce.mockImplementation(
+        async (_id: string, bill: () => Promise<number>) => ({
+          creditsBilled: await bill(),
+          newlySettled: true,
+        }),
+      );
+      mocks.mirrorExternalSlotRelease.mockResolvedValue(undefined);
+      const req = {
+        params: { sessionId: SESSION_ID },
+        auth: { team_id: TEAM_ID },
+      } as unknown as RequestWithAuth<{ sessionId: string }>;
+      const res = makeRes();
+
+      await browserDeleteController(req as any, res as any);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        status: "stopped",
+        creditsBilled: 0,
+      });
+      expect(mocks.settleBrowserSessionOnce).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(Function),
+      );
+      expect(mocks.mirrorExternalSlotRelease).toHaveBeenCalledWith(
+        TEAM_ID,
+        SESSION_ID,
+      );
+      expect(mocks.billTeam).not.toHaveBeenCalled();
+    },
+  );
+
   it("DELETE /v2/scrape/:jobId/interact releases the active row when the scrape also has a destroyed row", async () => {
     const actual = await vi.importActual<
       typeof import("../../../lib/browser-sessions")
