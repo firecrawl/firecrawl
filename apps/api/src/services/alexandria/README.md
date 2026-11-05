@@ -17,6 +17,17 @@ Search returns contracts in `data.tools`, up to `limit` per discovery source
 `creditsUsed`; web results are billed as before. `domainTools: false` disables
 URL matching only.
 
+`sources` may also include `skills`. That asks Exchange
+`GET /v1/discover/skill-cards` with the search query and returns up to 3 short cards
+on `data.skills` (`id`, `name`, `description`, `source`, and when present
+`provider` and `similarity`). It is free and uses the same access rules as
+`alexandria`. A timeout, a non-200, an unexpected body, or a card that fails
+validation yields `data.skills: []` without failing the search. Invalid cards
+are dropped, and a response whose cards are all invalid is an empty list. A
+query longer than 2000 characters skips the lookup and yields the same empty
+list. The card is not the full skill; the `id` is how that skill is
+loaded later. Tool discovery does not read skills from find-tools.
+
 ```json
 {
   "alexandria": {
@@ -48,7 +59,8 @@ cannot be known (no org, preview team, Autumn error): this read fails closed
 where the rate limiter fails open (Benzinga Schedule C.4: full text, WIIM,
 analyst ratings), quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
-`alexandria_<chargeId>`), execute `/v1/retrieve` with the budget and deadline
+`alexandria_<chargeId>`, or `alexandria_<chargeId>_team` for a hosted MCP hold
+that MCP credits refuse and team credits cover), execute `/v1/retrieve` with the budget and deadline
 headers, settle the receipt (`finalizeCreditsLock`), enqueue the ledger write
 on the billing queue with job id `alexandria-bill-<chargeId>`, and report to
 `/v1/usage-events/billing`. Paid requests fail closed when authorization,
@@ -75,9 +87,8 @@ seven days:
 
 An unsettled confirm returns the answer, writes no ledger row, and sends no
 Exchange confirmation; the run stays pending on the Exchange for
-reconciliation. A ledger commit or enqueue that fails is refunded at Autumn on
-the direct route; on the firebill route the durable charge stands pending
-reconciliation. Provider tools do not support forced zero data retention;
+reconciliation. A ledger commit or enqueue that fails leaves the durable
+Autumn charge standing, pending reconciliation. Provider tools do not support forced zero data retention;
 those teams are refused before any record is written.
 
 ## Runtime

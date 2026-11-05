@@ -2789,6 +2789,10 @@
                                 "type": "string",
                                 "enum": ["low", "medium", "high"],
                                 "description": "Reasoning budget used for the agent run (only present for runs that set effort)"
+                              },
+                              "safe": {
+                                "type": "boolean",
+                                "description": "Whether the run's web searches filtered explicit content (only present for runs that set `safe: true`)"
                               }
                             }
                           }
@@ -2950,6 +2954,10 @@
                         "example": "DE"
                       }
                     }
+                  },
+                  "safe": {
+                    "type": "boolean",
+                    "description": "When `true`, every web search the agent makes during the run filters explicit content, the same filter as the search endpoint's `safe` option. Pages the agent scrapes or opens in a browser are not filtered. Omit to keep the default behavior, which does not apply the filter. Omitted on a follow-up turn keeps the thread's setting; `false` turns it off."
                   },
                   "exchange": {
                     "type": "object",
@@ -3212,6 +3220,10 @@
                       "type": "string",
                       "enum": ["low", "medium", "high"],
                       "description": "Reasoning budget used for the agent run (only present for runs that set effort)"
+                    },
+                    "safe": {
+                      "type": "boolean",
+                      "description": "Whether the run's web searches filtered explicit content (only present for runs that set `safe: true`)"
                     },
                     "error": {
                       "type": "string",
@@ -4365,10 +4377,22 @@
                           },
                           "required": ["type"],
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "title": "Skills",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": ["skills"]
+                            }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": false
                         }
                       ]
                     },
-                    "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. Requires the team's Alexandria access to be enabled (403 otherwise). When `sources` is omitted, an authenticated search may also return compact tools in `data.tools` for queries that ask for structured data; pass `sources` explicitly to turn this off.",
+                    "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\", \"skills\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. The `skills` source returns up to 3 short skill cards in `data.skills` (`id`, `name`, `description`, `source` of `official` or `provider`, plus `provider` when the skill belongs to a provider and `similarity` when the match was semantic). It is free, is never counted in `creditsUsed`, and uses the same access rules as `alexandria`. A timeout or upstream error returns an empty `data.skills` array and does not fail the search. The card is not the full skill; load that separately with the card `id`. Requires the team's Alexandria access to be enabled (403 otherwise). When `sources` is omitted, an authenticated search may also return compact tools in `data.tools` for queries that ask for structured data; pass `sources` explicitly to turn this off.",
                     "default": [
                       {
                         "type": "web"
@@ -4756,6 +4780,38 @@
                           "description": "Tool contracts discovered from the Alexandria catalogue. Present when `alexandria` is among the sources, when `domainTools` was requested, or when `sources` was omitted and the query asks for structured data; up to `limit` results per discovery source (semantic matches from the `alexandria` source, domain matches from `domainTools`).",
                           "items": {
                             "$ref": "#/components/schemas/DiscoveredTool"
+                          }
+                        },
+                        "skills": {
+                          "type": "array",
+                          "description": "Short skill cards from the Alexandria catalogue. Present when `skills` is among the sources, including when nothing matched or the lookup failed. At most 3 cards. Free, and never counted in `creditsUsed`.",
+                          "items": {
+                            "type": "object",
+                            "required": ["id", "name", "description", "source"],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "Skill id. The full skill is loaded separately with this id."
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": ["official", "provider"]
+                              },
+                              "provider": {
+                                "type": "string",
+                                "description": "Publisher slug. Present when `source` is `provider`."
+                              },
+                              "similarity": {
+                                "type": "number",
+                                "description": "Semantic match score. Omitted when the card came from a word match."
+                              }
+                            }
                           }
                         }
                       },
@@ -6090,10 +6146,10 @@
                 },
                 "example": {
                   "success": true,
+                  "partial": false,
                   "results": [
                     {
                       "id": "issue:firecrawl/firecrawl#1234",
-                      "type": "issue",
                       "url": "https://github.com/firecrawl/firecrawl/issues/1234",
                       "title": "Retries are not applied to 429 responses",
                       "passages": [
@@ -6102,14 +6158,7 @@
                         }
                       ]
                     }
-                  ],
-                  "coverage": {
-                    "doc": "ok",
-                    "issue": "ok",
-                    "pull_request": "ok",
-                    "readme": "ok"
-                  },
-                  "reranked": true
+                  ]
                 }
               }
             }
@@ -8875,7 +8924,7 @@
           "skipTlsVerification": {
             "type": "boolean",
             "description": "Skip TLS certificate verification when making requests.",
-            "default": true
+            "default": false
           },
           "removeBase64Images": {
             "type": "boolean",
@@ -8986,7 +9035,7 @@
           "skipTlsVerification": {
             "type": "boolean",
             "description": "Skip TLS certificate verification when making requests.",
-            "default": true
+            "default": false
           },
           "timeout": {
             "type": "integer",
@@ -10121,6 +10170,19 @@
                         "sku": {
                           "type": "string",
                           "description": "The variant SKU."
+                        },
+                        "gtin": {
+                          "type": "string",
+                          "description": "The variant's GTIN (EAN, UPC or ISBN), digits only, with a valid check digit. Present only when the page or store states one."
+                        },
+                        "mpn": {
+                          "type": "string",
+                          "description": "The variant's manufacturer part number. Present only when the page states one."
+                        },
+                        "condition": {
+                          "type": "string",
+                          "enum": ["new", "used", "refurbished", "damaged"],
+                          "description": "The variant's item condition. Present only when the page states one; never assumed to be new."
                         },
                         "title": {
                           "type": "string",
@@ -11956,13 +12018,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`.",
+            "description": "Stable result id. Its prefix names the result kind, such as `issue:owner/repo#123` or `doc:<page URL>`.",
             "example": "issue:firecrawl/firecrawl#1234"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["doc", "issue", "pull_request", "readme"],
-            "description": "Result kind."
           },
           "url": {
             "type": "string",
@@ -11980,9 +12037,42 @@
               "properties": {
                 "text": {
                   "type": "string"
+                },
+                "citation_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Link to the passage's own location, such as a section anchor, when it differs from the result `url`."
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "True when `text` omits part of the full passage. Absent when false."
+                },
+                "served_span": {
+                  "type": "object",
+                  "description": "Byte offsets of `text` within the full passage, present when `text` is one contiguous span.",
+                  "required": ["start", "end"],
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "full_tokens_est": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Approximate token count of the full passage."
                 }
               }
             }
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known."
           }
         }
       },
@@ -11992,37 +12082,15 @@
           "success": {
             "type": "boolean"
           },
+          "partial": {
+            "type": "boolean",
+            "description": "True when the deadline passed before every best-effort stage finished, so the response holds the work completed by then."
+          },
           "results": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeveloperSearchResult"
             }
-          },
-          "coverage": {
-            "type": "object",
-            "description": "Outcome for each result type. Check this when an expected result type is missing: `skipped` means your `types` value did not ask for that type, while `degraded` or `unavailable` means the gap came from the index or from a filter, not from the query. A repository filter is one such cause — see [how the repository filters scope a search](/api-reference/endpoint/developer-search#how-the-repository-filters-scope-a-search).",
-            "properties": {
-              "doc": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "issue": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "pull_request": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              },
-              "readme": {
-                "type": "string",
-                "enum": ["ok", "degraded", "unavailable", "skipped"]
-              }
-            }
-          },
-          "reranked": {
-            "type": "boolean",
-            "description": "Whether the ranked list went through the reranking stage."
           },
           "repos": {
             "type": "array",
@@ -12032,6 +12100,10 @@
               "properties": {
                 "repo": {
                   "type": "string"
+                },
+                "canonicalRepo": {
+                  "type": "string",
+                  "description": "The current indexed slug when `repo` is a superseded alias. Absent otherwise."
                 },
                 "indexed": {
                   "type": "boolean"

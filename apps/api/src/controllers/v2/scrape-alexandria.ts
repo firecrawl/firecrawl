@@ -52,6 +52,7 @@ const agentInteropSchema = z.strictObject({
   requestId: z.string(),
   shouldBill: z.boolean(),
   boostConcurrency: z.boolean().optional(),
+  hostedMcp: z.boolean().optional(),
 });
 
 const providerScrapeSchema = z.strictObject({
@@ -173,6 +174,7 @@ export async function providerScrapeController(
       resultAuthorization: req.get("authorization"),
       requestId,
       agentRequestId: body.__agentInterop?.requestId,
+      hostedMcp: req.auth.hostedMcp,
       scrapeId: uuidv7(),
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,

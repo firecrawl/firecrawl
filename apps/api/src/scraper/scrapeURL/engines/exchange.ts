@@ -13,6 +13,7 @@ import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
 import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
 import { EngineError, ExchangeRefusedError } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
 
 // The enrichment waterfall's record of which provider matched and every
 // provider it tried, in order.
@@ -195,6 +196,9 @@ export async function scrapeURLWithExchange(
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
+        ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+          ? { headers: { "x-exchange-us-only": "true" } }
+          : {}),
         body: {
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,

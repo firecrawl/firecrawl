@@ -6,10 +6,7 @@ function researchKeylessOperation(
 ): ResearchKeylessOperation | null {
   const segments = req.path.toLowerCase().split("/").filter(Boolean);
   const papersIndex = segments.indexOf("papers");
-  // Paper paths win, so a paper id of "github" is not the github route.
-  if (papersIndex === -1) {
-    return segments.includes("github") ? "github" : null;
-  }
+  if (papersIndex === -1) return null;
 
   const rest = segments.slice(papersIndex + 1);
   if (rest.length === 0) return "search";

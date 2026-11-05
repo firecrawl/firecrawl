@@ -7,7 +7,8 @@ minimumReleaseAgeExclude:
 overrides:
   "body-parser@>=2.0.0 <2.4.0": "2.4.0"
   "path-to-regexp@<8.4.0": ">=8.4.0"
-  "qs@<6.16.0": ">=6.16.0 <7.0.0"
+  # GHSA-6pq8-jhm2-2vcw: fixed in 6.16.1. Bounded <7.0.0.
+  "qs@<6.16.1": ">=6.16.1 <7.0.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
   "ip-address@>=10.0.0 <10.7.4": "10.7.4"
   # GHSA-jqcg-44mw-7w3h: pin the 2.x line only. Exact 2.0.8 cannot

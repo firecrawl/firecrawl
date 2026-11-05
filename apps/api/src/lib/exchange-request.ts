@@ -28,6 +28,7 @@ export function getExchangeAccessForRequestBody(input: {
     teamId: input.teamId,
     orgId: input.orgId,
     blocked: input.blocked,
+    origin: typeof body.origin === "string" ? body.origin : null,
     formats: scrapeOptions.formats,
     actions: scrapeOptions.actions,
     headers: scrapeOptions.headers,

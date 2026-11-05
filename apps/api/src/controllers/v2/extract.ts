@@ -24,6 +24,8 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { checkExtractAvailable } from "../../lib/extract/fire-0/extraction-service-f0";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -44,6 +46,17 @@ export async function extractController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+    });
+  }
+
+  try {
+    checkExtractAvailable(req.acuc?.flags);
+  } catch (error) {
+    if (!(error instanceof UsOnlyUnavailableError)) throw error;
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
     });
   }
 

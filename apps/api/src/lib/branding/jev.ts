@@ -11,7 +11,12 @@ import { formatHex, hsl, parse, wcagContrast } from "culori";
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
 import { getTypeSafeClient } from "../typesafe";
-import { APITimeoutError, Image, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APIError,
+  APITimeoutError,
+  Image,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 import {
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
@@ -23,6 +28,13 @@ import {
   JevScreenshotOutcome,
 } from "./metrics";
 import { sampled } from "../rollout";
+import {
+  GENERIC_FONTS,
+  knownFamily,
+  normalizeVendorName,
+  renderedFamily,
+  titleCase,
+} from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -65,6 +77,20 @@ let breakerOpenUntil = 0;
 
 function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
+}
+
+/**
+ * TypeSafe turning the image away: a 529 (it sheds load on the image lane
+ * first, text calls keep answering) or a 5xx whose message names the image,
+ * such as "503 Image processing is unavailable". A plain 5xx or a timeout
+ * is a failure of the call itself and is handled as before.
+ */
+function isImageRejection(error: unknown): error is APIError {
+  return (
+    error instanceof APIError &&
+    (error.status === 529 ||
+      (error.status >= 500 && /\bimage/i.test(error.message)))
+  );
 }
 
 function recordJevFailure(input: BrandingLLMInput): void {
@@ -220,25 +246,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-const GENERIC_FONTS = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "-apple-system",
-  "blinkmacsystemfont",
-  "inherit",
-  "initial",
-  "emoji",
-  "math",
-]);
-
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
 const FALLBACK_FONTS = new Set([
@@ -294,15 +301,23 @@ const splitCamelCase = (name: string) =>
     .join(" ");
 
 export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack ("system-ui, sans-serif") reports its first family.
-  let name = raw
-    .split(",")[0]
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name || /^var\(/i.test(name)) return undefined;
+  // A whole stack reports the family it renders: past hashed aliases, none
+  // for a system stack ("-apple-system, BlinkMacSystemFont, Segoe UI").
+  let name = renderedFamily(raw.split(",")) ?? "";
+  if (!name) return undefined;
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
+  // Vendor spellings and build suffixes: "orig_libre_baskerville",
+  // "helvetica-w01-roman", "inter-variable-web".
+  name = normalizeVendorName(name);
+  // A name that is only a weight ("Regular", "semibold") is not a family.
+  if (FONT_WEIGHT.test(name)) return undefined;
+  // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
+  const glued = name.match(
+    /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
+  );
+  if (glued) name = knownFamily(glued[1]) ?? glued[1];
   // "Roboto_Black": the weight goes before underscores turn into spaces.
   while (DELIMITED_WEIGHT_SUFFIX.test(name))
     name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
@@ -317,10 +332,10 @@ export function cleanFontFamily(raw: string): string | undefined {
   while (FONT_WEIGHT_SUFFIX.test(name))
     name = name.replace(FONT_WEIGHT_SUFFIX, "");
   name = splitCamelCase(name);
+  // A known family can only be matched once its weight is gone.
+  name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (name === name.toLowerCase()) name = titleCase(name);
   return name;
 }
 
@@ -340,7 +355,8 @@ function typographyRole(
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    const raw = Array.isArray(value) ? value[0] : value;
+    // A stack names the family it renders, not its first entry.
+    const raw = Array.isArray(value) ? renderedFamily(value) : value;
     const cleaned = raw ? cleanFontFamily(raw) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
@@ -390,16 +406,35 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
 // ---------------------------------------------------------------------------
 // State + questions
 
+/** The site's own marks that the scan didn't see rendered: JSON-LD logo, apple-touch icon. */
+const DECLARED_SOURCES = new Set(["logo-jsonld", "apple-touch-icon"]);
+
+/**
+ * Where a candidate's link goes, read from the link itself: a `/home` or
+ * `/cart` path is named rather than trusted as the homepage, so a nav glyph
+ * labelled "home" doesn't read like the logo. `home`, the scan's verdict, is
+ * kept for links it resolved and we can't: a sibling brand domain's root, a
+ * `javascript:` link labelled as the home link, an unparseable href.
+ */
 function hrefKind(href: string | undefined, pageUrl: string, home: boolean) {
   if (!href?.trim()) return "no link";
-  if (home) return "links to the homepage";
   try {
     const target = new URL(href, pageUrl);
-    return target.hostname === new URL(pageUrl).hostname
-      ? "links to another page on this site"
-      : "links to another website";
+    if (!/^https?:$/.test(target.protocol)) {
+      return home ? "links to the homepage" : `${target.protocol} link`;
+    }
+    const host = (url: URL) => url.hostname.replace(/^www\./, "");
+    const path = target.pathname.replace(/\/+$/, "") || "/";
+    const root = path === "/" || /^\/index(?:\.html?)?$/i.test(path);
+    if (host(target) !== host(new URL(pageUrl))) {
+      return root && home
+        ? "links to the homepage"
+        : `links to another website (${host(target)})`;
+    }
+    if (root) return "links to the homepage";
+    return `links to ${clip(path, 60)} on this site`;
   } catch {
-    return "unknown link";
+    return home ? "links to the homepage" : "unknown link";
   }
 }
 
@@ -704,21 +739,29 @@ export function buildJevRequest(
       logos.map((logo, i) => {
         const width = Math.round(logo.position?.width ?? 0);
         const height = Math.round(logo.position?.height ?? 0);
+        // A declared mark was never rendered: say so instead of the
+        // placeholder geometry the heuristic ranks it with.
+        const rendered = !DECLARED_SOURCES.has(logo.source);
         return [
           `logo_${i}`,
           {
-            where: logo.location,
-            visible: logo.isVisible,
-            size: `${width}x${height} px (${sizeLabel(width, height)})`,
-            shape:
-              width && height && width / height >= 3
+            where: rendered ? logo.location : "page metadata, not rendered",
+            visible: rendered && logo.isVisible,
+            size: rendered
+              ? `${width}x${height} px (${sizeLabel(width, height)})`
+              : "unknown",
+            shape: rendered
+              ? width && height && width / height >= 3
                 ? "wide, wordmark-shaped"
-                : "compact",
+                : "compact"
+              : "unknown",
             kind: logo.isSvg ? "SVG" : "image",
             alt: clip(logo.alt, 100),
             aria_label: clip(logo.ariaLabel, 100),
             title: clip(logo.title, 100),
-            link: hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch),
+            link: rendered
+              ? hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch)
+              : "no link",
             file: fileName(logo.src),
             found_via: logo.source,
             heuristic_pick: i === heuristic,
@@ -795,7 +838,7 @@ export function buildJevRequest(
     questions.logo = {
       type: "choice",
       instructions:
-        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, social, partner, customer and payment icons are not the brand logo." +
+        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, search, cart, account, social, partner, customer and payment icons are not the brand logo, nor are flags, maps and country or language selectors. A candidate found via `logo-jsonld` is the logo the site declares for itself; one found via `apple-touch-icon` is only its app icon, the answer only when no rendered candidate shows the brand's mark." +
         look(
           "the brand logo is the mark it shows for this site, usually top left.",
         ),
@@ -841,7 +884,7 @@ export function buildJevRequest(
     questions.accent_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the accent color used for calls to action, highlights and links?",
+        "Which entry in `colors` is the accent color: the saturated color used for calls to action, highlights and links, standing out against the page background? A pale tint, a gray or the background itself is not an accent; when the brand uses a single color, answer the main color.",
       criteria: options(colorIds),
     };
     questions.secondary_color = {
@@ -853,7 +896,7 @@ export function buildJevRequest(
     questions.background_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the main page background color?",
+        "Which entry in `colors` is the main page background color, the one behind most of the body text? A hero, a footer or a dialog's backdrop is not the page background.",
       criteria: options(colorIds),
     };
     questions.text_color = {
@@ -1204,24 +1247,24 @@ export async function enhanceBrandingWithJev(
   let request: JevRequest;
   let response: JevResponse;
   let called = false;
-  try {
-    request = buildJevRequest(input, screenshot);
-    response = await withSpan(
+  let imageRetried = false;
+  const callJev = (req: JevRequest) =>
+    withSpan(
       "typesafe.systemone",
       async span => {
         called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
-            state: request.state,
-            questions: request.questions,
-            ...(request.assets ? { assets: request.assets } : {}),
+            state: req.state,
+            questions: req.questions,
+            ...(req.assets ? { assets: req.assets } : {}),
           },
           {
             timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
             retry: JEV_RETRY,
             // Image input is opt-in per request.
-            ...(request.assets
+            ...(req.assets
               ? { headers: { "TypeSafe-Danger-Zone-Images": "true" } }
               : {}),
           },
@@ -1240,8 +1283,8 @@ export async function enhanceBrandingWithJev(
         zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
-          "branding.jev.questions": Object.keys(request.questions).length,
-          "branding.jev.screenshot": !!screenshot,
+          "branding.jev.questions": Object.keys(req.questions).length,
+          "branding.jev.screenshot": !!req.assets,
           "branding.jev.screenshot_outcome": firstScreen.outcome,
           ...(firstScreen.bytes !== undefined
             ? { "branding.jev.screenshot_bytes": firstScreen.bytes }
@@ -1249,11 +1292,39 @@ export async function enhanceBrandingWithJev(
           ...(firstScreen.outcome !== "none"
             ? { "branding.jev.screenshot_load_ms": firstScreen.loadMs }
             : {}),
+          ...(imageRetried ? { "branding.jev.image_retry": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
+  try {
+    request = buildJevRequest(input, screenshot);
+    try {
+      response = await callJev(request);
+    } catch (error) {
+      if (!called || !screenshot || !isImageRejection(error)) throw error;
+      error satisfies APIError;
+      // TypeSafe's image lane is the part that is overloaded (its text calls
+      // keep answering), so ask again from the text alone. Jev without the
+      // first screen is still a far better answer per dollar than the LLM
+      // fallback, and a refused image says nothing about Jev's health, so
+      // it doesn't count toward the breaker.
+      count("image_rejected");
+      // A warning with a fixed message and the vendor's status, so a log
+      // metric can count refusals and page us before the fallback bill does.
+      input.logger.warn("TypeSafe refused the first screen", {
+        vendor: "typesafe",
+        status: error.status,
+        error: error.message,
+        elapsedMs: Date.now() - started,
+        ...screenshotLog,
+      });
+      imageRetried = true;
+      called = false;
+      request = buildJevRequest(input, undefined);
+      response = await callJev(request);
+    }
   } catch (error) {
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
@@ -1274,6 +1345,7 @@ export async function enhanceBrandingWithJev(
       error,
       elapsedMs: Date.now() - started,
       ...screenshotLog,
+      ...(imageRetried ? { imageRetried } : {}),
     });
     return null;
   }
@@ -1315,6 +1387,7 @@ export async function enhanceBrandingWithJev(
     questions: Object.keys(request.questions).length,
     logoConfidence: result.logoConfidence,
     ...screenshotLog,
+    ...(imageRetried ? { imageRetried } : {}),
   });
   return result;
 }

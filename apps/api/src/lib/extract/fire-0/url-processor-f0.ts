@@ -18,9 +18,13 @@ import { getACUCTeam } from "../../../controllers/auth";
 export async function generateBasicCompletion_FO(
   prompt: string,
   metadata: { teamId: string; extractId?: string },
+  teamFlags?: TeamFlags | null,
 ) {
   const { text } = await generateText({
-    model: getModel("gpt-4o-mini"),
+    model: getModel("gpt-4o-mini", undefined, {
+      teamFlags,
+      feature: "Extract",
+    }),
     prompt: prompt,
     temperature: 0,
     providerOptions: {
@@ -105,6 +109,7 @@ export async function processUrl_F0(
         await generateBasicCompletion_FO(
           buildRefrasedPrompt(options.prompt, baseUrl),
           { teamId: options.teamId, extractId: options.extractId },
+          teamFlags,
         )
       )
         ?.replace('"', "")
@@ -231,6 +236,7 @@ export async function processUrl_F0(
         (await generateBasicCompletion_FO(
           buildPreRerankPrompt(rephrasedPrompt, options.schema, baseUrl),
           { teamId: options.teamId, extractId: options.extractId },
+          teamFlags,
         )) ??
         "Extract the data according to the schema: " +
           JSON.stringify(options.schema, null, 2);
@@ -263,6 +269,7 @@ export async function processUrl_F0(
           functionId: "processUrl_F0",
           extractId: options.extractId,
         },
+        teamFlags,
       },
       new CostTracking(),
     );
@@ -285,6 +292,7 @@ export async function processUrl_F0(
             functionId: "processUrl_F0",
             extractId: options.extractId,
           },
+          teamFlags,
         },
         new CostTracking(),
       );

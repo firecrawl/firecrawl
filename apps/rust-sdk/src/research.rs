@@ -20,6 +20,8 @@ pub struct PaperResult {
     pub score: Option<f64>,
     pub year: Option<i32>,
     pub authors: Option<Vec<String>>,
+    pub created_date: Option<String>,
+    pub update_date: Option<String>,
     pub venue: Option<String>,
     pub url: Option<String>,
     pub signals: Option<HashMap<String, Value>>,
@@ -112,6 +114,10 @@ pub struct SearchPapersOptions {
     pub categories: Option<Vec<String>>,
     pub from: Option<String>,
     pub to: Option<String>,
+    /// `relevance` (default) or `date_desc`, which returns the newest of the most
+    /// relevant matches, newest first by created date. It does not list every
+    /// paper in a date range; add `from` (and `to`) for that.
+    pub sort: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -268,6 +274,9 @@ impl Client {
             if let Some(to) = options.to {
                 push_query(&mut query, "to", to);
             }
+            if let Some(sort) = options.sort {
+                push_query(&mut query, "sort", sort);
+            }
         }
 
         let response = self
@@ -409,8 +418,11 @@ impl Client {
 
     /// Search the research index GitHub slice.
     ///
-    /// Stops responding after 2026-11-03. Use [`Client::developer_search`].
-    #[deprecated(note = "Use Client::developer_search; sunset 2026-11-03")]
+    /// The research index GitHub search endpoint was removed after 2026-11-03.
+    /// Use [`Client::developer_search`] instead.
+    #[deprecated(
+        note = "The research index GitHub search endpoint was removed after 2026-11-03. Use Client::developer_search instead."
+    )]
     pub async fn search_github(
         &self,
         query_text: impl AsRef<str>,

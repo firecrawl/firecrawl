@@ -153,6 +153,7 @@ vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
   selectBrowserAgentTab: vi.fn(async () => {}),
   executePromptViaBrowserAgent: vi.fn(),
   executeCodeViaBrowserSession: vi.fn(),
+  getBrowserAgentModel: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-session-activity", () => ({
@@ -274,6 +275,58 @@ describe("scrapeInteractController", () => {
         );
       },
     );
+
+    it.each(["allowed", "forced"] as const)(
+      "restricts the Hangar proxy to ZDR exits when the team policy is %s",
+      async mode => {
+        const req = buildRequest();
+        req.acuc.flags.scrapeZDR = mode;
+        if (mode === "forced") req.body = {};
+        await browserCreateController(req, buildRes());
+        expect(createHangarBrowser).toHaveBeenCalledWith(
+          expect.any(String),
+          "team-123",
+          expect.objectContaining({ zeroDataRetention: true }),
+        );
+      },
+    );
+
+    it("keeps the default Hangar proxy pool without ZDR", async () => {
+      const req = buildRequest();
+      req.body = {};
+      await browserCreateController(req, buildRes());
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ zeroDataRetention: false }),
+      );
+    });
+
+    it("restricts the Hangar proxy to ZDR exits when interacting with a ZDR scrape", async () => {
+      vi.mocked(getBrowserSession).mockResolvedValue(null);
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        zeroDataRetention: true,
+      } as any);
+      vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(output);
+      await scrapeInteractController(
+        {
+          ...buildRequest(),
+          acuc: {},
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('ok')", url: "https://example.com" },
+        },
+        buildRes(),
+      );
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ zeroDataRetention: true }),
+      );
+    });
 
     it("stores and returns access URLs for active ZDR sessions", async () => {
       const res = buildRes();
@@ -455,6 +508,8 @@ describe("scrapeInteractController", () => {
       await runPrompt();
       expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
         ignoreModelOverride: true,
+        teamFlags: undefined,
+        feature: "Interact",
       });
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -87,7 +87,7 @@ other variables in the API container's environment.
 | `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
 
 Header-authenticated routes: `GET /admin/ops/redis-health`,
-`GET /admin/ops/autumn-health`, `POST /admin/ops/acuc-cache-clear`,
+`POST /admin/ops/acuc-cache-clear`,
 `POST /admin/ops/ip-restriction-cache-clear`,
 `POST /admin/ops/key-restriction-cache-clear` and
 `POST /admin/ops/concurrency-queue-backfill`.
@@ -95,7 +95,7 @@ Header-authenticated routes: `GET /admin/ops/redis-health`,
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
 `GET /admin/nuq-fdb-metrics` and `GET /admin/index-queue-prometheus`; and
-`GET /admin/redis-health`, `GET /admin/autumn-health`, `GET /admin/feng-check`,
+`GET /admin/redis-health`, `GET /admin/feng-check`,
 `GET /admin/precrawl` (queues a precrawl run), `POST /admin/fsearch` (runs a
 search) and `POST /admin/crawl-monitor` (still requires an API key and credits).
 Anyone who can reach the port can use them.

@@ -52,7 +52,10 @@ export function isBrowserOptions(value: unknown): value is BrowserOptions {
 }
 
 /** The Hangar create-request fields that carry these options. */
-export function hangarBrowserOptions(options: BrowserOptions) {
+export function hangarBrowserOptions(
+  options: BrowserOptions,
+  zeroDataRetention: boolean,
+) {
   return {
     // uBlock Origin Lite covers ads, trackers and cookie notices.
     extensions: options.blockAds ? ["ublock"] : [],
@@ -65,12 +68,14 @@ export function hangarBrowserOptions(options: BrowserOptions) {
         }
       : {}),
     // Scrape's stealth proxy is Hangar's mobile pool. Omitted fields keep
-    // Hangar's defaults: country "us", type "basic".
-    ...(options.location || options.proxy === "stealth"
+    // Hangar's defaults: country "us", type "basic". Under ZDR, Hangar picks
+    // only ZDR exits and fails the browser if none is available.
+    ...(options.location || options.proxy === "stealth" || zeroDataRetention
       ? {
           proxy: {
             ...(options.location ? { country: options.location.country } : {}),
             type: options.proxy === "stealth" ? "mobile" : "basic",
+            ...(zeroDataRetention ? { zero_data_retention: true } : {}),
           },
         }
       : {}),

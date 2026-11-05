@@ -228,7 +228,8 @@ results = firecrawl.search(
 )
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer and gov
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -242,6 +243,10 @@ results = firecrawl.search("nanopore basecalling accuracy", categories=["researc
 > results. To search papers themselves, use `search_papers` below.
 
 ### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
 
 Use `developer_search` for the dedicated developer index and its complete
 filter and response contract. Generic `search(categories=["developer"])`
@@ -335,14 +340,6 @@ related = firecrawl.related_papers(
     k=20,
 )
 ```
-
-> **`search_github` is deprecated.** The research index GitHub endpoint stops
-> responding after 2026-11-03. Use `developer_search` instead: it searches
-> GitHub issues, pull requests and readmes plus curated documentation sources,
-> returns matched passages, and adds filters for repo, language, license and
-> stars. It does not carry over the `scores` breakdown or the
-> `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 > **Response keys are camelCase.** Unlike the rest of the SDK, the research
 > methods return the raw JSON body as a `dict` — they are not parsed into typed

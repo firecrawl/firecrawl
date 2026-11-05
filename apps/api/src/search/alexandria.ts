@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Logger } from "winston";
+import { developerCategoryAliases } from "../lib/developer-category";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   toolSchema,
@@ -13,6 +14,8 @@ export const isAlexandriaSource = (source: { type: string }) =>
 type ToolDiscovery = {
   items: DiscoveredTool[];
   warning?: string;
+  /** Tools the Exchange hid from a US-only team; set only when it hid some. */
+  usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
 };
@@ -23,21 +26,49 @@ type CategoryLike = string | { type: string };
 const typeOf = (value: SourceLike | CategoryLike) =>
   typeof value === "string" ? value : value?.type;
 
+const CATALOGUE_SOURCES = new Set(["alexandria", "skills"]);
+
+function excludesIndexCategory(categories: unknown): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(category => {
+      const type = typeOf(category);
+      return (
+        type === "gov" ||
+        (type !== undefined && developerCategoryAliases.has(type))
+      );
+    })
+  );
+}
+
 export function isToolsOnlySearch(
   sources: unknown,
   categories: unknown,
 ): boolean {
   if (!Array.isArray(sources) || sources.length === 0) return false;
   if (!sources.every(source => typeOf(source) === "alexandria")) return false;
-  if (
-    Array.isArray(categories) &&
-    categories.some(category => {
-      const type = typeOf(category);
-      return type === "developer" || type === "gov";
-    })
-  )
-    return false;
+  if (excludesIndexCategory(categories)) return false;
   return true;
+}
+
+/**
+ * Search that only asks the Alexandria catalogue for tools and/or skill cards.
+ * Both are free, so the credit check is skipped the same way as a tools-only
+ * search. An index category still has its own billable path.
+ */
+export function isFreeCatalogueSearch(
+  sources: unknown,
+  categories: unknown,
+): boolean {
+  if (!Array.isArray(sources) || sources.length === 0) return false;
+  if (!sources.every(source => CATALOGUE_SOURCES.has(typeOf(source) ?? "")))
+    return false;
+  if (excludesIndexCategory(categories)) return false;
+  return true;
+}
+
+export function usOnlyToolsWarning(excluded: number): string {
+  return `${excluded} ${excluded === 1 ? "tool is" : "tools are"} not available for teams restricted to US-only processing.`;
 }
 
 export async function discoverTools(
@@ -52,6 +83,8 @@ export async function discoverTools(
     timeoutMs: number;
     /** The team may use its own MCP connectors: their listed tools join its discovery. */
     connectors?: boolean;
+    /** The team may only be served by US-based providers. */
+    usOnly?: boolean;
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -60,6 +93,8 @@ export async function discoverTools(
   const selected = { semantic: new Set<string>(), domain: new Set<string>() };
   let attempted = 0;
   let answered = 0;
+  // Lookups can hide the same tools, so the largest count is reported.
+  let usOnlyExcluded = 0;
   const remaining = (deadline: number) => {
     if (Date.now() >= deadline) throw new Error("Tool discovery timed out");
     return deadline - Date.now();
@@ -71,6 +106,7 @@ export async function discoverTools(
       timeoutMs: remaining(deadline),
       maximumCredits: 0,
       connectors: input.connectors === true,
+      usOnly: input.usOnly === true,
       body: {
         provider: "firecrawl",
         capability: "find-tools",
@@ -87,7 +123,7 @@ export async function discoverTools(
     });
     if (result.status !== 200)
       throw new Error("Tool contract lookup unavailable");
-    return z
+    const data = z
       .object({
         success: z.literal(true),
         creditsCost: z.literal(0),
@@ -95,9 +131,17 @@ export async function discoverTools(
           items: z.array(
             input.toolDetail === "full" ? toolSchema : toolSummarySchema,
           ),
+          usOnlyExcluded: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .catch(undefined),
         }),
       })
-      .parse(result.body).data.items;
+      .parse(result.body).data;
+    usOnlyExcluded = Math.max(usOnlyExcluded, data.usOnlyExcluded ?? 0);
+    return data.items;
   };
   const merge = (
     tool: z.infer<typeof toolSchema> | z.infer<typeof toolSummarySchema>,
@@ -191,6 +235,7 @@ export async function discoverTools(
           body: { urls: batch },
           timeoutMs: remaining(deadline),
           connectors: input.connectors === true,
+          usOnly: input.usOnly === true,
         });
         if (result.status !== 200)
           throw new Error("Domain discovery unavailable");
@@ -280,6 +325,7 @@ export async function discoverTools(
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),
+    ...(input.usOnly && usOnlyExcluded > 0 ? { usOnlyExcluded } : {}),
     ...(attempted && !answered && !items.size
       ? { unavailable: true as const }
       : {}),

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   searchGovCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
+  discoverSkills: vi.fn(),
   removeExplicitResults: vi.fn(),
   inferToolIntent: vi.fn(),
   verifyTools: vi.fn(),
@@ -17,8 +18,15 @@ vi.mock("./tool-intent", () => ({
 
 vi.mock("./alexandria", () => ({
   discoverTools: mocks.discoverTools,
+  usOnlyToolsWarning: (excluded: number) => `${excluded} tools hidden`,
   isAlexandriaSource: (source: { type: string }) =>
     source.type === "alexandria",
+}));
+
+vi.mock("./skill-cards", () => ({
+  discoverSkills: mocks.discoverSkills,
+  isSkillsSource: (source: { type: string }) => source.type === "skills",
+  SKILLS_DISCOVERY_TIMEOUT_MS: 3000,
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -111,6 +119,7 @@ beforeEach(() => {
     status: "available",
     items: [{ id: "fred/series/observations" }],
   });
+  mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: false });
   mocks.verifyTools.mockImplementation(async (_query, items) => items);
 });
 
@@ -245,6 +254,32 @@ describe("executeSearch tool intent", () => {
     expect(result.toolsAuto).toBe(true);
     expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
     expect(result.searchCredits).toBe(2);
+  });
+
+  it("warns a US-only team about tools hidden from automatic discovery", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["US unemployment rate statistics"],
+      domains: [],
+      needsTools: true,
+    });
+    mocks.discoverTools.mockResolvedValue({
+      items: [{ id: "fred/series/observations" }],
+      usOnlyExcluded: 2,
+    });
+    const result = await executeSearch(
+      { ...options([]), autoTools: true },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+    );
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
+    );
+    expect(result.toolsWarning).toBe("2 tools hidden");
   });
 
   it("leaves a default search alone when the query does not need tools", async () => {
@@ -564,7 +599,7 @@ describe("executeSearch developer category", () => {
   it("rejects developer combined with other categories at the schema", () => {
     const mixed = searchRequestSchema.safeParse({
       query: "retries",
-      categories: ["developer", "github"],
+      categories: ["developer", "pdf"],
     });
     expect(mixed.success).toBe(false);
     if (!mixed.success) {
@@ -824,6 +859,168 @@ describe("executeSearch query operators", () => {
 
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({ tbs, type: ["web"] }),
+    );
+  });
+});
+
+describe("executeSearch skill cards", () => {
+  const card = {
+    id: "official/search",
+    name: "Search",
+    description: "Find records",
+    source: "official" as const,
+    similarity: 0.5,
+  };
+
+  it("leaves skills off when the source was not requested", async () => {
+    mocks.search.mockResolvedValue({ web: [developerResult] });
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(mocks.discoverSkills).not.toHaveBeenCalled();
+    expect(result.response).not.toHaveProperty("skills");
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("starts skill discovery before the web search and maps the cards", async () => {
+    const order: string[] = [];
+    let releaseSkills: (found: {
+      skills: unknown[];
+      succeeded: boolean;
+    }) => void = () => {};
+    mocks.discoverSkills.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          order.push("skills");
+          releaseSkills = resolve;
+        }),
+    );
+    mocks.search.mockImplementation(async () => {
+      order.push("web");
+      releaseSkills({ skills: [card], succeeded: true });
+      return { web: [developerResult] };
+    });
+
+    const result = await executeSearch(
+      {
+        ...options([]),
+        sources: [{ type: "web" }, { type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(order).toEqual(["skills", "web"]);
+    expect(mocks.discoverSkills).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: "team-1",
+        query: "retries",
+        timeoutMs: 1000,
+        usOnly: false,
+      }),
+      logger,
+    );
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ type: ["web"] }),
+    );
+    expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
+    expect(result.response.web).toHaveLength(1);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("keeps web results and returns no cards when skill discovery fails", async () => {
+    mocks.search.mockResolvedValue({ web: [developerResult] });
+    mocks.discoverSkills.mockRejectedValue(new Error("timed out"));
+
+    const result = await executeSearch(
+      {
+        ...options([]),
+        sources: [{ type: "web" }, { type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(result.response.web).toHaveLength(1);
+    expect(result.response.skills).toEqual([]);
+    expect(result.skillsDiscovered).toBe(false);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("does not run or bill web search for a skills-only request", async () => {
+    mocks.discoverSkills.mockResolvedValue({
+      skills: [card],
+      succeeded: true,
+    });
+
+    const result = await executeSearch(
+      { ...options([]), sources: [{ type: "skills" }] },
+      context,
+      logger,
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
+    expect(result.searchCredits).toBe(0);
+    expect(result.totalCredits).toBe(0);
+  });
+
+  it.each([
+    ["zero data retention", { zeroDataRetention: true }, {}],
+    ["zdr enterprise mode", {}, { enterprise: ["zdr"] }],
+    ["anon enterprise mode", {}, { enterprise: ["anon"] }],
+  ])(
+    "skips skill discovery under %s",
+    async (_label, contextOverrides, optionOverrides) => {
+      mocks.search.mockResolvedValue({ web: [developerResult] });
+
+      const result = await executeSearch(
+        {
+          ...options([]),
+          sources: [{ type: "web" }, { type: "skills" }],
+          ...optionOverrides,
+        },
+        { ...context, ...contextOverrides },
+        logger,
+      );
+
+      expect(mocks.discoverSkills).not.toHaveBeenCalled();
+      expect(result.response).not.toHaveProperty("skills");
+      expect(result.skillsDiscovered).toBe(false);
+    },
+  );
+
+  it("skips skill discovery when the query is empty", async () => {
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "   ",
+        sources: [{ type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(mocks.discoverSkills).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).not.toHaveProperty("skills");
+    expect(result.skillsDiscovered).toBe(false);
+  });
+
+  it("forwards a US-only team to skill discovery", async () => {
+    mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: true });
+
+    await executeSearch(
+      { ...options([]), sources: [{ type: "skills" }] },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+
+    expect(mocks.discoverSkills).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
     );
   });
 });

@@ -18,7 +18,7 @@ pub struct SearchOptions {
     /// Maximum number of results to return. Default: 5, Max: 20.
     pub limit: Option<u32>,
 
-    /// Search sources to query (web, news, images, alexandria).
+    /// Search sources to query (web, news, images, alexandria, skills).
     pub sources: Option<Vec<SearchSource>>,
 
     /// Enable Alexandria domain-tool discovery (send alongside `sources: ["alexandria"]`).
@@ -27,7 +27,8 @@ pub struct SearchOptions {
     /// Discovery response detail; defaults to compact.
     pub tool_detail: Option<crate::types::ToolDetail>,
 
-    /// Categories to filter results (github, research, pdf).
+    /// Categories to filter results (research, pdf). `Github` was removed; use
+    /// `Client::developer_search` instead.
     pub categories: Option<Vec<SearchCategory>>,
 
     /// Domains to include in search results.
@@ -86,6 +87,22 @@ pub struct SearchData {
     /// Image search results.
     pub images: Option<Vec<SearchResultImage>>,
     pub tools: Option<Vec<DiscoveredTool>>,
+    /// Short skill cards. Present when `skills` was requested.
+    pub skills: Option<Vec<SkillCard>>,
+}
+
+/// Short skill card returned by the `skills` search source.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCard {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// `official` or `provider`.
+    pub source: String,
+    pub provider: Option<String>,
+    pub similarity: Option<f64>,
 }
 
 /// A search result that may be a simple result or a full document.
