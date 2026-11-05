@@ -69,7 +69,7 @@ import {
   autoToolsEnabled,
   queryInferenceEnabled,
 } from "../../search/tool-intent";
-import { isUsOnly } from "../../lib/us-only";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
@@ -333,6 +333,21 @@ async function searchControllerInner(
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
+      });
+    }
+
+    const usOnlyLocationError =
+      requestedFormats.length > 0
+        ? usOnlyLocationRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
       });
     }
 

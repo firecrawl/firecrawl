@@ -39,6 +39,7 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly } from "../../lib/us-only";
 
 async function scrapeHelper(
   jobId: string,
@@ -97,6 +98,9 @@ async function scrapeHelper(
   );
 
   internalOptions.orgId = acuc?.org_id ?? null;
+  if (isUsOnly(acuc?.flags ?? undefined)) {
+    internalOptions.teamFlags = acuc?.flags;
+  }
   internalOptions.saveScrapeResultToGCS = process.env
     .GCS_FIRE_ENGINE_BUCKET_NAME
     ? true

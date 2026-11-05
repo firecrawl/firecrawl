@@ -18,9 +18,11 @@ import {
   SiteError,
   SiteRestrictionError,
   UnsupportedFileError,
+  UsOnlyUnavailableError,
 } from "../../error";
 import { Meta } from "../..";
 import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
+import { US_ONLY_EXIT_UNAVAILABLE } from "../../../../lib/us-only";
 
 import { config } from "../../../../config";
 
@@ -60,6 +62,8 @@ export type FireEngineScrapeRequestCommon = {
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+  /** Leave only from a US exit, or fail. Sent only for US-only teams. */
+  usOnly?: boolean;
 
   behaviorOverrides?: {
     disableSiteHandling?: boolean;
@@ -211,6 +215,22 @@ const failedSchema = z.object({
   failureReason: z.literal("site_protection").optional(),
 });
 
+/** Throws when fire-engine refused a US-only request because no US exit could take it. */
+export function throwIfUsOnlyExitUnavailable(status: {
+  error?: unknown;
+  errorData?: { code?: unknown };
+}) {
+  if (
+    status.errorData?.code === "US_ONLY_EXIT_UNAVAILABLE" ||
+    (typeof status.error === "string" &&
+      status.error.includes(US_ONLY_EXIT_UNAVAILABLE))
+  ) {
+    throw new UsOnlyUnavailableError(
+      "No US exit was available to fetch this page, and teams restricted to US-only processing are only served from US exits. Try again later.",
+    );
+  }
+}
+
 export const fireEngineURL =
   config.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
 export const fireEngineStagingURL =
@@ -274,6 +294,7 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    throwIfUsOnlyExitUnavailable(status);
     if (
       failedParse.data.failureReason === "site_protection" &&
       meta.internalOptions.safeMode?.disableSiteHandling

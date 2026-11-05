@@ -21,6 +21,7 @@ type SitemapScrapeOptions = {
   url: string;
   maxAge: number;
   zeroDataRetention: boolean;
+  usOnly?: boolean;
   location: ScrapeOptions["location"];
   crawlId: string;
   logger?: Logger;
@@ -101,6 +102,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       teamId: "sitemap",
       orgId: null,
       zeroDataRetention: options.zeroDataRetention,
+      ...(options.usOnly ? { teamFlags: { usOnly: true } } : {}),
       crawlId: options.crawlId,
       isPreCrawl: options.isPreCrawl,
     },

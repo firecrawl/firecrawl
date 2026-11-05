@@ -45,6 +45,7 @@ import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { scrapeQueue } from "../../../services/worker/nuq-router";
 import { redlock } from "../../../services/redlock";
 import { updateKeylessBrowserCredits } from "../../../lib/keyless";
+import { UsOnlyUnavailableError } from "../../../scraper/scrapeURL/error";
 
 vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
 vi.mock("../../../services/rate-limiter", () => ({
@@ -771,6 +772,98 @@ describe("scrapeInteractController", () => {
     );
     expect(res.status).toHaveBeenCalledWith(status);
     expect(getHangarRecording).not.toHaveBeenCalled();
+  });
+
+  describe("US-only teams", () => {
+    const usOnlyRequest = (body: Record<string, unknown>) =>
+      ({
+        body,
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: { flags: { usOnly: true } },
+      }) as any;
+
+    beforeEach(() => {
+      vi.mocked(createHangarBrowser).mockResolvedValue({
+        id: "br_us",
+        max_expires_at: 700,
+        cdp_url: "wss://hangar.example/cdp",
+      } as any);
+      vi.mocked(insertBrowserSession).mockImplementation(
+        async row => row as any,
+      );
+    });
+
+    it("refuses a browser session located outside the US", async () => {
+      const res = buildRes();
+      await browserCreateController(
+        usOnlyRequest({ location: { country: "NL" } }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: expect.stringContaining('location.country "NL"'),
+      });
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
+
+    it("asks Hangar for a US-only exit", async () => {
+      const res = buildRes();
+      await browserCreateController(
+        usOnlyRequest({ location: { country: "us" } }),
+        res,
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ usOnly: true }),
+      );
+    });
+
+    it("reports Hangar's US-only refusal as US_ONLY_UNAVAILABLE", async () => {
+      vi.mocked(createHangarBrowser).mockRejectedValueOnce(
+        new UsOnlyUnavailableError("No US exit is available."),
+      );
+      const res = buildRes();
+      await browserCreateController(usOnlyRequest({}), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: "No US exit is available.",
+      });
+    });
+
+    it("refuses to interact from a scrape located outside the US", async () => {
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+        browser: { blockAds: true, location: { country: "nl" } },
+      } as any);
+      const res = buildRes();
+      await scrapeInteractController(
+        {
+          ...usOnlyRequest({ code: "console.log('ok')" }),
+          params: { jobId: "scrape-123" },
+        },
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: expect.stringContaining('location.country "NL"'),
+      });
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
   });
 });
 

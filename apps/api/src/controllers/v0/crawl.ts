@@ -49,6 +49,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { isUsOnly } from "../../lib/us-only";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -253,6 +254,9 @@ export async function crawlController(req: Request, res: Response) {
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     internalOptions.orgId = auth.chunk?.org_id ?? null;
+    if (isUsOnly(auth.chunk?.flags ?? undefined)) {
+      internalOptions.teamFlags = auth.chunk?.flags;
+    }
     internalOptions.saveScrapeResultToGCS = process.env
       .GCS_FIRE_ENGINE_BUCKET_NAME
       ? true

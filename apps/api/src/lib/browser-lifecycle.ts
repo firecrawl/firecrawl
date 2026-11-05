@@ -55,6 +55,8 @@ import { getScrapeZDR } from "./zdr-helpers";
 import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const logger = rootLogger;
 
@@ -157,6 +159,12 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    req.acuc?.flags,
+    options.location?.country,
+  );
+  if (usOnlyLocationError)
+    throw new UsOnlyUnavailableError(usOnlyLocationError);
   const zeroDataRetention =
     getBrowserZDR(req) || options.zeroDataRetention === true;
   if (zeroDataRetention && (options.recordSession || options.profile)) {
@@ -242,6 +250,7 @@ async function createBrowserSessionInternal(
     const browser = await createHangarBrowser(id, req.auth.team_id, {
       ...options,
       zeroDataRetention,
+      usOnly: isUsOnly(req.acuc?.flags),
     });
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);

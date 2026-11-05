@@ -15,7 +15,7 @@ import {
   SiteRestrictionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
-import { fireEngineURL } from "./scrape";
+import { fireEngineURL, throwIfUsOnlyExitUnavailable } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
@@ -191,6 +191,7 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
+    throwIfUsOnlyExitUnavailable(status);
     if (
       failedParse.data.failureReason === "site_protection" &&
       meta.internalOptions.safeMode?.disableSiteHandling

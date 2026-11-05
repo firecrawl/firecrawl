@@ -9,6 +9,7 @@ import {
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 import { getDocFromGCS } from "../lib/gcs-jobs";
 import { MirrorResult, FireEngineResponse } from "./ab-test-comparison";
+import { isUsOnly } from "../lib/us-only";
 
 export function abTestJob(webScraperOptions: ScrapeJobData) {
   const abLogger = _logger.child({ method: "ABTestToStaging" });
@@ -21,6 +22,7 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
       webScraperOptions.mode === "single_urls" &&
       !webScraperOptions.zeroDataRetention &&
       !webScraperOptions.internalOptions?.zeroDataRetention &&
+      !isUsOnly(webScraperOptions.internalOptions?.teamFlags ?? undefined) &&
       abRate > 0 &&
       Math.random() <= abRate &&
       config.SCRAPEURL_AB_HOST &&
@@ -89,6 +91,7 @@ export function abTestFireEngine(
 
   const shouldABTest =
     !feRequest.zeroDataRetention &&
+    !feRequest.usOnly &&
     abRate > 0 &&
     Math.random() <= abRate &&
     config.FIRE_ENGINE_AB_URL;
