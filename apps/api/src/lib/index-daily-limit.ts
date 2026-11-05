@@ -1,13 +1,22 @@
 import { config } from "../config";
-import { redisRateLimitClient } from "../services/rate-limiter";
+import type { TeamFlags } from "../controllers/v1/types";
+import {
+  getAutumnRateLimiter,
+  redisRateLimitClient,
+} from "../services/rate-limiter";
+import { RateLimiterMode } from "../types";
 import { isKeylessTeamId } from "./keyless";
 import { logger } from "./logger";
 
 // Daily call budgets for the free Firecrawl indexes, per team and per UTC day,
 // sized by plan. Every route into an index reserves from the same counter, so a
 // team cannot raise its budget by switching between the direct endpoint, the
-// search category and the Alexandria provider. A new route into an index (for
-// example the `research` category on /search) must reserve here as well.
+// search category and the Alexandria provider. The per-minute limit is shared
+// the same way: it is the direct endpoint's limiter. A gov search on /search
+// that only queries the index authenticates with it, and every other route
+// takes from it through consumeIndexRateLimit. A new route into an index (for
+// example the `research` category on /search) must reserve here and take from
+// that limiter as well.
 
 export type IndexName = "gov" | "research";
 
@@ -22,12 +31,21 @@ type IndexDailyReservation =
       resetsAt: Date;
     };
 
+type IndexRateLimit =
+  | { ok: true; release: () => Promise<void> }
+  | { ok: false; error: string; retryAfterSeconds: number };
+
 const DISPLAY_NAMES: Record<IndexName, string> = {
   gov: "Government Index",
   research: "Research Index",
 };
 
 const UPGRADE_URL = "https://firecrawl.dev/pricing";
+
+const RATE_LIMITER_MODES: Record<IndexName, RateLimiterMode> = {
+  gov: RateLimiterMode.GovSearch,
+  research: RateLimiterMode.Research,
+};
 
 const BASE_CALLS_PER_DAY = 1000;
 
@@ -161,6 +179,131 @@ return 1
         releaseScheduled = true;
         void pending
           .then(([admitted]) => (admitted === 1 ? release() : undefined))
+          .catch(() => {});
+      },
+    };
+  }
+}
+
+/**
+ * Takes the calls from the team's per-minute limit for the index, for a route
+ * that reaches the index under another limiter: the Alexandria providers, and
+ * a gov search on /search that also scrapes its results. One script checks and
+ * counts on the direct endpoint's limiter key, so a refused batch takes
+ * nothing and the count keeps that limiter's window. Like the daily check, it
+ * allows the calls when Redis fails or does not answer in time. release gives
+ * the calls back only while the window they were taken from is still open
+ * (with a second of slack for the round trip), so it never lowers the count
+ * of the next window.
+ */
+export async function consumeIndexRateLimit(
+  index: IndexName,
+  teamId: string,
+  rateLimitMultiplier: number,
+  flags: TeamFlags | null | undefined,
+  calls: number,
+): Promise<IndexRateLimit> {
+  if (calls <= 0) return { ok: true, release: async () => {} };
+  const limiter = getAutumnRateLimiter(
+    RATE_LIMITER_MODES[index],
+    rateLimitMultiplier,
+    flags ?? undefined,
+  );
+  const key = limiter.getKey(teamId);
+  const pending = Promise.resolve()
+    .then(
+      () =>
+        redisRateLimitClient.eval(
+          `
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local calls = tonumber(ARGV[1])
+local ttl = redis.call("PTTL", KEYS[1])
+if current + calls > tonumber(ARGV[2]) then
+  return {0, ttl}
+end
+if ttl < 0 then
+  redis.call("SET", KEYS[1], current + calls, "EX", ARGV[3])
+  return {1, tonumber(ARGV[3]) * 1000}
+end
+redis.call("INCRBY", KEYS[1], calls)
+return {1, ttl}
+`,
+          1,
+          key,
+          calls,
+          limiter.points,
+          limiter.duration,
+        ) as Promise<[number, number]>,
+    )
+    .then(([admitted, ttl]) => ({
+      admitted: admitted === 1,
+      ttl,
+      windowEndsAt: Date.now() + ttl,
+    }));
+
+  let releasePromise: Promise<void> | undefined;
+  const release = (windowEndsAt: number) =>
+    (releasePromise ??= (async () => {
+      const remaining = windowEndsAt - Date.now();
+      if (remaining <= 0) return;
+      try {
+        await withTimeout(
+          redisRateLimitClient.eval(
+            `
+local ttl = redis.call("PTTL", KEYS[1])
+if ttl <= 0 or ttl > tonumber(ARGV[2]) then
+  return 0
+end
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+if current > 0 then
+  redis.call("DECRBY", KEYS[1], math.min(current, tonumber(ARGV[1])))
+end
+return 1
+`,
+            1,
+            key,
+            calls,
+            remaining + 1000,
+          ),
+        );
+      } catch (error) {
+        logger.warn("Index rate limit release failed", {
+          index,
+          teamId,
+          error,
+        });
+      }
+    })());
+
+  try {
+    const { admitted, ttl, windowEndsAt } = await withTimeout(pending);
+    if (admitted) return { ok: true, release: () => release(windowEndsAt) };
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((ttl > 0 ? ttl : limiter.duration * 1000) / 1000),
+    );
+    const needs =
+      calls > 1
+        ? ` and this request needs ${calls.toLocaleString("en-US")}`
+        : "";
+    return {
+      ok: false,
+      retryAfterSeconds,
+      error: `${DISPLAY_NAMES[index]} rate limit reached: your team can make ${limiter.points.toLocaleString("en-US")} calls a minute across every endpoint that queries the index${needs}. Retry in ${retryAfterSeconds}s.`,
+    };
+  } catch (error) {
+    logger.warn("Index rate limit check failed; allowing request", {
+      index,
+      teamId,
+      error,
+    });
+    return {
+      ok: true,
+      release: async () => {
+        void pending
+          .then(({ admitted, windowEndsAt }) =>
+            admitted ? release(windowEndsAt) : undefined,
+          )
           .catch(() => {});
       },
     };

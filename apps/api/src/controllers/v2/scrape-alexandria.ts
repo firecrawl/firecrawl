@@ -325,7 +325,8 @@ export async function providerScrapeController(
       retryAfterSeconds?: unknown;
     } | null;
     if (
-      refused?.code === "index_daily_limit" &&
+      (refused?.code === "index_daily_limit" ||
+        refused?.code === "index_rate_limit") &&
       typeof refused.retryAfterSeconds === "number"
     )
       res.setHeader("Retry-After", String(refused.retryAfterSeconds));

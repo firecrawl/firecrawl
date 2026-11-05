@@ -55,8 +55,9 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
-import { wantsGovCategory } from "../../search/gov";
+import { isGovIndexOnlySearch, wantsGovCategory } from "../../search/gov";
 import {
+  consumeIndexRateLimit,
   indexDailyLimitRefusal,
   reserveIndexCalls,
 } from "../../lib/index-daily-limit";
@@ -466,6 +467,20 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
+
+    if (govSearch && !isGovIndexOnlySearch(req.body)) {
+      const perMinute = await consumeIndexRateLimit(
+        "gov",
+        req.auth.team_id,
+        req.acuc?.rate_limit_multiplier ?? 1,
+        req.acuc?.flags,
+        1,
+      );
+      if (!perMinute.ok) {
+        res.setHeader("Retry-After", String(perMinute.retryAfterSeconds));
+        return res.status(429).json({ success: false, error: perMinute.error });
+      }
+    }
 
     if (projectedKeylessCredits > 0) {
       const reservation = await reserveKeylessCredits(

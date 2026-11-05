@@ -364,7 +364,9 @@ export function checkCreditsMiddleware(
 }
 
 export function authMiddleware(
-  rateLimiterMode: RateLimiterMode,
+  rateLimiterMode:
+    | RateLimiterMode
+    | ((req: RequestWithMaybeAuth) => RateLimiterMode),
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
     allowAgentManagedKey?: boolean;
@@ -378,7 +380,10 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      let currentRateLimiterMode = rateLimiterMode;
+      let currentRateLimiterMode =
+        typeof rateLimiterMode === "function"
+          ? rateLimiterMode(req)
+          : rateLimiterMode;
       if (
         currentRateLimiterMode === RateLimiterMode.Extract &&
         isAgentExtractModelValid((req.body as any)?.agent?.model)

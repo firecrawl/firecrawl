@@ -4,6 +4,7 @@ import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { reportExchangeUsageBilling } from "../../lib/exchange";
 import {
+  consumeIndexRateLimit,
   indexDailyLimitRefusal,
   reserveIndexCalls,
   type IndexName,
@@ -323,11 +324,29 @@ export async function retrieveProviders(input: {
     if (denied) return refuse(denied);
 
     for (const [index, provider] of INDEX_PROVIDERS) {
+      const calls = input.calls.filter(
+        call => call.provider === provider,
+      ).length;
+      const perMinute = await consumeIndexRateLimit(
+        index,
+        input.teamId,
+        input.rateLimitMultiplier,
+        input.flags,
+        calls,
+      );
+      if (!perMinute.ok)
+        return refuse(
+          refusal(429, perMinute.error, {
+            code: "index_rate_limit",
+            retryAfterSeconds: perMinute.retryAfterSeconds,
+          }),
+        );
+      indexReleases.push(perMinute.release);
       const indexBudget = await reserveIndexCalls(
         index,
         input.teamId,
         input.rateLimitMultiplier,
-        input.calls.filter(call => call.provider === provider).length,
+        calls,
       );
       if (!indexBudget.ok) {
         const { error, ...limitFields } = indexDailyLimitRefusal(

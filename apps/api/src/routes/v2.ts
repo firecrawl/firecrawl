@@ -65,6 +65,7 @@ import {
   removedEndpointHandler,
 } from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
+import { isGovIndexOnlySearch } from "../search/gov";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
@@ -210,10 +211,16 @@ registerMcpActionLogReadRoute(
 v2Router.post(
   "/search",
   researchCategoryNoticeMiddleware,
-  authMiddleware(RateLimiterMode.Search, {
-    allowKeyless: true,
-    allowAgentManagedKey: true,
-  }),
+  authMiddleware(
+    req =>
+      isGovIndexOnlySearch(req.body)
+        ? RateLimiterMode.GovSearch
+        : RateLimiterMode.Search,
+    {
+      allowKeyless: true,
+      allowAgentManagedKey: true,
+    },
+  ),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
