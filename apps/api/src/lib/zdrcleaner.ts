@@ -4,6 +4,7 @@ import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
+import type { ZdrCleanupJob } from "./zdr-queue";
 
 export async function sendZdrHeartbeat() {
   if (config.ZDRCLEANER_HEARTBEAT_URL) {
@@ -86,4 +87,12 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
     }
     setSpanAttributes(span, { "zdr.cleanup.outcome": "completed" });
   });
+}
+
+export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
+  if ("blobId" in job) {
+    await removeJobFromGCS(job.blobId);
+    return;
+  }
+  await cleanZdrRequest(job.requestId);
 }
