@@ -1660,6 +1660,7 @@ export type ErrorResponse = {
   login_url?: string;
   replacement?: string;
   documentation_url?: string;
+  retry_after_seconds?: number;
 };
 
 export type ScrapeResponse =

@@ -478,7 +478,11 @@ async function searchControllerInner(
       );
       if (!perMinute.ok) {
         res.setHeader("Retry-After", String(perMinute.retryAfterSeconds));
-        return res.status(429).json({ success: false, error: perMinute.error });
+        return res.status(429).json({
+          success: false,
+          error: perMinute.error,
+          retry_after_seconds: perMinute.retryAfterSeconds,
+        });
       }
     }
 
