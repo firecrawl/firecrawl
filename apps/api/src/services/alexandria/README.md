@@ -51,13 +51,13 @@ shape relays a provider error with Alexandria's status and `code`.
 
 Inline in the request (`retrieve.ts`): authorize through Alexandria
 (`/v1/provider-terms/requirements`, which refuses unknown providers) against
-the organization's `organizationDataSourceAccess` flags, then refuse a
-free-plan team (Autumn rate-limit multiplier below the hobby floor) calling a
-capability the Exchange lists in `paidPlanOnlyCapabilities` with 403
-`paid_plan_required`, or with 503 `plan_verification_unavailable` when the plan
-cannot be known (no org, preview team, Autumn error): this read fails closed
-where the rate limiter fails open (Benzinga Schedule C.4: full text, WIIM,
-analyst ratings), quote
+the organization's `organizationDataSourceAccess` flags, then hold back a
+free-plan team's calls to capabilities the Exchange lists in
+`paidPlanOnlyCapabilities` (Benzinga Schedule C.4: full text, WIIM, analyst
+ratings). In a batch, the other calls run and each held-back call answers an
+uncharged `paid_plan_required` result (403, `retryable: false`); when every
+call is held back the request is refused with 403 `paid_plan_required` before
+quoting. Then quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
 `alexandria_<chargeId>`, or `alexandria_<chargeId>_team` for a hosted MCP hold
 that MCP credits refuse and team credits cover), execute `/v1/retrieve` with the budget and deadline

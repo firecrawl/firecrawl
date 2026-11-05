@@ -834,18 +834,27 @@ describe("a batch with paid-plan-only calls", () => {
     provider: "benzinga",
     capability: "news/search",
     creditsCost: 0,
-    error: { code: "paid_plan_required", message: "Paid.", status: 403 },
+    error: {
+      code: "paid_plan_required",
+      message: "Paid.",
+      status: 403,
+      retryable: false,
+    },
   };
 
   it("runs the allowed calls, answers the gated one with its own error, and charges only what ran", async () => {
     mocks.authorize.mockResolvedValue({
       paidPlanRequired: new Map([[1, refused]]),
     });
-    exchangeAnswers({
-      success: true,
-      creditsCost: 10,
-      results: [quoted, { ...quoted, data: { price: 2 } }],
-    });
+    exchangeAnswers(
+      {
+        success: true,
+        creditsCost: 10,
+        results: [quoted, { ...quoted, data: { price: 2 } }],
+      },
+      200,
+      { status: 200, body: { maximumCredits: 10 } },
+    );
     const result = await run({ calls: [quote, news, quote] });
     expect(result.status).toBe(200);
     expect(result.executed).toBe(true);
@@ -882,7 +891,7 @@ describe("a batch with paid-plan-only calls", () => {
       creditsCost: 10,
       results: [quoted, quoted],
     };
-    exchangeAnswers(both);
+    exchangeAnswers(both, 200, { status: 200, body: { maximumCredits: 10 } });
     expect((await run({ calls: [quote, quote] })).body).toEqual(both);
     expect(executions()[0][0].body.requests).toEqual([quote, quote]);
   });

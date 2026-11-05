@@ -45,6 +45,7 @@ const call = {
   options: {},
 };
 let flags: Record<string, unknown> = { exchangeRetrieve: true };
+let paidPlan = false;
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
@@ -54,6 +55,7 @@ app.use((req, _res, next) => {
       api_key_id: 12,
       org_id: "org",
       flags,
+      is_paid_plan: paidPlan,
     },
   });
   next();
@@ -72,6 +74,7 @@ const result = (results: unknown[], executed = true) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   flags = { exchangeRetrieve: true };
+  paidPlan = false;
   mocks.log.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
   mocks.discovery.mockImplementation(async (_teamId, calls: unknown[]) =>
@@ -620,4 +623,18 @@ it("neither reads nor records discovery under zero data retention", async () => 
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.discovery).not.toHaveBeenCalled();
   expect(mocks.recordDiscovered).not.toHaveBeenCalled();
+});
+
+it("tells retrieval whether the team may run paid-plan-only capabilities", async () => {
+  const sentPlan = async () => {
+    mocks.retrieve.mockClear();
+    await request(app).post("/v2/scrape").send({ alexandria: call });
+    return mocks.retrieve.mock.calls[0][0].paidPlan;
+  };
+  expect(await sentPlan()).toBe(false);
+  paidPlan = true;
+  expect(await sentPlan()).toBe(true);
+  paidPlan = false;
+  flags = { exchangeRetrieve: true, bypassCreditChecks: true };
+  expect(await sentPlan()).toBe(true);
 });
