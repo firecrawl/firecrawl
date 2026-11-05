@@ -816,3 +816,83 @@ it("does not retry the write when the credit store is unavailable", async () => 
   });
   expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
 });
+
+describe("a batch with paid-plan-only calls", () => {
+  const quote = {
+    provider: "finance-yahoo-com",
+    capability: "equities/quote",
+    options: { symbol: "AMD" },
+  };
+  const news = {
+    provider: "benzinga",
+    capability: "news/search",
+    options: { tickers: "AMD" },
+  };
+  const quoted = { ...quote, creditsCost: 5, data: { price: 1 } };
+
+  const refused = {
+    provider: "benzinga",
+    capability: "news/search",
+    creditsCost: 0,
+    error: { code: "paid_plan_required", message: "Paid.", status: 403 },
+  };
+
+  it("runs the allowed calls, answers the gated one with its own error, and charges only what ran", async () => {
+    mocks.authorize.mockResolvedValue({
+      paidPlanRequired: new Map([[1, refused]]),
+    });
+    exchangeAnswers({
+      success: true,
+      creditsCost: 10,
+      results: [quoted, { ...quoted, data: { price: 2 } }],
+    });
+    const result = await run({ calls: [quote, news, quote] });
+    expect(result.status).toBe(200);
+    expect(result.executed).toBe(true);
+    expect(result.body).toEqual({
+      success: true,
+      creditsCost: 10,
+      results: [quoted, refused, { ...quoted, data: { price: 2 } }],
+    });
+    const sent = mocks.request.mock.calls.map(([arg]) => arg);
+    for (const path of ["/v1/retrieve/quote", "/v1/retrieve"])
+      expect(sent.find(arg => arg.path === path).body.requests).toEqual([
+        quote,
+        quote,
+      ]);
+    expect(mocks.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "confirm", overrideValue: 10 }),
+    );
+  });
+
+  it("refuses an all-gated batch before quoting", async () => {
+    mocks.authorize.mockResolvedValue({
+      status: 403,
+      body: { success: false, error: "paid", code: "paid_plan_required" },
+    });
+    const result = await run({ calls: [news, news] });
+    expect(result).toMatchObject({ status: 403, executed: false });
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.lock).not.toHaveBeenCalled();
+  });
+
+  it("runs an all-allowed batch unchanged", async () => {
+    const both = {
+      success: true,
+      creditsCost: 10,
+      results: [quoted, quoted],
+    };
+    exchangeAnswers(both);
+    expect((await run({ calls: [quote, quote] })).body).toEqual(both);
+    expect(executions()[0][0].body.requests).toEqual([quote, quote]);
+  });
+});
+
+it("tells the Exchange the caller's plan on execution only", async () => {
+  await run({ paidPlan: false });
+  const sent = mocks.request.mock.calls.map(([arg]) => arg);
+  expect(sent.find(arg => arg.path === "/v1/retrieve").paidPlan).toBe(false);
+  expect(
+    sent.find(arg => arg.path === "/v1/retrieve/quote").paidPlan,
+  ).toBeUndefined();
+});

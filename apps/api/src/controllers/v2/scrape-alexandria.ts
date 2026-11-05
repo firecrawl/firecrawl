@@ -182,6 +182,9 @@ export async function providerScrapeController(
       clientIp: req.ip,
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
+      paidPlan:
+        req.acuc.is_paid_plan === true ||
+        req.acuc.flags?.bypassCreditChecks === true,
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {

@@ -119,6 +119,8 @@ export async function retrieveProviders(input: {
   billingCountry?: string;
   /** The team's Autumn rate-limit multiplier, which sizes its index budgets. */
   rateLimitMultiplier: number;
+  /** Whether the team may run paid-plan-only capabilities, when known. */
+  paidPlan?: boolean;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -285,6 +287,8 @@ export async function retrieveProviders(input: {
 
   let lockId: string | undefined;
   let maximumCredits: number;
+  let gated = new Map<number, unknown>();
+  let runnable = input.calls;
   const finalize = async (credits: number) => {
     if (!lockId) return true;
     const settled = await autumnService.finalizeCreditsLock({
@@ -312,7 +316,7 @@ export async function retrieveProviders(input: {
   };
 
   try {
-    const denied = await authorizeProviders(
+    const authorized = await authorizeProviders(
       input.teamId,
       input.calls,
       input.flags,
@@ -320,14 +324,16 @@ export async function retrieveProviders(input: {
       input.clientIp,
       input.billingCountry,
     );
-    if (denied) return refuse(denied);
+    if (authorized?.status !== undefined) return refuse(authorized);
+    gated = authorized?.paidPlanRequired ?? gated;
+    runnable = input.calls.filter((_, index) => !gated.has(index));
 
     for (const [index, provider] of INDEX_PROVIDERS) {
       const indexBudget = await reserveIndexCalls(
         index,
         input.teamId,
         input.rateLimitMultiplier,
-        input.calls.filter(call => call.provider === provider).length,
+        runnable.filter(call => call.provider === provider).length,
       );
       if (!indexBudget.ok) {
         const { error, ...limitFields } = indexDailyLimitRefusal(
@@ -349,7 +355,7 @@ export async function retrieveProviders(input: {
     const quote = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve/quote",
-      body: { requests: input.calls },
+      body: { requests: runnable },
       timeoutMs: Math.min(10000, remaining()),
       clientIp: input.clientIp,
       billingCountry: input.billingCountry,
@@ -469,7 +475,7 @@ export async function retrieveProviders(input: {
     const response = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
-      body: { requests: input.calls },
+      body: { requests: runnable },
       timeoutMs: remaining(),
       requestId: id,
       clientIp: input.clientIp,
@@ -484,6 +490,7 @@ export async function retrieveProviders(input: {
       ...(termsIdentity ? { termsIdentity } : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      paidPlan: input.paidPlan,
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
@@ -504,16 +511,15 @@ export async function retrieveProviders(input: {
     if (!parsed.success) return fail("Alexandria answer was malformed");
     const answer = parsed.data;
     const receiptMatches =
-      answer.results.length === input.calls.length &&
+      answer.results.length === runnable.length &&
       answer.creditsCost <= maximumCredits &&
       answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
         answer.creditsCost &&
       answer.results.every(
         (item, i) =>
-          (item.provider ?? input.calls[i].provider) ===
-            input.calls[i].provider &&
-          (item.capability ?? input.calls[i].capability) ===
-            input.calls[i].capability,
+          (item.provider ?? runnable[i].provider) === runnable[i].provider &&
+          (item.capability ?? runnable[i].capability) ===
+            runnable[i].capability,
       );
     if (!receiptMatches)
       return fail("Alexandria receipt did not match the request");
@@ -541,7 +547,14 @@ export async function retrieveProviders(input: {
         billingReference: `alexandria:${id}`,
       });
 
-    const done: ExchangeResponse = { status: 200, body: answer };
+    let ran = 0;
+    const results = input.calls.map((_, index) =>
+      gated.has(index) ? gated.get(index) : answer.results[ran++],
+    );
+    const done: ExchangeResponse = {
+      status: 200,
+      body: { ...answer, results },
+    };
     await write(
       zeroDataRetention
         ? { ...record, phase: "done", responseWithheld: true }

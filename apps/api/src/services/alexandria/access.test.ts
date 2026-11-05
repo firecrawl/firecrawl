@@ -444,6 +444,64 @@ describe("paid-plan-only capabilities", () => {
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
+  it("lets the rest of a free-plan team's batch run, answering only the gated call", async () => {
+    mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+    mocks.team.mockResolvedValue({ is_paid_plan: false });
+    const authorized = await authorizeProviders(
+      "team",
+      [...pressReleases, ...wiim, ...pressReleases],
+      enabled,
+      "org",
+    );
+    expect(authorized).toEqual({
+      paidPlanRequired: new Map([
+        [
+          1,
+          {
+            provider: "benzinga",
+            capability: "news/wiims",
+            creditsCost: 0,
+            error: {
+              code: "paid_plan_required",
+              message: expect.stringContaining(
+                "benzinga/news/wiims is available on paid plans only",
+              ),
+              status: 403,
+              retryable: false,
+            },
+          },
+        ],
+      ]),
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a free-plan team's batch when every call is gated", async () => {
+    mocks.request.mockResolvedValue(
+      requirements(["news/wiims", "news/search"]),
+    );
+    mocks.team.mockResolvedValue({ is_paid_plan: false });
+    const denied = await authorizeProviders(
+      "team",
+      [
+        ...wiim,
+        { provider: "benzinga", capability: "news/search", options: {} },
+      ],
+      enabled,
+      "org",
+    );
+    expect(denied).toEqual({
+      status: 403,
+      body: expect.objectContaining({
+        code: "paid_plan_required",
+        retryable: false,
+        error: expect.stringContaining(
+          "benzinga/news/wiims, benzinga/news/search are available on paid plans only",
+        ),
+      }),
+    });
+  });
+
   it("admits a paid-plan team, and does not consult the plan for an ungated capability", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
     mocks.team.mockResolvedValue({ is_paid_plan: true });

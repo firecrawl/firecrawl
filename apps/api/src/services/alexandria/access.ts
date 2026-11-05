@@ -34,6 +34,31 @@ const requirementsSchema = z.object({
   ),
 });
 
+const paidPlanMessage = (addresses: string[]) =>
+  `${addresses.join(", ")} ${addresses.length === 1 ? "is" : "are"} available on paid plans only. Upgrade at ${config.FIRECRAWL_DASHBOARD_URL ?? "https://www.firecrawl.dev"} to use ${addresses.length === 1 ? "it" : "them"}.`;
+
+const paidPlanRequiredResult = (call: ProviderCall) => ({
+  provider: call.provider,
+  capability: call.capability,
+  creditsCost: 0,
+  error: {
+    code: "paid_plan_required",
+    message: paidPlanMessage([`${call.provider}/${call.capability}`]),
+    status: 403,
+    retryable: false,
+  },
+});
+
+type PartialAuthorization = {
+  paidPlanRequired: Map<number, ReturnType<typeof paidPlanRequiredResult>>;
+  status?: never;
+  body?: never;
+};
+
+/**
+ * Refuses the request, or, when the rest of the batch can still run, maps each
+ * call the team's plan may not run (by index) to its uncharged error result.
+ */
 export async function authorizeProviders(
   teamId: string,
   calls: ProviderCall[],
@@ -41,7 +66,7 @@ export async function authorizeProviders(
   orgId: string | null = null,
   clientIp?: string,
   billingCountry?: string,
-): Promise<ExchangeResponse | undefined> {
+): Promise<ExchangeResponse | PartialAuthorization | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   const response = await exchangeRequest({
     teamId,
@@ -134,22 +159,28 @@ export async function authorizeProviders(
       ),
     ),
   );
-  const gated = calls.filter(call =>
-    paidPlanOnly.has(`${call.provider}/${call.capability}`),
+  const gated = calls.flatMap((call, index) =>
+    paidPlanOnly.has(`${call.provider}/${call.capability}`) ? [index] : [],
   );
-  // Licensed payloads that may only answer a paid request: refuse teams that
-  // aren't on a paid plan. Credit-check bypass teams pass.
-  if (gated.length > 0 && flags?.bypassCreditChecks !== true) {
-    if (!(await getACUCTeam(teamId))?.is_paid_plan) {
-      const addresses = [
-        ...new Set(gated.map(call => `${call.provider}/${call.capability}`)),
-      ].join(", ");
-      return refusal(
-        403,
-        `${addresses} ${gated.length === 1 ? "is" : "are"} available on paid plans only. Upgrade at ${config.FIRECRAWL_DASHBOARD_URL ?? "https://www.firecrawl.dev"} to use ${gated.length === 1 ? "it" : "them"}. No provider was executed.`,
-        { code: "paid_plan_required" },
-      );
-    }
-  }
-  return undefined;
+  // Licensed payloads that may only answer a paid request. Credit-check bypass
+  // teams pass; a batch still runs its other calls.
+  if (gated.length === 0 || flags?.bypassCreditChecks === true)
+    return undefined;
+  if ((await getACUCTeam(teamId))?.is_paid_plan) return undefined;
+  if (gated.length < calls.length)
+    return {
+      paidPlanRequired: new Map(
+        gated.map(index => [index, paidPlanRequiredResult(calls[index])]),
+      ),
+    };
+  const addresses = [
+    ...new Set(
+      gated.map(index => `${calls[index].provider}/${calls[index].capability}`),
+    ),
+  ];
+  return refusal(
+    403,
+    `${paidPlanMessage(addresses)} No provider was executed.`,
+    { code: "paid_plan_required", retryable: false },
+  );
 }

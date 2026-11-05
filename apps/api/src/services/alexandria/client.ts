@@ -29,6 +29,8 @@ export async function exchangeRequest(input: {
   zeroDataRetention?: boolean;
   /** The team may only be served by US-based providers. */
   usOnly?: boolean;
+  /** Whether the team may run paid-plan-only capabilities; Find Tools marks them for the caller. */
+  paidPlan?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
@@ -60,6 +62,9 @@ export async function exchangeRequest(input: {
         ? { "x-exchange-zero-data-retention": "true" }
         : {}),
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
+      ...(input.paidPlan === undefined
+        ? {}
+        : { "x-exchange-paid-plan": String(input.paidPlan) }),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}
