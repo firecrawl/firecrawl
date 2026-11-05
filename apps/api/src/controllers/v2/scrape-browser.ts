@@ -521,7 +521,6 @@ async function createSessionForScrape(
     });
     return { session };
   } catch (error) {
-    logger.error("Failed to initialize scrape browser session", { error });
     if (error instanceof UsOnlyUnavailableError) {
       return {
         error: true as const,
@@ -533,6 +532,7 @@ async function createSessionForScrape(
         },
       };
     }
+    logger.error("Failed to initialize scrape browser session", { error });
     const knownError =
       error instanceof BrowserSessionError || error instanceof HangarError;
     const status = knownError ? error.status : 502;

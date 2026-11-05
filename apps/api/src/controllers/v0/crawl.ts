@@ -49,7 +49,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { requestCreditsShards } from "../../lib/request-credits-store";
-import { isUsOnly } from "../../lib/us-only";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -214,6 +214,17 @@ export async function crawlController(req: Request, res: Response) {
     ) {
       return res.status(403).json({
         error: UNSUPPORTED_SITE_MESSAGE,
+      });
+    }
+
+    const usOnlyLocationError = usOnlyLocationRefusal(
+      auth.chunk?.flags ?? undefined,
+      pageOptions?.geolocation?.country,
+    );
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
       });
     }
 

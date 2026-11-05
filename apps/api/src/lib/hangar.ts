@@ -108,12 +108,17 @@ async function request<T>(
   }
 }
 
-export const getHangarBrowser = (id: string, wait = 0, timeout?: number) =>
+export const getHangarBrowser = (
+  id: string,
+  wait = 0,
+  timeout?: number,
+  usOnly?: boolean,
+) =>
   request<HangarBrowser>(
     "GET",
     `/${encodeURIComponent(id)}${wait ? `?wait=${wait}` : ""}`,
     undefined,
-    { timeout },
+    { timeout, usOnly },
   );
 export const stopHangarBrowser = (id: string) =>
   request<HangarBrowser>("POST", `/${encodeURIComponent(id)}/stop`);
@@ -167,7 +172,12 @@ export async function createHangarBrowser(
     let browser: HangarBrowser = created;
     const deadline = Date.now() + 300_000;
     while (browser.status === "starting" && Date.now() < deadline)
-      browser = await getHangarBrowser(created.id, 30);
+      browser = await getHangarBrowser(
+        created.id,
+        30,
+        undefined,
+        options.usOnly,
+      );
     if (options.usOnly && browser.error?.includes(US_ONLY_EXIT_UNAVAILABLE))
       throw usOnlyExitUnavailable();
     if (browser.status !== "running")

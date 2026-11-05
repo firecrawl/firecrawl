@@ -39,7 +39,8 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { isUsOnly } from "../../lib/us-only";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 async function scrapeHelper(
   jobId: string,
@@ -53,6 +54,7 @@ async function scrapeHelper(
 ): Promise<{
   success: boolean;
   error?: string;
+  code?: string;
   data?: V0Document | { url: string };
   returnCode: number;
 }> {
@@ -85,6 +87,19 @@ async function scrapeHelper(
     return {
       success: false,
       error: UNSUPPORTED_SITE_MESSAGE,
+      returnCode: 403,
+    };
+  }
+
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    acuc?.flags ?? undefined,
+    pageOptions?.geolocation?.country,
+  );
+  if (usOnlyLocationError) {
+    return {
+      success: false,
+      error: usOnlyLocationError,
+      code: "US_ONLY_UNAVAILABLE",
       returnCode: 403,
     };
   }
@@ -140,6 +155,13 @@ async function scrapeHelper(
         success: false,
         error: e.message,
         returnCode: 408,
+      };
+    } else if (e instanceof UsOnlyUnavailableError) {
+      return {
+        success: false,
+        error: e.message,
+        code: e.code,
+        returnCode: 403,
       };
     } else if (
       typeof e === "string" &&

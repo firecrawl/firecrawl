@@ -5,12 +5,12 @@ const fake = vi.hoisted(() => ({
   responses: [] as Record<string, unknown>[],
 }));
 
-vi.mock("../../../lib/fetch", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/fetch")>()),
+vi.mock("../../../lib/fetch", () => ({
   robustFetch: vi.fn(async (params: any) => {
     fake.calls.push(params);
     return fake.responses.shift() ?? {};
   }),
+  redactRequestBodyForLog: (body: unknown) => body,
 }));
 
 vi.mock("../../../../../lib/gcs-jobs", () => ({

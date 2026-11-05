@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../scrapeURL", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../scrapeURL")>()),
+vi.mock("../../scrapeURL", () => ({
   scrapeURL: vi.fn(async () => ({ success: false, error: "unreachable" })),
 }));
 
 import { scrapeURL } from "../../scrapeURL";
+import { UsOnlyUnavailableError } from "../../scrapeURL/error";
 import { crawlToCrawler } from "../../../lib/crawl-redis";
+import { fetchRobotsTxt } from "../../../lib/robots-txt";
 import { getLinksFromSitemap } from "../sitemap";
 import { scrapeSitemap } from "../../crawler/sitemap";
 import { logger } from "../../../lib/logger";
@@ -53,6 +54,25 @@ describe("crawl discovery for US-only teams", () => {
         teamFlags: { usOnly: true },
       }),
     ]);
+  });
+
+  it("fails a US-only robots.txt fetch closed when no US exit is available", async () => {
+    const refusal = new UsOnlyUnavailableError("No US exit is available.");
+    vi.mocked(scrapeURL).mockResolvedValueOnce({
+      success: false,
+      error: refusal,
+    } as any);
+    await expect(
+      fetchRobotsTxt(
+        {
+          url: "https://example.com/page",
+          zeroDataRetention: false,
+          usOnly: true,
+        },
+        "scrape-1",
+        logger,
+      ),
+    ).rejects.toBe(refusal);
   });
 
   it("fetches other teams' robots.txt without team flags", async () => {

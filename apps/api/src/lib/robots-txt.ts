@@ -6,6 +6,7 @@ import { Engine } from "../scraper/scrapeURL/engines";
 import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
 
@@ -104,6 +105,9 @@ export async function fetchRobotsTxt(
   ) {
     content = response.document.rawHtml!;
   } else {
+    if (!response.success && response.error instanceof UsOnlyUnavailableError) {
+      throw response.error;
+    }
     if (response.success && response.document.metadata.statusCode === 404) {
       logger.warn("Robots.txt not found", { robotsTxtUrl }); // should probably index 404 robots.txt
       return { content: "", url: robotsTxtUrl };

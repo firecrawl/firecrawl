@@ -1512,7 +1512,10 @@ export async function scrapeURL(
                   });
                 }
               } catch (error) {
-                if (error instanceof CrawlDenialError) {
+                if (
+                  error instanceof CrawlDenialError ||
+                  error instanceof UsOnlyUnavailableError
+                ) {
                   throw error;
                 }
                 meta.logger.debug(
@@ -1529,7 +1532,10 @@ export async function scrapeURL(
             }
           },
         ).catch(error => {
-          if (error instanceof CrawlDenialError) {
+          if (
+            error instanceof CrawlDenialError ||
+            error instanceof UsOnlyUnavailableError
+          ) {
             return {
               success: false as const,
               error,

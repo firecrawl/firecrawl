@@ -224,6 +224,30 @@ describe("Hangar's US-only refusal", () => {
     await expect(create(true)).rejects.toBeInstanceOf(UsOnlyUnavailableError);
   });
 
+  it("maps a refused status poll to US_ONLY_UNAVAILABLE", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) =>
+        url.endsWith("/stop")
+          ? Response.json({ id: "br_1", status: "stopping" })
+          : init?.method === "GET"
+            ? Response.json(
+                {
+                  error:
+                    "US-only exit unavailable: no US exit for this browser",
+                },
+                { status: 503 },
+              )
+            : Response.json({
+                id: "br_1",
+                status: "starting",
+                cdp_url: "wss://hangar.test/cdp",
+              }),
+      ),
+    );
+    await expect(create(true)).rejects.toBeInstanceOf(UsOnlyUnavailableError);
+  });
+
   it("keeps the generic failure for other teams", async () => {
     failedBrowser();
     await expect(create(false)).rejects.toBeInstanceOf(HangarError);
