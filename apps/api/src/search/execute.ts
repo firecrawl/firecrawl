@@ -12,9 +12,11 @@ import {
 } from "./skill-cards";
 import {
   AUTO_TOOLS_WAIT_MS,
+  FUSED_FIT_THRESHOLD,
   inferToolIntent,
   verifyTools,
 } from "./tool-intent";
+import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { search } from "./v2";
 import {
   SearchV2Response,
@@ -80,6 +82,8 @@ interface SearchOptions {
   inferToolQuery?: boolean;
   /** Add compact tools to a search that did not ask for them, when the query needs them. */
   autoTools?: boolean;
+  /** Rank rewrite-found tools together with raw-query tools instead of after them. */
+  toolFusion?: boolean;
   timeout: number;
 }
 
@@ -122,6 +126,50 @@ interface SearchExecuteResult {
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+}
+
+const toolKey = (tool: DiscoveredTool) => `${tool.provider}/${tool.capability}`;
+
+function addTool(tools: Map<string, DiscoveredTool>, tool: DiscoveredTool) {
+  const key = toolKey(tool);
+  const previous = tools.get(key);
+  tools.set(
+    key,
+    previous && "matchedBy" in previous && "matchedBy" in tool
+      ? {
+          ...previous,
+          matchedBy: [
+            ...new Set([
+              ...(previous.matchedBy ?? []),
+              ...(tool.matchedBy ?? []),
+            ]),
+          ],
+          matchedUrls: [
+            ...new Set([
+              ...(previous.matchedUrls ?? []),
+              ...(tool.matchedUrls ?? []),
+            ]),
+          ],
+        }
+      : (previous ?? tool),
+  );
+}
+
+const RRF_K = 60;
+
+/** Orders tools by reciprocal rank fusion; ties keep the earlier list's order. */
+function fuseRankings(lists: DiscoveredTool[][]): DiscoveredTool[] {
+  const tools = new Map<string, DiscoveredTool>();
+  const scores = new Map<string, number>();
+  for (const list of lists)
+    list.forEach((tool, index) => {
+      addTool(tools, tool);
+      const key = toolKey(tool);
+      scores.set(key, (scores.get(key) ?? 0) + 1 / (RRF_K + index + 1));
+    });
+  return [...tools.entries()]
+    .sort(([a], [b]) => scores.get(b)! - scores.get(a)!)
+    .map(([, tool]) => tool);
 }
 
 export async function executeSearch(
@@ -175,6 +223,7 @@ export async function executeSearch(
     query.trim()
       ? inferToolIntent(query, logger)
       : null;
+  const fuseTools = wantsTools && options.toolFusion === true;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -199,7 +248,14 @@ export async function executeSearch(
             logger,
           );
           return {
-            items: await verifyTools(query, found.items, logger),
+            items: await verifyTools(
+              query,
+              found.items,
+              logger,
+              ...(fuseTools ? [FUSED_FIT_THRESHOLD] : []),
+            ),
+            found: found.items,
+            semanticMatches: found.semanticMatches,
             usOnlyExcluded: found.usOnlyExcluded ?? 0,
           };
         })
@@ -431,16 +487,23 @@ export async function executeSearch(
   const waitForExtra = async (alongside?: Promise<unknown>) => {
     if (!extraDiscovery) return null;
     let timer: NodeJS.Timeout | undefined;
-    const deadline = new Promise<void>(resolve => {
-      timer = setTimeout(resolve, AUTO_TOOLS_WAIT_MS);
-      timer.unref();
-    });
+    let settled = false;
+    const delay = (ms: number) =>
+      new Promise<void>(resolve => {
+        if (settled) return resolve();
+        timer = setTimeout(resolve, ms);
+        timer.unref();
+      });
+    // Fused tools are worth waiting for past the raw lookup; appended ones are not.
+    const deadline = fuseTools
+      ? Promise.resolve(alongside).then(() =>
+          delay(config.ALEXANDRIA_TOOL_FUSION_WAIT_MS),
+        )
+      : Promise.all([delay(AUTO_TOOLS_WAIT_MS), alongside]);
     try {
-      return await Promise.race([
-        extraDiscovery,
-        Promise.all([deadline, alongside]).then(() => null),
-      ]);
+      return await Promise.race([extraDiscovery, deadline.then(() => null)]);
     } finally {
+      settled = true;
       clearTimeout(timer);
     }
   };
@@ -457,35 +520,26 @@ export async function executeSearch(
       baseDiscovery,
       waitForExtra(baseDiscovery),
     ]);
-    const merged = new Map(
-      discovery.items.map(tool => [
-        `${tool.provider}/${tool.capability}`,
-        tool,
-      ]),
-    );
-    for (const tool of extra?.items ?? []) {
-      const key = `${tool.provider}/${tool.capability}`;
-      const previous = merged.get(key);
-      merged.set(
-        key,
-        previous && "matchedBy" in previous && "matchedBy" in tool
-          ? {
-              ...previous,
-              matchedBy: [
-                ...new Set([
-                  ...(previous.matchedBy ?? []),
-                  ...(tool.matchedBy ?? []),
-                ]),
-              ],
-              matchedUrls: [
-                ...new Set([
-                  ...(previous.matchedUrls ?? []),
-                  ...(tool.matchedUrls ?? []),
-                ]),
-              ],
-            }
-          : (previous ?? tool),
-      );
+    const merged = new Map<string, DiscoveredTool>();
+    if (fuseTools && extra) {
+      // Semantic matches are fused; domain-only matches follow, as they do unfused.
+      const baseKeys = new Set(discovery.items.map(toolKey));
+      const fits = new Set(extra.items.map(toolKey));
+      const baseSemantic = discovery.items.slice(0, discovery.semanticMatches);
+      const extraSemantic = extra.found
+        .slice(0, extra.semanticMatches)
+        .filter(tool => fits.has(toolKey(tool)) || baseKeys.has(toolKey(tool)));
+      for (const tool of [
+        ...fuseRankings([baseSemantic, extraSemantic]),
+        ...discovery.items.slice(baseSemantic.length),
+        ...extra.found
+          .slice(extra.semanticMatches)
+          .filter(tool => fits.has(toolKey(tool))),
+      ])
+        addTool(merged, tool);
+    } else {
+      for (const tool of [...discovery.items, ...(extra?.items ?? [])])
+        addTool(merged, tool);
     }
     searchResponse.tools = [...merged.values()];
     // Both legs can hide the same tools, so the larger count is reported.

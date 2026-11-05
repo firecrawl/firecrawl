@@ -436,6 +436,11 @@ const configSchema = z.object({
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+  // Rank rewrite-found tools together with raw-query tools by reciprocal rank
+  // fusion (also the alexandriaToolFusion team flag), waiting up to
+  // ALEXANDRIA_TOOL_FUSION_WAIT_MS past the raw lookup for them.
+  ALEXANDRIA_TOOL_FUSION: z.stringbool().default(false),
+  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce.number().int().min(0).default(1000),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),

@@ -68,6 +68,7 @@ import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
+  toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
@@ -522,6 +523,7 @@ async function searchControllerInner(
         domainTools: req.body.domainTools,
         toolDetail: req.body.toolDetail,
         inferToolQuery: queryInferenceEnabled(),
+        toolFusion: toolFusionEnabled(req.acuc?.flags),
         autoTools:
           (sourcesOmitted || req.body.domainTools === true) &&
           !req.auth.team_id.startsWith("preview_keyless_") &&
