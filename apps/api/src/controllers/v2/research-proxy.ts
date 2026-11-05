@@ -160,7 +160,9 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
-const govSource = z.enum(["web", "law"]);
+const govSource = z.enum(["web", "gov"]);
+
+const govCite = z.string().trim().min(1);
 
 const govSearchSchema = z.strictObject({
   query: z.string().min(1),
@@ -190,7 +192,12 @@ const govSearchSchema = z.strictObject({
       "state-attorney-general",
     ])
     .optional(),
-  cites: z.string().trim().min(1).optional(),
+  cites: z
+    .union([govCite, z.array(govCite).min(1).max(32)])
+    .optional()
+    .transform(value =>
+      value === undefined ? undefined : [...new Set([value].flat())],
+    ),
   domain: z.string().trim().min(1).optional(),
   sources: z
     .union([govSource, z.array(govSource).min(1)])
@@ -276,7 +283,7 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
 
 function resultCount(body: any): number {
   if (Array.isArray(body?.results)) return body.results.length;
-  const group = body?.data?.web ?? body?.data?.law;
+  const group = body?.data?.web ?? body?.data?.gov;
   return Array.isArray(group) ? group.length : 0;
 }
 

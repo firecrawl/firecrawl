@@ -6389,12 +6389,19 @@
             "name": "cites",
             "in": "query",
             "required": false,
-            "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+            "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them. Repeat the parameter to pass more than one.",
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "example": "42 U.S.C. § 1983"
-            }
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 32,
+              "example": ["42 U.S.C. § 1983"]
+            },
+            "style": "form",
+            "explode": true
           },
           {
             "name": "domain",
@@ -6411,12 +6418,12 @@
             "name": "sources",
             "in": "query",
             "required": false,
-            "description": "Result groups to return. `web` returns plain search results. `law` returns the same results with the index's legal labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as` and `updated_at`. Repeat the parameter to return both.",
+            "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as`, `lang` and `updated_at`. Repeat the parameter to return both.",
             "schema": {
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["web", "law"]
+                "enum": ["web", "gov"]
               },
               "default": ["web"]
             },
@@ -6525,9 +6532,22 @@
                     "description": "Keep only pages from one type of court."
                   },
                   "cites": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 32
+                      }
+                    ],
+                    "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them.",
                     "example": "42 U.S.C. § 1983"
                   },
                   "domain": {
@@ -6540,11 +6560,11 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["web", "law"]
+                      "enum": ["web", "gov"]
                     },
                     "minItems": 1,
                     "default": ["web"],
-                    "description": "Result groups to return. `web` returns plain search results. `law` returns the same results with the index's legal labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as` and `updated_at`."
+                    "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as`, `lang` and `updated_at`."
                   }
                 }
               },
@@ -12196,9 +12216,9 @@
                   }
                 }
               },
-              "law": {
+              "gov": {
                 "type": "array",
-                "description": "Present when `sources` includes `law`. The same results as `web`, in the same order, with the index's legal labels.",
+                "description": "Present when `sources` includes `gov`. The same results as `web`, in the same order, with the index's labels.",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -12243,9 +12263,13 @@
                       },
                       "description": "Citation ids other pages cite this page by. Pass one as `cites` to find the pages citing it. Absent when none are known."
                     },
+                    "lang": {
+                      "type": "string",
+                      "description": "Language code of the page, such as `en`. Absent when unknown."
+                    },
                     "updated_at": {
                       "type": "integer",
-                      "description": "When the page was crawled, in Unix milliseconds. Present for indexed pages, omitted for external web results."
+                      "description": "When the page was crawled into the index, in Unix milliseconds. Omitted for results that were never crawled into the index."
                     }
                   }
                 }

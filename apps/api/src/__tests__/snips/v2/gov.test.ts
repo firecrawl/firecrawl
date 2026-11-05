@@ -32,9 +32,9 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
   }, 120000);
 
   it(
-    "returns law results with legal labels and keeps web results plain",
+    "returns gov results with index labels and keeps web results plain",
     async () => {
-      const identity = await idmux({ name: "gov/law", credits: 100 });
+      const identity = await idmux({ name: "gov/gov-group", credits: 100 });
 
       const res = await researchRaw(
         PATH,
@@ -42,17 +42,17 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
           query: "qualified immunity excessive force",
           k: 5,
           jurisdiction: "us",
-          sources: ["web", "law"],
+          sources: ["web", "gov"],
         },
         identity,
       );
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
-      const { web, law } = res.body.data;
-      expect(Array.isArray(law)).toBe(true);
-      expect(law.length).toBeGreaterThan(0);
-      expect(law.map((r: any) => r.url)).toEqual(web.map((r: any) => r.url));
+      const { web, gov } = res.body.data;
+      expect(Array.isArray(gov)).toBe(true);
+      expect(gov.length).toBeGreaterThan(0);
+      expect(gov.map((r: any) => r.url)).toEqual(web.map((r: any) => r.url));
       for (const result of web) {
         for (const key of [
           "jurisdiction",
@@ -61,15 +61,19 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
           "cites",
           "cited_as",
           "updated_at",
+          "lang",
         ]) {
           expect(result[key]).toBeUndefined();
         }
       }
-      for (const result of law) {
+      for (const result of gov) {
         expect(typeof result.url).toBe("string");
         expect(typeof result.position).toBe("number");
         if (result.updated_at !== undefined) {
           expect(typeof result.updated_at).toBe("number");
+        }
+        if (result.lang !== undefined) {
+          expect(typeof result.lang).toBe("string");
         }
         if (result.jurisdiction !== undefined) {
           expect(result.jurisdiction).toBe("us");
@@ -85,7 +89,7 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
   );
 
   it(
-    "refuses a source other than web or law",
+    "refuses a source other than web or gov",
     async () => {
       const identity = await idmux({ name: "gov/bad-source", credits: 100 });
 
