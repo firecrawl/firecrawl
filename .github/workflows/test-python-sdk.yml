@@ -28,10 +28,14 @@ jobs:
           cache: pip
           cache-dependency-path: ./apps/python-sdk/requirements.txt
 
+      - name: Install pip
+        run: python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
+
       - name: Install dependencies
         working-directory: ./apps/python-sdk
+        env:
+          PIP_UPLOADED_PRIOR_TO: P3D
         run: |
-          python -m pip install --no-cache-dir -r ../../.github/pip-bootstrap.txt
           pip install -r requirements.txt
           pip install -e .
 
