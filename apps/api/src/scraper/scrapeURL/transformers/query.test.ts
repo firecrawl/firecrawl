@@ -233,6 +233,39 @@ describe("performQuery freeform", () => {
   });
 });
 
+describe("performQuery freeform empty answers", () => {
+  it("falls back to the next model when one returns empty text", async () => {
+    respond("");
+    respond("the answer");
+    const document: any = { markdown: page(3), metadata: {} };
+
+    await performQuery(
+      makeMeta([{ type: "query", prompt: "what is this?" }]),
+      document,
+    );
+
+    expect(calls()).toHaveLength(2);
+    expect(document.answer).toBe("the answer");
+    expect(document.warning).toBeUndefined();
+  });
+
+  it("warns instead of returning an empty answer when every model does", async () => {
+    respond("");
+    respond("  ");
+    respond("");
+    const document: any = { markdown: page(3), metadata: {} };
+
+    await performQuery(
+      makeMeta([{ type: "query", prompt: "what is this?" }]),
+      document,
+    );
+
+    expect(calls()).toHaveLength(3);
+    expect(document.answer).toBeUndefined();
+    expect(document.warning).toBe("Query generation failed after all models.");
+  });
+});
+
 describe("performQuery directQuote", () => {
   it("warns when no line of the page answers the query", async () => {
     respond("[]");
