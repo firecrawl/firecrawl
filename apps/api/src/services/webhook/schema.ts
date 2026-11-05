@@ -1,13 +1,14 @@
 import { z } from "zod";
+import {
+  FIRECRAWL_MANAGED_WEBHOOK_HEADERS,
+  isFirecrawlManagedWebhookHeader,
+} from "./headers";
 
-const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
+const BLACKLISTED_WEBHOOK_HEADERS = [...FIRECRAWL_MANAGED_WEBHOOK_HEADERS];
 
 export function createWebhookSchema<T extends [string, ...string[]]>(
   events: T,
 ) {
-  const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map(h =>
-    h.toLowerCase(),
-  );
   return z.preprocess(
     x => (typeof x === "string" ? { url: x } : x),
     z
@@ -18,10 +19,7 @@ export function createWebhookSchema<T extends [string, ...string[]]>(
         events: z.array(z.enum(events)).prefault([...events]),
       })
       .refine(
-        obj =>
-          !Object.keys(obj.headers).some(key =>
-            blacklistedLower.includes(key.toLowerCase()),
-          ),
+        obj => !Object.keys(obj.headers).some(isFirecrawlManagedWebhookHeader),
         `The following headers are not allowed: ${BLACKLISTED_WEBHOOK_HEADERS.join(", ")}`,
       ),
   );
