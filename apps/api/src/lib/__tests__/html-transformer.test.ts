@@ -1,6 +1,7 @@
 import {
   extractLinks,
   extractMetadata,
+  postProcessMarkdown,
   transformHtml,
   TransformHtmlOptions,
 } from "@mendable/firecrawl-rs";
@@ -556,6 +557,41 @@ describe("HTML Transformer", () => {
       expect(result).toContain("https://example.com/#hashurl");
       expect(result).toContain("https://example.com/#q1");
       expect(result).toContain("https://example.com/#q2");
+    });
+  });
+
+  describe("postProcessMarkdown", () => {
+    it("should escape line breaks inside link text", async () => {
+      expect(
+        await postProcessMarkdown("[multi\nline](https://x.example)"),
+      ).toBe("[multi\\\nline](https://x.example)");
+    });
+
+    it("should leave arrays in fenced code blocks unchanged", async () => {
+      const json = '```json\n{\n  "a": [\n    1,\n    2\n  ]\n}\n```';
+      const python = "~~~python\nx = [\n    1,\n]\n~~~";
+      const nested = "- item\n\n  ```\n  [\n  ]\n  ```";
+
+      expect(await postProcessMarkdown(json)).toBe(json);
+      expect(await postProcessMarkdown(python)).toBe(python);
+      expect(await postProcessMarkdown(nested)).toBe(nested);
+
+      // A fence left open runs to the end of the document
+      const unclosed = '```json\n{\n  "a": [\n    1,\n';
+      expect(await postProcessMarkdown(unclosed)).toBe(unclosed);
+
+      // A fence in a blockquote, and one after a `[` that opened no link
+      const quoted = "> ```json\n> [\n>   1\n> ]\n> ```";
+      const afterBracket = `Use \`[\` to start a list:\n\n${json}`;
+      expect(await postProcessMarkdown(quoted)).toBe(quoted);
+      expect(
+        (await postProcessMarkdown(afterBracket)).endsWith(`\n${json}`),
+      ).toBe(true);
+      expect(
+        await postProcessMarkdown(
+          `${json}\n\nSee [the\ndocs](https://x.example).`,
+        ),
+      ).toBe(`${json}\n\nSee [the\\\ndocs](https://x.example).`);
     });
   });
 });
