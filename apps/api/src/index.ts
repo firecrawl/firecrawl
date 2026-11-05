@@ -43,6 +43,7 @@ import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
 import { shutdownPubSubLogging } from "./services/logging/log_job";
+import { adminAccessLog, shutdownAccessEvents } from "./lib/access-events";
 import { notFoundHandler } from "./lib/not-found";
 
 const { createBullBoard } = require("@bull-board/api");
@@ -85,6 +86,8 @@ const captureRawBody = (
     (req as http.IncomingMessage & { rawBody?: Buffer }).rawBody = buf;
   }
 };
+
+app.use("/admin", adminAccessLog);
 
 registerMcpActionLogIngestRoute(app);
 
@@ -242,6 +245,7 @@ async function startServer(port = DEFAULT_PORT) {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {
             await shutdownPubSubLogging();
+            await shutdownAccessEvents();
             await shutdownTracing();
             logger.info("NUQ shutdown complete");
             process.exit(0);
