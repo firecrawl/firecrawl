@@ -279,12 +279,14 @@ export async function crawlController(
           success: false,
           code: error.code,
           error: error.message,
+          jobId: id,
         });
       }
       return res.status(400).json({
         success: false,
         error:
           "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
+        jobId: id,
       });
     }
   }
@@ -315,9 +317,11 @@ export async function crawlController(
   if (req.body.prompt) {
     const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
     if (pathPatternIssues.length > 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: pathPatternIssues[0].message });
+      return res.status(400).json({
+        success: false,
+        error: pathPatternIssues[0].message,
+        jobId: id,
+      });
     }
   }
 
