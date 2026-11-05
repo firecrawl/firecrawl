@@ -341,7 +341,6 @@ export async function retrieveProviders(input: {
             retryAfterSeconds: perMinute.retryAfterSeconds,
           }),
         );
-      indexReleases.push(perMinute.release);
       const indexBudget = await reserveIndexCalls(
         index,
         input.teamId,

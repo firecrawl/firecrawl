@@ -28,6 +28,7 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -779,6 +780,23 @@ async function handleKeylessAuth(
       keylessReason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
     };
+  }
+
+  if (modeLabel === "gov" || modeLabel === "research") {
+    const perMinute = await consumeIndexRateLimit(
+      modeLabel,
+      teamId,
+      1,
+      undefined,
+      1,
+    );
+    if (!perMinute.ok)
+      return {
+        success: false,
+        error: perMinute.error,
+        status: 429,
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      };
   }
 
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });

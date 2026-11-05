@@ -12,27 +12,6 @@ export function wantsGovCategory(categories?: CategoryOption[]): boolean {
   return hasCategory(categories, "gov");
 }
 
-/**
- * Whether a /search request runs under the Government Index's own per-minute
- * limit: a gov-category search that only queries the index. One that also
- * scrapes its results keeps /search's limit, which plans scale, and the search
- * controller takes its index call from the Government Index limit as well.
- * The route calls it on the raw body before validation; the schema takes
- * formats only as an array, so a missing or empty one means no scrape either
- * way.
- */
-export function isGovIndexOnlySearch(body: unknown): boolean {
-  const { categories, scrapeOptions } = (body ?? {}) as {
-    categories?: CategoryOption[];
-    scrapeOptions?: { formats?: unknown };
-  };
-  const formats = scrapeOptions?.formats;
-  return (
-    wantsGovCategory(categories) &&
-    !(Array.isArray(formats) && formats.length > 0)
-  );
-}
-
 export async function searchGovCategory(
   options: {
     query: string;

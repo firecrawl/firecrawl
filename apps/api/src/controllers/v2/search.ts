@@ -55,7 +55,7 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
-import { isGovIndexOnlySearch, wantsGovCategory } from "../../search/gov";
+import { wantsGovCategory } from "../../search/gov";
 import {
   consumeIndexRateLimit,
   indexDailyLimitRefusal,
@@ -468,7 +468,7 @@ async function searchControllerInner(
         timeMs: waited,
       });
 
-    if (govSearch && !isGovIndexOnlySearch(req.body)) {
+    if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
         "gov",
         req.auth.team_id,
