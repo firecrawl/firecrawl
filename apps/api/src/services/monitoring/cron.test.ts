@@ -1,4 +1,64 @@
-import { getNextMonitorRunAt, validateMonitorCron } from "./cron";
+import {
+  getNextMonitorRunAt,
+  parseMonitorScheduleText,
+  validateMonitorCron,
+} from "./cron";
+
+describe("parseMonitorScheduleText", () => {
+  it.each([
+    [5, 55],
+    [10, 40],
+    [15, 59],
+    [20, 55],
+    [30, 45],
+    [5, 0],
+    [30, 15],
+    [60, 45],
+  ])(
+    "keeps every %i minutes starting at :%i across hour boundaries",
+    (interval, startMinute) => {
+      const cron = parseMonitorScheduleText(
+        `every ${interval} minutes starting at :${startMinute}`,
+      );
+      let previous = new Date(Date.UTC(2026, 9, 15, 23, startMinute));
+      for (let run = 0; run < 4; run++) {
+        const next = getNextMonitorRunAt(cron, previous, "UTC");
+        expect(next.getTime() - previous.getTime()).toBe(interval * 60_000);
+        previous = next;
+      }
+    },
+  );
+
+  it("retains the minute phase in the monitor's timezone", () => {
+    const cron = parseMonitorScheduleText("every 30 minutes starting at :45");
+    // 23:45 in Kolkata: the next run is 00:15, including across midnight.
+    expect(
+      getNextMonitorRunAt(
+        cron,
+        new Date("2026-10-15T18:15:00Z"),
+        "Asia/Kolkata",
+      ).toISOString(),
+    ).toBe("2026-10-15T18:45:00.000Z");
+  });
+
+  it.each([
+    "every 0 minutes",
+    "every 61 minutes",
+    "every 7 minutes",
+    "every 5 minutes starting at :60",
+  ])("rejects an invalid minute schedule: %s", text => {
+    expect(() => parseMonitorScheduleText(text)).toThrow();
+  });
+
+  it.each([
+    ["every 30 minutes", "*/30 * * * *"],
+    ["every 30 minutes starting at :15", "15-59/30 * * * *"],
+    ["hourly at :45", "45 * * * *"],
+    ["daily at 5pm", "0 17 * * *"],
+  ])("preserves the existing schedule %s", (text, cron) => {
+    expect(parseMonitorScheduleText(text)).toBe(cron);
+  });
+});
 
 // Minute-by-minute reference: the previous implementation, kept here so the
 // jump-based search is checked against it over short horizons (it costs one
