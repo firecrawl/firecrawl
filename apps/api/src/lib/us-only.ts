@@ -5,6 +5,23 @@ export function isUsOnly(flags: TeamFlags | undefined): boolean {
   return flags?.usOnly === true;
 }
 
+const US_LOCATION_COUNTRIES = ["us", "us-generic", "us-whitelist"];
+
+export const US_ONLY_LOCATION_MESSAGE =
+  "Non-US locations are not available for teams restricted to US-only processing.";
+
+/** Whether the team may egress from this location country. An omitted country keeps US egress. */
+export function isLocationAllowed(
+  flags: TeamFlags | undefined,
+  country: string | undefined,
+): boolean {
+  return (
+    !isUsOnly(flags) ||
+    !country ||
+    US_LOCATION_COUNTRIES.includes(country.toLowerCase())
+  );
+}
+
 /** The `data_region` value that pins a US-only team's GPU work to US capacity. */
 export const US_DATA_REGION = "us";
 

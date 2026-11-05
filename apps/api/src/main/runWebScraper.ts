@@ -2,6 +2,7 @@ import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
 configDotenv();
@@ -121,6 +122,7 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
+      if (_error instanceof UsOnlyUnavailableError) break;
     }
   }
 

@@ -37,6 +37,7 @@ import {
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
 import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
 import { config } from "../../../../config";
+import { isUsOnly } from "../../../../lib/us-only";
 
 /** The handoff additionally requires the inbound allowlist bucket to be
  * configured: without it, a reference fire-engine returned could never be
@@ -499,6 +500,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : {}),
       priority: meta.internalOptions.priority,
       geolocation: meta.options.location,
+      ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+        ? { usOnly: true }
+        : {}),
       mobile: meta.options.mobile,
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
@@ -728,6 +732,9 @@ export async function scrapeURLWithFireEngineTLSClient(
 
       atsv: meta.internalOptions.atsv,
       geolocation: meta.options.location,
+      ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+        ? { usOnly: true }
+        : {}),
       disableJsDom: meta.internalOptions.v0DisableJsDom,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
       autoProxy: meta.options.proxy === "auto",

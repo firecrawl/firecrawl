@@ -23,6 +23,7 @@ export async function fetchRobotsTxt(
     headers,
     skipCache,
     skipTlsVerification,
+    usOnly,
   }: {
     url: string;
     zeroDataRetention: boolean;
@@ -30,6 +31,7 @@ export async function fetchRobotsTxt(
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     skipCache?: boolean;
+    usOnly?: boolean;
   },
   scrapeId: string,
   logger: Logger,
@@ -90,6 +92,7 @@ export async function fetchRobotsTxt(
         : undefined,
       teamId: "robots-txt",
       zeroDataRetention,
+      ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
     },
     new CostTracking(),
   );

@@ -97,6 +97,7 @@ async function scrapeHelper(
   );
 
   internalOptions.orgId = acuc?.org_id ?? null;
+  internalOptions.teamFlags = acuc?.flags ?? null;
   internalOptions.saveScrapeResultToGCS = process.env
     .GCS_FIRE_ENGINE_BUCKET_NAME
     ? true

@@ -134,6 +134,11 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { loadFirstScreen } from "../../lib/branding/jev";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
+import {
+  isLocationAllowed,
+  isUsOnly,
+  US_ONLY_LOCATION_MESSAGE,
+} from "../../lib/us-only";
 
 export type ScrapeUrlResponse =
   | {
@@ -1301,6 +1306,18 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
+      if (
+        !isLocationAllowed(
+          internalOptions.teamFlags ?? undefined,
+          options.location?.country,
+        )
+      ) {
+        return {
+          success: false,
+          error: new UsOnlyUnavailableError(US_ONLY_LOCATION_MESSAGE),
+        };
+      }
+
       // Safe Mode: the universal enforcement choke point. The controller
       // pre-resolves safe mode for a single scrape, but jobs that carry only
       // team flags (crawl children, search / extract URLs, allowlisted single
@@ -1469,6 +1486,7 @@ export async function scrapeURL(
                         internalOptions.zeroDataRetention || false,
                       location: options.location,
                       skipTlsVerification: options.skipTlsVerification,
+                      usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
                     },
                     id,
                     meta.logger,
