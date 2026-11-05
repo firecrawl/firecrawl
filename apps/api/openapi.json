@@ -6418,7 +6418,7 @@
             "name": "sources",
             "in": "query",
             "required": false,
-            "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as`, `lang` and `updated_at`. Repeat the parameter to return both.",
+            "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`. Repeat the parameter to return both.",
             "schema": {
               "type": "array",
               "items": {
@@ -6564,7 +6564,7 @@
                     },
                     "minItems": 1,
                     "default": ["web"],
-                    "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `court_type`, `cites`, `cited_as`, `lang` and `updated_at`."
+                    "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`."
                   }
                 }
               },
@@ -12245,7 +12245,7 @@
                       "type": "string",
                       "description": "CourtListener court id, such as `scotus` or `ca9`. Absent when the index has no label."
                     },
-                    "court_type": {
+                    "courtType": {
                       "type": "string",
                       "description": "Type of court, one of the `courtType` filter values. Absent when the index has no label."
                     },
@@ -12256,7 +12256,7 @@
                       },
                       "description": "Citation ids of the laws and cases the page cites. Absent when none are known."
                     },
-                    "cited_as": {
+                    "citedAs": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -12267,7 +12267,7 @@
                       "type": "string",
                       "description": "Language code of the page, such as `en`. Absent when unknown."
                     },
-                    "updated_at": {
+                    "updatedAt": {
                       "type": "integer",
                       "description": "When the page was crawled into the index, in Unix milliseconds. Omitted for results that were never crawled into the index."
                     }

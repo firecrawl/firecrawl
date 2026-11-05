@@ -281,6 +281,26 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
   return object as T;
 }
 
+const GOV_RESULT_KEYS: Record<string, string> = {
+  court_type: "courtType",
+  cited_as: "citedAs",
+  updated_at: "updatedAt",
+};
+
+function camelCaseGovResults(body: any) {
+  const gov = body?.data?.gov;
+  if (!Array.isArray(gov)) return body;
+  body.data.gov = gov.map(item =>
+    Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [
+        GOV_RESULT_KEYS[key] ?? key,
+        value,
+      ]),
+    ),
+  );
+  return body;
+}
+
 function resultCount(body: any): number {
   if (Array.isArray(body?.results)) return body.results.length;
   const group = body?.data?.web ?? body?.data?.gov;
@@ -509,10 +529,13 @@ function createResearchController(
       if (responseBody === null || typeof responseBody === "string") {
         return res.status(statusCode).send(responseBody ?? "");
       }
-      const response =
-        options.legacy && upstream.ok
+      const response = !upstream.ok
+        ? responseBody
+        : options.legacy
           ? addLegacySnakeCaseAliases(responseBody)
-          : responseBody;
+          : endpoint.kind === "gov_search"
+            ? camelCaseGovResults(responseBody)
+            : responseBody;
       const usOnlyWarning =
         upstream.ok && isUsOnly(authedReq.acuc?.flags)
           ? usOnlySkippedWarning(upstream.headers)

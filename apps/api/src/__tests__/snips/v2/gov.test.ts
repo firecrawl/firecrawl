@@ -57,10 +57,10 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
         for (const key of [
           "jurisdiction",
           "court",
-          "court_type",
+          "courtType",
           "cites",
-          "cited_as",
-          "updated_at",
+          "citedAs",
+          "updatedAt",
           "lang",
         ]) {
           expect(result[key]).toBeUndefined();
@@ -69,8 +69,11 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
       for (const result of gov) {
         expect(typeof result.url).toBe("string");
         expect(typeof result.position).toBe("number");
-        if (result.updated_at !== undefined) {
-          expect(typeof result.updated_at).toBe("number");
+        for (const key of ["court_type", "cited_as", "updated_at"]) {
+          expect(result[key]).toBeUndefined();
+        }
+        if (result.updatedAt !== undefined) {
+          expect(typeof result.updatedAt).toBe("number");
         }
         if (result.lang !== undefined) {
           expect(typeof result.lang).toBe("string");
@@ -78,7 +81,7 @@ describeIf(HAS_GOV)("Government Index Search API", () => {
         if (result.jurisdiction !== undefined) {
           expect(result.jurisdiction).toBe("us");
         }
-        for (const key of ["cites", "cited_as"]) {
+        for (const key of ["cites", "citedAs"]) {
           if (result[key] !== undefined) {
             expect(Array.isArray(result[key])).toBe(true);
           }

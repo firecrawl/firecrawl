@@ -222,13 +222,19 @@ describe("/v2/search/gov", () => {
   ] as const)(
     "forwards a %s request for gov results and counts them",
     async (method, sources) => {
+      const labels = {
+        jurisdiction: "us",
+        court: "scotus",
+        cites: ["us:usc:21:343"],
+        lang: "en",
+      };
       const gov = [
         {
           ...WEB_RESULT,
-          jurisdiction: "us",
-          cites: ["us:usc:21:343"],
+          ...labels,
+          court_type: "federal-supreme",
+          cited_as: ["us:us-reports:555:223"],
           updated_at: 1700000000000,
-          lang: "en",
         },
       ];
       mocks.fetchGovUpstream.mockResolvedValue({
@@ -247,7 +253,20 @@ describe("/v2/search/gov", () => {
       expect(mocks.fetchGovUpstream).toHaveBeenCalledWith(
         expect.objectContaining({ sources: ["gov"] }),
       );
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: { gov } });
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          gov: [
+            {
+              ...WEB_RESULT,
+              ...labels,
+              courtType: "federal-supreme",
+              citedAs: ["us:us-reports:555:223"],
+              updatedAt: 1700000000000,
+            },
+          ],
+        },
+      });
       expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
         expect.objectContaining({ num_results: 1, credits_cost: 0 }),
       );
