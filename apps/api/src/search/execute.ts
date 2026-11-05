@@ -157,12 +157,19 @@ function addTool(tools: Map<string, DiscoveredTool>, tool: DiscoveredTool) {
 
 const RRF_K = 60;
 
-/** Orders tools by reciprocal rank fusion; ties keep the earlier list's order. */
-function fuseRankings(lists: DiscoveredTool[][]): DiscoveredTool[] {
+/**
+ * Orders tools by reciprocal rank fusion; ties keep the earlier list's order.
+ * Tools `keep` rejects are left out without moving the ranks of the rest.
+ */
+function fuseRankings(
+  lists: DiscoveredTool[][],
+  keep: (tool: DiscoveredTool) => boolean,
+): DiscoveredTool[] {
   const tools = new Map<string, DiscoveredTool>();
   const scores = new Map<string, number>();
   for (const list of lists)
     list.forEach((tool, index) => {
+      if (!keep(tool)) return;
       addTool(tools, tool);
       const key = toolKey(tool);
       scores.set(key, (scores.get(key) ?? 0) + 1 / (RRF_K + index + 1));
@@ -248,12 +255,26 @@ export async function executeSearch(
             logger,
           );
           return {
-            items: await verifyTools(
-              query,
-              found.items,
-              logger,
-              ...(fuseTools ? [FUSED_FIT_THRESHOLD] : []),
-            ),
+            // Only fused semantic matches get the lower bar; domain matches keep the default.
+            items: fuseTools
+              ? (
+                  await Promise.all([
+                    verifyTools(
+                      query,
+                      found.items.slice(0, found.semanticMatches),
+                      logger,
+                      FUSED_FIT_THRESHOLD,
+                    ),
+                    found.items.length > found.semanticMatches
+                      ? verifyTools(
+                          query,
+                          found.items.slice(found.semanticMatches),
+                          logger,
+                        )
+                      : [],
+                  ])
+                ).flat()
+              : await verifyTools(query, found.items, logger),
             found: found.items,
             semanticMatches: found.semanticMatches,
             usOnlyExcluded: found.usOnlyExcluded ?? 0,
@@ -523,14 +544,14 @@ export async function executeSearch(
     const merged = new Map<string, DiscoveredTool>();
     if (fuseTools && extra) {
       // Semantic matches are fused; domain-only matches follow, as they do unfused.
-      const baseKeys = new Set(discovery.items.map(toolKey));
       const fits = new Set(extra.items.map(toolKey));
       const baseSemantic = discovery.items.slice(0, discovery.semanticMatches);
-      const extraSemantic = extra.found
-        .slice(0, extra.semanticMatches)
-        .filter(tool => fits.has(toolKey(tool)) || baseKeys.has(toolKey(tool)));
+      const baseKeys = new Set(baseSemantic.map(toolKey));
       for (const tool of [
-        ...fuseRankings([baseSemantic, extraSemantic]),
+        ...fuseRankings(
+          [baseSemantic, extra.found.slice(0, extra.semanticMatches)],
+          tool => baseKeys.has(toolKey(tool)) || fits.has(toolKey(tool)),
+        ),
         ...discovery.items.slice(baseSemantic.length),
         ...extra.found
           .slice(extra.semanticMatches)

@@ -176,7 +176,7 @@ it("keeps tools at or above a lower fit threshold when one is given", async () =
     { provider: "sec-gov", capability: "filings/filings", description: "" },
   ];
   systemOne
-    .mockResolvedValueOnce({ answers: { fits: { noul: 0.3 } } })
+    .mockResolvedValueOnce({ answers: { fits: { noul: 0.2 } } })
     .mockResolvedValueOnce({ answers: { fits: { noul: 0.1 } } });
   expect(await verifyTools("who owns apple stock", tools, logger, 0.2)).toEqual(
     [tools[0]],

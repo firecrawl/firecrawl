@@ -440,7 +440,12 @@ const configSchema = z.object({
   // fusion (also the alexandriaToolFusion team flag), waiting up to
   // ALEXANDRIA_TOOL_FUSION_WAIT_MS past the raw lookup for them.
   ALEXANDRIA_TOOL_FUSION: z.stringbool().default(false),
-  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce.number().int().min(0).default(1000),
+  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .default(1000),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),

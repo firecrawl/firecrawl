@@ -386,7 +386,7 @@ describe("executeSearch tool intent", () => {
                 semanticMatches: 3,
               }
             : {
-                items: [tool("x"), tool("c"), tool("y")],
+                items: [tool("x"), tool("c"), tool("y"), tool("site")],
                 semanticMatches: 3,
               },
       );
@@ -398,12 +398,18 @@ describe("executeSearch tool intent", () => {
         "b",
         "y",
         "domain",
+        "site",
       ]);
       expect(mocks.verifyTools).toHaveBeenCalledWith(
         "who owns apple stock",
         [tool("x"), tool("c"), tool("y")],
         logger,
         0.2,
+      );
+      expect(mocks.verifyTools).toHaveBeenCalledWith(
+        "who owns apple stock",
+        [tool("site")],
+        logger,
       );
     });
 
@@ -420,6 +426,25 @@ describe("executeSearch tool intent", () => {
       expect(result.response.tools?.map(found => found.provider)).toEqual([
         "b",
         "a",
+      ]);
+    });
+
+    it("scores rewrite tools by their original rank when earlier ones are rejected", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a"), tool("b")], semanticMatches: 2 }
+            : { items: [tool("x"), tool("y")], semanticMatches: 2 },
+      );
+      mocks.verifyTools.mockImplementation(async (_query, items) =>
+        items.filter((item: { provider: string }) => item.provider !== "x"),
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "a",
+        "b",
+        "y",
       ]);
     });
 
