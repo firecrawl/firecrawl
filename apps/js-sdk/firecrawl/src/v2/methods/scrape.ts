@@ -179,7 +179,9 @@ export async function interact(
     const res = await http.post<ScrapeExecuteResponse>(
       `/v2/scrape/${jobId}/interact`,
       body,
-      args.timeout != null ? { timeoutMs: args.timeout * 1000 + 5000 } : {},
+      args.timeout != null
+        ? { timeoutMs: args.timeout * 1000 + (hasCode ? 5000 : 30000) }
+        : {},
     );
     if (res.status !== 200)
       throwForBadResponse(res, "interact with scrape browser");
