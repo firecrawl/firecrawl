@@ -1,4 +1,3 @@
-import { RateLimiterRes } from "rate-limiter-flexible";
 import { config } from "../config";
 import type { TeamFlags } from "../controllers/v1/types";
 import {
@@ -184,10 +183,11 @@ return 1
 /**
  * Takes the calls from the team's per-minute limit for the index where auth
  * has not counted them: a route that reaches the index through another
- * endpoint, or a keyless request, which auth does not rate limit. It consumes
- * from the index endpoint's own limiter, so every route shares one count, and
- * like the daily check it allows the calls when Redis fails or does not answer
- * in time.
+ * endpoint, or a keyless request, which auth does not rate limit. One script
+ * checks and counts on the index endpoint's own limiter key, so every route
+ * shares one count and window, and a refused batch takes nothing. Like the
+ * daily check, it allows the calls when Redis fails or does not answer in
+ * time.
  */
 export async function consumeIndexRateLimit(
   index: IndexName,
@@ -205,20 +205,37 @@ export async function consumeIndexRateLimit(
     flags ?? undefined,
   );
   try {
-    await withTimeout(limiter.consume(teamId, calls));
-    return { ok: true };
-  } catch (rejection) {
-    if (!(rejection instanceof RateLimiterRes)) {
-      logger.warn("Index rate limit check failed; allowing request", {
-        index,
-        teamId,
-        error: rejection,
-      });
-      return { ok: true };
-    }
+    const [admitted, ttl] = (await withTimeout(
+      redisRateLimitClient.eval(
+        `
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local calls = tonumber(ARGV[1])
+local ttl = redis.call("PTTL", KEYS[1])
+if ttl == -1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[3])
+  ttl = tonumber(ARGV[3]) * 1000
+end
+if current + calls > tonumber(ARGV[2]) then
+  return {0, ttl}
+end
+if ttl < 0 then
+  redis.call("SET", KEYS[1], current + calls, "EX", ARGV[3])
+else
+  redis.call("INCRBY", KEYS[1], calls)
+end
+return {1, ttl}
+`,
+        1,
+        limiter.getKey(teamId),
+        calls,
+        limiter.points,
+        limiter.duration,
+      ),
+    )) as [number, number];
+    if (admitted === 1) return { ok: true };
     const retryAfterSeconds = Math.max(
       1,
-      Math.ceil(rejection.msBeforeNext / 1000),
+      Math.ceil((ttl >= 0 ? ttl : limiter.duration * 1000) / 1000),
     );
     const needs =
       calls > 1
@@ -229,6 +246,13 @@ export async function consumeIndexRateLimit(
       retryAfterSeconds,
       error: `${DISPLAY_NAMES[index]} rate limit reached: your team can make ${limiter.points.toLocaleString("en-US")} calls a minute across every endpoint that queries the index${needs}. Retry in ${retryAfterSeconds}s.`,
     };
+  } catch (error) {
+    logger.warn("Index rate limit check failed; allowing request", {
+      index,
+      teamId,
+      error,
+    });
+    return { ok: true };
   }
 }
 
