@@ -1660,6 +1660,8 @@ export type ErrorResponse = {
   login_url?: string;
   replacement?: string;
   documentation_url?: string;
+  /** The job the failed request created, when it got far enough to have one. */
+  jobId?: string;
 };
 
 export type ScrapeResponse =

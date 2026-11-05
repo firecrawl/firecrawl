@@ -493,6 +493,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -504,6 +505,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -515,6 +517,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -526,6 +529,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
             });
@@ -539,6 +543,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -553,6 +558,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -564,6 +570,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -575,6 +582,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -586,6 +594,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -597,6 +606,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -604,7 +614,7 @@ export async function scrapeController(
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
-            return res.status(403).json(e.response());
+            return res.status(403).json({ ...e.response(), jobId });
           }
 
           if (
@@ -618,6 +628,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -629,6 +640,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -643,6 +655,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              jobId,
             });
           }
 
@@ -663,6 +676,7 @@ export async function scrapeController(
             success: false,
             code: e.code,
             error: e.message,
+            jobId,
             ...(processing && { details: processing }),
           });
         } else {
@@ -682,6 +696,7 @@ export async function scrapeController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
+            jobId,
           });
         }
       } finally {
