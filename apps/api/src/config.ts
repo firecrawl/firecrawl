@@ -691,6 +691,16 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
+  // onlyCleanContent: "off" keeps the full-rewrite cleaner, "shadow" also runs
+  // the deletion-only cleaner in the background and logs a comparison, "on"
+  // answers with the deletion-only cleaner. PERCENT samples requests in shadow
+  // and teams (stable) in on.
+  ONLY_CLEAN_CONTENT_MODE: emptyStringAsDefault(
+    z.enum(["off", "shadow", "on"]).default("off"),
+  ),
+  ONLY_CLEAN_CONTENT_PERCENT: emptyStringAsDefault(
+    z.coerce.number().min(0).max(100).default(100),
+  ),
   // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
   // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
   // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
