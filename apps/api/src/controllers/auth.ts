@@ -790,13 +790,21 @@ async function handleKeylessAuth(
       undefined,
       1,
     );
-    if (!perMinute.ok)
+    if (!perMinute.ok) {
+      keylessAuthTotal.inc({ mode, outcome: "index_rate_limit" });
+      logger.warn("Keyless request blocked", {
+        ...baseLog,
+        blocked: true,
+        reason: "index_rate_limit",
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      });
       return {
         success: false,
         error: perMinute.error,
         status: 429,
         retryAfterSeconds: perMinute.retryAfterSeconds,
       };
+    }
   }
 
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
