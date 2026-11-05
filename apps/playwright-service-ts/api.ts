@@ -156,7 +156,46 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  // Browser backend for this request. "chromium" (default) uses the
+  // locally launched Chromium; "lightpanda" / "moli" connect over CDP to
+  // the endpoints configured via LIGHTPANDA_CDP_URL / MOLI_CDP_URL.
+  engine?: BrowserEngineKind;
 }
+
+type BrowserEngineKind = 'chromium' | 'lightpanda' | 'moli';
+
+const LIGHT_BROWSER_CDP_URLS: Record<
+  Exclude<BrowserEngineKind, 'chromium'>,
+  string | undefined
+> = {
+  lightpanda: process.env.LIGHTPANDA_CDP_URL || undefined,
+  moli: process.env.MOLI_CDP_URL || undefined,
+};
+
+const cdpBrowsers = new Map<BrowserEngineKind, Browser>();
+
+/**
+ * Return a (cached) Playwright Browser connected over CDP to a lightweight
+ * engine. Throws when the endpoint is not configured, so the caller can
+ * answer 500 and the API-side waterfall falls through to the next engine.
+ */
+const getCdpBrowser = async (
+  kind: Exclude<BrowserEngineKind, 'chromium'>,
+): Promise<Browser> => {
+  const endpoint = LIGHT_BROWSER_CDP_URLS[kind];
+  if (!endpoint) {
+    throw new Error(
+      `${kind} engine requested but ${kind === 'lightpanda' ? 'LIGHTPANDA_CDP_URL' : 'MOLI_CDP_URL'} is not configured on the playwright service`,
+    );
+  }
+  const cached = cdpBrowsers.get(kind);
+  if (cached && cached.isConnected()) {
+    return cached;
+  }
+  const connected = await chromium.connectOverCDP(endpoint);
+  cdpBrowsers.set(kind, connected);
+  return connected;
+};
 
 let browser: Browser;
 
@@ -178,9 +217,14 @@ const initializeBrowser = async () => {
 const createContext = async (
   skipTlsVerification: boolean = false,
   userAgentOverride?: string,
+  browserInstance?: Browser,
 ): Promise<{
   context: BrowserContext;
   securityState: ContextSecurityState;
+  // False when the browser only exposes a shared default context (some
+  // CDP engines do not implement Browser.newContext): the caller must not
+  // close it, and per-request isolation is weaker — see DESIGN notes.
+  owned: boolean;
 }> => {
   const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
@@ -199,7 +243,26 @@ const createContext = async (
     server: `http://127.0.0.1:${ssrfProxyPort}`,
   };
 
-  const newContext = await browser.newContext(contextOptions);
+  const targetBrowser = browserInstance ?? browser;
+  let newContext: BrowserContext;
+  let owned = true;
+  try {
+    newContext = await targetBrowser.newContext(contextOptions);
+  } catch (error) {
+    // Some CDP engines (e.g. Moli) expose a single default context and
+    // reject newContext. Fall back to it rather than failing the scrape;
+    // route interception below is still installed on that context.
+    const existing = targetBrowser.contexts()[0];
+    if (!existing) {
+      throw error;
+    }
+    console.warn(
+      'browser.newContext failed; falling back to the shared default context:',
+      error,
+    );
+    newContext = existing;
+    owned = false;
+  }
 
   if (BLOCK_MEDIA) {
     await newContext.route(
@@ -238,7 +301,7 @@ const createContext = async (
     },
   );
 
-  return { context: newContext, securityState };
+  return { context: newContext, securityState, owned };
 };
 
 const shutdownBrowser = async () => {
@@ -357,6 +420,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     headers,
     check_selector,
     skip_tls_verification = false,
+    engine = 'chromium',
   }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
@@ -399,9 +463,29 @@ app.post('/scrape', async (req: Request, res: Response) => {
     await initializeBrowser();
   }
 
+  // Resolve the requested backend. A lightweight engine that is not
+  // configured is a plain 500: the API-side engine throws on it and the
+  // scrape waterfall moves on to the next engine.
+  let requestBrowser: Browser = browser;
+  if (engine !== 'chromium') {
+    if (engine !== 'lightpanda' && engine !== 'moli') {
+      return res.status(400).json({ error: `Unknown engine: ${engine}` });
+    }
+    try {
+      requestBrowser = await getCdpBrowser(engine);
+    } catch (error) {
+      console.error(`Lightweight engine unavailable:`, error);
+      return res.status(500).json({
+        error:
+          error instanceof Error ? error.message : 'Engine unavailable',
+      });
+    }
+  }
+
   await pageSemaphore.acquire();
 
   let requestContext: BrowserContext | null = null;
+  let contextOwned = true;
   let securityState: ContextSecurityState | null = null;
   let page: Page | null = null;
 
@@ -418,8 +502,10 @@ app.post('/scrape', async (req: Request, res: Response) => {
     const contextBundle = await createContext(
       skip_tls_verification,
       userAgentOverride,
+      requestBrowser,
     );
     requestContext = contextBundle.context;
+    contextOwned = contextBundle.owned;
     securityState = contextBundle.securityState;
     page = await requestContext.newPage();
 
@@ -534,7 +620,10 @@ app.post('/scrape', async (req: Request, res: Response) => {
       .json({ error: 'An error occurred while fetching the page.' });
   } finally {
     if (page) await page.close();
-    if (requestContext) await requestContext.close();
+    // Shared default contexts (CDP fallback path) belong to the browser
+    // connection, not to this request — closing one would break every
+    // later scrape on that backend.
+    if (requestContext && contextOwned) await requestContext.close();
     pageSemaphore.release();
   }
 });
