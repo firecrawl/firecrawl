@@ -18,6 +18,8 @@ type ToolDiscovery = {
   usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
+  /** How many leading items the semantic lookup found; the rest matched by domain only. */
+  semanticMatches: number;
 };
 
 type SourceLike = string | { type: string };
@@ -311,6 +313,7 @@ export async function discoverTools(
   })();
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
   for (const tool of semanticTools ?? []) merge(tool, "semantic");
+  const semanticMatches = items.size;
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
   return {
     items: [...items.values()].map(tool =>
@@ -322,6 +325,7 @@ export async function discoverTools(
           }
         : tool,
     ),
+    semanticMatches,
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),
