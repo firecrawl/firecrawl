@@ -2,6 +2,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   itIf,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { config } from "../../../config";
@@ -94,3 +95,61 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
     );
   },
 );
+
+describeIf(ALLOW_TEST_SUITE_WEBSITE)("PDF URL serving HTML", () => {
+  it(
+    "scrapes the HTML viewer page served at a .pdf URL",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${TEST_SUITE_WEBSITE}/embedded-pdf.pdf`,
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.markdown).toContain(
+        "Firecrawl embedded PDF viewer fixture",
+      );
+      expect(response.metadata.title).toBe("Embedded PDF Viewer");
+      expect(response.metadata.contentType).toContain("text/html");
+      expect(response.metadata.numPages).toBeUndefined();
+      expect(response.metadata.statusCode).toBe(200);
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "reports a missing .pdf URL as a 404 instead of a PDF error",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${TEST_SUITE_WEBSITE}/missing.pdf`,
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.metadata.statusCode).toBe(404);
+      expect(response.metadata.numPages).toBeUndefined();
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_SELF_HOST)(
+    "fails a corrupt PDF without falling back to the HTML engines",
+    async () => {
+      const response = await scrapeWithFailure(
+        {
+          url: `${TEST_SUITE_WEBSITE}/corrupt.pdf`,
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.error).toContain("All scraping engines failed");
+      expect(response.error).toContain("Engines tried: [pdf]");
+    },
+    scrapeTimeout,
+  );
+});
