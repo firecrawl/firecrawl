@@ -337,6 +337,7 @@ v2Router.post(
 v2Router.post(
   "/crawl/params-preview",
   authMiddleware(RateLimiterMode.Crawl),
+  deprecationMiddleware("v2_crawl_params_preview"),
   checkCreditsMiddleware(),
   wrap(crawlParamsPreviewController),
 );
