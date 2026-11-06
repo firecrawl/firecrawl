@@ -468,15 +468,18 @@ def crawl(
         request: CrawlRequest containing URL and options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
-        request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination 
+        request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination
             requests when fetching results. If there are multiple pages, each page request gets this timeout
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False for backward compatibility.
         
     Returns:
-        CrawlJob when job completes
+        CrawlJob with the terminal status and available data
         
     Raises:
         ValueError: If request is invalid
-        Exception: If the crawl fails to start or complete
+        FirecrawlError: If starting the job fails, or if raise_on_failure is True
+            and the job ends as failed or cancelled
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
