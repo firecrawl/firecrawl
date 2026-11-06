@@ -978,6 +978,8 @@ export interface FindToolsData {
   }>;
   total: number;
   next: AlexandriaCall | null;
+  /** Opaque feedback token of this find-tools call. Absent when the API issues none. */
+  feedbackToken?: string;
 }
 
 export interface AlexandriaScrapeRequest extends AlexandriaOptions {
@@ -1007,12 +1009,15 @@ export type AlexandriaScrapeResult =
       records?: number;
       upstreamStatus?: number;
       recordedAt?: string;
+      /** Opaque token to pass to `alexandriaFeedback`. Absent under zero data retention. */
+      feedbackToken?: string;
       error?: undefined;
       [key: string]: unknown;
     }
   | {
       provider?: string;
       capability?: string;
+      feedbackToken?: string;
       error: AlexandriaScrapeError;
       [key: string]: unknown;
     };
@@ -1245,6 +1250,60 @@ export interface FeedbackResponse {
   creditsRefundedToday?: number;
   dailyRefundCap?: number;
   warning?: string;
+}
+
+export interface AlexandriaProviderFeedback {
+  name: string;
+  issue:
+    | "missing_provider"
+    | "insufficient_coverage"
+    | "provider_unavailable"
+    | "other";
+  why: string;
+}
+
+export type AlexandriaCapabilityFeedback = {
+  name: string;
+  provider: string;
+  why: string;
+} & (
+  | { issue: "new_capability_request"; requestedFunctionality: string }
+  | {
+      issue:
+        | "missing_capability"
+        | "insufficient_functionality"
+        | "incorrect_result"
+        | "execution_error"
+        | "other";
+      requestedFunctionality?: string;
+    }
+);
+
+export interface AlexandriaCallRating {
+  /** The `feedbackToken` of an Alexandria call result. */
+  token: string;
+  rating: FeedbackRating;
+}
+
+export interface AlexandriaFeedbackRequest {
+  /** Session-level rating, applied to every call in `tokens`. */
+  rating: FeedbackRating;
+  requestedWebsite: { url: string; requestedFunctionality: string };
+  rationale: string;
+  objective?: string;
+  providerFeedback?: AlexandriaProviderFeedback[];
+  capabilityFeedback?: AlexandriaCapabilityFeedback[];
+  /** Tokens of the calls `rating` covers: at most 20, newest last. */
+  tokens?: string[];
+  /** Per-call ratings: at most 20. A token here need not also be in `tokens`. */
+  callRatings?: AlexandriaCallRating[];
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface AlexandriaFeedbackResponse extends FeedbackResponse {
+  /** Tokens that failed verification (expired, other team, or forged). */
+  rejectedTokens?: number;
 }
 
 /**
