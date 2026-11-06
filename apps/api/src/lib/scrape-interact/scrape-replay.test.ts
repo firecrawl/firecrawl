@@ -23,8 +23,13 @@ describe("estimateReplayTimeoutSeconds", () => {
   it("budgets waitFor at the 30 second ceiling the replay script enforces", () => {
     // The generated script runs waitForTimeout(Math.min(waitForMs, 30000)),
     // so a 60 second waitFor must not buy extra kill-deadline headroom.
+    // 30s waitFor ceiling + 45s margin. Asserting the number (not just that
+    // 60s equals 30s) so a budget that ignores waitFor entirely (45s) fails.
     expect(estimateReplayTimeoutSeconds(context({ waitForMs: 60_000 }))).toBe(
-      estimateReplayTimeoutSeconds(context({ waitForMs: 30_000 })),
+      75,
+    );
+    expect(estimateReplayTimeoutSeconds(context({ waitForMs: 30_000 }))).toBe(
+      75,
     );
     expect(buildReplayScript(context())).toContain(
       "Math.min(replay.waitForMs, 30000)",
@@ -74,15 +79,12 @@ describe("estimateReplayTimeoutSeconds", () => {
 
 describe("describeReplayFailure", () => {
   it("extracts the failing action step and the cause", () => {
-    const failure = describeReplayFailure(
-      {
-        exitCode: 1,
-        killed: false,
-        stderr:
-          "Error: Replay action #2 (click): page.click: Timeout 30000ms exceeded.\n    at <anonymous>:12:3",
-      },
-      false,
-    );
+    const failure = describeReplayFailure({
+      exitCode: 1,
+      killed: false,
+      stderr:
+        "Error: Replay action #2 (click): page.click: Timeout 30000ms exceeded.\n    at <anonymous>:12:3",
+    });
     expect(failure).toEqual({
       exitCode: 1,
       killed: false,
@@ -93,51 +95,32 @@ describe("describeReplayFailure", () => {
 
   it("recognizes a navigation failure", () => {
     expect(
-      describeReplayFailure(
-        {
-          exitCode: 1,
-          killed: false,
-          stderr: "Error: Failed to load scrape URL: net::ERR_ABORTED",
-        },
-        false,
-      ).step,
+      describeReplayFailure({
+        exitCode: 1,
+        killed: false,
+        stderr: "Error: Failed to load scrape URL: net::ERR_ABORTED",
+      }).step,
     ).toBe("Failed to load scrape URL");
   });
 
   it("reports a killed replay without inventing a step", () => {
+    // A killed replay is cut off mid-run, so there is no error text to read a
+    // step from. The log still records that it was killed.
     expect(
-      describeReplayFailure({ exitCode: 137, killed: true, stderr: "" }, false),
+      describeReplayFailure({ exitCode: 137, killed: true, stderr: "" }),
     ).toEqual({ exitCode: 137, killed: true });
   });
 
-  it("truncates a long cause", () => {
-    const failure = describeReplayFailure(
-      {
-        exitCode: 1,
-        killed: false,
-        stderr: `Replay action #1 (click): ${"x".repeat(5_000)}`,
-      },
-      false,
-    );
-    expect(failure.detail!.length).toBeLessThanOrEqual(500);
-  });
-
-  it("never returns raw stderr for a ZDR session, only the step label", () => {
-    const failure = describeReplayFailure(
-      {
-        exitCode: 1,
-        killed: false,
-        stderr:
-          "Error: Replay action #3 (click): selector #patient-record-4412 not found",
-      },
-      true,
-    );
-    expect(failure).toEqual({
+  it("truncates a long cause to exactly 500 characters", () => {
+    const prefix = "Replay action #1 (click): ";
+    const failure = describeReplayFailure({
       exitCode: 1,
       killed: false,
-      step: "Replay action #3 (click)",
+      stderr: `${prefix}${"x".repeat(5_000)}`,
     });
-    expect(JSON.stringify(failure)).not.toContain("patient-record");
+    expect(failure.step).toBe("Replay action #1 (click)");
+    expect(failure.detail).toHaveLength(500);
+    expect(failure.detail).toBe(`${prefix}${"x".repeat(500 - prefix.length)}`);
   });
 });
 

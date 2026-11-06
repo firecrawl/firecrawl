@@ -768,8 +768,8 @@ describe("scrapeInteractController", () => {
       );
     });
 
-    it("does not log replay stderr for a ZDR scrape", async () => {
-      await interactAfterFailedReplay(
+    it("logs nothing about the replay failure for a ZDR scrape", async () => {
+      const res = await interactAfterFailedReplay(
         {
           exitCode: 1,
           killed: false,
@@ -778,11 +778,12 @@ describe("scrapeInteractController", () => {
         },
         true,
       );
-      const logged = replayFailureLog();
-      expect(logged).toEqual(
-        expect.objectContaining({ step: "Replay action #1 (click)" }),
+      expect(replayFailureLog()).toBeUndefined();
+      // The client still gets the same 409.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
+        "patient-record",
       );
-      expect(JSON.stringify(logged)).not.toContain("patient-record");
     });
   });
 
