@@ -1,3 +1,4 @@
+import { EXPECTED_ERROR, isExpectedError } from "./otel-tracer";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
 export type ErrorCodes =
@@ -72,6 +73,9 @@ export type ErrorCodes =
 
 export class TransportableError extends Error {
   public readonly code: ErrorCodes;
+  // A coded error is an answer the API gives the caller, not a defect. The
+  // one exception, UnknownError, is the wrapper for everything that is.
+  [EXPECTED_ERROR] = true;
 
   constructor(code: ErrorCodes, message?: string, options?: ErrorOptions) {
     super(message, options);
@@ -267,10 +271,16 @@ export class UnknownError extends TransportableError {
     if (inner instanceof Error) {
       this.stack = inner.stack;
     }
+    // The wrapper is only as expected as what it wraps: a cancelled job
+    // stays a normal outcome, a TypeError stays a defect.
+    this[EXPECTED_ERROR] = isExpectedError(inner);
   }
 
   serialize() {
-    return super.serialize();
+    // The wrapped error does not survive the queue, so its classification
+    // travels explicitly; otherwise a cancelled job revived on the API side
+    // would look like a defect.
+    return { ...super.serialize(), expected: this[EXPECTED_ERROR] };
   }
 
   static deserialize(
@@ -280,6 +290,7 @@ export class UnknownError extends TransportableError {
     const x = new UnknownError("dummy");
     x.message = data.message;
     x.stack = data.stack;
+    x[EXPECTED_ERROR] = data.expected === true;
     return x;
   }
 }
@@ -441,6 +452,8 @@ export class ActionsNotSupportedError extends TransportableError {
  * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
+  [EXPECTED_ERROR] = true;
+
   constructor() {
     super(
       "This scrape was not completed because the parent crawl or batch scrape was cancelled. This happens when you call the cancel endpoint on a crawl or batch scrape, or when the operation is stopped for another reason. Any URLs that were already scraped before cancellation are still available in the results.",

@@ -5,7 +5,10 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
-import { serializeTraceContext } from "../../../../lib/otel-tracer";
+import {
+  markExpectedError,
+  serializeTraceContext,
+} from "../../../../lib/otel-tracer";
 import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,
@@ -343,11 +346,15 @@ export async function fireEngineScrape<
     ) {
       throw new ProxySelectionError();
     } else {
-      throw new EngineError("Scrape job failed", {
-        cause: {
-          status,
-        },
-      });
+      // The remote scrape did not succeed; the engine loop decides what that
+      // means for the request, so it is a normal outcome here.
+      throw markExpectedError(
+        new EngineError("Scrape job failed", {
+          cause: {
+            status,
+          },
+        }),
+      );
     }
   } else {
     logger.debug("Scrape returned response not matched by any schema", {

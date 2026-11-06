@@ -2,7 +2,10 @@ import { ErrorCodes, TransportableError } from "../../lib/error";
 import { Meta } from ".";
 import { Engine, FeatureFlag } from "./engines";
 import { isSelfHosted } from "../../lib/deployment";
+import { EXPECTED_ERROR } from "../../lib/otel-tracer";
 
+// Not expected as a class: engines also raise it for index, storage and temp
+// file failures. Sites that report a remote scrape outcome mark the instance.
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
     super(message, options);
@@ -78,6 +81,7 @@ export class NoEnginesLeftError extends TransportableError {
 }
 
 export class AddFeatureError extends Error {
+  [EXPECTED_ERROR] = true;
   public featureFlags: FeatureFlag[];
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
@@ -98,6 +102,7 @@ export class AddFeatureError extends Error {
 }
 
 export class RemoveFeatureError extends Error {
+  [EXPECTED_ERROR] = true;
   public featureFlags: FeatureFlag[];
 
   constructor(featureFlags: FeatureFlag[]) {
@@ -424,6 +429,7 @@ export class DNSResolutionError extends TransportableError {
 }
 
 export class IndexMissError extends Error {
+  [EXPECTED_ERROR] = true;
   constructor() {
     super("Index doesn't have the page we're looking for");
   }
@@ -792,6 +798,7 @@ export class BrandingNotSupportedError extends TransportableError {
 }
 
 export class FEPageLoadFailed extends Error {
+  [EXPECTED_ERROR] = true;
   constructor() {
     super(
       "The page failed to load with the specified timeout. Please increase the timeout parameter in your request.",
@@ -800,6 +807,7 @@ export class FEPageLoadFailed extends Error {
 }
 
 export class EngineSnipedError extends Error {
+  [EXPECTED_ERROR] = true;
   name = "EngineSnipedError";
 
   constructor() {
@@ -808,6 +816,7 @@ export class EngineSnipedError extends Error {
 }
 
 export class EngineUnsuccessfulError extends Error {
+  [EXPECTED_ERROR] = true;
   name = "EngineUnsuccessfulError";
 
   constructor(engine: Engine) {
@@ -816,6 +825,7 @@ export class EngineUnsuccessfulError extends Error {
 }
 
 export class WaterfallNextEngineSignal extends Error {
+  [EXPECTED_ERROR] = true;
   name = "WaterfallNextEngineSignal";
 
   constructor() {
