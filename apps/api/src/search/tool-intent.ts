@@ -31,7 +31,8 @@ const modelsConfigured = () =>
   config.ANTHROPIC_API_KEY !== undefined &&
   config.TYPESAFE_API_KEY !== undefined;
 
-export const queryInferenceEnabled = modelsConfigured;
+export const queryInferenceEnabled = () =>
+  modelsConfigured() && !config.ALEXANDRIA_SKIP_QUERY_REWRITE;
 
 export const autoToolsEnabled = (flags: TeamFlags | null | undefined) =>
   modelsConfigured() &&
