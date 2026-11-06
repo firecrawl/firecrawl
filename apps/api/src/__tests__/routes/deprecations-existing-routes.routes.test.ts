@@ -23,6 +23,7 @@ type Key = keyof typeof EXISTING;
 
 const V0_GUIDE = "https://docs.firecrawl.dev/migrating-from-v0";
 const V0_SUNSET = "Thu, 10 Dec 2026 15:00:00 GMT";
+const EXTRACT_SUNSET = "Thu, 10 Dec 2026 15:00:00 GMT";
 
 // What the old middleware did, replayed on a copy, so we can compare bytes.
 function legacyAnnotate(body: any, message: string, replacement?: string) {
@@ -51,7 +52,7 @@ const BODIES: Record<string, unknown> = {
 };
 
 describe("pre-existing deprecated routes are unchanged", () => {
-  // Before the v0 sunset, so every route still serves.
+  // Before the v0 and extract sunsets, so every route still serves.
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-01T00:00:00Z"));
@@ -63,12 +64,16 @@ describe("pre-existing deprecated routes are unchanged", () => {
 
   for (const key of Object.keys(EXISTING) as Key[]) {
     describe(key, () => {
-      it("emits the shared 2026-05-06 Deprecation date, and a Sunset only on v0", async () => {
+      it("emits the shared 2026-05-06 Deprecation date, and a Sunset only on v0 and extract", async () => {
         const res = await request(appFor(key, BODIES.plain)).get("/probe");
 
         expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
         expect(res.headers["sunset"]).toBe(
-          key.startsWith("v0_") ? V0_SUNSET : undefined,
+          key.startsWith("v0_")
+            ? V0_SUNSET
+            : key.includes("extract")
+              ? EXTRACT_SUNSET
+              : undefined,
         );
         expect(res.headers["warning"]).toMatch(/^299 - "/);
         if (key.startsWith("v0_")) {
