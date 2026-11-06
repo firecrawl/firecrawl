@@ -1,22 +1,14 @@
-import axios, {
-  type AxiosInstance,
-  type AxiosRequestConfig,
-  type AxiosResponse,
-} from "axios";
 import { getVersion } from "./getVersion";
 import { pinToApiOrigin } from "../../utils/apiOrigin";
+import { httpRequest, type HttpResponse } from "../../utils/httpRequest";
 
-// Runtimes such as Cloudflare Workers reject the Request `cache: "default"` that
-// axios's fetch adapter always sets; there axios calls fetch(url, init) without it.
-const rejectsDefaultCacheMode = (): boolean => {
-  if (typeof Request !== "function") return false;
-  try {
-    new Request("https://api.firecrawl.dev", { cache: "default" });
-    return false;
-  } catch {
-    return true;
-  }
-};
+interface RequestConfig {
+  method: string;
+  url: string;
+  data?: unknown;
+  headers?: Record<string, string>;
+  timeout?: number;
+}
 
 export interface HttpClientOptions {
   apiKey: string;
@@ -33,12 +25,12 @@ export interface RequestOptions {
 }
 
 export class HttpClient {
-  private instance: AxiosInstance;
   private readonly apiKey: string;
   private readonly apiUrl: string;
   private readonly maxRetries: number;
   private readonly backoffFactor: number;
   private readonly origin: string;
+  private readonly timeoutMs: number;
 
   constructor(options: HttpClientOptions) {
     this.apiKey = options.apiKey;
@@ -46,18 +38,7 @@ export class HttpClient {
     this.maxRetries = options.maxRetries ?? 3;
     this.backoffFactor = options.backoffFactor ?? 0.5;
     this.origin = options.origin || `js-sdk@${getVersion()}`;
-    this.instance = axios.create({
-      baseURL: this.apiUrl,
-      timeout: options.timeoutMs ?? 300000,
-      headers: {
-        // Omit the Authorization header entirely when no API key is set so that
-        // scrape/search/interact can use the keyless free tier (the cloud only
-        // grants it when no Authorization header is present).
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      transitional: { clarifyTimeoutError: true },
-      ...(rejectsDefaultCacheMode() ? { adapter: "fetch", env: { Request: null as any } } : {}),
-    });
+    this.timeoutMs = options.timeoutMs ?? 300000;
   }
 
   getApiUrl(): string {
@@ -76,12 +57,12 @@ export class HttpClient {
   /** The client-wide default request timeout, for callers that need to
    * extend a specific request beyond it (e.g. scrape auto-resume). */
   getTimeoutMs(): number {
-    return (this.instance.defaults.timeout as number | undefined) ?? 300000;
+    return this.timeoutMs;
   }
 
   private async request<T = any>(
-    config: AxiosRequestConfig,
-  ): Promise<AxiosResponse<T>> {
+    config: RequestConfig,
+  ): Promise<HttpResponse<T>> {
     config.headers = {
       ...(config.headers || {}),
     };
@@ -90,7 +71,7 @@ export class HttpClient {
     let lastError: any;
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
-        const cfg: AxiosRequestConfig = { ...config };
+        const cfg: RequestConfig = { ...config };
         const isFormDataBody =
           typeof FormData !== "undefined" && cfg.data instanceof FormData;
         const isPlainObjectBody =
@@ -121,7 +102,18 @@ export class HttpClient {
           delete (cfg.headers as Record<string, unknown>)["content-type"];
         }
 
-        const res = await this.instance.request<T>(cfg);
+        const res = await httpRequest<T>(this.resolveUrl(cfg.url), {
+          method: cfg.method,
+          headers: {
+            // Omit the Authorization header entirely when no API key is set so that
+            // scrape/search/interact can use the keyless free tier (the cloud only
+            // grants it when no Authorization header is present).
+            ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+            ...cfg.headers,
+          },
+          body: cfg.data,
+          timeoutMs: cfg.timeout ?? this.timeoutMs,
+        });
         if (res.status === 502 && attempt < this.maxRetries - 1) {
           await this.sleep(this.backoffFactor * Math.pow(2, attempt));
           continue;
@@ -138,6 +130,10 @@ export class HttpClient {
       }
     }
     throw lastError ?? new Error("Unexpected HTTP client error");
+  }
+
+  private resolveUrl(url: string): string {
+    return /^([a-z][a-z\d+\-.]*:)?\/\//i.test(url) ? url : `${this.apiUrl}/${url.replace(/^\/+/, "")}`;
   }
 
   private sleep(seconds: number): Promise<void> {

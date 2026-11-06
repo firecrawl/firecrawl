@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { throwForBadResponse, normalizeAxiosError } from "../../../v2/utils/errorHandler";
+import { throwForBadResponse, normalizeHttpError } from "../../../v2/utils/errorHandler";
 
 describe("v2 utils: errorHandler", () => {
   test("throwForBadResponse: throws SdkError with message from body.error", () => {
@@ -7,18 +7,18 @@ describe("v2 utils: errorHandler", () => {
     expect(() => throwForBadResponse(resp, "do thing")).toThrow(/bad/);
   });
 
-  test("normalizeAxiosError: prefers body.error then err.message", () => {
+  test("normalizeHttpError: prefers body.error then err.message", () => {
     const err: any = {
-      isAxiosError: true,
+      isHttpError: true,
       response: { status: 402, data: { error: "payment required" } },
       message: "network",
     };
-    expect(() => normalizeAxiosError(err, "action")).toThrow(/payment required/);
+    expect(() => normalizeHttpError(err, "action")).toThrow(/payment required/);
   });
 
-  test("normalizeAxiosError: names the fields a 400 validation error rejected", () => {
+  test("normalizeHttpError: names the fields a 400 validation error rejected", () => {
     const err: any = {
-      isAxiosError: true,
+      isHttpError: true,
       response: {
         status: 400,
         data: {
@@ -28,7 +28,7 @@ describe("v2 utils: errorHandler", () => {
       },
       message: "Request failed with status code 400",
     };
-    expect(() => normalizeAxiosError(err, "scrape")).toThrow(/unrecognized key\(s\) parsePDF/);
+    expect(() => normalizeHttpError(err, "scrape")).toThrow(/unrecognized key\(s\) parsePDF/);
   });
 
   test("throwForBadResponse: appends the path and message of each issue", () => {

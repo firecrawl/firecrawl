@@ -21,9 +21,9 @@ function makeClient(
   return { client: new ResearchClient(http), calls };
 }
 
-/** Make an axios-like error carrying an RFC 7807 Problem body. */
+/** Make an HTTP error carrying an RFC 7807 Problem body. */
 function problemError(status: number, body: any) {
-  return { isAxiosError: true, response: { status, data: body }, message: "req failed" };
+  return { isHttpError: true, response: { status, data: body }, message: "req failed" };
 }
 
 describe("research.searchPapers", () => {

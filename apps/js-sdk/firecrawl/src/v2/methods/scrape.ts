@@ -10,7 +10,7 @@ import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
-  normalizeAxiosError,
+  normalizeHttpError,
 } from "../utils/errorHandler";
 
 /** Auto-resume bounds: a resume only ever follows the server's explicit
@@ -28,8 +28,8 @@ const RESUME_MAX_DELAY_MS = 10 * 60 * 1000;
  * delay. Returns that delay in ms, or undefined for every other error.
  */
 export function processingContinuesDelayMs(err: unknown): number | undefined {
-  const response = (err as { isAxiosError?: boolean; response?: any })
-    ?.isAxiosError
+  const response = (err as { isHttpError?: boolean; response?: any })
+    ?.isHttpError
     ? (err as { response?: any }).response
     : undefined;
   if (!response || response.status !== 408) return undefined;
@@ -99,7 +99,7 @@ export async function scrape(
   // pre-existing behavior (explicit timeout +5s, else the client's own
   // default). With auto-resume on, the client-side timeout must outlast
   // the SERVER's wall — options.timeout, or the API's 5-minute default —
-  // otherwise axios can abort in a photo-finish with the server's
+  // otherwise the client can abort in a photo-finish with the server's
   // processing_continues response and the resume signal is lost exactly
   // when it matters. The caller's configured client timeout is
   // respected as a floor, never overridden downward.
@@ -148,7 +148,7 @@ export async function scrape(
         await sleep(delayMs);
         continue;
       }
-      if (err?.isAxiosError) return normalizeAxiosError(err, "scrape");
+      if (err?.isHttpError) return normalizeHttpError(err, "scrape");
       throw err;
     }
   }
@@ -185,8 +185,8 @@ export async function interact(
       throwForBadResponse(res, "interact with scrape browser");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "interact with scrape browser");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "interact with scrape browser");
     throw err;
   }
 }
@@ -206,7 +206,7 @@ export async function stopInteraction(
     if (res.status !== 200) throwForBadResponse(res, "stop interaction");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "stop interaction");
+    if (err?.isHttpError) return normalizeHttpError(err, "stop interaction");
     throw err;
   }
 }

@@ -1,43 +1,22 @@
 import { describe, test, expect } from "vitest";
-import axios, { type AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
 import { HttpClient } from "../../../v2/utils/httpClient";
 import { waitForCrawlCompletion } from "../../../v2/methods/crawl";
 import { SdkError } from "../../../v2/types";
+import { mockFetch, type MockReply, type SentRequest } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 const JOB_ID = "job-123";
 
-type Sent = { method: string; path: string };
 type Reply = { status: number; data: unknown };
 
-function withAdapter<T extends { defaults: any }>(instance: T, route: (req: Sent) => Reply): Sent[] {
-  const sent: Sent[] = [];
-  const adapter: AxiosAdapter = async (config) => {
-    const req = {
-      method: (config.method || "get").toLowerCase(),
-      path: new URL(axios.getUri(config)).pathname,
-    };
-    sent.push(req);
-    const { status, data } = route(req);
-    const response = { data, status, statusText: String(status), headers: {}, config };
-    const validate = config.validateStatus;
-    if (validate && !validate(status)) {
-      throw new axios.AxiosError(`Request failed with status code ${status}`, undefined, config, null, response);
-    }
-    return response;
-  };
-  instance.defaults.adapter = adapter;
-  return sent;
-}
-
-function makeClient(route: (req: Sent) => Reply) {
+function makeClient(route: (req: SentRequest) => MockReply | Promise<MockReply>) {
   const client = new FirecrawlClient({ apiKey: "fc-test", apiUrl: API_URL });
-  const sent = withAdapter((client as any).http.instance, route);
+  const sent = mockFetch(route);
   return { client, sent };
 }
 
-// The cancel runs in the background, so let its request reach the adapter.
+// The cancel runs in the background, so let its request reach fetch.
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const running: Reply = { status: 200, data: { success: true, status: "scraping", completed: 0, total: 1, data: [] } };
@@ -47,13 +26,8 @@ describe("v2 cancelCrawl", () => {
   test("returns false when the crawl is already completed (409)", async () => {
     const { client, sent } = makeClient(() => ({ status: 409, data: { error: "Crawl is already completed" } }));
     await expect(client.cancelCrawl(JOB_ID)).resolves.toBe(false);
-    expect(sent).toEqual([{ method: "delete", path: `/v2/crawl/${JOB_ID}` }]);
-  });
-
-  test("returns false on 409 when the transport does not throw for 4xx", async () => {
-    const { client } = makeClient(() => ({ status: 409, data: { error: "Crawl is already completed" } }));
-    (client as any).http.instance.defaults.validateStatus = () => true;
-    await expect(client.cancelCrawl(JOB_ID)).resolves.toBe(false);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ method: "delete", path: `/v2/crawl/${JOB_ID}` });
   });
 
   test("returns true when the crawl is cancelled", async () => {
@@ -109,15 +83,13 @@ describe("v2 crawl with an AbortSignal", () => {
 
   test("a hanging cancel does not delay the rejection", async () => {
     const controller = new AbortController();
-    const client = new FirecrawlClient({ apiKey: "fc-test", apiUrl: API_URL });
     const methods: string[] = [];
-    (client as any).http.instance.defaults.adapter = (async (config) => {
-      methods.push(config.method!);
-      if (config.method === "delete") return new Promise(() => {});
-      if (config.method === "get") setTimeout(() => controller.abort(), 10);
-      const data = config.method === "post" ? started.data : running.data;
-      return { data, status: 200, statusText: "OK", headers: {}, config };
-    }) as AxiosAdapter;
+    const { client } = makeClient((req) => {
+      methods.push(req.method);
+      if (req.method === "delete") return new Promise<MockReply>(() => {});
+      if (req.method === "get") setTimeout(() => controller.abort(), 10);
+      return req.method === "post" ? started : running;
+    });
 
     // Read the reason after the abort: before it, signal.reason is undefined.
     const err = await client.crawl("https://example.com", { pollInterval: 30, signal: controller.signal }).catch((e) => e);
@@ -156,13 +128,11 @@ describe("v2 crawl with an AbortSignal", () => {
 
   test("the signal is not sent in the crawl request body", async () => {
     const controller = new AbortController();
-    const client = new FirecrawlClient({ apiKey: "fc-test", apiUrl: API_URL });
     const bodies: unknown[] = [];
-    (client as any).http.instance.defaults.adapter = (async (config) => {
-      if (config.method === "post") bodies.push(JSON.parse(config.data as string));
-      const data = config.method === "post" ? started.data : { success: true, status: "completed", completed: 1, total: 1, data: [] };
-      return { data, status: 200, statusText: "OK", headers: {}, config };
-    }) as AxiosAdapter;
+    const { client } = makeClient((req) => {
+      if (req.method === "post") bodies.push(req.body);
+      return req.method === "post" ? started : { data: { success: true, status: "completed", completed: 1, total: 1, data: [] } };
+    });
 
     const job = await client.crawl("https://example.com", { limit: 1, signal: controller.signal });
     expect(job.status).toBe("completed");
@@ -175,7 +145,7 @@ describe("v2 waitForCrawlCompletion with an AbortSignal", () => {
   test("stops polling and rejects without cancelling the job", async () => {
     const http = new HttpClient({ apiKey: "fc-test", apiUrl: API_URL });
     const controller = new AbortController();
-    const sent = withAdapter((http as any).instance, () => {
+    const sent = mockFetch(() => {
       setTimeout(() => controller.abort(), 10);
       return running;
     });

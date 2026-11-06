@@ -4,7 +4,7 @@ import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidParseOptions } from "../utils/validation";
 import {
   throwForBadResponse,
-  normalizeAxiosError,
+  normalizeHttpError,
 } from "../utils/errorHandler";
 
 function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
@@ -86,7 +86,7 @@ export async function parse(
     }
     return { ...res.data.data, ...agentHintMetadata(res.data) };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "parse");
+    if (err?.isHttpError) return normalizeHttpError(err, "parse");
     throw err;
   }
 }
@@ -97,7 +97,7 @@ export async function getParseFormats(http: HttpClient): Promise<ParseFormatInfo
     if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get parse formats");
     return res.data.data?.formats ?? [];
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get parse formats");
+    if (err?.isHttpError) return normalizeHttpError(err, "get parse formats");
     throw err;
   }
 }

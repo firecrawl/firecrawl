@@ -27,7 +27,7 @@ export async function fetchAllPages<T = Document>(
       const res = await http.get<{ success: boolean; next?: string | null; data?: T[] | { pages?: T[]; next?: string | null } }>(current);
       payload = res.data;
     } catch {
-      break; // axios rejects on non-2xx; stop pagination gracefully
+      break; // the client rejects on non-2xx; stop pagination gracefully
     }
     if (!payload?.success) break;
 

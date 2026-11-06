@@ -1,23 +1,16 @@
 import { afterEach, beforeEach, describe, test, expect } from "vitest";
-import type { AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
 import { Firecrawl } from "../../../index";
 import { getVersion } from "../../../v2/utils/getVersion";
 import { detectCallerPackage } from "../../../utils/callerOrigin";
+import { mockFetch } from "../helpers/mockFetch";
 
 function withCapture<T extends { http: any }>(client: T) {
   const bodies: Array<Record<string, unknown>> = [];
-  const adapter: AxiosAdapter = async config => {
-    bodies.push(JSON.parse(config.data));
-    return {
-      data: { success: true, data: { markdown: "# hello" } },
-      status: 200,
-      statusText: "OK",
-      headers: {},
-      config,
-    };
-  };
-  client.http.instance.defaults.adapter = adapter;
+  mockFetch(req => {
+    bodies.push(req.body);
+    return { data: { success: true, data: { markdown: "# hello" } } };
+  });
   return { client, bodies };
 }
 

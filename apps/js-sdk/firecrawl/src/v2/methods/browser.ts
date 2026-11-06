@@ -6,7 +6,7 @@ import type {
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
 } from "../utils/errorHandler";
 
@@ -43,8 +43,8 @@ export async function browser(
     if (res.status !== 200) throwForBadResponse(res, "create browser session");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "create browser session");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "create browser session");
     throw err;
   }
 }
@@ -73,8 +73,8 @@ export async function browserExecute(
     if (res.status !== 200) throwForBadResponse(res, "execute browser code");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "execute browser code");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "execute browser code");
     throw err;
   }
 }
@@ -90,8 +90,8 @@ export async function deleteBrowser(
     if (res.status !== 200) throwForBadResponse(res, "delete browser session");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "delete browser session");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "delete browser session");
     throw err;
   }
 }
@@ -110,8 +110,8 @@ export async function listBrowsers(
     if (res.status !== 200) throwForBadResponse(res, "list browser sessions");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError)
-      return normalizeAxiosError(err, "list browser sessions");
+    if (err?.isHttpError)
+      return normalizeHttpError(err, "list browser sessions");
     throw err;
   }
 }

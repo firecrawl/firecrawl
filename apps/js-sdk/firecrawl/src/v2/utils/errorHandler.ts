@@ -1,4 +1,4 @@
-import { type AxiosError, type AxiosResponse } from "axios";
+import type { HttpError, HttpResponse } from "../../utils/httpRequest";
 import { SdkError, JobTimeoutError, parseRequiresAction } from "../types";
 import { agentHintMetadata } from "./agentHints";
 
@@ -23,7 +23,7 @@ function withIssues(message: unknown, details: unknown): string {
   return issues && !text.includes(issues) ? `${text} (${issues})` : text;
 }
 
-export function throwForBadResponse(resp: AxiosResponse, action: string): never {
+export function throwForBadResponse(resp: HttpResponse, action: string): never {
   const status = resp.status;
   const body = resp.data || {};
   const msg = body?.error || body?.message || `Request failed (${status}) while trying to ${action}`;
@@ -38,7 +38,7 @@ export function throwForBadResponse(resp: AxiosResponse, action: string): never 
   ), agentHintMetadata(body));
 }
 
-export function normalizeAxiosError(err: AxiosError, action: string): never {
+export function normalizeHttpError(err: HttpError, action: string): never {
   const status = err.response?.status;
   const body: any = err.response?.data;
   const message = body?.error || err.message || `Request failed${status ? ` (${status})` : ""} while trying to ${action}`;
@@ -74,7 +74,7 @@ export function isRetryableError(err: any): boolean {
   }
   
   // Network errors (no response) are retryable
-  if (err?.isAxiosError && !err.response) {
+  if (err?.isHttpError && !err.response) {
     return true;
   }
   

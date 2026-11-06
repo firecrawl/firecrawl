@@ -11,7 +11,7 @@ import {
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureNoV1Options, ensureValidScrapeOptions } from "../utils/validation";
-import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
+import { normalizeHttpError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
 import type { HttpClient as _Http } from "../utils/httpClient";
 import { fetchAllPages } from "../utils/pagination";
 
@@ -58,7 +58,7 @@ export async function startCrawl(http: HttpClient, request: CrawlRequest): Promi
     }
     return { id: res.data.id, url: res.data.url };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "start crawl");
+    if (err?.isHttpError) return normalizeHttpError(err, "start crawl");
     throw err;
   }
 }
@@ -103,7 +103,7 @@ export async function getCrawlStatus(
       data: aggregated,
     };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get crawl status");
+    if (err?.isHttpError) return normalizeHttpError(err, "get crawl status");
     throw err;
   }
 }
@@ -119,9 +119,9 @@ export async function cancelCrawl(http: HttpClient, jobId: string): Promise<bool
     if (res.status !== 200) throwForBadResponse(res, "cancel crawl");
     return res.data?.status === "cancelled";
   } catch (err: any) {
-    if (err?.isAxiosError) {
+    if (err?.isHttpError) {
       if (err.response?.status === 409) return false;
-      return normalizeAxiosError(err, "cancel crawl");
+      return normalizeHttpError(err, "cancel crawl");
     }
     throw err;
   }
@@ -252,7 +252,7 @@ export async function getCrawlErrors(http: HttpClient, crawlId: string): Promise
     const payload = res.data?.data ?? (res.data as any);
     return { errors: payload.errors || [], robotsBlocked: payload.robotsBlocked || [] };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get crawl errors");
+    if (err?.isHttpError) return normalizeHttpError(err, "get crawl errors");
     throw err;
   }
 }
@@ -265,7 +265,7 @@ export async function getActiveCrawls(http: HttpClient): Promise<ActiveCrawlsRes
     const crawls = crawlsIn.map((c) => ({ id: c.id, teamId: (c as any).teamId ?? (c as any).team_id, url: c.url, options: c.options ?? null }));
     return { success: true, crawls };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get active crawls");
+    if (err?.isHttpError) return normalizeHttpError(err, "get active crawls");
     throw err;
   }
 }
@@ -280,7 +280,7 @@ export async function crawlParamsPreview(http: HttpClient, url: string, prompt: 
     if (res.data.warning) (data as any).warning = res.data.warning;
     return data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "crawl params preview");
+    if (err?.isHttpError) return normalizeHttpError(err, "crawl params preview");
     throw err;
   }
 }

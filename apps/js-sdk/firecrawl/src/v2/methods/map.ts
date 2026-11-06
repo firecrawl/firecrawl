@@ -3,7 +3,7 @@ import { HttpClient } from "../utils/httpClient";
 import { agentHintMetadata } from "../utils/agentHints";
 import {
   throwForBadResponse,
-  normalizeAxiosError,
+  normalizeHttpError,
 } from "../utils/errorHandler";
 
 function prepareMapPayload(
@@ -68,7 +68,7 @@ export async function map(
     }
     return { id: res.data.id, links, ...agentHintMetadata(res.data) };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "map");
+    if (err?.isHttpError) return normalizeHttpError(err, "map");
     throw err;
   }
 }

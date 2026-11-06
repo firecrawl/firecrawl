@@ -1,28 +1,16 @@
 import { describe, test, expect } from "vitest";
-import axios, { type AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
+import { mockFetch } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 
 function makeClient(apiKey: string) {
   const client = new FirecrawlClient({ apiKey, apiUrl: API_URL });
   const sent: Array<{ method?: string; url: string; authorization: unknown; body: unknown }> = [];
-  const adapter: AxiosAdapter = async config => {
-    sent.push({
-      method: config.method,
-      url: axios.getUri(config),
-      authorization: config.headers.Authorization,
-      body: JSON.parse(config.data),
-    });
-    return {
-      data: { success: true, data: { markdown: "# hello" } },
-      status: 200,
-      statusText: "OK",
-      headers: {},
-      config,
-    };
-  };
-  (client as any).http.instance.defaults.adapter = adapter;
+  mockFetch(req => {
+    sent.push({ method: req.method, url: req.url, authorization: req.headers.authorization, body: req.body });
+    return { data: { success: true, data: { markdown: "# hello" } } };
+  });
   return { client, sent };
 }
 

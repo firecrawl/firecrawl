@@ -79,7 +79,7 @@ describe("developerSearch", () => {
     const http = {
       post: vi.fn(async () => {
         throw {
-          isAxiosError: true,
+          isHttpError: true,
           code: "ECONNABORTED",
           message: "request timed out",
         };

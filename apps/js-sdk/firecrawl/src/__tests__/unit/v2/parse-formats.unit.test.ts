@@ -1,23 +1,14 @@
 import { describe, test, expect } from "vitest";
-import axios, { type AxiosAdapter } from "axios";
 import { Firecrawl } from "../../../index";
 import { SdkError } from "../../../v2/types";
+import { mockFetch } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 const API_KEY = "fc-test";
 
 function makeClient(status: number, data: unknown) {
   const client = new Firecrawl({ apiKey: API_KEY, apiUrl: API_URL });
-  const sent: Array<{ url: string; method?: string; authorization: unknown }> = [];
-  const adapter: AxiosAdapter = async config => {
-    sent.push({ url: axios.getUri(config), method: config.method, authorization: config.headers.Authorization });
-    const response = { data, status, statusText: "", headers: {}, config };
-    if (status >= 400) {
-      throw new axios.AxiosError(`Request failed with status code ${status}`, "ERR_BAD_RESPONSE", config, null, response);
-    }
-    return response;
-  };
-  (client as any).http.instance.defaults.adapter = adapter;
+  const sent = mockFetch(() => ({ status, data }));
   return { client, sent };
 }
 
@@ -35,7 +26,9 @@ describe("v2.getParseFormats unit", () => {
 
     const formats = await client.getParseFormats();
 
-    expect(sent).toEqual([{ url: `${API_URL}/v2/parse/formats`, method: "get", authorization: `Bearer ${API_KEY}` }]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ url: `${API_URL}/v2/parse/formats`, method: "get" });
+    expect(sent[0]!.headers.authorization).toBe(`Bearer ${API_KEY}`);
     expect(formats).toHaveLength(2);
     expect(formats[0]).toEqual({ format: "pdf", kind: "document", extensions: [".pdf"], mimeTypes: ["application/pdf"], available: true });
     expect(formats[1]!.kind).toBe("image");

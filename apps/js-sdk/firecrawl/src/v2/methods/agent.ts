@@ -1,6 +1,6 @@
 import { type AgentEffort, type AgentExchangeOptions, type AgentListOptions, type AgentListResponse, type AgentMode, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentThreadResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
+import { normalizeHttpError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
 import type { ZodTypeAny } from "zod";
 
@@ -60,7 +60,7 @@ export async function startAgent(http: HttpClient, args: Parameters<typeof prepa
     if (res.status !== 200) throwForBadResponse(res, "agent");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "agent");
+    if (err?.isHttpError) return normalizeHttpError(err, "agent");
     throw err;
   }
 }
@@ -71,7 +71,7 @@ export async function getAgentStatus(http: HttpClient, jobId: string): Promise<A
     if (res.status !== 200) throwForBadResponse(res, "agent status");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "agent status");
+    if (err?.isHttpError) return normalizeHttpError(err, "agent status");
     throw err;
   }
 }
@@ -83,7 +83,7 @@ export async function listAgents(http: HttpClient, options?: AgentListOptions): 
     if (res.status !== 200) throwForBadResponse(res, "list agents");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "list agents");
+    if (err?.isHttpError) return normalizeHttpError(err, "list agents");
     throw err;
   }
 }
@@ -124,7 +124,7 @@ export async function getAgentTrace(
     if (res.status !== 200) throwForBadResponse(res, "agent trace");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "agent trace");
+    if (err?.isHttpError) return normalizeHttpError(err, "agent trace");
     throw err;
   }
 }
@@ -139,7 +139,7 @@ export async function getAgentSnapshot(
     if (res.status !== 200) throwForBadResponse(res, "agent snapshot");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "agent snapshot");
+    if (err?.isHttpError) return normalizeHttpError(err, "agent snapshot");
     throw err;
   }
 }
@@ -155,7 +155,7 @@ export async function getAgentThread(
     if (res.status !== 200) throwForBadResponse(res, "agent thread");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "agent thread");
+    if (err?.isHttpError) return normalizeHttpError(err, "agent thread");
     throw err;
   }
 }
@@ -166,7 +166,7 @@ export async function cancelAgent(http: HttpClient, jobId: string): Promise<bool
     if (res.status !== 200) throwForBadResponse(res, "cancel agent");
     return res.data?.success === true;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "cancel agent");
+    if (err?.isHttpError) return normalizeHttpError(err, "cancel agent");
     throw err;
   }
 }

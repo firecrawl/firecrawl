@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
-import axios, { type AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
 import { pinToApiOrigin } from "../../../utils/apiOrigin";
+import { mockFetch } from "../helpers/mockFetch";
 
 const API_URL = "https://api.firecrawl.dev";
 const API_KEY = "fc-test";
@@ -18,13 +18,10 @@ const origins: Array<[string, string]> = [
 function makeClient(firstPage: (next: string) => unknown, lastPage: unknown, next: string) {
   const client = new FirecrawlClient({ apiKey: API_KEY, apiUrl: API_URL });
   const sent: Array<{ url: string; authorization: unknown }> = [];
-  const adapter: AxiosAdapter = async config => {
-    const url = axios.getUri(config);
-    sent.push({ url, authorization: config.headers.Authorization });
-    const data = new URL(url).searchParams.has("skip") ? lastPage : firstPage(next);
-    return { data, status: 200, statusText: "OK", headers: {}, config };
-  };
-  (client as any).http.instance.defaults.adapter = adapter;
+  mockFetch(req => {
+    sent.push({ url: req.url, authorization: req.headers.authorization });
+    return { data: new URL(req.url).searchParams.has("skip") ? lastPage : firstPage(next) };
+  });
   return { client, sent };
 }
 

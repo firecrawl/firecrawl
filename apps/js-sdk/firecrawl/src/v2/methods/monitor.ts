@@ -12,7 +12,7 @@ import {
 import { HttpClient } from "../utils/httpClient";
 import {
   throwForBadResponse,
-  normalizeAxiosError,
+  normalizeHttpError,
 } from "../utils/errorHandler";
 import { fetchAllPages } from "../utils/pagination";
 
@@ -48,7 +48,7 @@ export async function createMonitor(
     const res = await http.post<ApiResponse<Monitor>>("/v2/monitor", request as any);
     return dataOrThrow(res, "create monitor");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "create monitor");
+    if (err?.isHttpError) return normalizeHttpError(err, "create monitor");
     throw err;
   }
 }
@@ -63,7 +63,7 @@ export async function listMonitors(
     );
     return dataOrThrow(res, "list monitors");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "list monitors");
+    if (err?.isHttpError) return normalizeHttpError(err, "list monitors");
     throw err;
   }
 }
@@ -76,7 +76,7 @@ export async function getMonitor(
     const res = await http.get<ApiResponse<Monitor>>(`/v2/monitor/${monitorId}`);
     return dataOrThrow(res, "get monitor");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get monitor");
+    if (err?.isHttpError) return normalizeHttpError(err, "get monitor");
     throw err;
   }
 }
@@ -93,7 +93,7 @@ export async function updateMonitor(
     );
     return dataOrThrow(res, "update monitor");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "update monitor");
+    if (err?.isHttpError) return normalizeHttpError(err, "update monitor");
     throw err;
   }
 }
@@ -109,7 +109,7 @@ export async function deleteMonitor(
     }
     return true;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "delete monitor");
+    if (err?.isHttpError) return normalizeHttpError(err, "delete monitor");
     throw err;
   }
 }
@@ -125,7 +125,7 @@ export async function runMonitor(
     );
     return dataOrThrow(res, "run monitor");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "run monitor");
+    if (err?.isHttpError) return normalizeHttpError(err, "run monitor");
     throw err;
   }
 }
@@ -141,7 +141,7 @@ export async function listMonitorChecks(
     );
     return dataOrThrow(res, "list monitor checks");
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "list monitor checks");
+    if (err?.isHttpError) return normalizeHttpError(err, "list monitor checks");
     throw err;
   }
 }
@@ -175,7 +175,7 @@ export async function getMonitorCheck(
       next: null,
     };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get monitor check");
+    if (err?.isHttpError) return normalizeHttpError(err, "get monitor check");
     throw err;
   }
 }

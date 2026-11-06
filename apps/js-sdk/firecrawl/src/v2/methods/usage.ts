@@ -1,6 +1,6 @@
 import type { ConcurrencyCheck, CreditUsage, QueueStatusResponse, TokenUsage, CreditUsageHistoricalResponse, TokenUsageHistoricalResponse } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
+import { normalizeHttpError, throwForBadResponse } from "../utils/errorHandler";
 
 export async function getConcurrency(http: HttpClient): Promise<ConcurrencyCheck> {
   try {
@@ -9,7 +9,7 @@ export async function getConcurrency(http: HttpClient): Promise<ConcurrencyCheck
     const d = res.data.data || (res.data as any);
     return { concurrency: d.concurrency, maxConcurrency: d.maxConcurrency ?? d.max_concurrency };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get concurrency");
+    if (err?.isHttpError) return normalizeHttpError(err, "get concurrency");
     throw err;
   }
 }
@@ -26,7 +26,7 @@ export async function getCreditUsage(http: HttpClient): Promise<CreditUsage> {
       billingPeriodEnd: d.billingPeriodEnd ?? d.billing_period_end ?? null,
     };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get credit usage");
+    if (err?.isHttpError) return normalizeHttpError(err, "get credit usage");
     throw err;
   }
 }
@@ -43,7 +43,7 @@ export async function getTokenUsage(http: HttpClient): Promise<TokenUsage> {
       billingPeriodEnd: d.billingPeriodEnd ?? d.billing_period_end ?? null,
     };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get token usage");
+    if (err?.isHttpError) return normalizeHttpError(err, "get token usage");
     throw err;
   }
 }
@@ -54,7 +54,7 @@ export async function getQueueStatus(http: HttpClient): Promise<QueueStatusRespo
     if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get queue status");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get queue status");
+    if (err?.isHttpError) return normalizeHttpError(err, "get queue status");
     throw err;
   }
 }
@@ -66,7 +66,7 @@ export async function getCreditUsageHistorical(http: HttpClient, byApiKey?: bool
     if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get credit usage historical");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get credit usage historical");
+    if (err?.isHttpError) return normalizeHttpError(err, "get credit usage historical");
     throw err;
   }
 }
@@ -78,7 +78,7 @@ export async function getTokenUsageHistorical(http: HttpClient, byApiKey?: boole
     if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get token usage historical");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get token usage historical");
+    if (err?.isHttpError) return normalizeHttpError(err, "get token usage historical");
     throw err;
   }
 }

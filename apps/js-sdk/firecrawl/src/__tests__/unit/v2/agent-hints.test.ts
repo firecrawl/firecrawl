@@ -4,7 +4,7 @@ import { scrape } from "../../../v2/methods/scrape";
 import { parse } from "../../../v2/methods/parse";
 import { map } from "../../../v2/methods/map";
 import {
-  normalizeAxiosError,
+  normalizeHttpError,
   throwForBadResponse,
 } from "../../../v2/utils/errorHandler";
 
@@ -87,7 +87,7 @@ describe("agent hints survive SDK response unwrapping", () => {
     },
   );
 
-  it("preserves hints on HTTP and Axios errors without changing their status", () => {
+  it("preserves hints on HTTP errors without changing their status", () => {
     const response = {
       status: 400,
       data: {
@@ -100,7 +100,7 @@ describe("agent hints survive SDK response unwrapping", () => {
     for (const raise of [
       () => throwForBadResponse(response, "search"),
       () =>
-        normalizeAxiosError({ response, isAxiosError: true } as any, "search"),
+        normalizeHttpError({ response, isHttpError: true } as any, "search"),
     ]) {
       try {
         raise();
