@@ -10,8 +10,8 @@ interface Deprecation {
   replacement?: string;
   // RFC 9745 requires a Date here, e.g. "@1788393600".
   deprecatedAt: string;
-  // RFC 8594 HTTP-date. From then on deprecationMiddleware answers 410, except
-  // for a team whose deprecationExtensions flag runs later.
+  // RFC 8594 IMF-fixdate. From then on deprecationMiddleware answers 410,
+  // except for a team whose deprecationExtensions flag runs later.
   sunset?: string;
   docs?: string;
   // Key of the team extension flag, shared by every entry of one surface.
@@ -158,8 +158,23 @@ function setDeprecationHeaders(res: Response, dep: Deprecation) {
 }
 
 /**
+ * The instant a sunset takes effect, Infinity without one. Throws unless the
+ * value is an exact IMF-fixdate, e.g. "Tue, 03 Nov 2026 23:59:59 GMT".
+ */
+export function sunsetInstant(key: string, sunset: string | undefined): number {
+  if (sunset === undefined) return Infinity;
+  const at = Date.parse(sunset);
+  if (Number.isNaN(at) || new Date(at).toUTCString() !== sunset) {
+    throw new Error(`Deprecation ${key} has an unreadable sunset: ${sunset}`);
+  }
+  return at;
+}
+
+const EXTENSION_UNTIL = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/;
+
+/**
  * Whether a team's deprecationExtensions flag keeps a sunset route working for
- * it now. The flag maps a surface (or an entry key) to an ISO 8601 instant.
+ * it now. Anything but an exact YYYY-MM-DD or UTC timestamp counts as none.
  */
 export function hasSunsetExtension(
   key: string,
@@ -168,17 +183,22 @@ export function hasSunsetExtension(
   now = Date.now(),
 ): boolean {
   const until = flags?.deprecationExtensions?.[dep.surface ?? key];
-  return until !== undefined && now < Date.parse(until);
+  if (typeof until !== "string" || !EXTENSION_UNTIL.test(until)) return false;
+  const at = Date.parse(until);
+  return (
+    !Number.isNaN(at) &&
+    new Date(at).toISOString().startsWith(until.replace(/Z$/, "")) &&
+    now < at
+  );
 }
 
+/**
+ * Mount after authMiddleware where the route has one: past sunset it reads the
+ * team's extension from req.acuc, so keyless callers still get 401 first.
+ */
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
-  const sunsetAt = dep.sunset === undefined ? Infinity : Date.parse(dep.sunset);
-  if (Number.isNaN(sunsetAt)) {
-    throw new Error(
-      `Deprecation ${key} has an unreadable sunset: ${dep.sunset}`,
-    );
-  }
+  const sunsetAt = sunsetInstant(key, dep.sunset);
 
   const annotate = (res: Response) => {
     setDeprecationHeaders(res, dep);

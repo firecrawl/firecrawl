@@ -10,6 +10,7 @@ vi.mock("../../controllers/auth", () => ({
 import {
   deprecationMiddleware,
   hasSunsetExtension,
+  sunsetInstant,
 } from "../../lib/deprecations";
 
 // The only entry with a sunset today: Tue, 03 Nov 2026 23:59:59 GMT.
@@ -47,6 +48,28 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("sunsetInstant", () => {
+  it("reads an exact IMF-fixdate", () => {
+    expect(sunsetInstant("k", "Tue, 03 Nov 2026 23:59:59 GMT")).toBe(
+      Date.parse("2026-11-03T23:59:59Z"),
+    );
+  });
+
+  it("is never reached without a sunset", () => {
+    expect(sunsetInstant("k", undefined)).toBe(Infinity);
+  });
+
+  it.each([
+    "Tue, 31 Nov 2026 23:59:59 GMT",
+    "Mon, 03 Nov 2026 23:59:59 GMT",
+    "3 Nov 2026",
+    "2026-11-03",
+    "soon",
+  ])("refuses %s", sunset => {
+    expect(() => sunsetInstant("k", sunset)).toThrow(/unreadable sunset/);
+  });
 });
 
 describe("hasSunsetExtension", () => {
@@ -95,15 +118,29 @@ describe("hasSunsetExtension", () => {
     );
   });
 
-  it("treats a missing or unreadable date as no extension", () => {
+  it("treats a missing or non-string flag as no extension", () => {
     expect(hasSunsetExtension("v0_scrape", { surface: "v0" }, null, now)).toBe(
       false,
     );
+    const numeric = { deprecationExtensions: { v0: 20270131 } } as any;
+    expect(
+      hasSunsetExtension("v0_scrape", { surface: "v0" }, numeric, now),
+    ).toBe(false);
+  });
+
+  it.each([
+    "next spring",
+    "2027/01/31",
+    "2027-02-30",
+    "2027",
+    "2027-01-31T12:00:00+02:00",
+    "2027-01-31T25:00:00Z",
+  ])("treats %s as no extension", until => {
     expect(
       hasSunsetExtension(
         "v0_scrape",
         { surface: "v0" },
-        extendedUntil("next spring", "v0"),
+        extendedUntil(until, "v0"),
         now,
       ),
     ).toBe(false);
@@ -172,6 +209,14 @@ describe("deprecationMiddleware sunset gate", () => {
     const unknown = await request(appFor(SUNSET_KEY)).get("/probe");
 
     expect(unknown.status).toBe(410);
+  });
+
+  it("passes a failed lookup on as an error, not a 410", async () => {
+    vi.setSystemTime(AFTER_SUNSET);
+    mocks.getApiKeyTeamFlags.mockRejectedValueOnce(new Error("lookup down"));
+    const res = await request(appFor(SUNSET_KEY)).get("/probe");
+
+    expect(res.status).toBe(500);
   });
 
   it("never looks anything up for an entry without a sunset", async () => {
