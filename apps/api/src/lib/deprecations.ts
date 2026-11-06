@@ -60,22 +60,38 @@ const DEPRECATIONS = {
     sunset: "Tue, 03 Nov 2026 23:59:59 GMT",
   },
   v1_deep_research: {
-    message: "/v1/deep-research is deprecated. Use /v2/search instead.",
-    replacement: "/v2/search",
+    message:
+      "/v1/deep-research is deprecated. Use /v2/agent instead, or /v2/search with scrapeOptions to run your own research loop.",
+    replacement: "/v2/agent",
+    docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "deep_research",
   },
   v1_deep_research_status: {
-    message: "/v1/deep-research/:jobId is deprecated. Use /v2/search instead.",
-    replacement: "/v2/search",
+    message:
+      "/v1/deep-research/:jobId is deprecated. Use /v2/agent instead, and read results from /v2/agent/:jobId.",
+    replacement: "/v2/agent/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "deep_research",
   },
   v1_llmstxt: {
-    message: "/v1/llmstxt is deprecated and will not be replaced.",
+    message:
+      "/v1/llmstxt is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
+    docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "llmstxt",
   },
   v1_llmstxt_status: {
-    message: "/v1/llmstxt/:jobId is deprecated and will not be replaced.",
+    message:
+      "/v1/llmstxt/:jobId is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
+    docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "llmstxt",
   },
   v0_scrape: {
     message: "/v0/scrape is deprecated. Use /v2/scrape instead.",
