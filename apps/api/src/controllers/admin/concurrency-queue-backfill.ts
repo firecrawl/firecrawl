@@ -1,6 +1,6 @@
-import { logger as _logger } from "../../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 import { Request, Response } from "express";
-import { reconcileConcurrencyQueue } from "../../../lib/concurrency-queue-reconciler";
+import { reconcileConcurrencyQueue } from "../../lib/concurrency-queue-reconciler";
 
 export async function concurrencyQueueBackfillController(
   req: Request,

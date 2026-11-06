@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { clearIpRestrictionCache } from "../../../lib/ip-restriction";
-import { logger } from "../../../lib/logger";
+import { clearIpRestrictionCache } from "../../lib/ip-restriction";
+import { logger } from "../../lib/logger";
 
 // Called by the dashboard after it writes ip_restriction_config so allowlist
 // edits take effect immediately instead of after the 60s cache TTL.

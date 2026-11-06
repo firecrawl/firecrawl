@@ -1,5 +1,5 @@
-import { logger } from "../../../lib/logger";
-import { config } from "../../../config";
+import { logger } from "../../lib/logger";
+import { config } from "../../config";
 import { Request, Response } from "express";
 
 export async function checkFireEngine(req: Request, res: Response) {
