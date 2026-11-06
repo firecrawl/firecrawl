@@ -2,9 +2,9 @@ import express from "express";
 import request from "supertest";
 import { deprecationMiddleware } from "../../lib/deprecations";
 
-// Every pre-existing deprecation entry and its replacement. Pinned so the
-// github entry cannot change anyone else's wire output. All 13 shipped in
-// #3469 on 2026-05-06, which is the date they now emit.
+// Pre-existing deprecation entries and their replacements. Pinned so the
+// github entry cannot change anyone else's wire output. All shipped in #3469
+// on 2026-05-06, which is the date they now emit.
 const LEGACY_DEPRECATED_AT = "@1778025600";
 
 const EXISTING = {
@@ -12,10 +12,6 @@ const EXISTING = {
   v1_extract_status: "/v2/scrape",
   v2_extract: "/v2/scrape",
   v2_extract_status: "/v2/scrape",
-  v1_deep_research: "/v2/search",
-  v1_deep_research_status: "/v2/search",
-  v1_llmstxt: undefined,
-  v1_llmstxt_status: undefined,
   v0_scrape: "/v2/scrape",
   v0_crawl: "/v2/crawl",
   v0_crawl_status: "/v2/crawl/:jobId",
@@ -94,4 +90,44 @@ describe("pre-existing deprecated routes are unchanged", () => {
     const str = await request(appFor("v0_search", "hello")).get("/probe");
     expect(str.text).toBe('"hello"');
   });
+});
+
+describe("deep-research and llmstxt entries", () => {
+  const CASES = {
+    v1_deep_research: {
+      replacement: "/v2/agent",
+      docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
+    },
+    v1_deep_research_status: {
+      replacement: "/v2/agent/:jobId",
+      docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
+    },
+    v1_llmstxt: {
+      replacement: undefined,
+      docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
+    },
+    v1_llmstxt_status: {
+      replacement: undefined,
+      docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
+    },
+  } as const;
+
+  for (const key of Object.keys(CASES) as (keyof typeof CASES)[]) {
+    const { replacement, docs } = CASES[key];
+
+    it(`${key} links its migration guide and replacement`, async () => {
+      const app = express();
+      app.get("/probe", deprecationMiddleware(key), (_req, res) => {
+        res.status(200).json({ success: true });
+      });
+      const res = await request(app).get("/probe");
+
+      expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
+      expect(res.headers["sunset"]).toBeUndefined();
+      const links = [`<${docs}>; rel="deprecation"`];
+      if (replacement) links.push(`<${replacement}>; rel="successor-version"`);
+      expect(res.headers["link"]).toBe(links.join(", "));
+      expect(res.body.replacement).toBe(replacement);
+    });
+  }
 });
