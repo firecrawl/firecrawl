@@ -326,6 +326,14 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+// Provider and tool reliability for Alexandria's public pages: Exchange's totals across every
+// caller, the same answer for everyone. A catalogue read; it runs no tool.
+exchangeRouter.get(
+  "/reputation",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/provider-terms/accept",
   authMiddleware(RateLimiterMode.Labs),
