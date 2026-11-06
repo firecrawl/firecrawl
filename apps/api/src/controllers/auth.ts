@@ -235,9 +235,7 @@ async function getACUC(
   if (requiresPrimaryRead) useCache = false;
 
   let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   if (timingSafeSecretEqual(api_key, config.PREVIEW_TOKEN)) {
     const acuc = mockPreviewACUC(api_key, isExtract);
@@ -408,9 +406,7 @@ export async function getACUCTeam(
   mode?: RateLimiterMode,
 ): Promise<AuthCreditUsageChunkFromTeam | null> {
   let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   if (team_id.startsWith("preview")) {
     const acuc = mockPreviewACUC(team_id, isExtract);
@@ -861,9 +857,7 @@ export async function authenticateUser(
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   return withAuth(supaAuthenticateUser, {
     success: true,

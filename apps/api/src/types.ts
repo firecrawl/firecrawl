@@ -122,7 +122,6 @@ export enum RateLimiterMode {
   Map = "map",
   Extract = "extract",
   ExtractStatus = "extractStatus",
-  ExtractAgentPreview = "extractAgentPreview",
   Browser = "browser",
   BrowserExecute = "browserExecute",
   BrowserReplay = "browserReplay",

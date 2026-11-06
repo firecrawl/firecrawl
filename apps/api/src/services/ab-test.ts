@@ -23,9 +23,7 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
       !webScraperOptions.internalOptions?.zeroDataRetention &&
       abRate > 0 &&
       Math.random() <= abRate &&
-      config.SCRAPEURL_AB_HOST &&
-      webScraperOptions.internalOptions?.v1Agent === undefined &&
-      webScraperOptions.internalOptions?.v1JSONAgent === undefined;
+      config.SCRAPEURL_AB_HOST;
 
     if (shouldABTest) {
       const timeout = Math.min(
