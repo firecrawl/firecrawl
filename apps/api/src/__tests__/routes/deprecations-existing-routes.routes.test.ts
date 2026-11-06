@@ -6,6 +6,7 @@ import { deprecationMiddleware } from "../../lib/deprecations";
 // github entry cannot change anyone else's wire output. All 13 shipped in
 // #3469 on 2026-05-06, which is the date they now emit.
 const LEGACY_DEPRECATED_AT = "@1778025600";
+const EXTRACT_SUNSET = "Thu, 10 Dec 2026 15:00:00 GMT";
 
 const EXISTING = {
   v1_extract: "/v2/scrape",
@@ -51,18 +52,32 @@ const BODIES: Record<string, unknown> = {
   "warnings first": { warnings: [], success: true },
 };
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-12-01T00:00:00Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("pre-existing deprecated routes are unchanged", () => {
   for (const key of Object.keys(EXISTING) as Key[]) {
     describe(key, () => {
-      it("emits the shared 2026-05-06 Deprecation date and no Sunset", async () => {
+      it("emits the shared 2026-05-06 Deprecation date and only extract's Sunset", async () => {
         const res = await request(appFor(key, BODIES.plain)).get("/probe");
 
         expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
-        expect(res.headers["sunset"]).toBeUndefined();
+        expect(res.headers["sunset"]).toBe(
+          key.includes("extract") ? EXTRACT_SUNSET : undefined,
+        );
         expect(res.headers["warning"]).toMatch(/^299 - "/);
         if (EXISTING[key]) {
+          const docsLink = key.includes("extract")
+            ? `<https://docs.firecrawl.dev/migrating-from-extract>; rel="deprecation", `
+            : "";
           expect(res.headers["link"]).toBe(
-            `<${EXISTING[key]}>; rel="successor-version"`,
+            `${docsLink}<${EXISTING[key]}>; rel="successor-version"`,
           );
         } else {
           expect(res.headers["link"]).toBeUndefined();
