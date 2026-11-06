@@ -439,7 +439,7 @@ with open("sitemap.xml", "w", encoding="utf-8") as f:
 
 Here is what the file looks like after saving:
 
-![XML sitemap example showing structured website data with URLs, last modified dates, change frequencies and priorities, generated using Firecrawl](notebook_files/image.png)
+![XML sitemap example showing structured website data with URLs, last modified dates, change frequencies and priorities, generated using Firecrawl](notebook_files/image-2.png)
 
 Such `sitemap.xml` file provides a standardized way for search engines to discover and crawl all pages on your website.
 
@@ -449,7 +449,7 @@ If you want a visual sitemap of a website, you don't have to sign up for expensi
 
 The resulting graph would like the following:
 
-![Interactive Sankey diagram visualization showing hierarchical structure of Stripe documentation with color-coded sections and flow widths representing page counts, generated using Firecrawl's /map endpoint](images/stripe_docs.png)
+*Interactive Sankey diagram visualization showing hierarchical structure of Stripe documentation with color-coded sections and flow widths representing page counts, generated using Firecrawl's /map endpoint*
 
 The Sankey diagram above visualizes the hierarchical structure of [the Stripe documentation](docs.stripe.org) (which is quite large) by showing how pages are organized and connected across different sections. The width of each flow represents the number of pages in that section, making it easy to identify which parts of the website contain the most content. The colors help distinguish between different sections and their subsections.
 
@@ -467,7 +467,7 @@ The script automatically handles things like grouping smaller sections together,
 
 Here is another plot generated for the [PyData.org](https://pydata.org) website:
 
-![Interactive Sankey diagram showing hierarchical website structure of PyData.org with color-coded sections, flow visualization and navigation paths for improved site architecture understanding, generated using Firecrawl's map endpoint and Plotly](images/pydata.png)
+*Interactive Sankey diagram showing hierarchical website structure of PyData.org with color-coded sections, flow visualization and navigation paths for improved site architecture understanding, generated using Firecrawl's map endpoint and Plotly*
 
 ## Conclusion
 
