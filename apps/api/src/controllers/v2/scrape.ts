@@ -684,6 +684,7 @@ export async function scrapeController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
+            id: jobId,
           });
         }
       } finally {
