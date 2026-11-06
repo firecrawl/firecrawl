@@ -26,6 +26,14 @@ export interface Notice {
 }
 
 // Every legacy entry shipped together in #3469, so they share one date.
+// Every v1 route below shares one deprecation date, sunset and extension flag.
+const V1 = {
+  docs: "https://docs.firecrawl.dev/migrate-to-v2",
+  deprecatedAt: "@1793923200",
+  sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+  surface: "v1",
+};
+
 const DEPRECATIONS = {
   v1_extract: {
     message:
@@ -109,186 +117,125 @@ const DEPRECATIONS = {
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
-  // The rest of v1 shares one deprecation date and one sunset.
   v1_scrape: {
     message:
       "/v1/scrape is deprecated. Use /v2/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/scrape",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_scrape_status: {
     message:
       "/v1/scrape/:jobId is deprecated. Use /v2/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/scrape/:jobId",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl: {
     message:
       "/v1/crawl is deprecated. Use /v2/crawl instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl_status: {
     message:
       "/v1/crawl/:jobId is deprecated. Use /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl/:jobId",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl_cancel: {
     message:
       "DELETE /v1/crawl/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl/:jobId",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl_errors: {
     message:
       "/v1/crawl/:jobId/errors is deprecated. Use /v2/crawl/:jobId/errors instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl/:jobId/errors",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl_active: {
     message:
       "/v1/crawl/active is deprecated. Use /v2/crawl/active instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl/active",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_crawl_ongoing: {
     message:
       "/v1/crawl/ongoing is deprecated. Use /v2/crawl/active instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/crawl/active",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_batch_scrape: {
     message:
       "/v1/batch/scrape is deprecated. Use /v2/batch/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/batch/scrape",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_batch_scrape_status: {
     message:
       "/v1/batch/scrape/:jobId is deprecated. Use /v2/batch/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/batch/scrape/:jobId",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_batch_scrape_cancel: {
     message:
       "DELETE /v1/batch/scrape/:jobId is deprecated. Use DELETE /v2/batch/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/batch/scrape/:jobId",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_batch_scrape_errors: {
     message:
       "/v1/batch/scrape/:jobId/errors is deprecated. Use /v2/batch/scrape/:jobId/errors instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/batch/scrape/:jobId/errors",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_search: {
     message:
       "/v1/search is deprecated. Use /v2/search instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/search",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_map: {
     message:
       "/v1/map is deprecated. Use /v2/map instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/map",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_concurrency_check: {
     message:
       "/v1/concurrency-check is deprecated. Use /v2/concurrency-check instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/concurrency-check",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_team_credit_usage: {
     message:
       "/v1/team/credit-usage is deprecated. Use /v2/team/credit-usage instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/team/credit-usage",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_team_credit_usage_historical: {
     message:
       "/v1/team/credit-usage/historical is deprecated. Use /v2/team/credit-usage/historical instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/team/credit-usage/historical",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_team_token_usage: {
     message:
       "/v1/team/token-usage is deprecated. Use /v2/team/token-usage instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/team/token-usage",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_team_token_usage_historical: {
     message:
       "/v1/team/token-usage/historical is deprecated. Use /v2/team/token-usage/historical instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/team/token-usage/historical",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
   v1_team_queue_status: {
     message:
       "/v1/team/queue-status is deprecated. Use /v2/team/queue-status instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/team/queue-status",
-    docs: "https://docs.firecrawl.dev/migrate-to-v2",
-    deprecatedAt: "@1793923200",
-    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
-    surface: "v1",
+    ...V1,
   },
 } as const satisfies Record<string, Deprecation>;
 
