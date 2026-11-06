@@ -44,7 +44,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -511,6 +515,21 @@ export async function getACUCTeam(
   } else {
     return null;
   }
+}
+
+/**
+ * The flags of the team behind a request's plain API key, read without rate
+ * limiting or the other auth checks. Null without a known API key.
+ */
+export async function getApiKeyTeamFlags(req: {
+  headers: { authorization?: string };
+}): Promise<TeamFlags | null> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const normalizedApi = parseApi(token);
+  if (!normalizedApiIsUuid(normalizedApi)) return null;
+  const chunk = await getACUC(normalizedApi);
+  return chunk?.flags ?? null;
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
