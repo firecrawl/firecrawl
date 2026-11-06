@@ -421,8 +421,56 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
-    "rejects actions when fire-engine is not configured",
+  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && HAS_PLAYWRIGHT)(
+    "runs actions and screenshots through playwright",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["markdown", { type: "screenshot", fullPage: true }],
+          actions: [
+            { type: "wait", milliseconds: 500 },
+            { type: "scroll", direction: "down" },
+            { type: "executeJavascript", script: "document.title" },
+            { type: "screenshot" },
+            { type: "scrape" },
+          ],
+        },
+        identity,
+      );
+
+      expect(response.screenshot).toMatch(/^data:image\/png;base64,/);
+      expect(response.actions?.screenshots).toHaveLength(1);
+      expect(response.actions?.screenshots?.[0]).toMatch(
+        /^data:image\/png;base64,/,
+      );
+      expect(response.actions?.javascriptReturns).toEqual([
+        { type: "string", value: response.metadata.title },
+      ]);
+      expect(response.actions?.scrapes?.[0]?.html).toContain("<title>");
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && HAS_PLAYWRIGHT)(
+    "reports a failed action through playwright",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: "https://firecrawl.dev",
+          actions: [{ type: "click", selector: "#does-not-exist" }],
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(500);
+      expect(raw.body.code).toBe("SCRAPE_ACTION_ERROR");
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && !HAS_PLAYWRIGHT)(
+    "rejects actions when no browser engine is configured",
     async () => {
       const raw = await scrapeRaw(
         {
