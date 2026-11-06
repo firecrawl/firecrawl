@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import {
-  isAgentExtractModelValid,
   RequestWithAuth,
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
@@ -389,19 +388,7 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      let currentRateLimiterMode = rateLimiterMode;
-      if (
-        currentRateLimiterMode === RateLimiterMode.Extract &&
-        isAgentExtractModelValid((req.body as any)?.agent?.model)
-      ) {
-        currentRateLimiterMode = RateLimiterMode.ExtractAgentPreview;
-      }
-
-      // if (currentRateLimiterMode === RateLimiterMode.Scrape && isAgentExtractModelValid((req.body as any)?.agent?.model)) {
-      //   currentRateLimiterMode = RateLimiterMode.ScrapeAgentPreview;
-      // }
-
-      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+      const auth = await authenticateUser(req, res, rateLimiterMode, {
         ...options,
         allowKeyless,
       });

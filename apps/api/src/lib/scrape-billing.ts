@@ -123,15 +123,7 @@ export async function calculateCreditsToBeBilled(
   );
 
   if (document === null) {
-    // Failure -- check cost tracking if FIRE-1
     let creditsToBeBilled = 0;
-
-    if (
-      internalOptions.v1Agent?.model?.toLowerCase() === "fire-1" ||
-      internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
-    ) {
-      creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
-    }
 
     if (
       error instanceof TransportableError &&
@@ -194,15 +186,6 @@ export async function calculateCreditsToBeBilled(
     promptInjectionGuardGaveVerdict(costTrackingJSON)
   ) {
     creditsToBeBilled += 4;
-  }
-
-  if (
-    internalOptions.v1Agent?.model === "fire-1" ||
-    internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
-  ) {
-    creditsToBeBilled =
-      (exchangeCredits ?? 0) +
-      Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
   }
 
   const hasQuestionFormat =

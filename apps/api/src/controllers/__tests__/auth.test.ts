@@ -192,7 +192,7 @@ describe("authenticateUser", () => {
     const auth = await authenticateUser(
       { headers: {}, socket: {} },
       {},
-      RateLimiterMode.ExtractAgentPreview,
+      RateLimiterMode.Extract,
     );
 
     expect(auth.success).toBe(true);

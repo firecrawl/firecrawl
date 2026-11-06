@@ -1,19 +1,17 @@
 import { vi } from "vitest";
 
-vi.mock("../lib/extractSmartScrape", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../lib/extractSmartScrape")>();
+vi.mock("../lib/jsonExtract", async importOriginal => {
+  const actual = await importOriginal<typeof import("../lib/jsonExtract")>();
   return {
     ...actual,
     extractData: vi.fn(async () => ({
       extractedDataArray: [],
       warning: undefined,
-      costLimitExceededTokenUsage: null,
     })),
   };
 });
 import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
-import { extractData } from "../lib/extractSmartScrape";
+import { extractData } from "../lib/jsonExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
@@ -539,12 +537,10 @@ describe("performLLMExtract extraction provider fallback", () => {
       .mockResolvedValueOnce({
         extractedDataArray: [{ jobs: [] }],
         warning: undefined,
-        costLimitExceededTokenUsage: null,
       })
       .mockResolvedValueOnce({
         extractedDataArray: [{ jobs: [{ title: "Line cook" }] }],
         warning: undefined,
-        costLimitExceededTokenUsage: null,
       });
 
     const result = await performLLMExtract(meta(), {
@@ -561,7 +557,6 @@ describe("performLLMExtract extraction provider fallback", () => {
     (extractData as Mock).mockResolvedValueOnce({
       extractedDataArray: [{ jobs: [] }],
       warning: undefined,
-      costLimitExceededTokenUsage: null,
     });
 
     const result = await performLLMExtract(meta(), {
@@ -578,7 +573,6 @@ describe("performLLMExtract extraction provider fallback", () => {
     (extractData as Mock).mockResolvedValueOnce({
       extractedDataArray: [{ jobs: [] }],
       warning: undefined,
-      costLimitExceededTokenUsage: null,
     });
 
     const result = await performLLMExtract(meta(), {
@@ -595,7 +589,6 @@ describe("performLLMExtract extraction provider fallback", () => {
     (extractData as Mock).mockResolvedValueOnce({
       extractedDataArray: [{ jobs: [{ title: "Pizza cook" }] }],
       warning: undefined,
-      costLimitExceededTokenUsage: null,
     });
 
     const result = await performLLMExtract(meta(), {

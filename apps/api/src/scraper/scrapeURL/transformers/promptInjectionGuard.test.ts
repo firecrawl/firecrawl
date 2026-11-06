@@ -3,7 +3,7 @@ import { performPromptInjectionGuard } from "./promptInjectionGuard";
 import { checkForPromptInjection } from "../lib/promptInjectionGuard";
 import { PromptInjectionDetectedError } from "../error";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { MAX_JSON_EXTRACTION_MARKDOWN_CHARS } from "../lib/extractSmartScrape";
+import { MAX_JSON_EXTRACTION_MARKDOWN_CHARS } from "../lib/jsonExtract";
 
 vi.mock("../lib/promptInjectionGuard", () => ({
   checkForPromptInjection: vi.fn(),

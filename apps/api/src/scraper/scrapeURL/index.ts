@@ -15,7 +15,6 @@ import {
   type ScrapeOptions,
   type TeamFlags,
 } from "../../controllers/v2/types";
-import { ScrapeOptions as ScrapeOptionsV1 } from "../../controllers/v1/types";
 import { logger as _logger } from "../../lib/logger";
 import {
   buildFallbackList,
@@ -653,8 +652,6 @@ export type InternalOptions = {
    * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */
   safeModeBypassed?: boolean;
 
-  v1Agent?: ScrapeOptionsV1["agent"];
-  v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
   v1JSONSystemPrompt?: string;
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
