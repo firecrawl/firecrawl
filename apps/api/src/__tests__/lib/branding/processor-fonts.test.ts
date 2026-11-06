@@ -63,7 +63,11 @@ describe("fonts the page renders", () => {
     const inter = ["inter-variable-web", ...system];
     const profile = processRawBranding(
       raw(
-        { body: inter, heading: ["recoleta-web", "Georgia", "serif"], paragraph: inter },
+        {
+          body: inter,
+          heading: ["recoleta-web", "Georgia", "serif"],
+          paragraph: inter,
+        },
         [snap(inter), snap(inter), snap(system), snap(["Georgia", "serif"])],
       ),
     );
@@ -82,7 +86,11 @@ describe("fonts the page renders", () => {
     ];
     const profile = processRawBranding(
       raw(
-        { body: ["Arial", "Helvetica", "sans-serif"], heading: wix, paragraph: wix },
+        {
+          body: ["Arial", "Helvetica", "sans-serif"],
+          heading: wix,
+          paragraph: wix,
+        },
         [snap(wix), snap(wix), snap(["wf_38b82f6a99a44d63a0bc6a5d605011dd"])],
       ),
     );
@@ -94,7 +102,9 @@ describe("fonts the page renders", () => {
   it("reports a page set entirely in generic or system fonts as such, not as its fallbacks", () => {
     const generic = ["sans-serif"];
     const plain = processRawBranding(
-      raw({ body: generic, heading: generic, paragraph: generic }, [snap(generic)]),
+      raw({ body: generic, heading: generic, paragraph: generic }, [
+        snap(generic),
+      ]),
     );
     expect(families(plain)).toEqual(["sans-serif:1"]);
     expect(plain.typography?.fontFamilies).toEqual({
@@ -102,9 +112,18 @@ describe("fonts the page renders", () => {
       heading: "sans-serif",
     });
 
-    const system = ["-apple-system", "BlinkMacSystemFont", "Roboto", "Arial", "sans-serif"];
+    const system = [
+      "-apple-system",
+      "BlinkMacSystemFont",
+      "Roboto",
+      "Arial",
+      "sans-serif",
+    ];
     const espn = processRawBranding(
-      raw({ body: system, heading: system, paragraph: system }, [snap(system), snap(["a"])]),
+      raw({ body: system, heading: system, paragraph: system }, [
+        snap(system),
+        snap(["a"]),
+      ]),
     );
     // Not "Roboto", "Arial" or the one-letter declaration.
     expect(families(espn)).toEqual(["system-ui:1"]);

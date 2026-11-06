@@ -401,8 +401,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   };
   const typography = {
     fontFamilies: {
-      primary:
-        familyOf(raw.typography.stacks.body) || "system-ui, sans-serif",
+      primary: familyOf(raw.typography.stacks.body) || "system-ui, sans-serif",
       heading:
         familyOf(raw.typography.stacks.heading) ||
         familyOf(raw.typography.stacks.body) ||
@@ -541,8 +540,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       hexify(button.colors.background, pageBackground) || "transparent";
     const borderHex =
       button.colors.borderWidth && button.colors.borderWidth > 0
-        ? hexify(button.colors.border, pageBackground) ||
-          "transparent-border"
+        ? hexify(button.colors.border, pageBackground) || "transparent-border"
         : "no-border";
     const textKey = (button.text || "").trim().toLowerCase().substring(0, 50);
     const classKey = (button.classes || "")

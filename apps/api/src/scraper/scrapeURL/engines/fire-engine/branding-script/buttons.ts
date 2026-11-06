@@ -20,7 +20,11 @@ const isOpaque = (color: string | null | undefined): boolean => {
 // "js-reveal" convention), and attributes that mark the same thing.
 const ENTRANCE_CLASS =
   /(?:^|\s)(?:elementor-invisible|wow|aos-init|animate__animated|[\w-]*reveal[\w-]*|[\w-]*fade-?in[\w-]*)(?:\s|$)/i;
-const ENTRANCE_ATTRS = ["data-aos", "data-framer-appear-id", "data-motion-enter"];
+const ENTRANCE_ATTRS = [
+  "data-aos",
+  "data-framer-appear-id",
+  "data-motion-enter",
+];
 
 /**
  * An element at opacity 0 (or visibility hidden) that is only waiting for its

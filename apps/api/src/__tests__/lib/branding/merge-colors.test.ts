@@ -45,15 +45,19 @@ describe("merging the model's color roles", () => {
       expect(merged.colors?.accent).toBe("#E6007A");
     }
     expect(
-      mergeBrandingResults(page(), roles({ accentColor: "#FC6D26" }), [])
-        .colors?.accent,
+      mergeBrandingResults(page(), roles({ accentColor: "#FC6D26" }), []).colors
+        ?.accent,
     ).toBe("#FC6D26");
   });
 
   it("falls back to the primary when the measured accent is pale too", () => {
     const js = page();
     js.colors!.accent = "#F2F3F3";
-    const merged = mergeBrandingResults(js, roles({ accentColor: "#C9D1D9" }), []);
+    const merged = mergeBrandingResults(
+      js,
+      roles({ accentColor: "#C9D1D9" }),
+      [],
+    );
     expect(merged.colors?.accent).toBe("#0061FE");
   });
 
@@ -63,8 +67,11 @@ describe("merging the model's color roles", () => {
         .colors?.background,
     ).toBe("#FFFFFF");
     expect(
-      mergeBrandingResults(page("dark"), roles({ backgroundColor: "#FAFAFA" }), [])
-        .colors?.background,
+      mergeBrandingResults(
+        page("dark"),
+        roles({ backgroundColor: "#FAFAFA" }),
+        [],
+      ).colors?.background,
     ).toBe("#111111");
     expect(
       mergeBrandingResults(page(), roles({ backgroundColor: "#FAFAFA" }), [])
@@ -76,15 +83,19 @@ describe("merging the model's color roles", () => {
     const js = page();
     js.colors!.link = js.colors!.accent;
     (js as any).__link_measured = false;
-    const merged = mergeBrandingResults(js, roles({ accentColor: "#FC6D26" }), []);
+    const merged = mergeBrandingResults(
+      js,
+      roles({ accentColor: "#FC6D26" }),
+      [],
+    );
     expect(merged.colors?.accent).toBe("#FC6D26");
     expect(merged.colors?.link).toBe("#FC6D26");
   });
 
   it("keeps a measured link color when the model changes the accent, even one equal to the heuristic accent", () => {
     expect(
-      mergeBrandingResults(page(), roles({ accentColor: "#FC6D26" }), [])
-        .colors?.link,
+      mergeBrandingResults(page(), roles({ accentColor: "#FC6D26" }), []).colors
+        ?.link,
     ).toBe("#0044AF");
     const js = page();
     js.colors!.link = js.colors!.accent;

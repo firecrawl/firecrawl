@@ -107,7 +107,12 @@ describe("branding script button detection", () => {
        <div class="elementor-element elementor-invisible" style="visibility: hidden">${cta("Get a quote")}</div>`,
     );
 
-    for (const text of ["Contact us", "Book a call", "Shop rugs", "Get a quote"]) {
+    for (const text of [
+      "Contact us",
+      "Book a call",
+      "Shop rugs",
+      "Get a quote",
+    ]) {
       expect(byText(snaps, text), text).toMatchObject({
         isButton: true,
         visible: true,
@@ -171,10 +176,12 @@ describe("branding script button detection", () => {
       text: "rgb(255, 255, 255)",
     });
     // Hidden copies for other breakpoints or screen readers are passed over.
-    expect(
-      snaps.find(s => s.text.startsWith("Mobile copy"))?.colors.text,
-    ).toBe("rgb(255, 255, 255)");
-    expect(byText(snaps, "Plain label")?.colors.text).toBe("rgb(255, 255, 255)");
+    expect(snaps.find(s => s.text.startsWith("Mobile copy"))?.colors.text).toBe(
+      "rgb(255, 255, 255)",
+    );
+    expect(byText(snaps, "Plain label")?.colors.text).toBe(
+      "rgb(255, 255, 255)",
+    );
   });
 
   it("still reads the label inside a button waiting on its entrance animation", () => {

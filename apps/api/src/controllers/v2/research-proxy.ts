@@ -160,6 +160,10 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
+const govSource = z.enum(["web", "gov"]);
+
+const govCite = z.string().trim().min(1);
+
 const govSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
@@ -188,8 +192,19 @@ const govSearchSchema = z.strictObject({
       "state-attorney-general",
     ])
     .optional(),
-  cites: z.string().trim().min(1).optional(),
+  cites: z
+    .union([govCite, z.array(govCite).min(1).max(32)])
+    .optional()
+    .transform(value =>
+      value === undefined ? undefined : [...new Set([value].flat())],
+    ),
   domain: z.string().trim().min(1).optional(),
+  sources: z
+    .union([govSource, z.array(govSource).min(1)])
+    .optional()
+    .transform(value =>
+      value === undefined ? undefined : [...new Set([value].flat())],
+    ),
   ...commonQuery,
 });
 
@@ -266,9 +281,30 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
   return object as T;
 }
 
+const GOV_RESULT_KEYS: Record<string, string> = {
+  court_type: "courtType",
+  cited_as: "citedAs",
+  updated_at: "updatedAt",
+};
+
+function camelCaseGovResults(body: any) {
+  const gov = body?.data?.gov;
+  if (!Array.isArray(gov)) return body;
+  body.data.gov = gov.map(item =>
+    Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [
+        GOV_RESULT_KEYS[key] ?? key,
+        value,
+      ]),
+    ),
+  );
+  return body;
+}
+
 function resultCount(body: any): number {
   if (Array.isArray(body?.results)) return body.results.length;
-  return Array.isArray(body?.data?.web) ? body.data.web.length : 0;
+  const group = body?.data?.web ?? body?.data?.gov;
+  return Array.isArray(group) ? group.length : 0;
 }
 
 function creditsFor(
@@ -493,10 +529,13 @@ function createResearchController(
       if (responseBody === null || typeof responseBody === "string") {
         return res.status(statusCode).send(responseBody ?? "");
       }
-      const response =
-        options.legacy && upstream.ok
+      const response = !upstream.ok
+        ? responseBody
+        : options.legacy
           ? addLegacySnakeCaseAliases(responseBody)
-          : responseBody;
+          : endpoint.kind === "gov_search"
+            ? camelCaseGovResults(responseBody)
+            : responseBody;
       const usOnlyWarning =
         upstream.ok && isUsOnly(authedReq.acuc?.flags)
           ? usOnlySkippedWarning(upstream.headers)
@@ -693,6 +732,7 @@ export function createGovRouter() {
           courtType: params.courtType,
           cites: params.cites,
           domain: params.domain,
+          sources: params.sources,
           headers,
           timeoutMs: GOV_SEARCH_TIMEOUT_MS,
         }),

@@ -1332,13 +1332,17 @@ describe("Jev request building", () => {
         "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
       ),
     ).toBe("Libre Baskerville");
-    expect(cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd")).toBeUndefined();
+    expect(
+      cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd"),
+    ).toBeUndefined();
     // Monotype spellings on Wix.
     expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
     expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
     expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
     expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
-    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe("DIN Neuzeit Grotesk");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe(
+      "DIN Neuzeit Grotesk",
+    );
     // Self-hosted builds and a weight glued onto a lowercase alias.
     expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
     expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
@@ -1354,7 +1358,9 @@ describe("Jev request building", () => {
     // A system stack asks for the visitor's font: Segoe UI and Roboto are
     // its spellings per platform, not the brand's choice.
     expect(
-      cleanFontFamily("-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"),
+      cleanFontFamily(
+        "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+      ),
     ).toBeUndefined();
     expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
     // A real face ahead of the system stack is still that face (hyphenated
@@ -1528,16 +1534,39 @@ describe("logo candidates as Jev sees them", () => {
     input.pageUrl = "https://acme.test/";
     input.logoCandidates = [
       LOGO,
-      { ...LOGO, src: "https://acme.test/home.svg", alt: "home", href: "/home/" },
+      {
+        ...LOGO,
+        src: "https://acme.test/home.svg",
+        alt: "home",
+        href: "/home/",
+      },
       { ...LOGO, src: "https://acme.test/cart.svg", alt: "", href: "/cart" },
-      { ...LOGO, src: "https://acme.test/www.svg", href: "https://www.acme.test/?ref=nav" },
+      {
+        ...LOGO,
+        src: "https://acme.test/www.svg",
+        href: "https://www.acme.test/?ref=nav",
+      },
       { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
       { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
       // The scan resolved these as the home link; we can't tell from the href.
-      { ...LOGO, src: "https://acme.test/sibling.svg", href: "https://acme.io/" },
+      {
+        ...LOGO,
+        src: "https://acme.test/sibling.svg",
+        href: "https://acme.io/",
+      },
       { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
-      { ...LOGO, src: "https://acme.test/mail.svg", href: "mailto:hi@acme.test", indicators: { ...LOGO.indicators, hrefMatch: false } },
-      { ...LOGO, src: "https://acme.test/other.svg", href: "https://acme.io/pricing", indicators: { ...LOGO.indicators, hrefMatch: false } },
+      {
+        ...LOGO,
+        src: "https://acme.test/mail.svg",
+        href: "mailto:hi@acme.test",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
+      {
+        ...LOGO,
+        src: "https://acme.test/other.svg",
+        href: "https://acme.io/pricing",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
     ];
     expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
       "links to the homepage",
@@ -1582,4 +1611,3 @@ describe("logo candidates as Jev sees them", () => {
     });
   });
 });
-
