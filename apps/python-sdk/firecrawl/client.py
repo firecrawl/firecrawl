@@ -3,12 +3,11 @@ Firecrawl Client
 
 A Firecrawl client that enables you to scrape content from websites, crawl entire sites, search the web, and extract structured data using AI.
 
-The client supports both v1 and v2 API versions, providing access to features like:
+The client uses the v2 API, providing access to features like:
 - Web scraping with advanced options (screenshots, markdown conversion, etc.)
 - Site crawling with configurable depth and limits
 - Web search with content extraction
 - Structured data extraction using AI models
-- Deep research capabilities
 
 Usage:
     from firecrawl import Firecrawl
@@ -23,7 +22,6 @@ from typing import Any, Dict, Optional, List, Union, BinaryIO, Literal
 import logging
 
 
-from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
 from .v2 import FirecrawlClient as V2FirecrawlClient
 from .v2.client_async import AsyncFirecrawlClient
 from .v2.methods.research_docs import (
@@ -40,29 +38,8 @@ from .v2.methods.research_docs import (
     doc,
 )
 from .v2.types import Document, ParseOptions, ScrapeOptions
-from .v2.utils.caller_origin import default_origin
-from .v2.utils.get_version import get_version
 
 logger = logging.getLogger("firecrawl")
-
-class V1Proxy:
-    """Type-annotated proxy for v1 client methods."""
-    _client: Optional[V1FirecrawlApp]
-    
-    def __init__(self, client_instance: Optional[V1FirecrawlApp]):
-        self._client = client_instance
-
-        if client_instance:
-            self.scrape_url = client_instance.scrape_url
-            self.crawl_url = client_instance.crawl_url
-            self.batch_scrape_urls = client_instance.batch_scrape_urls
-            self.async_batch_scrape_urls = client_instance.async_batch_scrape_urls
-            self.async_crawl_url = client_instance.async_crawl_url
-            self.check_crawl_status = client_instance.check_crawl_status
-            self.map_url = client_instance.map_url
-            self.extract = client_instance.extract
-            self.deep_research = client_instance.deep_research
-            self.generate_llms_text = client_instance.generate_llms_text
 
 class V2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
@@ -138,25 +115,6 @@ class V2Proxy:
     def __getattr__(self, name):
         """Forward attribute access to the underlying client."""
         return getattr(self._client, name)
-
-class AsyncV1Proxy:
-    """Type-annotated proxy for v1 client methods."""
-    _client: Optional[AsyncV1FirecrawlApp]
-    
-    def __init__(self, client_instance: Optional[AsyncV1FirecrawlApp]):
-        self._client = client_instance
-
-        if client_instance:
-            self.scrape_url = client_instance.scrape_url
-            self.crawl_url = client_instance.crawl_url
-            self.batch_scrape_urls = client_instance.batch_scrape_urls
-            self.async_batch_scrape_urls = client_instance.async_batch_scrape_urls
-            self.async_crawl_url = client_instance.async_crawl_url
-            self.check_crawl_status = client_instance.check_crawl_status
-            self.map_url = client_instance.map_url
-            self.extract = client_instance.extract
-            self.deep_research = client_instance.deep_research
-            self.generate_llms_text = client_instance.generate_llms_text
 
 class AsyncV2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
@@ -239,12 +197,7 @@ class AsyncV2Proxy:
 
 
 class Firecrawl:
-    """
-    Unified Firecrawl client (v2 by default, v1 under ``.v1``).
-
-    Provides a single entrypoint that exposes the latest API directly while
-    keeping a feature-frozen v1 available for incremental migration.
-    """
+    """Unified Firecrawl client for the v2 API."""
 
     def __init__(
         self,
@@ -273,10 +226,6 @@ class Firecrawl:
             api_url = "https://api.firecrawl.dev"
         self.api_key = api_key
         self.api_url = api_url
-
-        # Resolved here: caller detection reads the stack of whoever constructs the client.
-        self._origin = origin or default_origin(get_version())
-        self._v1: Optional[V1Proxy] = None
 
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
@@ -366,13 +315,6 @@ class Firecrawl:
         self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
         self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
 
-    @property
-    def v1(self) -> V1Proxy:
-        """Feature-frozen v1 client, created on first use because it requires an API key on the cloud API."""
-        if self._v1 is None:
-            self._v1 = V1Proxy(V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
-        return self._v1
-
     def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],
@@ -418,7 +360,7 @@ class Firecrawl:
 
 
 class AsyncFirecrawl:
-    """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
+    """Async unified Firecrawl client for the v2 API."""
 
     def __init__(
         self,
@@ -433,9 +375,6 @@ class AsyncFirecrawl:
             api_url = "https://api.firecrawl.dev"
         self.api_key = api_key
         self.api_url = api_url
-
-        self._origin = origin or default_origin(get_version())
-        self._v1: Optional[AsyncV1Proxy] = None
 
         self._v2_client = AsyncFirecrawlClient(
             api_key=api_key,
@@ -525,13 +464,6 @@ class AsyncFirecrawl:
         self.async_batch_scrape_urls = self._v2_client.async_batch_scrape_urls
         self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
         self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
-
-    @property
-    def v1(self) -> AsyncV1Proxy:
-        """Feature-frozen async v1 client, created on first use because it requires an API key on the cloud API."""
-        if self._v1 is None:
-            self._v1 = AsyncV1Proxy(AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
-        return self._v1
 
     async def parse(
         self,

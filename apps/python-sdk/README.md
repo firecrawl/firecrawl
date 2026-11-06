@@ -449,18 +449,7 @@ async def example_crawl():
 
 ## v1 compatibility
 
-For legacy code paths, v1 remains available under `firecrawl.v1` with the original method names.
-
-```python
-from firecrawl import Firecrawl
-
-firecrawl = Firecrawl(api_key="YOUR_API_KEY")
-
-# v1 methods (feature‑frozen)
-doc_v1 = firecrawl.v1.scrape_url('https://firecrawl.dev', formats=['markdown', 'html'])
-crawl_v1 = firecrawl.v1.crawl_url('https://firecrawl.dev', limit=100)
-map_v1 = firecrawl.v1.map_url('https://firecrawl.dev')
-```
+Version 5 removes the v1 client: `firecrawl.v1`, `V1FirecrawlApp` and `AsyncV1FirecrawlApp` are gone. The v1 method names (`scrape_url`, `crawl_url`, `async_crawl_url`, `check_crawl_status`, `check_crawl_errors`, `map_url`, `batch_scrape_urls`, `async_batch_scrape_urls`, `check_batch_scrape_status`, `check_batch_scrape_errors`) remain on `Firecrawl` and `AsyncFirecrawl` as deprecated aliases that call the v2 API.
 
 ### Alexandria
 
