@@ -96,17 +96,17 @@ describe("Deprecation warnings on legacy endpoints", () => {
     expect(res.body.replacement).toBe("/v2/scrape");
   }, 60000);
 
-  it("GET /v1/team/credit-usage points at its v2 route", async () => {
+  it("GET /v1/concurrency-check points at its v2 route", async () => {
     const res = await request(TEST_API_URL)
-      .get("/v1/team/credit-usage")
+      .get("/v1/concurrency-check")
       .set("Authorization", `Bearer ${identity.apiKey}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.headers["deprecation"]).toBe("@1793923200");
     expect(res.headers["link"]).toContain(
-      '</v2/team/credit-usage>; rel="successor-version"',
+      '</v2/concurrency-check>; rel="successor-version"',
     );
-    expect(res.body.replacement).toBe("/v2/team/credit-usage");
+    expect(res.body.replacement).toBe("/v2/concurrency-check");
   }, 30000);
 
   it("non-deprecated endpoints do not emit Deprecation header or warnings", async () => {
