@@ -1969,6 +1969,10 @@ class FirecrawlClient:
     ):
         """
         Start a batch scrape job and wait until completion.
+
+        Args:
+            raise_on_failure: Raise FirecrawlError if the job ends as failed or
+                cancelled. Defaults to False for backward compatibility.
         """
         options = ScrapeOptions(
             **{k: v for k, v in dict(
