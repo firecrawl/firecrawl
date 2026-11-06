@@ -76,12 +76,42 @@ describe("Deprecation warnings on legacy endpoints", () => {
     expect(res.body.replacement).toBe("/v2/search");
   }, 30000);
 
-  it("non-deprecated endpoints do not emit Deprecation header or warnings", async () => {
+  it("POST /v1/scrape points at /v2/scrape and the migration guide", async () => {
     const res = await request(TEST_API_URL)
       .post("/v1/scrape")
       .set("Authorization", `Bearer ${identity.apiKey}`)
       .set("Content-Type", "application/json")
       .send({ url: "https://firecrawl.dev" });
+
+    expect(res.headers["deprecation"]).toBe("@1793923200");
+    expect(res.headers["sunset"]).toBeUndefined();
+    expect(res.headers["warning"]).toMatch(/\/v1\/scrape is deprecated/);
+    expect(res.headers["link"]).toBe(
+      '<https://docs.firecrawl.dev/migrate-to-v2>; rel="deprecation", </v2/scrape>; rel="successor-version"',
+    );
+    expect(res.body.warnings.some((w: string) => /\/v2\/scrape/.test(w))).toBe(
+      true,
+    );
+    expect(res.body.replacement).toBe("/v2/scrape");
+  }, 60000);
+
+  it("GET /v1/team/credit-usage points at its v2 route", async () => {
+    const res = await request(TEST_API_URL)
+      .get("/v1/team/credit-usage")
+      .set("Authorization", `Bearer ${identity.apiKey}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["deprecation"]).toBe("@1793923200");
+    expect(res.headers["link"]).toContain(
+      '</v2/team/credit-usage>; rel="successor-version"',
+    );
+    expect(res.body.replacement).toBe("/v2/team/credit-usage");
+  }, 30000);
+
+  it("non-deprecated endpoints do not emit Deprecation header or warnings", async () => {
+    const res = await request(TEST_API_URL)
+      .get("/v2/team/credit-usage")
+      .set("Authorization", `Bearer ${identity.apiKey}`);
 
     expect(res.headers["deprecation"]).toBeUndefined();
     expect(res.headers["warning"]).toBeUndefined();
