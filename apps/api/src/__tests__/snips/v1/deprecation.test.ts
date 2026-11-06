@@ -13,71 +13,70 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("Deprecation warnings on legacy endpoints", () => {
-  it("POST /v1/llmstxt enqueues with Deprecation header and warnings in body", async () => {
+const LLMSTXT_LINK =
+  '<https://docs.firecrawl.dev/migrating-from-llmstxt>; rel="deprecation"';
+const DEEP_RESEARCH_DOCS_LINK =
+  '<https://docs.firecrawl.dev/migrating-from-deep-research>; rel="deprecation"';
+
+describe("Removed legacy endpoints", () => {
+  it("POST /v1/llmstxt answers 410 without an API key", async () => {
     const res = await request(TEST_API_URL)
       .post("/v1/llmstxt")
-      .set("Authorization", `Bearer ${identity.apiKey}`)
       .set("Content-Type", "application/json")
       .send({ url: "https://firecrawl.dev" });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.headers["deprecation"]).toBe("@1778025600");
-    expect(res.headers["warning"]).toMatch(/^299 - "/);
-    expect(res.headers["warning"]).toMatch(/llmstxt/i);
-    expect(Array.isArray(res.body.warnings)).toBe(true);
-    expect(res.body.warnings.some((w: string) => /llmstxt/i.test(w))).toBe(
-      true,
-    );
-    expect(res.body.warnings.some((w: string) => /deprecated/i.test(w))).toBe(
-      true,
-    );
+    expect(res.statusCode).toBe(410);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe("ENDPOINT_REMOVED");
+    expect(res.body.error).toMatch(/llmstxt/i);
     expect(res.body.replacement).toBeUndefined();
-    expect(res.headers["link"]).toBe(
-      '<https://docs.firecrawl.dev/migrating-from-llmstxt>; rel="deprecation"',
-    );
+    expect(res.headers["deprecation"]).toBe("@1778025600");
+    expect(res.headers["link"]).toBe(LLMSTXT_LINK);
   }, 30000);
 
-  it("GET /v1/llmstxt/:jobId still emits warnings on 404", async () => {
+  it("GET /v1/llmstxt/:jobId answers 410", async () => {
     const res = await request(TEST_API_URL)
       .get(`/v1/llmstxt/${crypto.randomUUID()}`)
       .set("Authorization", `Bearer ${identity.apiKey}`);
 
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(410);
+    expect(res.body.code).toBe("ENDPOINT_REMOVED");
     expect(res.headers["deprecation"]).toBe("@1778025600");
-    expect(res.headers["warning"]).toMatch(/deprecated/i);
-    expect(Array.isArray(res.body.warnings)).toBe(true);
-    expect(res.body.warnings.some((w: string) => /deprecated/i.test(w))).toBe(
-      true,
-    );
+    expect(res.headers["link"]).toBe(LLMSTXT_LINK);
   }, 30000);
 
-  it("POST /v1/deep-research returns warnings and successor-version Link", async () => {
+  it("POST /v1/deep-research answers 410 with the successor-version Link", async () => {
     const res = await request(TEST_API_URL)
       .post("/v1/deep-research")
-      .set("Authorization", `Bearer ${identity.apiKey}`)
       .set("Content-Type", "application/json")
-      .send({
-        query: "what is firecrawl",
-        maxDepth: 1,
-        maxUrls: 1,
-        timeLimit: 60,
-      });
+      .send({ query: "what is firecrawl" });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.headers["deprecation"]).toBe("@1778025600");
-    expect(res.headers["warning"]).toMatch(/deep-research/i);
-    expect(res.headers["link"]).toBe(
-      '<https://docs.firecrawl.dev/migrating-from-deep-research>; rel="deprecation", </v2/agent>; rel="successor-version"',
-    );
-    expect(Array.isArray(res.body.warnings)).toBe(true);
-    expect(
-      res.body.warnings.some((w: string) => /deep-research/i.test(w)),
-    ).toBe(true);
+    expect(res.statusCode).toBe(410);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe("ENDPOINT_REMOVED");
+    expect(res.body.error).toMatch(/deep-research/i);
     expect(res.body.replacement).toBe("/v2/agent");
+    expect(res.headers["deprecation"]).toBe("@1778025600");
+    expect(res.headers["link"]).toBe(
+      `${DEEP_RESEARCH_DOCS_LINK}, </v2/agent>; rel="successor-version"`,
+    );
   }, 30000);
 
+  it("GET /v1/deep-research/:jobId answers 410", async () => {
+    const res = await request(TEST_API_URL)
+      .get(`/v1/deep-research/${crypto.randomUUID()}`)
+      .set("Authorization", `Bearer ${identity.apiKey}`);
+
+    expect(res.statusCode).toBe(410);
+    expect(res.body.code).toBe("ENDPOINT_REMOVED");
+    expect(res.headers["deprecation"]).toBe("@1778025600");
+    expect(res.headers["link"]).toBe(
+      `${DEEP_RESEARCH_DOCS_LINK}, </v2/agent/:jobId>; rel="successor-version"`,
+    );
+  }, 30000);
+});
+
+describe("Deprecation warnings on legacy endpoints", () => {
   it("non-deprecated endpoints do not emit Deprecation header or warnings", async () => {
     const res = await request(TEST_API_URL)
       .post("/v1/scrape")

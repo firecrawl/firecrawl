@@ -3083,24 +3083,3 @@ export type TokenUsage = {
   step?: string;
   model?: string;
 };
-
-const generateLLMsTextRequestSchema = z.object({
-  url: URL.describe("The URL to generate text from"),
-  maxUrls: z
-    .number()
-    .min(1)
-    .max(5000)
-    .prefault(10)
-    .describe("Maximum number of URLs to process"),
-  showFullText: z
-    .boolean()
-    .prefault(false)
-    .describe("Whether to show the full LLMs-full.txt in the response"),
-  cache: z
-    .boolean()
-    .prefault(true)
-    .describe("Whether to use cached content if available"),
-  __experimental_stream: z.boolean().optional(),
-});
-
-type GenerateLLMsTextRequest = z.infer<typeof generateLLMsTextRequestSchema>;

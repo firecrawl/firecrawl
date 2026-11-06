@@ -3,9 +3,7 @@ import { logger } from "./logger";
 import { Document } from "../controllers/v1/types";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import type {
-  LoggedDeepResearch,
   LoggedExtract,
-  LoggedLlmsTxt,
   LoggedMap,
   LoggedScrape,
   LoggedSearch,
@@ -319,66 +317,6 @@ export async function saveMapToGCS(
       options: JSON.stringify(map.options),
       credits_cost: map.credits_cost,
       success: true,
-    },
-    logger: _logger,
-  });
-}
-
-export async function saveDeepResearchToGCS(
-  deepResearch: LoggedDeepResearch,
-  _logger: Logger = logger,
-): Promise<void> {
-  return await saveJobToGCS({
-    mode: "deep_research",
-    id: deepResearch.id,
-    request_id: deepResearch.request_id,
-    team_id: deepResearch.team_id,
-    is_successful: true,
-    num_docs: 1,
-    data: deepResearch.result,
-    zeroDataRetention: false, // ZDR not supported on deep research
-    metadata: {
-      mode: "deep_research",
-      job_id: deepResearch.id,
-      team_id:
-        deepResearch.team_id === "preview" ||
-        deepResearch.team_id?.startsWith("preview_")
-          ? null
-          : deepResearch.team_id,
-      options: JSON.stringify(deepResearch.options),
-      credits_cost: deepResearch.credits_cost,
-      success: true,
-      time_taken: deepResearch.time_taken,
-    },
-    logger: _logger,
-  });
-}
-
-export async function saveLlmsTxtToGCS(
-  llmsTxt: LoggedLlmsTxt,
-  _logger: Logger = logger,
-): Promise<void> {
-  return await saveJobToGCS({
-    mode: "llms_txt",
-    id: llmsTxt.id,
-    team_id: llmsTxt.team_id,
-    request_id: llmsTxt.request_id,
-    num_docs: 1,
-    is_successful: true,
-    zeroDataRetention: false, // ZDR not supported on llms txt
-    data: llmsTxt.result,
-    metadata: {
-      mode: "llms_txt",
-      job_id: llmsTxt.id,
-      team_id:
-        llmsTxt.team_id === "preview" || llmsTxt.team_id?.startsWith("preview_")
-          ? null
-          : llmsTxt.team_id,
-      options: JSON.stringify(llmsTxt.options),
-      credits_cost: llmsTxt.credits_cost,
-      success: true,
-      num_urls: llmsTxt.num_urls,
-      cost_tracking: JSON.stringify(llmsTxt.cost_tracking),
     },
     logger: _logger,
   });

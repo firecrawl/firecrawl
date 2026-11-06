@@ -405,8 +405,6 @@ export type GenerateCompletionsOptions = {
     functionId?: string;
     extractId?: string;
     scrapeId?: string;
-    deepResearchId?: string;
-    llmsTxtId?: string;
     crawlId?: string;
     /** Extra span metadata from the feature that requested the call. */
     telemetry?: Record<string, string>;
@@ -436,18 +434,6 @@ function telemetryMetadata(metadata: GenerateCompletionsOptions["metadata"]) {
       ? {
           langfuseTraceId: "scrape:" + metadata.scrapeId,
           scrapeId: metadata.scrapeId,
-        }
-      : {}),
-    ...(metadata.deepResearchId
-      ? {
-          langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
-          deepResearchId: metadata.deepResearchId,
-        }
-      : {}),
-    ...(metadata.llmsTxtId
-      ? {
-          langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
-          llmsTxtId: metadata.llmsTxtId,
         }
       : {}),
     ...(metadata.crawlId ? { crawlId: metadata.crawlId } : {}),
@@ -526,8 +512,6 @@ export async function generateCompletions({
                 functionId: metadata.functionId ?? "unspecified",
                 extractId: metadata.extractId ?? "unspecified",
                 scrapeId: metadata.scrapeId ?? "unspecified",
-                deepResearchId: metadata.deepResearchId ?? "unspecified",
-                llmsTxtId: metadata.llmsTxtId ?? "unspecified",
               },
             },
             openai: {
@@ -606,8 +590,6 @@ export async function generateCompletions({
                     functionId: metadata.functionId ?? "unspecified",
                     extractId: metadata.extractId ?? "unspecified",
                     scrapeId: metadata.scrapeId ?? "unspecified",
-                    deepResearchId: metadata.deepResearchId ?? "unspecified",
-                    llmsTxtId: metadata.llmsTxtId ?? "unspecified",
                   },
                 },
                 openai: {
@@ -747,8 +729,6 @@ export async function generateCompletions({
                   functionId: metadata.functionId ?? "unspecified",
                   extractId: metadata.extractId ?? "unspecified",
                   scrapeId: metadata.scrapeId ?? "unspecified",
-                  deepResearchId: metadata.deepResearchId ?? "unspecified",
-                  llmsTxtId: metadata.llmsTxtId ?? "unspecified",
                 },
               },
               openai: {
@@ -805,8 +785,6 @@ export async function generateCompletions({
             functionId: metadata.functionId ?? "unspecified",
             extractId: metadata.extractId ?? "unspecified",
             scrapeId: metadata.scrapeId ?? "unspecified",
-            deepResearchId: metadata.deepResearchId ?? "unspecified",
-            llmsTxtId: metadata.llmsTxtId ?? "unspecified",
           },
         },
         openai: {
