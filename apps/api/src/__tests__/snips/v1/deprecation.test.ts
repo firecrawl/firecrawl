@@ -68,8 +68,8 @@ describe("Deprecation warnings on legacy endpoints", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["deprecation"]).toBe("@1778025600");
     expect(res.headers["warning"]).toMatch(/deep-research/i);
-    expect(res.headers["link"]).toContain(
-      '</v2/agent>; rel="successor-version"',
+    expect(res.headers["link"]).toBe(
+      '<https://docs.firecrawl.dev/migrating-from-deep-research>; rel="deprecation", </v2/agent>; rel="successor-version"',
     );
     expect(Array.isArray(res.body.warnings)).toBe(true);
     expect(
