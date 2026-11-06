@@ -699,6 +699,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
+        raise_on_failure: bool = False,
     ) -> CrawlJob:
         """
         Start a crawl job and wait for it to complete.
@@ -811,6 +812,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             request_timeout=request_timeout,
+            raise_on_failure=raise_on_failure,
         )
     
     def start_crawl(
@@ -1963,6 +1965,7 @@ class FirecrawlClient:
         idempotency_key: Optional[str] = None,
         poll_interval: int = 2,
         wait_timeout: Optional[int] = None,
+        raise_on_failure: bool = False,
     ):
         """
         Start a batch scrape job and wait until completion.
@@ -2008,5 +2011,6 @@ class FirecrawlClient:
             idempotency_key=idempotency_key,
             poll_interval=poll_interval,
             timeout=wait_timeout,
+            raise_on_failure=raise_on_failure,
         )
     
