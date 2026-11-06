@@ -978,7 +978,7 @@ export interface FindToolsData {
   }>;
   total: number;
   next: AlexandriaCall | null;
-  /** Meta calls are not scored, so this token is optional to keep. */
+  /** Opaque feedback token of this find-tools call. Absent when the API issues none. */
   feedbackToken?: string;
 }
 
