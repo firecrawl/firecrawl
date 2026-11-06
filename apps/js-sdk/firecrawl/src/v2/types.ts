@@ -1584,20 +1584,6 @@ export type GetMonitorCheckOptions = PaginationConfig & {
   status?: MonitorCheckPage["status"];
 };
 
-export interface ExtractResponse {
-  success?: boolean;
-  id?: string;
-  status?: "processing" | "completed" | "failed" | "cancelled";
-  data?: unknown;
-  error?: string;
-  warning?: string;
-  warnings?: string[];
-  replacement?: string;
-  sources?: Record<string, unknown>;
-  expiresAt?: string;
-  creditsUsed?: number;
-}
-
 /** Conversation mode for an agent run. Defaults to "extract" server-side. */
 export type AgentMode = "extract" | "chat";
 
@@ -2074,10 +2060,6 @@ export interface AgentSnapshotResponse {
   /** Full artifact content as a JSON/string blob. */
   snapshot?: string;
   error?: string;
-}
-
-export interface AgentOptions {
-  model: "FIRE-1" | "v3-beta";
 }
 
 export interface ConcurrencyCheck {

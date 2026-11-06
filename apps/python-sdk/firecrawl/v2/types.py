@@ -252,12 +252,6 @@ class DocumentMetadata(BaseModel):
         return cls._coerce_string_to_int(v)
 
 
-class AgentOptions(BaseModel):
-    """Configuration for the agent in extract operations."""
-
-    model: Literal["FIRE-1", "v3-beta"] = "FIRE-1"
-
-
 class AttributeResult(BaseModel):
     """Result of attribute extraction."""
 
@@ -1598,40 +1592,6 @@ class MonitorCheckPage(BaseModel):
 class MonitorCheckDetail(MonitorCheck):
     pages: List[MonitorCheckPage] = []
     next: Optional[str] = None
-
-
-# Extract types
-class ExtractRequest(BaseModel):
-    """Request for extract operations."""
-
-    urls: Optional[List[str]] = None
-    prompt: Optional[str] = None
-    schema_: Optional[Dict[str, Any]] = Field(default=None, alias="schema")
-    system_prompt: Optional[str] = None
-    allow_external_links: Optional[bool] = None
-    enable_web_search: Optional[bool] = None
-    show_sources: Optional[bool] = None
-    scrape_options: Optional[ScrapeOptions] = None
-    ignore_invalid_urls: Optional[bool] = None
-    integration: Optional[str] = None
-    agent: Optional[AgentOptions] = None
-
-
-class ExtractResponse(BaseModel):
-    """Response for extract operations (start/status/final)."""
-
-    success: Optional[bool] = None
-    id: Optional[str] = None
-    status: Optional[Literal["processing", "completed", "failed", "cancelled"]] = None
-    data: Optional[Any] = None
-    error: Optional[str] = None
-    warning: Optional[str] = None
-    warnings: Optional[List[str]] = None
-    replacement: Optional[str] = None
-    sources: Optional[Dict[str, Any]] = None
-    expires_at: Optional[datetime] = None
-    credits_used: Optional[int] = None
-    tokens_used: Optional[int] = None
 
 
 class AgentExchangeOptions(BaseModel):

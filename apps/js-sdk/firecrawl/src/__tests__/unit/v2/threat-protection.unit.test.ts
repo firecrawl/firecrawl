@@ -4,7 +4,6 @@ import { startBatchScrape } from "../../../v2/methods/batch";
 import { startCrawl } from "../../../v2/methods/crawl";
 import { search } from "../../../v2/methods/search";
 import { map } from "../../../v2/methods/map";
-import { startExtract } from "../../../v2/methods/extract";
 import { startAgent } from "../../../v2/methods/agent";
 import type { ThreatProtectionOptions } from "../../../v2/types";
 
@@ -99,19 +98,6 @@ describe("v2 threatProtection request serialization", () => {
       "/v2/map",
       expect.objectContaining({ threatProtection }),
       {},
-    );
-  });
-
-  test("extract sends threatProtection at top level", async () => {
-    const http = makeHttp({ success: true, id: "job" });
-    await startExtract(http, {
-      urls: ["https://example.com"],
-      prompt: "extract",
-      threatProtection,
-    });
-    expect(http.post).toHaveBeenCalledWith(
-      "/v2/extract",
-      expect.objectContaining({ threatProtection }),
     );
   });
 
