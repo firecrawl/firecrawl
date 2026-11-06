@@ -1000,5 +1000,55 @@ class TestRunningJobPagination:
         assert len(result.data) == 1
 
 
+class TestMaxResultsOnFirstPage:
+    """max_results caps the documents returned, including those on the first status page."""
+
+    job_id = "job-123"
+    sample_doc = {"url": "https://example.com", "markdown": "# Test", "metadata": {"title": "Test"}}
+
+    def _page(self, next_url):
+        response = Mock()
+        response.ok = True
+        response.status_code = 200
+        response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 6,
+            "total": 6,
+            "creditsUsed": 6,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": next_url,
+            "data": [self.sample_doc] * 3,
+        }
+        return response
+
+    @pytest.mark.parametrize("next_url", [None, "https://api.firecrawl.dev/v2/x?skip=3"])
+    @pytest.mark.parametrize(
+        "get_status",
+        [get_batch_scrape_status, get_crawl_status],
+    )
+    def test_first_page_truncated_to_max_results(self, get_status, next_url):
+        client = Mock()
+        client.get.side_effect = [self._page(next_url), self._page(None)]
+
+        result = get_status(client, self.job_id, PaginationConfig(max_results=2))
+
+        assert len(result.data) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("next_url", [None, "https://api.firecrawl.dev/v2/x?skip=3"])
+    @pytest.mark.parametrize(
+        "get_status",
+        [get_batch_scrape_status_async, get_crawl_status_async],
+    )
+    async def test_first_page_truncated_to_max_results_async(self, get_status, next_url):
+        client = AsyncMock()
+        client.get.side_effect = [self._page(next_url), self._page(None)]
+
+        result = await get_status(client, self.job_id, PaginationConfig(max_results=2))
+
+        assert len(result.data) == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

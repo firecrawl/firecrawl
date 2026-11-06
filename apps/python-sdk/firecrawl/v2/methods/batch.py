@@ -144,6 +144,10 @@ def get_batch_scrape_status(
             pagination_config
         )
 
+    # The first page alone can exceed max_results.
+    if auto_paginate and pagination_config and pagination_config.max_results is not None:
+        documents = documents[:pagination_config.max_results]
+
     return BatchScrapeJob(
         status=payload["status"],
         completed=payload["completed"],
