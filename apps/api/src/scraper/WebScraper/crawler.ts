@@ -566,6 +566,17 @@ export class WebCrawler {
     return this.robotsCrawlDelay;
   }
 
+  /**
+   * Discovers sitemap links and dispatches them to the caller.
+   * @param urlsHandler Receives URLs discovered from the sitemap.
+   * @param fromMap Whether discovery is running for the map endpoint.
+   * @param onlySitemap Whether to return only sitemap URLs.
+   * @param timeout Maximum time allowed for sitemap discovery, in milliseconds.
+   * @param abort Optional signal that cancels sitemap discovery.
+   * @param mock Optional scrape fixture used for sitemap requests.
+   * @param maxAge Maximum cache age for sitemap responses, in milliseconds.
+   * @returns The aggregate count reported by sitemap processing, which may differ from URLs delivered to the caller.
+   */
   public async tryGetSitemap(
     urlsHandler: (urls: string[]) => unknown,
     fromMap: boolean = false,
@@ -666,7 +677,10 @@ export class WebCrawler {
 
       // Fetched in batches so children of early sitemap indexes claim
       // SITEMAP_LIMIT slots before later top-level sitemaps do.
-      const sitemapSources = [this.initialUrl, ...robotsSitemaps];
+      const sitemapSources = [
+        { url: this.initialUrl, isRobotsSitemap: false },
+        ...robotsSitemaps.map(url => ({ url, isRobotsSitemap: true })),
+      ];
 
       const fetchSources = async () => {
         let linkCount = 0;
@@ -682,11 +696,12 @@ export class WebCrawler {
               .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
               .map(source =>
                 this.tryFetchSitemapLinks(
-                  source,
+                  source.url,
                   _urlsHandler,
                   fetchAbort,
                   mock,
                   maxAge,
+                  source.isRobotsSitemap,
                 ),
               ),
           );
@@ -912,14 +927,26 @@ export class WebCrawler {
     }
   }
 
+  /**
+   * Fetches links from a site sitemap or an explicit robots.txt sitemap URL.
+   * @param url Site base URL or sitemap URL declared in robots.txt.
+   * @param urlsHandler Receives URLs found in fetched sitemap documents.
+   * @param abort Optional signal that cancels sitemap requests.
+   * @param mock Optional scrape fixture used for sitemap requests.
+   * @param maxAge Maximum cache age for sitemap responses, in milliseconds.
+   * @param isRobotsSitemap Whether the URL came from a robots.txt directive.
+   * @returns The number of URLs found in fetched sitemap documents.
+   */
   private async tryFetchSitemapLinks(
     url: string,
     urlsHandler: (urls: string[]) => unknown,
     abort?: AbortSignal,
     mock?: string,
     maxAge?: number,
+    isRobotsSitemap: boolean = false,
   ): Promise<number> {
     const sitemapUrl =
+      isRobotsSitemap ||
       url.toLowerCase().endsWith(".xml") ||
       url.toLowerCase().endsWith(".xml.gz")
         ? url
