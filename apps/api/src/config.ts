@@ -510,7 +510,6 @@ const configSchema = z.object({
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
-  SMART_SCRAPE_API_URL: z.string().optional(),
 
   // PDF Processing
   PDF_MU_V2_BASE_URL: z.string().optional(),

@@ -22,7 +22,7 @@ import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
-import { extractData } from "../lib/extractSmartScrape";
+import { extractData } from "../lib/jsonExtract";
 import {
   findStrictSchemaViolation,
   toRootSchema,
@@ -30,7 +30,6 @@ import {
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
-import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import {
   EMPTY_LIST_FALLBACK_MIN_CHARS,
@@ -1030,29 +1029,8 @@ export async function performLLMExtract(
   }
 
   if (jsonFormat) {
-    const useAgent = isAgentExtractModelValid(
-      meta.internalOptions.v1JSONAgent?.model,
-    );
     const teamFlags = meta.internalOptions.teamFlags;
     const usOnly = isUsOnly(teamFlags ?? undefined);
-
-    // NOTE: ZDR deny policy on JSON mode has been lightened to only
-    // disallow agent/smart scrape (deprecated). This now binds us to
-    // only use model providers in JSON mode that we have ZDR agreements
-    // with. (openai certified yes.) WE MUST OBEY THIS! - Mogery
-    if (useAgent && meta.internalOptions.zeroDataRetention) {
-      document.warning =
-        "JSON mode with agent is not supported with zero data retention." +
-        (document.warning ? " " + document.warning : "");
-      return document;
-    }
-
-    if (useAgent && usOnly) {
-      document.warning =
-        "JSON mode with agent is not supported for teams restricted to US-only processing." +
-        (document.warning ? " " + document.warning : "");
-      return document;
-    }
 
     // const originalOptions = meta.options.extract!;
 
@@ -1096,19 +1074,18 @@ export async function performLLMExtract(
 
     // Optional extraction provider: routed by team cohort, with the default
     // model as a per-request fallback; or mirrored (shadow) without using
-    // the result. The agent path and US-only teams are never routed.
-    const route =
-      useAgent || usOnly
-        ? "default"
-        : selectExtractionRoute({
-            teamId: meta.internalOptions.teamId,
-            zeroDataRetention:
-              !!meta.internalOptions.zeroDataRetention ||
-              isZeroDataRetentionActive(),
-            inputBytes: Buffer.byteLength(document.markdown ?? "", "utf8"),
-            requestedModel: jsonFormat.model,
-            refSchema: modelSelection.reason === "recursive_schema_detected",
-          });
+    // the result. US-only teams are never routed.
+    const route = usOnly
+      ? "default"
+      : selectExtractionRoute({
+          teamId: meta.internalOptions.teamId,
+          zeroDataRetention:
+            !!meta.internalOptions.zeroDataRetention ||
+            isZeroDataRetentionActive(),
+          inputBytes: Buffer.byteLength(document.markdown ?? "", "utf8"),
+          requestedModel: jsonFormat.model,
+          refSchema: modelSelection.reason === "recursive_schema_detected",
+        });
     if (jsonFormat.model !== undefined && route !== "provider") {
       document.warning =
         "The requested extraction model is not available for this request; the default model was used." +
@@ -1117,9 +1094,6 @@ export async function performLLMExtract(
     const extractWith = (options: GenerateCompletionsOptions) =>
       extractData({
         extractOptions: options,
-        urls: [meta.rewrittenUrl ?? meta.url],
-        useAgent,
-        checkPromptInjection: meta.options.checkPromptInjection,
         scrapeId: meta.id,
         metadata: {
           teamId: meta.internalOptions.teamId,
@@ -1192,8 +1166,7 @@ export async function performLLMExtract(
         });
       }
     }
-    const { extractedDataArray, warning, costLimitExceededTokenUsage } =
-      extraction;
+    const { extractedDataArray, warning } = extraction;
 
     if (warning) {
       document.warning =
@@ -1213,77 +1186,6 @@ export async function performLLMExtract(
         "JSON extraction did not produce a result." +
         (document.warning ? " " + document.warning : "");
     }
-
-    // // Prepare the schema, potentially wrapping it
-    // const { schemaToUse, schemaWasWrapped } = prepareSmartScrapeSchema(
-    //   originalOptions.schema,
-    //   meta.logger,
-    // );
-
-    // // Update generationOptions with the potentially wrapped schema
-    // generationOptions.schema = schemaToUse;
-
-    // meta.internalOptions.abort?.throwIfAborted();
-    // const {
-    //   extract: rawExtract,
-    //   warning,
-    //   totalUsage,
-    //   model,
-    // } = await generateCompletions({
-    //   logger: meta.logger.child({
-    //     method: "performLLMExtract/generateCompletions",
-    //   }),
-    //   options: generationOptions, // Use the potentially modified options
-    //   markdown: document.markdown,
-    //   previousWarning: document.warning,
-    //   // ... existing model and provider options ...
-    //   model: getModel("o3-mini", "openai"), // Keeping existing model selection
-    //   providerOptions: {
-    //     anthropic: {
-    //       thinking: { type: "enabled", budgetTokens: 12000 },
-    //     },
-    //   },
-    // });
-
-    // // Log token usage
-    // meta.logger.info("LLM extraction token usage", {
-    //   model: model,
-    //   promptTokens: totalUsage.inputTokens,
-    //   completionTokens: totalUsage.completionTokens,
-    //   totalTokens: totalUsage.totalTokens,
-    // });
-
-    // // Process the result to extract data and SmartScrape decision
-    // const {
-    //   extractedData,
-    //   shouldUseSmartscrape,
-    //   smartscrape_reasoning,
-    //   smartscrape_prompt,
-    // } = processSmartScrapeResult(rawExtract, schemaWasWrapped, meta.logger);
-
-    // // Log the SmartScrape decision if applicable
-    // if (schemaWasWrapped) {
-    //   meta.logger.info("SmartScrape decision processing result", {
-    //     shouldUseSmartscrape,
-    //     smartscrape_reasoning,
-    //     // Don't log the full prompt potentially
-    //     smartscrape_prompt_present: !!smartscrape_prompt,
-    //     extractedDataIsPresent:
-    //       extractedData !== undefined && extractedData !== null,
-    //   });
-
-    //   // TODO: Implement logic to ACTUALLY trigger SmartScrape based on the result
-    //   // For example:
-    //   // if (shouldUseSmartscrape && smartscrape_prompt) {
-    //   //   meta.logger.info("Triggering SmartScrape refinement...", { reason: smartscrape_reasoning, prompt: smartscrape_prompt });
-    //   //   // Call the smartScrape function (which needs to be implemented/imported)
-    //   //   // const smartScrapedDocs = await smartScrape(meta.rewrittenUrl ?? meta.url, smartscrape_prompt);
-    //   //   // Process/merge smartScrapedDocs with extractedData
-    //   //   // ... potentially update finalExtract ...
-    //   // } else {
-    //   //   meta.logger.info("SmartScrape not required based on LLM output.");
-    //   // }
-    // }
 
     // Assign the final extracted data
     // For v1 API backward compatibility, check the original format

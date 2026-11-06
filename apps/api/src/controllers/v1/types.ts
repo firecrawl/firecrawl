@@ -274,22 +274,8 @@ const extractOptionsWithAgent = z
   })
   .transform(data => ({
     ...data,
-    systemPrompt: isAgentExtractModelValid(data.agent?.model)
-      ? `You are an expert web data extractor. Your task is to analyze the provided markdown content from a web page and generate a JSON object based *strictly* on the provided schema.
-
-Key Instructions:
-1.  **Schema Adherence:** Populate the JSON object according to the structure defined in the schema.
-2.  **Content Grounding:** Extract information *only* if it is explicitly present in the provided markdown. Do NOT infer or fabricate information.
-3.  **Missing Information:** If a piece of information required by the schema cannot be found in the markdown, use \`null\` for that field's value.
-4.  **SmartScrape Recommendation:**
-    *   Assess if the *full* required data seems unavailable in the current markdown likely because:
-        - Content requires user interaction to reveal (e.g., clicking buttons, hovering, scrolling)
-        - Content uses pagination (e.g., "Load More" buttons, numbered pagination, infinite scroll)
-        - Content is dynamically loaded after user actions
-    *   If the content requires user interaction or pagination to be fully accessible, set \`shouldUseSmartscrape\` to \`true\` in your response and provide a clear \`reasoning\` and \`prompt\` for the SmartScrape tool.
-    *   If the content is simply JavaScript rendered but doesn't require interaction, set \`shouldUseSmartscrape\` to \`false\`.
-5.  **Output Format:** Your final output MUST be a single, valid JSON object conforming precisely to the schema. Do not include any explanatory text outside the JSON structure.`
-      : "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
+    systemPrompt:
+      "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
 export type ExtractOptions = z.infer<typeof extractOptions>;
@@ -632,10 +618,6 @@ const extractTransform = (obj: ScrapeOptions) => {
 
   if (includesFormat(obj.formats, "changeTracking") && obj.timeout === 30000) {
     obj = { ...obj, timeout: 60000 };
-  }
-
-  if ((obj as ScrapeOptions).agent) {
-    obj = { ...obj, timeout: 300000 };
   }
 
   if (

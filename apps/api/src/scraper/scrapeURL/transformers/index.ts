@@ -14,7 +14,6 @@ import {
 import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
-import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
@@ -638,7 +637,6 @@ const transformerStack: Transformer[] = [
   performSummary,
   performQuery,
   performAttributes,
-  performAgent,
   removeBase64Images,
   deriveDiff,
   fetchAudio,

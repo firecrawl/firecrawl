@@ -1,7 +1,7 @@
 import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { checkForPromptInjection } from "../lib/promptInjectionGuard";
-import { MAX_JSON_EXTRACTION_MARKDOWN_CHARS } from "../lib/extractSmartScrape";
+import { MAX_JSON_EXTRACTION_MARKDOWN_CHARS } from "../lib/jsonExtract";
 
 // Runs before every LLM-backed format, so blocked content never reaches one.
 export async function performPromptInjectionGuard(
