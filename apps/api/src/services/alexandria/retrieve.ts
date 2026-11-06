@@ -27,11 +27,12 @@ import { isUsOnly } from "../../lib/us-only";
 import {
   answerSchema,
   refusal,
+  REQUEST_ID_PATTERN,
   type ExchangeResponse,
   type ProviderCall,
 } from "./contracts";
 
-export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+export { REQUEST_ID_PATTERN };
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;

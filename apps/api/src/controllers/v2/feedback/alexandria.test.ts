@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   recordEndpointFeedback: vi.fn(),
   refundAlexandriaFeedback: vi.fn(),
   hasRecentAlexandriaActivity: vi.fn(),
+  getRecentAlexandriaCalls: vi.fn(),
+  forwardExchangeToolFeedback: vi.fn(),
   logError: vi.fn(),
 }));
 vi.mock("./alexandria-refund", () => ({
@@ -18,6 +20,10 @@ vi.mock("./alexandria-refund", () => ({
 }));
 vi.mock("../../../lib/alexandria-activity", () => ({
   hasRecentAlexandriaActivity: mocks.hasRecentAlexandriaActivity,
+  getRecentAlexandriaCalls: mocks.getRecentAlexandriaCalls,
+}));
+vi.mock("../../../lib/exchange", () => ({
+  forwardExchangeToolFeedback: mocks.forwardExchangeToolFeedback,
 }));
 vi.mock("../../../db/connection", () => ({
   db: { transaction: mocks.transaction },
@@ -35,6 +41,7 @@ const inserted = (table: string) =>
 const parentRows = () => inserted("alexandria_feedback");
 const providerRows = () => inserted("alexandria_feedback_providers");
 const capabilityRows = () => inserted("alexandria_feedback_capabilities");
+const callRows = () => inserted("alexandria_feedback_calls");
 vi.mock("../../../lib/logger", () => ({ logger: { error: mocks.logError } }));
 vi.mock("./record", () => ({
   recordEndpointFeedback: mocks.recordEndpointFeedback,
@@ -83,6 +90,7 @@ beforeEach(() => {
   );
   mocks.insert.mockResolvedValue(undefined);
   mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
+  mocks.getRecentAlexandriaCalls.mockResolvedValue([]);
   mocks.refundAlexandriaFeedback.mockResolvedValue({
     creditsRefunded: 1,
     creditsRefundedToday: 1,
@@ -133,6 +141,7 @@ it.each(["good", "partial", "bad"])(
     ]);
     expect(providerRows()).toEqual([]);
     expect(capabilityRows()).toEqual([]);
+    expect(callRows()).toEqual([]);
   },
 );
 
@@ -611,6 +620,8 @@ it.each([
   expect(response.body.creditsRefunded).toBe(0);
   expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+  expect(mocks.getRecentAlexandriaCalls).not.toHaveBeenCalled();
+  expect(mocks.forwardExchangeToolFeedback).not.toHaveBeenCalled();
 });
 
 it("returns the refund outcome, including cap and duplicate warnings", async () => {
@@ -643,6 +654,7 @@ it("rejects feedback outside the window after the team's last Alexandria call", 
   expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
   expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+  expect(mocks.forwardExchangeToolFeedback).not.toHaveBeenCalled();
 });
 
 it("fails closed when the feedback window cannot be checked", async () => {
@@ -724,6 +736,7 @@ it.each([
   expect(JSON.stringify(mocks.logError.mock.calls)).not.toContain("sensitive");
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+  expect(mocks.forwardExchangeToolFeedback).not.toHaveBeenCalled();
 });
 
 it.each(["search", "scrape", "parse", "map"])(
@@ -749,3 +762,137 @@ it.each(["search", "scrape", "parse", "map"])(
     expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );
+
+describe("call attribution", () => {
+  const now = 1_800_000_000_000;
+  const recent = (requestId: string, provider: string, ageSec: number) => ({
+    requestId,
+    provider,
+    capability: "lookup",
+    at: now - ageSec * 1000,
+  });
+  const callRow = (
+    position: number,
+    request_id: string,
+    provider: string | null,
+    attribution: string,
+  ) => ({
+    feedback_id: expect.any(String),
+    team_id: teamId,
+    position,
+    request_id,
+    provider,
+    capability: provider === null ? null : "lookup",
+    attribution,
+  });
+  let originalWindow: number;
+  let clock: { mockRestore: () => void };
+  beforeEach(() => {
+    originalWindow = config.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
+    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
+    clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    mocks.getRecentAlexandriaCalls.mockResolvedValue([
+      recent("req-3", "sec", 10),
+      recent("req-2", "fred", 60),
+      recent("req-2", "bls", 60),
+      recent("req-3", "sec", 120),
+      recent("req-1", "census", 1500),
+    ]);
+  });
+  afterEach(() => {
+    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
+    clock.mockRestore();
+  });
+
+  it("attributes to the calls the client names by request id", async () => {
+    const response = await submit({ ...minimal, requestId: "req-2" });
+    expect(response.status).toBe(200);
+    expect(mocks.getRecentAlexandriaCalls).toHaveBeenCalledWith(teamId);
+    expect(callRows()).toEqual([
+      callRow(0, "req-2", "fred", "client"),
+      callRow(1, "req-2", "bls", "client"),
+    ]);
+    expect(
+      callRows().every(row => row.feedback_id === response.body.feedbackId),
+    ).toBe(true);
+  });
+
+  it("names the client's request id even when it is no longer remembered", async () => {
+    expect((await submit({ ...minimal, requestId: "req-1" })).status).toBe(200);
+    expect(callRows()).toEqual([callRow(0, "req-1", "census", "client")]);
+    mocks.insert.mockClear();
+    expect((await submit({ ...minimal, requestId: "unknown" })).status).toBe(
+      200,
+    );
+    expect(callRows()).toEqual([callRow(0, "unknown", null, "client")]);
+  });
+
+  it("falls back to the distinct calls inside the window", async () => {
+    expect((await submit(minimal)).status).toBe(200);
+    expect(callRows()).toEqual([
+      callRow(0, "req-3", "sec", "window"),
+      callRow(1, "req-2", "fred", "window"),
+      callRow(2, "req-2", "bls", "window"),
+    ]);
+  });
+
+  it("records feedback without calls when none are remembered", async () => {
+    mocks.getRecentAlexandriaCalls.mockResolvedValue([]);
+    expect((await submit(minimal)).status).toBe(200);
+    expect(callRows()).toEqual([]);
+    expect(parentRows()).toHaveLength(1);
+  });
+
+  it.each(["", "has space", "x".repeat(129)])(
+    "rejects an invalid request id %j",
+    async requestId => {
+      expect((await submit({ ...minimal, requestId })).status).toBe(400);
+      expect(mocks.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it("forwards the rating and its calls to the Exchange after the refund", async () => {
+    const response = await submit({
+      ...minimal,
+      rating: "bad",
+      origin: "mcp",
+      requestId: "req-2",
+    });
+    expect(mocks.forwardExchangeToolFeedback).toHaveBeenCalledExactlyOnceWith({
+      teamId,
+      feedbackId: response.body.feedbackId,
+      occurredAt: new Date(now).toISOString(),
+      rating: "bad",
+      origin: "mcp",
+      attribution: "client",
+      calls: [
+        { requestId: "req-2", provider: "fred", capability: "lookup" },
+        { requestId: "req-2", provider: "bls", capability: "lookup" },
+      ],
+    });
+    expect(
+      mocks.refundAlexandriaFeedback.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.forwardExchangeToolFeedback.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("forwards window ratings even when no calls are attributed", async () => {
+    mocks.getRecentAlexandriaCalls.mockResolvedValue([]);
+    await submit(minimal);
+    expect(mocks.forwardExchangeToolFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attribution: "window",
+        calls: [],
+        origin: "api",
+      }),
+    );
+  });
+
+  it("does not let a failing forward affect the response", async () => {
+    mocks.forwardExchangeToolFeedback.mockReturnValue(new Promise(() => {}));
+    const response = await submit(minimal);
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+});

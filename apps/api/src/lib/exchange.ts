@@ -811,6 +811,7 @@ export function getExchangeSuccessCredits(input: {
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
+const EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS = 3_000;
 const EXCHANGE_BILLING_ATTEMPTS = 3;
 const EXCHANGE_BILLING_RETRY_DELAY_MS = 2_000;
 const EXCHANGE_BILLING_RETRY_MAX_DELAY_MS = 15_000;
@@ -903,6 +904,49 @@ export async function reportExchangeUsageBilling(input: {
     retryNotFound: true,
     context: { requestId: input.requestId, status: input.status },
   });
+}
+
+export type ExchangeToolFeedback = {
+  teamId: string;
+  feedbackId: string;
+  occurredAt: string;
+  rating: "good" | "partial" | "bad";
+  origin: string;
+  attribution: "client" | "window";
+  calls: {
+    requestId: string;
+    provider: string | null;
+    capability: string | null;
+  }[];
+};
+
+/** Forwards an Alexandria feedback rating to the Exchange. Never throws; failures are logged. */
+export async function forwardExchangeToolFeedback(
+  input: ExchangeToolFeedback,
+): Promise<void> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) return;
+  const { teamId, ...body } = input;
+  const context = { feedbackId: input.feedbackId, teamId };
+  try {
+    const response = await fetch(`${baseUrl}/v1/tool-feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+        "x-exchange-team-id": teamId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS),
+    });
+    if (!response.ok)
+      rootLogger.warn("Exchange tool feedback rejected", {
+        ...context,
+        statusCode: response.status,
+      });
+  } catch (error) {
+    rootLogger.warn("Exchange tool feedback errored", { ...context, error });
+  }
 }
 
 async function deliverBillingReport(input: {

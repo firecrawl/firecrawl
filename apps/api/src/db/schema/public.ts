@@ -606,6 +606,30 @@ export const alexandria_feedback_capabilities = pgTable(
   ],
 );
 
+export const alexandria_feedback_calls = pgTable(
+  "alexandria_feedback_calls",
+  {
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    request_id: text("request_id").notNull(),
+    provider: text("provider"),
+    capability: text("capability"),
+    attribution: text("attribution").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.feedback_id, table.position] }),
+    index("alexandria_feedback_calls_request_id_idx").on(table.request_id),
+    check(
+      "alexandria_feedback_calls_attribution_check",
+      sql`${table.attribution} IN ('client', 'window')`,
+    ),
+  ],
+);
+
 export const subscriptions = pgTable("subscriptions", {
   id: text("id").notNull(),
   user_id: uuid("user_id").notNull(),

@@ -10,6 +10,7 @@ import {
 import {
   canUseExchangeForRequest,
   clearExchangeProvidersForTest,
+  forwardExchangeToolFeedback,
   reportExchangeBilling,
   getExchangeAccessForRequest,
   getExchangeRequestLogContext,
@@ -1025,5 +1026,83 @@ describe("Exchange terms acceptance", () => {
       new ThirdPartyDataTermsRequiredError(ACME_TERMS).response()
         .requiresAction,
     );
+  });
+});
+
+describe("Exchange tool feedback forward", () => {
+  const original = {
+    url: config.FIRE_EXCHANGE_URL,
+    secret: config.EXCHANGE_INTERNAL_SECRET,
+  };
+  const feedback = {
+    teamId: "01933161-0000-7000-8000-000000000001",
+    feedbackId: "01933161-0000-7000-8000-000000000009",
+    occurredAt: "2026-11-05T12:00:00.000Z",
+    rating: "bad" as const,
+    origin: "mcp",
+    attribution: "client" as const,
+    calls: [{ requestId: "req-1", provider: "fred", capability: "series" }],
+  };
+
+  beforeEach(() => {
+    vi.mocked(fetch).mockReset();
+    config.FIRE_EXCHANGE_URL = "https://exchange.example/";
+    config.EXCHANGE_INTERNAL_SECRET = "internal-secret";
+  });
+  afterEach(() => {
+    config.FIRE_EXCHANGE_URL = original.url;
+    config.EXCHANGE_INTERNAL_SECRET = original.secret;
+  });
+
+  it("posts the rating and its calls with the internal secret and team header", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 202 } as Awaited<
+      ReturnType<typeof fetch>
+    >);
+    await forwardExchangeToolFeedback(feedback);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      "https://exchange.example/v1/tool-feedback",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-exchange-secret": "internal-secret",
+          "x-exchange-team-id": feedback.teamId,
+        },
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(
+      JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string),
+    ).toEqual({
+      feedbackId: feedback.feedbackId,
+      occurredAt: feedback.occurredAt,
+      rating: "bad",
+      origin: "mcp",
+      attribution: "client",
+      calls: feedback.calls,
+    });
+  });
+
+  it.each(["FIRE_EXCHANGE_URL", "EXCHANGE_INTERNAL_SECRET"] as const)(
+    "skips the forward without %s",
+    async key => {
+      config[key] = undefined as never;
+      await forwardExchangeToolFeedback(feedback);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("resolves on rejected responses and network errors", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    } as Awaited<ReturnType<typeof fetch>>);
+    await expect(
+      forwardExchangeToolFeedback(feedback),
+    ).resolves.toBeUndefined();
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("timeout"));
+    await expect(
+      forwardExchangeToolFeedback(feedback),
+    ).resolves.toBeUndefined();
   });
 });

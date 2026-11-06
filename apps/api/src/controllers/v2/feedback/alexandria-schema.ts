@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { integrationSchema } from "../../../utils/integration";
+import { REQUEST_ID_PATTERN } from "../../../services/alexandria/contracts";
 
 const detail = z.string().trim().min(1).max(2000);
 const name = z.string().trim().min(1).max(200);
@@ -49,6 +50,8 @@ export const alexandriaFeedbackSchema = z
     rationale: detail,
     // Optional so clients released before the field keep working.
     objective: detail.optional(),
+    // The x-request-id of the provider call being rated.
+    requestId: z.string().regex(REQUEST_ID_PATTERN).optional(),
     providerFeedback: z.array(providerFeedback).max(20).optional(),
     capabilityFeedback: z.array(capabilityFeedback).max(20).optional(),
     origin: z.string().trim().min(1).max(100).default("api"),

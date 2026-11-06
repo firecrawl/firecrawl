@@ -3,7 +3,11 @@ import { DrizzleQueryError } from "drizzle-orm/errors";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
-import { hasRecentAlexandriaActivity } from "../../../lib/alexandria-activity";
+import {
+  getRecentAlexandriaCalls,
+  hasRecentAlexandriaActivity,
+} from "../../../lib/alexandria-activity";
+import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
 import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
@@ -85,7 +89,30 @@ export async function recordAlexandriaFeedback(
     );
   }
 
+  const recentCalls = await getRecentAlexandriaCalls(teamId);
+  const attribution = body.requestId ? "client" : "window";
+  const now = Date.now();
+  const windowStart = now - config.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
+  const matched = recentCalls.filter(call =>
+    body.requestId ? call.requestId === body.requestId : call.at >= windowStart,
+  );
+  const calls: {
+    requestId: string;
+    provider: string | null;
+    capability: string | null;
+  }[] = [
+    ...new Map(
+      matched.map(({ requestId, provider, capability }) => [
+        JSON.stringify([requestId, provider, capability]),
+        { requestId, provider, capability },
+      ]),
+    ).values(),
+  ];
+  if (body.requestId && calls.length === 0)
+    calls.push({ requestId: body.requestId, provider: null, capability: null });
+
   const feedbackId = uuidv7();
+  const occurredAt = new Date(now).toISOString();
   const providerRows = (body.providerFeedback ?? []).map((entry, position) => ({
     feedback_id: feedbackId,
     team_id: teamId,
@@ -132,6 +159,19 @@ export async function recordAlexandriaFeedback(
           .insert(schema.alexandria_feedback_capabilities)
           .values(capabilityRows);
       }
+      if (calls.length > 0) {
+        await tx.insert(schema.alexandria_feedback_calls).values(
+          calls.map((call, position) => ({
+            feedback_id: feedbackId,
+            team_id: teamId,
+            position,
+            request_id: call.requestId,
+            provider: call.provider,
+            capability: call.capability,
+            attribution,
+          })),
+        );
+      }
     });
   } catch (error) {
     // Database errors may embed the submitted payload. Keep feedback content
@@ -154,6 +194,15 @@ export async function recordAlexandriaFeedback(
     orgId: req.acuc?.org_id ?? null,
     rating: body.rating,
     requestedUrl: body.requestedWebsite.url,
+  });
+  void forwardExchangeToolFeedback({
+    teamId,
+    feedbackId,
+    occurredAt,
+    rating: body.rating,
+    origin: body.origin,
+    attribution,
+    calls,
   });
   return {
     status: 200,

@@ -31,6 +31,7 @@ vi.mock("./refund-totals", () => ({
 }));
 vi.mock("../../../lib/alexandria-activity", () => ({
   hasRecentAlexandriaActivity: fixture.alexandriaActivity,
+  getRecentAlexandriaCalls: async () => [],
 }));
 vi.mock("./alexandria-refund", () => ({
   refundAlexandriaFeedback: async () => ({

@@ -11,7 +11,10 @@ import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
-import { markAlexandriaActivity } from "../../lib/alexandria-activity";
+import {
+  markAlexandriaActivity,
+  markAlexandriaCalls,
+} from "../../lib/alexandria-activity";
 import {
   discoveryForCalls,
   recordDiscoveredTools,
@@ -195,6 +198,15 @@ export async function providerScrapeController(
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
   markAlexandriaActivity(req.auth.team_id);
+  if (!zeroDataRetention)
+    markAlexandriaCalls(
+      req.auth.team_id,
+      body.alexandria.map(({ provider, capability }) => ({
+        requestId,
+        provider,
+        capability,
+      })),
+    );
   if (result.executed && !body.__agentInterop) {
     const apiKeyId = req.acuc.api_key_id ?? null;
     const served = answerSchema.safeParse(result.body);

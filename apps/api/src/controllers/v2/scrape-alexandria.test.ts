@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   scrapeLog: vi.fn(),
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
+  markCalls: vi.fn(),
+}));
+vi.mock("../../lib/alexandria-activity", () => ({
+  markAlexandriaActivity: vi.fn(),
+  markAlexandriaCalls: mocks.markCalls,
 }));
 vi.mock("../../lib/alexandria-discovery", () => ({
   discoveryForCalls: mocks.discovery,
@@ -621,3 +626,27 @@ it("neither reads nor records discovery under zero data retention", async () => 
   expect(mocks.discovery).not.toHaveBeenCalled();
   expect(mocks.recordDiscovered).not.toHaveBeenCalled();
 });
+
+it("remembers each provider call under its request id for feedback attribution", async () => {
+  const second = { provider: "sec", capability: "filings", options: {} };
+  await request(app)
+    .post("/v2/scrape")
+    .set("x-request-id", "req-1")
+    .send({ alexandria: [call, second] });
+  expect(mocks.markCalls).toHaveBeenCalledExactlyOnceWith("team", [
+    { requestId: "req-1", provider: "fred", capability: "categories/category" },
+    { requestId: "req-1", provider: "sec", capability: "filings" },
+  ]);
+});
+
+it.each([
+  [{ alexandria: call, zeroDataRetention: true }, {}],
+  [{ alexandria: call }, { forceZDR: true }],
+])(
+  "does not remember provider calls under zero data retention %#",
+  async (body, teamFlags) => {
+    flags = { exchangeRetrieve: true, ...teamFlags };
+    await request(app).post("/v2/scrape").send(body);
+    expect(mocks.markCalls).not.toHaveBeenCalled();
+  },
+);
