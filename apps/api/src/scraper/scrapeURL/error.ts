@@ -172,6 +172,8 @@ export class ExchangeRefusedError extends TransportableError {
 }
 
 export class SiteError extends TransportableError {
+  public readonly isProxyError: boolean;
+
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
       ERR_TUNNEL_CONNECTION_FAILED:
@@ -210,6 +212,7 @@ export class SiteError extends TransportableError {
       "SCRAPE_SITE_ERROR",
       `The URL failed to load in the browser with error code "${errorCode}". ${explanation} ${followUp}`,
     );
+    this.isProxyError = isProxyError;
   }
 
   serialize() {

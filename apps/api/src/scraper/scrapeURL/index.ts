@@ -688,13 +688,31 @@ async function scrapeURLLoopIter(
 ): Promise<EngineScrapeResult> {
   const abort = meta.abort.child(snipeAbort);
   try {
-    const engineResult = await scrapeURLWithEngine(
-      {
-        ...meta,
-        abort,
-      },
-      engine,
-    );
+    let engineResult: EngineScrapeResult;
+    try {
+      engineResult = await scrapeURLWithEngine(
+        {
+          ...meta,
+          abort,
+        },
+        engine,
+      );
+    } catch (error) {
+      if (
+        error instanceof SiteError &&
+        error.isProxyError &&
+        meta.options.proxy === "auto" &&
+        !meta.featureFlags.has("stealthProxy") &&
+        !engine.endsWith(";stealth")
+      ) {
+        meta.logger.info(
+          "Scrape hit a proxy error. Retrying with stealthProxy flag.",
+          { engine, errorCode: error.errorCode },
+        );
+        throw new AddFeatureError(["stealthProxy"]);
+      }
+      throw error;
+    }
 
     const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(
