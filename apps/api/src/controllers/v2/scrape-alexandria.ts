@@ -187,7 +187,9 @@ export async function providerScrapeController(
       bypassBilling: body.__agentInterop?.shouldBill === false,
       zeroDataRetention,
       clientIp: keyless ? keylessClientIp(req) : req.ip,
-      billingCountry: await billingCountryForTeam(req.auth.team_id),
+      billingCountry: keyless
+        ? undefined
+        : await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
     });
   } catch (error) {

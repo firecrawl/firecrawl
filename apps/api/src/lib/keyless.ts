@@ -142,10 +142,12 @@ export function isKeylessAlexandriaAllowed(
 ): boolean {
   return (
     calls.length > 0 &&
-    calls.every(call =>
-      KEYLESS_ALEXANDRIA_CAPABILITIES.has(
-        `${call.provider}/${call.capability}`,
-      ),
+    calls.every(
+      call =>
+        !call.provider.includes("/") &&
+        KEYLESS_ALEXANDRIA_CAPABILITIES.has(
+          `${call.provider}/${call.capability}`,
+        ),
     )
   );
 }

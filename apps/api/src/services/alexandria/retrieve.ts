@@ -296,10 +296,10 @@ export async function retrieveProviders(input: {
   const keyless = isKeylessTeamId(input.teamId);
   let keylessHeld = 0;
   const finalize = async (credits: number) => {
-    if (keylessHeld > 0) {
+    if (keyless) {
       const held = keylessHeld;
       keylessHeld = 0;
-      await adjustKeylessCredits(input.teamId, credits - held);
+      if (held > 0) await adjustKeylessCredits(input.teamId, credits - held);
       await logKeylessCreditUsage(input.teamId, credits);
       return true;
     }
