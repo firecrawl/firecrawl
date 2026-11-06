@@ -59,6 +59,13 @@ const DEPRECATIONS = {
     deprecatedAt: "@1788393600",
     sunset: "Tue, 03 Nov 2026 23:59:59 GMT",
   },
+  v2_crawl_params_preview: {
+    message:
+      "POST /v2/crawl/params-preview is deprecated. Send the same prompt to POST /v2/crawl instead; its response includes the crawl options generated from the prompt.",
+    replacement: "/v2/crawl",
+    deprecatedAt: "@1793923200",
+    surface: "crawl_params_preview",
+  },
   v1_deep_research: {
     message: "/v1/deep-research is deprecated. Use /v2/search instead.",
     replacement: "/v2/search",
