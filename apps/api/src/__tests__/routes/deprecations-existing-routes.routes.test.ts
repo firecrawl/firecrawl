@@ -63,6 +63,7 @@ describe("pre-existing deprecated routes are unchanged", () => {
         expect(res.headers["sunset"]).toBeUndefined();
         expect(res.headers["warning"]).toMatch(/^299 - "/);
         if (key.startsWith("v0_")) {
+          expect(res.headers["warning"]).toContain(V0_GUIDE);
           expect(res.headers["link"]).toBe(
             `<${V0_GUIDE}>; rel="deprecation", <${EXISTING[key]}>; rel="successor-version"`,
           );
