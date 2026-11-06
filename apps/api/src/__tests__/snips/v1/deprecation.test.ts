@@ -96,6 +96,19 @@ describe("Deprecation warnings on legacy endpoints", () => {
     expect(res.body.replacement).toBe("/v2/scrape");
   }, 60000);
 
+  it("GET /v1/team/credit-usage points at its v2 route", async () => {
+    const res = await request(TEST_API_URL)
+      .get("/v1/team/credit-usage")
+      .set("Authorization", `Bearer ${identity.apiKey}`);
+
+    // Self-hosted has no billing client, so the status varies; the notice must not.
+    expect(res.headers["deprecation"]).toBe("@1793923200");
+    expect(res.headers["link"]).toContain(
+      '</v2/team/credit-usage>; rel="successor-version"',
+    );
+    expect(res.body.replacement).toBe("/v2/team/credit-usage");
+  }, 30000);
+
   it("GET /v1/concurrency-check points at its v2 route", async () => {
     const res = await request(TEST_API_URL)
       .get("/v1/concurrency-check")
