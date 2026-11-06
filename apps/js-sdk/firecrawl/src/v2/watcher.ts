@@ -62,7 +62,10 @@ class Emitter {
   }
 
   private onceWrapper(event: string | symbol, listener: Listener): Listener {
+    let fired = false;
     const wrapped: Listener = (...args) => {
+      if (fired) return;
+      fired = true;
       this.off(event, wrapped);
       listener.apply(this, args);
     };
