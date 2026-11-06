@@ -2,7 +2,7 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 import { logger } from "./logger";
 
 const WINDOW_SECONDS = 3600;
-const SOURCES = ["search", "auto_search", "find_tools"] as const;
+const SOURCES = ["search", "auto_search", "find_tools", "read_skill"] as const;
 type DiscoverySource = (typeof SOURCES)[number];
 type ToolRef = { provider: string; capability: string };
 export type CallDiscovery = Partial<
@@ -17,8 +17,9 @@ const discoveredKey = (
   `alexandria:discovered:${JSON.stringify([source, teamId, tool.provider, tool.capability])}`;
 
 /**
- * Remembers for an hour that a search or find-tools job showed these tools to
- * the team, so a later provider call can be attributed to it. Never rejects.
+ * Remembers for an hour that a search, find-tools or read-skill job showed
+ * these tools to the team, so a later provider call can be attributed to it.
+ * Never rejects.
  */
 export function recordDiscoveredTools(
   teamId: string,
@@ -47,7 +48,7 @@ export function recordDiscoveredTools(
     );
 }
 
-/** The latest search and find-tools jobs in the last hour that showed each call's tool to the team. */
+/** The latest search, find-tools and read-skill jobs in the last hour that showed each call's tool to the team. */
 export async function discoveryForCalls(
   teamId: string,
   calls: ToolRef[],
