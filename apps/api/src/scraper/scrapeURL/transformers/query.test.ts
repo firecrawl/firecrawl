@@ -20,7 +20,7 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
 import { keepWholeLines, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 
 const noopLogger = {
   info: () => {},

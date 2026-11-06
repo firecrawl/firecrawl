@@ -9,7 +9,7 @@ import {
 import { Logger } from "winston";
 import { Meta } from "..";
 import { logger } from "../../../lib/logger";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 import {
   AISDKError,
   generateObject,
