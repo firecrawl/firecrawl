@@ -256,6 +256,23 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
   });
 
   it.each([
+    { scrapeZDR: "forced" },
+    { searchZDR: "forced-zdr" },
+    { searchZDR: "forced-anon" },
+  ])(
+    "refuses discover before any upstream call for a team with %o",
+    async flags => {
+      keyResolvesAs(flags);
+      const response = await send("get", "/exchange/discover?q=gdp", "header");
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe(
+        "Provider discovery does not support zero data retention.",
+      );
+      expect(mocks.upstreamFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     [200, true],
     [502, false],
   ])(
