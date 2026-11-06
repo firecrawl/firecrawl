@@ -97,13 +97,14 @@ const DEPRECATIONS = {
     replacement: "/v2/search",
     deprecatedAt: "@1778025600",
   },
-  // The rest of v1 shares one deprecation date and has no sunset yet.
+  // The rest of v1 shares one deprecation date and one sunset.
   v1_scrape: {
     message:
       "/v1/scrape is deprecated. Use /v2/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",
     replacement: "/v2/scrape",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_scrape_status: {
     message:
@@ -111,6 +112,7 @@ const DEPRECATIONS = {
     replacement: "/v2/scrape/:jobId",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl: {
     message:
@@ -118,6 +120,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl_status: {
     message:
@@ -125,6 +128,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl/:jobId",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl_cancel: {
     message:
@@ -132,6 +136,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl/:jobId",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl_errors: {
     message:
@@ -139,6 +144,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl/:jobId/errors",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl_active: {
     message:
@@ -146,6 +152,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl/active",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_crawl_ongoing: {
     message:
@@ -153,6 +160,7 @@ const DEPRECATIONS = {
     replacement: "/v2/crawl/active",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_batch_scrape: {
     message:
@@ -160,6 +168,7 @@ const DEPRECATIONS = {
     replacement: "/v2/batch/scrape",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_batch_scrape_status: {
     message:
@@ -167,6 +176,7 @@ const DEPRECATIONS = {
     replacement: "/v2/batch/scrape/:jobId",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_batch_scrape_cancel: {
     message:
@@ -174,6 +184,7 @@ const DEPRECATIONS = {
     replacement: "/v2/batch/scrape/:jobId",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_batch_scrape_errors: {
     message:
@@ -181,6 +192,7 @@ const DEPRECATIONS = {
     replacement: "/v2/batch/scrape/:jobId/errors",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_search: {
     message:
@@ -188,6 +200,7 @@ const DEPRECATIONS = {
     replacement: "/v2/search",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_map: {
     message:
@@ -195,6 +208,7 @@ const DEPRECATIONS = {
     replacement: "/v2/map",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_concurrency_check: {
     message:
@@ -202,6 +216,7 @@ const DEPRECATIONS = {
     replacement: "/v2/concurrency-check",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_team_credit_usage: {
     message:
@@ -209,6 +224,7 @@ const DEPRECATIONS = {
     replacement: "/v2/team/credit-usage",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_team_credit_usage_historical: {
     message:
@@ -216,6 +232,7 @@ const DEPRECATIONS = {
     replacement: "/v2/team/credit-usage/historical",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_team_token_usage: {
     message:
@@ -223,6 +240,7 @@ const DEPRECATIONS = {
     replacement: "/v2/team/token-usage",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_team_token_usage_historical: {
     message:
@@ -230,6 +248,7 @@ const DEPRECATIONS = {
     replacement: "/v2/team/token-usage/historical",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
   v1_team_queue_status: {
     message:
@@ -237,6 +256,7 @@ const DEPRECATIONS = {
     replacement: "/v2/team/queue-status",
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
   },
 } as const satisfies Record<string, Deprecation>;
 

@@ -85,7 +85,7 @@ describe("Deprecation warnings on legacy endpoints", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers["deprecation"]).toBe("@1793923200");
-    expect(res.headers["sunset"]).toBeUndefined();
+    expect(res.headers["sunset"]).toBe("Thu, 10 Dec 2026 15:00:00 GMT");
     expect(res.headers["warning"]).toMatch(/\/v1\/scrape is deprecated/);
     expect(res.headers["link"]).toBe(
       '<https://docs.firecrawl.dev/migrate-to-v2>; rel="deprecation", </v2/scrape>; rel="successor-version"',

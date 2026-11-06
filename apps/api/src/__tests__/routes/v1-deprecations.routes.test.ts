@@ -4,6 +4,7 @@ import { deprecationMiddleware } from "../../lib/deprecations";
 
 const V1_DEPRECATED_AT = "@1793923200";
 const GUIDE = "https://docs.firecrawl.dev/migrate-to-v2";
+const V1_SUNSET = "Thu, 10 Dec 2026 15:00:00 GMT";
 
 const V1 = {
   v1_scrape: "/v2/scrape",
@@ -40,11 +41,11 @@ function appFor(key: Key) {
 
 describe("v1 route deprecations", () => {
   for (const key of Object.keys(V1) as Key[]) {
-    it(`${key} points at ${V1[key]} and the migration guide, with no sunset`, async () => {
+    it(`${key} points at ${V1[key]} and the migration guide, with the v1 sunset`, async () => {
       const res = await request(appFor(key)).get("/probe");
 
       expect(res.headers["deprecation"]).toBe(V1_DEPRECATED_AT);
-      expect(res.headers["sunset"]).toBeUndefined();
+      expect(res.headers["sunset"]).toBe(V1_SUNSET);
       expect(res.headers["link"]).toBe(
         `<${GUIDE}>; rel="deprecation", <${V1[key]}>; rel="successor-version"`,
       );
