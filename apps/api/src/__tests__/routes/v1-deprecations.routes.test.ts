@@ -1,10 +1,15 @@
 import express from "express";
 import request from "supertest";
+
+vi.mock("../../controllers/auth", () => ({ getApiKeyTeamFlags: vi.fn() }));
+
 import { deprecationMiddleware } from "../../lib/deprecations";
 
 const V1_DEPRECATED_AT = "@1793923200";
 const GUIDE = "https://docs.firecrawl.dev/migrate-to-v2";
 const V1_SUNSET = "Thu, 10 Dec 2026 15:00:00 GMT";
+const BEFORE_SUNSET = new Date("2026-11-07T00:00:00Z");
+const AFTER_SUNSET = new Date("2026-12-11T00:00:00Z");
 
 const V1 = {
   v1_scrape: "/v2/scrape",
@@ -31,15 +36,39 @@ const V1 = {
 
 type Key = keyof typeof V1;
 
-function appFor(key: Key) {
+function appFor(key: Key, flags: unknown = null) {
   const app = express();
-  app.get("/probe", deprecationMiddleware(key), (_req, res) => {
-    res.status(200).json({ success: true, data: { markdown: "# hi" } });
-  });
+  app.get(
+    "/probe",
+    (req: any, _res, next) => {
+      req.acuc = { flags };
+      next();
+    },
+    deprecationMiddleware(key),
+    (_req, res) => {
+      res.status(200).json({ success: true, data: { markdown: "# hi" } });
+    },
+  );
   return app;
 }
 
+function extendedOn(surface: string) {
+  return { deprecationExtensions: { [surface]: "2027-01-31T00:00:00Z" } };
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("v1 route deprecations", () => {
+  beforeEach(() => {
+    vi.setSystemTime(BEFORE_SUNSET);
+  });
+
   for (const key of Object.keys(V1) as Key[]) {
     it(`${key} points at ${V1[key]} and the migration guide, with the v1 sunset`, async () => {
       const res = await request(appFor(key)).get("/probe");
@@ -59,4 +88,47 @@ describe("v1 route deprecations", () => {
       expect(res.body.warnings[0]).toContain(GUIDE);
     });
   }
+});
+
+describe("v1 sunset", () => {
+  beforeEach(() => {
+    vi.setSystemTime(AFTER_SUNSET);
+  });
+
+  for (const key of Object.keys(V1) as Key[]) {
+    it(`${key} answers 410 after the sunset`, async () => {
+      const res = await request(appFor(key)).get("/probe");
+
+      expect(res.status).toBe(410);
+      expect(res.body).toMatchObject({
+        success: false,
+        code: "ENDPOINT_REMOVED",
+        replacement: V1[key],
+      });
+      expect(res.headers["sunset"]).toBe(V1_SUNSET);
+    });
+
+    it(`${key} keeps serving a team extended on the v1 surface`, async () => {
+      const res = await request(appFor(key, extendedOn("v1"))).get("/probe");
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ markdown: "# hi" });
+    });
+  }
+
+  it("does not extend v1 for a team extended on another surface", async () => {
+    const res = await request(appFor("v1_scrape", extendedOn("v0"))).get(
+      "/probe",
+    );
+
+    expect(res.status).toBe(410);
+  });
+
+  it("does not extend v1 for a flag under a single route key", async () => {
+    const res = await request(appFor("v1_scrape", extendedOn("v1_scrape"))).get(
+      "/probe",
+    );
+
+    expect(res.status).toBe(410);
+  });
 });
