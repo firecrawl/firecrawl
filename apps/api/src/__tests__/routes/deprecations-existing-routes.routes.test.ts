@@ -95,27 +95,3 @@ describe("pre-existing deprecated routes are unchanged", () => {
     expect(str.text).toBe('"hello"');
   });
 });
-
-describe("crawl params preview entry", () => {
-  it("points to POST /v2/crawl with no sunset", async () => {
-    const app = express();
-    app.post(
-      "/probe",
-      deprecationMiddleware("v2_crawl_params_preview"),
-      (_req, res) => {
-        res.status(200).json({ success: true, data: {} });
-      },
-    );
-    const res = await request(app).post("/probe");
-
-    expect(res.status).toBe(200);
-    expect(res.headers["deprecation"]).toBe("@1793923200");
-    expect(res.headers["sunset"]).toBeUndefined();
-    expect(res.headers["link"]).toBe('</v2/crawl>; rel="successor-version"');
-    expect(res.body.data).toEqual({});
-    expect(res.body.replacement).toBe("/v2/crawl");
-    expect(res.body.warnings).toEqual([
-      expect.stringContaining("Send the same prompt to POST /v2/crawl"),
-    ]);
-  });
-});

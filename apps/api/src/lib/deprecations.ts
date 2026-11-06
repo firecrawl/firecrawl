@@ -61,7 +61,7 @@ const DEPRECATIONS = {
   },
   v2_crawl_params_preview: {
     message:
-      "POST /v2/crawl/params-preview is deprecated. Send the same prompt to POST /v2/crawl instead; its response includes the crawl options generated from the prompt.",
+      "POST /v2/crawl/params-preview is deprecated. Send the same prompt to POST /v2/crawl instead: its response includes the crawl options generated from the prompt. That starts a billed crawl, so set a low limit to check the options first.",
     replacement: "/v2/crawl",
     deprecatedAt: "@1793923200",
     surface: "crawl_params_preview",
