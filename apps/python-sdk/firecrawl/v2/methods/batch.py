@@ -300,7 +300,9 @@ def wait_for_batch_completion(
     client: HttpClient,
     job_id: str,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    *,
+    raise_on_failure: bool = False,
 ) -> BatchScrapeJob:
     """
     Wait for a batch scrape job to complete, polling for status updates.
@@ -323,8 +325,15 @@ def wait_for_batch_completion(
     while True:
         status_job = get_batch_scrape_status(client, job_id)
         
-        # Check if job is complete
-        if status_job.status in ["completed", "failed", "cancelled"]:
+        # Keep the historical return behavior unless callers opt in to
+        # exceptions for terminal states that did not complete successfully.
+        if status_job.status == "completed":
+            return status_job
+        if status_job.status in ["failed", "cancelled"]:
+            if raise_on_failure:
+                raise FirecrawlError(
+                    f"Batch scrape job {job_id} ended with status '{status_job.status}'"
+                )
             return status_job
         
         # Check timeout
@@ -349,7 +358,8 @@ def batch_scrape(
     audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    raise_on_failure: bool = False,
 ) -> BatchScrapeJob:
     """
     Start a batch scrape job and wait for it to complete.
@@ -387,7 +397,7 @@ def batch_scrape(
 
     # Wait for completion
     return wait_for_batch_completion(
-        client, job_id, poll_interval, timeout
+        client, job_id, poll_interval, timeout, raise_on_failure=raise_on_failure
     )
 
 
