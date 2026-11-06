@@ -194,3 +194,14 @@ secret:
 
 imagePullSecrets:
   - name: docker-registry-secret
+
+# V8 old-space caps (MB) passed as --max-old-space-size to the node
+# deployments. When unset, the original per-process heap sizes apply
+# (api 6144, worker 3072, nuqWorker 3072, nuqPrefetchWorker 2048,
+# extractWorker 3072). Example:
+# nodeHeapSize:
+#   api: 1024
+#   worker: 512
+#   nuqWorker: 512
+#   nuqPrefetchWorker: 512
+#   extractWorker: 512
