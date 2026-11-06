@@ -168,3 +168,25 @@ def test_async_aliases_map_params():
     assert crawl.call_args.kwargs["limit"] == 1
     assert result["success"] is True
     assert result["data"][0]["markdown"] == "# hi"
+
+def test_v1_requires_api_key_sync(monkeypatch):
+    """Accessing .v1 without an API key raises a helpful ValueError."""
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    fc = Firecrawl(api_key=None)
+    try:
+        _ = fc.v1
+        assert False, "Expected ValueError"
+    except ValueError as exc:
+        assert "requires an API key" in str(exc)
+
+
+@pytest.mark.asyncio
+async def test_v1_requires_api_key_async(monkeypatch):
+    """Accessing .v1 on AsyncFirecrawl without an API key raises a helpful ValueError."""
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    fc = AsyncFirecrawl(api_key=None)
+    try:
+        _ = fc.v1
+        assert False, "Expected ValueError"
+    except ValueError as exc:
+        assert "requires an API key" in str(exc)
