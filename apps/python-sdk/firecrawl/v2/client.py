@@ -705,6 +705,8 @@ class FirecrawlClient:
         Start a crawl job and wait for it to complete.
 
         Args:
+            raise_on_failure: Raise FirecrawlError if the crawl ends as failed or
+                cancelled. Defaults to False for backward compatibility.
             url: Target URL to start crawling from
             prompt: Optional prompt to guide the crawl
             exclude_paths: Patterns of URLs to exclude
