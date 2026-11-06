@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `searchGithub()`. The research index GitHub search endpoint it called was
   removed on 2026-11-03 and answers 410 Gone, so the method could only fail.
-  Use `developerSearch()` instead. This ships in a minor release because no
-  call to the method could succeed.
+  Use `developerSearch()` instead. This reverses the 1.16.7 note that the
+  method would stay until the next major release: it ships in a minor release
+  because no call to it could succeed. Code that still calls it now gets PHP's
+  undefined method `Error` instead of a `FirecrawlException`.
 
 ## [1.16.7] - 2026-11-04
 
