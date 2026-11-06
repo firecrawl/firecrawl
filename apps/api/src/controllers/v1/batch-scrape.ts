@@ -12,7 +12,6 @@ import {
 import {
   addCrawlJobs,
   finishCrawlKickoff,
-  getCrawl,
   lockURLs,
   markCrawlActive,
   saveCrawl,
@@ -49,6 +48,11 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import {
+  TERMINAL_BATCH_APPEND_ERROR,
+  validateBatchAppend,
+} from "../../lib/batch-append";
+import { GroupNotActiveError } from "../../services/worker/nuq-group-error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -59,6 +63,20 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchemaNoURLValidation.parse(req.body);
   } else {
     req.body = batchScrapeRequestSchema.parse(req.body);
+  }
+
+  let appendCrawl: StoredCrawl | undefined;
+  if (req.body.appendToId) {
+    const append = await validateBatchAppend(
+      req.body.appendToId,
+      req.auth.team_id,
+    );
+    if ("error" in append) {
+      return res
+        .status(append.status)
+        .json({ success: false, error: append.error });
+    }
+    appendCrawl = append.crawl;
   }
 
   const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
@@ -337,7 +355,7 @@ export async function batchScrapeController(
   }
 
   const sc: StoredCrawl = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
+    ? appendCrawl!
     : {
         crawlerOptions: null,
         scrapeOptions,
@@ -365,12 +383,6 @@ export async function batchScrapeController(
         origin: req.body.origin,
       };
 
-  if (req.body.appendToId && (!sc || sc.team_id !== req.auth.team_id)) {
-    return res.status(404).json({
-      success: false,
-      error: "Job not found",
-    });
-  }
   if (req.body.appendToId && sc?.internalOptions) {
     // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
     // current policy, not whatever was stored when the batch was created.
@@ -436,6 +448,17 @@ export async function batchScrapeController(
     priority: jobPriority,
   }));
 
+  // Request preparation can outlast the original batch. Recheck before adding
+  // any URL/job bookkeeping; this is a precondition check, not an enqueue lock.
+  if (req.body.appendToId) {
+    const append = await validateBatchAppend(id, req.auth.team_id);
+    if ("error" in append) {
+      return res
+        .status(append.status)
+        .json({ success: false, error: append.error });
+    }
+  }
+
   await finishCrawlKickoff(id);
 
   logger.debug("Locking URLs...");
@@ -452,7 +475,16 @@ export async function batchScrapeController(
     logger,
   );
   logger.debug("Adding scrape jobs to BullMQ...");
-  await addScrapeJobs(jobs);
+  try {
+    await addScrapeJobs(jobs, { requireActiveGroup: !!req.body.appendToId });
+  } catch (error) {
+    if (error instanceof GroupNotActiveError) {
+      return res
+        .status(409)
+        .json({ success: false, error: TERMINAL_BATCH_APPEND_ERROR });
+    }
+    throw error;
+  }
 
   if (req.body.webhook) {
     logger.debug("Calling webhook with batch_scrape.started...", {
