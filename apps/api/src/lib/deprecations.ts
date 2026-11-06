@@ -29,27 +29,35 @@ export interface Notice {
 const DEPRECATIONS = {
   v1_extract: {
     message:
-      "/v1/extract is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v1/extract is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v1_extract_status: {
     message:
-      "/v1/extract/:jobId is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v1/extract/:jobId is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_extract: {
     message:
-      "/v2/extract is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v2/extract is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_extract_status: {
     message:
-      "/v2/extract/:jobId is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v2/extract/:jobId is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_research_github_search: {
     message:

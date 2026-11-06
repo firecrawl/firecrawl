@@ -61,8 +61,11 @@ describe("pre-existing deprecated routes are unchanged", () => {
         expect(res.headers["sunset"]).toBeUndefined();
         expect(res.headers["warning"]).toMatch(/^299 - "/);
         if (EXISTING[key]) {
+          const docsLink = key.includes("extract")
+            ? `<https://docs.firecrawl.dev/migrating-from-extract>; rel="deprecation", `
+            : "";
           expect(res.headers["link"]).toBe(
-            `<${EXISTING[key]}>; rel="successor-version"`,
+            `${docsLink}<${EXISTING[key]}>; rel="successor-version"`,
           );
         } else {
           expect(res.headers["link"]).toBeUndefined();
