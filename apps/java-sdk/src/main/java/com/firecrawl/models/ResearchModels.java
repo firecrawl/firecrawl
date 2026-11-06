@@ -80,25 +80,6 @@ public final class ResearchModels {
         public String note;
     }
 
-    public static class GitHubSearchItem {
-        public String resultType;
-        public String repo;
-        public String url;
-        public String pageType;
-        public Integer number;
-        public Integer segmentCount;
-        public String readmeUrl;
-        public String title;
-        public String snippet;
-        public String contentMd;
-        public Map<String, Object> scores;
-    }
-
-    public static class GitHubSearchResponse {
-        public boolean success;
-        public List<GitHubSearchItem> results;
-    }
-
     public static class SearchPapersOptions {
         public Integer k;
         public List<String> authors;
@@ -122,10 +103,6 @@ public final class ResearchModels {
         public Integer k;
         public Boolean rerank;
         public List<String> anchor;
-    }
-
-    public static class SearchGitHubOptions {
-        public Integer k;
     }
 
     /** Options for {@code developerSearch}. Unset fields are omitted from the request. */

@@ -371,42 +371,6 @@ defmodule Firecrawl do
     Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
   end
 
-  @research_search_github_schema NimbleOptions.new!([
-    k: [type: :integer],
-    query: [type: :string, required: true]
-  ])
-
-  @research_search_github_key_mapping %{k: "k", query: "query"}
-
-  @doc """
-  Search GitHub research content.
-
-  `GET /search/research/github`
-
-  Deprecated: the research index GitHub search endpoint was removed after
-  2026-11-03. Use `search_developer/2` instead.
-  """
-  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer/2 instead."
-  @spec search_github(keyword(), keyword()) :: response()
-  def search_github(params \\ [], opts \\ []) do
-    with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
-      Req.get(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
-    end
-  end
-
-  @doc """
-  Bang variant of `search_github`. Raises on error.
-
-  Deprecated: the research index GitHub search endpoint was removed after
-  2026-11-03. Use `search_developer!/2` instead.
-  """
-  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer!/2 instead."
-  @spec search_github!(keyword(), keyword()) :: Req.Response.t()
-  def search_github!(params \\ [], opts \\ []) do
-    params = NimbleOptions.validate!(params, @research_search_github_schema)
-    Req.get!(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
-  end
-
   @search_developer_schema NimbleOptions.new!([
     query: [type: :string, required: true, doc: "Natural-language question or search phrase. Must not be blank."],
     k: [type: :integer, doc: "Total ranked results, 1 to 100 (default 10)."],
@@ -428,8 +392,8 @@ defmodule Firecrawl do
 
   @doc """
   Search the developer index: public repositories, GitHub issues, merged pull
-  requests, READMEs and code documentation. Replaces `search_github/2`, whose
-  endpoint was removed after 2026-11-03.
+  requests, READMEs and code documentation. It replaces the research index
+  GitHub search, which was removed on 2026-11-03.
 
   `POST /search/developer`
 

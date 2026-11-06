@@ -2,8 +2,8 @@
 Canonical docstrings for the research paper index (``/v2/search/research``).
 
 Single source of truth for the prose that documents ``search_papers``,
-``inspect_paper``, ``read_paper``, ``related_papers`` and ``search_github``.
-The same five methods are surfaced at six layers — the implementation functions
+``inspect_paper``, ``read_paper`` and ``related_papers``.
+The same four methods are surfaced at six layers — the implementation functions
 in ``research.py`` and ``aio/research.py``, and the delegating methods on
 ``FirecrawlClient``, ``AsyncFirecrawlClient``, ``Firecrawl`` and
 ``AsyncFirecrawl``. Every layer keeps a full docstring (``help()`` on any of
@@ -54,13 +54,6 @@ _ASYNC_CLIENT_ARG = "client: Async HTTP client."
 # ---------------------------------------------------------------------------
 # Implementation functions (``research.py`` / ``aio/research.py``)
 # ---------------------------------------------------------------------------
-
-GITHUB_SEARCH_DEPRECATION_MSG = (
-    "The research index GitHub search endpoint behind search_github() was "
-    "removed after 2026-11-03. Use developer_search() instead. See "
-    "https://docs.firecrawl.dev/features/developer."
-)
-
 
 _SEARCH_PAPERS_TEMPLATE = """
 Search the research paper index.
@@ -179,24 +172,6 @@ Note:
     (``/v2/search/research/papers/{id}/similar``), different method name.
 """
 
-_SEARCH_GITHUB_TEMPLATE = """
-Search the **research index** GitHub slice: GitHub issue/PR history and
-repository readmes.
-
-.. deprecated::
-    The research index GitHub search endpoint was removed after 2026-11-03.
-    Use ``developer_search()`` instead. See
-    https://docs.firecrawl.dev/features/developer.
-
-Args:
-    |CLIENT_ARG|
-    query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
-    k: Maximum number of results to return.
-
-Raises:
-    FirecrawlError: Always. The API answers 410 Gone with the removal message.
-"""
-
 SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 INSPECT_PAPER_DOC = _INSPECT_PAPER_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
@@ -205,8 +180,6 @@ READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
-SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
-AIO_SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 
 
 # ---------------------------------------------------------------------------
@@ -299,23 +272,6 @@ Note:
     ``research.similarPapers()``.
 """
 
-_CLIENT_SEARCH_GITHUB_TEMPLATE = """
-Search the **research index** GitHub slice: issue/PR history and repo
-readmes.
-
-.. deprecated::
-    The research index GitHub search endpoint was removed after
-    2026-11-03. Use ``developer_search()`` instead. See
-    https://docs.firecrawl.dev/features/developer.
-
-Args:
-    query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
-    **kwargs: ``k``.
-
-Raises:
-    FirecrawlError: Always. The API answers 410 Gone with the removal message.
-"""
-
 CLIENT_SEARCH_PAPERS_DOC = _CLIENT_SEARCH_PAPERS_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_SEARCH_PAPERS_DOC = _CLIENT_SEARCH_PAPERS_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_INSPECT_PAPER_DOC = _CLIENT_INSPECT_PAPER_TEMPLATE.replace(_AWAIT, "")
@@ -324,5 +280,3 @@ CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "await ")
-CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "")
-ASYNC_CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "await ")

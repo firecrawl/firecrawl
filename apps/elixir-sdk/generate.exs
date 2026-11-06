@@ -34,7 +34,6 @@ defmodule Firecrawl.Generator do
     {"get", "/search/research/papers"},
     {"get", "/search/research/papers/{id}"},
     {"get", "/search/research/papers/{id}/similar"},
-    {"get", "/search/research/github"},
     {"post", "/monitor"},
     {"get", "/monitor"},
     {"get", "/monitor/{monitorId}"},

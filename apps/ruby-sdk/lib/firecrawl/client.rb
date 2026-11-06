@@ -131,17 +131,6 @@ module Firecrawl
       @http.get("#{path}#{query(options.merge("intent" => intent, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
     end
 
-    # Search GitHub research content.
-    #
-    # @deprecated The research index GitHub search endpoint was removed after
-    #   2026-11-03. Use {#developer_search} instead.
-    # @param query_text [String] GitHub query
-    # @param options [Hash] optional query parameters
-    # @return [Hash]
-    def search_github(query_text, options = {})
-      @http.get("/v2/search/research/github#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
-    end
-
     # Searches the developer index: public repositories, GitHub issues, merged
     # pull requests, READMEs and code documentation.
     #

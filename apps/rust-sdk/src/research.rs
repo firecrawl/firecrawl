@@ -84,29 +84,6 @@ pub struct SimilarPapersResponse {
     pub note: Option<String>,
 }
 
-#[serde_with::skip_serializing_none]
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct GitHubSearchItem {
-    pub result_type: Option<String>,
-    pub repo: Option<String>,
-    pub url: Option<String>,
-    pub page_type: Option<String>,
-    pub number: Option<i32>,
-    pub segment_count: Option<i32>,
-    pub readme_url: Option<String>,
-    pub title: Option<String>,
-    pub snippet: Option<String>,
-    pub content_md: Option<String>,
-    pub scores: Option<HashMap<String, Value>>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct GitHubSearchResponse {
-    pub success: bool,
-    pub results: Vec<GitHubSearchItem>,
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct SearchPapersOptions {
     pub k: Option<u32>,
@@ -131,11 +108,6 @@ pub struct RelatedPapersOptions {
     pub k: Option<u32>,
     pub rerank: Option<bool>,
     pub anchor: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct SearchGitHubOptions {
-    pub k: Option<u32>,
 }
 
 fn push_query(query: &mut Vec<(String, String)>, key: &str, value: impl ToString) {
@@ -414,43 +386,6 @@ impl Client {
 
         self.handle_response(response, "search developer sources")
             .await
-    }
-
-    /// Search the research index GitHub slice.
-    ///
-    /// The research index GitHub search endpoint was removed after 2026-11-03.
-    /// Use [`Client::developer_search`] instead.
-    #[deprecated(
-        note = "The research index GitHub search endpoint was removed after 2026-11-03. Use Client::developer_search instead."
-    )]
-    pub async fn search_github(
-        &self,
-        query_text: impl AsRef<str>,
-        options: impl Into<Option<SearchGitHubOptions>>,
-    ) -> Result<GitHubSearchResponse, FirecrawlError> {
-        let mut query = vec![
-            ("query".to_string(), query_text.as_ref().to_string()),
-            (
-                "origin".to_string(),
-                format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
-            ),
-        ];
-        if let Some(options) = options.into() {
-            if let Some(k) = options.k {
-                push_query(&mut query, "k", k);
-            }
-        }
-
-        let response = self
-            .client
-            .get(self.url("/search/research/github"))
-            .headers(self.prepare_headers(None))
-            .query(&query)
-            .send()
-            .await
-            .map_err(|e| FirecrawlError::HttpError("search github".to_string(), e))?;
-
-        self.handle_response(response, "search github").await
     }
 }
 

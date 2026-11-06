@@ -140,17 +140,6 @@ describe("research.similarPapers", () => {
   });
 });
 
-describe("research.searchGithub", () => {
-  test("builds query string", async () => {
-    const { client, calls } = makeClient(() => ({ status: 200, data: { results: [] } }));
-    await client.searchGithub("milvus hybrid search", { k: 10 });
-    const qs = new URLSearchParams(calls[0].split("?")[1]);
-    expect(calls[0].startsWith("/v2/search/research/github?")).toBe(true);
-    expect(qs.get("query")).toBe("milvus hybrid search");
-    expect(qs.get("k")).toBe("10");
-  });
-});
-
 describe("research error mapping", () => {
   test("maps RFC 7807 Problem detail to SdkError", async () => {
     const { client } = makeClient(() => {
