@@ -412,12 +412,14 @@ def wait_for_crawl_completion(
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
         request_timeout: Optional timeout (in seconds) for each status request
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False to preserve the historical return behavior.
         
     Returns:
-        CrawlJob when job completes
+        CrawlJob with the terminal status and available data
         
     Raises:
-        Exception: If the job fails
+        FirecrawlError: If raise_on_failure is True and the job fails or is cancelled
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
