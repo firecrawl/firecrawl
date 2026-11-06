@@ -4,6 +4,7 @@ import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { reportExchangeUsageBilling } from "../../lib/exchange";
 import {
+  consumeIndexRateLimit,
   indexDailyLimitRefusal,
   reserveIndexCalls,
   type IndexName,
@@ -27,11 +28,12 @@ import { isUsOnly } from "../../lib/us-only";
 import {
   answerSchema,
   refusal,
+  REQUEST_ID_PATTERN,
   type ExchangeResponse,
   type ProviderCall,
 } from "./contracts";
 
-export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+export { REQUEST_ID_PATTERN };
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
@@ -78,6 +80,10 @@ const hash = (value: unknown) =>
   createHash("sha256")
     .update(JSON.stringify(canonical(value)))
     .digest("hex");
+
+/** The request id Exchange records for a team's x-request-id (its usage_events.request_id). */
+export const exchangeRequestId = (teamId: string, requestId: string) =>
+  hash([teamId, requestId]);
 
 const unresolved = (chargeId: string) =>
   refusal(
@@ -184,7 +190,7 @@ export async function retrieveProviders(input: {
       ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
       : undefined;
   const billable = !input.bypassBilling;
-  const id = hash([input.teamId, input.requestId]);
+  const id = exchangeRequestId(input.teamId, input.requestId);
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
@@ -323,11 +329,28 @@ export async function retrieveProviders(input: {
     if (denied) return refuse(denied);
 
     for (const [index, provider] of INDEX_PROVIDERS) {
+      const calls = input.calls.filter(
+        call => call.provider === provider,
+      ).length;
+      const perMinute = await consumeIndexRateLimit(
+        index,
+        input.teamId,
+        input.rateLimitMultiplier,
+        input.flags,
+        calls,
+      );
+      if (!perMinute.ok)
+        return refuse(
+          refusal(429, perMinute.error, {
+            code: "index_rate_limit",
+            retryAfterSeconds: perMinute.retryAfterSeconds,
+          }),
+        );
       const indexBudget = await reserveIndexCalls(
         index,
         input.teamId,
         input.rateLimitMultiplier,
-        input.calls.filter(call => call.provider === provider).length,
+        calls,
       );
       if (!indexBudget.ok) {
         const { error, ...limitFields } = indexDailyLimitRefusal(

@@ -394,7 +394,7 @@ export async function scrapePDFWithFirePDFAsync(
   // echo, and its result may have come from GPU capacity outside the US.
   if (
     isUsOnly(meta.internalOptions.teamFlags ?? undefined) &&
-    fetched.data_region !== US_DATA_REGION
+    fetched.data_region_applied !== US_DATA_REGION
   ) {
     throw firePdfUsOnlyRefusal(meta, "region_unconfirmed");
   }

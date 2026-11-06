@@ -11,7 +11,7 @@ content-type: application/json
 
 {
   "query": "firecrawl",
-  "sources": ["web", "images", "news"],
+  "sources": ["web", "images", "news", "skills"],
   "limit": 5
 }
 

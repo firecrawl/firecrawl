@@ -21,6 +21,7 @@ import {
 } from "../../error";
 import { Meta } from "../..";
 import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
+import { isUsOnly } from "../../../../lib/us-only";
 
 import { config } from "../../../../config";
 
@@ -83,6 +84,24 @@ export function safeModeParams(
       disablePlatformSelection: safeMode.disablePlatformSelection,
       disableCountrySelection: safeMode.disableCountrySelection,
       disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
+    },
+  };
+}
+
+/**
+ * Safe Mode's overrides, plus a pin for US-only teams: their fetches use the
+ * country "us" with fire-engine's own country selection turned off.
+ */
+export function requestOverrides(
+  meta: Meta,
+): Pick<FireEngineScrapeRequestCommon, "geolocation" | "behaviorOverrides"> {
+  const params = safeModeParams(meta.internalOptions.safeMode);
+  if (!isUsOnly(meta.internalOptions.teamFlags ?? undefined)) return params;
+  return {
+    geolocation: { ...meta.options.location, country: "us" },
+    behaviorOverrides: {
+      ...params.behaviorOverrides,
+      disableCountrySelection: true,
     },
   };
 }

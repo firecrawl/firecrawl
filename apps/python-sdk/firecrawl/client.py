@@ -19,7 +19,7 @@ Check example.py for other usage examples.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Union, BinaryIO
+from typing import Any, Dict, Optional, List, Union, BinaryIO, Literal
 import logging
 
 
@@ -75,6 +75,7 @@ class V2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -169,6 +170,7 @@ class AsyncV2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -292,6 +294,7 @@ class Firecrawl:
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -391,8 +394,14 @@ class Firecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return self._v2_client.search_papers(query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):
@@ -447,6 +456,7 @@ class AsyncFirecrawl:
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -545,8 +555,14 @@ class AsyncFirecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await self._v2_client.search_papers(query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):

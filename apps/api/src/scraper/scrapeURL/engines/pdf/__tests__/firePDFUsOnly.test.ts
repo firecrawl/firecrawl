@@ -18,6 +18,7 @@ import { UsOnlyUnavailableError } from "../../../error";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { scrapePDFWithFirePDFAsync } from "../fire-pdf/async";
 import { lookupAdoptableFirePdfJob } from "../fire-pdf/lookup";
+import { buildFirePdfJobOptions, FirePdfAsyncFailure } from "../fire-pdf/utils";
 import {
   makeFetchFromSequence,
   makeMeta as makeAsyncMeta,
@@ -73,10 +74,10 @@ function failureStatus(status: number, body: unknown) {
   });
 }
 
-const regionRefusal = {
-  code: "region_unavailable",
-  data_region: "us",
-  error: "no in-region capacity",
+// The PDF service's sync answer when every in-region GPU acquire was refused.
+const pinnedNoCapacity = {
+  error: "No OCR pods available",
+  data_region_refusals: { region_unroutable: 3 },
 };
 
 const ORIGINAL_BASE_URL = config.FIRE_PDF_BASE_URL;
@@ -99,7 +100,7 @@ describe("FirePDF sync parse for US-only teams", () => {
       markdown: "Document",
       failed_pages: null,
       pages_processed: 1,
-      data_region: "us",
+      data_region_applied: "us",
     } as any);
 
     await scrapePDFWithFirePDF(makeSyncMeta(), "BASE64", 1);
@@ -116,7 +117,7 @@ describe("FirePDF sync parse for US-only teams", () => {
       markdown: "Document",
       failed_pages: null,
       pages_processed: 1,
-      data_region: "us",
+      data_region_applied: "us",
     } as any);
 
     const result = await scrapePDFWithFirePDF(
@@ -129,7 +130,7 @@ describe("FirePDF sync parse for US-only teams", () => {
   });
 
   it("refuses a US-only parse the PDF service could not place on US capacity", async () => {
-    mockedRobustFetch.mockRejectedValue(failureStatus(503, regionRefusal));
+    mockedRobustFetch.mockRejectedValue(failureStatus(503, pinnedNoCapacity));
 
     const error = await scrapePDFWithFirePDF(
       makeSyncMeta(usOnlyFlags),
@@ -142,17 +143,37 @@ describe("FirePDF sync parse for US-only teams", () => {
     expect(error.message).toContain("PDF parsing is not available");
   });
 
+  it("keeps a US-only failure without region refusals on its own error", async () => {
+    const failure = failureStatus(502, { error: "All 3 pages failed" });
+    mockedRobustFetch.mockRejectedValue(failure);
+
+    const error = await scrapePDFWithFirePDF(
+      makeSyncMeta(usOnlyFlags),
+      "BASE64",
+      1,
+    ).catch(e => e);
+
+    expect(error).toBe(failure);
+  });
+
   it.each([
-    ["missing", undefined],
-    ["null", null],
+    ["missing", {}],
+    ["null", { data_region_applied: null }],
+    [
+      "null with refusals",
+      {
+        data_region_applied: null,
+        data_region_refusals: { region_unverified: 1 },
+      },
+    ],
   ])(
     "refuses a US-only result whose region echo is %s",
-    async (_name, dataRegion) => {
+    async (_name, echo) => {
       mockedRobustFetch.mockResolvedValue({
         markdown: "Document",
         failed_pages: null,
         pages_processed: 1,
-        data_region: dataRegion,
+        ...echo,
       } as any);
 
       const error = await scrapePDFWithFirePDF(
@@ -167,7 +188,7 @@ describe("FirePDF sync parse for US-only teams", () => {
   );
 
   it("names image OCR when a US-only image is refused", async () => {
-    mockedRobustFetch.mockRejectedValue(failureStatus(503, regionRefusal));
+    mockedRobustFetch.mockRejectedValue(failureStatus(503, pinnedNoCapacity));
 
     const error = await scrapePDFWithFirePDF(
       makeSyncMeta(usOnlyFlags),
@@ -186,7 +207,7 @@ describe("FirePDF sync parse for US-only teams", () => {
   });
 
   it("keeps an unpinned failure and an unpinned result without the echo unchanged", async () => {
-    const failure = failureStatus(503, regionRefusal);
+    const failure = failureStatus(503, pinnedNoCapacity);
     mockedRobustFetch.mockRejectedValueOnce(failure);
     expect(
       await scrapePDFWithFirePDF(makeSyncMeta(), "BASE64", 1).catch(e => e),
@@ -248,18 +269,18 @@ function runAsync(meta: any, fetchImpl: any) {
 }
 
 describe("FirePDF async jobs for US-only teams", () => {
-  it("sends data_region on the submit only for a US-only team", async () => {
+  it("sends data_region in the job options only for a US-only team", async () => {
     const unpinned = makeFetchFromSequence([
       submitAccepted,
       pollDone,
-      resultWith({}),
+      resultWith({ data_region_applied: null }),
     ]);
     await runAsync(makeUsOnlyAsyncMeta(), unpinned.fetchImpl);
 
     const pinned = makeFetchFromSequence([
       submitAccepted,
       pollDone,
-      resultWith({ data_region: "us" }),
+      resultWith({ data_region_applied: "us" }),
     ]);
     const result = await runAsync(
       makeUsOnlyAsyncMeta(usOnlyFlags),
@@ -267,7 +288,9 @@ describe("FirePDF async jobs for US-only teams", () => {
     );
 
     expect(unpinned.calls[0].body).not.toHaveProperty("data_region");
-    expect(pinned.calls[0].body).toMatchObject({ data_region: "us" });
+    expect(unpinned.calls[0].body).not.toHaveProperty("options.data_region");
+    expect(pinned.calls[0].body).not.toHaveProperty("data_region");
+    expect(pinned.calls[0].body).toHaveProperty("options.data_region", "us");
     expect(result.markdown).toBe("# Async");
   });
 
@@ -281,10 +304,11 @@ describe("FirePDF async jobs for US-only teams", () => {
           status: 502,
           body: {
             scrape_id: "scrape-id-test",
+            data_region_applied: "us",
             status: "failed",
-            error_class: "region_unavailable",
-            error_message: "no in-region capacity",
-            error_code: "region_unavailable",
+            error_class: "ocr_unavailable",
+            error_message:
+              "No OCR pods available [data_region=us refused: region_unroutable=4]",
           },
         },
       },
@@ -299,12 +323,43 @@ describe("FirePDF async jobs for US-only teams", () => {
     expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
   });
 
-  it("refuses a US-only submit the PDF service turned away for lack of US capacity, without retrying", async () => {
-    const { fetchImpl, calls } = makeFetchFromSequence([
+  it("keeps a US-only job that finished in the region despite refused acquires", async () => {
+    const { fetchImpl } = makeFetchFromSequence([
+      submitAccepted,
       {
-        matchUrl: /\/jobs$/,
-        matchMethod: "POST",
-        response: { status: 503, body: regionRefusal },
+        ...pollDone,
+        response: {
+          status: 200,
+          body: {
+            ...pollDone.response.body,
+            data_region_refusals: { region_cap: 1 },
+          },
+        },
+      },
+      resultWith({ data_region_applied: "us" }),
+    ]);
+
+    const result = await runAsync(makeUsOnlyAsyncMeta(usOnlyFlags), fetchImpl);
+
+    expect(result.markdown).toBe("# Async");
+  });
+
+  it("keeps a US-only job failure without region refusals off the US-only refusal", async () => {
+    const { fetchImpl } = makeFetchFromSequence([
+      submitAccepted,
+      {
+        matchUrl: /\/jobs\/scrape-id-test$/,
+        matchMethod: "GET",
+        response: {
+          status: 502,
+          body: {
+            scrape_id: "scrape-id-test",
+            data_region_applied: "us",
+            status: "failed",
+            error_class: "render_failed",
+            error_message: "Batch render failed",
+          },
+        },
       },
     ]);
 
@@ -313,9 +368,8 @@ describe("FirePDF async jobs for US-only teams", () => {
       fetchImpl,
     ).catch(e => e);
 
-    expect(error).toBeInstanceOf(UsOnlyUnavailableError);
-    expect(error.message).toContain("no US capacity could take this document");
-    expect(calls).toHaveLength(1);
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("terminal_failed");
   });
 
   it("refuses a US-only result that lacks the region echo and caches nothing", async () => {
@@ -334,7 +388,7 @@ describe("FirePDF async jobs for US-only teams", () => {
     expect(savePdfResultToCache).not.toHaveBeenCalled();
   });
 
-  it("sends data_region on the content lookup only for a US-only team", async () => {
+  it("forwards data_region from the caller's job options to the content lookup", async () => {
     const lookupHit = {
       matchUrl: /\/jobs\/lookup$/,
       matchMethod: "POST" as const,
@@ -347,23 +401,38 @@ describe("FirePDF async jobs for US-only teams", () => {
     const pinned = makeFetchFromSequence([lookupHit]);
     const sha = "ef".repeat(32);
 
+    const jobOptions = (dataRegion?: string) =>
+      buildFirePdfJobOptions({
+        maxPages: undefined,
+        pagesProcessed: undefined,
+        mode: "auto",
+        includePageMarkdown: false,
+        includeBlocks: false,
+        pageMarkers: false,
+        tableFormat: undefined,
+        trainingCapture: undefined,
+        dataRegion,
+      });
+
     await lookupAdoptableFirePdfJob(
       makeUsOnlyAsyncMeta(),
       sha,
-      { mode: "auto" },
+      jobOptions(),
       unpinned.fetchImpl,
     );
     await lookupAdoptableFirePdfJob(
       makeUsOnlyAsyncMeta(usOnlyFlags),
       sha,
-      { mode: "auto" },
+      jobOptions("us"),
       pinned.fetchImpl,
     );
 
     expect(unpinned.calls[0].body).not.toHaveProperty("data_region");
-    expect(pinned.calls[0].body).toMatchObject({
+    expect(unpinned.calls[0].body).toHaveProperty("options", { mode: "auto" });
+    expect(pinned.calls[0].body).not.toHaveProperty("data_region");
+    expect(pinned.calls[0].body).toHaveProperty("options", {
+      mode: "auto",
       data_region: "us",
-      options: { mode: "auto" },
     });
   });
 });

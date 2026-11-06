@@ -59,6 +59,8 @@ import { getScrapeZDR } from "./zdr-helpers";
 import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const logger = rootLogger;
 
@@ -199,6 +201,12 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    req.acuc?.flags,
+    options.location?.country,
+  );
+  if (usOnlyLocationError)
+    throw new UsOnlyUnavailableError(usOnlyLocationError);
   const zeroDataRetention =
     getBrowserZDR(req) || options.zeroDataRetention === true;
   if (zeroDataRetention && (options.recordSession || options.profile)) {
@@ -291,6 +299,7 @@ async function createBrowserSessionInternal(
       ...options,
       ttl,
       zeroDataRetention,
+      usOnly: isUsOnly(req.acuc?.flags),
     });
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);
@@ -467,6 +476,24 @@ async function settleBrowserSessionInternal(
   return { sessionDurationMs, creditsBilled };
 }
 
+/** Hangar answers 400 for an ID it never issued and 404 for a browser it no longer has. */
+function isUnknownToHangar(error: unknown) {
+  return (
+    error instanceof HangarError &&
+    (error.status === 400 || error.status === 404)
+  );
+}
+
+/** Closes a session Hangar cannot account for. Without a duration there is nothing to bill. */
+async function closeUnknownBrowserSession(session: BrowserSessionRow) {
+  const { creditsBilled } = await settleBrowserSessionOnce(
+    session.id,
+    async () => 0,
+  );
+  await finalizeBrowserSession(session, creditsBilled);
+  return { creditsBilled };
+}
+
 async function finalizeBrowserSession(
   session: BrowserSessionRow,
   credits: number,
@@ -560,29 +587,39 @@ async function stopBrowserSessionInternal(session: BrowserSessionRow) {
       creditsBilled: session.credits_used ?? 0,
     };
   }
-  let browser = await stopHangarBrowser(session.browser_id);
-  if (!["stopping", "stopped", "failed"].includes(browser.status))
-    throw new HangarError(502, "Hangar did not confirm the stop request.");
-  // A successful public DELETE includes final duration and billing, even
-  // though Hangar's stop endpoint acknowledges cleanup asynchronously.
-  const deadline = Date.now() + 30_000;
-  while (browser.status === "stopping") {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0)
-      throw new HangarError(
-        502,
-        "Browser is still stopping. Retry deletion shortly.",
+  let browser: HangarBrowser;
+  try {
+    browser = await stopHangarBrowser(session.browser_id);
+    if (!["stopping", "stopped", "failed"].includes(browser.status))
+      throw new HangarError(502, "Hangar did not confirm the stop request.");
+    // A successful public DELETE includes final duration and billing, even
+    // though Hangar's stop endpoint acknowledges cleanup asynchronously.
+    const deadline = Date.now() + 30_000;
+    while (browser.status === "stopping") {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        throw new HangarError(
+          502,
+          "Browser is still stopping. Retry deletion shortly.",
+        );
+      browser = await getHangarBrowser(
+        session.browser_id,
+        0,
+        Math.min(remaining, 5000),
       );
-    browser = await getHangarBrowser(
-      session.browser_id,
-      0,
-      Math.min(remaining, 5000),
-    );
-    if (browser.status === "stopping")
-      await new Promise(resolve => setTimeout(resolve, 250));
+      if (browser.status === "stopping")
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    if (browser.status !== "stopped" && browser.status !== "failed")
+      throw new HangarError(502, "Hangar did not confirm session release.");
+  } catch (error) {
+    if (!isUnknownToHangar(error)) throw error;
+    return {
+      success: true,
+      status: "stopped",
+      ...(await closeUnknownBrowserSession(session)),
+    };
   }
-  if (browser.status !== "stopped" && browser.status !== "failed")
-    throw new HangarError(502, "Hangar did not confirm session release.");
   const settled = await settleBrowserSession(session, browser);
   return {
     success: true,
@@ -634,10 +671,16 @@ export async function reconcileBrowserSessions() {
                 if (session.credits_used !== null) {
                   await finalizeBrowserSession(session, session.credits_used);
                 } else {
-                  await settleBrowserSession(
-                    session,
-                    await getHangarBrowser(session.browser_id, 0, 5000),
-                  );
+                  const browser = await getHangarBrowser(
+                    session.browser_id,
+                    0,
+                    5000,
+                  ).catch(error => {
+                    if (isUnknownToHangar(error)) return null;
+                    throw error;
+                  });
+                  if (browser) await settleBrowserSession(session, browser);
+                  else await closeUnknownBrowserSession(session);
                 }
               } catch (error) {
                 failures = Math.min(Number(state.failures ?? 0) + 1, 5);

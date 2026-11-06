@@ -60,7 +60,10 @@ import {
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
@@ -730,6 +733,12 @@ v2Router.post(
   "/support/docs-search",
   authMiddleware(RateLimiterMode.SupportDocsSearch),
   wrap(supportProxyController),
+);
+
+// Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.
+v2Router.get(
+  ["/search/research/github", "/research/github"],
+  removedEndpointHandler("v2_research_github_search"),
 );
 
 if (config.RESEARCH_PROXY_URL) {

@@ -196,17 +196,19 @@ type MenuItemIdentifiers struct {
 
 // PaperResult represents a ranked research paper result.
 type PaperResult struct {
-	PaperID   string                 `json:"paperId"`
-	PrimaryID string                 `json:"primaryId,omitempty"`
-	IDs       map[string]interface{} `json:"ids,omitempty"`
-	Title     string                 `json:"title,omitempty"`
-	Abstract  string                 `json:"abstract,omitempty"`
-	Score     *float64               `json:"score,omitempty"`
-	Year      *int                   `json:"year,omitempty"`
-	Authors   []string               `json:"authors,omitempty"`
-	Venue     string                 `json:"venue,omitempty"`
-	URL       string                 `json:"url,omitempty"`
-	Signals   map[string]interface{} `json:"signals,omitempty"`
+	PaperID     string                 `json:"paperId"`
+	PrimaryID   string                 `json:"primaryId,omitempty"`
+	IDs         map[string]interface{} `json:"ids,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Abstract    string                 `json:"abstract,omitempty"`
+	Score       *float64               `json:"score,omitempty"`
+	Year        *int                   `json:"year,omitempty"`
+	Authors     []string               `json:"authors,omitempty"`
+	CreatedDate string                 `json:"createdDate,omitempty"`
+	UpdateDate  string                 `json:"updateDate,omitempty"`
+	Venue       string                 `json:"venue,omitempty"`
+	URL         string                 `json:"url,omitempty"`
+	Signals     map[string]interface{} `json:"signals,omitempty"`
 }
 
 // PaperMetadata represents paper metadata returned by inspect/read endpoints.
@@ -288,6 +290,10 @@ type SearchPapersOptions struct {
 	Categories []string `json:"categories,omitempty"`
 	From       string   `json:"from,omitempty"`
 	To         string   `json:"to,omitempty"`
+	// Sort is "relevance" (default) or "date_desc", which returns the newest of
+	// the most relevant matches, newest first by created date. It does not list
+	// every paper in a date range. Set From (and To) for that.
+	Sort string `json:"sort,omitempty"`
 }
 
 // ReadPaperOptions configures ReadPaper.
@@ -722,6 +728,17 @@ type SearchData struct {
 	News    []map[string]interface{} `json:"news,omitempty"`
 	Images  []map[string]interface{} `json:"images,omitempty"`
 	Tools   []DiscoveredTool         `json:"tools,omitempty"`
+	Skills  []SkillCard              `json:"skills,omitempty"`
+}
+
+// SkillCard is a short skill card from the skills search source.
+type SkillCard struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Source      string   `json:"source"`
+	Provider    string   `json:"provider,omitempty"`
+	Similarity  *float64 `json:"similarity,omitempty"`
 }
 
 type AlexandriaCall struct {

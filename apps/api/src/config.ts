@@ -48,16 +48,8 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
-// "github" is out of the default and the true/all shorthand, so keyless
-// behaviour is unchanged until someone names it. An explicit list replaces the
-// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
-const RESEARCH_KEYLESS_OPERATIONS = [
-  ...RESEARCH_PAPER_OPERATIONS,
-  "github",
-] as const;
-
 export type ResearchKeylessOperation =
-  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
+  (typeof RESEARCH_PAPER_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -74,7 +66,7 @@ const researchKeylessDisabled = z.preprocess(
       .filter(Boolean);
   },
   z
-    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
+    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
@@ -444,6 +436,17 @@ const configSchema = z.object({
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+  // Rank rewrite-found tools together with raw-query tools by reciprocal rank
+  // fusion (also the alexandriaToolFusion team flag), waiting up to
+  // ALEXANDRIA_TOOL_FUSION_WAIT_MS past the raw lookup for them. On by default;
+  // set to false to append rewrite tools after the raw ranking instead.
+  ALEXANDRIA_TOOL_FUSION: z.stringbool().default(true),
+  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .default(1000),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),

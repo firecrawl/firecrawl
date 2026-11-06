@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Logger } from "winston";
+import { developerCategoryAliases } from "../lib/developer-category";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   toolSchema,
@@ -17,6 +18,8 @@ type ToolDiscovery = {
   usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
+  /** How many leading items the semantic lookup found; the rest matched by domain only. */
+  semanticMatches: number;
 };
 
 type SourceLike = string | { type: string };
@@ -25,20 +28,44 @@ type CategoryLike = string | { type: string };
 const typeOf = (value: SourceLike | CategoryLike) =>
   typeof value === "string" ? value : value?.type;
 
+const CATALOGUE_SOURCES = new Set(["alexandria", "skills"]);
+
+function excludesIndexCategory(categories: unknown): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(category => {
+      const type = typeOf(category);
+      return (
+        type === "gov" ||
+        (type !== undefined && developerCategoryAliases.has(type))
+      );
+    })
+  );
+}
+
 export function isToolsOnlySearch(
   sources: unknown,
   categories: unknown,
 ): boolean {
   if (!Array.isArray(sources) || sources.length === 0) return false;
   if (!sources.every(source => typeOf(source) === "alexandria")) return false;
-  if (
-    Array.isArray(categories) &&
-    categories.some(category => {
-      const type = typeOf(category);
-      return type === "developer" || type === "gov";
-    })
-  )
+  if (excludesIndexCategory(categories)) return false;
+  return true;
+}
+
+/**
+ * Search that only asks the Alexandria catalogue for tools and/or skill cards.
+ * Both are free, so the credit check is skipped the same way as a tools-only
+ * search. An index category still has its own billable path.
+ */
+export function isFreeCatalogueSearch(
+  sources: unknown,
+  categories: unknown,
+): boolean {
+  if (!Array.isArray(sources) || sources.length === 0) return false;
+  if (!sources.every(source => CATALOGUE_SOURCES.has(typeOf(source) ?? "")))
     return false;
+  if (excludesIndexCategory(categories)) return false;
   return true;
 }
 
@@ -286,6 +313,7 @@ export async function discoverTools(
   })();
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
   for (const tool of semanticTools ?? []) merge(tool, "semantic");
+  const semanticMatches = items.size;
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
   return {
     items: [...items.values()].map(tool =>
@@ -297,6 +325,7 @@ export async function discoverTools(
           }
         : tool,
     ),
+    semanticMatches,
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),

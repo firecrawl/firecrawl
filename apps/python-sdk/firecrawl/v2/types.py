@@ -20,6 +20,7 @@ from pydantic import (
     ValidationError,
     model_serializer,
     model_validator,
+    StringConstraints,
 )
 
 # Suppress pydantic warnings about schema field shadowing
@@ -329,6 +330,9 @@ class ProductVariant(BaseModel):
 
     id: Optional[str] = None
     sku: Optional[str] = None
+    gtin: Optional[str] = None
+    mpn: Optional[str] = None
+    condition: Optional[Literal["new", "used", "refurbished", "damaged"]] = None
     title: Optional[str] = None
     values: Optional[Dict[str, Any]] = None
     price: Optional[ProductPrice] = None
@@ -626,7 +630,6 @@ class Category(BaseModel):
     `search()` to their own index.
 
     Supported categories:
-    - "github": Restrict web results to github.com (a `site:` filter)
     - "research": Restrict web results to a fixed list of ~14 academic
       *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
       ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). This is a
@@ -637,6 +640,9 @@ class Category(BaseModel):
       documentation) served in `web`; cannot be combined with other categories
     - "gov": Government Index results served in `web`; cannot be combined
       with other categories
+
+    The "github" category is removed. Use "developer" for GitHub issues, pull
+    requests and READMEs.
 
     .. warning::
        ``categories=["research"]`` is **not** Firecrawl's research paper index.
@@ -1118,10 +1124,14 @@ class DiscoveredTool(ExchangeSearchResult):
 
 
 class FindToolsData(BaseModel):
+    model_config = {"populate_by_name": True}
+
     level: Literal["categories", "providers", "groups", "tools"]
     items: List[Dict[str, Any]]
     total: int
     next: Optional[Dict[str, Any]] = None
+    # Meta calls are not scored, so this token is optional to keep.
+    feedback_token: Optional[str] = Field(default=None, alias="feedbackToken")
 
 
 class AlexandriaCall(BaseModel):
@@ -1150,6 +1160,8 @@ class AlexandriaScrapeResult(BaseModel):
     records: Optional[int] = None
     upstream_status: Optional[int] = Field(default=None, alias="upstreamStatus")
     recorded_at: Optional[str] = Field(default=None, alias="recordedAt")
+    # Opaque token for alexandria_feedback. Absent under zero data retention.
+    feedback_token: Optional[str] = Field(default=None, alias="feedbackToken")
     error: Optional[AlexandriaError] = None
 
     @property
@@ -1164,6 +1176,96 @@ class AlexandriaScrapeData(BaseModel):
     request_id: Optional[str] = None
     alexandria: List[AlexandriaScrapeResult] = Field(default_factory=list)
     credits_cost: Union[int, float] = Field(default=0, alias="creditsCost")
+
+
+AlexandriaFeedbackRating = Literal["good", "partial", "bad"]
+_FeedbackToken = Annotated[str, Field(min_length=1, max_length=1024)]
+_FeedbackText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+
+class AlexandriaCallRating(BaseModel):
+    """Rating for one Alexandria call, identified by its feedback token."""
+
+    model_config = {"extra": "forbid"}
+
+    token: _FeedbackToken
+    rating: AlexandriaFeedbackRating
+
+
+class AlexandriaRequestedWebsite(BaseModel):
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    url: str
+    requested_functionality: _FeedbackText = Field(alias="requestedFunctionality")
+
+
+class AlexandriaProviderFeedback(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str
+    issue: Literal["missing_provider", "insufficient_coverage", "provider_unavailable", "other"]
+    why: _FeedbackText
+
+
+class AlexandriaCapabilityFeedback(BaseModel):
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    name: str
+    provider: str
+    issue: Literal[
+        "new_capability_request",
+        "missing_capability",
+        "insufficient_functionality",
+        "incorrect_result",
+        "execution_error",
+        "other",
+    ]
+    why: _FeedbackText
+    requested_functionality: Optional[_FeedbackText] = Field(default=None, alias="requestedFunctionality")
+
+    @model_validator(mode="after")
+    def _require_functionality_for_new_capability(self):
+        if self.issue == "new_capability_request" and self.requested_functionality is None:
+            raise ValueError("requested_functionality is required for new_capability_request")
+        return self
+
+
+class AlexandriaFeedbackRequest(BaseModel):
+    """Feedback for Alexandria calls.
+
+    ``tokens`` lists the calls the session-level ``rating`` covers (at most 20,
+    newest last). ``call_ratings`` rates individual calls (at most 20); a token there
+    need not also be in ``tokens``.
+    """
+
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    rating: AlexandriaFeedbackRating
+    requested_website: AlexandriaRequestedWebsite = Field(alias="requestedWebsite")
+    rationale: _FeedbackText
+    objective: Optional[_FeedbackText] = None
+    provider_feedback: Optional[List[AlexandriaProviderFeedback]] = Field(
+        default=None, alias="providerFeedback", max_length=20
+    )
+    capability_feedback: Optional[List[AlexandriaCapabilityFeedback]] = Field(
+        default=None, alias="capabilityFeedback", max_length=20
+    )
+    tokens: Optional[List[_FeedbackToken]] = Field(default=None, max_length=20)
+    call_ratings: Optional[List[AlexandriaCallRating]] = Field(
+        default=None, alias="callRatings", max_length=20
+    )
+    integration: Optional[str] = None
+    origin: Optional[str] = None
+
+
+class AlexandriaFeedbackResponse(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    success: bool = True
+    feedback_id: Optional[str] = Field(default=None, alias="feedbackId")
+    credits_refunded: Optional[Union[int, float]] = Field(default=None, alias="creditsRefunded")
+    # Tokens that failed verification (expired, other team, or forged).
+    rejected_tokens: Optional[int] = Field(default=None, alias="rejectedTokens")
 
 
 class MapDocument(Document):
@@ -2557,6 +2659,19 @@ class LinkResult(BaseModel):
 SearchResult = LinkResult
 
 
+class SkillCard(BaseModel):
+    """Short skill card returned by the skills search source."""
+
+    model_config = {"extra": "ignore"}
+
+    id: str
+    name: str
+    description: str
+    source: Literal["official", "provider"]
+    provider: Optional[str] = None
+    similarity: Optional[float] = None
+
+
 class SearchData(BaseModel):
     """Search results grouped by source type."""
 
@@ -2566,6 +2681,7 @@ class SearchData(BaseModel):
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
     tools: Optional[List[DiscoveredTool]] = None
+    skills: Optional[List[SkillCard]] = None
 
     @property
     def data(self):
@@ -2578,7 +2694,9 @@ class SearchData(BaseModel):
             parts.append(f".images ({len(self.images)} results)")
         if self.tools:
             parts.append(f".tools ({len(self.tools)} results)")
-        available = ", ".join(parts) if parts else ".web, .news, .images, or .tools"
+        if self.skills:
+            parts.append(f".skills ({len(self.skills)} results)")
+        available = ", ".join(parts) if parts else ".web, .news, .images, .tools, or .skills"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"
         )
