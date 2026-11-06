@@ -8,8 +8,8 @@ from typing import Optional, Dict, Any, List
 from ..types import (
     CrawlRequest,
     CrawlJob,
-    CrawlResponse, Document, CrawlParamsRequest, CrawlParamsResponse, CrawlParamsData,
-    WebhookConfig, CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
+    CrawlResponse, Document,
+    CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
 )
 from ..utils import FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 from ..utils.error_handler import CrawlJobTimeoutError
@@ -484,126 +484,6 @@ def crawl(
         timeout,
         request_timeout=effective_request_timeout,
     )
-
-
-def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> CrawlParamsData:
-    """
-    Get crawl parameters from LLM based on URL and prompt.
-    
-    Args:
-        client: HTTP client instance
-        request: CrawlParamsRequest containing URL and prompt
-        
-    Returns:
-        CrawlParamsData containing suggested crawl options
-        
-    Raises:
-        ValueError: If request is invalid
-        Exception: If the operation fails
-    """
-    # Validate request
-    if not request.url or not request.url.strip():
-        raise ValueError("URL cannot be empty")
-    
-    if not request.prompt or not request.prompt.strip():
-        raise ValueError("Prompt cannot be empty")
-    
-    # Prepare request data
-    request_data = {
-        "url": request.url,
-        "prompt": request.prompt
-    }
-    
-    # Make the API request
-    response = client.post("/v2/crawl/params-preview", request_data)
-    
-    # Handle errors
-    if not response.ok:
-        handle_response_error(response, "crawl params preview")
-    
-    # Parse response
-    response_data = response.json()
-    
-    if response_data.get("success"):
-        params_data = response_data.get("data", {})
-        
-        # Convert camelCase to snake_case for CrawlParamsData
-        converted_params = {}
-        field_mappings = {
-            "includePaths": "include_paths",
-            "excludePaths": "exclude_paths", 
-            "maxDiscoveryDepth": "max_discovery_depth",
-            "sitemap": "sitemap",
-            "ignoreQueryParameters": "ignore_query_parameters",
-            "deduplicateSimilarURLs": "deduplicate_similar_urls",
-            "crawlEntireDomain": "crawl_entire_domain",
-            "allowExternalLinks": "allow_external_links",
-            "allowSubdomains": "allow_subdomains",
-            "ignoreRobotsTxt": "ignore_robots_txt",
-            "robotsUserAgent": "robots_user_agent",
-            "maxConcurrency": "max_concurrency",
-            "scrapeOptions": "scrape_options",
-            "zeroDataRetention": "zero_data_retention"
-        }
-        
-        # Handle webhook conversion
-        if "webhook" in params_data:
-            webhook_data = params_data["webhook"]
-            if isinstance(webhook_data, dict):
-                converted_params["webhook"] = WebhookConfig(**webhook_data)
-            else:
-                converted_params["webhook"] = webhook_data
-        
-        for camel_case, snake_case in field_mappings.items():
-            if camel_case in params_data:
-                if camel_case == "scrapeOptions" and params_data[camel_case] is not None:
-                    # Handle nested scrapeOptions conversion
-                    scrape_opts_data = params_data[camel_case]
-                    converted_scrape_opts = {}
-                    scrape_field_mappings = {
-                        "includeTags": "include_tags",
-                        "excludeTags": "exclude_tags",
-                        "onlyMainContent": "only_main_content",
-                        "waitFor": "wait_for",
-                        "skipTlsVerification": "skip_tls_verification",
-                        "removeBase64Images": "remove_base64_images"
-                    }
-                    
-                    for scrape_camel, scrape_snake in scrape_field_mappings.items():
-                        if scrape_camel in scrape_opts_data:
-                            converted_scrape_opts[scrape_snake] = scrape_opts_data[scrape_camel]
-                    
-                    # Handle formats field - if it's a list, convert to ScrapeFormats
-                    if "formats" in scrape_opts_data:
-                        formats_data = scrape_opts_data["formats"]
-                        if isinstance(formats_data, list):
-                            # Convert list to ScrapeFormats object
-                            from ..types import ScrapeFormats
-                            converted_scrape_opts["formats"] = ScrapeFormats(formats=formats_data)
-                        else:
-                            converted_scrape_opts["formats"] = formats_data
-                    
-                    # Add fields that don't need conversion
-                    for key, value in scrape_opts_data.items():
-                        if key not in scrape_field_mappings and key != "formats":
-                            converted_scrape_opts[key] = value
-                    
-                    converted_params[snake_case] = converted_scrape_opts
-                else:
-                    converted_params[snake_case] = params_data[camel_case]
-        
-        # Add fields that don't need conversion
-        for key, value in params_data.items():
-            if key not in field_mappings:
-                converted_params[key] = value
-        
-        # Add warning if present
-        if "warning" in response_data:
-            converted_params["warning"] = response_data["warning"]
-        
-        return CrawlParamsData(**converted_params)
-    else:
-        raise FirecrawlError(response_data.get("error", "Unknown error occurred"))
 
 
 def get_crawl_errors(http_client: HttpClient, crawl_id: str) -> CrawlErrorsResponse:

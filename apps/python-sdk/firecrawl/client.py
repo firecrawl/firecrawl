@@ -70,7 +70,6 @@ class V2Proxy:
             self.get_crawl_errors = client_instance.get_crawl_errors
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
-            self.crawl_params_preview = client_instance.crawl_params_preview
 
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
@@ -146,7 +145,6 @@ class AsyncV2Proxy:
             self.get_crawl_errors = client_instance.get_crawl_errors
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
-            self.crawl_params_preview = client_instance.crawl_params_preview
 
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
@@ -264,7 +262,6 @@ class Firecrawl:
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
         self.wait_crawl = self._v2_client.wait_crawl
-        self.crawl_params_preview = self._v2_client.crawl_params_preview
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
         self.cancel_crawl = self._v2_client.cancel_crawl
@@ -420,7 +417,6 @@ class AsyncFirecrawl:
         self.crawl = self._v2_client.crawl
         self.get_crawl_errors = self._v2_client.get_crawl_errors
         self.active_crawls = self._v2_client.active_crawls
-        self.crawl_params_preview = self._v2_client.crawl_params_preview
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
         self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status

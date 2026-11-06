@@ -168,22 +168,3 @@ async def test_async_active_crawls_with_running_crawl():
     assert start.id in ids
     # cleanup
     await client.cancel_crawl(start.id)
-
-
-@pytest.mark.asyncio
-async def test_async_crawl_params_preview():
-    client = AsyncFirecrawl(api_key=os.getenv("API_KEY"), api_url=os.getenv("API_URL"))
-    params = await client.crawl_params_preview(
-        url="https://docs.firecrawl.dev",
-        prompt="Extract all blog posts and documentation",
-    )
-    assert params is not None
-    # basic sanity: at least one field should be suggested
-    has_any = any([
-        getattr(params, "limit", None) is not None,
-        getattr(params, "include_paths", None) is not None,
-        getattr(params, "max_discovery_depth", None) is not None,
-    ])
-    assert has_any
-
-

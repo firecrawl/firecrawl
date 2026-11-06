@@ -18,7 +18,6 @@ import {
   crawl as crawlWaiter,
   getCrawlErrors,
   getActiveCrawls,
-  crawlParamsPreview,
 } from "./methods/crawl";
 import {
   startBatchScrape,
@@ -434,14 +433,6 @@ export class FirecrawlClient {
    */
   async getActiveCrawls(): Promise<ActiveCrawlsResponse> {
     return getActiveCrawls(this.http);
-  }
-  /**
-   * Preview normalized crawl parameters produced by a natural-language prompt.
-   * @param url Root URL.
-   * @param prompt Natural-language instruction.
-   */
-  async crawlParamsPreview(url: string, prompt: string): Promise<Record<string, unknown>> {
-    return crawlParamsPreview(this.http, url, prompt);
   }
 
   // Monitor
