@@ -116,9 +116,7 @@ vi.mock("../../lib/keyless", () => ({
 }));
 
 vi.mock("../../lib/gcs-jobs", () => ({
-  saveDeepResearchToGCS: vi.fn(),
   saveExtractToGCS: vi.fn(),
-  saveLlmsTxtToGCS: vi.fn(),
   saveMapToGCS: vi.fn(),
   saveScrapeToGCS: vi.fn(),
   saveSearchToGCS: vi.fn(),
@@ -727,12 +725,12 @@ describe("logRequest", () => {
 
     await logRequest({
       ...makeRequest(null),
-      kind: "deep_research",
+      kind: "crawl",
       jobAccessExpiresAt: expiresAt,
     });
 
     expect(writeApiJobAccess).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "deep_research", expiresAt }),
+      expect.objectContaining({ kind: "crawl", expiresAt }),
     );
   });
 

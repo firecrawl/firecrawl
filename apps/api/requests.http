@@ -149,23 +149,3 @@ content-type: application/json
 GET {{baseUrl}}/v2/crawl/active HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### Generate LLMs TXT
-# @name generateLlmsTxt
-POST {{baseUrl}}/v1/llmstxt HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-content-type: application/json
-
-{
-  "url": "https://firecrawl.dev",
-  "maxUrls": 1,
-  "showFullText": false,
-  "cache": true
-}
-
-
-### Check Generate LLMs TXT Status
-@generateLlmsTxtId = {{generateLlmsTxt.response.body.$.id}}
-# @name generateLlmsTxtStatus
-GET {{baseUrl}}/v1/llmstxt/{{generateLlmsTxtId}} HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-

@@ -122,8 +122,6 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["monitor"], "monitor"],
   [["research"], "research"],
   [["developer"], "research"],
-  [["llmstxt"], "llmstxt"],
-  [["deep-research"], "deep-research"],
   [["fireclaw"], "fireclaw"],
 ];
 

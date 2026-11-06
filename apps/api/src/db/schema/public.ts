@@ -278,6 +278,7 @@ export const key_restriction_config = pgTable(
   ],
 );
 
+/** @public Mirrors a table that is still in the database but has no reader. */
 export const llm_texts = pgTable("llm_texts", {
   id: uuid("id").notNull().defaultRandom(),
   origin_url: text("origin_url").notNull(),

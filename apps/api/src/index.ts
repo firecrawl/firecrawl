@@ -5,8 +5,6 @@ import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import {
-  getGenerateLlmsTxtQueue,
-  getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
   getFirebillTrackRetryQueue,
@@ -104,8 +102,6 @@ if (config.EXPRESS_TRUST_PROXY) {
 const serverAdapter = new ExpressAdapter();
 
 const bullBoardQueues = [
-  new BullMQAdapter(getGenerateLlmsTxtQueue()),
-  new BullMQAdapter(getDeepResearchQueue()),
   new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
   new BullMQAdapter(getFirebillTrackRetryQueue()),

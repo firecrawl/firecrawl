@@ -200,7 +200,7 @@ export const agentOptionsExtract = z.strictObject({
   model: z.string().prefault(agentExtractModelValue),
 });
 
-export const extractOptions = z
+const extractOptions = z
   .strictObject({
     mode: z.enum(["llm"]).prefault("llm"),
     schema: z
@@ -1723,26 +1723,3 @@ export type TokenUsage = {
   step?: string;
   model?: string;
 };
-
-export const generateLLMsTextRequestSchema = z.object({
-  url: url.describe("The URL to generate text from"),
-  maxUrls: z
-    .number()
-    .min(1)
-    .max(5000)
-    .prefault(10)
-    .describe("Maximum number of URLs to process"),
-  showFullText: z
-    .boolean()
-    .prefault(false)
-    .describe("Whether to show the full LLMs-full.txt in the response"),
-  cache: z
-    .boolean()
-    .prefault(true)
-    .describe("Whether to use cached content if available"),
-  __experimental_stream: z.boolean().optional(),
-});
-
-export type GenerateLLMsTextRequest = z.infer<
-  typeof generateLLMsTextRequestSchema
->;

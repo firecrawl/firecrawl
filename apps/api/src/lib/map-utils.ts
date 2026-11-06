@@ -125,7 +125,7 @@ export async function getMapResults({
 
   // Safe Mode lockdown: serve links from the index only — skip live search +
   // sitemap discovery. Derived here from the team flags so every caller
-  // (map, extract, llmstxt, prompt enhancement) honors it.
+  // (map, extract, prompt enhancement) honors it.
   const indexOnly =
     resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
