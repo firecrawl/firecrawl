@@ -480,3 +480,24 @@ uses its published price. A provider whose data terms have not been accepted rej
 call with a 403 whose `SdkError` carries `code: "THIRD_PARTY_DATA_TERMS_REQUIRED"` and a
 `requiresAction: { type: "accept_terms", terms, version, url }` pointing at the page where
 an organization admin can accept them.
+
+Each Alexandria call result can carry an opaque `feedbackToken`, valid for 24 hours. It is
+absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandriaFeedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `callRatings` (at most 20) rate individual calls. The response includes
+`rejectedTokens` when some tokens failed verification.
+
+```ts
+import { collectFeedbackTokens } from "@mendable/firecrawl-js";
+
+const response = await firecrawl.alexandriaFeedback({
+  rating: "partial",
+  requestedWebsite: { url: "https://example.com", requestedFunctionality: "Find episodes" },
+  rationale: "Found the episodes but the dates were missing",
+  tokens: collectFeedbackTokens(result.alexandria),
+  callRatings: result.alexandria[0].feedbackToken
+    ? [{ token: result.alexandria[0].feedbackToken, rating: "bad" }]
+    : undefined,
+});
+console.log(response.rejectedTokens ?? 0);
+```
