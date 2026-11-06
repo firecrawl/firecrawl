@@ -76,7 +76,7 @@ describe("Removed legacy endpoints", () => {
   }, 30000);
 });
 
-describe("Deprecation warnings on legacy endpoints", () => {
+describe("Non-deprecated endpoints", () => {
   it("non-deprecated endpoints do not emit Deprecation header or warnings", async () => {
     const res = await request(TEST_API_URL)
       .post("/v1/scrape")
