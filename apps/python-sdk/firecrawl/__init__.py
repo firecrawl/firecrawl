@@ -41,15 +41,8 @@ from .v2.utils.error_handler import (
     DNSResolutionError,
     TLSError,
 )
-from .v1 import (
-    V1FirecrawlApp,
-    AsyncV1FirecrawlApp,
-    V1JsonConfig,
-    V1ScrapeOptions,
-    V1ChangeTrackingOptions,
-)
 
-__version__ = "4.56.0"
+__version__ = "5.0.0"
 
 # Define the logger for the Firecrawl project
 logger: logging.Logger = logging.getLogger("firecrawl")
@@ -139,9 +132,4 @@ __all__ = [
     'InternalServerError',
     'DNSResolutionError',
     'TLSError',
-    'V1FirecrawlApp',
-    'AsyncV1FirecrawlApp',
-    'V1JsonConfig',
-    'V1ScrapeOptions',
-    'V1ChangeTrackingOptions',
 ]

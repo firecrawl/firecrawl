@@ -29,9 +29,6 @@ from .v2.types import (
     CrawlRequest,
     CrawlJob,
     CrawlResponse,
-    CrawlParamsRequest,
-    CrawlParamsData,
-    CrawlParamsResponse,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
     
@@ -133,9 +130,6 @@ __all__ = [
     'CrawlJob',
     'CrawlJobData',
     'CrawlResponse',
-    'CrawlParamsRequest',
-    'CrawlParamsData',
-    'CrawlParamsResponse',
     'CrawlErrorsResponse',
     'ActiveCrawlsResponse',
     

@@ -4,8 +4,6 @@ from ...types import (
     CrawlJob,
     CrawlResponse,
     Document,
-    CrawlParamsRequest,
-    CrawlParamsData,
     WebhookConfig,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
@@ -316,61 +314,6 @@ async def cancel_crawl(client: AsyncHttpClient, job_id: str) -> bool:
         handle_response_error(response, "cancel crawl")
     body = response.json()
     return body.get("status") == "cancelled"
-
-
-async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequest) -> CrawlParamsData:
-    """
-    Preview crawl parameters before starting a crawl job.
-    
-    Args:
-        client: Async HTTP client instance
-        request: CrawlParamsRequest containing URL and prompt
-        
-    Returns:
-        CrawlParamsData containing crawl configuration
-        
-    Raises:
-        ValueError: If request is invalid
-        Exception: If the parameter preview fails
-    """
-    if not request.url or not request.url.strip():
-        raise ValueError("URL cannot be empty")
-    if not request.prompt or not request.prompt.strip():
-        raise ValueError("Prompt cannot be empty")
-    payload = {"url": request.url, "prompt": request.prompt}
-    response = await client.post("/v2/crawl/params-preview", payload)
-    if response.status_code >= 400:
-        handle_response_error(response, "crawl params preview")
-    body = response.json()
-    if not body.get("success"):
-        raise FirecrawlError(body.get("error", "Unknown error occurred"))
-    params_data = body.get("data", {})
-    converted: Dict[str, Any] = {}
-    mapping = {
-        "includePaths": "include_paths",
-        "excludePaths": "exclude_paths",
-        "maxDiscoveryDepth": "max_discovery_depth",
-        "sitemap": "sitemap",
-        "ignoreQueryParameters": "ignore_query_parameters",
-        "deduplicateSimilarURLs": "deduplicate_similar_urls",
-        "crawlEntireDomain": "crawl_entire_domain",
-        "allowExternalLinks": "allow_external_links",
-        "allowSubdomains": "allow_subdomains",
-        "ignoreRobotsTxt": "ignore_robots_txt",
-        "robotsUserAgent": "robots_user_agent",
-        "maxConcurrency": "max_concurrency",
-        "scrapeOptions": "scrape_options",
-        "zeroDataRetention": "zero_data_retention",
-    }
-    for camel, snake in mapping.items():
-        if camel in params_data:
-            converted[snake] = params_data[camel]
-    if "webhook" in params_data:
-        wk = params_data["webhook"]
-        converted["webhook"] = wk
-    if "warning" in body:
-        converted["warning"] = body["warning"]
-    return CrawlParamsData(**converted)
 
 
 async def get_crawl_errors(client: AsyncHttpClient, crawl_id: str) -> CrawlErrorsResponse:
