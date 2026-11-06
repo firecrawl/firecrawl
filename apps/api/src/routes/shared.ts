@@ -313,7 +313,7 @@ export function checkCreditsMiddleware(
           return res.status(402).json({
             success: false,
             error:
-              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://www.firecrawl.dev/extract#pricing.",
+              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://firecrawl.dev/pricing.",
           });
         }
         if (
