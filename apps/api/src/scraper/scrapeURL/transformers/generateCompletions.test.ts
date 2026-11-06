@@ -19,7 +19,7 @@ import {
   generateCrawlerOptionsFromPrompt,
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 
 const noopLogger = {
   warn: () => {},
