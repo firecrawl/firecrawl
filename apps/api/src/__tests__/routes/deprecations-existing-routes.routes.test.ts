@@ -123,7 +123,7 @@ describe("deep-research and llmstxt entries", () => {
       const res = await request(app).get("/probe");
 
       expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
-      expect(res.headers["sunset"]).toBeUndefined();
+      expect(res.headers["sunset"]).toBe("Thu, 10 Dec 2026 15:00:00 GMT");
       const links = [`<${docs}>; rel="deprecation"`];
       if (replacement) links.push(`<${replacement}>; rel="successor-version"`);
       expect(res.headers["link"]).toBe(links.join(", "));

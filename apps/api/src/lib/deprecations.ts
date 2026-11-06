@@ -65,6 +65,7 @@ const DEPRECATIONS = {
     replacement: "/v2/agent",
     docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     surface: "deep_research",
   },
   v1_deep_research_status: {
@@ -73,6 +74,7 @@ const DEPRECATIONS = {
     replacement: "/v2/agent/:jobId",
     docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     surface: "deep_research",
   },
   v1_llmstxt: {
@@ -80,6 +82,7 @@ const DEPRECATIONS = {
       "/v1/llmstxt is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
     docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     surface: "llmstxt",
   },
   v1_llmstxt_status: {
@@ -87,6 +90,7 @@ const DEPRECATIONS = {
       "/v1/llmstxt/:jobId is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
     docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     surface: "llmstxt",
   },
   v0_scrape: {
