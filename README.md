@@ -35,6 +35,13 @@
   </p>
 </div>
 
+<div align="center">
+  <p>
+    <a href="README.md">English</a> |
+    <a href="README.ru.md">Русский</a>
+  </p>
+</div>
+
 ---
 
 # **🔥 Firecrawl**
