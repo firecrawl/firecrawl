@@ -69,12 +69,13 @@ export async function authorizeProviders(
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   let failure: unknown;
+  const deadline = Date.now() + 10000;
   const lookup = () =>
     exchangeRequest({
       teamId,
       path: "/v1/provider-terms/requirements",
       body: { providers },
-      timeoutMs: 10000,
+      timeoutMs: deadline - Date.now(),
       clientIp,
       billingCountry,
     }).catch(error => {
@@ -82,12 +83,11 @@ export async function authorizeProviders(
       return undefined;
     });
   let response = await lookup();
-  // A dropped connection or a 5xx usually means an Exchange pod was replaced mid-request;
-  // the lookup is read-only, so one immediate retry reaches a live pod. A timeout is not retried.
+  // A dropped connection or a 5xx usually means an Exchange pod was replaced mid-request; the
+  // lookup is read-only, so one retry within the same 10s budget reaches a live pod.
   if (
-    (response === undefined &&
-      !(failure instanceof Error && failure.name === "TimeoutError")) ||
-    (response !== undefined && response.status >= 500)
+    (response === undefined || response.status >= 500) &&
+    deadline - Date.now() >= 1000
   ) {
     failure = undefined;
     response = await lookup();

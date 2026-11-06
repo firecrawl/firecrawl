@@ -57,12 +57,27 @@ it("retries the lookup once when the connection drops or Exchange answers 5xx", 
   expect(mocks.request).toHaveBeenCalledTimes(2);
 });
 
-it("does not retry a lookup that timed out", async () => {
-  const timeout = new Error("The operation was aborted due to timeout");
-  timeout.name = "TimeoutError";
-  mocks.request.mockRejectedValue(timeout);
+it("retries only within the original 10s budget", async () => {
+  vi.useFakeTimers({ now: new Date("2026-11-06T16:05:00Z") });
+  mocks.request.mockImplementationOnce(async () => {
+    vi.setSystemTime(new Date("2026-11-06T16:05:09.500Z"));
+    throw new Error("connect timeout");
+  });
   expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
   expect(mocks.request).toHaveBeenCalledTimes(1);
+
+  mocks.request.mockReset();
+  vi.setSystemTime(new Date("2026-11-06T16:06:00Z"));
+  mocks.request
+    .mockImplementationOnce(async () => {
+      vi.setSystemTime(new Date("2026-11-06T16:06:04Z"));
+      throw new Error("other side closed");
+    })
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({ timeoutMs: 6000 }),
+  );
 });
 
 it("refuses a provider the Exchange does not know before any quote or execution", async () => {
