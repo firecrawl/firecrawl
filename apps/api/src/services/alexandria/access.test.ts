@@ -4,7 +4,8 @@ vi.mock("../../config", () => ({
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("../../controllers/auth", () => ({ getACUCTeam: mocks.team }));
-import { authorizeProviders } from "./access";
+
+let authorizeProviders: typeof import("./access.js").authorizeProviders;
 
 const calls = [
   { provider: "fred", capability: "series/observations", options: {} },
@@ -22,7 +23,62 @@ const requirement = (required: boolean) => ({
   },
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(async () => {
+  vi.clearAllMocks();
+  vi.resetModules();
+  ({ authorizeProviders } = await import("./access.js"));
+});
+
+afterEach(() => vi.useRealTimers());
+
+it("serves the last requirements for up to an hour when the Exchange cannot answer", async () => {
+  vi.useFakeTimers({ now: new Date("2026-10-19T06:00:00Z") });
+  mocks.request.mockResolvedValue(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  mocks.request.mockRejectedValue(new Error("timeout"));
+  vi.setSystemTime(new Date("2026-10-19T06:59:00Z"));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  vi.setSystemTime(new Date("2026-10-19T07:01:00Z"));
+  expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
+});
+
+it("retries the lookup once when the connection drops or Exchange answers 5xx", async () => {
+  mocks.request
+    .mockRejectedValueOnce(new Error("other side closed"))
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+
+  mocks.request.mockReset();
+  mocks.request
+    .mockResolvedValueOnce({ status: 503, body: "draining" })
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+});
+
+it("retries only within the original 10s budget", async () => {
+  vi.useFakeTimers({ now: new Date("2026-11-06T16:05:00Z") });
+  mocks.request.mockImplementationOnce(async () => {
+    vi.setSystemTime(new Date("2026-11-06T16:05:09.500Z"));
+    throw new Error("connect timeout");
+  });
+  expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+
+  mocks.request.mockReset();
+  vi.setSystemTime(new Date("2026-11-06T16:06:00Z"));
+  mocks.request
+    .mockImplementationOnce(async () => {
+      vi.setSystemTime(new Date("2026-11-06T16:06:04Z"));
+      throw new Error("other side closed");
+    })
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({ timeoutMs: 6000 }),
+  );
+});
 
 it("refuses a provider the Exchange does not know before any quote or execution", async () => {
   mocks.request.mockResolvedValue({ status: 404, body: { code: "not_found" } });
