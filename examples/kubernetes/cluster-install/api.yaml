@@ -42,7 +42,7 @@ spec:
               cpu: "2000m"
           livenessProbe:
             httpGet:
-              path: /v0/health/liveness
+              path: /health/liveness
               port: 3002
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -51,7 +51,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /v0/health/readiness
+              path: /health/readiness
               port: 3002
             initialDelaySeconds: 30
             periodSeconds: 30

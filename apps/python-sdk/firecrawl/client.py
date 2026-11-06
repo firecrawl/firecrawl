@@ -73,6 +73,7 @@ class V2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -167,6 +168,7 @@ class AsyncV2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -290,6 +292,7 @@ class Firecrawl:
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -447,6 +450,7 @@ class AsyncFirecrawl:
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
