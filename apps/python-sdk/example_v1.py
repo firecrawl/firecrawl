@@ -101,19 +101,6 @@ extract_result = app.v1.extract(['https://firecrawl.dev'], prompt="Extract the t
 print(extract_result)
 
 
-# Deep research example
-research_result = app.v1.deep_research(
-    "What are the latest developments in large language models?",
-    max_urls=4
-)
-print("Research Results:", research_result)
-
-# Generate LLMs.txt example
-llms_result = app.v1.generate_llms_text(
-    "https://firecrawl.dev")
-print("LLMs.txt Results:", llms_result)
-
-
 # Crawl a website with WebSockets:
 # inside an async function...
 import nest_asyncio
@@ -233,20 +220,6 @@ async def example_map_and_extract():
     extract_result = await async_app.v1.extract(['https://firecrawl.dev'], prompt="Extract the title, description, and links from the website", schema=extract_schema)
     print(extract_result)
 
-async def example_deep_research():
-    # Deep research example
-    research_result = await async_app.v1.deep_research(
-        "What are the latest developments in large language models?",
-        max_urls=4
-    )
-    print("Research Results:", research_result)
-
-async def example_generate_llms_text():
-    # Generate LLMs.txt example
-    llms_result = await async_app.v1.generate_llms_text(
-        "https://firecrawl.dev")
-    print("LLMs.txt Results:", llms_result)
-
 # Define event handlers for websocket
 def on_document(detail):
     print("DOC", detail)
@@ -278,8 +251,6 @@ async def main():
     await example_llm_extraction()
     await example_map_and_extract()
     await example_websocket_crawl()
-    await example_deep_research()
-    await example_generate_llms_text()
 
 if __name__ == "__main__":
     asyncio.run(main())

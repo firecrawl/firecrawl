@@ -48,12 +48,6 @@ describe("v1 methods work without params", () => {
     ["batchScrapeUrlsAndWatch", "/v1/batch/scrape", app => app.batchScrapeUrlsAndWatch(["https://example.com"])],
     ["extract", "/v1/extract", app => app.extract(["https://example.com"])],
     ["asyncExtract", "/v1/extract", app => app.asyncExtract(["https://example.com"])],
-    ["deepResearch", "/v1/deep-research", app => app.deepResearch("firecrawl")],
-    ["asyncDeepResearch", "/v1/deep-research", app => app.asyncDeepResearch("firecrawl")],
-    ["__deepResearch", "/v1/deep-research", app => app.__deepResearch("firecrawl")],
-    ["__asyncDeepResearch", "/v1/deep-research", app => app.__asyncDeepResearch("firecrawl")],
-    ["generateLLMsText", "/v1/llmstxt", app => app.generateLLMsText("https://example.com")],
-    ["asyncGenerateLLMsText", "/v1/llmstxt", app => app.asyncGenerateLLMsText("https://example.com")],
   ];
 
   test.each(cases)("%s sends the default origin", async (_method, path, call) => {

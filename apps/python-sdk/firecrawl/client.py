@@ -8,7 +8,6 @@ The client supports both v1 and v2 API versions, providing access to features li
 - Site crawling with configurable depth and limits
 - Web search with content extraction
 - Structured data extraction using AI models
-- Deep research capabilities
 
 Usage:
     from firecrawl import Firecrawl
@@ -61,8 +60,6 @@ class V1Proxy:
             self.check_crawl_status = client_instance.check_crawl_status
             self.map_url = client_instance.map_url
             self.extract = client_instance.extract
-            self.deep_research = client_instance.deep_research
-            self.generate_llms_text = client_instance.generate_llms_text
 
 class V2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
@@ -155,8 +152,6 @@ class AsyncV1Proxy:
             self.check_crawl_status = client_instance.check_crawl_status
             self.map_url = client_instance.map_url
             self.extract = client_instance.extract
-            self.deep_research = client_instance.deep_research
-            self.generate_llms_text = client_instance.generate_llms_text
 
 class AsyncV2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
