@@ -617,6 +617,7 @@ export const alexandria_feedback_calls = pgTable(
     request_id: text("request_id").notNull(),
     provider: text("provider"),
     capability: text("capability"),
+    rating: text("rating"),
     attribution: text("attribution").notNull(),
     created_at: ts("created_at").notNull().defaultNow(),
   },
@@ -625,7 +626,11 @@ export const alexandria_feedback_calls = pgTable(
     index("alexandria_feedback_calls_request_id_idx").on(table.request_id),
     check(
       "alexandria_feedback_calls_attribution_check",
-      sql`${table.attribution} IN ('client', 'window')`,
+      sql`${table.attribution} IN ('token', 'window')`,
+    ),
+    check(
+      "alexandria_feedback_calls_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
     ),
   ],
 );

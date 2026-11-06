@@ -52,6 +52,7 @@ vi.mock("./record-options", () => ({
 
 import { config } from "../../../config";
 import { feedbackController } from "./controller";
+import { issueFeedbackToken } from "../../../lib/alexandria-feedback-token";
 
 const minimal = {
   endpoint: "alexandria",
@@ -765,24 +766,41 @@ it.each(["search", "scrape", "parse", "map"])(
 
 describe("call attribution", () => {
   const now = 1_800_000_000_000;
+  const originalSecret = config.EXCHANGE_INTERNAL_SECRET;
   const recent = (requestId: string, provider: string, ageSec: number) => ({
     requestId,
     provider,
     capability: "lookup",
     at: now - ageSec * 1000,
   });
+  const token = (
+    requestId: string,
+    provider: string,
+    options: { team?: string; at?: number } = {},
+  ) =>
+    issueFeedbackToken(
+      {
+        requestId,
+        teamId: options.team ?? teamId,
+        provider,
+        capability: "lookup",
+      },
+      options.at ?? now - 60_000,
+    )!;
   const callRow = (
     position: number,
     request_id: string,
-    provider: string | null,
+    provider: string,
     attribution: string,
+    rating: string | null = null,
   ) => ({
     feedback_id: expect.any(String),
     team_id: teamId,
     position,
     request_id,
     provider,
-    capability: provider === null ? null : "lookup",
+    capability: "lookup",
+    rating,
     attribution,
   });
   let originalWindow: number;
@@ -790,6 +808,7 @@ describe("call attribution", () => {
   beforeEach(() => {
     originalWindow = config.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
     config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
+    config.EXCHANGE_INTERNAL_SECRET = "internal-secret";
     clock = vi.spyOn(Date, "now").mockReturnValue(now);
     mocks.getRecentAlexandriaCalls.mockResolvedValue([
       recent("req-3", "sec", 10),
@@ -801,30 +820,90 @@ describe("call attribution", () => {
   });
   afterEach(() => {
     config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
+    config.EXCHANGE_INTERNAL_SECRET = originalSecret;
     clock.mockRestore();
   });
 
-  it("attributes to the calls the client names by request id", async () => {
-    const response = await submit({ ...minimal, requestId: "req-2" });
+  it("attributes to the calls named by valid tokens, with per-call ratings", async () => {
+    const fred = token("req-2", "fred");
+    const sec = token("req-3", "sec");
+    const response = await submit({
+      ...minimal,
+      tokens: [fred, sec, fred],
+      callRatings: [{ token: sec, rating: "bad" }],
+    });
     expect(response.status).toBe(200);
-    expect(mocks.getRecentAlexandriaCalls).toHaveBeenCalledWith(teamId);
+    expect(response.body.rejectedTokens).toBeUndefined();
+    expect(mocks.getRecentAlexandriaCalls).not.toHaveBeenCalled();
     expect(callRows()).toEqual([
-      callRow(0, "req-2", "fred", "client"),
-      callRow(1, "req-2", "bls", "client"),
+      callRow(0, "req-2", "fred", "token"),
+      callRow(1, "req-3", "sec", "token", "bad"),
     ]);
     expect(
       callRows().every(row => row.feedback_id === response.body.feedbackId),
     ).toBe(true);
   });
 
-  it("matches a remembered request id past the window, else records the id alone", async () => {
-    expect((await submit({ ...minimal, requestId: "req-1" })).status).toBe(200);
-    expect(callRows()).toEqual([callRow(0, "req-1", "census", "client")]);
-    mocks.insert.mockClear();
-    expect((await submit({ ...minimal, requestId: "unknown" })).status).toBe(
-      200,
-    );
-    expect(callRows()).toEqual([callRow(0, "unknown", null, "client")]);
+  it("accepts a token-attributed rating after the window has closed", async () => {
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+    const response = await submit({
+      ...minimal,
+      callRatings: [{ token: token("req-1", "census"), rating: "good" }],
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.hasRecentAlexandriaActivity).not.toHaveBeenCalled();
+    expect(mocks.refundAlexandriaFeedback).toHaveBeenCalledOnce();
+    expect(callRows()).toEqual([
+      callRow(0, "req-1", "census", "token", "good"),
+    ]);
+  });
+
+  it("rejects tokens that are forged, expired, from another team or unsigned", async () => {
+    const valid = token("req-2", "fred");
+    const [version, payload, signature] = valid.split(".");
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
+    const forged = [
+      version,
+      Buffer.from(
+        JSON.stringify([claims[0], "bls", ...claims.slice(2)]),
+      ).toString("base64url"),
+      signature,
+    ].join(".");
+    const response = await submit({
+      ...minimal,
+      tokens: [
+        valid,
+        forged,
+        token("req-2", "bls", { at: now - 25 * 3600_000 }),
+        token("req-2", "bls", { team: "01933161-0000-7000-8000-00000000000f" }),
+        "v1.not-a-token",
+      ],
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.rejectedTokens).toBe(4);
+    expect(callRows()).toEqual([callRow(0, "req-2", "fred", "token")]);
+  });
+
+  it("falls back to the window when no token verifies, and closes when the window has", async () => {
+    const stale = token("req-2", "fred", { at: now - 25 * 3600_000 });
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+    const closed = await submit({ ...minimal, tokens: [stale] });
+    expect(closed.status).toBe(409);
+    expect(closed.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
+    const open = await submit({ ...minimal, tokens: [stale] });
+    expect(open.status).toBe(200);
+    expect(open.body.rejectedTokens).toBe(1);
+    expect(callRows()[0]).toEqual(callRow(0, "req-3", "sec", "window"));
+  });
+
+  it("does not verify tokens without a signing key", async () => {
+    const valid = token("req-2", "fred");
+    config.EXCHANGE_INTERNAL_SECRET = undefined as never;
+    const response = await submit({ ...minimal, tokens: [valid] });
+    expect(response.status).toBe(200);
+    expect(response.body.rejectedTokens).toBe(1);
+    expect(callRows().every(row => row.attribution === "window")).toBe(true);
   });
 
   it("falls back to the distinct calls inside the window", async () => {
@@ -843,20 +922,40 @@ describe("call attribution", () => {
     expect(parentRows()).toHaveLength(1);
   });
 
-  it.each(["", "has space", "x".repeat(129)])(
-    "rejects an invalid request id %j",
-    async requestId => {
-      expect((await submit({ ...minimal, requestId })).status).toBe(400);
-      expect(mocks.transaction).not.toHaveBeenCalled();
+  it.each([
+    { tokens: [""] },
+    { tokens: ["x".repeat(1025)] },
+    { tokens: Array.from({ length: 21 }, (_, i) => `t${i}`) },
+    { callRatings: [{ token: "t", rating: "great" }] },
+    { callRatings: [{ token: "t" }] },
+    {
+      callRatings: Array.from({ length: 21 }, (_, i) => ({
+        token: `t${i}`,
+        rating: "good",
+      })),
     },
-  );
+    { requestId: "req-2" },
+  ])("rejects invalid token fields %j", async extra => {
+    expect((await submit({ ...minimal, ...extra })).status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
 
-  it("forwards the rating and its calls to the Exchange after the refund", async () => {
+  it("keeps tokens out of the 8 KiB payload bound", async () => {
+    const tokens = Array.from({ length: 20 }, (_, i) =>
+      token(`req-${i}`, "x".repeat(150)),
+    );
+    expect(JSON.stringify(tokens).length).toBeGreaterThan(8 * 1024);
+    expect((await submit({ ...minimal, tokens })).status).toBe(200);
+  });
+
+  it("forwards the rating and its token calls to the Exchange after the refund", async () => {
+    const fred = token("req-2", "fred");
     const response = await submit({
       ...minimal,
       rating: "bad",
       origin: "mcp",
-      requestId: "req-2",
+      tokens: [fred],
+      callRatings: [{ token: token("req-3", "sec"), rating: "good" }],
     });
     expect(mocks.forwardExchangeToolFeedback).toHaveBeenCalledExactlyOnceWith({
       teamId,
@@ -864,10 +963,20 @@ describe("call attribution", () => {
       occurredAt: new Date(now).toISOString(),
       rating: "bad",
       origin: "mcp",
-      attribution: "client",
+      attribution: "token",
       calls: [
-        { requestId: "req-2", provider: "fred", capability: "lookup" },
-        { requestId: "req-2", provider: "bls", capability: "lookup" },
+        {
+          requestId: "req-2",
+          provider: "fred",
+          capability: "lookup",
+          rating: null,
+        },
+        {
+          requestId: "req-3",
+          provider: "sec",
+          capability: "lookup",
+          rating: "good",
+        },
       ],
     });
     expect(

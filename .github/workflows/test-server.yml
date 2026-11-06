@@ -242,6 +242,7 @@ jobs:
           src/controllers/v2/feedback/feedback-window.test.ts
           src/controllers/v2/scrape-alexandria.test.ts
           src/lib/alexandria-activity.test.ts
+          src/lib/alexandria-feedback-token.test.ts
           --maxWorkers=1 --reporter=default
         working-directory: apps/api
 

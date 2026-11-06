@@ -10,6 +10,7 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
+import { issueFeedbackToken } from "../../lib/alexandria-feedback-token";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import {
   markAlexandriaActivity,
@@ -343,7 +344,26 @@ export async function providerScrapeController(
       res.setHeader("Retry-After", String(refused.retryAfterSeconds));
     return res.status(result.status).json(result.body);
   }
-  const answer = answerSchema.parse(result.body);
+  const parsed = answerSchema.parse(result.body);
+  const answer = zeroDataRetention
+    ? parsed
+    : {
+        ...parsed,
+        results: parsed.results.map((item, i) => {
+          const provider = item.provider ?? body.alexandria[i]?.provider;
+          const capability = item.capability ?? body.alexandria[i]?.capability;
+          const feedbackToken =
+            provider && capability
+              ? issueFeedbackToken({
+                  requestId,
+                  teamId: req.auth.team_id,
+                  provider,
+                  capability,
+                })
+              : undefined;
+          return feedbackToken ? { ...item, feedbackToken } : item;
+        }),
+      };
   if (legacy) {
     if (legacyBody && "requests" in legacyBody) return res.json(answer);
     const first = answer.results[0];

@@ -912,11 +912,12 @@ export type ExchangeToolFeedback = {
   occurredAt: string;
   rating: "good" | "partial" | "bad";
   origin: string;
-  attribution: "client" | "window";
+  attribution: "token" | "window";
   calls: {
     requestId: string;
-    provider: string | null;
-    capability: string | null;
+    provider: string;
+    capability: string;
+    rating: "good" | "partial" | "bad" | null;
   }[];
 };
 

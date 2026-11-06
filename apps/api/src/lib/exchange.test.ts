@@ -1040,8 +1040,15 @@ describe("Exchange tool feedback forward", () => {
     occurredAt: "2026-11-05T12:00:00.000Z",
     rating: "bad" as const,
     origin: "mcp",
-    attribution: "client" as const,
-    calls: [{ requestId: "req-1", provider: "fred", capability: "series" }],
+    attribution: "token" as const,
+    calls: [
+      {
+        requestId: "req-1",
+        provider: "fred",
+        capability: "series",
+        rating: "good" as const,
+      },
+    ],
   };
 
   beforeEach(() => {
@@ -1078,7 +1085,7 @@ describe("Exchange tool feedback forward", () => {
       occurredAt: feedback.occurredAt,
       rating: "bad",
       origin: "mcp",
-      attribution: "client",
+      attribution: "token",
       calls: feedback.calls,
     });
   });

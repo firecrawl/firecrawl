@@ -43,6 +43,8 @@ vi.mock("../../config", () => ({
   },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
+import { config } from "../../config";
+import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 
 const call = {
   provider: "fred",
@@ -658,3 +660,67 @@ it.each([
     expect(mocks.markCalls).not.toHaveBeenCalled();
   },
 );
+
+describe("feedback tokens", () => {
+  afterEach(() => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      undefined;
+  });
+  beforeEach(() => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      "internal-secret";
+  });
+
+  it("returns a team-bound token per provider call, failed calls included", async () => {
+    const second = { provider: "sec", capability: "filings", options: {} };
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { ...call, creditsCost: 0, data: {} },
+        { error: { code: "provider_error", message: "down" } },
+      ]),
+    );
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-request-id", "req-1")
+      .send({ alexandria: [call, second] });
+    const [first, failed] = response.body.data.alexandria;
+    expect(verifyFeedbackToken(first.feedbackToken, "team")).toMatchObject({
+      requestId: "req-1",
+      provider: "fred",
+      capability: "categories/category",
+    });
+    expect(verifyFeedbackToken(failed.feedbackToken, "team")).toMatchObject({
+      requestId: "req-1",
+      provider: "sec",
+      capability: "filings",
+    });
+    expect(verifyFeedbackToken(first.feedbackToken, "other-team")).toBeNull();
+  });
+
+  it("returns the token on the legacy single-call route", async () => {
+    const response = await request(app).post("/exchange/retrieve").send(call);
+    expect(response.body.feedbackToken).toEqual(expect.any(String));
+  });
+
+  it.each([
+    [{ alexandria: call, zeroDataRetention: true }, {}],
+    [{ alexandria: call }, { forceZDR: true }],
+  ])(
+    "issues no token under zero data retention %#",
+    async (body, teamFlags) => {
+      flags = { exchangeRetrieve: true, ...teamFlags };
+      const response = await request(app).post("/v2/scrape").send(body);
+      expect(response.status).toBe(200);
+      expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
+    },
+  );
+
+  it("issues no token without a signing key", async () => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      undefined;
+    const response = await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: call });
+    expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
+  });
+});
