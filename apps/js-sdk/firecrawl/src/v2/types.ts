@@ -2344,62 +2344,6 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
-/**
- * Component scores.
- *
- * @deprecated The research index GitHub search endpoint was removed after
- * 2026-11-03. Use `developerSearch()` instead. See
- * https://docs.firecrawl.dev/features/developer.
- */
-export interface GitHubScoreBreakdown {
-  rrf?: number;
-  semantic?: number;
-  lexical?: number;
-  fusion?: number;
-  rerank?: number;
-}
-
-/**
- * @deprecated The research index GitHub search endpoint was removed after
- * 2026-11-03. Use `developerSearch()` instead. See
- * https://docs.firecrawl.dev/features/developer.
- */
-export interface GitHubSearchItem {
-  resultType?: "github_history" | "repo_readme" | "web";
-  /** `owner/name`; empty for web results whose URL is not a repo page. */
-  repo: string;
-  url: string;
-  /** History page type (e.g. `issue`, `pull`). Omitted for readmes. */
-  pageType?: string;
-  /** Issue/PR number. Omitted for readmes. */
-  number?: number;
-  /** Number of matched segments/chunks. Omitted when not applicable. */
-  segmentCount?: number;
-  /** Readme URL (readme results). Omitted otherwise. */
-  readmeUrl?: string;
-  /** SERP page title. Only set on web results. */
-  title?: string;
-  /** Short matched excerpt. */
-  snippet: string;
-  /** Full matched content in markdown. Omitted unless available. */
-  contentMd?: string;
-  scores: GitHubScoreBreakdown;
-}
-
-/**
- * @deprecated The research index GitHub search endpoint was removed after
- * 2026-11-03. Use `developerSearch()` instead. See
- * https://docs.firecrawl.dev/features/developer.
- */
-export interface GitHubSearchResponse {
-  success: boolean;
-  results: GitHubSearchItem[];
-  /** Deprecation notice while the sunset window is live. */
-  warnings?: string[];
-  /** Replacement endpoint path, while the sunset window is live. */
-  replacement?: string;
-}
-
 /** Options for `research.searchPapers`. */
 export interface SearchPapersOptions {
   /** Number of results to return (1–500, default 40). */
@@ -2435,16 +2379,4 @@ export interface SimilarPapersOptions {
   rerank?: boolean;
   /** Additional seed paper reference(s), same format as `id`. */
   anchor?: string[];
-}
-
-/**
- * Options for `research.searchGithub`.
- *
- * @deprecated The research index GitHub search endpoint was removed after
- * 2026-11-03. Use `developerSearch()` instead. See
- * https://docs.firecrawl.dev/features/developer.
- */
-export interface SearchGithubOptions {
-  /** Number of results to return (1–100, default 20). */
-  k?: number;
 }

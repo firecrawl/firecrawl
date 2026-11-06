@@ -182,22 +182,6 @@ final class FirecrawlClient
     }
 
     /**
-     * Search GitHub research content.
-     *
-     * @deprecated The research index GitHub search endpoint was removed after
-     *   2026-11-03. Use {@see self::developerSearch()} instead.
-     * @param array<string, mixed> $options
-     * @return array<string, mixed>
-     */
-    public function searchGithub(string $query, array $options = []): array
-    {
-        return $this->http->get('/v2/search/research/github' . $this->queryArray(array_merge(
-            ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
-            $options,
-        )));
-    }
-
-    /**
      * Search the developer index: public repositories, GitHub issues, merged
      * pull requests, READMEs and code documentation.
      *

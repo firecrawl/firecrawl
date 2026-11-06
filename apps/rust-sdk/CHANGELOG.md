@@ -1,5 +1,15 @@
 ## CHANGELOG
 
+## [2.22.0] - 2026-11-06
+
+### Removed
+
+- `Client::search_github`, with `SearchGitHubOptions`, `GitHubSearchResponse`
+  and `GitHubSearchItem`. The research index GitHub search endpoint it called
+  was removed on 2026-11-03 and answers 410 Gone, so the method could only
+  fail. Use `Client::developer_search` instead. This ships in a minor release
+  because no call to the method could succeed.
+
 ## [2.21.10] - 2026-11-04
 
 ### Added

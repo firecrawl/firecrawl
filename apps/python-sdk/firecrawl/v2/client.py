@@ -85,7 +85,6 @@ from .methods.research_docs import (
     CLIENT_INSPECT_PAPER_DOC,
     CLIENT_READ_PAPER_DOC,
     CLIENT_RELATED_PAPERS_DOC,
-    CLIENT_SEARCH_GITHUB_DOC,
     CLIENT_SEARCH_PAPERS_DOC,
     doc,
 )
@@ -336,10 +335,6 @@ class FirecrawlClient:
     @doc(CLIENT_RELATED_PAPERS_DOC)
     def related_papers(self, paper_id: str, intent: str, **kwargs):
         return research_module.related_papers(self.http_client, paper_id, intent, **kwargs)
-
-    @doc(CLIENT_SEARCH_GITHUB_DOC)
-    def search_github(self, query: str, **kwargs):
-        return research_module.search_github(self.http_client, query, **kwargs)
 
     def interact(
         self,

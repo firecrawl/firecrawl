@@ -223,19 +223,6 @@ class TestRelatedPapers:
         assert qs["intent"] == ["intent"]
 
 
-class TestSearchGithub:
-    """search_github -> GET /v2/search/research/github"""
-
-    def test_builds_query_string(self):
-        client = FakeHttpClient(FakeResponse(200, {"success": True, "results": []}))
-        research.search_github(client, "milvus hybrid search", k=10)
-        path, qs = split(client.last_path)
-        assert path == "/v2/search/research/github"
-        assert qs["query"] == ["milvus hybrid search"]
-        assert qs["k"] == ["10"]
-        assert qs["origin"][0].startswith("python-sdk@")
-
-
 class TestErrorMapping:
     """Non-200 responses raise the shared v2 error types."""
 
@@ -255,7 +242,7 @@ class TestErrorMapping:
     def test_error_action_is_labelled_research(self):
         client = FakeHttpClient(FakeResponse(500, {"error": "boom"}))
         with pytest.raises(FirecrawlError) as exc:
-            research.search_github(client, "q")
+            research.search_papers(client, "q")
         assert "research" in str(exc.value)
 
 
@@ -277,7 +264,6 @@ class TestClientWiring:
             "inspect_paper",
             "read_paper",
             "related_papers",
-            "search_github",
         ):
             assert callable(getattr(FirecrawlClient, name)), name
 
@@ -316,7 +302,6 @@ RESEARCH_METHODS = (
     "inspect_paper",
     "read_paper",
     "related_papers",
-    "search_github",
 )
 
 
@@ -326,7 +311,7 @@ class TestUnifiedClientWiring:
     ``Firecrawl`` does not inherit from the v2 client (unlike the JS SDK, where
     ``Firecrawl extends FirecrawlClient``) — it delegates method by method. Any
     method missing from that list is simply absent from the documented surface,
-    so pin all five here.
+    so pin all four here.
     """
 
     def _client(self, response=None):
@@ -375,13 +360,6 @@ class TestUnifiedClientWiring:
         assert qs["intent"] == ["replication attempts"]
         assert qs["k"] == ["20"]
 
-    def test_search_github_delegates(self):
-        client = self._client(FakeResponse(200, {"success": True, "results": []}))
-        client.search_github("pysam VCF parsing memory leak", k=3)
-        path, qs = split(client._v2_client.http_client.last_path)
-        assert path == "/v2/search/research/github"
-        assert qs["query"] == ["pysam VCF parsing memory leak"]
-
     def test_returns_the_v2_response_verbatim(self):
         payload = {"success": True, "results": [{"paperId": "1", "primaryId": "pmid:1"}]}
         client = self._client(FakeResponse(200, payload))
@@ -398,9 +376,9 @@ class TestUnifiedClientWiring:
 
 
 class TestDocstringSingleSourceOfTruth:
-    """The five docstrings live once, in ``v2/methods/research_docs.py``.
+    """The four docstrings live once, in ``v2/methods/research_docs.py``.
 
-    Six layers surface the same five methods. Each keeps a full docstring, but
+    Six layers surface the same four methods. Each keeps a full docstring, but
     the prose is applied from the canonical constants, so a correction to a
     factual claim is a one-place edit. These tests fail if a layer forks its
     own copy again.

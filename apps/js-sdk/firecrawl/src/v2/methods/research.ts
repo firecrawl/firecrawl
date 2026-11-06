@@ -6,8 +6,6 @@ import type {
   ReadPaperResponse,
   SimilarPapersOptions,
   SimilarPapersResponse,
-  SearchGithubOptions,
-  GitHubSearchResponse,
 } from "../types";
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
@@ -214,37 +212,6 @@ export class ResearchClient {
       return res.data;
     } catch (err) {
       return normalizeResearchError(err, "find similar papers");
-    }
-  }
-
-  /**
-   * Search the research index GitHub slice: issue/PR history and repository
-   * readmes.
-   *
-   * @deprecated The research index GitHub search endpoint was removed after
-   * 2026-11-03. Use `developerSearch()` on the client instead. See
-   * https://docs.firecrawl.dev/features/developer.
-   * @param query Search query.
-   * @param options Optional `k`.
-   */
-  async searchGithub(
-    query: string,
-    options: SearchGithubOptions = {},
-  ): Promise<GitHubSearchResponse> {
-    if (!query || !query.trim()) throw new Error("query cannot be empty");
-    if (options.k != null && options.k <= 0)
-      throw new Error("k must be positive");
-    const params = new URLSearchParams();
-    appendParam(params, "query", query);
-    appendParam(params, "k", options.k);
-    try {
-      const res = await this.http.get<GitHubSearchResponse>(
-        withQuery(this.http.getOrigin(), `${BASE}/github`, params),
-      );
-      if (res.status !== 200) throwForBadResponse(res, "search github");
-      return res.data;
-    } catch (err) {
-      return normalizeResearchError(err, "search github");
     }
   }
 }

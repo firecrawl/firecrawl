@@ -30,12 +30,10 @@ from .v2.methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
     ASYNC_CLIENT_RELATED_PAPERS_DOC,
-    ASYNC_CLIENT_SEARCH_GITHUB_DOC,
     ASYNC_CLIENT_SEARCH_PAPERS_DOC,
     CLIENT_INSPECT_PAPER_DOC,
     CLIENT_READ_PAPER_DOC,
     CLIENT_RELATED_PAPERS_DOC,
-    CLIENT_SEARCH_GITHUB_DOC,
     CLIENT_SEARCH_PAPERS_DOC,
     doc,
 )
@@ -412,10 +410,6 @@ class Firecrawl:
     def related_papers(self, paper_id: str, intent: str, **kwargs):
         return self._v2_client.related_papers(paper_id, intent, **kwargs)
 
-    @doc(CLIENT_SEARCH_GITHUB_DOC)
-    def search_github(self, query: str, **kwargs):
-        return self._v2_client.search_github(query, **kwargs)
-
 
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
@@ -571,10 +565,6 @@ class AsyncFirecrawl:
     @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
     async def related_papers(self, paper_id: str, intent: str, **kwargs):
         return await self._v2_client.related_papers(paper_id, intent, **kwargs)
-
-    @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
-    async def search_github(self, query: str, **kwargs):
-        return await self._v2_client.search_github(query, **kwargs)
 
 
 # Export Firecrawl as an alias for FirecrawlApp

@@ -262,27 +262,6 @@ type SimilarPapersResponse struct {
 	Note      *string       `json:"note,omitempty"`
 }
 
-// GitHubSearchItem represents a GitHub research search result.
-type GitHubSearchItem struct {
-	ResultType   string                 `json:"resultType,omitempty"`
-	Repo         string                 `json:"repo,omitempty"`
-	URL          string                 `json:"url,omitempty"`
-	PageType     string                 `json:"pageType,omitempty"`
-	Number       *int                   `json:"number,omitempty"`
-	SegmentCount *int                   `json:"segmentCount,omitempty"`
-	ReadmeURL    string                 `json:"readmeUrl,omitempty"`
-	Title        string                 `json:"title,omitempty"`
-	Snippet      string                 `json:"snippet,omitempty"`
-	ContentMD    string                 `json:"contentMd,omitempty"`
-	Scores       map[string]interface{} `json:"scores,omitempty"`
-}
-
-// GitHubSearchResponse is returned by SearchGitHub.
-type GitHubSearchResponse struct {
-	Success bool               `json:"success"`
-	Results []GitHubSearchItem `json:"results"`
-}
-
 // Research options for search-like endpoints.
 type SearchPapersOptions struct {
 	K          *int     `json:"k,omitempty"`
@@ -307,11 +286,6 @@ type RelatedPapersOptions struct {
 	K      *int     `json:"k,omitempty"`
 	Rerank *bool    `json:"rerank,omitempty"`
 	Anchor []string `json:"anchor,omitempty"`
-}
-
-// SearchGitHubOptions configures SearchGitHub.
-type SearchGitHubOptions struct {
-	K *int `json:"k,omitempty"`
 }
 
 // DeveloperSearchOptions configures DeveloperSearch.

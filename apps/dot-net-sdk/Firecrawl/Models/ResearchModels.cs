@@ -92,35 +92,6 @@ public class SimilarPapersResponse
     public string? Note { get; set; }
 }
 
-public class GitHubSearchItem
-{
-    public string? ResultType { get; set; }
-
-    public string? Repo { get; set; }
-    public string? Url { get; set; }
-
-    public string? PageType { get; set; }
-
-    public int? Number { get; set; }
-
-    public int? SegmentCount { get; set; }
-
-    public string? ReadmeUrl { get; set; }
-
-    public string? Title { get; set; }
-    public string? Snippet { get; set; }
-
-    public string? ContentMd { get; set; }
-
-    public Dictionary<string, object>? Scores { get; set; }
-}
-
-public class GitHubSearchResponse
-{
-    public bool Success { get; set; }
-    public List<GitHubSearchItem>? Results { get; set; }
-}
-
 public class DeveloperSearchPassage
 {
     public string? Text { get; set; }
@@ -202,11 +173,6 @@ public class RelatedPapersOptions
     public int? K { get; set; }
     public bool? Rerank { get; set; }
     public List<string>? Anchor { get; set; }
-}
-
-public class SearchGitHubOptions
-{
-    public int? K { get; set; }
 }
 
 public class DeveloperSearchOptions
