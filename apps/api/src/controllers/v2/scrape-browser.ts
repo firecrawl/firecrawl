@@ -30,11 +30,13 @@ import {
 } from "../../lib/scrape-interact/scrape-replay";
 import {
   executePromptViaBrowserAgent,
+  getBrowserAgentModel,
   executeCodeViaBrowserSession,
   selectBrowserAgentTab,
   AgentResult,
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import {
@@ -97,6 +99,7 @@ interface BrowserExecuteResponse {
   stderr?: string;
   exitCode?: number;
   killed?: boolean;
+  code?: string;
   error?: string;
 }
 
@@ -259,6 +262,21 @@ async function scrapeInteractInternal(
     }
   }
 
+  // Refused before a session is created or credits are reserved. The model
+  // depends on zeroDataRetention, which no longer changes past this point.
+  if (prompt && !rawCode) {
+    try {
+      getBrowserAgentModel({ zeroDataRetention, teamFlags: req.acuc?.flags });
+    } catch (err) {
+      if (!(err instanceof UsOnlyUnavailableError)) throw err;
+      return res.status(403).json({
+        success: false,
+        code: err.code,
+        error: err.message,
+      });
+    }
+  }
+
   if (!session) {
     if (!replayContext) {
       return res.status(409).json({
@@ -365,6 +383,7 @@ async function scrapeInteractInternal(
             teamId: req.auth.team_id,
             ...traceIdentity,
             zeroDataRetention,
+            teamFlags: req.acuc?.flags,
             ...traceScrapeContext,
           },
         );
@@ -398,6 +417,7 @@ async function scrapeInteractInternal(
             teamId: req.auth.team_id,
             ...traceIdentity,
             zeroDataRetention,
+            teamFlags: req.acuc?.flags,
             ...traceScrapeContext,
           },
         );
@@ -501,6 +521,17 @@ async function createSessionForScrape(
     });
     return { session };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) {
+      return {
+        error: true as const,
+        status: 403,
+        body: {
+          success: false as const,
+          code: error.code,
+          error: error.message,
+        },
+      };
+    }
     logger.error("Failed to initialize scrape browser session", { error });
     const knownError =
       error instanceof BrowserSessionError || error instanceof HangarError;

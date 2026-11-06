@@ -49,6 +49,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -216,6 +217,17 @@ export async function crawlController(req: Request, res: Response) {
       });
     }
 
+    const usOnlyLocationError = usOnlyLocationRefusal(
+      auth.chunk?.flags ?? undefined,
+      pageOptions?.geolocation?.country,
+    );
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
+      });
+    }
+
     // if (mode === "single_urls" && !url.includes(",")) { // NOTE: do we need this?
     //   try {
     //     const a = new WebScraperDataProvider();
@@ -253,6 +265,9 @@ export async function crawlController(req: Request, res: Response) {
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     internalOptions.orgId = auth.chunk?.org_id ?? null;
+    if (isUsOnly(auth.chunk?.flags ?? undefined)) {
+      internalOptions.teamFlags = auth.chunk?.flags;
+    }
     internalOptions.saveScrapeResultToGCS = process.env
       .GCS_FIRE_ENGINE_BUCKET_NAME
       ? true

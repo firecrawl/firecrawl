@@ -212,6 +212,9 @@ export async function refundAlexandriaFeedback(params: {
         orgId,
         value: REFUND_CREDITS,
         idempotencyKey: `fc:refund:alexandria-feedback:${feedbackId}`,
+        // An unconfirmed refund frees its cap reservation below, so a late
+        // durable retry landing would credit outside both daily caps.
+        durableRetry: false,
         featureId: CREDITS_FEATURE_ID,
         properties: {
           source: "feedback",

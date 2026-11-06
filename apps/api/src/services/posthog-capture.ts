@@ -8,8 +8,8 @@ import { logger as _logger } from "../lib/logger";
  * or a network error must never affect request handling.
  *
  * Configure via env:
- *   POSTHOG_API_KEY  — project API key (if unset, capture is a no-op)
- *   POSTHOG_HOST     — ingestion host (defaults to https://us.i.posthog.com)
+ *   POSTHOG_API_KEY: project API key (if unset, capture is a no-op)
+ *   POSTHOG_HOST:    ingestion host (defaults to https://us.i.posthog.com)
  */
 const POSTHOG_API_KEY = process.env.POSTHOG_API_KEY;
 const POSTHOG_HOST = process.env.POSTHOG_HOST || "https://us.i.posthog.com";

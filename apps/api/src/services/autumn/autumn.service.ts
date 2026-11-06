@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { AutumnError } from "autumn-js";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -12,33 +11,38 @@ import {
   firebillTrack,
   firebillCheck,
   firebillConfigured,
-  shouldRouteToFirebill,
 } from "./firebill";
-import {
-  autumnCustomerGetOrCreateTotal,
-  autumnEntityCreatedInlineTotal,
-  billingRouteTotal,
-} from "./metrics";
 import type {
-  CreateEntityParams,
-  CreateEntityResult,
-  EnsureOrgProvisionedParams,
-  EnsureTeamProvisionedParams,
   FinalizeCreditsLockParams,
-  GetEntityParams,
-  GetOrCreateCustomerParams,
   LockCreditsParams,
   LockCreditsResult,
   TrackCreditsParams,
-  TrackParams,
 } from "./types";
-import { ExistingCreditsLockError } from "./types";
 
-export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+/**
+ * The balance hosted MCP calls spend before the endpoint's own feature (see
+ * AutumnService.trackHostedMcpCredits). Configurable so the id can follow the
+ * Autumn feature without a code change.
+ */
+export const MCP_CREDITS_FEATURE_ID = config.MCP_CREDITS_FEATURE_ID;
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
+
+/**
+ * The Autumn entity a charge on `featureId` is made against. MCP credits are
+ * granted to the customer rather than to a team, so their charges, holds and
+ * refunds carry no entity: with the team's entity, Autumn spends that team's
+ * own balances first, including a team-scoped CREDITS grant, and leaves the
+ * customer's MCP credits untouched.
+ */
+function billingEntityId(
+  featureId: string,
+  teamId: string,
+): string | undefined {
+  return featureId === MCP_CREDITS_FEATURE_ID ? undefined : teamId;
+}
 
 /**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
@@ -117,19 +121,12 @@ export class BoundedSet<V> extends Set<V> {
 }
 
 /**
- * Wraps Autumn customer/entity provisioning and usage tracking for team credit billing.
+ * Team credit billing through firebill, plus the Autumn reads (limits, auto
+ * top-up) that sit beside it.
  */
 export class AutumnService {
   private gatewayTeams = new BoundedSet<string>(50_000);
   private nonGatewayTeamsUntil = new BoundedMap<string, number>(50_000);
-  private ensuredOrgs = new BoundedSet<string>(50_000);
-  // Keyed by org AND team: an entity lives under one customer, so a team that
-  // moves orgs has to be provisioned again under the new one.
-  private ensuredTeams = new BoundedSet<string>(50_000);
-
-  private ensuredTeamKey(orgId: string, teamId: string): string {
-    return `${orgId}:${teamId}`;
-  }
 
   private isPreviewTeam(teamId: string): boolean {
     return teamId === "preview" || teamId.startsWith("preview_");
@@ -137,8 +134,7 @@ export class AutumnService {
 
   /**
    * Whether this team is an account a gateway partner provisioned, which is
-   * what makes the partner responsible for part of its usage, and forces it
-   * through firebill.
+   * what makes the partner responsible for part of its usage.
    *
    * Reads `partner_provisioned_accounts` rather than any config, because these
    * are created at runtime by the partner API — an allowlist of org ids cannot
@@ -198,293 +194,10 @@ export class AutumnService {
     return typeof responseStatus === "number" ? responseStatus : undefined;
   }
 
-  private async getOrCreateCustomer({
-    customerId,
-    name,
-    email,
-    autoEnablePlanId = AUTUMN_DEFAULT_PLAN_ID,
-  }: GetOrCreateCustomerParams): Promise<unknown | null> {
-    if (!autumnClient) return null;
-    if (!customerId) return null;
-
-    try {
-      // Counted before the await so a call that reached Autumn and failed is
-      // still counted; the counter measures attempts, not successes.
-      autumnCustomerGetOrCreateTotal.inc();
-      const customer = await autumnClient.customers.getOrCreate({
-        customerId,
-        name: name ?? undefined,
-        email: email ?? undefined,
-        autoEnablePlanId,
-      });
-      logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
-      return customer;
-    } catch (error) {
-      logger.error(
-        "Autumn getOrCreateCustomer failed — billing API may be unavailable",
-        { customerId, error },
-      );
-      return null;
-    }
-  }
-
-  private async getEntity({
-    customerId,
-    entityId,
-  }: GetEntityParams): Promise<unknown | null> {
-    if (!autumnClient) return null;
-
-    try {
-      return await autumnClient.entities.get({ customerId, entityId });
-    } catch (error) {
-      const status = this.getErrorStatus(error);
-      if (status === 404) {
-        return null;
-      }
-
-      logger.error("Autumn getEntity failed — billing API may be unavailable", {
-        customerId,
-        entityId,
-        error,
-      });
-      // Only a 404 establishes that the entity is missing. Let provisioning's
-      // catch handle other failures without attempting to create the entity.
-      throw error;
-    }
-  }
-
-  private async createEntity({
-    customerId,
-    entityId,
-    featureId,
-    name,
-    path,
-  }: CreateEntityParams): Promise<CreateEntityResult> {
-    if (!autumnClient) return { ok: false, conflict: false };
-
-    try {
-      const entity = await autumnClient.entities.create({
-        customerId,
-        entityId,
-        featureId,
-        name: name ?? undefined,
-      });
-      autumnEntityCreatedInlineTotal.labels(path).inc();
-      logger.info("Autumn createEntity succeeded", {
-        customerId,
-        entityId,
-        featureId,
-      });
-      return { ok: true, entity };
-    } catch (error) {
-      const status = this.getErrorStatus(error);
-      if (status === 409) {
-        // Entity already exists — treat as success for provisioning purposes.
-        return { ok: false, conflict: true };
-      }
-
-      logger.error(
-        "Autumn createEntity failed — billing API may be unavailable",
-        {
-          customerId,
-          entityId,
-          featureId,
-          error,
-        },
-      );
-      return { ok: false, conflict: false };
-    }
-  }
-
   /**
-   * Whether this team's usage is currently routed through firebill. Used by
-   * billers to pick route-specific failure handling (on the firebill route a
-   * recorded charge stands and dedupes, so compensating refunds and duplicate
-   * enqueues behave differently). Never throws: an error means "not routed",
-   * falling back to the pre-firebill behavior.
-   */
-  async isRoutedThroughFirebill(
-    teamId: string,
-    orgId: string,
-  ): Promise<boolean> {
-    if (this.isPreviewTeam(teamId)) return false;
-    try {
-      const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
-      return shouldRouteToFirebill(orgId, { gatewayProvisioned });
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * `routed` is decided by the caller (see {@link resolveBillingRoute}) rather
-   * than asked again here: the answer costs a `partner_provisioned_accounts`
-   * read on a cold team, and the caller already needed it to know whether to
-   * provision.
-   */
-  private async track(
-    {
-      customerId,
-      entityId,
-      featureId,
-      value,
-      properties,
-      idempotencyKey,
-      externalRequestId,
-    }: TrackParams,
-    routed: boolean,
-  ): Promise<boolean> {
-    // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
-    // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
-    // to Autumn on failure — firebill may already own the event, and the SDK
-    // sends no idempotency key, so the pair could not be deduped.
-    if (routed) {
-      billingRouteTotal.labels("firebill").inc();
-      return await firebillTrack({
-        customerId,
-        entityId,
-        featureId,
-        value,
-        properties,
-        idempotencyKey,
-        externalRequestId,
-      });
-    }
-
-    billingRouteTotal.labels("direct").inc();
-
-    if (!autumnClient) return false;
-
-    try {
-      await autumnClient.track({
-        customerId,
-        entityId,
-        featureId,
-        value,
-        properties,
-        overageBehavior: "overflow",
-      });
-      logger.info("Autumn track succeeded", {
-        customerId,
-        entityId,
-        featureId,
-        value,
-      });
-      return true;
-    } catch (error) {
-      logger.error("Autumn track failed — billing API may be unavailable", {
-        customerId,
-        entityId,
-        featureId,
-        value,
-        error,
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Ensures the Autumn customer exists for an org, caching successful lookups in-process.
-   */
-  async ensureOrgProvisioned({
-    orgId,
-    name,
-    email,
-  }: EnsureOrgProvisionedParams): Promise<void> {
-    if (this.ensuredOrgs.has(orgId)) return;
-    const customer = await this.getOrCreateCustomer({
-      customerId: orgId,
-      name,
-      email,
-    });
-    if (customer) {
-      this.ensuredOrgs.add(orgId);
-    }
-  }
-
-  /**
-   * Ensures the Autumn entity exists for a team under its org customer.
-   *
-   * The `ensuredTeams` check runs before any Autumn call so that a team already
-   * provisioned under its current org incurs no HTTP round-trips — not even
-   * `ensureOrgProvisioned`.
-   */
-  async ensureTeamProvisioned({
-    teamId,
-    orgId,
-    name,
-  }: EnsureTeamProvisionedParams): Promise<void> {
-    if (!autumnClient) return;
-    if (this.isPreviewTeam(teamId)) return;
-
-    try {
-      // Fast path: team is already fully provisioned under this org.
-      if (this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
-        return;
-      }
-      await this.ensureOrgProvisioned({ orgId });
-
-      const entity = await this.getEntity({
-        customerId: orgId,
-        entityId: teamId,
-      });
-
-      if (!entity) {
-        const result = await this.createEntity({
-          customerId: orgId,
-          entityId: teamId,
-          featureId: TEAM_FEATURE_ID,
-          name,
-          path: "ensureTeamProvisioned",
-        });
-        if (result.ok || ("conflict" in result && result.conflict)) {
-          // Entity was just created, or already existed (409 race) — either way
-          // it's present. No need for a second getEntity confirmation call.
-          this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
-        }
-        // Genuine error: leave ensuredTeams empty so the next request retries.
-        return;
-      }
-
-      this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
-    } catch (error) {
-      logger.error(
-        "Autumn ensureTeamProvisioned failed — billing API may be unavailable",
-        { teamId, error },
-      );
-    }
-  }
-
-  /**
-   * Decides the route a team's billing takes, and warms the customer/entity
-   * context the direct route needs. The customer is the caller's own org,
-   * which this service never looks up for itself.
-   *
-   * **Provisioning runs on the direct route only.** firebill creates a missing
-   * entity itself now, off the 404 `entity_not_found` Autumn answers the
-   * billing call with, so the get/create prefix here would be a second,
-   * redundant round trip — one that cannot change the answer either way,
-   * because its failure is caught and the operation proceeds regardless.
-   *
-   * A team already provisioned under this org skips ensureTeamProvisioned
-   * entirely.
-   */
-  private async resolveBillingRoute(
-    teamId: string,
-    orgId: string,
-  ): Promise<{ customerId: string; routed: boolean }> {
-    const routed = shouldRouteToFirebill(orgId, {
-      gatewayProvisioned: await this.isGatewayProvisioned(teamId),
-    });
-    if (!routed && !this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
-      await this.ensureTeamProvisioned({ teamId, orgId });
-    }
-    return { customerId: orgId, routed };
-  }
-
-  /**
-   * Checks whether a team has enough Autumn balance to cover a request.
-   * Returns null when Autumn gating is unavailable and callers should fall back.
+   * Checks whether a team has enough balance to cover a request, through
+   * firebill. Returns null when gating is unavailable and callers should fall
+   * back.
    */
   async checkCredits({
     teamId,
@@ -495,63 +208,38 @@ export class AutumnService {
   }: TrackCreditsParams): Promise<{
     allowed: boolean;
     remaining: number;
+    /** When the checked balance next resets, in epoch ms; absent when unknown. */
+    resetsAt?: number;
+    /** Set only for a Gateway account, funded by the platform that created it. */
+    gatewayProvisioned?: boolean;
   } | null> {
-    if (!autumnClient || this.isPreviewTeam(teamId)) {
+    if (!firebillConfigured() || this.isPreviewTeam(teamId)) {
       return null;
     }
     try {
-      const { customerId, routed } = await this.resolveBillingRoute(
-        teamId,
-        orgId,
-      );
+      const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
 
-      // Mirrors track() and lockCredits(). Without this branch the gate reads
-      // the ghost's balance alone, and a gateway ghost is designed to spend
-      // credits it does not have — so it would 402 exactly the requests the
-      // partner pool exists to fund. firebill answers with the same arithmetic
-      // settlement uses.
+      // firebill answers with the same arithmetic settlement uses, so a
+      // gateway ghost's gate counts the partner pool rather than the ghost's
+      // own balance — which a ghost is designed to overspend, and which would
+      // otherwise 402 exactly the requests the pool exists to fund.
       //
-      // `unavailable` becomes `null`, which this method's existing contract
-      // already means "fail open" — the same answer a null from Autumn gets
-      // below, for the same reason.
-      //
-      // `gatewayProvisioned` matters more here than on the charge paths. A
-      // partner-provisioned org that misses firebill on a *charge* is billed to
-      // the wrong account; one that misses firebill on the *gate* is refused
-      // outright, because Autumn is asked about a balance the org was never
-      // meant to pay from. So the org this most needs to reach firebill is
-      // exactly the one a sampling bucket might leave behind.
-      if (routed) {
-        const result = await firebillCheck({
-          customerId,
-          entityId: teamId,
-          featureId,
-          value,
-          properties,
-        });
-        if (result.status === "unavailable") return null;
-        return { allowed: result.allowed, remaining: result.remaining };
-      }
-
-      const { allowed, balance } = await autumnClient.check({
-        customerId,
-        entityId: teamId,
-        featureId,
-        requiredBalance: value,
-        properties,
-      });
-
-      const remaining = balance?.remaining ?? 0;
-
-      logger.debug("Autumn checkCredits completed", {
-        customerId,
-        entityId: teamId,
+      // `unavailable` becomes `null`, which this method's contract already
+      // means "fail open".
+      const result = await firebillCheck({
+        customerId: orgId,
+        entityId: billingEntityId(featureId, teamId) ?? "",
         featureId,
         value,
-        allowed,
-        remaining,
+        properties,
       });
-      return { allowed, remaining };
+      if (result.status === "unavailable") return null;
+      return {
+        allowed: result.allowed,
+        remaining: result.remaining,
+        ...(result.resetsAt ? { resetsAt: result.resetsAt } : {}),
+        ...(gatewayProvisioned ? { gatewayProvisioned } : {}),
+      };
     } catch (error) {
       logger.error(
         "Autumn checkCredits failed — billing API may be unavailable, falling back",
@@ -563,6 +251,18 @@ export class AutumnService {
       );
       return null;
     }
+  }
+
+  /**
+   * The feature a hosted MCP request's charge, hold or check is made on, in
+   * place of `featureId`: MCP credits, which Autumn spends first before
+   * falling back to other balances. A partner-provisioned team keeps
+   * `featureId`: its usage is split with the partner on the regular features.
+   */
+  async hostedMcpFeatureId(teamId: string, featureId: string): Promise<string> {
+    return (await this.isGatewayProvisioned(teamId))
+      ? featureId
+      : MCP_CREDITS_FEATURE_ID;
   }
 
   /**
@@ -593,7 +293,8 @@ export class AutumnService {
   }
 
   /**
-   * Attempts to reserve a team's credits in Autumn. See {@link LockCreditsResult}.
+   * Attempts to reserve a team's credits through firebill. See
+   * {@link LockCreditsResult}.
    */
   async lockCredits({
     teamId,
@@ -605,7 +306,16 @@ export class AutumnService {
     partnerJobToken,
     orgId,
   }: LockCreditsParams): Promise<LockCreditsResult> {
-    if (!autumnClient || this.isPreviewTeam(teamId)) {
+    // Only firebill can ask the partner, so a gated run with no firebill would
+    // silently skip the gate. Refused, as the direct lock path used to.
+    if (partnerJobToken && !firebillConfigured()) {
+      logger.error(
+        "A partner job token reached lockCredits with firebill unconfigured, where no partner can be asked; refusing the hold",
+        { teamId },
+      );
+      return { status: "denied", reason: "gate_unavailable" };
+    }
+    if (!firebillConfigured() || this.isPreviewTeam(teamId)) {
       return { status: "skipped" };
     }
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
@@ -621,105 +331,40 @@ export class AutumnService {
         : { status: "skipped" };
 
     try {
-      const { customerId, routed } = await this.resolveBillingRoute(
-        teamId,
-        orgId,
-      );
-
-      // Gradual firebill rollout, mirroring track(): allowlisted orgs take
-      // their holds through firebill. The hold still lives in Autumn (firebill
-      // keeps no lock state), but only firebill pins the retry/timeout budget
-      // around the call. An unavailable answer maps to "skipped" — proceed
-      // unlocked — like a direct-Autumn check failure below, except when a
-      // partner gate is involved; see `unreachable` above.
-      if (routed) {
-        const result = await firebillLock({
-          customerId,
-          entityId: teamId,
-          featureId,
-          value,
-          lockId: resolvedLockId,
-          // firebill requires an expiry (Autumn releasing the hold by itself
-          // is what makes firebill lock-table-free); default to an hour, the
-          // monitor runner's convention, when the caller sets none.
-          expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
-          properties,
-          partnerJobToken,
-        });
-        if (result.status === "locked") {
-          return {
-            status: "locked",
-            lockId: result.lockId,
-            ...(result.operationToken
-              ? { operationToken: result.operationToken }
-              : {}),
-          };
-        }
-        if (result.status === "denied") {
-          return {
-            status: "denied",
-            ...(result.reason ? { reason: result.reason } : {}),
-          };
-        }
-        return unreachable();
-      }
-
-      // Unreachable — a partner-provisioned org always routes to firebill
-      // (#4403) — but a token here would silently skip the gate.
-      if (partnerJobToken) {
-        logger.error(
-          "A partner job token reached the direct-Autumn lock path, where no partner can be asked; refusing the hold",
-          { teamId, lockId: resolvedLockId },
-        );
-        return { status: "denied", reason: "gate_unavailable" };
-      }
-
-      const { allowed } = await autumnClient
-        .check({
-          customerId,
-          entityId: teamId,
-          featureId,
-          requiredBalance: value,
-          properties,
-          lock: {
-            enabled: true,
-            lockId: resolvedLockId,
-            expiresAt,
-          },
-        })
-        .catch(error => {
-          if (error instanceof AutumnError && error.statusCode === 409) {
-            let body: { code?: unknown } | null = null;
-            try {
-              body = JSON.parse(error.body);
-            } catch {}
-            if (body?.code === "lock_already_exists") {
-              throw new ExistingCreditsLockError(resolvedLockId);
-            }
-          }
-          throw error;
-        });
-
-      if (!allowed) {
-        logger.info("Autumn lockCredits denied", {
-          teamId,
-          value,
-          lockId: resolvedLockId,
-        });
-        return { status: "denied" };
-      }
-
-      logger.info("Autumn lockCredits succeeded", {
-        customerId,
-        entityId: teamId,
+      // The hold still lives in Autumn (firebill keeps no lock state), but
+      // only firebill pins the retry/timeout budget around the call. An
+      // unavailable answer maps to "skipped" — proceed unlocked — except when
+      // a partner gate is involved; see `unreachable` above.
+      const result = await firebillLock({
+        customerId: orgId,
+        entityId: billingEntityId(featureId, teamId) ?? "",
         featureId,
         value,
         lockId: resolvedLockId,
+        // firebill requires an expiry (Autumn releasing the hold by itself
+        // is what makes firebill lock-table-free); default to an hour, the
+        // monitor runner's convention, when the caller sets none.
+        expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
         properties,
+        partnerJobToken,
       });
-      return { status: "locked", lockId: resolvedLockId };
+      if (result.status === "locked") {
+        return {
+          status: "locked",
+          lockId: result.lockId,
+          ...(result.operationToken
+            ? { operationToken: result.operationToken }
+            : {}),
+        };
+      }
+      if (result.status === "denied") {
+        return {
+          status: "denied",
+          ...(result.reason ? { reason: result.reason } : {}),
+        };
+      }
+      return unreachable();
     } catch (error) {
-      if (error instanceof ExistingCreditsLockError) throw error;
       logger.error(
         "Autumn lockCredits failed — billing API may be unavailable, falling back",
         {
@@ -735,18 +380,13 @@ export class AutumnService {
   }
 
   /**
-   * Finalizes a previously-acquired Autumn lock.
+   * Finalizes a previously-acquired Autumn lock through firebill, which
+   * queues the settle durably and retries delivery — a dropped settle means
+   * the hold just expires, leaving a confirm's work unbilled.
    *
-   * When the caller supplies the lock's team and that team's org is on the
-   * firebill rollout, the settle goes through firebill, which queues it
-   * durably and retries delivery — a dropped direct finalize means the hold
-   * just expires, leaving a confirm's work unbilled. Either route lands on the
-   * same Autumn lock, so routing is a durability choice, not a correctness one.
-   *
-   * **Except with a run token in hand**, where it is a correctness choice: only
-   * firebill reports the operation to the partner, and the routing predicate is
-   * not stable across the hour between a lock and its finalize. The token is
-   * proof of the route the lock took, so it wins over asking again.
+   * A caller that cannot name the org passes no team. The lock id is all a
+   * finalize needs, so an ordinary settle loses nothing by not knowing the org;
+   * a run-token settle loses its partner report, as below.
    */
   async finalizeCreditsLock({
     lockId,
@@ -758,74 +398,42 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     heldValue,
   }: FinalizeCreditsLockParams): Promise<boolean> {
-    const gated = Boolean(externalRequestId) && firebillConfigured();
-    if (
-      gated ||
-      (team && (await this.isRoutedThroughFirebill(team.teamId, team.orgId)))
-    ) {
-      // Named only for a gated settle: firebill needs the org to split the
-      // settle and to find the integration to report to. An ordinary finalize
-      // does neither, so it does not carry one. Nothing is provisioned here —
-      // every settle on this branch goes through firebill, which provisions
-      // what it needs (see resolveBillingRoute).
-      //
-      // A caller that cannot name the org passes no team and the settle still
-      // lands, without the label. There is no durable retry on this path —
-      // `billMonitorCheck`'s only caller catches, writes
-      // `billing_status: "failed"`, and moves on, and nothing ever reads that
-      // back — so refusing would abandon the finalize entirely: the hold
-      // expires and the run goes unbilled at Autumn as well as unreported.
-      // Settling and losing the label is the lesser loss, and firebill counts
-      // the lost label as `partner_events_total{outcome="no_customer"}`.
-      const customerId = externalRequestId && team ? team.orgId : null;
-      // Surfaced, not discarded. firebill answers `false` for a refusal, a
-      // timeout, or a non-OK — none of which throw — so a caller that ignores
-      // this records a run as billed that nobody billed.
-      return await firebillFinalize({
-        lockId,
-        action,
-        overrideValue,
-        properties,
-        externalRequestId,
-        customerId,
-        featureId: customerId ? featureId : null,
-        heldValue: customerId ? heldValue : null,
-      });
-    }
-
-    // No client means no hold was ever taken, so nothing can have gone
+    // Without firebill no hold was ever taken, so nothing can have gone
     // unsettled.
-    if (!autumnClient) return true;
+    if (!firebillConfigured()) return true;
 
-    try {
-      await autumnClient.balances.finalize({
-        lockId,
-        action,
-        overrideValue,
-        properties,
-      });
-      logger.info("Autumn finalizeCreditsLock succeeded", {
-        lockId,
-        action,
-        overrideValue,
-      });
-      return true;
-    } catch (error) {
-      logger.error(
-        "Autumn finalizeCreditsLock failed — billing API may be unavailable",
-        {
-          lockId,
-          action,
-          overrideValue,
-          error,
-        },
-      );
-      return false;
-    }
+    // Named only for a gated settle: firebill needs the org to split the
+    // settle and to find the integration to report to. An ordinary finalize
+    // does neither, so it does not carry one.
+    //
+    // A gated caller that cannot name the org passes no team and the settle
+    // still lands, without the label. There is no durable retry on this path —
+    // `billMonitorCheck`'s only caller catches, writes
+    // `billing_status: "failed"`, and moves on, and nothing ever reads that
+    // back — so refusing would abandon the finalize entirely: the hold
+    // expires and the run goes unbilled at Autumn as well as unreported.
+    // Settling and losing the label is the lesser loss, and firebill counts
+    // the lost label as `partner_events_total{outcome="no_customer"}`.
+    const customerId = externalRequestId && team ? team.orgId : null;
+    // Surfaced, not discarded. firebill answers `false` for a refusal, a
+    // timeout, or a non-OK — none of which throw — so a caller that ignores
+    // this records a run as billed that nobody billed.
+    return await firebillFinalize({
+      lockId,
+      action,
+      overrideValue,
+      properties,
+      externalRequestId,
+      customerId,
+      featureId: customerId ? featureId : null,
+      heldValue: customerId ? heldValue : null,
+    });
   }
 
   /**
-   * Records a credit usage event directly in Autumn. Returns true on success.
+   * Records a credit usage event through firebill. Returns true on success.
+   *
+   * No fallback to Autumn on failure — firebill may already own the event.
    */
   async trackCredits({
     teamId,
@@ -834,28 +442,23 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
     externalRequestId,
+    durableRetry,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
-    if (!autumnClient) return false;
+    if (!firebillConfigured()) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      const { customerId, routed } = await this.resolveBillingRoute(
-        teamId,
-        orgId,
-      );
-      return await this.track(
-        {
-          customerId,
-          entityId: teamId,
-          featureId,
-          value,
-          properties,
-          idempotencyKey,
-          externalRequestId,
-        },
-        routed,
-      );
+      return await firebillTrack({
+        customerId: orgId,
+        entityId: billingEntityId(featureId, teamId),
+        featureId,
+        value,
+        properties,
+        idempotencyKey,
+        externalRequestId,
+        durableRetry,
+      });
     } catch (error) {
       logger.error(
         "Autumn trackCredits failed — billing API may be unavailable",
@@ -928,28 +531,23 @@ export class AutumnService {
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
     externalRequestId,
+    durableRetry,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
-    if (!autumnClient) return false;
+    if (!firebillConfigured()) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      const { customerId, routed } = await this.resolveBillingRoute(
-        teamId,
-        orgId,
-      );
-      return await this.track(
-        {
-          customerId,
-          entityId: teamId,
-          featureId,
-          value: -value,
-          properties: { ...properties, source: "autumn_refund" },
-          idempotencyKey,
-          externalRequestId,
-        },
-        routed,
-      );
+      return await firebillTrack({
+        customerId: orgId,
+        entityId: billingEntityId(featureId, teamId),
+        featureId,
+        value: -value,
+        properties: { ...properties, source: "autumn_refund" },
+        idempotencyKey,
+        externalRequestId,
+        durableRetry,
+      });
     } catch (error) {
       logger.error(
         "Autumn refundCredits failed — billing API may be unavailable",

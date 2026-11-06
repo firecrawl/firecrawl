@@ -7,7 +7,7 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
-  safeModeParams,
+  requestOverrides,
 } from "./scrape";
 import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
@@ -35,6 +35,7 @@ import {
   largePdfLimitBytes,
 } from "../pdf/fire-pdf/by-reference";
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
+import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
 import { config } from "../../../../config";
 
 /** The handoff additionally requires the inbound allowlist bucket to be
@@ -64,8 +65,6 @@ import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
-
-const MAX_GUNZIPPED_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -524,7 +523,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             name: meta.options.profile.name,
           }
         : undefined,
-      ...safeModeParams(meta.internalOptions.safeMode),
+      ...requestOverrides(meta),
     };
 
     // Safe Mode worker-side hardening: neutralize anything that request-time
@@ -722,6 +721,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       scrapeId: meta.id,
       engine: "tlsclient",
       instantReturn: false,
+      skipTlsVerification: meta.options.skipTlsVerification,
 
       headers: meta.options.headers,
       priority: meta.internalOptions.priority,
@@ -738,7 +738,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      ...safeModeParams(meta.internalOptions.safeMode),
+      ...requestOverrides(meta),
     };
 
     const sm = meta.internalOptions.safeMode;

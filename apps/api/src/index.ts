@@ -9,8 +9,10 @@ import {
   getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
+  getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
+import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
@@ -107,6 +109,7 @@ const bullBoardQueues = [
   new BullMQAdapter(getDeepResearchQueue()),
   new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
+  new BullMQAdapter(getFirebillTrackRetryQueue()),
   // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
   // management UI, not here.
 ];
@@ -137,6 +140,9 @@ app.get("/", (_, res) => {
 app.get("/e2e-test", (_, res) => {
   res.status(200).send("OK");
 });
+
+app.get("/health/liveness", livenessController);
+app.get("/health/readiness", readinessController);
 
 // register router
 app.use(v0Router);

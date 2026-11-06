@@ -133,9 +133,8 @@ module Firecrawl
 
     # Search GitHub research content.
     #
-    # @deprecated Stops responding after 2026-11-03. Use {#developer_search},
-    #   which does not carry over the score breakdown or the web fallback
-    #   results.
+    # @deprecated The research index GitHub search endpoint was removed after
+    #   2026-11-03. Use {#developer_search} instead.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]

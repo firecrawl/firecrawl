@@ -10,6 +10,7 @@ import {
 } from "../../../lib/cost-tracking";
 import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
+import type { TeamFlags } from "../../../controllers/v2/types";
 
 const GUARD_MODEL = "gpt-4o-mini";
 const GUARD_MAX_CHUNK_CHARS = 32000;
@@ -190,6 +191,7 @@ export async function checkForPromptInjection({
   costTracking,
   metadata,
   zeroDataRetention,
+  teamFlags,
   limiter = createPromptInjectionGuardLimiter(),
 }: {
   markdown: string | undefined;
@@ -197,6 +199,7 @@ export async function checkForPromptInjection({
   costTracking: CostTracking;
   metadata: GuardTelemetryMetadata;
   zeroDataRetention: boolean;
+  teamFlags?: TeamFlags | null;
   limiter?: Semaphore;
 }): Promise<boolean> {
   if (!markdown || markdown.trim().length === 0) {
@@ -210,7 +213,10 @@ export async function checkForPromptInjection({
     GUARD_CHUNK_OVERLAP_CHARS,
   );
 
-  const model = getModel(GUARD_MODEL, "openai");
+  const model = getModel(GUARD_MODEL, "openai", {
+    teamFlags,
+    feature: "The prompt injection check",
+  });
   const modelId = typeof model === "string" ? model : model.modelId;
 
   // Batched so a detection stops later batches from ever being scheduled, and so a huge page can't burst past rate limits.

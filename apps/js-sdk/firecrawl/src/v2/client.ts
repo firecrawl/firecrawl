@@ -10,7 +10,11 @@ import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { govSearch as govSearchMethod } from "./methods/gov";
 import { map as mapMethod } from "./methods/map";
-import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
+import {
+  alexandriaFeedback as alexandriaFeedbackMethod,
+  feedback as feedbackMethod,
+  searchFeedback as searchFeedbackMethod,
+} from "./methods/feedback";
 import {
   startCrawl,
   getCrawlStatus,
@@ -63,6 +67,8 @@ import type {
   DeveloperSearchResponse,
   GovSearchOptions,
   GovSearchResponse,
+  AlexandriaFeedbackRequest,
+  AlexandriaFeedbackResponse,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -341,6 +347,18 @@ export class FirecrawlClient {
   }
 
   /**
+   * Rate Alexandria calls. Pass the `feedbackToken` of each call result in
+   * `tokens` (session rating) or `callRatings` (per-call rating).
+   * @param request Alexandria feedback payload.
+   * @returns Feedback record, refund details, and the count of rejected tokens.
+   */
+  async alexandriaFeedback(
+    request: AlexandriaFeedbackRequest,
+  ): Promise<AlexandriaFeedbackResponse> {
+    return alexandriaFeedbackMethod(this.http, request);
+  }
+
+  /**
    * Submit feedback for a search job.
    * @param jobId Search job id returned by search.
    * @param request Search feedback payload.
@@ -353,10 +371,10 @@ export class FirecrawlClient {
   // Research
   /**
    * Access the v2 research endpoints — Firecrawl's **research paper index**
-   * (~43M paper abstracts) plus GitHub history/readmes.
+   * (~43M paper abstracts).
    *
-   * `research.searchGithub()` is deprecated and stops responding after
-   * 2026-11-03. Use `developerSearch()` instead.
+   * The research index GitHub search behind `research.searchGithub()` was
+   * removed after 2026-11-03. Use `developerSearch()` instead.
    *
    * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
    * bioRxiv and medRxiv — with arXiv covering physics, mathematics and

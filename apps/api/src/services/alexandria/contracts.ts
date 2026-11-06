@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
 export const callSchema = z.strictObject({
   provider: z.string().min(1).max(200),
   capability: z.string().min(1).max(200),

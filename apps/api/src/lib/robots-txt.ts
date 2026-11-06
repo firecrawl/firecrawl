@@ -19,12 +19,16 @@ export async function fetchRobotsTxt(
   {
     url,
     zeroDataRetention,
+    usOnly,
     location,
     headers,
     skipCache,
+    skipTlsVerification,
   }: {
     url: string;
     zeroDataRetention: boolean;
+    usOnly?: boolean;
+    skipTlsVerification?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     skipCache?: boolean;
@@ -71,6 +75,7 @@ export async function fetchRobotsTxt(
       ...(skipCache ? { maxAge: 0 } : { maxAge: ROBOTS_MAX_AGE }),
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
+      ...(skipTlsVerification ? { skipTlsVerification } : {}),
     }),
     {
       forceEngine,
@@ -87,6 +92,7 @@ export async function fetchRobotsTxt(
         : undefined,
       teamId: "robots-txt",
       zeroDataRetention,
+      ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
     },
     new CostTracking(),
   );

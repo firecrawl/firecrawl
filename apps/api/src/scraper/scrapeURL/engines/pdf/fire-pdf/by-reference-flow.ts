@@ -10,6 +10,7 @@ import {
 import { cacheKeyShape, tryGetCached } from "./cache";
 import { lookupAdoptableFirePdfJob } from "./lookup";
 import { buildFirePdfJobOptions, FirePdfAsyncFailure } from "./utils";
+import { isUsOnly, US_DATA_REGION } from "../../../../../lib/us-only";
 import {
   buildFirePdfJobTrainingCapture,
   firePdfTableFormat,
@@ -151,6 +152,9 @@ export async function runFirePdfByReferenceAttempt(
         pageMarkers,
         tableFormat: firePdfTableFormat(meta),
         trainingCapture: buildFirePdfJobTrainingCapture(meta),
+        dataRegion: isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+          ? US_DATA_REGION
+          : undefined,
       }),
     );
     meta.abort.throwIfAborted();

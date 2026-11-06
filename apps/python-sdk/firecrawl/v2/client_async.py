@@ -25,6 +25,8 @@ from .types import (
     SourceOption,
     FindToolsData,
     AlexandriaCall,
+    AlexandriaFeedbackRequest,
+    AlexandriaFeedbackResponse,
     AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
@@ -76,6 +78,7 @@ from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 from .methods.aio import research as async_research  # type: ignore[attr-defined]
+from .methods.aio import feedback as async_feedback  # type: ignore[attr-defined]
 from .methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
@@ -163,6 +166,12 @@ class AsyncFirecrawlClient:
             self.async_http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
+    async def alexandria_feedback(
+        self, request: Union[AlexandriaFeedbackRequest, Dict[str, Any]]
+    ) -> AlexandriaFeedbackResponse:
+        """Rate Alexandria calls. See FirecrawlClient.alexandria_feedback."""
+        return await async_feedback.alexandria_feedback(self.async_http_client, request)
+
     async def find_tools(self, **options) -> FindToolsData:
         """Explore providers and contracts without executing discovered tools.
 
@@ -181,12 +190,20 @@ class AsyncFirecrawlClient:
                 code=item.error.code,
                 charge_id=item.error.charge_id,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**item.data, feedback_token=item.feedback_token)
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await async_research.search_papers(self.async_http_client, query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await async_research.search_papers(
+            self.async_http_client, query, sort=sort, **kwargs
+        )
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):

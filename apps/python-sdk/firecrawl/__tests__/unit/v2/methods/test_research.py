@@ -68,6 +68,7 @@ class TestSearchPapers:
             categories=["cs.LG", "stat.ML"],
             from_date="2020-01-01",
             to_date="2024-12-31",
+            sort="date_desc",
         )
         path, qs = split(client.last_path)
         assert path == "/v2/search/research/papers"
@@ -79,6 +80,7 @@ class TestSearchPapers:
         # from_date/to_date are sent as the wire names `from`/`to`
         assert qs["from"] == ["2020-01-01"]
         assert qs["to"] == ["2024-12-31"]
+        assert qs["sort"] == ["date_desc"]
 
     def test_biomedical_query_is_passed_through_percent_encoded(self):
         client = FakeHttpClient(FakeResponse(200, {"success": True, "results": []}))
@@ -281,10 +283,11 @@ class TestClientWiring:
 
     def test_search_papers_routes_to_the_paper_index(self):
         client = self._client(FakeResponse(200, {"success": True, "results": []}))
-        client.search_papers("tau aggregation inhibitors", k=5)
+        client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
         path, qs = split(client.http_client.last_path)
         assert path == "/v2/search/research/papers"
         assert qs["k"] == ["5"]
+        assert qs["sort"] == ["date_desc"]
 
     def test_read_paper_routes_to_the_paper_id_path(self):
         client = self._client(FakeResponse(200, {"success": True, "paper": {}}))
@@ -343,11 +346,12 @@ class TestUnifiedClientWiring:
 
     def test_search_papers_delegates_to_the_paper_index(self):
         client = self._client(FakeResponse(200, {"success": True, "results": []}))
-        client.search_papers("tau aggregation inhibitors", k=5)
+        client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
         path, qs = split(client._v2_client.http_client.last_path)
         assert path == "/v2/search/research/papers"
         assert qs["query"] == ["tau aggregation inhibitors"]
         assert qs["k"] == ["5"]
+        assert qs["sort"] == ["date_desc"]
 
     def test_inspect_paper_delegates(self):
         client = self._client(FakeResponse(200, {"success": True, "paper": {}}))

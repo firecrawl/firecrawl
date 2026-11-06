@@ -28,6 +28,7 @@ type RouteInput = {
   orgId?: string | null;
   /** The URL is on the team's blocklist, so the Exchange is the only way to serve it. */
   blocked?: boolean;
+  origin?: string | null;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -541,6 +542,11 @@ async function getProviderAccessDecision(
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
+  // The Exchange scrapes through Firecrawl; routing those back would loop.
+  if (input.origin === "exchange") {
+    return false;
+  }
+
   // Blocked URLs go to the Exchange for every team, since nothing else may
   // serve them; elsewhere it replaces a normal scrape only for the beta.
   if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
@@ -805,6 +811,7 @@ export function getExchangeSuccessCredits(input: {
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
+const EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS = 3_000;
 const EXCHANGE_BILLING_ATTEMPTS = 3;
 const EXCHANGE_BILLING_RETRY_DELAY_MS = 2_000;
 const EXCHANGE_BILLING_RETRY_MAX_DELAY_MS = 15_000;
@@ -897,6 +904,52 @@ export async function reportExchangeUsageBilling(input: {
     retryNotFound: true,
     context: { requestId: input.requestId, status: input.status },
   });
+}
+
+export type ExchangeToolFeedback = {
+  teamId: string;
+  feedbackId: string;
+  occurredAt: string;
+  rating: "good" | "partial" | "bad";
+  origin: string;
+  attribution: "token" | "window";
+  calls: {
+    requestId: string;
+    provider: string;
+    capability: string;
+    rating: "good" | "partial" | "bad" | null;
+  }[];
+};
+
+/** Forwards an Alexandria feedback rating to the Exchange. Never throws; failures are logged. */
+export async function forwardExchangeToolFeedback(
+  input: ExchangeToolFeedback,
+): Promise<void> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) return;
+  const { teamId, ...body } = input;
+  const context = { feedbackId: input.feedbackId, teamId };
+  try {
+    const response = await fetch(`${baseUrl}/v1/tool-feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+        "x-exchange-team-id": teamId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      rootLogger.warn("Exchange tool feedback rejected", {
+        ...context,
+        statusCode: response.status,
+      });
+    }
+  } catch (error) {
+    rootLogger.warn("Exchange tool feedback errored", { ...context, error });
+  }
 }
 
 async function deliverBillingReport(input: {

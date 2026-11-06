@@ -2,7 +2,12 @@ vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn(), hasAutoTopUp: vi.fn() },
+  autumnService: {
+    checkCredits: vi.fn(),
+    hasAutoTopUp: vi.fn(),
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
+  },
+  CREDITS_FEATURE_ID: "CREDITS",
 }));
 
 import { gateAgentCredits } from "../agent-credit-gate";
@@ -191,5 +196,80 @@ describe("gateAgentCredits", () => {
   it("fails open without an org", async () => {
     expect(await gate(4000, null)).toEqual(asRequested(4000));
     expect(checkCredits).not.toHaveBeenCalled();
+  });
+});
+
+describe("gateAgentCredits for a hosted MCP run", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    hasAutoTopUp.mockResolvedValue(false);
+  });
+
+  const hostedGate = (requestedMaxCredits?: number) =>
+    gateAgentCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      apiKeyId: 7,
+      requestedMaxCredits,
+      hostedMcp: true,
+    });
+
+  it("checks MCP credits, the balance its charges are tracked on", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: true, remaining: 300 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 300 });
+
+    expect(await hostedGate(1000)).toEqual({
+      allowed: true,
+      maxCredits: 300,
+      stopOnInsufficientCredits: true,
+    });
+    expect(checkCredits).toHaveBeenCalledTimes(2);
+    for (const [check] of checkCredits.mock.calls) {
+      expect(check.featureId).toBe("MCP_CREDITS");
+    }
+  });
+
+  it("gates a run MCP credits can't cover on the team's own credits", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 300 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 300 });
+
+    expect(await hostedGate(1000)).toEqual({
+      allowed: true,
+      maxCredits: 300,
+      stopOnInsufficientCredits: true,
+      onTeamCredits: true,
+    });
+    expect(checkCredits.mock.calls.map(([check]) => check.featureId)).toEqual([
+      "MCP_CREDITS",
+      "CREDITS",
+      "CREDITS",
+    ]);
+  });
+
+  it("keeps the MCP refusal when the team-credit check can't be answered", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce(null);
+
+    expect(await hostedGate(1000)).toEqual({ allowed: false, balance: 0 });
+  });
+
+  it("refuses like any run when both checks refuse, reporting the team's balance", async () => {
+    checkCredits
+      .mockResolvedValueOnce({ allowed: false, remaining: 0 })
+      .mockResolvedValueOnce({ allowed: false, remaining: 4 });
+
+    expect(await hostedGate()).toEqual({ allowed: false, balance: 4 });
+  });
+
+  it("leaves the feature to the default for a run the hosted MCP did not start", async () => {
+    checkCredits.mockResolvedValueOnce({ allowed: false, remaining: 0 });
+
+    await gate();
+
+    expect(checkCredits.mock.calls[0][0].featureId).toBeUndefined();
   });
 });

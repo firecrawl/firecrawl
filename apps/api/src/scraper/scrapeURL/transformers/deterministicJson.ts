@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 import { eq } from "drizzle-orm";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -171,6 +172,13 @@ export async function performDeterministicJson(
 
   if (meta.internalOptions.zeroDataRetention) {
     warn("Deterministic JSON mode is not supported with zero data retention.");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    warn(
+      "Deterministic JSON mode is not supported for teams restricted to US-only processing.",
+    );
     return document;
   }
 

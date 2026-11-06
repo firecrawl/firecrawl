@@ -43,12 +43,14 @@ export type ErrorCodes =
   | "SCRAPE_PROMPT_INJECTION_DETECTED"
   | "SCRAPE_JSON_CONTENT_TOO_LARGE"
   | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
+  | "US_ONLY_UNAVAILABLE"
   | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
   | "UNSUPPORTED_SITE"
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
+  | "CATEGORY_REMOVED"
   | "CONCURRENCY_QUEUE_TIMEOUT"
   | "SAFE_MODE_BLOCKED"
   | "SCRAPE_SITE_RESTRICTION_BLOCKED"
@@ -65,7 +67,8 @@ export type ErrorCodes =
   | "zdr_threads_unsupported"
   | "zdr_expired"
   | "zdr_no_snapshots"
-  | "zdr_not_enabled";
+  | "zdr_not_enabled"
+  | "zdr_retention_misconfigured";
 
 export class TransportableError extends Error {
   public readonly code: ErrorCodes;

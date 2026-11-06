@@ -60,9 +60,14 @@ function withoutZdrContent(options: any): any {
         model: options.model,
         modelPreset: options.modelPreset,
         effort: options.effort,
+        safe: options.safe,
         zeroDataRetention: true,
       }
     : options;
+}
+
+function safeOption(options: any): { safe?: true } {
+  return options?.safe === true ? { safe: true } : {};
 }
 
 function zdrOptions(options: any): { zeroDataRetention?: true } {
@@ -340,6 +345,7 @@ export async function agentListController(
             effort:
               dbOptions.effort ??
               (dbOptions.model === "spark-2" ? "medium" : undefined),
+            ...safeOption(dbOptions),
             ...threadOptions(dbOptions),
             ...zdrOptions(dbOptions),
           }
@@ -354,6 +360,7 @@ export async function agentListController(
                 (recentOptions.modelPreset === "spark-2"
                   ? "medium"
                   : undefined),
+              ...safeOption(recentOptions),
               ...threadOptions(recentOptions),
               ...zdrOptions(recentOptions),
             }
