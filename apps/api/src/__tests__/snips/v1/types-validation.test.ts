@@ -275,6 +275,29 @@ describe("V1 Types Validation", () => {
       expect(result.timeout).toBe(1000);
     });
 
+    it("should reject extract.agent", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: ["extract"],
+        extract: {
+          agent: {
+            model: "fire-1",
+            prompt: "test",
+          },
+          schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+            },
+          },
+        },
+      };
+
+      expect(() => scrapeRequestSchema.parse(input)).toThrow(
+        "The 'agent' option (FIRE-1) has been removed",
+      );
+    });
+
     it("should reject jsonOptions.agent", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
