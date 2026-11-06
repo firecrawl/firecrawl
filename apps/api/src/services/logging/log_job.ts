@@ -21,12 +21,14 @@ import type {
   SearchResultCategoriesBySource,
 } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
+import type { ErrorCodes } from "../../lib/error";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
+import { redactLogData } from "./redact";
 import {
   JOB_ACCESS_TTL_MS,
   isApiJobKind,
@@ -391,11 +393,14 @@ async function robustInsert(table: string, data: any, _logger: Logger) {
     return;
   }
 
-  // Clean the row once so the log receives accepted values.
-  data = sanitizeLogData({
-    ...data,
-    created_at: data.created_at ?? new Date(),
-  });
+  // Redact credentials and internal fields, then clean the row once so the
+  // log receives accepted values.
+  data = sanitizeLogData(
+    redactLogData({
+      ...data,
+      created_at: data.created_at ?? new Date(),
+    }),
+  );
 
   // Pub/Sub is the store of record: publish and wait for it. A failed
   // publish fails the log call.
@@ -422,7 +427,6 @@ type LoggedRequest = {
     | "research_paper_inspect"
     | "research_paper_read"
     | "research_related_papers"
-    | "research_github_search"
     | "code_search"
     | "gov_search";
   api_version: string;
@@ -440,6 +444,8 @@ type LoggedRequest = {
   external_request_id?: string | null;
   jobAccess?: boolean;
   jobAccessExpiresAt?: Date;
+  /** An agent run's ZDR retention, recorded on its job access row. */
+  jobAccessZeroDataRetentionMinutes?: number;
   creditsShards?: number;
 };
 
@@ -528,6 +534,7 @@ async function logRequestInternal(request: LoggedRequest) {
           new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
         clientOrigin: sanitizedOrigin,
         zeroDataRetention: request.zeroDataRetention,
+        zeroDataRetentionMinutes: request.jobAccessZeroDataRetentionMinutes,
       });
     } catch (error) {
       logger.error("Failed to write API job access to Bigtable", {
@@ -581,6 +588,8 @@ export type LoggedScrape = {
   url: string;
   is_successful: boolean;
   error?: string;
+  /** Code of a failed scrape's error; the only error detail kept under zero data retention. */
+  error_code?: ErrorCodes;
   doc?: Document;
   time_taken: number;
   team_id: string;
@@ -709,7 +718,11 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         ? "<redacted due to zero data retention>"
         : scrape.url,
       is_successful: scrape.is_successful,
-      error: scrape.error ?? null,
+      error: scrape.zeroDataRetention
+        ? scrape.is_successful
+          ? null
+          : (scrape.error_code ?? "<redacted due to zero data retention>")
+        : (scrape.error ?? null),
       time_taken: scrape.time_taken,
       team_id: storedTeamId,
       options: scrape.zeroDataRetention ? null : scrape.options,
@@ -814,6 +827,7 @@ type LoggedProviderScrape = {
   credits_cost: number;
   is_successful: boolean;
   error?: string;
+  zeroDataRetention: boolean;
 };
 
 export async function logProviderScrape(scrape: LoggedProviderScrape) {
@@ -823,7 +837,7 @@ export async function logProviderScrape(scrape: LoggedProviderScrape) {
       table: "scrapes",
       id: scrape.id,
       requestId: scrape.request_id,
-      zeroDataRetention: false,
+      zeroDataRetention: scrape.zeroDataRetention,
     },
     () => logProviderScrapeInternal(scrape),
   );
@@ -848,12 +862,18 @@ async function logProviderScrapeInternal(scrape: LoggedProviderScrape) {
     {
       id: scrape.id,
       request_id: scrape.request_id,
-      url: scrape.target,
+      url: scrape.zeroDataRetention
+        ? "<redacted due to zero data retention>"
+        : scrape.target,
       is_successful: scrape.is_successful,
-      error: scrape.error ?? null,
+      error: scrape.zeroDataRetention
+        ? scrape.error === undefined
+          ? null
+          : "<redacted due to zero data retention>"
+        : (scrape.error ?? null),
       time_taken: scrape.time_taken,
       team_id: storedTeamId,
-      options: scrape.options,
+      options: scrape.zeroDataRetention ? null : scrape.options,
       cost_tracking: null,
       pdf_num_pages: null,
       credits_cost: scrape.credits_cost,
@@ -1104,7 +1124,6 @@ export type ResearchRequestKind =
   | "research_paper_inspect"
   | "research_paper_read"
   | "research_related_papers"
-  | "research_github_search"
   | "code_search"
   | "gov_search";
 
@@ -1113,7 +1132,6 @@ export type ResearchTableName =
   | "research_paper_inspects"
   | "research_paper_reads"
   | "research_related_papers"
-  | "research_github_searches"
   | "code_searches"
   | "gov_searches";
 

@@ -1,13 +1,19 @@
 import { randomUUID } from "crypto";
+import type { Job } from "bullmq";
 import { z } from "zod";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
-import { sampled } from "../../lib/rollout";
+import {
+  getFirebillTrackRetryQueue,
+  type FirebillTrackRetryJobData,
+} from "../queue-service";
 import type { LockDeniedReason, TrackParams } from "./types";
 import {
   firebillCheckTotal,
   firebillFailureCauseTotal,
   firebillRetryTotal,
+  firebillTrackRetryExhaustedValueTotal,
+  firebillTrackRetryTotal,
   firebillTrackTotal,
 } from "./metrics";
 
@@ -38,7 +44,7 @@ function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
 
 // firebill's own internal budget (durable write + forward attempt) is up to
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
-// direct Autumn client.
+// Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
 
 // A gated lock legitimately does more: firebill asks the partner (2.5s ceiling)
@@ -53,6 +59,19 @@ const FIREBILL_GATED_LOCK_TIMEOUT_MS = 10000;
 // cannot reach the broker — which more attempts will not fix.
 const FIREBILL_ATTEMPTS = 2;
 const FIREBILL_RETRY_DELAY_MS = 150;
+
+// The durable retry behind an unanswered track: first re-send after 30s, then
+// 60s, 120s and doubling, so the eighth and last lands about two hours after
+// the caller gave up. Long enough to outlast a firebill pod being rescheduled
+// off a lost node.
+export const FIREBILL_DURABLE_RETRY_ATTEMPTS = 8;
+const FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS = 30_000;
+// BullMQ's exponential backoff waits base * 2^(n-1) after the nth failure, so
+// a 60s base is what makes the second gap double the first.
+const FIREBILL_DURABLE_RETRY_BACKOFF_MS = 60_000;
+// The queue's Redis client retries a command forever while disconnected, so an
+// enqueue is bounded here: a Redis outage must not hang the billing call.
+const FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS = 2000;
 
 /**
  * Why a firebill call did not produce a usable answer, at a cardinality safe to
@@ -229,6 +248,16 @@ const checkAnswerSchema = z.discriminatedUnion("success", [
     success: z.literal(true),
     allowed: z.boolean(),
     remaining: z.number().finite().optional().catch(undefined),
+    // Epoch ms, within what a Date can hold: the 402 renders it with
+    // toISOString(). Caught to undefined: a mis-shaped reset time must not turn
+    // an answer into a fail-open.
+    resets_at: z
+      .number()
+      .int()
+      .positive()
+      .max(8_640_000_000_000_000)
+      .optional()
+      .catch(undefined),
   }),
   z.object({ success: z.literal(false) }),
 ]);
@@ -246,67 +275,12 @@ const lockAnswerSchema = z.discriminatedUnion("success", [
   z.object({ success: z.literal(false) }),
 ]);
 
-// FIREBILL_ORG_IDS is decoded once at startup by the config schema; the Set is
-// built lazily on first use and cached, keyed on the decoded array reference.
-let allowlistCache: { source: string[] | undefined; ids: Set<string> } | null =
-  null;
-
-function firebillOrgIds(): Set<string> {
-  const source = config.FIREBILL_ORG_IDS;
-  if (!allowlistCache || allowlistCache.source !== source) {
-    allowlistCache = {
-      source,
-      ids: new Set(
-        (source ?? []).map(id => id.trim()).filter(id => id.length > 0),
-      ),
-    };
-  }
-  return allowlistCache.ids;
-}
-
 /**
- * Configured, without the rollout question — a finalize carrying a run token
- * follows the lock through firebill whatever the ramp says.
+ * Whether firebill is configured. Every billing write goes through firebill;
+ * without it, billing is skipped.
  */
 export function firebillConfigured(): boolean {
   return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
-}
-
-/**
- * Whether this org's usage goes through firebill rather than straight to Autumn.
- * Needs firebill configured, then any of: the allowlist, being
- * partner-provisioned, or the sticky percentage.
- *
- * `gatewayProvisioned` is deliberately a parameter rather than a lookup in here:
- * this stays a pure function of config so it can be reasoned about and tested
- * without a database, and the caller already has the answer cached.
- *
- * It arrives in an options object rather than as a second positional argument
- * because this predicate is used as a callback — `orgs.filter(shouldRouteToFirebill)`
- * would otherwise pass the array *index* as it, routing everything but element
- * zero. Destructuring a field off a number yields undefined, so the object form
- * cannot be fooled that way.
- *
- * **This whole gateway branch is meant to be deleted.** It exists only because
- * the ramp is below 100: a gateway partner's usage must route deterministically,
- * and a sticky sample is a probability. At `FIREBILL_ROLLOUT_PERCENT=100` every
- * org routes anyway, the branch stops changing any outcome, and it — along with
- * the lookup feeding it — should go.
- */
-export function shouldRouteToFirebill(
-  orgId: string,
-  opts?: { gatewayProvisioned?: boolean },
-): boolean {
-  if (!firebillConfigured()) return false;
-  // Always-on set: test orgs stay routed even at 0 percent.
-  if (firebillOrgIds().has(orgId)) return true;
-  // A partner-provisioned org always routes: firebill is the only thing that
-  // knows how to split its usage between that org's own balance and the
-  // partner's, so a charge that misses firebill is billed wholly to an account
-  // nobody pays for, and the partner is silently never charged.
-  if (opts?.gatewayProvisioned) return true;
-  // Sticky by org, so a ramp only ever adds and 0 is the kill switch.
-  return sampled(orgId, config.FIREBILL_ROLLOUT_PERCENT);
 }
 
 // Plain concatenation rather than new URL(path, base): a leading-slash path
@@ -324,19 +298,21 @@ function firebillUrl(path: string): string {
  * firebill's /v1/refund endpoint expects the POSITIVE amount and negates it
  * itself, so the absolute value is sent either way.
  *
- * Returns true when firebill accepted the event, mirroring the boolean
- * contract of the direct Autumn track path. A `false` means firebill never
- * took it: nothing is retrying, and the usage goes unbilled.
+ * Returns true when firebill accepted the event. A `false` means firebill did not
+ * confirm it. An unanswered event is then handed to a durable retry that
+ * re-sends the identical event under the same idempotency key, so it is billed
+ * once whether or not the lost attempt landed; an explicit refusal is not.
  */
 export async function firebillTrack(params: TrackParams): Promise<boolean> {
-  const operation = params.value < 0 ? "refund" : "track";
+  const operation = trackOperation(params.value);
   const path = `/v1/${operation}`;
   // Both attempts must be the same event. Without a caller key firebill mints
   // one per request, so a retry after an accepted-but-lost first attempt would
   // be a second charge; minting here instead keeps one identity per call while
   // separate calls stay distinct, exactly as before.
+  const { durableRetry = true, ...event } = params;
   const attempted = {
-    ...params,
+    ...event,
     idempotencyKey: params.idempotencyKey ?? randomUUID(),
   };
 
@@ -369,6 +345,10 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // counter rather than a throw: billing must not fail the customer's request,
   // and a log alone is too quiet to alert on.
   const outcome = last.reason === "not_success" ? "refused" : "ambiguous";
+  const handedToRetry =
+    outcome === "ambiguous" &&
+    durableRetry &&
+    (await enqueueFirebillTrackRetry(attempted));
   logger.error(
     outcome === "refused"
       ? "firebill refused a usage event; it will not be billed"
@@ -382,6 +362,7 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
       callerSuppliedKey: params.idempotencyKey !== undefined,
       path,
       attempts: FIREBILL_ATTEMPTS,
+      handedToRetry,
       reason: last.reason,
       cause: last.cause,
       ...(last.status !== undefined ? { status: last.status } : {}),
@@ -395,6 +376,128 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // would quietly turn one threshold into one threshold per cause.
   firebillFailureCauseTotal.labels(operation, last.cause).inc();
   return false;
+}
+
+function trackOperation(value: number): "track" | "refund" {
+  return value < 0 ? "refund" : "track";
+}
+
+/**
+ * Hands an unanswered event to the durable retry queue. The job carries the
+ * whole event, key included, so every re-send is byte-for-byte the event the
+ * caller sent. Keyed by the idempotency key, so the same event enqueued twice
+ * (a stalled job re-running its charge) is one job.
+ */
+async function enqueueFirebillTrackRetry(
+  event: FirebillTrackRetryJobData,
+): Promise<boolean> {
+  const operation = trackOperation(event.value);
+  const context = {
+    customerId: event.customerId,
+    entityId: event.entityId,
+    featureId: event.featureId,
+    value: event.value,
+    idempotencyKey: event.idempotencyKey,
+  };
+  const timedOut = Symbol("enqueue timed out");
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const added = await Promise.race([
+      getFirebillTrackRetryQueue().add(operation, event, {
+        jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
+        delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
+        attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+        backoff: {
+          type: "exponential",
+          delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
+        },
+      }),
+      new Promise<typeof timedOut>(resolve => {
+        timer = setTimeout(
+          () => resolve(timedOut),
+          FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    // The add is still in flight and may land: unknown, not lost.
+    if (added === timedOut) {
+      logger.error(
+        "firebill durable retry enqueue timed out; the retry may or may not have been queued",
+        { ...context, timeoutMs: FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS },
+      );
+      firebillTrackRetryTotal.labels(operation, "enqueue_timeout").inc();
+      return false;
+    }
+    firebillTrackRetryTotal.labels(operation, "enqueued").inc();
+    return true;
+  } catch (error) {
+    logger.error(
+      "firebill durable retry could not be enqueued; the event will not be billed unless replayed",
+      { ...context, error },
+    );
+    firebillTrackRetryTotal.labels(operation, "enqueue_failed").inc();
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * One durable re-send of an event firebill never confirmed. Throws on any
+ * answer but accepted so the queue schedules the next attempt with backoff;
+ * the last failed attempt logs and counts the event as exhausted first.
+ *
+ * Any non-accepted answer is retried, a refusal included: an earlier attempt
+ * may still have landed, and the shared key makes a late duplicate a no-op.
+ */
+export async function processFirebillTrackRetry(
+  job: Job<FirebillTrackRetryJobData>,
+): Promise<void> {
+  const event = job.data;
+  const operation = trackOperation(event.value);
+  const attempt = job.attemptsMade + 1;
+  const attempts = job.opts.attempts ?? 1;
+
+  firebillTrackRetryTotal.labels(operation, "retried").inc();
+  const result = await firebillAttempt(`/v1/${operation}`, event);
+
+  const context = {
+    customerId: event.customerId,
+    entityId: event.entityId,
+    featureId: event.featureId,
+    value: event.value,
+    idempotencyKey: event.idempotencyKey,
+    attempt,
+    attempts,
+  };
+
+  if (result.ok) {
+    firebillTrackRetryTotal.labels(operation, "settled").inc();
+    logger.info("firebill accepted a usage event on durable retry", context);
+    return;
+  }
+
+  const failure = {
+    ...context,
+    reason: result.reason,
+    cause: result.cause,
+    ...(result.status !== undefined ? { status: result.status } : {}),
+  };
+  if (attempt >= attempts) {
+    firebillTrackRetryTotal.labels(operation, "exhausted").inc();
+    firebillTrackRetryExhaustedValueTotal
+      .labels(operation, event.featureId)
+      .inc(Math.abs(event.value));
+    logger.error(
+      "firebill durable retry exhausted; the event may not have been billed",
+      failure,
+    );
+  } else {
+    logger.warn("firebill durable retry attempt failed; will retry", failure);
+  }
+  throw new Error(
+    `firebill ${operation} retry ${attempt}/${attempts} failed: ${result.cause}`,
+  );
 }
 
 type AttemptResult =
@@ -434,11 +537,11 @@ async function firebillAttempt(
         "content-type": "application/json",
       },
       // No overage flag needed: firebill itself pins Autumn's
-      // overage_behavior to "overflow" on every upstream call, matching the
-      // direct-Autumn path below.
+      // overage_behavior to "overflow" on every upstream call.
       body: JSON.stringify({
         customer_id: customerId,
-        entity_id: entityId,
+        // Required by firebill; empty for a customer-level charge.
+        entity_id: entityId ?? "",
         feature_id: featureId,
         value: Math.abs(value),
         properties,
@@ -565,7 +668,13 @@ async function firebillAttempt(
  * yes/no, `unavailable` means firebill could not answer at all.
  */
 type FirebillCheckResult =
-  | { status: "answered"; allowed: boolean; remaining: number }
+  | {
+      status: "answered";
+      allowed: boolean;
+      remaining: number;
+      /** When the balance behind the answer next resets, in epoch ms. */
+      resetsAt?: number;
+    }
   | { status: "unavailable" };
 
 /**
@@ -700,7 +809,12 @@ export async function firebillCheck({
         remaining,
       });
     }
-    return { status: "answered", allowed: body.allowed, remaining };
+    return {
+      status: "answered",
+      allowed: body.allowed,
+      remaining,
+      ...(body.resets_at ? { resetsAt: body.resets_at } : {}),
+    };
   } catch (error) {
     const failure = classifyTransportError(error);
     // **Not "firebill is unavailable".** The request never completed, which is
@@ -856,13 +970,12 @@ export async function firebillLock({
  * Settles a lock via firebill's `/v1/finalize`: `confirm` bills the hold,
  * `release` gives the balance back. firebill queues the settle durably and
  * retries it until it lands in Autumn, instead of dropping it when Autumn
- * blinks (the direct-Autumn path's failure mode — the lock then just expires,
- * which for a confirm means the work goes unbilled).
+ * blinks (a dropped settle just lets the lock expire, which for a confirm
+ * means the work goes unbilled).
  *
- * Returns true when firebill accepted the settle for delivery, mirroring the
- * void-and-log contract of the direct finalize path. No direct-Autumn
- * fallback, for the same reason as track: firebill may have durably queued
- * the settle before the call failed.
+ * Returns true when firebill accepted the settle for delivery. No
+ * direct-Autumn fallback, for the same reason as track: firebill may have
+ * durably queued the settle before the call failed.
  */
 export async function firebillFinalize({
   lockId,

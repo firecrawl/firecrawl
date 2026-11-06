@@ -1,4 +1,27 @@
-import { isDpaRestricted } from "./zdr-helpers";
+import { getAgentZdrRetentionMinutes, isDpaRestricted } from "./zdr-helpers";
+
+describe("getAgentZdrRetentionMinutes", () => {
+  it("is null when unset", () => {
+    expect(getAgentZdrRetentionMinutes(undefined)).toBeNull();
+    expect(getAgentZdrRetentionMinutes({})).toBeNull();
+  });
+
+  it("returns each tier", () => {
+    for (const minutes of [15, 30, 60, 360, 1440]) {
+      expect(
+        getAgentZdrRetentionMinutes({ agentZdrRetentionMinutes: minutes }),
+      ).toBe(minutes);
+    }
+  });
+
+  it("marks any other value invalid", () => {
+    for (const value of [0, 45, 2880, "30" as unknown as number]) {
+      expect(
+        getAgentZdrRetentionMinutes({ agentZdrRetentionMinutes: value }),
+      ).toBe("invalid");
+    }
+  });
+});
 
 describe("isDpaRestricted", () => {
   it("is false when flags are missing", () => {

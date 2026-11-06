@@ -14,6 +14,12 @@ import { config } from "../config";
  * A request may also name the provider model explicitly (json format `model`);
  * that routes it regardless of cohort when the team is listed in TEAM_IDS or
  * REQUEST_OPT_IN is on. Unknown model names are rejected at validation.
+ *
+ * Schemas with $ref/$defs can roll out on their own percentage
+ * (REF_SCHEMA_ROLLOUT_PERCENT), since the default path prices them
+ * differently. An answer that is nothing but empty arrays on a page long
+ * enough to hold items is treated as a provider failure (see
+ * isEmptyListAnswer) so the request falls back instead of returning nothing.
  */
 type ExtractionRoute = "provider" | "shadow" | "default";
 
@@ -48,6 +54,8 @@ export function selectExtractionRoute(input: {
   zeroDataRetention: boolean;
   inputBytes: number;
   requestedModel?: string;
+  /** The schema uses $ref/$defs (routed by REF_SCHEMA_ROLLOUT_PERCENT when set). */
+  refSchema?: boolean;
 }): ExtractionRoute {
   if (!isExtractionProviderConfigured()) return "default";
   if (input.zeroDataRetention) return "default";
@@ -63,14 +71,39 @@ export function selectExtractionRoute(input: {
   }
   if (listed) return "provider";
   const bucket = cohortBucket(input.teamId);
-  if (bucket < config.EXTRACTION_PROVIDER_ROLLOUT_PERCENT) return "provider";
-  if (
-    bucket <
-    config.EXTRACTION_PROVIDER_ROLLOUT_PERCENT +
-      config.EXTRACTION_PROVIDER_SHADOW_PERCENT
-  )
+  const rollout =
+    input.refSchema &&
+    config.EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT !== undefined
+      ? config.EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT
+      : config.EXTRACTION_PROVIDER_ROLLOUT_PERCENT;
+  if (bucket < rollout) return "provider";
+  if (bucket < rollout + config.EXTRACTION_PROVIDER_SHADOW_PERCENT)
     return "shadow";
   return "default";
+}
+
+/** Pages shorter than this can legitimately have no list items. */
+export const EMPTY_LIST_FALLBACK_MIN_CHARS = 2000;
+
+function arraysIn(value: unknown, out: unknown[][] = []): unknown[][] {
+  if (Array.isArray(value)) {
+    out.push(value);
+    for (const v of value) arraysIn(v, out);
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>))
+      arraysIn(v, out);
+  }
+  return out;
+}
+
+/**
+ * True when the answer contains arrays and every one of them is empty — the
+ * shape a model produces when it gives up on a listing page. Only meaningful
+ * with a markdown input of at least EMPTY_LIST_FALLBACK_MIN_CHARS.
+ */
+export function isEmptyListAnswer(answer: unknown): boolean {
+  const arrays = arraysIn(answer);
+  return arrays.length > 0 && arrays.every(a => a.length === 0);
 }
 
 /** Per-million-token prices for the provider model (amortized infrastructure cost, configured). */

@@ -23,6 +23,13 @@ vi.mock("../../../lib/keyless", () => ({
   chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
 }));
 
+// These tests cover routing, billing and retention, not the daily index limit.
+// The limiter needs Redis, so here it admits every call.
+vi.mock("../../../lib/index-daily-limit", () => ({
+  reserveIndexCalls: vi.fn(async () => ({ ok: true, release: async () => {} })),
+  indexDailyLimitRefusal: vi.fn(),
+}));
+
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -154,6 +161,28 @@ describe.each([
         headers: expect.objectContaining({
           "firecrawl-zero-data-retention": "false",
         }),
+      }),
+    );
+  });
+});
+
+describe("paper search sort", () => {
+  it("forwards sort=date_desc upstream", async () => {
+    await callRoute(
+      createResearchRouter(),
+      "/papers",
+      { query: "graph databases", sort: "date_desc" },
+      {},
+    );
+
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v2/research/papers",
+        params: expect.objectContaining({
+          query: "graph databases",
+          sort: "date_desc",
+        }),
+        queryKeys: expect.arrayContaining(["sort"]),
       }),
     );
   });

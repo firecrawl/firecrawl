@@ -555,7 +555,8 @@ public class FirecrawlClient
                 ["authors"] = options?.Authors,
                 ["categories"] = options?.Categories,
                 ["from"] = options?.From,
-                ["to"] = options?.To
+                ["to"] = options?.To,
+                ["sort"] = options?.Sort
             }),
             cancellationToken);
     }
@@ -626,7 +627,7 @@ public class FirecrawlClient
     /// <summary>
     /// Searches GitHub research content.
     /// </summary>
-    [Obsolete("Stops responding after 2026-11-03. Use DeveloperSearchAsync, which does not carry over the score breakdown or the web fallback results.")]
+    [Obsolete("The research index GitHub search endpoint was removed after 2026-11-03. Use DeveloperSearchAsync instead.")]
     public async Task<GitHubSearchResponse> SearchGitHubAsync(
         string query,
         SearchGitHubOptions? options = null,
@@ -921,7 +922,7 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
-    private const string SdkOrigin = "dotnet-sdk@1.15.1";
+    private const string SdkOrigin = "dotnet-sdk@1.15.3";
 
     private static Dictionary<string, object> BuildBody(object? options)
     {

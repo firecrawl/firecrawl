@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -374,6 +375,7 @@ export async function parseController(
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       };
 
       if (
@@ -396,9 +398,10 @@ export async function parseController(
       const agentRequestId = req.body.__agentInterop?.requestId ?? null;
       const boostConcurrency =
         req.body.__agentInterop?.boostConcurrency ?? false;
-      const isDirectToBullMQ =
-        config.SEARCH_PREVIEW_TOKEN !== undefined &&
-        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+      const isDirectToBullMQ = timingSafeSecretEqual(
+        req.body.__searchPreviewToken,
+        config.SEARCH_PREVIEW_TOKEN,
+      );
       const projectedKeylessCredits =
         shouldBill && !isDirectToBullMQ
           ? projectScrapeCredits(
@@ -643,6 +646,17 @@ export async function parseController(
               "parse.status_code": 400,
             });
             return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "US_ONLY_UNAVAILABLE") {
+            setSpanAttributes(span, {
+              "parse.status_code": 403,
+            });
+            return res.status(403).json({
               success: false,
               code: e.code,
               error: e.message,

@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import express, {
   Application,
   NextFunction,
@@ -13,6 +12,9 @@ import {
   listMcpActionLogsController,
 } from "../controllers/v2/mcp-action-logs";
 import { wrap } from "./shared";
+import { timingSafeSecretEqual } from "../lib/secret-compare";
+
+export { timingSafeSecretEqual };
 
 const BODY_LIMIT = "64kb";
 const DEFAULT_LIMIT = 600;
@@ -22,16 +24,6 @@ const DEFAULT_MAX_BUCKETS = 10_000;
 function bearerToken(value: string | string[] | undefined) {
   const header = Array.isArray(value) ? value[0] : value;
   return header?.startsWith("Bearer ") ? header.slice(7) : null;
-}
-
-export function timingSafeSecretEqual(
-  provided: string | null,
-  expected?: string,
-) {
-  if (!provided || !expected) return false;
-  const left = Buffer.from(provided);
-  const right = Buffer.from(expected);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 function requireWritesEnabled(

@@ -6,6 +6,8 @@ import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { isUsOnly } from "../us-only";
 import {
   generateText,
   buildLangSmithProviderOptions,
@@ -228,11 +230,37 @@ interface BrowserAgentTraceContext {
   teamId: string;
   orgId?: string;
   zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
   scrapeUrl?: string;
   targetUrl?: string;
   scrapeWaitForMs?: number;
   scrapeActions?: number;
   scrapeOrigin?: string;
+}
+
+// The tracing vendor is skipped for US-only teams, as it is for ZDR.
+function isUntraced(trace: BrowserAgentTraceContext | undefined): boolean {
+  return (
+    trace?.zeroDataRetention === true || isUsOnly(trace?.teamFlags ?? undefined)
+  );
+}
+
+// Throws UsOnlyUnavailableError when a US-only team has no US route, so
+// callers can refuse before creating a session or reserving credits.
+export function getBrowserAgentModel(
+  trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
+) {
+  const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
+  return trace?.zeroDataRetention === true
+    ? getModel("gpt-6-luna", "openai", {
+        ignoreModelOverride: true,
+        ...modelOptions,
+      })
+    : getModel(
+        "gemini-3.5-flash",
+        hasVertex() ? "vertex" : "google",
+        modelOptions,
+      );
 }
 
 export async function executePromptViaBrowserAgent(
@@ -243,6 +271,8 @@ export async function executePromptViaBrowserAgent(
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
   const zeroDataRetention = trace?.zeroDataRetention === true;
+  const untraced = isUntraced(trace);
+  const model = getBrowserAgentModel(trace);
   const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
   debugLog.add(`=== AGENT RUN ===`);
   debugLog.add(`Time:    ${new Date().toISOString()}`);
@@ -341,7 +371,7 @@ export async function executePromptViaBrowserAgent(
           org_id: trace.orgId,
           browser_id: browserId,
           mode: "prompt",
-          zeroDataRetention: trace.zeroDataRetention,
+          zeroDataRetention: untraced,
           scrape_url: trace.scrapeUrl,
           target_url: trace.targetUrl,
           scrape_wait_for_ms: trace.scrapeWaitForMs,
@@ -358,11 +388,9 @@ export async function executePromptViaBrowserAgent(
   try {
     // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
     // is enabled globally. Use the same provider as ZDR JSON extraction.
-    const generate = zeroDataRetention ? untracedGenerateText : generateText;
+    const generate = untraced ? untracedGenerateText : generateText;
     const result = await generate({
-      model: zeroDataRetention
-        ? getModel("gpt-6-luna", "openai", { ignoreModelOverride: true })
-        : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
+      model,
       experimental_telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,
       messages: [
@@ -484,7 +512,7 @@ export async function executeCodeViaBrowserSession(
       org_id: trace.orgId,
       browser_id: browserId,
       mode: "code",
-      zeroDataRetention: trace.zeroDataRetention,
+      zeroDataRetention: isUntraced(trace),
       scrape_url: trace.scrapeUrl,
       target_url: trace.targetUrl,
       scrape_wait_for_ms: trace.scrapeWaitForMs,

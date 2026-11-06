@@ -273,7 +273,7 @@ export async function crawlController(
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       threatProtection: threatProtection.policy ?? undefined,
       // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
-      teamFlags: req.acuc?.flags ?? undefined,
+      teamFlags: req.acuc?.flags ?? null,
       safeModeBypassed: safeMode.bypassed === true,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,

@@ -16,20 +16,78 @@ on:
 # This workflow reads Version from apps/go-sdk/version.go, checks whether the
 # corresponding tag already exists, and if not creates+pushes it, then warms
 # the proxy.golang.org cache to trigger pkg.go.dev indexing.
+permissions: {}
+
 jobs:
+  supersede:
+    name: Supersede unapproved runs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - uses: ./.github/actions/supersede-waiting-runs
+        continue-on-error: true
+        timeout-minutes: 2
+
+  release-summary:
+    name: Release summary
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Read the version
+        id: version
+        continue-on-error: true
+        run: |
+          version=$(grep -E '^const Version = ' apps/go-sdk/version.go | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/apps/go-sdk/v$version" >/dev/null; then publishes=false; else publishes=true; fi
+          echo "publishes=$publishes" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: Tag and index on pkg.go.dev
+          version: apps/go-sdk/v${{ steps.version.outputs.version }}
+          publishes: ${{ steps.version.outputs.publishes }}
+          published-step: Create and push tag
+          paths: apps/go-sdk
+
   publish:
     name: Tag and index on pkg.go.dev
+    needs: release-summary
+    if: github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.23"
           cache-dependency-path: apps/go-sdk/go.sum

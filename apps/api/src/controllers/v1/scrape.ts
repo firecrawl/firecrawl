@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -191,9 +192,10 @@ async function scrapeControllerInner(
 
   // const startTime = new Date().getTime();
 
-  const isDirectToBullMQ =
-    config.SEARCH_PREVIEW_TOKEN !== undefined &&
-    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+  const isDirectToBullMQ = timingSafeSecretEqual(
+    req.body.__searchPreviewToken,
+    config.SEARCH_PREVIEW_TOKEN,
+  );
 
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
     req.body,
@@ -368,7 +370,10 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "unsafe_domain_blocked") {
+      if (
+        e.code === "unsafe_domain_blocked" ||
+        e.code === "US_ONLY_UNAVAILABLE"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,

@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { isUsOnly } from "../lib/us-only";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
@@ -93,6 +94,16 @@ async function labsProxyController(req: Request, res: Response) {
 
   if (!authedReq.acuc?.flags?.labsSearch) {
     return labsError(res, 403, "This endpoint is not enabled for this team.");
+  }
+
+  // Every labs route is served from a hosted vector index, so none has a US-only route.
+  if (isUsOnly(authedReq.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      code: "US_ONLY_UNAVAILABLE",
+      error:
+        "Labs Search is not available for teams restricted to US-only processing.",
+    });
   }
 
   try {

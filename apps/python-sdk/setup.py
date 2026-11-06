@@ -28,6 +28,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         'requests',
+        'certifi>=2026.10.19',
         'pytest',
         'python-dotenv',
         'websockets',

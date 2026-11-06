@@ -228,7 +228,8 @@ results = firecrawl.search(
 )
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer and gov
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -242,6 +243,10 @@ results = firecrawl.search("nanopore basecalling accuracy", categories=["researc
 > results. To search papers themselves, use `search_papers` below.
 
 ### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
 
 Use `developer_search` for the dedicated developer index and its complete
 filter and response contract. Generic `search(categories=["developer"])`
@@ -285,7 +290,23 @@ law = firecrawl.gov_search("food labeling requirements", k=5)
 
 for result in law.data.web:
     print(result.position, result.title, result.url)
+
+# State supreme court opinions that cite a federal statute:
+cases = firecrawl.gov_search(
+    "qualified immunity",
+    court_type="state-supreme",
+    cites="42 U.S.C. § 1983",
+)
 ```
+
+Filters, all optional and combined with AND: `jurisdiction` (`"us"` for
+federal, or `"us-"` plus a two-letter state or territory code, such as
+`"us-ca"`), `court` (a CourtListener court id, such as `"scotus"` or `"ca9"`),
+`court_type`, `cites` (one printed citation or citation id, such as
+`"us:usc:42:1983"`), and `domain` (one site, such as `"irs.gov"`). Filters
+keep only pages the index has labeled, so a filtered search can leave out
+relevant pages, and no results does not mean none exist. Court labels are most
+complete for federal courts and case-law collections.
 
 ### Research / paper search
 
@@ -319,14 +340,6 @@ related = firecrawl.related_papers(
     k=20,
 )
 ```
-
-> **`search_github` is deprecated.** The research index GitHub endpoint stops
-> responding after 2026-11-03. Use `developer_search` instead: it searches
-> GitHub issues, pull requests and readmes plus curated documentation sources,
-> returns matched passages, and adds filters for repo, language, license and
-> stars. It does not carry over the `scores` breakdown or the
-> `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 > **Response keys are camelCase.** Unlike the rest of the SDK, the research
 > methods return the raw JSON body as a `dict` — they are not parsed into typed

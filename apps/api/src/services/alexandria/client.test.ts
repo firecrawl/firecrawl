@@ -91,6 +91,27 @@ describe("exchangeRequest", () => {
     expect(headersOf()).not.toHaveProperty("x-exchange-connectors");
   });
 
+  it("asks for zero data retention only when set", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      zeroDataRetention: true,
+    });
+    expect(headersOf()).toMatchObject({
+      "x-exchange-zero-data-retention": "true",
+    });
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-zero-data-retention");
+  });
+
   it("sends the deadline as a whole number of milliseconds", async () => {
     await exchangeRequest({
       teamId: "team",

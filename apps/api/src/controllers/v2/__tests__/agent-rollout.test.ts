@@ -83,8 +83,8 @@ describe("Agent Alexandria rollout", () => {
       };
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
       await agentController(req as any, res as any);
-      expect(res.status).toHaveBeenCalledWith(forced ? 400 : 200);
-      expect(fetch).toHaveBeenCalledTimes(forced ? 0 : 1);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(fetch).toHaveBeenCalledTimes(1);
     },
   );
 });

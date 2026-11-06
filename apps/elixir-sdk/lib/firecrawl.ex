@@ -257,13 +257,18 @@ defmodule Firecrawl do
     from: [type: :string],
     k: [type: :integer],
     query: [type: :string, required: true],
+    sort: [type: {:in, [:relevance, :date_desc, "relevance", "date_desc"]}],
     to: [type: :string]
   ])
 
-  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", sort: "sort", to: "to"}
 
   @doc """
   Search research papers.
+
+  `sort` accepts `relevance` (default) or `date_desc`, which returns the newest
+  of the most relevant matches, newest first by created date. It does not list
+  every paper in a date range; add `from` (and `to`) for that.
 
   `GET /search/research/papers`
   """
@@ -378,10 +383,10 @@ defmodule Firecrawl do
 
   `GET /search/research/github`
 
-  Deprecated: stops responding after 2026-11-03. Use `search_developer/2`, which
-  does not carry over the score breakdown or the web fallback results.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer/2` instead.
   """
-  @deprecated "Use search_developer/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer/2 instead."
   @spec search_github(keyword(), keyword()) :: response()
   def search_github(params \\ [], opts \\ []) do
     with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
@@ -392,9 +397,10 @@ defmodule Firecrawl do
   @doc """
   Bang variant of `search_github`. Raises on error.
 
-  Deprecated: use `search_developer!/2`.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer!/2` instead.
   """
-  @deprecated "Use search_developer!/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer!/2 instead."
   @spec search_github!(keyword(), keyword()) :: Req.Response.t()
   def search_github!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @research_search_github_schema)
@@ -422,7 +428,8 @@ defmodule Firecrawl do
 
   @doc """
   Search the developer index: public repositories, GitHub issues, merged pull
-  requests, READMEs and code documentation. Replaces the deprecated `search_github/2`.
+  requests, READMEs and code documentation. Replaces `search_github/2`, whose
+  endpoint was removed after 2026-11-03.
 
   `POST /search/developer`
 
@@ -1675,10 +1682,15 @@ defmodule Firecrawl do
 
   @gov_search_query_schema NimbleOptions.new!([
     query: [type: :string, required: true, doc: "Natural-language question or search phrase."],
-    k: [type: :integer, doc: "Number of results to return."]
+    k: [type: :integer, doc: "Number of results to return."],
+    jurisdiction: [type: :string, doc: "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`."],
+    court: [type: :string, doc: "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."],
+    court_type: [type: {:or, [{:in, [:"federal-supreme", :"federal-appellate", :"federal-district", :"federal-bankruptcy", :"federal-special", :military, :"state-supreme", :"state-appellate", :"state-trial", :"state-special", :"state-attorney-general"]}, :string]}, doc: "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."],
+    cites: [type: :string, doc: "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."],
+    domain: [type: :string, doc: "Keep only pages from one site, such as `irs.gov`."]
   ])
 
-  @gov_search_query_key_mapping %{query: "query", k: "k"}
+  @gov_search_query_key_mapping %{query: "query", k: "k", jurisdiction: "jurisdiction", court: "court", court_type: "courtType", cites: "cites", domain: "domain"}
 
   @doc """
   Search the Government Index
@@ -1691,6 +1703,11 @@ defmodule Firecrawl do
 
     * `query` — query parameter `query`
     * `k` — query parameter `k`
+    * `jurisdiction` — query parameter `jurisdiction`
+    * `court` — query parameter `court`
+    * `court_type` — query parameter `courtType`
+    * `cites` — query parameter `cites`
+    * `domain` — query parameter `domain`
 
   ## Returns
 
@@ -1716,11 +1733,16 @@ defmodule Firecrawl do
 
 
   @gov_search_post_schema NimbleOptions.new!([
+    cites: [type: :string, doc: "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."],
+    court: [type: :string, doc: "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."],
+    court_type: [type: {:or, [{:in, [:"federal-supreme", :"federal-appellate", :"federal-district", :"federal-bankruptcy", :"federal-special", :military, :"state-supreme", :"state-appellate", :"state-trial", :"state-special", :"state-attorney-general"]}, :string]}, doc: "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."],
+    domain: [type: :string, doc: "Keep only pages from one site, such as `irs.gov`."],
+    jurisdiction: [type: :string, doc: "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`."],
     k: [type: :integer, doc: "Number of results to return."],
     query: [type: :string, required: true, doc: "Natural-language question or search phrase."]
   ])
 
-  @gov_search_post_key_mapping %{k: "k", query: "query"}
+  @gov_search_post_key_mapping %{cites: "cites", court: "court", court_type: "courtType", domain: "domain", jurisdiction: "jurisdiction", k: "k", query: "query"}
 
   @doc """
   Search the Government Index

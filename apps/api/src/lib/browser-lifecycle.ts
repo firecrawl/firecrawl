@@ -19,6 +19,9 @@ import {
   settleBrowserSessionOnce,
   withLockedBrowserSession,
   didBrowserSessionUsePrompt,
+  didBrowserSessionComeFromHostedMcp,
+  markBrowserSessionHostedMcp,
+  clearBrowserSessionHostedMcp,
   listUnsettledHangarSessions,
   BrowserSessionRow,
 } from "./browser-sessions";
@@ -33,9 +36,12 @@ import {
 } from "../services/worker/nuq-router";
 import {
   autumnService,
+  CREDITS_FEATURE_ID,
   DEFAULT_TEAM_LIMITS,
 } from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
+import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
+import type { TrackCreditsParams } from "../services/autumn/types";
 import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
@@ -49,6 +55,8 @@ import { getScrapeZDR } from "./zdr-helpers";
 import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const logger = rootLogger;
 
@@ -60,6 +68,27 @@ export class BrowserSessionError extends Error {
     super(message);
     this.name = "BrowserSessionError";
   }
+}
+
+/**
+ * A browser charge's credit check. A hosted MCP call that MCP credits can't
+ * cover is billed on the team's own credits from here on, like an API-key call.
+ */
+async function checkBrowserCredits(
+  req: RequestWithAuth<any, any, any>,
+  params: TrackCreditsParams,
+) {
+  if (!req.auth.hostedMcp)
+    return {
+      result: await autumnService.checkCredits(params),
+      onTeamCredits: false,
+    };
+  const gate = await checkHostedMcpCredits({
+    ...params,
+    featureId: CREDITS_FEATURE_ID,
+  });
+  if (gate.onTeamCredits) req.auth.hostedMcp = false;
+  return gate;
 }
 
 /** Returns the effective session policy and rejects disallowed ZDR requests. */
@@ -130,6 +159,12 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    req.acuc?.flags,
+    options.location?.country,
+  );
+  if (usOnlyLocationError)
+    throw new UsOnlyUnavailableError(usOnlyLocationError);
   const zeroDataRetention =
     getBrowserZDR(req) || options.zeroDataRetention === true;
   if (zeroDataRetention && (options.recordSession || options.profile)) {
@@ -173,7 +208,7 @@ async function createBrowserSessionInternal(
       ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
       : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
-    const credit = await autumnService.checkCredits({
+    const { result: credit } = await checkBrowserCredits(req, {
       teamId: req.auth.team_id,
       orgId: req.acuc.org_id,
       value: estimatedCredits,
@@ -212,7 +247,11 @@ async function createBrowserSessionInternal(
       ))
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
-    const browser = await createHangarBrowser(id, req.auth.team_id, options);
+    const browser = await createHangarBrowser(id, req.auth.team_id, {
+      ...options,
+      zeroDataRetention,
+      usOnly: isUsOnly(req.acuc?.flags),
+    });
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);
     if (!options.requestId)
@@ -248,6 +287,15 @@ async function createBrowserSessionInternal(
       credits_used: null,
       profile_name: options.profile?.name ?? null,
     });
+    // Settlement runs later, often with no request in hand, so the session
+    // keeps the verified hosted MCP signal for it.
+    if (shouldBill && req.auth.hostedMcp)
+      await markBrowserSessionHostedMcp(session.id).catch(error =>
+        logger.warn("Failed to mark a hosted MCP browser session", {
+          sessionId: session.id,
+          error,
+        }),
+      );
     return {
       session,
       expiresAt:
@@ -338,6 +386,7 @@ async function settleBrowserSessionInternal(
         ? session.request_id
         : undefined;
     if (session.should_bill) {
+      const hostedMcp = await didBrowserSessionComeFromHostedMcp(session.id);
       billTeam(
         session.team_id,
         await orgIdForTeam(session.team_id),
@@ -351,6 +400,7 @@ async function settleBrowserSessionInternal(
               : "browser",
           jobId: agentRequestId ?? session.id,
           chargeId: `${session.id}:destroy`,
+          ...(hostedMcp ? { hostedMcp: true } : {}),
         },
       ).catch(error =>
         logger.error("Failed to bill browser session", {
@@ -375,6 +425,24 @@ async function settleBrowserSessionInternal(
   }
   await finalizeBrowserSession(session, creditsBilled);
   return { sessionDurationMs, creditsBilled };
+}
+
+/** Hangar answers 400 for an ID it never issued and 404 for a browser it no longer has. */
+function isUnknownToHangar(error: unknown) {
+  return (
+    error instanceof HangarError &&
+    (error.status === 400 || error.status === 404)
+  );
+}
+
+/** Closes a session Hangar cannot account for. Without a duration there is nothing to bill. */
+async function closeUnknownBrowserSession(session: BrowserSessionRow) {
+  const { creditsBilled } = await settleBrowserSessionOnce(
+    session.id,
+    async () => 0,
+  );
+  await finalizeBrowserSession(session, creditsBilled);
+  return { creditsBilled };
 }
 
 async function finalizeBrowserSession(
@@ -407,8 +475,9 @@ export async function reserveBrowserPromptCredits(
     session.ttl_total * 1000,
     browserCreditsPerHour(true, session.zero_data_retention),
   );
+  let onTeamCredits = false;
   if (session.should_bill && req.acuc?.org_id) {
-    const credit = await autumnService.checkCredits({
+    const gate = await checkBrowserCredits(req, {
       teamId: session.team_id,
       orgId: req.acuc.org_id,
       value: credits,
@@ -418,11 +487,12 @@ export async function reserveBrowserPromptCredits(
         apiKeyId: req.acuc?.api_key_id ?? null,
       },
     });
-    if (credit !== null && !credit.allowed)
+    if (gate.result !== null && !gate.result.allowed)
       throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
       );
+    onTeamCredits = gate.onTeamCredits;
   }
   // The same row lock guards settlement: a prompt admitted before stop
   // records its rate before billing reads it, and a later prompt cannot
@@ -436,7 +506,20 @@ export async function reserveBrowserPromptCredits(
       !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
     )
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+    // A hosted prompt on team credits bills the whole session there, and must
+    // not run if the session would still settle on the MCP credits that refused.
+    if (current.should_bill && onTeamCredits)
+      await clearBrowserSessionHostedMcp(current.id);
     await markBrowserSessionUsedPrompt(current.id);
+    // The prompt rate is most of a session's charge, so a hosted MCP prompt
+    // bills the session as hosted even when another call created it.
+    if (current.should_bill && req.auth.hostedMcp)
+      await markBrowserSessionHostedMcp(current.id).catch(error =>
+        logger.warn("Failed to mark a hosted MCP browser session", {
+          sessionId: current.id,
+          error,
+        }),
+      );
   });
 }
 
@@ -454,29 +537,39 @@ async function stopBrowserSessionInternal(session: BrowserSessionRow) {
       creditsBilled: session.credits_used ?? 0,
     };
   }
-  let browser = await stopHangarBrowser(session.browser_id);
-  if (!["stopping", "stopped", "failed"].includes(browser.status))
-    throw new HangarError(502, "Hangar did not confirm the stop request.");
-  // A successful public DELETE includes final duration and billing, even
-  // though Hangar's stop endpoint acknowledges cleanup asynchronously.
-  const deadline = Date.now() + 30_000;
-  while (browser.status === "stopping") {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0)
-      throw new HangarError(
-        502,
-        "Browser is still stopping. Retry deletion shortly.",
+  let browser: HangarBrowser;
+  try {
+    browser = await stopHangarBrowser(session.browser_id);
+    if (!["stopping", "stopped", "failed"].includes(browser.status))
+      throw new HangarError(502, "Hangar did not confirm the stop request.");
+    // A successful public DELETE includes final duration and billing, even
+    // though Hangar's stop endpoint acknowledges cleanup asynchronously.
+    const deadline = Date.now() + 30_000;
+    while (browser.status === "stopping") {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        throw new HangarError(
+          502,
+          "Browser is still stopping. Retry deletion shortly.",
+        );
+      browser = await getHangarBrowser(
+        session.browser_id,
+        0,
+        Math.min(remaining, 5000),
       );
-    browser = await getHangarBrowser(
-      session.browser_id,
-      0,
-      Math.min(remaining, 5000),
-    );
-    if (browser.status === "stopping")
-      await new Promise(resolve => setTimeout(resolve, 250));
+      if (browser.status === "stopping")
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    if (browser.status !== "stopped" && browser.status !== "failed")
+      throw new HangarError(502, "Hangar did not confirm session release.");
+  } catch (error) {
+    if (!isUnknownToHangar(error)) throw error;
+    return {
+      success: true,
+      status: "stopped",
+      ...(await closeUnknownBrowserSession(session)),
+    };
   }
-  if (browser.status !== "stopped" && browser.status !== "failed")
-    throw new HangarError(502, "Hangar did not confirm session release.");
   const settled = await settleBrowserSession(session, browser);
   return {
     success: true,
@@ -528,10 +621,16 @@ export async function reconcileBrowserSessions() {
                 if (session.credits_used !== null) {
                   await finalizeBrowserSession(session, session.credits_used);
                 } else {
-                  await settleBrowserSession(
-                    session,
-                    await getHangarBrowser(session.browser_id, 0, 5000),
-                  );
+                  const browser = await getHangarBrowser(
+                    session.browser_id,
+                    0,
+                    5000,
+                  ).catch(error => {
+                    if (isUnknownToHangar(error)) return null;
+                    throw error;
+                  });
+                  if (browser) await settleBrowserSession(session, browser);
+                  else await closeUnknownBrowserSession(session);
                 }
               } catch (error) {
                 failures = Math.min(Number(state.failures ?? 0) + 1, 5);

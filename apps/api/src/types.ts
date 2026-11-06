@@ -172,6 +172,8 @@ export type AuthResponse =
       org_id?: string | null;
       api_key?: string;
       chunk: AuthCreditUsageChunk | null;
+      // The hosted MCP made the call, as verified in supaAuthenticateUser.
+      hostedMcp?: boolean;
     }
   | {
       success: false;

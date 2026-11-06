@@ -8,32 +8,27 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
-  contents: write
-  id-token: write
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: audit-npm-claude-remediation-${{ github.event.repository.default_branch }}
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  remediate:
+  scan:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 60
-    env:
-      NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL: ${{ secrets.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      has_uncovered: ${{ steps.scan.outputs.has_uncovered }}
 
     steps:
       - name: Checkout default branch
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
 
@@ -54,18 +49,58 @@ jobs:
         run: |
           echo "No uncovered audit-ci vulnerabilities on ${GITHUB_REF_NAME}; skipping Claude."
 
+  remediate:
+    needs: scan
+    if: ${{ needs.scan.outputs.has_uncovered == 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 60
+    concurrency:
+      group: audit-npm-claude-remediation-${{ github.event.repository.default_branch }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    env:
+      NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL: ${{ secrets.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 11.4.0
+
+      - name: Rescan default branch audit failures
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/audit-ci-vuln-scan.mjs
+
       - name: Run Claude remediation
         id: claude
         if: ${{ steps.scan.outputs.has_uncovered == 'true' }}
         uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # v1
         with:
           anthropic_api_key: ${{ secrets.NPM_AUDIT_CLAUDE_ANTHROPIC_API_KEY }}
+          additional_permissions: |
+            issues: read
           base_branch: ${{ github.event.repository.default_branch }}
           branch_prefix: claude/audit-ci/
           prompt: ${{ steps.scan.outputs.prompt }}
           claude_args: |
             --max-turns 40
-            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,WebFetch,WebSearch,TodoWrite,Bash(pnpm:*),Bash(npm:*),Bash(node:*),Bash(git:*),Bash(gh:*),Bash(jq:*),Bash(rg:*),Bash(curl:*),Bash(date:*)"
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,WebSearch,TodoWrite,Bash(pnpm:*),Bash(npm:*),Bash(node:*),Bash(git:*),Bash(gh:*),Bash(jq:*),Bash(rg:*),Bash(date:*)"
 
       - name: Ensure remediation PR marker
         id: remediation_pr

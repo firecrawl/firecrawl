@@ -5,9 +5,9 @@ import { getBrandingScript } from "../../../scraper/scrapeURL/engines/fire-engin
 
 // jsdom has no layout: elements get a box from data-top / data-w / data-h, and
 // anything without data-top has an empty box (not visible).
-function scan(body: string, scrollY = 0, innerHeight = 1080) {
+function scan(body: string, scrollY = 0, innerHeight = 1080, bodyAttrs = "") {
   const dom = new JSDOM(
-    `<html><head><title>Acme</title></head><body>${body}</body></html>`,
+    `<html><head><title>Acme</title></head><body ${bodyAttrs}>${body}</body></html>`,
     { runScripts: "outside-only", url: "https://acme.test/" },
   );
   const window = dom.window as any;
@@ -47,7 +47,7 @@ function scan(body: string, scrollY = 0, innerHeight = 1080) {
     isNavigation: boolean;
     visible: boolean;
     position: { top: number };
-    colors: { background: string };
+    colors: { background: string; text: string };
   }>;
 }
 
@@ -91,6 +91,104 @@ describe("branding script button detection", () => {
 
     const link = snaps.find(s => s.text === "Get inspired" && s.isButton);
     expect(link?.colors.background).toBe("rgb(34, 34, 34)");
+  });
+
+  it("keeps a call to action that is only faded out until it scrolls into view", () => {
+    const cta = (text: string) =>
+      `<a href="/go" data-top="900" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 10px 20px; border-radius: 6px">${text}</a>`;
+    const snaps = scan(
+      // Wix: a box animated in by CSS, sitting at opacity 0 until then.
+      `<div style="opacity: 0; animation-name: motion-fadeIn; animation-duration: 1.2s">${cta("Contact us")}</div>
+       <!-- Framer: slid out of place by a motion script, inline opacity 0 with a transform. -->
+       <div style="will-change: transform; opacity: 0; transform: translateY(44px)">${cta("Book a call")}</div>
+       <!-- Shopify theme: a reveal class the page's script flips on scroll. -->
+       <section class="tc-row js-reveal" style="opacity: 0">${cta("Shop rugs")}</section>
+       <!-- Elementor: visibility hidden until its entrance animation. -->
+       <div class="elementor-element elementor-invisible" style="visibility: hidden">${cta("Get a quote")}</div>`,
+    );
+
+    for (const text of ["Contact us", "Book a call", "Shop rugs", "Get a quote"]) {
+      expect(byText(snaps, text), text).toMatchObject({
+        isButton: true,
+        visible: true,
+      });
+    }
+  });
+
+  it("still leaves out closed menus, inactive slides and plain transparent boxes", () => {
+    const cta = (text: string) =>
+      `<a href="/go" data-top="300" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 10px 20px; border-radius: 6px">${text}</a>`;
+    const snaps = scan(
+      `<div style="opacity: 0; position: absolute; transition-property: opacity; transition-duration: 0.3s">${cta("Menu item")}</div>
+       <!-- A closed accordion in normal flow fades too: a transition is not an entrance. -->
+       <div style="opacity: 0; transition-property: opacity; transition-duration: 0.3s">${cta("Accordion item")}</div>
+       <div style="opacity: 0; will-change: transform">${cta("Will change only")}</div>
+       <div style="opacity: 0; position: relative" aria-hidden="true">${cta("Slide two")}</div>
+       <div style="opacity: 0">${cta("Just transparent")}</div>
+       <div style="opacity: 0; position: fixed; transform: translateY(-100%); pointer-events: none">${cta("Filter bar")}</div>
+       <!-- A dialog closed for good, with an entrance-animated box inside it. -->
+       <div style="visibility: hidden"><div class="elementor-invisible" style="visibility: hidden">${cta("Inside closed dialog")}</div></div>`,
+    );
+
+    // Links are sampled for typography regardless, so they appear in the
+    // snapshots; what matters is that none of them counts as visible.
+    for (const text of [
+      "Menu item",
+      "Accordion item",
+      "Will change only",
+      "Slide two",
+      "Just transparent",
+      "Filter bar",
+      "Inside closed dialog",
+    ]) {
+      expect(byText(snaps, text)?.visible, text).toBe(false);
+    }
+  });
+
+  it("ignores a load-time fade on the page itself", () => {
+    const snaps = scan(
+      `<button data-top="400" style="background-color: rgb(83, 58, 253); color: rgb(255, 255, 255)">Start free trial</button>`,
+      0,
+      1080,
+      'style="opacity: 0"',
+    );
+
+    expect(byText(snaps, "Start free trial")).toMatchObject({
+      isButton: true,
+      visible: true,
+    });
+  });
+
+  it("reports the label's color when the button's own color is only inherited", () => {
+    const snaps = scan(
+      `<button data-top="500" style="background-color: rgb(0, 0, 0); color: rgb(0, 0, 0)"><span style="color: rgb(255, 255, 255)">Subscribe Now</span></button>
+       <a href="/plain" data-top="600" style="background-color: rgb(0, 97, 254); color: rgb(255, 255, 255); padding: 8px 16px; border-radius: 6px">Plain label</a>
+       <button data-top="700" style="background-color: rgb(0, 0, 0); color: rgb(0, 0, 0)"><span style="display: none; color: rgb(255, 0, 0)">Mobile copy</span><span class="sr-only" style="position: absolute; width: 1px; height: 1px; color: rgb(0, 255, 0)">Opens in a new tab</span><span style="color: rgb(255, 255, 255)">Desktop label</span></button>`,
+    );
+
+    expect(byText(snaps, "Subscribe Now")?.colors).toMatchObject({
+      background: "rgb(0, 0, 0)",
+      text: "rgb(255, 255, 255)",
+    });
+    // Hidden copies for other breakpoints or screen readers are passed over.
+    expect(
+      snaps.find(s => s.text.startsWith("Mobile copy"))?.colors.text,
+    ).toBe("rgb(255, 255, 255)");
+    expect(byText(snaps, "Plain label")?.colors.text).toBe("rgb(255, 255, 255)");
+  });
+
+  it("still reads the label inside a button waiting on its entrance animation", () => {
+    const snaps = scan(
+      `<div class="elementor-element elementor-invisible" style="visibility: hidden">
+         <a href="/quote" data-top="800" class="elementor-button" style="background-color: rgb(200, 30, 30); color: rgb(0, 0, 0); padding: 10px 20px; border-radius: 4px"><span class="elementor-button-text" style="color: rgb(255, 255, 255)">Get a quote</span></a>
+       </div>`,
+    );
+
+    expect(byText(snaps, "Get a quote")).toMatchObject({
+      isButton: true,
+      visible: true,
+      colors: { background: "rgb(200, 30, 30)", text: "rgb(255, 255, 255)" },
+    });
   });
 
   it("leaves out hidden copies of buttons", () => {

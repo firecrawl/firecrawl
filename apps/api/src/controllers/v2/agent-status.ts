@@ -8,7 +8,11 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
-import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
+import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
+import {
+  ExtractV3AgentStatusError,
+  getExtractV3AgentStatus,
+} from "../../lib/extract-v3-status";
 
 // python-sdk versions before 4.37.1 validate the status response's `model`
 // with pydantic as Literal["spark-1-pro", "spark-1-mini"], so any other value
@@ -73,7 +77,26 @@ export async function agentStatusController(
     });
   }
 
-  const agent = await getExtractV3AgentStatus(req.params.jobId);
+  let agent: Awaited<ReturnType<typeof getExtractV3AgentStatus>>;
+  try {
+    agent = await getExtractV3AgentStatus(req.params.jobId);
+  } catch (error) {
+    if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+    return res.status(error.status).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+    });
+  }
+
+  const expiry = agentJobExpiry(access, agent);
+  if (expiry.zeroDataRetentionExpired) {
+    return res.status(410).json({
+      success: false,
+      code: "zdr_expired",
+      error: ZDR_EXPIRED_ERROR,
+    });
+  }
 
   let model: "spark-1-pro" | "spark-1-mini" | "spark-2" =
     agent.model ?? "spark-1-pro";
@@ -110,6 +133,7 @@ export async function agentStatusController(
       : {}),
     model,
     effort,
+    safe: agent.safe,
     threadId: thread.threadId,
     threadTurn: thread.threadTurn,
     mode: thread.mode,
@@ -117,7 +141,7 @@ export async function agentStatusController(
     suggestions: agent.suggestions as AgentSuggestion[] | undefined,
     pendingApproval: agent.pendingApproval as AgentPendingApproval | undefined,
     exchange: agent.exchange as AgentExchangeSummary | undefined,
-    expiresAt: new Date(access.expiresAtMs).toISOString(),
+    expiresAt: new Date(expiry.expiresAtMs).toISOString(),
     creditsUsed: agent.creditsUsed,
   });
 }

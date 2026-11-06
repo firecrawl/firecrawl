@@ -30,7 +30,12 @@ const compact = {
   capability: tool.capability,
   description: tool.description,
 };
-const input = { teamId: "team", query: "records", limit: 5, timeoutMs: 10000 };
+const input = {
+  teamId: "team",
+  queries: ["records"],
+  limit: 5,
+  timeoutMs: 10000,
+};
 beforeEach(() => vi.clearAllMocks());
 it.each([undefined, "compact", "summary", "full"] as const)(
   "supports %s discovery detail",
@@ -204,4 +209,77 @@ it("keeps partial results when only one leg fails", async () => {
   expect(result.items).toHaveLength(1);
   expect(result.warning).toBeTruthy();
   expect(result.unavailable).toBeUndefined();
+});
+
+it("interleaves results of several queries by rank", async () => {
+  const named = (capability: string) => ({ ...tool, capability });
+  request.mockImplementation(async args => {
+    const query = (args.body as { options: { query: string } }).options.query;
+    return {
+      status: 200,
+      body: {
+        success: true,
+        creditsCost: 0,
+        data: {
+          items:
+            query === "first"
+              ? [named("a/one"), named("a/two")]
+              : [named("b/one"), named("a/one")],
+        },
+      },
+    };
+  });
+  const result = await discoverTools(
+    { ...input, toolDetail: "compact", queries: ["first", "second"] },
+    logger,
+  );
+  expect(result.items.map(item => item.capability)).toEqual([
+    "a/one",
+    "b/one",
+    "a/two",
+  ]);
+  expect(result.warning).toBeUndefined();
+});
+
+it("keeps the results of queries that answered", async () => {
+  request.mockImplementation(async args =>
+    (args.body as { options: { query: string } }).options.query === "first"
+      ? { status: 503, body: {} }
+      : {
+          status: 200,
+          body: { success: true, creditsCost: 0, data: { items: [tool] } },
+        },
+  );
+  const result = await discoverTools(
+    { ...input, queries: ["first", "second"] },
+    logger,
+  );
+  expect(result.items).toHaveLength(1);
+  expect(result.warning).toBeUndefined();
+});
+
+it("reports the tools the Exchange hid from a US-only team", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: { items: [tool], usOnlyExcluded: 3 },
+    },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
+  expect(result.items).toHaveLength(1);
+  expect(result.usOnlyExcluded).toBe(3);
+  expect(result).not.toHaveProperty("warning");
+});
+
+it("reports no hidden tools when the Exchange hid nothing", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(result.items).toHaveLength(1);
+  expect(result).not.toHaveProperty("usOnlyExcluded");
 });

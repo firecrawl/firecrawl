@@ -46,7 +46,7 @@ describe("V2 Types Validation", () => {
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
       expect(result.formats).toEqual([{ type: "markdown" }]);
-      expect(result.skipTlsVerification).toBe(true);
+      expect(result.skipTlsVerification).toBe(false);
     });
 
     it("should preserve explicit skipTlsVerification false", () => {
@@ -123,6 +123,22 @@ describe("V2 Types Validation", () => {
       expect(scrapeRequestSchema.parse(objectInput).formats).toEqual([
         { type: "video" },
       ]);
+    });
+
+    it("should accept the experimental first-screen flag on branding only as a boolean", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [{ type: "branding", __experimental_screenshot: true }],
+      };
+      expect(scrapeRequestSchema.parse(input).formats).toEqual([
+        { type: "branding", __experimental_screenshot: true },
+      ]);
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: [{ type: "branding", __experimental_screenshot: "yes" }],
+        }),
+      ).toThrow();
     });
 
     it("should accept valid scrape request with json format options", () => {
@@ -1496,13 +1512,13 @@ describe("V2 Types Validation", () => {
     it("should accept search request with simple categories array", () => {
       const input: SearchRequestInput = {
         query: "test",
-        categories: ["github", "research"],
+        categories: ["pdf", "research"],
       };
 
       const result = searchRequestSchema.parse(input);
       // Categories are transformed from string array to object array
       expect(result.categories).toEqual([
-        { type: "github" },
+        { type: "pdf" },
         { type: "research" },
       ]);
     });
@@ -1609,7 +1625,7 @@ describe("V2 Types Validation", () => {
       expect(() =>
         searchRequestSchema.parse({
           query: "test",
-          categories: ["docs", "github", "developer_index"],
+          categories: ["docs", "pdf", "developer_index"],
         }),
       ).toThrow(/cannot be combined/);
     });
@@ -1638,9 +1654,6 @@ describe("V2 Types Validation", () => {
       const input: SearchRequestInput = {
         query: "test",
         categories: [
-          {
-            type: "github",
-          },
           {
             type: "research",
           },

@@ -18,6 +18,7 @@ import {
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
+import { isUsOnly } from "../../lib/us-only";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -175,7 +176,8 @@ export async function getMapResults({
       Math.min(MAX_FIRE_ENGINE_RESULTS, limit) / resultsPerPage,
     );
 
-    const cacheKey = `fireEngineMap:${mapUrl}`;
+    const usOnly = isUsOnly(flags);
+    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache ? null : await redis.get(cacheKey);
 
     let allResults: any[] = [];
@@ -193,6 +195,8 @@ export async function getMapResults({
           {
             numResults: resultsPerPage,
             page: page,
+            usOnly,
+            zeroDataRetention,
           },
           abort,
         );

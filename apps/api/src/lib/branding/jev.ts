@@ -11,13 +11,30 @@ import { formatHex, hsl, parse, wcagContrast } from "culori";
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
 import { getTypeSafeClient } from "../typesafe";
-import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APIError,
+  APITimeoutError,
+  Image,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 import {
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
   brandingJevDurationSeconds,
+  brandingJevScreenshotTotal,
+  brandingScreenshotBytes,
+  brandingScreenshotLoadSeconds,
   JevCallOutcome,
+  JevScreenshotOutcome,
 } from "./metrics";
+import { sampled } from "../rollout";
+import {
+  GENERIC_FONTS,
+  knownFamily,
+  normalizeVendorName,
+  renderedFamily,
+  titleCase,
+} from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -60,6 +77,20 @@ let breakerOpenUntil = 0;
 
 function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
+}
+
+/**
+ * TypeSafe turning the image away: a 529 (it sheds load on the image lane
+ * first, text calls keep answering) or a 5xx whose message names the image,
+ * such as "503 Image processing is unavailable". A plain 5xx or a timeout
+ * is a failure of the call itself and is handled as before.
+ */
+function isImageRejection(error: unknown): error is APIError {
+  return (
+    error instanceof APIError &&
+    (error.status === 529 ||
+      (error.status >= 500 && /\bimage/i.test(error.message)))
+  );
 }
 
 function recordJevFailure(input: BrandingLLMInput): void {
@@ -215,24 +246,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-const GENERIC_FONTS = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "-apple-system",
-  "blinkmacsystemfont",
-  "inherit",
-  "initial",
-  "emoji",
-  "math",
-]);
 
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
@@ -289,15 +302,23 @@ const splitCamelCase = (name: string) =>
     .join(" ");
 
 export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack ("system-ui, sans-serif") reports its first family.
-  let name = raw
-    .split(",")[0]
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name || /^var\(/i.test(name)) return undefined;
+  // A whole stack reports the family it renders: past hashed aliases, none
+  // for a system stack ("-apple-system, BlinkMacSystemFont, Segoe UI").
+  let name = renderedFamily(raw.split(",")) ?? "";
+  if (!name) return undefined;
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
+  // Vendor spellings and build suffixes: "orig_libre_baskerville",
+  // "helvetica-w01-roman", "inter-variable-web".
+  name = normalizeVendorName(name);
+  // A name that is only a weight ("Regular", "semibold") is not a family.
+  if (FONT_WEIGHT.test(name)) return undefined;
+  // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
+  const glued = name.match(
+    /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
+  );
+  if (glued) name = knownFamily(glued[1]) ?? glued[1];
   // "Roboto_Black": the weight goes before underscores turn into spaces.
   while (DELIMITED_WEIGHT_SUFFIX.test(name))
     name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
@@ -312,10 +333,10 @@ export function cleanFontFamily(raw: string): string | undefined {
   while (FONT_WEIGHT_SUFFIX.test(name))
     name = name.replace(FONT_WEIGHT_SUFFIX, "");
   name = splitCamelCase(name);
+  // A known family can only be matched once its weight is gone.
+  name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (name === name.toLowerCase()) name = titleCase(name);
   return name;
 }
 
@@ -335,7 +356,8 @@ function typographyRole(
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    const raw = Array.isArray(value) ? value[0] : value;
+    // A stack names the family it renders, not its first entry.
+    const raw = Array.isArray(value) ? renderedFamily(value) : value;
     const cleaned = raw ? cleanFontFamily(raw) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
@@ -385,16 +407,35 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
 // ---------------------------------------------------------------------------
 // State + questions
 
+/** The site's own marks that the scan didn't see rendered: JSON-LD logo, apple-touch icon. */
+const DECLARED_SOURCES = new Set(["logo-jsonld", "apple-touch-icon"]);
+
+/**
+ * Where a candidate's link goes, read from the link itself: a `/home` or
+ * `/cart` path is named rather than trusted as the homepage, so a nav glyph
+ * labelled "home" doesn't read like the logo. `home`, the scan's verdict, is
+ * kept for links it resolved and we can't: a sibling brand domain's root, a
+ * `javascript:` link labelled as the home link, an unparseable href.
+ */
 function hrefKind(href: string | undefined, pageUrl: string, home: boolean) {
   if (!href?.trim()) return "no link";
-  if (home) return "links to the homepage";
   try {
     const target = new URL(href, pageUrl);
-    return target.hostname === new URL(pageUrl).hostname
-      ? "links to another page on this site"
-      : "links to another website";
+    if (!/^https?:$/.test(target.protocol)) {
+      return home ? "links to the homepage" : `${target.protocol} link`;
+    }
+    const host = (url: URL) => url.hostname.replace(/^www\./, "");
+    const path = target.pathname.replace(/\/+$/, "") || "/";
+    const root = path === "/" || /^\/index(?:\.html?)?$/i.test(path);
+    if (host(target) !== host(new URL(pageUrl))) {
+      return root && home
+        ? "links to the homepage"
+        : `links to another website (${host(target)})`;
+    }
+    if (root) return "links to the homepage";
+    return `links to ${clip(path, 60)} on this site`;
   } catch {
-    return "unknown link";
+    return home ? "links to the homepage" : "unknown link";
   }
 }
 
@@ -518,6 +559,8 @@ const wellFormed = (value: JsonValue): JsonValue =>
 type JevRequest = {
   state: Record<string, JsonValue>;
   questions: Record<string, Question>;
+  /** The page's first screen, referenced as SCREENSHOT in state and questions. */
+  assets?: Record<string, Image>;
   colors: ColorCandidate[];
   fonts: FontCandidate[];
   logoCount: number;
@@ -528,7 +571,153 @@ type JevRequest = {
   buttonBackgrounds: string[];
 };
 
-export function buildJevRequest(input: BrandingLLMInput): JevRequest {
+// The page's first screen, when the scrape captured one, is attached as an image
+// and referenced from the questions a look at the page answers better.
+const SCREENSHOT = "<screenshot>";
+const SCREENSHOT_FETCH_TIMEOUT_MS = 3000;
+const SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024;
+// A 1280x720 JPEG of a real page is 25 KB and up; a black frame (the browser
+// had not drawn yet) is ~6 KB. Smaller than this, Jev answers without it.
+const SCREENSHOT_MIN_BYTES = 10_000;
+
+/**
+ * Whether a branding scrape captures a first screen for Jev to look at, and
+ * why: the request asks for it (the branding format's
+ * `__experimental_screenshot: true`), or its team is in
+ * BRANDING_JEV_SCREENSHOT_PERCENT. `__experimental_screenshot: false` opts a
+ * request out of the rollout.
+ */
+export function wantsBrandingScreenshot(
+  requested: boolean | undefined,
+  teamId: string | undefined,
+  zeroDataRetention: boolean | undefined,
+): "flag" | "rollout" | undefined {
+  if (
+    requested === false ||
+    !isJevBrandingEnabled() ||
+    zeroDataRetention ||
+    // Jev won't be called while its breaker is open.
+    isJevBreakerOpen()
+  ) {
+    return undefined;
+  }
+  if (requested === true) return "flag";
+  return teamId &&
+    sampled(`team:${teamId}`, config.BRANDING_JEV_SCREENSHOT_PERCENT)
+    ? "rollout"
+    : undefined;
+}
+
+/** The first screen read for Jev: the image when usable, and what happened. */
+export type FirstScreen = {
+  image?: Image;
+  outcome: JevScreenshotOutcome;
+  bytes?: number;
+  loadMs: number;
+};
+
+/** The body, or undefined once it passes `max` bytes (the rest isn't read). */
+async function readCapped(
+  response: Response,
+  max: number,
+): Promise<Uint8Array | undefined> {
+  if (Number(response.headers.get("content-length") ?? 0) > max) {
+    await response.body?.cancel();
+    return undefined;
+  }
+  if (!response.body) return new Uint8Array(await response.arrayBuffer());
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * The first screen as a TypeSafe image: a PNG/JPEG data URL, or a URL to one
+ * (fire-engine uploads screenshots). No image when it can't be read in time,
+ * is too large, or is blank, so Jev answers from the page data alone. Never
+ * rejects, so it can start as soon as the engine returns.
+ */
+export async function loadFirstScreen(
+  firstScreen: string | undefined,
+  logger: BrandingLLMInput["logger"],
+): Promise<FirstScreen> {
+  if (!firstScreen) return { outcome: "none", loadMs: 0 };
+  const started = Date.now();
+  const done = (
+    outcome: JevScreenshotOutcome,
+    bytes?: Uint8Array,
+  ): FirstScreen => {
+    const loadMs = Date.now() - started;
+    brandingScreenshotLoadSeconds.observe(loadMs / 1000);
+    if (bytes) brandingScreenshotBytes.observe(bytes.byteLength);
+    if (outcome === "blank") {
+      logger.warn("Branding screenshot blank, Jev answers without it", {
+        bytes: bytes?.byteLength,
+      });
+    }
+    return {
+      outcome,
+      loadMs,
+      ...(bytes ? { bytes: bytes.byteLength } : {}),
+      ...(outcome === "attached" && bytes ? { image: new Image(bytes) } : {}),
+    };
+  };
+  const checked = (bytes: Uint8Array) =>
+    done(bytes.byteLength < SCREENSHOT_MIN_BYTES ? "blank" : "attached", bytes);
+  try {
+    const inline = firstScreen.match(/^data:image\/(?:png|jpeg);base64,(.+)$/);
+    if (inline) {
+      // base64 is 4 characters per 3 bytes
+      if ((inline[1].length * 3) / 4 > SCREENSHOT_MAX_BYTES) {
+        return done("too_large");
+      }
+      return checked(Buffer.from(inline[1], "base64"));
+    }
+    if (!/^https?:\/\//.test(firstScreen)) return done("unreadable");
+    const response = await fetch(firstScreen, {
+      signal: AbortSignal.timeout(SCREENSHOT_FETCH_TIMEOUT_MS),
+    });
+    const type = response.headers.get("content-type") ?? "";
+    if (!response.ok || !/^image\/(png|jpeg)/.test(type)) {
+      logger.warn("Branding screenshot not usable for Jev", {
+        status: response.status,
+        type,
+      });
+      return done("unreadable");
+    }
+    const bytes = await readCapped(response, SCREENSHOT_MAX_BYTES);
+    if (!bytes) {
+      logger.warn("Branding screenshot too large for Jev", {
+        length: response.headers.get("content-length"),
+      });
+      return done("too_large");
+    }
+    return checked(bytes);
+  } catch (error) {
+    logger.warn("Branding screenshot could not be read for Jev", { error });
+    return done("unreadable");
+  }
+}
+
+export function buildJevRequest(
+  input: BrandingLLMInput,
+  screenshot?: Image,
+): JevRequest {
+  const look = (what: string) =>
+    screenshot
+      ? ` ${SCREENSHOT} shows the top of the page as a visitor first sees it: ${what}`
+      : "";
   const pageUrl = input.pageUrl || input.url;
   const logos = (input.logoCandidates ?? []).slice(0, MAX_LOGOS);
   const buttons = (input.buttons ?? []).slice(0, MAX_BUTTONS);
@@ -541,6 +730,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
       title: clip(input.pageTitle, 200),
       brand_name_hint: clip(input.brandName, 80),
       color_scheme: input.jsAnalysis.colorScheme ?? "unknown",
+      ...(screenshot ? { first_screen: SCREENSHOT } : {}),
     },
   };
 
@@ -550,21 +740,29 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
       logos.map((logo, i) => {
         const width = Math.round(logo.position?.width ?? 0);
         const height = Math.round(logo.position?.height ?? 0);
+        // A declared mark was never rendered: say so instead of the
+        // placeholder geometry the heuristic ranks it with.
+        const rendered = !DECLARED_SOURCES.has(logo.source);
         return [
           `logo_${i}`,
           {
-            where: logo.location,
-            visible: logo.isVisible,
-            size: `${width}x${height} px (${sizeLabel(width, height)})`,
-            shape:
-              width && height && width / height >= 3
+            where: rendered ? logo.location : "page metadata, not rendered",
+            visible: rendered && logo.isVisible,
+            size: rendered
+              ? `${width}x${height} px (${sizeLabel(width, height)})`
+              : "unknown",
+            shape: rendered
+              ? width && height && width / height >= 3
                 ? "wide, wordmark-shaped"
-                : "compact",
+                : "compact"
+              : "unknown",
             kind: logo.isSvg ? "SVG" : "image",
             alt: clip(logo.alt, 100),
             aria_label: clip(logo.ariaLabel, 100),
             title: clip(logo.title, 100),
-            link: hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch),
+            link: rendered
+              ? hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch)
+              : "no link",
             file: fileName(logo.src),
             found_via: logo.source,
             heuristic_pick: i === heuristic,
@@ -641,7 +839,10 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     questions.logo = {
       type: "choice",
       instructions:
-        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, social, partner, customer and payment icons are not the brand logo.",
+        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, search, cart, account, social, partner, customer and payment icons are not the brand logo, nor are flags, maps and country or language selectors. A candidate found via `logo-jsonld` is the logo the site declares for itself; one found via `apple-touch-icon` is only its app icon, the answer only when no rendered candidate shows the brand's mark." +
+        look(
+          "the brand logo is the mark it shows for this site, usually top left.",
+        ),
       criteria: options(
         ids("logo", logos.length),
         "No candidate is this website's own brand logo.",
@@ -654,14 +855,18 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     questions.primary_button = {
       type: "choice",
       instructions:
-        "Which entry in `buttons` is the site's primary call-to-action button: the most prominent action a visitor is invited to take (such as Sign up, Get started, Buy, Book a demo, Donate)? It is usually filled with the brand's color; a white, gray, black or transparent button is the primary only when no call to action uses a brand color, or the brand is deliberately monochrome. Cookie-consent buttons are not calls to action.",
+        "Which entry in `buttons` is the site's primary call-to-action button: the most prominent action a visitor is invited to take (such as Sign up, Get started, Buy, Book a demo, Donate)? It is usually filled with the brand's color; a white, gray, black or transparent button is the primary only when no call to action uses a brand color, or the brand is deliberately monochrome. Cookie-consent buttons are not calls to action." +
+        look(
+          "the primary button is the one that stands out most there, usually a filled, colored button in the hero or header. A gray, pale or disabled-looking button is not it.",
+        ),
       // No "none": when a page has buttons, one of them is the primary style.
       criteria: options(buttonIds),
     };
     questions.secondary_button = {
       type: "choice",
       instructions:
-        "Which entry in `buttons` is the secondary action button: a less prominent alternative to the primary one (such as Learn more, Contact sales, Log in), usually outlined, neutral or a different color?",
+        "Which entry in `buttons` is the secondary action button: a less prominent alternative to the primary one (such as Learn more, Contact sales, Log in), usually outlined, neutral or a different color?" +
+        look("the secondary button is usually next to the primary one."),
       criteria: options(buttonIds, "There is no secondary button."),
     };
   }
@@ -671,13 +876,16 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     questions.primary_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the brand's main color: the distinctive color of its logo, primary buttons and highlights? Page chrome such as white or black backgrounds, gray text and borders is not the brand color unless the brand is deliberately monochrome.",
+        "Which entry in `colors` is the brand's main color: the distinctive color of its logo, primary buttons and highlights? Page chrome such as white or black backgrounds, gray text and borders is not the brand color unless the brand is deliberately monochrome." +
+        look(
+          "the brand color is the one its logo and main buttons show there.",
+        ),
       criteria: options(colorIds),
     };
     questions.accent_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the accent color used for calls to action, highlights and links?",
+        "Which entry in `colors` is the accent color: the saturated color used for calls to action, highlights and links, standing out against the page background? A pale tint, a gray or the background itself is not an accent; when the brand uses a single color, answer the main color.",
       criteria: options(colorIds),
     };
     questions.secondary_color = {
@@ -689,7 +897,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     questions.background_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the main page background color?",
+        "Which entry in `colors` is the main page background color, the one behind most of the body text? A hero, a footer or a dialog's backdrop is not the page background.",
       criteria: options(colorIds),
     };
     questions.text_color = {
@@ -775,6 +983,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
   return {
     state: wellFormed(state) as Record<string, JsonValue>,
     questions,
+    ...(screenshot ? { assets: { [SCREENSHOT]: screenshot } } : {}),
     colors,
     fonts,
     logoCount: logos.length,
@@ -1021,25 +1230,44 @@ export async function enhanceBrandingWithJev(
     count("breaker_open");
     return null;
   }
+  const firstScreen = await (input.firstScreenImage ??
+    loadFirstScreen(input.firstScreen, input.logger));
+  const screenshot = firstScreen.image;
+  brandingJevScreenshotTotal.inc({ outcome: firstScreen.outcome });
+  const screenshotLabel = { screenshot: screenshot ? "yes" : "no" };
+  const screenshotLog = {
+    screenshot: firstScreen.outcome,
+    ...(firstScreen.bytes !== undefined
+      ? { screenshotBytes: firstScreen.bytes }
+      : {}),
+    ...(firstScreen.outcome !== "none"
+      ? { screenshotLoadMs: firstScreen.loadMs }
+      : {}),
+  };
   const started = Date.now();
   let request: JevRequest;
   let response: JevResponse;
   let called = false;
-  try {
-    request = buildJevRequest(input);
-    response = await withSpan(
+  let imageRetried = false;
+  const callJev = (req: JevRequest) =>
+    withSpan(
       "typesafe.systemone",
       async span => {
         called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
-            state: request.state,
-            questions: request.questions,
+            state: req.state,
+            questions: req.questions,
+            ...(req.assets ? { assets: req.assets } : {}),
           },
           {
             timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
             retry: JEV_RETRY,
+            // Image input is opt-in per request.
+            ...(req.assets
+              ? { headers: { "TypeSafe-Danger-Zone-Images": "true" } }
+              : {}),
           },
         );
         setSpanAttributes(span, {
@@ -1056,17 +1284,56 @@ export async function enhanceBrandingWithJev(
         zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
-          "branding.jev.questions": Object.keys(request.questions).length,
+          "branding.jev.questions": Object.keys(req.questions).length,
+          "branding.jev.screenshot": !!req.assets,
+          "branding.jev.screenshot_outcome": firstScreen.outcome,
+          ...(firstScreen.bytes !== undefined
+            ? { "branding.jev.screenshot_bytes": firstScreen.bytes }
+            : {}),
+          ...(firstScreen.outcome !== "none"
+            ? { "branding.jev.screenshot_load_ms": firstScreen.loadMs }
+            : {}),
+          ...(imageRetried ? { "branding.jev.image_retry": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
+  try {
+    request = buildJevRequest(input, screenshot);
+    try {
+      response = await callJev(request);
+    } catch (error) {
+      if (!called || !screenshot || !isImageRejection(error)) throw error;
+      error satisfies APIError;
+      // TypeSafe's image lane is the part that is overloaded (its text calls
+      // keep answering), so ask again from the text alone. Jev without the
+      // first screen is still a far better answer per dollar than the LLM
+      // fallback, and a refused image says nothing about Jev's health, so
+      // it doesn't count toward the breaker.
+      count("image_rejected");
+      // A warning with a fixed message and the vendor's status, so a log
+      // metric can count refusals and page us before the fallback bill does.
+      input.logger.warn("TypeSafe refused the first screen", {
+        vendor: "typesafe",
+        status: error.status,
+        error: error.message,
+        elapsedMs: Date.now() - started,
+        ...screenshotLog,
+      });
+      imageRetried = true;
+      called = false;
+      request = buildJevRequest(input, undefined);
+      response = await callJev(request);
+    }
   } catch (error) {
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
       recordJevFailure(input);
-      brandingJevDurationSeconds.observe((Date.now() - started) / 1000);
+      brandingJevDurationSeconds.observe(
+        screenshotLabel,
+        (Date.now() - started) / 1000,
+      );
       count(
         error instanceof RateLimitError
           ? "rate_limited"
@@ -1078,13 +1345,18 @@ export async function enhanceBrandingWithJev(
     input.logger.warn("Jev branding call failed, falling back to LLM", {
       error,
       elapsedMs: Date.now() - started,
+      ...screenshotLog,
+      ...(imageRetried ? { imageRetried } : {}),
     });
     return null;
   }
   // A call that started before the breaker opened and succeeds late doesn't
   // close it: the next failure after the cooldown should reopen it at once.
   if (!isJevBreakerOpen()) consecutiveFailures = 0;
-  brandingJevDurationSeconds.observe((Date.now() - started) / 1000);
+  brandingJevDurationSeconds.observe(
+    screenshotLabel,
+    (Date.now() - started) / 1000,
+  );
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;
@@ -1115,6 +1387,8 @@ export async function enhanceBrandingWithJev(
     inputTokens,
     questions: Object.keys(request.questions).length,
     logoConfidence: result.logoConfidence,
+    ...screenshotLog,
+    ...(imageRetried ? { imageRetried } : {}),
   });
   return result;
 }

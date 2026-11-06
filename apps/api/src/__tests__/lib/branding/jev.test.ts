@@ -1,7 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import { generateObject } from "ai";
-import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APITimeoutError,
+  InternalServerError,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 
 const mocks = vi.hoisted(() => ({ systemOne: vi.fn() }));
 
@@ -24,9 +28,12 @@ import {
   buildJevRequest,
   cleanFontFamily,
   describeColor,
+  loadFirstScreen,
   resetJevBreaker,
+  wantsBrandingScreenshot,
 } from "../../../lib/branding/jev";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
+import { brandingJevScreenshotTotal } from "../../../lib/branding/metrics";
 import {
   brandingRoutedTotal,
   brandingJevBreakerOpensTotal,
@@ -212,6 +219,7 @@ const jevResponse = (overrides: Record<string, unknown> = {}) => ({
 const saved = {
   key: config.TYPESAFE_API_KEY,
   global: config.BRANDING_JEV,
+  screenshotPercent: config.BRANDING_JEV_SCREENSHOT_PERCENT,
 };
 
 beforeEach(() => {
@@ -245,6 +253,7 @@ afterEach(() => {
   vi.useRealTimers();
   config.TYPESAFE_API_KEY = saved.key;
   config.BRANDING_JEV = saved.global;
+  config.BRANDING_JEV_SCREENSHOT_PERCENT = saved.screenshotPercent;
 });
 
 const respondWith = (body: unknown) =>
@@ -401,6 +410,309 @@ describe("branding with Jev", () => {
     expect(result.buttonClassification.primaryButtonIndex).toBe(-1);
   });
 
+  it("captures the first screen when the request asks, or for the rollout's teams", () => {
+    config.BRANDING_JEV_SCREENSHOT_PERCENT = 0;
+    expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+    expect(wantsBrandingScreenshot(undefined, "team-jev", false)).toBe(
+      undefined,
+    );
+
+    config.BRANDING_JEV_SCREENSHOT_PERCENT = 100;
+    expect(wantsBrandingScreenshot(undefined, "team-jev", false)).toBe(
+      "rollout",
+    );
+    expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+    // an explicit false opts the request out of the rollout
+    expect(wantsBrandingScreenshot(false, "team-jev", false)).toBe(undefined);
+    expect(wantsBrandingScreenshot(undefined, undefined, false)).toBe(
+      undefined,
+    );
+    // never for zero data retention
+    expect(wantsBrandingScreenshot(true, "team-jev", true)).toBe(undefined);
+    expect(wantsBrandingScreenshot(undefined, "team-jev", true)).toBe(
+      undefined,
+    );
+  });
+
+  describe("with the page's first screen", () => {
+    // A 1x1 PNG padded to a real page's screenshot size: the guard drops
+    // anything under 10 KB as a blank frame.
+    const SHOT = Buffer.concat([
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+      Buffer.alloc(30_000),
+    ]);
+    const PNG = SHOT.toString("base64");
+    const screenshotCount = async (outcome: string) =>
+      (await brandingJevScreenshotTotal.get()).values.find(
+        v => v.labels.outcome === outcome,
+      )?.value ?? 0;
+    const sentWith = () => mocks.systemOne.mock.calls[0];
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("attaches it as an image, opts in, and points the questions at it", async () => {
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      const input = baseInput(new CostTracking());
+      input.firstScreen = `data:image/png;base64,${PNG}`;
+      await enhanceBrandingWithLLM(input);
+
+      const [request, options] = sentWith();
+      expect(Object.keys(request.assets ?? {})).toEqual(["<screenshot>"]);
+      expect(request.state.page.first_screen).toBe("<screenshot>");
+      expect(request.questions.primary_button.instructions).toContain(
+        "<screenshot>",
+      );
+      expect(options.headers).toEqual({
+        "TypeSafe-Danger-Zone-Images": "true",
+      });
+    });
+
+    it("downloads a screenshot fire-engine uploaded", async () => {
+      const fetch = vi.fn(
+        async () =>
+          new Response(SHOT, {
+            status: 200,
+            headers: { "content-type": "image/jpeg" },
+          }),
+      );
+      vi.stubGlobal("fetch", fetch);
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      const input = baseInput(new CostTracking());
+      input.firstScreen = "https://storage.example/branding.jpg";
+      await enhanceBrandingWithLLM(input);
+
+      expect(fetch).toHaveBeenCalledWith(
+        "https://storage.example/branding.jpg",
+        expect.anything(),
+      );
+      expect(Object.keys(sentWith()[0].assets ?? {})).toEqual(["<screenshot>"]);
+    });
+
+    it("uses the download started when the engine returned instead of fetching again", async () => {
+      const fetch = vi.fn(
+        async () =>
+          new Response(SHOT, {
+            status: 200,
+            headers: { "content-type": "image/jpeg" },
+          }),
+      );
+      vi.stubGlobal("fetch", fetch);
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      const input = baseInput(new CostTracking());
+      input.firstScreen = "https://storage.example/branding.jpg";
+      input.firstScreenImage = loadFirstScreen(input.firstScreen, logger);
+      await enhanceBrandingWithLLM(input);
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(Object.keys(sentWith()[0].assets ?? {})).toEqual(["<screenshot>"]);
+    });
+
+    it("resolves to nothing when the download fails, so an early start can't reject", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("socket hang up");
+        }),
+      );
+      await expect(
+        loadFirstScreen("https://storage.example/branding.jpg", logger),
+      ).resolves.toMatchObject({ outcome: "unreadable" });
+    });
+
+    it("skips a screenshot past the size cap without reading all of it", async () => {
+      const big = new Response(new Uint8Array(9 * 1024 * 1024), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => big),
+      );
+      await expect(
+        loadFirstScreen("https://storage.example/huge.jpg", logger),
+      ).resolves.toMatchObject({ outcome: "too_large" });
+      const inline = Buffer.alloc(9 * 1024 * 1024).toString("base64");
+      await expect(
+        loadFirstScreen(`data:image/jpeg;base64,${inline}`, logger),
+      ).resolves.toMatchObject({ outcome: "too_large" });
+    });
+
+    it("answers without a blank frame and counts it", async () => {
+      const blankBefore = await screenshotCount("blank");
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      const input = baseInput(new CostTracking());
+      // a black 1280x720 JPEG is ~6 KB
+      input.firstScreen = `data:image/jpeg;base64,${Buffer.alloc(6_000).toString("base64")}`;
+      await enhanceBrandingWithLLM(input);
+
+      expect(sentWith()[0].assets).toBeUndefined();
+      expect(sentWith()[1].headers).toBeUndefined();
+      expect(await screenshotCount("blank")).toBe(blankBefore + 1);
+    });
+
+    it("counts an attached screenshot, and none when there is no screenshot", async () => {
+      const before = {
+        attached: await screenshotCount("attached"),
+        none: await screenshotCount("none"),
+      };
+      mocks.systemOne.mockResolvedValue(jevResponse());
+      const withShot = baseInput(new CostTracking());
+      withShot.firstScreen = `data:image/png;base64,${PNG}`;
+      await enhanceBrandingWithLLM(withShot);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+      expect(await screenshotCount("attached")).toBe(before.attached + 1);
+      expect(await screenshotCount("none")).toBe(before.none + 1);
+    });
+
+    it("answers without it when the screenshot can't be read", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("gone", { status: 404 })),
+      );
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      const input = baseInput(new CostTracking());
+      input.firstScreen = "https://storage.example/missing.jpg";
+      const result = await enhanceBrandingWithLLM(input);
+
+      const [request, options] = sentWith();
+      expect(request.assets).toBeUndefined();
+      expect(request.state.page.first_screen).toBeUndefined();
+      expect(options.headers).toBeUndefined();
+      expect(
+        result.buttonClassification.primaryButtonIndex,
+      ).toBeGreaterThanOrEqual(0);
+    });
+
+    const callCount = async (outcome: string) =>
+      (await brandingJevCallsTotal.get()).values.find(
+        v => v.labels.outcome === outcome,
+      )?.value ?? 0;
+    const refused = (status: number, message: string) =>
+      new InternalServerError(status, {}, new Headers(), message);
+    const withScreen = () => {
+      const input = baseInput(new CostTracking());
+      input.firstScreen = `data:image/png;base64,${PNG}`;
+      return input;
+    };
+
+    it("asks again from the text alone when TypeSafe refuses the image, instead of paying for the LLM", async () => {
+      for (const refusal of [
+        refused(503, "503 Image processing is unavailable."),
+        refused(
+          529,
+          "529 We are currently experiencing high traffic and cannot process your request.",
+        ),
+      ]) {
+        mocks.systemOne.mockReset();
+        mocks.systemOne
+          .mockRejectedValueOnce(refusal)
+          .mockResolvedValueOnce(jevResponse());
+        const before = {
+          rejected: await callCount("image_rejected"),
+          ok: await callCount("ok"),
+        };
+
+        const result = await enhanceBrandingWithLLM(withScreen());
+
+        expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+        const [first, firstOptions] = mocks.systemOne.mock.calls[0];
+        const [second, secondOptions] = mocks.systemOne.mock.calls[1];
+        expect(first.assets).toBeDefined();
+        expect(firstOptions.headers).toEqual({
+          "TypeSafe-Danger-Zone-Images": "true",
+        });
+        expect(second.assets).toBeUndefined();
+        expect(second.state.page.first_screen).toBeUndefined();
+        expect(second.questions.primary_button.instructions).not.toContain(
+          "<screenshot>",
+        );
+        expect(secondOptions.headers).toBeUndefined();
+        expect(generateObject).not.toHaveBeenCalled();
+        expect(
+          result.buttonClassification.primaryButtonIndex,
+        ).toBeGreaterThanOrEqual(0);
+        expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+        expect(await callCount("ok")).toBe(before.ok + 1);
+      }
+    });
+
+    it("does not count a refused image toward the breaker", async () => {
+      // Five failures in a row would open it; five refused images must not.
+      mocks.systemOne.mockReset();
+      for (let i = 0; i < 5; i++) {
+        mocks.systemOne
+          .mockRejectedValueOnce(
+            refused(503, "503 Image processing is unavailable."),
+          )
+          .mockResolvedValueOnce(jevResponse());
+      }
+      for (let i = 0; i < 5; i++) await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(10);
+      expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(11);
+      expect(generateObject).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the LLM when the text-only retry fails too, and that failure counts toward the breaker", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne
+        .mockRejectedValueOnce(
+          refused(503, "503 Image processing is unavailable."),
+        )
+        .mockRejectedValueOnce(refused(500, "500 Internal server error"));
+      const before = {
+        rejected: await callCount("image_rejected"),
+        error: await callCount("error"),
+      };
+
+      await enhanceBrandingWithLLM(withScreen());
+
+      expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+      expect(await callCount("error")).toBe(before.error + 1);
+
+      // That failure was the first of five: four more plain failures open
+      // the breaker, which a refused image alone would not have done.
+      mocks.systemOne.mockRejectedValue(
+        refused(500, "500 Internal server error"),
+      );
+      for (let i = 0; i < 4; i++) {
+        await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      }
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      expect(generateObject).toHaveBeenCalledTimes(6);
+    });
+
+    it("still falls back to the LLM on a server error that is not about the image, or a refusal without one", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(500, "500 Internal server error"),
+      );
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+
+      // A 529 on a text-only call is TypeSafe asking us to back off: no retry.
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(529, "529 We are currently experiencing high traffic"),
+      );
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("fails fast when TypeSafe asks to back off, and retries a 503 or a timeout once, quickly", async () => {
     // The options Jev passes, run through the real SDK against a fake server.
     mocks.systemOne.mockResolvedValueOnce(jevResponse());
@@ -476,10 +788,16 @@ describe("branding with Jev", () => {
     }
     expect(mocks.systemOne).toHaveBeenCalledTimes(5);
 
-    // Open: answered by the LLM without waiting on Jev.
+    // Open: answered by the LLM without waiting on Jev, and no first screen
+    // is captured for a call that won't happen.
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
     expect(mocks.systemOne).toHaveBeenCalledTimes(5);
     expect(generateObject).toHaveBeenCalledTimes(6);
+    config.BRANDING_JEV_SCREENSHOT_PERCENT = 100;
+    expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe(undefined);
+    expect(wantsBrandingScreenshot(undefined, "team-jev", false)).toBe(
+      undefined,
+    );
 
     // After the cooldown Jev is tried again, and a success keeps it in use.
     vi.setSystemTime(Date.now() + 61_000);
@@ -1006,6 +1324,46 @@ describe("Jev request building", () => {
     expect(describeColor("#1A73E8")).toBe("vivid blue");
   });
 
+  it("names the family a stack renders, not its alias or its system fallbacks", () => {
+    // Wix serves a licensed face under a per-site alias and keeps the real
+    // name further down the stack.
+    expect(
+      cleanFontFamily(
+        "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
+      ),
+    ).toBe("Libre Baskerville");
+    expect(cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd")).toBeUndefined();
+    // Monotype spellings on Wix.
+    expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
+    expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
+    expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
+    expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe("DIN Neuzeit Grotesk");
+    // Self-hosted builds and a weight glued onto a lowercase alias.
+    expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
+    expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
+    expect(cleanFontFamily("orig_graphikextralight")).toBe("Graphik");
+    expect(cleanFontFamily("Cooper Black")).toBe("Cooper Black");
+    // A weight alone is still no family, and a known family is matched
+    // once its glued weight is gone.
+    expect(cleanFontFamily("semibold")).toBeUndefined();
+    expect(cleanFontFamily("proximanovabold")).toBe("Proxima Nova");
+    // Non-Latin faces are families too, and title case works past ASCII.
+    expect(cleanFontFamily("思源黑体, sans-serif")).toBe("思源黑体");
+    expect(cleanFontFamily("über grotesk")).toBe("Über Grotesk");
+    // A system stack asks for the visitor's font: Segoe UI and Roboto are
+    // its spellings per platform, not the brand's choice.
+    expect(
+      cleanFontFamily("-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"),
+    ).toBeUndefined();
+    expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
+    // A real face ahead of the system stack is still that face (hyphenated
+    // self-hosted names keep their spelling).
+    expect(
+      cleanFontFamily("Salesforce-Sans, system-ui, -apple-system, Segoe UI"),
+    ).toBe("Salesforce-Sans");
+  });
+
   it("cleans font names in code", () => {
     expect(cleanFontFamily("__Roboto_Mono_c8ca7d")).toBe("Roboto Mono");
     expect(cleanFontFamily("__suisse_6d5c28")).toBe("Suisse");
@@ -1157,3 +1515,71 @@ describe("branding metrics", () => {
     expect(mocks.systemOne).not.toHaveBeenCalled();
   });
 });
+
+describe("logo candidates as Jev sees them", () => {
+  const candidates = (input: BrandingLLMInput) =>
+    buildJevRequest(input).state.logo_candidates as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+  it("names a link's path instead of trusting the scan's homepage flag", () => {
+    const input = baseInput(new CostTracking());
+    input.pageUrl = "https://acme.test/";
+    input.logoCandidates = [
+      LOGO,
+      { ...LOGO, src: "https://acme.test/home.svg", alt: "home", href: "/home/" },
+      { ...LOGO, src: "https://acme.test/cart.svg", alt: "", href: "/cart" },
+      { ...LOGO, src: "https://acme.test/www.svg", href: "https://www.acme.test/?ref=nav" },
+      { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
+      { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
+      // The scan resolved these as the home link; we can't tell from the href.
+      { ...LOGO, src: "https://acme.test/sibling.svg", href: "https://acme.io/" },
+      { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
+      { ...LOGO, src: "https://acme.test/mail.svg", href: "mailto:hi@acme.test", indicators: { ...LOGO.indicators, hrefMatch: false } },
+      { ...LOGO, src: "https://acme.test/other.svg", href: "https://acme.io/pricing", indicators: { ...LOGO.indicators, hrefMatch: false } },
+    ];
+    expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
+      "links to the homepage",
+      "links to /home on this site",
+      "links to /cart on this site",
+      "links to the homepage",
+      "links to another website (x.com)",
+      "no link",
+      "links to the homepage",
+      "links to the homepage",
+      "mailto: link",
+      "links to another website (acme.io)",
+    ]);
+  });
+
+  it("shows a declared mark as metadata, not as a rendered header logo", () => {
+    const input = baseInput(new CostTracking());
+    input.logoCandidates = [
+      LOGO,
+      {
+        ...LOGO,
+        src: "https://acme.test/apple-touch-icon.png",
+        isSvg: false,
+        position: { top: 0, left: 0, width: 180, height: 180 },
+        href: undefined,
+        source: "apple-touch-icon",
+      },
+    ];
+    const [rendered, declared] = Object.values(candidates(input));
+    expect(rendered).toMatchObject({
+      where: "header",
+      visible: true,
+      link: "links to the homepage",
+    });
+    expect(declared).toMatchObject({
+      where: "page metadata, not rendered",
+      visible: false,
+      size: "unknown",
+      shape: "unknown",
+      link: "no link",
+      found_via: "apple-touch-icon",
+    });
+  });
+});
+

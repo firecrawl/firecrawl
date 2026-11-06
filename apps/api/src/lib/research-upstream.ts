@@ -1,4 +1,4 @@
-import { Agent, fetch } from "undici";
+import { Agent, fetch, type Response } from "undici";
 import { config } from "../config";
 
 const TIMEOUT_MS = 120_000;
@@ -48,9 +48,48 @@ export async function fetchResearchUpstream(options: {
   });
 }
 
+/** An upstream's refusal of a US-only request, relayed to the caller with its status. */
+export class UsOnlyUpstreamRefusalError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function usOnlyUpstreamRefusal(
+  upstream: Response,
+  fallback: string,
+): Promise<UsOnlyUpstreamRefusalError> {
+  const body: any = await upstream.json().catch(() => null);
+  const message = [body?.detail, body?.error, body?.message, body?.title].find(
+    value => typeof value === "string" && value.length > 0,
+  );
+  return new UsOnlyUpstreamRefusalError(upstream.status, message ?? fallback);
+}
+
+/** The warning for the parts an upstream skipped for a US-only request, if it skipped any. */
+export function usOnlySkippedWarning(headers: {
+  get(name: string): string | null;
+}): string | undefined {
+  const skipped = (headers.get("firecrawl-us-only-skipped") ?? "")
+    .split(",")
+    .map(part => part.trim())
+    .filter(part => /^[\w-]+$/.test(part));
+  return skipped.length > 0
+    ? `Some results were not available under US-only processing: ${skipped.join(", ")}.`
+    : undefined;
+}
+
 export async function fetchGovUpstream(options: {
   query: string;
   k?: number;
+  jurisdiction?: string;
+  court?: string;
+  courtType?: string;
+  cites?: string;
+  domain?: string;
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
@@ -60,7 +99,15 @@ export async function fetchGovUpstream(options: {
   return fetch(base.replace(/\/+$/, "") + "/api/v1/gov-search", {
     method: "POST",
     headers: { ...options.headers, "content-type": "application/json" },
-    body: JSON.stringify({ query: options.query, top_k: options.k }),
+    body: JSON.stringify({
+      query: options.query,
+      top_k: options.k,
+      jurisdiction: options.jurisdiction,
+      court: options.court,
+      court_type: options.courtType,
+      cites: options.cites,
+      domain: options.domain,
+    }),
     signal: AbortSignal.timeout(options.timeoutMs),
     dispatcher,
   });

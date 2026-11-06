@@ -3,6 +3,7 @@ import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { AudioUnsupportedUrlError, throwIfMediaAccessDenied } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
 
 // Downloads can be large (long videos → hundreds of MB), so this is generous —
 // but an unbounded fetch that hangs would consume the whole scrape budget and
@@ -50,6 +51,20 @@ export async function fetchAudio(
   // Lockdown forbids any outbound request touching the target URL. The avgrab
   // service fetches the source on our behalf, so we must skip it here.
   if (meta.options.lockdown) {
+    return document;
+  }
+
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Audio format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Audio format is not supported for teams restricted to US-only processing." +
+      (document.warning ? " " + document.warning : "");
     return document;
   }
 
