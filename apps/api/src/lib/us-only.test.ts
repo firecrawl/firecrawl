@@ -10,7 +10,7 @@ describe("usOnlyLocationRefusal", () => {
     );
   });
 
-  it.each(["us", "US", "us-generic", "US-generic", undefined])(
+  it.each(["us", "US", "us-generic", "US-generic", "", null, 42, undefined])(
     "allows %s",
     country => {
       expect(usOnlyLocationRefusal(usOnly, country)).toBeUndefined();

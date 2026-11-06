@@ -14,11 +14,14 @@ const US_COUNTRIES = ["us", "us-generic"];
  */
 export function usOnlyLocationRefusal(
   flags: TeamFlags | undefined,
-  ...countries: (string | undefined)[]
+  ...countries: unknown[]
 ): string | undefined {
   if (!isUsOnly(flags)) return undefined;
   const country = countries.find(
-    value => value !== undefined && !US_COUNTRIES.includes(value.toLowerCase()),
+    (value): value is string =>
+      typeof value === "string" &&
+      value !== "" &&
+      !US_COUNTRIES.includes(value.toLowerCase()),
   );
   return country === undefined
     ? undefined

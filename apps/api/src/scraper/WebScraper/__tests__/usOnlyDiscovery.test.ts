@@ -60,6 +60,37 @@ describe("crawl discovery for US-only teams", () => {
     expect(internalOptionsSent()[0]).not.toHaveProperty("teamFlags");
   });
 
+  it("fetches nested sitemaps as US-only", async () => {
+    vi.mocked(scrapeURL).mockResolvedValueOnce({
+      success: true,
+      document: {
+        rawHtml:
+          '<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://example.com/sitemap-posts.xml</loc></sitemap></sitemapindex>',
+        metadata: { statusCode: 200 },
+      },
+    } as any);
+    await getLinksFromSitemap(
+      {
+        sitemapUrl: "https://example.com/sitemap.xml",
+        urlsHandler: () => {},
+        mode: "fire-engine",
+        zeroDataRetention: false,
+        usOnly: true,
+      },
+      logger,
+      "crawl-1",
+      new Set(),
+    );
+    expect(vi.mocked(scrapeURL).mock.calls.map(([, url]) => url)).toEqual([
+      "https://example.com/sitemap.xml",
+      "https://example.com/sitemap-posts.xml",
+    ]);
+    expect(internalOptionsSent()).toEqual([
+      expect.objectContaining({ teamFlags: { usOnly: true } }),
+      expect.objectContaining({ teamFlags: { usOnly: true } }),
+    ]);
+  });
+
   it("fetches sitemaps as US-only", async () => {
     await getLinksFromSitemap(
       {
