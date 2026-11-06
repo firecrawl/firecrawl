@@ -77,8 +77,11 @@ describe("pre-existing deprecated routes are unchanged", () => {
             `<${V0_GUIDE}>; rel="deprecation", <${EXISTING[key]}>; rel="successor-version"`,
           );
         } else if (EXISTING[key]) {
+          const docsLink = key.includes("extract")
+            ? `<https://docs.firecrawl.dev/migrating-from-extract>; rel="deprecation", `
+            : "";
           expect(res.headers["link"]).toBe(
-            `<${EXISTING[key]}>; rel="successor-version"`,
+            `${docsLink}<${EXISTING[key]}>; rel="successor-version"`,
           );
         } else {
           expect(res.headers["link"]).toBeUndefined();
