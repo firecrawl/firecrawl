@@ -10,7 +10,7 @@ import {
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
 import { displayFamily, genericFamily, renderedFamily } from "./font-names";
-import { parse, rgb, formatHex } from "culori";
+import { parse, rgb, formatHex, wcagContrast } from "culori";
 
 // Export for testing
 export function hexify(
@@ -386,8 +386,11 @@ const FIRST_SCREEN_PX = 1000;
 
 export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const pageBackground = resolvePageBackground(raw);
+  // A consent dialog's colors and controls are page chrome: out of the
+  // palette, the buttons, the inputs and the font counts alike.
+  const pageSnapshots = raw.snapshots.filter(s => !s.isConsent);
   const { linkMeasured, ...palette } = inferPalette(
-    raw.snapshots,
+    pageSnapshots,
     raw.cssData.colors,
     raw.colorScheme,
     pageBackground,
@@ -415,7 +418,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   // Spacing
   const baseUnit = inferBaseUnit(raw.cssData.spacings);
   const borderRadius = pickBorderRadius([
-    ...raw.snapshots.map(s => s.radius),
+    ...pageSnapshots.map(s => s.radius),
     ...raw.cssData.radii,
   ]);
 
@@ -424,7 +427,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   // generic font rather than with no font at all.
   const measuredStacks = [
     ...Object.values(raw.typography.stacks),
-    ...raw.snapshots.map(s => s.typography.fontStack),
+    ...pageSnapshots.map(s => s.typography.fontStack),
   ];
   let fontsList = inferFontsList(measuredStacks);
   if (fontsList.length === 0) {
@@ -451,7 +454,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   let components: any = {};
 
   // Filter and score buttons
-  const candidateButtons = raw.snapshots
+  const candidateButtons = pageSnapshots
     .filter(s => {
       if (!s.isButton) return false;
       // Hidden copies (mobile menus, closed dialogs) aren't what visitors see.
@@ -605,13 +608,24 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       s.borderRadius,
     );
 
+    // Text with no contrast against its own fill is not what visitors read:
+    // a deferred stylesheet that hadn't landed, or a label color set on an
+    // inner element the scan couldn't see. Report the readable one.
+    let textColor = hexify(s.colors.text, pageBackground) || "#000000";
+    if (
+      bgHex !== "transparent" &&
+      wcagContrast(bgHex, textColor) < 1.25
+    ) {
+      textColor = contrastYIQ(bgHex) >= 128 ? "#000000" : "#FFFFFF";
+    }
+
     return {
       index: idx,
       text: s.text || "",
       html: "",
       classes: s.classes || "",
       background: bgHex,
-      textColor: hexify(s.colors.text, pageBackground) || "#000000",
+      textColor,
       borderColor: borderHex,
       borderRadius: representativeBorderRadius,
       borderRadiusCorners: corners,
@@ -676,6 +690,7 @@ function extractInputSnapshots(
 ): InputSnapshot[] {
   // Filter input fields (excluding button inputs which are already in buttonSnapshots)
   const candidateInputs = raw.snapshots.filter(s => {
+    if (s.isConsent) return false;
     if (!s.isInput || !s.inputMetadata) return false;
     if (s.rect.w < 50 || s.rect.h < 20) return false; // Too small
     return true;

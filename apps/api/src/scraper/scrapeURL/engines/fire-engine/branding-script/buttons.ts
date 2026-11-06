@@ -6,13 +6,37 @@ import {
   recordError,
 } from "./helpers";
 
+/**
+ * Alpha of a CSS color: rgb()/rgba()/hsl() legacy and modern syntax
+ * (`rgb(0 0 0 / 50%)`, `oklch(0.7 0.1 30 / 0.5)`, `color(display-p3 …)`),
+ * four- and eight-digit hex, keywords. 1 when the color has none.
+ */
+const colorAlpha = (color: string): number => {
+  const hex = color.match(/^#([0-9a-f]{4}|[0-9a-f]{8})$/i);
+  if (hex) {
+    const digits = hex[1];
+    const a = digits.length === 4 ? digits[3] + digits[3] : digits.slice(6, 8);
+    return parseInt(a, 16) / 255;
+  }
+  const fn = color.match(/^[a-z-]+\((.*)\)$/i);
+  if (!fn) return 1;
+  const body = fn[1];
+  const slash = body.lastIndexOf("/");
+  const raw =
+    slash !== -1
+      ? body.slice(slash + 1).trim()
+      : body.split(",").length >= 4
+        ? body.split(",")[3].trim()
+        : "";
+  if (!raw) return 1;
+  const value = parseFloat(raw);
+  if (Number.isNaN(value)) return 1;
+  return raw.endsWith("%") ? value / 100 : value;
+};
+
 const isOpaque = (color: string | null | undefined): boolean => {
   if (!color || color === "transparent") return false;
-  const m = color.match(/rgba?\(([^)]+)\)/);
-  if (!m) return true;
-  const parts = m[1].split(/[\s,/]+/).filter(Boolean);
-  const alpha = parts.length >= 4 ? parseFloat(parts[3]) : 1;
-  return alpha > CONSTANTS.MIN_ALPHA_THRESHOLD;
+  return colorAlpha(color.trim()) > CONSTANTS.MIN_ALPHA_THRESHOLD;
 };
 
 // Classes site builders and reveal scripts put on content that is faded out
@@ -177,6 +201,39 @@ export const pageTop = (el: Element, rect: DOMRect): number => {
   return isTallWindow() ? toScreenPosition(top) : top;
 };
 
+/**
+ * The color a CSS gradient reads as: its last stop, the side a left-to-right
+ * or top-to-bottom gradient ends on, which is where the eye settles. Page
+ * builders paint buttons this way (Divi, Elementor, Tailwind's bg-gradient)
+ * with a transparent background-color, so without this they have no fill.
+ * Null for an image or no gradient.
+ */
+export const gradientFill = (backgroundImage: string | null | undefined): string | null => {
+  if (!backgroundImage) return null;
+  // Only the top layer shows: "linear-gradient(…), url(…)" lists layers
+  // top first, comma-separated outside parentheses.
+  let depth = 0;
+  let top = backgroundImage;
+  for (let i = 0; i < backgroundImage.length; i++) {
+    const ch = backgroundImage[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      top = backgroundImage.slice(0, i);
+      break;
+    }
+  }
+  if (!/gradient\(/i.test(top)) return null;
+  const colors =
+    top.match(
+      /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b/gi,
+    ) || [];
+  for (let i = colors.length - 1; i >= 0; i--) {
+    if (isOpaque(colors[i])) return colors[i];
+  }
+  return null;
+};
+
 /** The first opaque background behind an element (its ancestors'), white if none. */
 const getBackgroundBehind = (el: Element): string => {
   let parent = el.parentElement;
@@ -196,8 +253,11 @@ const getBackgroundBehind = (el: Element): string => {
  */
 export const getEffectiveFill = (el: Element): string | null => {
   try {
-    const own = getComputedStyleCached(el).backgroundColor;
+    const ownStyle = getComputedStyleCached(el);
+    const own = ownStyle.backgroundColor;
     if (isOpaque(own)) return own;
+    const gradient = gradientFill(ownStyle.backgroundImage);
+    if (gradient) return gradient;
     for (const pseudo of ["::before", "::after"]) {
       const ps = getPseudoStyle(el, pseudo);
       // Hover-only layers sit at opacity 0 until hovered: not a fill.
@@ -232,9 +292,11 @@ export const getEffectiveFill = (el: Element): string | null => {
 
 /** Filled with a color that stands out from what is behind it, or outlined. */
 export const looksFilledOrOutlined = (el: Element): boolean => {
+  const cs = getComputedStyleCached(el);
+  // A gradient is a fill whatever color it ends on, even the page's.
+  if (gradientFill(cs.backgroundImage)) return true;
   const fill = getEffectiveFill(el);
   if (fill && fill !== getBackgroundBehind(el)) return true;
-  const cs = getComputedStyleCached(el);
   return parseFloat(cs.borderTopWidth) > 0 && isOpaque(cs.borderTopColor);
 };
 
