@@ -91,6 +91,45 @@ def test_collect_feedback_tokens_dedupes_and_keeps_newest_twenty():
     assert collect_feedback_tokens([AlexandriaScrapeResult()]) == []
 
 
+def test_collect_feedback_tokens_accepts_plain_dicts():
+    results = [{"feedbackToken": "a"}, {"feedback_token": "b"}, {}, {"feedbackToken": "a"}]
+    assert collect_feedback_tokens(results) == ["b", "a"]
+
+
+def test_alexandria_feedback_accepts_token_of_exactly_1024_chars(monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        "requests.post", lambda url, **kwargs: sent.append(kwargs["json"]) or response(200, FEEDBACK_RESPONSE)
+    )
+    Firecrawl(api_key="fc-test").alexandria_feedback({**REQUEST, "tokens": ["x" * 1024]})
+    assert len(sent[0]["tokens"][0]) == 1024
+
+
+def test_alexandria_feedback_requires_functionality_for_new_capability_request(monkeypatch):
+    post = Mock(return_value=response(200, FEEDBACK_RESPONSE))
+    monkeypatch.setattr("requests.post", post)
+    entry = {"name": "episodes", "provider": "particle", "issue": "new_capability_request", "why": "Needed"}
+    client = Firecrawl(api_key="fc-test")
+    with pytest.raises(ValueError, match="requested_functionality is required"):
+        client.alexandria_feedback({**REQUEST, "capability_feedback": [entry]})
+    post.assert_not_called()
+    client.alexandria_feedback(
+        {**REQUEST, "capability_feedback": [{**entry, "requested_functionality": "Dates"}]}
+    )
+    assert post.call_args.kwargs["json"]["capabilityFeedback"][0]["requestedFunctionality"] == "Dates"
+
+
+def test_alexandria_feedback_trims_text_and_rejects_blank(monkeypatch):
+    post = Mock(return_value=response(200, FEEDBACK_RESPONSE))
+    monkeypatch.setattr("requests.post", post)
+    client = Firecrawl(api_key="fc-test")
+    with pytest.raises(ValueError):
+        client.alexandria_feedback({**REQUEST, "rationale": "   "})
+    post.assert_not_called()
+    client.alexandria_feedback({**REQUEST, "rationale": "  ok  "})
+    assert post.call_args.kwargs["json"]["rationale"] == "ok"
+
+
 @pytest.mark.parametrize("async_client", [False, True])
 @pytest.mark.asyncio
 async def test_alexandria_feedback_posts_tokens_and_call_ratings(async_client, monkeypatch):

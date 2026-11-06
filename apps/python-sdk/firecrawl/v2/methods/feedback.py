@@ -17,7 +17,10 @@ def collect_feedback_tokens(results: Iterable[Any]) -> List[str]:
     """
     tokens: List[str] = []
     for result in results:
-        token = getattr(result, "feedback_token", None)
+        if isinstance(result, dict):
+            token = result.get("feedbackToken") or result.get("feedback_token")
+        else:
+            token = getattr(result, "feedback_token", None)
         if not token:
             continue
         if token in tokens:

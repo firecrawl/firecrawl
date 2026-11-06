@@ -90,6 +90,16 @@ export async function alexandriaFeedback(
     }
     tokens.forEach((token, index) => validateToken(token, `tokens[${index}]`));
   }
+  request.capabilityFeedback?.forEach((entry, index) => {
+    if (
+      entry?.issue === "new_capability_request" &&
+      !entry.requestedFunctionality?.trim()
+    ) {
+      throw new Error(
+        `capabilityFeedback[${index}].requestedFunctionality is required for new_capability_request`,
+      );
+    }
+  });
   if (callRatings != null) {
     if (!Array.isArray(callRatings))
       throw new Error("callRatings must be an array");

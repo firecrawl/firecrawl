@@ -495,7 +495,9 @@ const response = await firecrawl.alexandriaFeedback({
   requestedWebsite: { url: "https://example.com", requestedFunctionality: "Find episodes" },
   rationale: "Found the episodes but the dates were missing",
   tokens: collectFeedbackTokens(result.alexandria),
-  callRatings: [{ token: result.alexandria[0].feedbackToken!, rating: "bad" }],
+  callRatings: result.alexandria[0].feedbackToken
+    ? [{ token: result.alexandria[0].feedbackToken, rating: "bad" }]
+    : undefined,
 });
 console.log(response.rejectedTokens ?? 0);
 ```

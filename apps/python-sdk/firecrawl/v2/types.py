@@ -20,6 +20,7 @@ from pydantic import (
     ValidationError,
     model_serializer,
     model_validator,
+    StringConstraints,
 )
 
 # Suppress pydantic warnings about schema field shadowing
@@ -1179,7 +1180,7 @@ class AlexandriaScrapeData(BaseModel):
 
 AlexandriaFeedbackRating = Literal["good", "partial", "bad"]
 _FeedbackToken = Annotated[str, Field(min_length=1, max_length=1024)]
-_FeedbackText = Annotated[str, Field(min_length=1, max_length=2000)]
+_FeedbackText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class AlexandriaCallRating(BaseModel):
@@ -1220,8 +1221,13 @@ class AlexandriaCapabilityFeedback(BaseModel):
         "other",
     ]
     why: _FeedbackText
-    # Required when issue is new_capability_request.
     requested_functionality: Optional[_FeedbackText] = Field(default=None, alias="requestedFunctionality")
+
+    @model_validator(mode="after")
+    def _require_functionality_for_new_capability(self):
+        if self.issue == "new_capability_request" and self.requested_functionality is None:
+            raise ValueError("requested_functionality is required for new_capability_request")
+        return self
 
 
 class AlexandriaFeedbackRequest(BaseModel):

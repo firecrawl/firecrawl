@@ -1258,20 +1258,22 @@ export interface AlexandriaProviderFeedback {
   why: string;
 }
 
-export interface AlexandriaCapabilityFeedback {
+export type AlexandriaCapabilityFeedback = {
   name: string;
   provider: string;
-  issue:
-    | "new_capability_request"
-    | "missing_capability"
-    | "insufficient_functionality"
-    | "incorrect_result"
-    | "execution_error"
-    | "other";
   why: string;
-  /** Required when `issue` is `new_capability_request`. */
-  requestedFunctionality?: string;
-}
+} & (
+  | { issue: "new_capability_request"; requestedFunctionality: string }
+  | {
+      issue:
+        | "missing_capability"
+        | "insufficient_functionality"
+        | "incorrect_result"
+        | "execution_error"
+        | "other";
+      requestedFunctionality?: string;
+    }
+);
 
 export interface AlexandriaCallRating {
   /** The `feedbackToken` of an Alexandria call result. */

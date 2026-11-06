@@ -498,12 +498,18 @@ is absent under zero data retention. Pass the tokens of the calls in a session t
 ```python
 from firecrawl import collect_feedback_tokens
 
+scraped = firecrawl.scrape(alexandria={
+    "provider": "particle",
+    "capability": "podcasts/episodes/search",
+    "options": {"semantic_search": "AI agents"},
+})
+first_token = scraped.alexandria[0].feedback_token
 response = firecrawl.alexandria_feedback({
     "rating": "partial",
     "requested_website": {"url": "https://example.com", "requested_functionality": "Find episodes"},
     "rationale": "Found the episodes but the dates were missing",
-    "tokens": collect_feedback_tokens(result.alexandria),
-    "call_ratings": [{"token": result.alexandria[0].feedback_token, "rating": "bad"}],
+    "tokens": collect_feedback_tokens(scraped.alexandria),
+    "call_ratings": [{"token": first_token, "rating": "bad"}] if first_token else None,
 })
 print(response.rejected_tokens or 0)
 ```

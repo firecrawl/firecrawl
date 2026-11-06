@@ -175,6 +175,34 @@ describe("alexandriaFeedback", () => {
     expect(sent[0].body.callRatings).toHaveLength(20);
   });
 
+  test("accepts a token of exactly 1024 characters", async () => {
+    await client.alexandriaFeedback({ ...base, tokens: ["x".repeat(1024)] });
+    expect(sent[0].body.tokens[0]).toHaveLength(1024);
+  });
+
+  test("requires requestedFunctionality for new_capability_request", async () => {
+    const entry = {
+      name: "episodes",
+      provider: "particle",
+      issue: "new_capability_request" as const,
+      why: "Needed",
+    };
+    await expect(
+      client.alexandriaFeedback({
+        ...base,
+        capabilityFeedback: [entry as any],
+      }),
+    ).rejects.toThrow("requestedFunctionality is required");
+    expect(sent).toHaveLength(0);
+    await client.alexandriaFeedback({
+      ...base,
+      capabilityFeedback: [{ ...entry, requestedFunctionality: "Dates" }],
+    });
+    expect(sent[0].body.capabilityFeedback[0].requestedFunctionality).toBe(
+      "Dates",
+    );
+  });
+
   test.each([
     ["21 tokens", { tokens: Array.from({ length: 21 }, (_, i) => `t${i}`) }, "tokens accepts at most 20"],
     [
