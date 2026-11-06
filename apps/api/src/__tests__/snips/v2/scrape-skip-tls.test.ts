@@ -112,6 +112,8 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       expect(response.status).toBe(500);
       expect(response.body.success).toBe(false);
       expect(response.body.code).toBe("SCRAPE_SSL_ERROR");
+      expect(typeof response.body.id).toBe("string");
+      expect(response.headers["x-request-id"]).toBe(response.body.id);
     },
     scrapeTimeout,
   );
