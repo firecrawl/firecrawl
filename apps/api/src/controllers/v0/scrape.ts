@@ -39,6 +39,7 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 
 async function scrapeHelper(
   jobId: string,
@@ -52,6 +53,7 @@ async function scrapeHelper(
 ): Promise<{
   success: boolean;
   error?: string;
+  code?: string;
   data?: V0Document | { url: string };
   returnCode: number;
 }> {
@@ -88,6 +90,19 @@ async function scrapeHelper(
     };
   }
 
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    acuc?.flags ?? undefined,
+    pageOptions?.geolocation?.country,
+  );
+  if (usOnlyLocationError) {
+    return {
+      success: false,
+      error: usOnlyLocationError,
+      code: "US_ONLY_UNAVAILABLE",
+      returnCode: 403,
+    };
+  }
+
   const { scrapeOptions, internalOptions } = fromV0Combo(
     pageOptions,
     extractorOptions,
@@ -97,6 +112,9 @@ async function scrapeHelper(
   );
 
   internalOptions.orgId = acuc?.org_id ?? null;
+  if (isUsOnly(acuc?.flags ?? undefined)) {
+    internalOptions.teamFlags = acuc?.flags;
+  }
   internalOptions.saveScrapeResultToGCS = process.env
     .GCS_FIRE_ENGINE_BUCKET_NAME
     ? true

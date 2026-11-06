@@ -16,6 +16,7 @@ import {
   THREAT_PROTECTION_NOT_ENABLED_MESSAGE,
   THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE,
 } from "./threat-protection/request";
+import { usOnlyLocationRefusal } from "./us-only";
 
 type LocationOptions = { country?: string };
 type ThreatProtectionOption = { mode?: string };
@@ -23,8 +24,10 @@ type ThreatProtectionOption = { mode?: string };
 interface APIRequest {
   zeroDataRetention?: boolean;
   location?: LocationOptions;
+  geolocation?: LocationOptions;
   scrapeOptions?: {
     location?: LocationOptions;
+    geolocation?: LocationOptions;
     threatProtection?: ThreatProtectionOption;
   };
   crawlerOptions?: {
@@ -169,6 +172,17 @@ export function checkPermissions(
         };
       }
     }
+  }
+
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    flags,
+    request.location?.country,
+    request.geolocation?.country,
+    request.scrapeOptions?.location?.country,
+    request.scrapeOptions?.geolocation?.country,
+  );
+  if (usOnlyLocationError) {
+    return { error: usOnlyLocationError, code: "US_ONLY_UNAVAILABLE" };
   }
 
   // ip whitelist perms

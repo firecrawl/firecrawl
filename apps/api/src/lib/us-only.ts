@@ -5,6 +5,29 @@ export function isUsOnly(flags: TeamFlags | undefined): boolean {
   return flags?.usOnly === true;
 }
 
+const US_COUNTRIES = ["us", "us-generic"];
+
+/**
+ * The refusal for a US-only team asking for a country other than the US, since
+ * its pages are fetched only from US exits. Undefined for an unrestricted team
+ * or when every country given is "us" or "us-generic" (the schema default).
+ */
+export function usOnlyLocationRefusal(
+  flags: TeamFlags | undefined,
+  ...countries: unknown[]
+): string | undefined {
+  if (!isUsOnly(flags)) return undefined;
+  const country = countries.find(
+    (value): value is string =>
+      typeof value === "string" &&
+      value !== "" &&
+      !US_COUNTRIES.includes(value.toLowerCase()),
+  );
+  return country === undefined
+    ? undefined
+    : `location.country "${country.toUpperCase()}" isn't available to teams restricted to US-only processing, because pages are fetched only from US exits. Omit location or set it to "US".`;
+}
+
 /** The `data_region` value that pins a US-only team's GPU work to US capacity. */
 export const US_DATA_REGION = "us";
 

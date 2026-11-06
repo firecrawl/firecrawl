@@ -36,6 +36,7 @@ import {
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -92,6 +93,13 @@ export function browserError(
       success: false,
       error: prompt.error,
       signup_url: prompt.signup_url,
+    });
+  }
+  if (error instanceof UsOnlyUnavailableError) {
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
     });
   }
   const knownError =

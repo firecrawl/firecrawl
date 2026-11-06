@@ -1637,6 +1637,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
       zeroDataRetention: job.data.zeroDataRetention ?? false,
+      usOnly: crawler.usOnly,
       location: job.data.location,
       crawlId: job.data.crawl_id,
       logger,

@@ -381,6 +381,17 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run US-only page fetch regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/us-only.test.ts
+          src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
+          src/scraper/scrapeURL/__tests__/usOnly.test.ts
+          src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run country check route regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/__tests__/routes/country-check.routes.test.ts --reporter=default
