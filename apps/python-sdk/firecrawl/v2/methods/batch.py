@@ -133,6 +133,8 @@ def get_batch_scrape_status(
     body = response.json()
     payload = _parse_batch_scrape_status_response(body)
     documents = payload["data"]
+    if pagination_config and pagination_config.max_results is not None:
+        documents = documents[:pagination_config.max_results]
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
