@@ -54,6 +54,7 @@ def start_batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    origin: Optional[str] = None,
     audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
 ) -> BatchScrapeResponse:
@@ -81,6 +82,7 @@ def start_batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        origin=origin,
         audit_metadata=audit_metadata,
     )
     
@@ -346,6 +348,7 @@ def batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    origin: Optional[str] = None,
     audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
@@ -379,6 +382,7 @@ def batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        origin=origin,
         audit_metadata=audit_metadata,
         idempotency_key=idempotency_key,
     )
@@ -431,6 +435,7 @@ def prepare_batch_scrape_request(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    origin: Optional[str] = None,
     audit_metadata: Optional[AuditMetadata] = None,
 ) -> dict:
     """
@@ -470,6 +475,8 @@ def prepare_batch_scrape_request(
         request_data["zeroDataRetention"] = zero_data_retention
     if integration is not None:
         request_data["integration"] = str(integration).strip()
+    if origin is not None:
+        request_data["origin"] = str(origin).strip()
 
     return request_data
 

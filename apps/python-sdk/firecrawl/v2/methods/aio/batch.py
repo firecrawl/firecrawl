@@ -56,6 +56,10 @@ def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwar
         trimmed_integration = str(v).strip()
         if trimmed_integration:
             payload["integration"] = trimmed_integration
+    if (v := kwargs.get("origin")) is not None:
+        trimmed_origin = str(v).strip()
+        if trimmed_origin:
+            payload["origin"] = trimmed_origin
     return payload
 
 
