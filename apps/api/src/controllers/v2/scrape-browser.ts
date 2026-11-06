@@ -534,7 +534,13 @@ async function createSessionForScrape(
     const body =
       message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
         ? await keylessLimitBody(req.auth.team_id, "v2_browser", req)
-        : { success: false as const, error: message };
+        : {
+            success: false as const,
+            ...(error instanceof BrowserSessionError && error.code
+              ? { code: error.code }
+              : {}),
+            error: message,
+          };
     return { error: true as const, status, body };
   }
 }
