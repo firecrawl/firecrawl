@@ -939,11 +939,13 @@ export async function forwardExchangeToolFeedback(
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS),
     });
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       rootLogger.warn("Exchange tool feedback rejected", {
         ...context,
         statusCode: response.status,
       });
+    }
   } catch (error) {
     rootLogger.warn("Exchange tool feedback errored", { ...context, error });
   }

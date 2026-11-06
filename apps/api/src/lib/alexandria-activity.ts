@@ -55,7 +55,7 @@ export async function recordAlexandriaCalls(
   const at = Date.now();
   const key = recentCallsKey(teamId);
   try {
-    await redisRateLimitClient
+    const results = await redisRateLimitClient
       .multi()
       .lpush(
         key,
@@ -66,6 +66,8 @@ export async function recordAlexandriaCalls(
       .ltrim(key, 0, RECENT_CALLS_LIMIT - 1)
       .expire(key, config.ALEXANDRIA_FEEDBACK_WINDOW_SEC)
       .exec();
+    const commandError = results?.find(([error]) => error)?.[0];
+    if (commandError) throw commandError;
   } catch (error) {
     logger.warn("Failed to record Alexandria calls", { error, teamId });
   }

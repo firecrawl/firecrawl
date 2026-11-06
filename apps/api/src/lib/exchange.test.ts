@@ -1093,13 +1093,16 @@ describe("Exchange tool feedback forward", () => {
   );
 
   it("resolves on rejected responses and network errors", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: false,
       status: 404,
-    } as Awaited<ReturnType<typeof fetch>>);
+      body: { cancel },
+    } as unknown as Awaited<ReturnType<typeof fetch>>);
     await expect(
       forwardExchangeToolFeedback(feedback),
     ).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledOnce();
     vi.mocked(fetch).mockRejectedValueOnce(new Error("timeout"));
     await expect(
       forwardExchangeToolFeedback(feedback),

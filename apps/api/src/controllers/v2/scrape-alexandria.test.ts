@@ -639,6 +639,14 @@ it("remembers each provider call under its request id for feedback attribution",
   ]);
 });
 
+it("does not remember calls the Exchange did not execute", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, creditsCost: 0, data: {} }], false),
+  );
+  await request(app).post("/v2/scrape").send({ alexandria: call });
+  expect(mocks.markCalls).not.toHaveBeenCalled();
+});
+
 it.each([
   [{ alexandria: call, zeroDataRetention: true }, {}],
   [{ alexandria: call }, { forceZDR: true }],

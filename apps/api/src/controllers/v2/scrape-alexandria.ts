@@ -198,7 +198,7 @@ export async function providerScrapeController(
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
   markAlexandriaActivity(req.auth.team_id);
-  if (!zeroDataRetention)
+  if (result.executed && !zeroDataRetention)
     markAlexandriaCalls(
       req.auth.team_id,
       body.alexandria.map(({ provider, capability }) => ({

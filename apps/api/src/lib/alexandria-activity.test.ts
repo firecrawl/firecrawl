@@ -123,6 +123,20 @@ it("keeps the last 20 provider calls for the feedback window's lifetime", async 
   expect(mocks.pipeline.exec).toHaveBeenCalledOnce();
 });
 
+it("logs a command error the transaction resolves with", async () => {
+  const error = new Error("WRONGTYPE");
+  mocks.pipeline.exec.mockResolvedValue([
+    [null, 1],
+    [error, null],
+    [null, 1],
+  ]);
+  await expect(recordAlexandriaCalls(teamId, calls)).resolves.toBeUndefined();
+  expect(mocks.warn).toHaveBeenCalledWith("Failed to record Alexandria calls", {
+    error,
+    teamId,
+  });
+});
+
 it("skips the write when there are no calls", async () => {
   await recordAlexandriaCalls(teamId, []);
   expect(mocks.multi).not.toHaveBeenCalled();

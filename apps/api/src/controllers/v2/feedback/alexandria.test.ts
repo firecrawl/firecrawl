@@ -817,7 +817,7 @@ describe("call attribution", () => {
     ).toBe(true);
   });
 
-  it("names the client's request id even when it is no longer remembered", async () => {
+  it("matches a remembered request id past the window, else records the id alone", async () => {
     expect((await submit({ ...minimal, requestId: "req-1" })).status).toBe(200);
     expect(callRows()).toEqual([callRow(0, "req-1", "census", "client")]);
     mocks.insert.mockClear();
