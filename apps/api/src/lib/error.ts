@@ -1,4 +1,5 @@
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
+import { upgradeUrlForTeam } from "./team-billing-url";
 
 export type ErrorCodes =
   | "THIRD_PARTY_DATA_TERMS_REQUIRED"
@@ -234,10 +235,12 @@ export class ScrapeJobTimeoutError extends TransportableError {
   }
 }
 
+export function concurrencyQueueTimeoutMessage(teamId?: string | null): string {
+  return `The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at ${upgradeUrlForTeam(teamId)}.`;
+}
+
 export class ConcurrencyQueueTimeoutError extends TransportableError {
-  constructor(
-    message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
-  ) {
+  constructor(message: string = concurrencyQueueTimeoutMessage()) {
     super("CONCURRENCY_QUEUE_TIMEOUT", message);
   }
 

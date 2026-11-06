@@ -6,6 +6,7 @@ import {
 } from "../services/rate-limiter";
 import { RateLimiterMode } from "../types";
 import { isKeylessTeamId } from "./keyless";
+import { upgradeUrlForTeam } from "./team-billing-url";
 import { logger } from "./logger";
 
 // Daily call budgets for the free Firecrawl indexes, per team and per UTC day,
@@ -34,8 +35,6 @@ const DISPLAY_NAMES: Record<IndexName, string> = {
   gov: "Government Index",
   research: "Research Index",
 };
-
-const UPGRADE_URL = "https://firecrawl.dev/pricing";
 
 const RATE_LIMITER_MODES: Record<IndexName, RateLimiterMode> = {
   gov: RateLimiterMode.GovSearch,
@@ -275,14 +274,15 @@ export function indexDailyLimitRefusal(
     reservation.requested > 1
       ? ` and this request needs ${reservation.requested.toLocaleString("en-US")}`
       : "";
+  const upgradeUrl = upgradeUrlForTeam(teamId);
   const error = isKeylessTeamId(teamId)
-    ? `Daily ${name} limit reached: requests without an API key are limited to ${limit} a day${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Add an API key, and upgrade to Scale or Enterprise for unlimited calls: ${UPGRADE_URL}`
-    : `Daily ${name} limit reached: your team has used ${reservation.used.toLocaleString("en-US")} of its ${limit} calls today${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Upgrade to Scale or Enterprise for unlimited ${name} calls: ${UPGRADE_URL}`;
+    ? `Daily ${name} limit reached: requests without an API key are limited to ${limit} a day${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Add an API key, and upgrade to Scale or Enterprise for unlimited calls: ${upgradeUrl}`
+    : `Daily ${name} limit reached: your team has used ${reservation.used.toLocaleString("en-US")} of its ${limit} calls today${needs}. The limit resets at 00:00 UTC, in ${resetsIn}. Upgrade to Scale or Enterprise for unlimited ${name} calls: ${upgradeUrl}`;
   return {
     error,
     limit: reservation.limit,
     used: reservation.used,
     resetsAt: reservation.resetsAt.toISOString(),
-    upgradeUrl: UPGRADE_URL,
+    upgradeUrl,
   };
 }

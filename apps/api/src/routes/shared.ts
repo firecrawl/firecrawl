@@ -47,6 +47,7 @@ import {
 } from "../lib/agent-interop";
 import { inferIntegration } from "../lib/infer-integration";
 import { resolveIntegration } from "../utils/integration";
+import { upgradeUrlForTeam } from "../lib/team-billing-url";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -122,7 +123,7 @@ export function checkCreditsMiddleware(
               credits_used: unverifiedCreditsUsed,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
-              upgrade_url: "https://firecrawl.dev/pricing",
+              upgrade_url: upgradeUrlForTeam(req.auth.team_id),
             });
           }
 
@@ -312,8 +313,7 @@ export function checkCreditsMiddleware(
         ) {
           return res.status(402).json({
             success: false,
-            error:
-              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://www.firecrawl.dev/extract#pricing.",
+            error: `Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at ${upgradeUrlForTeam(req.auth.team_id)}.`,
           });
         }
         if (
@@ -331,7 +331,7 @@ export function checkCreditsMiddleware(
               code: "mcp_credits_exhausted",
               requested_credits: requestedCredits,
               ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`,
+              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at ${upgradeUrlForTeam(req.auth.team_id)}.`,
             });
           }
 
@@ -365,7 +365,7 @@ export function checkCreditsMiddleware(
             requested_credits: requestedCredits,
             remaining_credits: autumnResult.remaining,
             ...(resetsAt ? { resets_at: resetsAt } : {}),
-            error: `Insufficient credits to perform this request: it can use up to ${requestedCredits} credits and your team has ${autumnResult.remaining} left${resetsAt ? `, with plan credits resetting at ${resetsAt}` : ""}. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing or try changing the request limit to a lower value.`,
+            error: `Insufficient credits to perform this request: it can use up to ${requestedCredits} credits and your team has ${autumnResult.remaining} left${resetsAt ? `, with plan credits resetting at ${resetsAt}` : ""}. For more credits, you can upgrade your plan at ${upgradeUrlForTeam(req.auth.team_id)} or try changing the request limit to a lower value.`,
           });
         }
       }

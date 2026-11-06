@@ -19,7 +19,7 @@ type AsyncCall = () => Promise<string>;
 function rateLimitError(seconds: number): Error & { status: number } {
   const err = new Error(
     `Rate limit exceeded. Consumed (req/min): 3, Remaining (req/min): 0. ` +
-      `Upgrade your plan at https://firecrawl.dev/pricing for increased rate ` +
+      `Upgrade your plan at https://www.firecrawl.dev/app/t/11111111-1111-4111-8111-111111111111/settings?tab=billing for increased rate ` +
       `limits or please retry after ${seconds}s, resets at Tue Sep 08 2026`,
   ) as Error & { status: number };
   err.status = 429;

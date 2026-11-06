@@ -5,6 +5,7 @@ vi.mock("../../config", () => ({
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("../../controllers/auth", () => ({ getACUCTeam: mocks.team }));
 import { authorizeProviders } from "./access";
+import { teamBillingUrl } from "../../lib/team-billing-url";
 
 const calls = [
   { provider: "fred", capability: "series/observations", options: {} },
@@ -431,7 +432,8 @@ describe("paid-plan-only capabilities", () => {
       requirements(["news/wiims", "news/search"]),
     );
     mocks.team.mockResolvedValue({ is_paid_plan: false });
-    const denied = await authorizeProviders("team", wiim, enabled, "org");
+    const teamId = "44444444-4444-4444-8444-444444444444";
+    const denied = await authorizeProviders(teamId, wiim, enabled, "org");
     expect(denied?.status).toBe(403);
     expect(denied?.body).toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
@@ -439,7 +441,12 @@ describe("paid-plan-only capabilities", () => {
     expect(String((denied?.body as { error: string }).error)).toContain(
       "benzinga/news/wiims",
     );
-    expect(mocks.team).toHaveBeenCalledWith("team");
+    expect(String((denied?.body as { error: string }).error)).toContain(
+      teamBillingUrl(teamId),
+    );
+    expect(mocks.team).toHaveBeenCalledWith(
+      "44444444-4444-4444-8444-444444444444",
+    );
     // One requirements read, and nothing else: no quote, no execution.
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });

@@ -50,6 +50,7 @@ vi.mock("../agent-thread", () => ({
 }));
 
 import { agentConsumeFreeRequestIfLeft } from "../../../db/rpc";
+import { teamBillingUrl } from "../../../lib/team-billing-url";
 import { autumnService } from "../../../services/autumn/autumn.service";
 
 const consumeFreeRequest = vi.mocked(agentConsumeFreeRequestIfLeft);
@@ -59,7 +60,10 @@ const hasAutoTopUp = vi.mocked(autumnService.hasAutoTopUp);
 async function startAgent(body: Record<string, unknown>) {
   const req = {
     body: { prompt: "Find government contracts", ...body },
-    auth: { team_id: "team-test", org_id: "org-test" },
+    auth: {
+      team_id: "22222222-2222-4222-8222-222222222222",
+      org_id: "org-test",
+    },
     acuc: {
       flags: {},
       api_key: "test-key",
@@ -109,6 +113,9 @@ describe("agent credit gate", () => {
     expect(payload.success).toBe(false);
     expect(payload.error).toContain("balance is 0 credits");
     expect(payload.error).toContain("Add credits");
+    expect(payload.error).toContain(
+      teamBillingUrl("22222222-2222-4222-8222-222222222222"),
+    );
     expect(sent).toBeUndefined();
   });
 

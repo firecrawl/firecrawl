@@ -48,6 +48,7 @@ vi.mock("../../services/idempotency/validate", () => ({
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { checkCreditsMiddleware } from "../../routes/shared";
+import { teamBillingUrl } from "../../lib/team-billing-url";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { getTeamBalance } from "../../services/autumn/usage";
 import { getApiKeySpendLimit } from "../../lib/api-key-spend-limit";
@@ -61,6 +62,9 @@ const getTeamBalanceMock = getTeamBalance as MockedFunction<
 const getApiKeySpendLimitMock = getApiKeySpendLimit as MockedFunction<
   typeof getApiKeySpendLimit
 >;
+
+const TEAM_ID = "11111111-1111-4111-8111-111111111111";
+const TEAM_BILLING_URL = teamBillingUrl(TEAM_ID);
 
 function buildReq(overrides: any = {}): any {
   return {
@@ -141,7 +145,9 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
       gatewayProvisioned: true,
     });
 
-    const { res } = await runMiddleware(buildReq());
+    const { res } = await runMiddleware(
+      buildReq({ auth: { team_id: TEAM_ID, org_id: "org_test" } }),
+    );
 
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.json).toHaveBeenCalledWith(
@@ -151,6 +157,7 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
         error: expect.stringContaining("contact that platform"),
       }),
     );
+    expect(res.json.mock.calls[0][0].error).not.toContain("/app/t/");
   });
 
   it("keeps the generic 402 for an account that is not a Gateway account", async () => {
@@ -378,7 +385,9 @@ describe("checkCreditsMiddleware – unverified agent-key 50-credit cap", () => 
   it("blocks with 402 when Autumn usage has reached the 50-credit cap", async () => {
     getTeamBalanceMock.mockResolvedValue({ usage: 50 } as any);
 
-    const req = buildUnverifiedReq();
+    const req = buildUnverifiedReq({
+      auth: { team_id: TEAM_ID, org_id: "org_test" },
+    });
     const { res } = await runMiddleware(req);
 
     expect(res.status).toHaveBeenCalledWith(402);
@@ -386,6 +395,7 @@ describe("checkCreditsMiddleware – unverified agent-key 50-credit cap", () => 
       expect.objectContaining({
         error: "unverified_credit_limit_reached",
         credits_used: 50,
+        upgrade_url: TEAM_BILLING_URL,
       }),
     );
     // The main Autumn credit check must not run once the cap is hit.
@@ -653,6 +663,7 @@ describe("checkCreditsMiddleware – 402 names the limit", () => {
     const req = buildReq({
       path: "/v2/scrape",
       body: {},
+      auth: { team_id: TEAM_ID, org_id: "org_test" },
       acuc: { api_key_id: 42 },
     });
     const { res } = await runMiddleware(req);
@@ -664,6 +675,7 @@ describe("checkCreditsMiddleware – 402 names the limit", () => {
       remaining_credits: 0,
       resets_at: "2026-12-01T00:00:00.000Z",
     });
+    expect(body(res).error).toContain(TEAM_BILLING_URL);
   });
 
   it("falls back to the plan message when a covered refusal has no key limit", async () => {
@@ -690,7 +702,7 @@ describe("checkCreditsMiddleware – 402 names the limit", () => {
     const req = buildReq({
       path: "/v2/scrape",
       body: {},
-      auth: { team_id: "team_test", org_id: "org_test", hostedMcp: true },
+      auth: { team_id: TEAM_ID, org_id: "org_test", hostedMcp: true },
       acuc: { api_key_id: 7 },
     });
     const { res } = await runMiddleware(
@@ -703,5 +715,22 @@ describe("checkCreditsMiddleware – 402 names the limit", () => {
       code: "mcp_credits_exhausted",
       resets_at: "2026-11-02T12:00:00.000Z",
     });
+    expect(body(res).error).toContain(TEAM_BILLING_URL);
+  });
+
+  it("points an extract token refusal at the team's billing page", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+
+    const req = buildReq({
+      path: "/v1/extract",
+      body: {},
+      auth: { team_id: TEAM_ID, org_id: "org_test" },
+      acuc: { is_extract: true },
+    });
+    const { res } = await runMiddleware(req);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(body(res).error).toContain(TEAM_BILLING_URL);
+    expect(body(res).error).toContain("Insufficient tokens");
   });
 });
