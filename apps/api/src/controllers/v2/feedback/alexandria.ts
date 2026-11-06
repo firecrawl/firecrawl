@@ -124,7 +124,7 @@ export async function recordAlexandriaFeedback(
       return failure(
         409,
         "FEEDBACK_WINDOW_EXPIRED",
-        `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution.`,
+        `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
       );
     }
     const windowStart = now - config.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
