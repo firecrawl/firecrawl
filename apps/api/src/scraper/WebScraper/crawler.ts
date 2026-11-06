@@ -296,11 +296,11 @@ export class WebCrawler {
 
       if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
         for (const link of res.links) {
-          this.logger.debug(`${link} OK`);
+          this.logger.debug("OK", { link });
         }
 
         for (const [link, reason] of fancyDenialReasons) {
-          this.logger.debug(`${link} ${reason}`);
+          this.logger.debug(reason, { link });
         }
       }
 
@@ -347,7 +347,7 @@ export class WebCrawler {
         ];
         if (nonWebProtocols.some(protocol => urlStr.startsWith(protocol))) {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} NON-WEB PROTOCOL FAIL`);
+            this.logger.debug("NON-WEB PROTOCOL FAIL", { link });
           }
           denialReasons.set(link, DenialReason.NON_WEB_PROTOCOL);
           return false;
@@ -358,7 +358,7 @@ export class WebCrawler {
         // Check if the link exceeds the maximum depth allowed
         if (depth > maxDepth) {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} DEPTH FAIL`);
+            this.logger.debug("DEPTH FAIL", { link });
           }
           denialReasons.set(
             link,
@@ -376,7 +376,7 @@ export class WebCrawler {
           );
           if (matchingPattern) {
             if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(`${link} EXCLUDE FAIL`);
+              this.logger.debug("EXCLUDE FAIL", { link });
             }
             denialReasons.set(
               link,
@@ -394,7 +394,7 @@ export class WebCrawler {
             )
           ) {
             if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(`${link} INCLUDE FAIL`);
+              this.logger.debug("INCLUDE FAIL", { link });
             }
             denialReasons.set(
               link,
@@ -411,7 +411,7 @@ export class WebCrawler {
           normalizedLink = new URL(link);
         } catch (_) {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} URL PARSE FAIL`);
+            this.logger.debug("URL PARSE FAIL", { link });
           }
           return false;
         }
@@ -421,11 +421,60 @@ export class WebCrawler {
         );
         const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        // Ensure host scoping matches the native filter: deny external links
+        // and (unless allowed) other subdomains, mirroring the flags passed to
+        // the Rust filterLinks. See https://github.com/firecrawl/firecrawl/issues/5139
+        const initialBaseDomain = extractBaseDomain(this.initialUrl);
+        const linkBaseDomain = extractBaseDomain(link);
+
+        if (!this.allowExternalContentLinks) {
+          // Require matching base domains. When both are null (IPs or
+          // unregistrable hosts), only allow if hostnames are exactly equal.
+          if (initialBaseDomain !== null || linkBaseDomain !== null) {
+            if (initialBaseDomain !== linkBaseDomain) {
+              if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+                this.logger.debug("HOSTNAME FAIL", { link });
+              }
+              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+              return false;
+            }
+          } else if (initialHostname !== linkHostname) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+              this.logger.debug("HOSTNAME FAIL", { link });
+            }
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
+          }
+          if (!this.allowSubdomains && linkHostname !== initialHostname) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+              this.logger.debug("SUBDOMAIN FAIL", { link });
+            }
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
+          }
+        } else if (linkHostname !== initialHostname) {
+          // Even when external content links are allowed, reject external root
+          // URLs (homepages) unless the link is under the same registrable
+          // domain as the initial URL.
+          const sameBaseDomain =
+            initialBaseDomain !== null &&
+            initialBaseDomain === linkBaseDomain;
+          if (!sameBaseDomain) {
+            try {
+              const linkUrl = new URL(link);
+              const pathname = linkUrl.pathname.replace(/\/+$/, "") || "/";
+              if (pathname === "/") {
+                if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+                  this.logger.debug("EXTERNAL ROOT FAIL", { link });
+                }
+                denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+                return false;
+              }
+            } catch {
+              // ignore parse errors, handled elsewhere
+            }
+          }
+        }
 
         if (!this.allowBackwardCrawling) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
@@ -449,7 +498,7 @@ export class WebCrawler {
             link,
           });
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} ROBOTS FAIL`);
+            this.logger.debug("ROBOTS FAIL", { link });
           }
           denialReasons.set(link, DenialReason.ROBOTS_TXT);
           return false;
@@ -457,9 +506,9 @@ export class WebCrawler {
 
         if (this.isFile(link)) {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} FILE FAIL`);
+            this.logger.debug("FILE FAIL", { link });
           }
-          const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
+          const extension = link.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
           denialReasons.set(
             link,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
@@ -468,7 +517,7 @@ export class WebCrawler {
         }
 
         if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-          this.logger.debug(`${link} OK`);
+          this.logger.debug("OK", { link });
         }
         return true;
       })
@@ -901,7 +950,7 @@ export class WebCrawler {
     ];
 
     try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
+      const urlWithoutQuery = url.split("?")[0].split("#")[0].toLowerCase();
       return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
