@@ -33,3 +33,7 @@ spec:
               secretKeyRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
                 key: REDIS_PASSWORD
+        {{- if and .Values.resources.enabled .Values.redis.resources }}
+        resources:
+          {{- toYaml .Values.redis.resources | nindent 10 }}
+        {{- end }}
