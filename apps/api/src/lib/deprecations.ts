@@ -147,6 +147,13 @@ const DEPRECATIONS = {
     docs: "https://docs.firecrawl.dev/migrate-to-v2",
     deprecatedAt: "@1793923200",
   },
+  v1_crawl_ongoing: {
+    message:
+      "/v1/crawl/ongoing is deprecated. Use /v2/crawl/active instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/active",
+    docs: "https://docs.firecrawl.dev/migrate-to-v2",
+    deprecatedAt: "@1793923200",
+  },
   v1_batch_scrape: {
     message:
       "/v1/batch/scrape is deprecated. Use /v2/batch/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",

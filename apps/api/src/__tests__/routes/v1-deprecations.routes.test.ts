@@ -13,6 +13,7 @@ const V1 = {
   v1_crawl_cancel: "/v2/crawl/:jobId",
   v1_crawl_errors: "/v2/crawl/:jobId/errors",
   v1_crawl_active: "/v2/crawl/active",
+  v1_crawl_ongoing: "/v2/crawl/active",
   v1_batch_scrape: "/v2/batch/scrape",
   v1_batch_scrape_status: "/v2/batch/scrape/:jobId",
   v1_batch_scrape_cancel: "/v2/batch/scrape/:jobId",
@@ -48,7 +49,7 @@ describe("v1 route deprecations", () => {
         `<${GUIDE}>; rel="deprecation", <${V1[key]}>; rel="successor-version"`,
       );
       expect(res.headers["warning"]).toMatch(
-        /^299 - "\/v1\/.* is deprecated\./,
+        /^299 - "(?:DELETE )?\/v1\/.* is deprecated\./,
       );
       expect(res.body.success).toBe(true);
       expect(res.body.data).toEqual({ markdown: "# hi" });

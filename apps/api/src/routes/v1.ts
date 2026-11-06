@@ -106,7 +106,7 @@ v1Router.post(
 v1Router.get(
   "/crawl/ongoing",
   authMiddleware(RateLimiterMode.CrawlStatus),
-  deprecationMiddleware("v1_crawl_active"),
+  deprecationMiddleware("v1_crawl_ongoing"),
   wrap(ongoingCrawlsController),
 );
 

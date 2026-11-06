@@ -83,6 +83,7 @@ describe("Deprecation warnings on legacy endpoints", () => {
       .set("Content-Type", "application/json")
       .send({ url: "https://firecrawl.dev" });
 
+    expect(res.statusCode).toBe(200);
     expect(res.headers["deprecation"]).toBe("@1793923200");
     expect(res.headers["sunset"]).toBeUndefined();
     expect(res.headers["warning"]).toMatch(/\/v1\/scrape is deprecated/);
