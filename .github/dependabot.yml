@@ -35,3 +35,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directories:
+      - "/apps/api"
+      - "/apps/playwright-service-ts"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "docker"

@@ -577,6 +577,9 @@ export interface ProductSale {
 export interface ProductVariant {
   id?: string;
   sku?: string;
+  gtin?: string;
+  mpn?: string;
+  condition?: "new" | "used" | "refurbished" | "damaged";
   title?: string;
   values?: Record<string, unknown>;
   price?: ProductPrice;
@@ -831,9 +834,32 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export type GovSearchCourtType =
+  | "federal-supreme"
+  | "federal-appellate"
+  | "federal-district"
+  | "federal-bankruptcy"
+  | "federal-special"
+  | "military"
+  | "state-supreme"
+  | "state-appellate"
+  | "state-trial"
+  | "state-special"
+  | "state-attorney-general";
+
 export interface GovSearchOptions {
   /** Total ranked results, 1–100 (default 10). */
   k?: number;
+  /** Keep only pages of one jurisdiction: "us" for federal, or "us-" plus a two-letter state or territory code, such as "us-ca" or "us-dc". */
+  jurisdiction?: string;
+  /** Keep only pages labeled for one court, by CourtListener court id, such as "scotus", "ca9" or "nysd". */
+  court?: string;
+  /** Keep only pages from one type of court. */
+  courtType?: GovSearchCourtType;
+  /** Keep only pages that cite one law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". */
+  cites?: string;
+  /** Keep only pages from one site, such as "irs.gov". */
+  domain?: string;
 }
 
 export interface GovSearchResponse {
@@ -868,6 +894,15 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface SkillCard {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+}
+
 export interface SearchData {
   agent_hints?: string[];
   warning?: string;
@@ -875,6 +910,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   tools?: DiscoveredTool[];
+  skills?: SkillCard[];
 }
 
 /** A complete tool contract returned by semantic or contextual discovery. */
@@ -1000,7 +1036,8 @@ export interface AlexandriaOptions {
  * Narrows ordinary **web search**. A category does not switch `search()` to a
  * different index.
  *
- * - `github` — restrict web results to github.com (a `site:` filter).
+ * - `github` — removed. Use `developer` for GitHub issues, pull requests and
+ *   READMEs.
  * - `research` — restrict web results to a fixed list of ~14 academic
  *   *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
@@ -1035,7 +1072,8 @@ export interface SearchRequest {
     | "news"
     | "images"
     | "alexandria"
-    | { type: "web" | "news" | "images" | "alexandria" }
+    | "skills"
+    | { type: "web" | "news" | "images" | "alexandria" | "skills" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1965,6 +2003,8 @@ export interface AgentTraceResponse {
   creditsUsed?: number;
   /** Present only when the trace was requested with liveView: true. */
   activeBrowserSessions?: AgentTraceActiveBrowserSession[];
+  /** True for a zero data retention run: events are limited to content-free lifecycle events. */
+  zeroDataRetention?: boolean;
   error?: string;
 }
 
@@ -2240,6 +2280,9 @@ export interface PaperResult {
   ids?: IdMap;
   title: string;
   abstract: string;
+  authors?: string[];
+  createdDate?: string;
+  updateDate?: string;
   /** Final ranking score (post-rerank when enabled). Not normalized. */
   score: number;
   /** Present on similarity results. */
@@ -2302,11 +2345,10 @@ export interface SimilarPapersResponse {
 }
 
 /**
- * Component scores; each field is present only when that signal contributed.
+ * Component scores.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. The developer index does not
- * expose a score breakdown. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubScoreBreakdown {
@@ -2318,8 +2360,8 @@ export interface GitHubScoreBreakdown {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchItem {
@@ -2345,8 +2387,8 @@ export interface GitHubSearchItem {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchResponse {
@@ -2370,6 +2412,7 @@ export interface SearchPapersOptions {
   from?: string;
   /** Inclusive upper bound on created/updated date (lexicographic). */
   to?: string;
+  sort?: "relevance" | "date_desc";
 }
 
 /** Options for `research.getPaper`. */
@@ -2397,8 +2440,8 @@ export interface SimilarPapersOptions {
 /**
  * Options for `research.searchGithub`.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface SearchGithubOptions {

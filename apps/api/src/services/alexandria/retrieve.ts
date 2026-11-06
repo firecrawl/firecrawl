@@ -4,8 +4,10 @@ import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { reportExchangeUsageBilling } from "../../lib/exchange";
 import {
-  govIndexDailyLimitMessage,
-  reserveGovIndexCalls,
+  consumeIndexRateLimit,
+  indexDailyLimitRefusal,
+  reserveIndexCalls,
+  type IndexName,
 } from "../../lib/index-daily-limit";
 import { logger } from "../../lib/logger";
 import {
@@ -13,10 +15,16 @@ import {
   featureIdForBillingEndpoint,
 } from "../autumn/autumn.service";
 import type { LockCreditsResult } from "../autumn/types";
+import {
+  AGENT_REQUEST_CREDITS_SHARDS,
+  initializeRequestCredits,
+  recordRequestCredits,
+} from "../../lib/request-credits-store";
 import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
+import { isUsOnly } from "../../lib/us-only";
 import {
   answerSchema,
   refusal,
@@ -29,6 +37,13 @@ const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
 
+// The providers served by the free Firecrawl indexes, each reserving from that
+// index's daily budget. Matched on the exact provider slug.
+const INDEX_PROVIDERS: [IndexName, string][] = [
+  ["gov", "firecrawl-gov-index"],
+  ["research", "firecrawl-research-index"],
+];
+
 // One record per charge id (team + x-request-id), written before the provider
 // call so a crash is found as unresolved instead of re-executed, and rewritten
 // with the response so replays never execute twice.
@@ -40,6 +55,8 @@ type Retrieval = {
   lockId?: string;
   maximumCredits?: number;
   response?: ExchangeResponse;
+  // Set instead of response under zero data retention.
+  responseWithheld?: boolean;
   failure?: string;
 };
 
@@ -90,12 +107,19 @@ export async function retrieveProviders(input: {
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
+  /** The agent run this call belongs to: its credits join that run's call credits. */
+  agentRequestId?: string;
+  /** A verified hosted MCP call: held and charged on MCP credits. */
+  hostedMcp?: boolean;
   scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
   resultAuthorization?: string;
+  zeroDataRetention?: boolean;
   clientIp?: string;
   billingCountry?: string;
+  /** The team's Autumn rate-limit multiplier, which sizes its index budgets. */
+  rateLimitMultiplier: number;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -163,11 +187,16 @@ export async function retrieveProviders(input: {
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
-  const fingerprint = hash(
-    termsOnly
+  const zeroDataRetention = input.zeroDataRetention === true;
+  const usOnly = isUsOnly(input.flags);
+  // Appended only when set so existing fingerprints stay stable.
+  const fingerprint = hash([
+    ...(termsOnly
       ? [input.calls, billable, termsIdentity ?? null]
-      : [input.calls, billable],
-  );
+      : [input.calls, billable]),
+    ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
+    ...(usOnly ? [{ usOnly }] : []),
+  ]);
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
@@ -192,6 +221,18 @@ export async function retrieveProviders(input: {
   if (claimed !== "OK") {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+    if (
+      existing?.phase === "done" &&
+      existing.fingerprint === fingerprint &&
+      existing.responseWithheld
+    )
+      return notExecuted(
+        refusal(
+          409,
+          "This provider request already completed. Its response is not kept under zero data retention.",
+          { code: "response_not_retained", chargeId: id },
+        ),
+      );
     if (existing?.phase === "done" && existing.fingerprint === fingerprint)
       return {
         ...existing.response!,
@@ -221,7 +262,11 @@ export async function retrieveProviders(input: {
     return notExecuted(unresolved(id));
   }
 
-  const featureId = featureIdForBillingEndpoint("scrape");
+  const teamFeatureId = featureIdForBillingEndpoint("scrape");
+  let featureId = input.hostedMcp
+    ? await autumnService.hostedMcpFeatureId(input.teamId, teamFeatureId)
+    : teamFeatureId;
+  let hostedMcp = input.hostedMcp === true;
   const properties = {
     source: "alexandria",
     endpoint: "scrape",
@@ -229,16 +274,44 @@ export async function retrieveProviders(input: {
     apiKeyId: input.apiKeyId,
   };
   const remaining = () => Math.max(1, record.deadline - Date.now());
-  let releaseGovCalls: (() => Promise<void>) | undefined;
+  const indexReleases: (() => Promise<void>)[] = [];
+  const releaseIndexCalls = async () => {
+    for (const release of indexReleases) await release();
+  };
   const refuse = async (response: ExchangeResponse, executed = false) => {
-    if (!executed && releaseGovCalls) await releaseGovCalls();
+    if (!executed) await releaseIndexCalls();
     await redisRateLimitClient.del(key);
     return { ...response, executed, scrapeId: input.scrapeId };
   };
 
   let lockId: string | undefined;
   let maximumCredits: number;
-  let refundable = false;
+  const finalize = async (credits: number) => {
+    if (!lockId) return true;
+    const settled = await autumnService.finalizeCreditsLock({
+      // Omitted without an org: the settle goes through firebill when it is
+      // configured, settled by lock id alone.
+      team:
+        input.orgId !== null
+          ? { teamId: input.teamId, orgId: input.orgId }
+          : undefined,
+      lockId,
+      action: credits > 0 ? "confirm" : "release",
+      ...(credits > 0 ? { overrideValue: credits } : {}),
+      heldValue: maximumCredits,
+      featureId,
+      properties,
+    });
+    if (!settled)
+      logger.error("Provider credits were not settled; hold expires unbilled", {
+        chargeId: id,
+        teamId: input.teamId,
+        lockId,
+        credits,
+      });
+    return settled;
+  };
+
   try {
     const denied = await authorizeProviders(
       input.teamId,
@@ -250,19 +323,45 @@ export async function retrieveProviders(input: {
     );
     if (denied) return refuse(denied);
 
-    const govCalls = input.calls.filter(
-      call => call.provider === "firecrawl-gov-index",
-    ).length;
-    if (govCalls > 0) {
-      const indexBudget = await reserveGovIndexCalls(input.teamId, govCalls);
-      if (!indexBudget.ok)
+    for (const [index, provider] of INDEX_PROVIDERS) {
+      const calls = input.calls.filter(
+        call => call.provider === provider,
+      ).length;
+      const perMinute = await consumeIndexRateLimit(
+        index,
+        input.teamId,
+        input.rateLimitMultiplier,
+        input.flags,
+        calls,
+      );
+      if (!perMinute.ok)
         return refuse(
-          refusal(429, govIndexDailyLimitMessage(indexBudget), {
-            code: "index_daily_limit",
-            retryAfterSeconds: indexBudget.retryAfterSeconds,
+          refusal(429, perMinute.error, {
+            code: "index_rate_limit",
+            retryAfterSeconds: perMinute.retryAfterSeconds,
           }),
         );
-      releaseGovCalls = indexBudget.release;
+      const indexBudget = await reserveIndexCalls(
+        index,
+        input.teamId,
+        input.rateLimitMultiplier,
+        calls,
+      );
+      if (!indexBudget.ok) {
+        const { error, ...limitFields } = indexDailyLimitRefusal(
+          index,
+          input.teamId,
+          indexBudget,
+        );
+        return refuse(
+          refusal(429, error, {
+            code: "index_daily_limit",
+            retryAfterSeconds: indexBudget.retryAfterSeconds,
+            ...limitFields,
+          }),
+        );
+      }
+      indexReleases.push(indexBudget.release);
     }
 
     const quote = await exchangeRequest({
@@ -273,6 +372,8 @@ export async function retrieveProviders(input: {
       clientIp: input.clientIp,
       billingCountry: input.billingCountry,
       connectors: input.flags?.exchangeRetrieve === true,
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -306,19 +407,31 @@ export async function retrieveProviders(input: {
       // service already answered when it could not name one.
       let hold: LockCreditsResult = { status: "skipped" };
       if (input.orgId !== null) {
-        refundable = !(await autumnService.isRoutedThroughFirebill(
-          input.teamId,
-          input.orgId,
-        ));
-        hold = await autumnService.lockCredits({
-          teamId: input.teamId,
-          orgId: input.orgId,
-          value: maximumCredits,
-          lockId: `alexandria_${id}`,
-          expiresAt: record.deadline + HOLD_GRACE_MS,
-          featureId,
-          properties,
-        });
+        const orgId = input.orgId;
+        const lock = (feature: string, lockId: string) =>
+          autumnService.lockCredits({
+            teamId: input.teamId,
+            orgId,
+            value: maximumCredits,
+            lockId,
+            expiresAt: record.deadline + HOLD_GRACE_MS,
+            featureId: feature,
+            properties,
+          });
+        hold = await lock(featureId, `alexandria_${id}`);
+        // MCP credits can't reach team-scoped grants such as coupons, so a
+        // hosted MCP hold they refuse is tried on the team's own credits.
+        if (
+          hold.status === "denied" &&
+          (!hold.reason || hold.reason === "out_of_credits") &&
+          featureId !== teamFeatureId
+        ) {
+          hold = await lock(teamFeatureId, `alexandria_${id}_team`);
+          if (hold.status === "locked") {
+            featureId = teamFeatureId;
+            hostedMcp = false;
+          }
+        }
       }
       if (hold.status === "denied")
         return refuse(
@@ -343,13 +456,18 @@ export async function retrieveProviders(input: {
         );
       lockId = hold.lockId;
     }
+
+    // The record is written before the provider runs, so a failed write means
+    // nothing ran: the catch below hands back the index calls and the hold.
+    record.lockId = lockId;
+    record.maximumCredits = maximumCredits;
+    await write(record);
   } catch (error) {
-    if (releaseGovCalls) await releaseGovCalls();
+    if (lockId) await finalize(0).catch(() => false);
+    await releaseIndexCalls();
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
   }
-  record.lockId = lockId;
-  record.maximumCredits = maximumCredits;
   const fail = async (reason: string): Promise<ProviderRetrieval> => {
     logger.error(
       "Provider request outcome is uncertain; needs reconciliation",
@@ -364,34 +482,8 @@ export async function retrieveProviders(input: {
     await write({ ...record, failure: reason }).catch(() => {});
     return { ...unresolved(id), executed: true, scrapeId: input.scrapeId };
   };
-  const finalize = async (credits: number) => {
-    if (!lockId) return true;
-    const settled = await autumnService.finalizeCreditsLock({
-      // Omitted without an org: the settle goes straight to Autumn, the route
-      // an unnameable org already took.
-      team:
-        input.orgId !== null
-          ? { teamId: input.teamId, orgId: input.orgId }
-          : undefined,
-      lockId,
-      action: credits > 0 ? "confirm" : "release",
-      ...(credits > 0 ? { overrideValue: credits } : {}),
-      heldValue: maximumCredits,
-      featureId,
-      properties,
-    });
-    if (!settled)
-      logger.error("Provider credits were not settled; hold expires unbilled", {
-        chargeId: id,
-        teamId: input.teamId,
-        lockId,
-        credits,
-      });
-    return settled;
-  };
 
   try {
-    await write(record);
     const response = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
@@ -408,6 +500,8 @@ export async function retrieveProviders(input: {
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
@@ -452,9 +546,12 @@ export async function retrieveProviders(input: {
             input.orgId,
             input.apiKeyId,
             credits,
-            refundable,
+            hostedMcp,
           )
         : settled;
+    const charged = settled && billable && credits > 0;
+    if (charged && input.agentRequestId)
+      await recordAgentCredits(input.agentRequestId, id, credits);
     if (!billable || recorded)
       void reportExchangeUsageBilling({
         requestId: id,
@@ -463,10 +560,45 @@ export async function retrieveProviders(input: {
       });
 
     const done: ExchangeResponse = { status: 200, body: answer };
-    await write({ ...record, phase: "done", response: done });
+    await write(
+      zeroDataRetention
+        ? { ...record, phase: "done", responseWithheld: true }
+        : { ...record, phase: "done", response: done },
+    );
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function recordAgentCredits(
+  agentRequestId: string,
+  chargeId: string,
+  credits: number,
+) {
+  const record = () =>
+    recordRequestCredits({
+      requestId: agentRequestId,
+      jobId: `alexandria:${chargeId}`,
+      credits,
+    });
+  try {
+    if (await record()) return;
+    if (
+      !(await initializeRequestCredits(
+        agentRequestId,
+        AGENT_REQUEST_CREDITS_SHARDS,
+      ))
+    )
+      throw new Error("Request credits store is unavailable");
+    await record();
+  } catch (error) {
+    logger.error("Provider credits were not recorded on the agent run", {
+      chargeId,
+      agentRequestId,
+      credits,
+      error,
+    });
   }
 }
 
@@ -476,7 +608,7 @@ async function recordLedgerUsage(
   orgId: string | null,
   apiKeyId: number | null,
   credits: number,
-  refundable: boolean,
+  hostedMcp: boolean,
 ): Promise<boolean> {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -486,12 +618,16 @@ async function recordLedgerUsage(
           team_id: teamId,
           org_id: orgId,
           credits,
-          billing: { endpoint: "scrape", chargeId: id },
+          billing: {
+            endpoint: "scrape",
+            chargeId: id,
+            ...(hostedMcp ? { hostedMcp: true } : {}),
+          },
           is_extract: false,
           timestamp: new Date().toISOString(),
           originating_job_id: id,
           api_key_id: apiKeyId,
-          autumnTrackInRequest: refundable,
+          autumnTrackInRequest: false,
         },
         { jobId: `alexandria-bill-${id}`, priority: 10 },
       );
@@ -502,26 +638,9 @@ async function recordLedgerUsage(
         continue;
       }
       logger.error(
-        refundable
-          ? "Provider usage could not be queued for the ledger; refunding the Autumn charge and leaving the Exchange usage pending for reconciliation"
-          : "Provider usage could not be queued for the ledger; the firebill charge stands and the Exchange usage stays pending for reconciliation",
+        "Provider usage could not be queued for the ledger; the Autumn charge stands and the Exchange usage stays pending for reconciliation",
         { chargeId: id, teamId, credits, error },
       );
-      // refundable is only ever set with an org in hand; named again so the
-      // type says so.
-      if (refundable && orgId !== null)
-        await autumnService.refundCredits({
-          teamId,
-          orgId,
-          value: credits,
-          featureId: featureIdForBillingEndpoint("scrape"),
-          properties: {
-            source: "alexandria",
-            endpoint: "scrape",
-            chargeId: id,
-          },
-          idempotencyKey: `fc:refund:scrape:${id}`,
-        });
       return false;
     }
   }

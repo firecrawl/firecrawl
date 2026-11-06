@@ -131,6 +131,7 @@ vi.mock("../../lib/hangar", async importOriginal => ({
 vi.mock("../../lib/scrape-interact/browser-agent", () => ({
   selectBrowserAgentTab: vi.fn(async () => {}),
   executePromptViaBrowserAgent: vi.fn(),
+  getBrowserAgentModel: vi.fn(),
   executeCodeViaBrowserSession: vi.fn(async () => ({
     stdout: "",
     result: "",

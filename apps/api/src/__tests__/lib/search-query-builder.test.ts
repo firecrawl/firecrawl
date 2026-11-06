@@ -19,13 +19,6 @@ describe("Search Query Builder", () => {
       expect(result.categoryMap.size).toBe(0);
     });
 
-    it("should add GitHub filter for simple github category", () => {
-      const result = buildSearchQuery("web scraping", ["github"]);
-      expect(result.query).toBe("web scraping (site:github.com)");
-      expect(result.categoryMap.get("github.com")).toBe("github");
-      expect(result.categoryMap.size).toBe(1);
-    });
-
     it("should add default research sites for simple research category", () => {
       const result = buildSearchQuery("neural networks", ["research"]);
       expect(result.query).toContain("neural networks (");
@@ -41,21 +34,15 @@ describe("Search Query Builder", () => {
     });
 
     it("should handle multiple simple categories", () => {
-      const result = buildSearchQuery("firecrawl", ["github", "research"]);
+      const result = buildSearchQuery("firecrawl", ["pdf", "research"]);
       expect(result.query).toContain("firecrawl (");
-      expect(result.query).toContain("site:github.com");
+      expect(result.query).toContain("filetype:pdf");
       expect(result.query).toContain("site:arxiv.org");
       expect(result.query).toContain(" OR ");
 
-      expect(result.categoryMap.get("github.com")).toBe("github");
+      expect(result.categoryMap.get("__pdf__")).toBe("pdf");
       expect(result.categoryMap.get("arxiv.org")).toBe("research");
-      expect(result.categoryMap.size).toBe(15); // 1 GitHub + 14 research
-    });
-
-    it("should handle GitHub category as object", () => {
-      const result = buildSearchQuery("code review", [{ type: "github" }]);
-      expect(result.query).toBe("code review (site:github.com)");
-      expect(result.categoryMap.get("github.com")).toBe("github");
+      expect(result.categoryMap.size).toBe(15); // PDF marker + 14 research
     });
 
     it("should use custom research sites when provided", () => {
@@ -75,28 +62,26 @@ describe("Search Query Builder", () => {
 
     it("should handle mixed string and object categories", () => {
       const result = buildSearchQuery("AI research", [
-        "github",
+        "pdf",
         {
           type: "research",
           sites: ["arxiv.org"],
         },
       ]);
-      expect(result.query).toBe(
-        "AI research (site:github.com OR site:arxiv.org)",
-      );
-      expect(result.categoryMap.get("github.com")).toBe("github");
+      expect(result.query).toBe("AI research (site:arxiv.org) filetype:pdf");
+      expect(result.categoryMap.get("__pdf__")).toBe("pdf");
       expect(result.categoryMap.get("arxiv.org")).toBe("research");
       expect(result.categoryMap.size).toBe(2);
     });
 
     it("should handle special characters in base query", () => {
-      const result = buildSearchQuery("C++ programming", ["github"]);
-      expect(result.query).toBe("C++ programming (site:github.com)");
+      const result = buildSearchQuery("C++ programming", ["pdf"]);
+      expect(result.query).toBe("C++ programming filetype:pdf");
     });
 
     it("should handle quotes in base query", () => {
-      const result = buildSearchQuery('"exact phrase" search', ["github"]);
-      expect(result.query).toBe('"exact phrase" search (site:github.com)');
+      const result = buildSearchQuery('"exact phrase" search', ["pdf"]);
+      expect(result.query).toBe('"exact phrase" search filetype:pdf');
     });
 
     it("should ignore invalid category types", () => {
@@ -152,13 +137,11 @@ describe("Search Query Builder", () => {
     });
 
     it("should combine categories with domain filters", () => {
-      const result = buildSearchQuery("web scraping", ["github"], {
+      const result = buildSearchQuery("web scraping", ["pdf"], {
         includeDomains: ["firecrawl.dev"],
       });
-      expect(result.query).toBe(
-        "web scraping (site:github.com) site:firecrawl.dev",
-      );
-      expect(result.categoryMap.get("github.com")).toBe("github");
+      expect(result.query).toBe("web scraping filetype:pdf site:firecrawl.dev");
+      expect(result.categoryMap.get("__pdf__")).toBe("pdf");
     });
   });
 
@@ -274,14 +257,14 @@ describe("Search Query Builder", () => {
     it("should handle complex real-world query", () => {
       const result = buildSearchQuery(
         'machine learning "neural networks" site:stackoverflow.com',
-        ["github", "research"],
+        ["research"],
       );
 
       // Should append category filters to existing query
       expect(result.query).toContain(
         'machine learning "neural networks" site:stackoverflow.com',
       );
-      expect(result.query).toContain("(site:github.com OR site:arxiv.org");
+      expect(result.query).toContain("(site:arxiv.org OR ");
 
       // Check URLs can be categorized
       const githubUrl = "https://github.com/tensorflow/tensorflow";
@@ -292,8 +275,8 @@ describe("Search Query Builder", () => {
     });
 
     it("should handle empty query with categories", () => {
-      const result = buildSearchQuery("", ["github"]);
-      expect(result.query).toBe(" (site:github.com)");
+      const result = buildSearchQuery("", ["pdf"]);
+      expect(result.query).toBe(" filetype:pdf");
     });
 
     it("should build correct query for multiple custom research sites", () => {

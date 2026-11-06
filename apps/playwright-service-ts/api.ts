@@ -10,9 +10,8 @@ import {
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
-import { lookup } from 'dns/promises';
-import IPAddr from 'ipaddr.js';
-import { Server, RequestError } from 'proxy-chain';
+import { Server } from 'proxy-chain';
+import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
 
 dotenv.config();
 
@@ -43,26 +42,6 @@ class InsecureConnectionError extends Error {
     this.name = 'InsecureConnectionError';
   }
 }
-
-const isInternalHost = async (hostname: string): Promise<boolean> => {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (!host) return true;
-
-  let addresses: string[];
-  if (IPAddr.isValid(host)) {
-    addresses = [host];
-  } else {
-    try {
-      addresses = (await lookup(host, { all: true })).map((a) => a.address);
-    } catch {
-      return true;
-    }
-  }
-  return (
-    addresses.length === 0 ||
-    addresses.some((a) => IPAddr.parse(a).range() !== 'unicast')
-  );
-};
 
 const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
   let parsedUrl: URL;
@@ -100,15 +79,10 @@ const startSSRFProxy = async (): Promise<number> => {
   const server = new Server({
     port: 0,
     host: '127.0.0.1',
-    prepareRequestFunction: async ({ hostname }) => {
-      if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(hostname))) {
-        throw new RequestError(
-          'Blocked: target resolves to a private/internal address',
-          403,
-        );
-      }
-      return { upstreamProxyUrl: buildUpstreamProxyUrl() };
-    },
+    prepareRequestFunction: ssrfPrepareRequest({
+      allowLocal: ALLOW_LOCAL_WEBHOOKS,
+      upstreamProxyUrl: buildUpstreamProxyUrl(),
+    }),
   });
   await server.listen();
   return server.port;

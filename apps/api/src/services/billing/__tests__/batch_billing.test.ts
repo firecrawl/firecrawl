@@ -39,6 +39,7 @@ vi.mock("../../autumn/autumn.service", () => ({
   autumnService: {
     trackCredits,
     refundCredits,
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
   },
   featureIdForBillingEndpoint: (endpoint?: string) =>
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
@@ -398,6 +399,41 @@ describe("processBillingBatch", () => {
     // The op still billed and is not requeued: only the legacy branch defers.
     expect(billTeam7).toHaveBeenCalled();
     expect(queue).toHaveLength(0);
+  });
+});
+
+describe("hosted MCP charges", () => {
+  const hosted = (overrides: Record<string, unknown> = {}) =>
+    makeOp({
+      credits: 5,
+      billing: { endpoint: "scrape", hostedMcp: true },
+      autumnTrackInRequest: true,
+      ...overrides,
+    });
+
+  it("writes a hosted charge as one ordinary ledger row", async () => {
+    queue = [hosted()];
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ credits: 5, subscription_id: null }),
+    );
+  });
+
+  it("refunds a hosted charge and a regular one each to the feature it was charged on", async () => {
+    queue = [hosted(), makeOp({ autumnTrackInRequest: true })];
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(refundCredits).toHaveBeenCalledTimes(2);
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 5, featureId: "MCP_CREDITS" }),
+    );
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 10, featureId: "CREDITS" }),
+    );
   });
 });
 

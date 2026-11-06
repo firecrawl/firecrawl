@@ -19,8 +19,15 @@ const mocks = vi.hoisted(() => {
     refund: vi.fn(),
     billAdd: vi.fn(),
     report: vi.fn(),
+    initCredits: vi.fn(),
+    recordCredits: vi.fn(),
   };
 });
+vi.mock("../../lib/request-credits-store", () => ({
+  AGENT_REQUEST_CREDITS_SHARDS: 8,
+  initializeRequestCredits: mocks.initCredits,
+  recordRequestCredits: mocks.recordCredits,
+}));
 vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("../rate-limiter", () => ({ redisRateLimitClient: mocks.redis }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
@@ -34,9 +41,9 @@ vi.mock("../../lib/exchange", () => ({
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     lockCredits: mocks.lock,
+    hostedMcpFeatureId: async () => "MCP_CREDITS",
     finalizeCreditsLock: mocks.finalize,
     refundCredits: mocks.refund,
-    isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
@@ -62,6 +69,7 @@ const run = (overrides: Record<string, unknown> = {}) =>
     requestId: "request-1",
     scrapeId: "scrape-1",
     timeoutMs: 50000,
+    rateLimitMultiplier: 1,
     ...overrides,
   });
 const executions = () =>
@@ -85,6 +93,8 @@ beforeEach(() => {
   mocks.refund.mockResolvedValue(undefined);
   mocks.billAdd.mockResolvedValue({});
   mocks.report.mockResolvedValue(true);
+  mocks.initCredits.mockResolvedValue(true);
+  mocks.recordCredits.mockResolvedValue(true);
   exchangeAnswers(answer);
 });
 
@@ -118,7 +128,7 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
     expect.objectContaining({
       credits: 3,
       org_id: "org",
-      autumnTrackInRequest: true,
+      autumnTrackInRequest: false,
     }),
     expect.objectContaining({
       jobId: expect.stringMatching(/^alexandria-bill-/),
@@ -138,6 +148,65 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
   expect(executions()).toHaveLength(1);
   expect(mocks.finalize).toHaveBeenCalledTimes(1);
   expect(mocks.billAdd).toHaveBeenCalledTimes(1);
+});
+
+it("holds and settles a hosted MCP call's whole budget on MCP credits", async () => {
+  expect(await run({ hostedMcp: true })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ value: 5, featureId: "MCP_CREDITS" }),
+  );
+  expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      overrideValue: 3,
+      heldValue: 5,
+      featureId: "MCP_CREDITS",
+    }),
+  );
+  expect(mocks.billAdd).toHaveBeenCalledWith(
+    "bill_team",
+    expect.objectContaining({
+      credits: 3,
+      billing: expect.objectContaining({ hostedMcp: true }),
+    }),
+    expect.anything(),
+  );
+});
+
+it("holds a hosted MCP call MCP credits refuse on the team's own credits", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied" })
+    .mockResolvedValueOnce({ status: "locked", lockId: "held" });
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+
+  expect((await run({ hostedMcp: true })).status).toBe(200);
+  expect(mocks.lock.mock.calls.map(([hold]) => hold.featureId)).toEqual([
+    "MCP_CREDITS",
+    "credits",
+  ]);
+  expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ featureId: "credits" }),
+  );
+  expect(mocks.billAdd).toHaveBeenCalledWith(
+    "bill_team",
+    expect.objectContaining({
+      billing: expect.not.objectContaining({ hostedMcp: true }),
+    }),
+    expect.anything(),
+  );
+  expect(mocks.refund).not.toHaveBeenCalled();
+});
+
+it("reports billing unavailable when the team-credit fallback hold can't be placed", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied", reason: "out_of_credits" })
+    .mockResolvedValueOnce({ status: "denied", reason: "gate_unavailable" });
+
+  const refused = await run({ hostedMcp: true });
+  expect(refused).toMatchObject({ status: 503, executed: false });
+  expect(executions()).toHaveLength(0);
 });
 
 it("refuses a different payload under the same x-request-id", async () => {
@@ -260,13 +329,11 @@ it("returns the answer but records nothing when the settle does not land", async
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
-it("refunds the direct-Autumn charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
+it("keeps the charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).toHaveBeenCalledTimes(3);
-  expect(mocks.refund).toHaveBeenCalledWith(
-    expect.objectContaining({ teamId: "team", orgId: "org", value: 3 }),
-  );
+  expect(mocks.refund).not.toHaveBeenCalled();
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
@@ -642,4 +709,110 @@ it("sends no credentials when the caller supplied none", async () => {
     executed: true,
   });
   expect(executions()[0][0].resultAuthorization).toBeUndefined();
+});
+
+it("forwards zero data retention to quote and execution and keeps no response", async () => {
+  expect(await run({ zeroDataRetention: true })).toEqual({
+    status: 200,
+    body: answer,
+    executed: true,
+    scrapeId: "scrape-1",
+  });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded)
+    expect(request.zeroDataRetention).toBe(true);
+  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  expect(stored).toMatchObject({ phase: "done", responseWithheld: true });
+  expect(stored).not.toHaveProperty("response");
+
+  const replay = await run({ zeroDataRetention: true, scrapeId: "scrape-2" });
+  expect(replay).toMatchObject({ status: 409, executed: false });
+  expect(replay.body).toEqual(
+    expect.objectContaining({ code: "response_not_retained" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it("keeps and replays the response without zero data retention", async () => {
+  await run();
+  expect(
+    mocks.request.mock.calls.every(([r]) => r.zeroDataRetention === undefined),
+  ).toBe(true);
+  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  expect(stored.response).toEqual({ status: 200, body: answer });
+  expect(stored).not.toHaveProperty("responseWithheld");
+  expect(await run()).toMatchObject({
+    status: 200,
+    body: answer,
+    executed: false,
+  });
+});
+
+it("refuses the same x-request-id with a different zero data retention setting", async () => {
+  await run();
+  const other = await run({ zeroDataRetention: true });
+  expect(other.status).toBe(409);
+  expect(other.body).toEqual(
+    expect.objectContaining({ code: "duplicate_request" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it("records an agent call's charge on the agent run, once, at Exchange's price", async () => {
+  await run({ agentRequestId: "agent-run", zeroDataRetention: true });
+  expect(mocks.initCredits).not.toHaveBeenCalled();
+  expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
+  expect(mocks.recordCredits).toHaveBeenCalledWith({
+    requestId: "agent-run",
+    jobId: expect.stringMatching(/^alexandria:/),
+    credits: 3,
+  });
+
+  await run({ agentRequestId: "agent-run", zeroDataRetention: true });
+  expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
+});
+
+it("records nothing on the agent run when nothing was charged", async () => {
+  await run({ agentRequestId: "agent-run", bypassBilling: true });
+  mocks.store.clear();
+  mocks.finalize.mockResolvedValueOnce(false);
+  await run({ agentRequestId: "agent-run" });
+  expect(mocks.recordCredits).not.toHaveBeenCalled();
+});
+
+it("records an agent call's charge when the ledger enqueue fails, since the charge stands", async () => {
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+  await run({ agentRequestId: "agent-run" });
+  expect(mocks.recordCredits).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ requestId: "agent-run", credits: 3 }),
+  );
+});
+
+it("still answers when the agent run's credits cannot be recorded", async () => {
+  mocks.recordCredits.mockRejectedValue(new Error("bigtable down"));
+  expect(await run({ agentRequestId: "agent-run" })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.billAdd).toHaveBeenCalledTimes(1);
+});
+
+it("creates the agent run's credit row only when it is missing", async () => {
+  mocks.recordCredits.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  await run({ agentRequestId: "agent-run" });
+  expect(mocks.initCredits).toHaveBeenCalledWith("agent-run", 8);
+  expect(mocks.recordCredits).toHaveBeenCalledTimes(2);
+});
+
+it("does not retry the write when the credit store is unavailable", async () => {
+  mocks.recordCredits.mockResolvedValue(false);
+  mocks.initCredits.mockResolvedValue(false);
+  expect(await run({ agentRequestId: "agent-run" })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
 });

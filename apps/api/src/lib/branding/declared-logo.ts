@@ -22,19 +22,32 @@ type DeclaredRaceCandidate = Pick<
   "src" | "isVisible" | "location" | "indicators"
 >;
 
+function hasLogoMark(c: DeclaredRaceCandidate): boolean {
+  const { altMatch, srcMatch, classMatch } = c.indicators;
+  return altMatch || srcMatch || classMatch;
+}
+
 function hasStrongVisibleHeaderLogo(c: DeclaredRaceCandidate): boolean {
   if (!c.isVisible) return false;
   if (!(c.location === "header" || c.indicators.inHeader)) return false;
-  const { altMatch, srcMatch, classMatch, hrefMatch } = c.indicators;
-  return altMatch || srcMatch || classMatch || hrefMatch;
+  return hasLogoMark(c) || c.indicators.hrefMatch;
 }
 
-/** Inject declared marks only when no strong rendered header logo is already in the race. */
+/**
+ * Inject a declared mark only when the rendered candidates don't already hold
+ * the logo. The site names its own logo in JSON-LD, so that mark competes
+ * unless a strong header logo is in the race; an apple-touch icon is just the
+ * app icon, so anything visible that looks like a logo (alt, src or class
+ * says so) keeps it out, wherever on the page it sits.
+ */
 export function shouldAddDeclaredLogoCandidate(
   existing: DeclaredRaceCandidate[],
-  declaredSrc: string,
+  declared: { src: string; source: "logo-jsonld" | "apple-touch-icon" },
 ): boolean {
-  if (existing.some(c => c.src === declaredSrc && c.isVisible)) return false;
+  if (existing.some(c => c.src === declared.src && c.isVisible)) return false;
+  if (declared.source === "apple-touch-icon") {
+    return !existing.some(c => c.isVisible && hasLogoMark(c));
+  }
   return !existing.some(hasStrongVisibleHeaderLogo);
 }
 

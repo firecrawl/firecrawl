@@ -155,6 +155,27 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
       "/exchange/team-skills/references?q=fred",
       "/v1/team-skills/references?q=fred",
     ],
+    ["get", "/exchange/provider-skills", "/v1/provider-skills"],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief/file",
+      "/v1/provider-skills/acme/research/brief/file",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research",
+      "/v1/provider-skills/acme/research",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
   ] as const)(
     "forwards %s %s for a team with exchangeRetrieve, granting connectors",
     async (method, path, upstreamPath) => {
@@ -220,6 +241,68 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
     },
   );
 
+  it.each([
+    ["get", "/exchange/provider-skills", "/v1/provider-skills"],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief/file",
+      "/v1/provider-skills/acme/research/brief/file",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research",
+      "/v1/provider-skills/acme/research",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+  ] as const)(
+    "forwards %s %s for any team, stamping the team and preserving method and body",
+    async (method, path, upstreamPath) => {
+      keyResolvesAs({});
+      const body = { enabled: false };
+      let req = request(app)
+        [method](path)
+        .set("authorization", `Bearer ${KEY}`);
+      if (method === "patch") req = req.send(body);
+      const response = await req;
+      expect(response.status).toBe(200);
+      expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
+      const { url, init } = upstream();
+      expect(url).toBe(`https://exchange.test${upstreamPath}`);
+      expect(init.method).toBe(method.toUpperCase());
+      expect(init.headers).toMatchObject({
+        "x-exchange-team-id": "team-connectors",
+      });
+      expect(init.headers).not.toHaveProperty("x-exchange-connectors");
+      if (method === "patch") {
+        expect(JSON.parse(String(init.body))).toEqual(body);
+      } else {
+        expect(init.body).toBeUndefined();
+      }
+    },
+  );
+
+  it.each(["post", "put", "delete"] as const)(
+    "does not forward %s /exchange/provider-skills",
+    async method => {
+      keyResolvesAs({ exchangeRetrieve: true });
+      const response = await request(app)
+        [method]("/exchange/provider-skills/acme/research")
+        .set("authorization", `Bearer ${KEY}`)
+        .send({ enabled: true });
+      expect(response.status).toBe(404);
+      expect(mocks.upstreamFetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("forwards the team's billing country only when known, never the caller's own", async () => {
     keyResolvesAs({});
     mocks.billingCountry.mockResolvedValueOnce("DE");
@@ -239,6 +322,34 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
     expect(upstream().init.headers).not.toHaveProperty(
       "x-exchange-billing-country",
     );
+  });
+
+  it("re-encodes path segments before forwarding", async () => {
+    keyResolvesAs({});
+    await request(app)
+      .patch("/exchange/team-skills/item%201")
+      .set("authorization", `Bearer ${KEY}`)
+      .send({ name: "Digest" });
+    expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
+    expect(upstream().url).toBe(
+      "https://exchange.test/v1/team-skills/item%201",
+    );
+  });
+
+  it.each([
+    "/exchange/supply/..%2Fretrieve",
+    "/exchange/supply/%2e%2e%2Fretrieve",
+    "/exchange/supply/x%5C..%5Cretrieve",
+    "/exchange/supply/a//b",
+    "/exchange/supply/%E0%A4%A",
+  ])("refuses %s before reaching Exchange", async path => {
+    keyResolvesAs({ exchangeRetrieve: true });
+    const response = await request(app)
+      .post(path)
+      .set("authorization", `Bearer ${KEY}`)
+      .send({});
+    expect(response.status).toBe(400);
+    expect(mocks.upstreamFetch).not.toHaveBeenCalled();
   });
 
   it("never forwards a caller's own x-exchange-connectors header", async () => {

@@ -73,7 +73,7 @@ jobs:
       PARSE_UPLOAD_REF_TEST_REQUIRED: true
       IDMUX_URL: ${{ secrets.IDMUX_URL }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
@@ -85,7 +85,7 @@ jobs:
             "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
           sudo dpkg -i /tmp/fdb-clients.deb
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: pnpm
@@ -104,7 +104,7 @@ jobs:
 
       - name: Restore native lib
         id: napi_restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             apps/api/native/*.node
@@ -120,7 +120,7 @@ jobs:
 
       - name: Cache native lib
         if: steps.napi_restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             apps/api/native/*.node
@@ -128,7 +128,7 @@ jobs:
             apps/api/native/index.d.ts
           key: ${{ steps.napi_restore.outputs.cache-primary-key }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 1.26
           cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
@@ -147,7 +147,7 @@ jobs:
 
       - name: Restore Go lib
         id: golib_restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
           key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
@@ -160,7 +160,7 @@ jobs:
 
       - name: Cache Go lib
         if: steps.golib_restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
           key: ${{ steps.golib_restore.outputs.cache-primary-key }}
@@ -168,7 +168,7 @@ jobs:
       - name: Restore Playwright cache
         if: matrix.engine == 'playwright'
         id: pw_cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-${{ runner.arch }}-pw-chromium-${{ hashFiles('apps/playwright-service-ts/pnpm-lock.yaml', 'apps/playwright-service-ts/package.json') }}
@@ -178,6 +178,11 @@ jobs:
       - name: Install Playwright node modules
         if: matrix.engine == 'playwright'
         run: pnpm install --frozen-lockfile
+        working-directory: ./apps/playwright-service-ts
+
+      - name: Run Playwright service unit tests
+        if: matrix.engine == 'playwright' && matrix.proxy == 'no-proxy'
+        run: pnpm test
         working-directory: ./apps/playwright-service-ts
 
       - name: Install Playwright system deps
@@ -192,7 +197,7 @@ jobs:
 
       - name: Cache Playwright
         if: matrix.engine == 'playwright' && steps.pw_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ steps.pw_cache.outputs.cache-primary-key }}
@@ -240,7 +245,7 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
-      - name: Run Autumn entity provisioning regression tests
+      - name: Run Autumn billing service regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
         working-directory: apps/api
@@ -259,6 +264,19 @@ jobs:
         run: pnpm exec vitest run src/services/billing/__tests__/batch_billing.test.ts --reporter=default
         working-directory: apps/api
 
+      - name: Run MCP credits billing regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/services/billing/__tests__/credit_billing.test.ts
+          src/services/autumn/__tests__/mcp-credits.test.ts
+          src/controllers/v2/__tests__/agent-credit-gate.test.ts
+          src/controllers/v2/__tests__/browser-mcp-credits.test.ts
+          src/services/alexandria/retrieve.test.ts
+          src/__tests__/routes/hosted-mcp-agent-interop.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run safeFetch SSRF guard regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/scraper/scrapeURL/engines/utils/safeFetch.proxy.test.ts --reporter=default
@@ -271,7 +289,11 @@ jobs:
 
       - name: Run browser options regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
-        run: pnpm exec vitest run src/lib/browser-options.test.ts --reporter=default
+        run: >-
+          pnpm exec vitest run
+          src/lib/browser-options.test.ts
+          src/controllers/v2/__tests__/scrape-browser.test.ts
+          --reporter=default
         working-directory: apps/api
 
       - name: Run search safe filter regression tests
@@ -304,9 +326,70 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run Vercel Marketplace OIDC auth regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/__tests__/vercel-marketplace-oidc.test.ts
+          src/controllers/__tests__/auth-vercel-oidc.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run agent location regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/controllers/v2/__tests__/agent-location.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run agent zero data retention regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/controllers/v2/__tests__/agent-zdr.test.ts
+          src/controllers/v2/__tests__/agent-zdr-passthrough.test.ts
+          src/controllers/v2/__tests__/agent-rollout.test.ts
+          src/controllers/v2/__tests__/agent-list.test.ts
+          src/controllers/v2/__tests__/agent-status.test.ts
+          src/lib/agent-job-expiry.test.ts
+          src/lib/job-operational-stores.test.ts
+          src/services/logging/log_job.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run audio, video and product format zero data retention regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/transformers/__tests__/audio.test.ts
+          src/scraper/scrapeURL/transformers/__tests__/video.test.ts
+          src/scraper/scrapeURL/transformers/__tests__/product.test.ts
+          src/lib/scrape-billing.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run US-only PDF, image OCR and PII redaction regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFUsOnly.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/usOnlyPdfRouting.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFBackgroundRefresh.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/parseFirePdfRouting.test.ts
+          src/lib/fire-privacy-client.test.ts
+          src/scraper/scrapeURL/transformers/redactPII.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run US-only page fetch regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/us-only.test.ts
+          src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
+          src/scraper/scrapeURL/__tests__/usOnly.test.ts
+          src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
+          --reporter=default
         working-directory: apps/api
 
       - name: Run country check route regression tests
@@ -354,6 +437,19 @@ jobs:
         working-directory: apps/api
         env:
           MONITOR_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          DOTENV_CONFIG_PATH: /dev/null
+
+      - name: Run repeated feedback submission regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          pnpm exec vitest run src/controllers/v2/feedback/record.integration.test.ts --reporter=verbose
+        working-directory: apps/api
+        env:
+          FEEDBACK_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
           DOTENV_CONFIG_PATH: /dev/null
 
       - name: Start FoundationDB
@@ -512,178 +608,11 @@ jobs:
           cd logs
           zip -r logs.zip ./*
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
           path: logs/logs.zip
-
-  # temp disabled
-  # prod-test:
-  #   name: Production environment tests
-  #   runs-on: big-runner
-  #   services:
-  #     redis:
-  #       image: redis
-  #       ports:
-  #         - 6379:6379
-  #     rabbitmq:
-  #       image: rabbitmq
-  #       ports:
-  #         - 5672:5672
-  #   env:
-  #     BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
-  #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  #     REDIS_URL: ${{ secrets.REDIS_URL }}
-  #     SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
-  #     SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
-  #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  #     SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
-  #     INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
-  #     INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
-  #     INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
-  #     TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-  #     TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
-  #     TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
-  #     TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
-  #     TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
-  #     TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
-  #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
-  #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
-  #     USE_DB_AUTHENTICATION: true
-  #     ENV: ${{ secrets.ENV }}
-  #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
-  #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
-  #     RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
-  #     GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
-  #     GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
-  #     GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
-  #     GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
-  #     GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
-  #     GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  #     VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
-  #     USE_GO_MARKDOWN_PARSER: true
-  #     SENTRY_ENVIRONMENT: dev
-  #     IDMUX_URL: ${{ secrets.IDMUX_URL }}
-  #     LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
-  #     TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
-  #     NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-  #     NUQ_RABBITMQ_URL: amqp://localhost:5672
-  #     HOST: 0.0.0.0
-  #   steps:
-  #     - uses: actions/checkout@v5
-
-  #     - name: Tailscale
-  #       uses: tailscale/github-action@v4
-  #       with:
-  #         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-  #         oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-  #         tags: tag:ci
-  #         use-cache: 'true'
-
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 11.4.0
-
-  #     - run: pnpm config set store-dir ~/.pnpm-store
-  #     - run: mkdir -p ~/.pnpm-store
-
-  #     - uses: actions/setup-node@v6
-  #       with:
-  #         node-version: 22
-  #         cache: pnpm
-  #         cache-dependency-path: |
-  #           apps/api/pnpm-lock.yaml
-
-  #     - run: pnpm fetch
-  #       working-directory: apps/api
-
-  #     - name: Restore native lib
-  #       id: napi_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         # note: this key is not ideal, need to find a better solution
-  #         key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
-
-  #     - name: Build native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       run: pnpm install
-  #       working-directory: apps/api/native
-
-  #     - name: Cache native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         key: ${{ steps.napi_restore.outputs.cache-primary-key }}
-
-  #     - uses: actions/setup-go@v6
-  #       with:
-  #         go-version: 1.24
-  #         cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
-
-  #     - name: Restore Go lib
-  #       id: golib_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
-
-  #     - name: Build go-html-to-md
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       run: |
-  #         cd apps/api/sharedLibs/go-html-to-md
-  #         go mod tidy
-  #         go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
-
-  #     - name: Cache Go lib
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ steps.golib_restore.outputs.cache-primary-key }}
-
-  #     - name: Install API dependencies
-  #       run: pnpm install --frozen-lockfile --ignore-scripts
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true"
-
-  #     - name: Run Docker Postgres
-  #       run: |
-  #         docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
-  #         docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
-
-  #     - name: Run tests
-  #       run: pnpm harness pnpm test:snips
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
-
-  #     - name: Create logs directory
-  #       if: always()
-  #       run: |
-  #         mkdir -p logs
-  #         cp ./apps/api/firecrawl.log logs/firecrawl.log
-  #         cd logs
-  #         zip -r logs.zip ./*
-  #         echo "${{ secrets.LOG_ENCRYPTION_KEY }}" | gpg --batch --yes --passphrase-fd 0 -c logs.zip
-  #         rm logs.zip
-
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: Encrypted Logs
-  #         path: logs/logs.zip.gpg
-  #         retention-days: 5
 
   nuq-fdb-core:
     name: NuQ FoundationDB core tests
@@ -696,13 +625,13 @@ jobs:
     env:
       FDB_VERSION: 7.3.63
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 11.4.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: pnpm

@@ -1,6 +1,11 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
-import { fetchGovUpstream } from "../lib/research-upstream";
+import {
+  fetchGovUpstream,
+  usOnlySkippedWarning,
+  usOnlyUpstreamRefusal,
+  UsOnlyUpstreamRefusalError,
+} from "../lib/research-upstream";
 import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 export function wantsGovCategory(categories?: CategoryOption[]): boolean {
@@ -14,6 +19,9 @@ export async function searchGovCategory(
     teamId: string;
     timeout: number;
     zeroDataRetention: boolean;
+    usOnly?: boolean;
+    /** Receives the warnings for parts the upstream skipped for a US-only request. */
+    warnings?: string[];
   },
   logger: Logger,
 ): Promise<WebSearchResult[]> {
@@ -24,17 +32,29 @@ export async function searchGovCategory(
       headers: {
         "firecrawl-team-id": options.teamId,
         "firecrawl-zero-data-retention": String(options.zeroDataRetention),
+        ...(options.usOnly ? { "firecrawl-us-only": "true" } : {}),
       },
       timeoutMs: options.timeout,
     });
     if (upstream === null) {
       return [];
     }
+    if (options.usOnly && upstream.status >= 400 && upstream.status < 500) {
+      throw await usOnlyUpstreamRefusal(
+        upstream,
+        "Government search refused the request.",
+      );
+    }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
       logger.warn("Gov category upstream failed", { status: upstream.status });
       return [];
     }
+
+    const skipped = options.usOnly
+      ? usOnlySkippedWarning(upstream.headers)
+      : undefined;
+    if (skipped) options.warnings?.push(skipped);
 
     const body: any = await upstream.json();
     const results: any[] = Array.isArray(body?.data?.web) ? body.data.web : [];
@@ -55,6 +75,7 @@ export async function searchGovCategory(
       }))
       .filter(result => result.url.length > 0);
   } catch (error) {
+    if (error instanceof UsOnlyUpstreamRefusalError) throw error;
     logger.warn("Gov category upstream error", { error });
     return [];
   }

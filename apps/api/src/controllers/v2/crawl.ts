@@ -38,6 +38,7 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
@@ -134,7 +135,11 @@ export async function crawlController(
           // No chargeId: a fresh crawl id is minted per request and the
           // rejected crawl is never persisted or queued, so there is no
           // stable per-charge identity that could dedupe a retry.
-          { endpoint: "crawl" },
+          {
+            endpoint: "crawl",
+            externalRequestId: externalRequestId(req),
+            hostedMcp: req.auth.hostedMcp,
+          },
         ).catch(error => {
           _logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
@@ -254,6 +259,7 @@ export async function crawlController(
             new CostTracking(),
             { teamId: req.auth.team_id, crawlId: id },
             zeroDataRetention,
+            req.acuc?.flags,
           );
         },
       );
@@ -268,6 +274,13 @@ export async function crawlController(
         error: error.message,
         prompt: req.body.prompt,
       });
+      if (error instanceof UsOnlyUnavailableError) {
+        return res.status(403).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+        });
+      }
       return res.status(400).json({
         success: false,
         error:
@@ -343,7 +356,7 @@ export async function crawlController(
       threatProtection: threatProtection.policy ?? undefined,
       // Safe Mode rides the crawl payload so every child scrape resolves it
       // per-URL at the scrapeURL backstop (allowlist applies per child).
-      teamFlags: req.acuc?.flags ?? undefined,
+      teamFlags: req.acuc?.flags ?? null,
       safeModeBypassed: safeMode.bypassed === true,
     },
     team_id: req.auth.team_id,
@@ -402,6 +415,7 @@ export async function crawlController(
         endpoint: "crawl",
         jobId: id,
         externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
       },
       crawl_id: id,
       webhook: req.body.webhook,

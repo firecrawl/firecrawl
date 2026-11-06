@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   collectSearchResultCategories,
   countSearchResultsBySource,
+  type SearchResultType,
   type SearchV2Response,
 } from "../entities";
 
@@ -95,6 +96,41 @@ describe("collectSearchResultCategories", () => {
     });
   });
 
+  it("counts tools only when provider discovery ran", () => {
+    expect(
+      countSearchResultsBySource({ web: [web("https://a.example/")] }),
+    ).toEqual({
+      web: 1,
+      images: 0,
+      news: 0,
+    });
+    expect(
+      countSearchResultsBySource({
+        tools: [
+          { provider: "fred", capability: "series/search", description: "" },
+        ],
+      }),
+    ).toEqual({ web: 0, images: 0, news: 0, tools: 1 });
+    expect(
+      countSearchResultsBySource({
+        skills: [
+          {
+            id: "official/search",
+            name: "Search",
+            description: "Find records",
+            source: "official",
+          },
+        ],
+      }),
+    ).toEqual({ web: 0, images: 0, news: 0, skills: 1 });
+    expect(countSearchResultsBySource({ skills: [] })).toEqual({
+      web: 0,
+      images: 0,
+      news: 0,
+      skills: 0,
+    });
+  });
+
   it("positions line up with the counts feedback bounds against", () => {
     const response: SearchV2Response = {
       web: [web("https://a.example/", "developer"), web("https://b.example/")],
@@ -107,7 +143,7 @@ describe("collectSearchResultCategories", () => {
     for (const [source, byPosition] of Object.entries(categories)) {
       for (const position of Object.keys(byPosition)) {
         expect(Number(position)).toBeLessThanOrEqual(
-          counts[source as keyof typeof counts],
+          counts[source as SearchResultType],
         );
       }
     }

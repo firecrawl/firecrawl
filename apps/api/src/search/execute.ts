@@ -1,5 +1,20 @@
 import type { Logger } from "winston";
-import { discoverTools, isAlexandriaSource } from "./alexandria";
+import {
+  discoverTools,
+  isAlexandriaSource,
+  usOnlyToolsWarning,
+} from "./alexandria";
+import {
+  discoverSkills,
+  isSkillsSource,
+  SKILLS_DISCOVERY_TIMEOUT_MS,
+  type SkillDiscovery,
+} from "./skill-cards";
+import {
+  AUTO_TOOLS_WAIT_MS,
+  inferToolIntent,
+  verifyTools,
+} from "./tool-intent";
 import { search } from "./v2";
 import {
   SearchV2Response,
@@ -25,6 +40,11 @@ import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import { searchGovCategory, wantsGovCategory } from "./gov";
 import { removeExplicitResults } from "./safe-search";
 import {
+  matchesQueryOperators,
+  planOperatorQuery,
+  siteHostnames,
+} from "./operators";
+import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
   searchHighlightsMode,
@@ -36,6 +56,7 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { isUsOnly } from "../lib/us-only";
 
 interface SearchOptions {
   query: string;
@@ -55,6 +76,10 @@ interface SearchOptions {
   highlights?: boolean;
   domainTools?: boolean;
   toolDetail?: "compact" | "summary" | "full";
+  /** Rewrite the query before tool discovery. */
+  inferToolQuery?: boolean;
+  /** Add compact tools to a search that did not ask for them, when the query needs them. */
+  autoTools?: boolean;
   timeout: number;
 }
 
@@ -80,8 +105,14 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  /** Parts of the search a US-only team could not be served. */
+  usOnlyWarning?: string;
   toolsWarning?: string;
+  /** The tools were added automatically, not requested. */
+  toolsAuto?: boolean;
   toolsUnavailable?: boolean;
+  /** Skill-card lookup returned the Exchange envelope, including an empty one. */
+  skillsDiscovered?: boolean;
   response: SearchV2Response;
   totalResultsCount: number;
   resultCountsBySource: SearchResultCountsBySource;
@@ -112,19 +143,104 @@ export async function executeSearch(
   } = context;
 
   const num_results_buffer = Math.floor(limit * 2);
+  const usOnly = isUsOnly(flags);
+  const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
 
   const wantsTools = sources.some(isAlexandriaSource);
+  const wantsSkills = sources.some(isSkillsSource);
+  const toolsAllowed =
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
+  const missedSkills: SkillDiscovery = { skills: [], succeeded: false };
+  const skillsPromise =
+    toolsAllowed && wantsSkills && query.trim()
+      ? discoverSkills(
+          {
+            teamId,
+            query,
+            timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
+            usOnly,
+          },
+          logger,
+        ).catch(error => {
+          logger.warn("Skill discovery failed", { error });
+          return missedSkills;
+        })
+      : null;
+  const toolIntent =
+    toolsAllowed &&
+    (wantsTools ? options.inferToolQuery : options.autoTools) &&
+    query.trim()
+      ? inferToolIntent(query, logger)
+      : null;
+  // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
+  const extraDiscovery = toolIntent
+    ? toolIntent
+        .then(async intent => {
+          if (!wantsTools && !intent.needsTools) return null;
+          const found = await discoverTools(
+            {
+              toolDetail: options.toolDetail ?? "compact",
+              teamId,
+              connectors: flags?.exchangeRetrieve === true,
+              usOnly,
+              limit,
+              queries: wantsTools
+                ? intent.toolQueries
+                : [query, ...intent.toolQueries],
+              urls:
+                options.domainTools === false
+                  ? []
+                  : intent.domains.map(domain => `https://${domain}/`),
+              timeoutMs: Math.min(options.timeout, 3000),
+            },
+            logger,
+          );
+          return {
+            items: await verifyTools(query, found.items, logger),
+            usOnlyExcluded: found.usOnlyExcluded ?? 0,
+          };
+        })
+        .catch(() => null)
+    : null;
+  let resolveToolUrls: (urls: string[]) => void = () => {};
+  const baseDiscovery =
+    toolsAllowed && (wantsTools || options.domainTools)
+      ? discoverTools(
+          {
+            toolDetail: options.toolDetail ?? "compact",
+            teamId,
+            connectors: flags?.exchangeRetrieve === true,
+            usOnly,
+            limit,
+            queries: wantsTools ? [query] : undefined,
+            urls:
+              options.domainTools === false
+                ? []
+                : new Promise<string[]>(resolve => {
+                    resolveToolUrls = resolve;
+                  }),
+            timeoutMs: options.timeout,
+          },
+          logger,
+        )
+      : null;
   const searchTypes = [
     ...new Set(
       sources
-        .filter(source => !isAlexandriaSource(source))
+        .filter(
+          source => !isAlexandriaSource(source) && !isSkillsSource(source),
+        )
         .map(source => source.type as SearchResultType),
     ),
   ];
+  const operatorPlan = planOperatorQuery(query);
+  const { operators } = operatorPlan;
+  const nonEmpty = (list: string[]) => (list.length > 0 ? list : undefined);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    query,
+    operatorPlan.query,
     categories,
     {
       includeDomains: options.includeDomains,
@@ -151,20 +267,24 @@ export async function executeSearch(
             options.enterprise?.some(
               mode => mode === "zdr" || mode === "anon",
             ) === true,
+          ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
         },
         logger,
       )
     : null;
 
   const searchResponse =
-    (wantsTools && !searchTypes.length) || indexResultsPromise !== null
+    ((wantsTools || wantsSkills) && !searchTypes.length) ||
+    indexResultsPromise !== null
       ? ({} as SearchV2Response)
       : ((await search({
           query: searchQuery,
           logger,
           requestId: context.requestId,
           advanced: false,
-          num_results: num_results_buffer,
+          num_results: operatorPlan.relaxed
+            ? Math.max(num_results_buffer, Math.min(limit * 5, 100))
+            : num_results_buffer,
           tbs: options.tbs,
           filter: options.filter,
           lang: options.lang,
@@ -173,10 +293,34 @@ export async function executeSearch(
           safe: options.safe,
           type: searchTypes,
           enterprise: options.enterprise,
-          includeDomains: options.includeDomains,
-          excludeDomains: options.excludeDomains,
+          includeDomains: options.includeDomains?.length
+            ? options.includeDomains
+            : nonEmpty(siteHostnames(operators.sites)),
+          excludeDomains: nonEmpty([
+            ...(options.excludeDomains ?? []),
+            ...operators.excludedSites.filter(site => !site.includes("/")),
+          ]),
+          usOnly,
         })) as SearchV2Response);
-  let indexResults = indexResultsPromise ? await indexResultsPromise : [];
+  const keepOperatorMatches = <
+    T extends { url?: string; title?: string; position?: number },
+  >(
+    results: T[] | undefined,
+  ): T[] | undefined => {
+    const kept = results?.filter(result =>
+      matchesQueryOperators(result, operatorPlan),
+    );
+    return kept?.length === results?.length
+      ? results
+      : kept?.map((result, index) => ({ ...result, position: index + 1 }));
+  };
+  searchResponse.web = keepOperatorMatches(searchResponse.web);
+  searchResponse.news = keepOperatorMatches(searchResponse.news);
+  searchResponse.images = keepOperatorMatches(searchResponse.images);
+  let indexResults =
+    keepOperatorMatches(
+      indexResultsPromise ? await indexResultsPromise : undefined,
+    ) ?? [];
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -282,34 +426,90 @@ export async function executeSearch(
   totalResultsCount += indexResultsCount;
   let toolsWarning: string | undefined;
   let toolsUnavailable = false;
+  let toolsAuto = false;
 
-  if (
-    !zeroDataRetention &&
-    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
-    (wantsTools || options.domainTools)
-  ) {
-    const discovery = await discoverTools(
-      {
-        toolDetail: options.toolDetail ?? "compact",
-        teamId,
-        connectors: flags?.exchangeRetrieve === true,
-        limit,
-        query: wantsTools ? query : undefined,
-        urls:
-          options.domainTools === false
-            ? []
-            : [
-                ...(searchResponse.web ?? []),
-                ...(searchResponse.news ?? []),
-                ...indexResults,
-              ].flatMap(item => (item.url ? [item.url] : [])),
-        timeoutMs: options.timeout,
-      },
-      logger,
+  const waitForExtra = async (alongside?: Promise<unknown>) => {
+    if (!extraDiscovery) return null;
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<void>(resolve => {
+      timer = setTimeout(resolve, AUTO_TOOLS_WAIT_MS);
+      timer.unref();
+    });
+    try {
+      return await Promise.race([
+        extraDiscovery,
+        Promise.all([deadline, alongside]).then(() => null),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  if (baseDiscovery) {
+    resolveToolUrls(
+      [
+        ...(searchResponse.web ?? []),
+        ...(searchResponse.news ?? []),
+        ...indexResults,
+      ].flatMap(item => (item.url ? [item.url] : [])),
     );
-    searchResponse.tools = discovery.items;
-    toolsWarning = discovery.warning;
-    toolsUnavailable = discovery.unavailable === true;
+    const [discovery, extra] = await Promise.all([
+      baseDiscovery,
+      waitForExtra(baseDiscovery),
+    ]);
+    const merged = new Map(
+      discovery.items.map(tool => [
+        `${tool.provider}/${tool.capability}`,
+        tool,
+      ]),
+    );
+    for (const tool of extra?.items ?? []) {
+      const key = `${tool.provider}/${tool.capability}`;
+      const previous = merged.get(key);
+      merged.set(
+        key,
+        previous && "matchedBy" in previous && "matchedBy" in tool
+          ? {
+              ...previous,
+              matchedBy: [
+                ...new Set([
+                  ...(previous.matchedBy ?? []),
+                  ...(tool.matchedBy ?? []),
+                ]),
+              ],
+              matchedUrls: [
+                ...new Set([
+                  ...(previous.matchedUrls ?? []),
+                  ...(tool.matchedUrls ?? []),
+                ]),
+              ],
+            }
+          : (previous ?? tool),
+      );
+    }
+    searchResponse.tools = [...merged.values()];
+    // Both legs can hide the same tools, so the larger count is reported.
+    const usOnlyExcluded = Math.max(
+      discovery.usOnlyExcluded ?? 0,
+      extra?.usOnlyExcluded ?? 0,
+    );
+    toolsWarning =
+      [
+        discovery.warning,
+        usOnlyExcluded > 0 ? usOnlyToolsWarning(usOnlyExcluded) : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined;
+    toolsUnavailable = discovery.unavailable === true && !extra?.items.length;
+  } else if (extraDiscovery) {
+    const extra = await waitForExtra();
+    if (extra?.items.length) {
+      searchResponse.tools = extra.items;
+      toolsAuto = true;
+    }
+    if (extra?.usOnlyExcluded) {
+      toolsWarning = usOnlyToolsWarning(extra.usOnlyExcluded);
+    }
   }
 
   const isZDR = options.enterprise?.includes("zdr");
@@ -429,6 +629,13 @@ export async function executeSearch(
     }));
   }
 
+  let skillsDiscovered = false;
+  if (skillsPromise) {
+    const found = await skillsPromise;
+    searchResponse.skills = found.skills;
+    skillsDiscovered = found.succeeded;
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -469,8 +676,13 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    ...(usOnlyWarnings.length > 0
+      ? { usOnlyWarning: usOnlyWarnings.join(" ") }
+      : {}),
     toolsWarning,
     toolsUnavailable,
+    toolsAuto,
+    skillsDiscovered,
     totalResultsCount,
     // Counted from the final response — after scraping and highlights — so it
     // matches exactly what the client can address by position.

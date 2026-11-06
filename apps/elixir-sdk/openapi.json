@@ -6618,6 +6618,68 @@
               "maximum": 100,
               "default": 10
             }
+          },
+          {
+            "name": "jurisdiction",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
+            "schema": {
+              "type": "string",
+              "pattern": "^us(-[a-zA-Z]{2})?$"
+            }
+          },
+          {
+            "name": "court",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "courtType",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "federal-supreme",
+                "federal-appellate",
+                "federal-district",
+                "federal-bankruptcy",
+                "federal-special",
+                "military",
+                "state-supreme",
+                "state-appellate",
+                "state-trial",
+                "state-special",
+                "state-attorney-general"
+              ]
+            }
+          },
+          {
+            "name": "cites",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages from one site, such as `irs.gov`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -6694,6 +6756,43 @@
                     "maximum": 100,
                     "default": 10,
                     "description": "Number of results to return."
+                  },
+                  "jurisdiction": {
+                    "type": "string",
+                    "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
+                    "pattern": "^us(-[a-zA-Z]{2})?$"
+                  },
+                  "court": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."
+                  },
+                  "courtType": {
+                    "type": "string",
+                    "enum": [
+                      "federal-supreme",
+                      "federal-appellate",
+                      "federal-district",
+                      "federal-bankruptcy",
+                      "federal-special",
+                      "military",
+                      "state-supreme",
+                      "state-appellate",
+                      "state-trial",
+                      "state-special",
+                      "state-attorney-general"
+                    ],
+                    "description": "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."
+                  },
+                  "cites": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."
+                  },
+                  "domain": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages from one site, such as `irs.gov`."
                   }
                 }
               },
@@ -12713,18 +12812,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`.",
+            "description": "Stable result id, such as `issue:owner/repo#123`. The prefix is the result kind.",
             "example": "issue:firecrawl/firecrawl#1234"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "doc",
-              "issue",
-              "pull_request",
-              "readme"
-            ],
-            "description": "Result kind."
           },
           "url": {
             "type": "string",
@@ -12742,9 +12831,46 @@
               "properties": {
                 "text": {
                   "type": "string"
+                },
+                "citation_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "URL to cite for this passage."
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "Present and true when `text` omits bytes from the full passage."
+                },
+                "served_span": {
+                  "type": "object",
+                  "description": "Byte offsets of `text` within the full passage when it is one contiguous span. Absent for table context assembled from separate rows.",
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "full_tokens_est": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Approximate token count of the full passage."
                 }
               }
             }
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known.",
+            "example": "MIT"
           }
         }
       },

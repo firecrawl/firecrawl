@@ -33,6 +33,7 @@ import {
   getPDFBlocks,
   getPDFPageMarkdown,
   getPDFPageMarkers,
+  getPDFRefresh,
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
@@ -173,6 +174,10 @@ export type EngineScrapeResult = {
   };
 
   branding?: BrandingProfile;
+  /** First-screen screenshot taken for Jev's branding call; internal, never
+   * returned (see the branding format's __experimental_screenshot and
+   * BRANDING_JEV_SCREENSHOT_PERCENT). */
+  brandingScreenshot?: string;
 
   pdfMetadata?: PdfMetadata;
 
@@ -184,6 +189,7 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  warning?: string;
   audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
@@ -493,9 +499,8 @@ const engineOptions: {
   },
   // The file engines (pdf, document, image) pass skipTlsVerification through
   // to their direct downloads, and a browser handoff already applied it
-  // upstream, so they declare it supported: otherwise every cache-miss file
-  // scrape carries a misleading "may be partial" warning, since v2 defaults
-  // the option to true.
+  // upstream, so they declare it supported: otherwise every file scrape that
+  // sets it carries a misleading "may be partial" warning.
   pdf: {
     features: {
       actions: false,
@@ -631,6 +636,11 @@ export function shouldUseIndex(meta: Meta) {
     !getPDFPageMarkers(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
+    // A PDF refresh asks for a fresh parse; a URL index copy is the parse
+    // being refreshed, so serving it would silently ignore the request.
+    !(
+      config.INDEX_SKIP_ON_PDF_REFRESH && getPDFRefresh(meta.options.parsers)
+    ) &&
     !hasCustomRequestContext(meta.options)
   );
 }
@@ -695,6 +705,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
       blocked,
+      origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
       headers: meta.options.headers,
@@ -778,10 +789,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     if (
       getPDFPageMarkdown(meta.options.parsers) ||
       getPDFBlocks(meta.options.parsers) ||
-      getPDFPageMarkers(meta.options.parsers)
+      getPDFPageMarkers(meta.options.parsers) ||
+      (config.INDEX_SKIP_ON_PDF_REFRESH && getPDFRefresh(meta.options.parsers))
     ) {
       meta.logger.warn(
-        "agentIndexOnly request demands pageMarkdown/blocks/pageMarkers, which the URL index cannot serve",
+        "agentIndexOnly request demands pageMarkdown/blocks/pageMarkers or a PDF refresh, which the URL index cannot serve",
         { parsers: meta.options.parsers },
       );
       throw new AgentIndexOnlyError();
@@ -978,6 +990,11 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
+    // Zero data retention scrapes, forced engines included, never use the
+    // Wikipedia engine: they stay on the engines that fetch the page directly.
+    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
+      continue;
+
     // A profile must never fall back to fetching anonymous content. File parsers
     // may consume bytes already fetched by the authenticated browser.
     if (

@@ -19,7 +19,7 @@ Check example.py for other usage examples.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Union, BinaryIO
+from typing import Any, Dict, Optional, List, Union, BinaryIO, Literal
 import logging
 
 
@@ -391,8 +391,14 @@ class Firecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return self._v2_client.search_papers(query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):
@@ -545,8 +551,14 @@ class AsyncFirecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await self._v2_client.search_papers(query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):

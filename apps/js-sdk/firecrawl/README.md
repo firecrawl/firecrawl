@@ -218,6 +218,10 @@ const results = await app.search('nanopore basecalling accuracy', {
 
 ### Developer search
 
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
 Use `developerSearch` for the dedicated developer index and its complete filter
 and response contract. Generic `search(..., { categories: ['developer'] })`
 returns developer results inside `.web` in the ordinary web-result shape
@@ -264,7 +268,22 @@ const law = await app.govSearch('food labeling requirements', {
 for (const result of law.data.web) {
   console.log(result.position, result.title, result.url);
 }
+
+// State supreme court opinions that cite a federal statute:
+const cases = await app.govSearch('qualified immunity', {
+  courtType: 'state-supreme',
+  cites: '42 U.S.C. § 1983',
+});
 ```
+
+Filters, all optional and combined with AND: `jurisdiction` (`'us'` for
+federal, or `'us-'` plus a two-letter state or territory code, such as
+`'us-ca'`), `court` (a CourtListener court id, such as `'scotus'` or `'ca9'`),
+`courtType`, `cites` (one printed citation or citation id, such as
+`'us:usc:42:1983'`), and `domain` (one site, such as `'irs.gov'`). Filters keep
+only pages the index has labeled, so a filtered search can leave out relevant
+pages, and no results does not mean none exist. Court labels are most complete
+for federal courts and case-law collections.
 
 ### Research / paper search
 
@@ -297,14 +316,6 @@ const related = await app.research.similarPapers('pmid:<id>', {
   k: 20,
 });
 ```
-
-> **`app.research.searchGithub` is deprecated.** The research index GitHub
-> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
-> instead: it searches GitHub issues, pull requests and readmes plus curated
-> documentation sources, returns matched passages, and adds filters for repo,
-> language, license and stars. It does not carry over the `scores` breakdown
-> or the `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 ### Scrape-bound interactive browsing (v2)
 

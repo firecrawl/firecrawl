@@ -24,6 +24,13 @@ vi.mock("../../../lib/keyless", () => ({
   chargeKeylessCredits: mocks.chargeKeylessCredits,
 }));
 
+// These tests cover routing, billing and retention, not the daily index limit.
+// The limiter needs Redis, so here it admits every call.
+vi.mock("../../../lib/index-daily-limit", () => ({
+  reserveIndexCalls: vi.fn(async () => ({ ok: true, release: async () => {} })),
+  indexDailyLimitRefusal: vi.fn(),
+}));
+
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -118,14 +125,6 @@ describe("research upstream timeouts", () => {
       timeoutMs: 10_000,
     },
     {
-      name: "GitHub search",
-      router: () => createResearchRouter(),
-      path: "/github",
-      query: { query: "retry logic" },
-      params: {},
-      timeoutMs: 12_000,
-    },
-    {
       name: "developer search",
       router: () => createDeveloperRouter(),
       path: "/search",
@@ -178,12 +177,12 @@ describe("research upstream timeouts", () => {
   ])("maps a $name timeout to 504", async ({ error }) => {
     mocks.fetchResearchUpstream.mockRejectedValue(error);
 
-    const res = await callRoute(createResearchRouter(), "/github", {
-      query: "retry logic",
+    const res = await callRoute(createDeveloperRouter(), "/search", {
+      query: "http client",
     });
 
     expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
-      expect.objectContaining({ timeoutMs: 12_000 }),
+      expect.objectContaining({ timeoutMs: 15_000 }),
     );
     expect(res.status).toHaveBeenCalledWith(504);
     expect(res.end).toHaveBeenCalled();

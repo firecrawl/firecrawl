@@ -1,30 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Job } from "bullmq";
 import {
+  FIREBILL_DURABLE_RETRY_ATTEMPTS,
   firebillCheck,
   firebillFinalize,
   firebillLock,
   firebillTrack,
-  shouldRouteToFirebill,
+  processFirebillTrackRetry,
 } from "../firebill";
 import { logger } from "../../../lib/logger";
 import {
   firebillCheckTotal,
   firebillFailureCauseTotal,
   firebillRetryTotal,
+  firebillTrackRetryExhaustedValueTotal,
+  firebillTrackRetryTotal,
   firebillTrackTotal,
 } from "../metrics";
+import type { FirebillTrackRetryJobData } from "../../queue-service";
 
 const { configState } = vi.hoisted(() => ({
   configState: {
     FIREBILL_URL: "https://firebill.test",
     FIREBILL_SECRET: "secret",
-    FIREBILL_ORG_IDS: ["allow-listed-org"] as string[] | undefined,
-    FIREBILL_ROLLOUT_PERCENT: 0,
     FIRECRAWL_BUILD_SHA: undefined as string | undefined,
   },
 }));
 
 vi.mock("../../../config", () => ({ config: configState }));
+
+const { retryQueueAdd } = vi.hoisted(() => ({
+  retryQueueAdd: vi.fn(),
+}));
+vi.mock("../../queue-service", () => ({
+  getFirebillTrackRetryQueue: () => ({ add: retryQueueAdd }),
+}));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -65,57 +75,20 @@ const params = {
 beforeEach(() => {
   configState.FIREBILL_URL = "https://firebill.test";
   configState.FIREBILL_SECRET = "secret";
-  configState.FIREBILL_ORG_IDS = ["allow-listed-org"];
-  configState.FIREBILL_ROLLOUT_PERCENT = 0;
   configState.FIRECRAWL_BUILD_SHA = undefined;
   firebillTrackTotal.reset();
   firebillRetryTotal.reset();
   firebillCheckTotal.reset();
   firebillFailureCauseTotal.reset();
+  firebillTrackRetryTotal.reset();
+  firebillTrackRetryExhaustedValueTotal.reset();
+  retryQueueAdd.mockReset();
+  retryQueueAdd.mockResolvedValue(undefined);
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
-
-describe("shouldRouteToFirebill", () => {
-  it("routes the allowlist even at 0 percent", () => {
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(true);
-  });
-
-  it("routes nobody else at 0 percent — the kill switch", () => {
-    const others = Array.from({ length: 200 }, (_, i) => `other-${i}`);
-    expect(others.some(orgId => shouldRouteToFirebill(orgId))).toBe(false);
-  });
-
-  it("routes roughly the configured share once ramped", () => {
-    const orgs = Array.from({ length: 1000 }, (_, i) => `ramp-${i}`);
-    configState.FIREBILL_ROLLOUT_PERCENT = 30;
-    const share =
-      (orgs.filter(orgId => shouldRouteToFirebill(orgId)).length /
-        orgs.length) *
-      100;
-    expect(Math.abs(share - 30)).toBeLessThan(6);
-  });
-
-  it("ignores a non-object second argument, so callback use cannot route everyone", () => {
-    // `orgs.filter(shouldRouteToFirebill)` would pass the array index as the
-    // options argument. TypeScript rejects that now, but the runtime must be
-    // safe too: destructuring a field off a number yields undefined.
-    configState.FIREBILL_ROLLOUT_PERCENT = 0;
-    const asCallback = shouldRouteToFirebill as unknown as (
-      orgId: string,
-      index: number,
-    ) => boolean;
-    expect(asCallback("not-allow-listed", 7)).toBe(false);
-  });
-
-  it("stays off entirely when firebill is not configured", () => {
-    configState.FIREBILL_ROLLOUT_PERCENT = 100;
-    configState.FIREBILL_SECRET = "";
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(false);
-  });
-});
 
 /**
  * The outcome counter alone — the one the alerts read, which must keep exactly
@@ -542,6 +515,263 @@ describe("firebillTrack", () => {
   });
 });
 
+const retryOutcomes = async () =>
+  Object.fromEntries(
+    (await firebillTrackRetryTotal.get()).values.map(v => [
+      `${v.labels.operation}/${v.labels.outcome}`,
+      v.value,
+    ]),
+  );
+
+/** A retry job as the queue hands it to the worker on a given attempt. */
+const retryJob = (
+  data: FirebillTrackRetryJobData,
+  attemptsMade: number,
+): Job<FirebillTrackRetryJobData> =>
+  ({
+    data,
+    attemptsMade,
+    opts: { attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS },
+  }) as unknown as Job<FirebillTrackRetryJobData>;
+
+/** Logger calls as [message, context], which the mocked signature hides. */
+const logCalls = (method: "info" | "warn" | "error") =>
+  vi.mocked(logger[method]).mock.calls as unknown as [
+    string,
+    Record<string, unknown>,
+  ][];
+
+describe("firebillTrack durable retry", () => {
+  it("hands an unanswered track to the retry queue as the identical event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(retryQueueAdd).toHaveBeenCalledTimes(1);
+    const [name, data, opts] = retryQueueAdd.mock.calls[0];
+    expect(name).toBe("track");
+    expect(data).toEqual(params);
+    expect(opts).toMatchObject({
+      jobId: "firebill|fc%3Atrack%3Ascrape%3Ajob-1",
+      attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+      backoff: { type: "exponential" },
+    });
+    // BullMQ waits backoff * 2^(n-1) after the nth failure: 30s to the first
+    // re-send, then doubling, which puts the last one about two hours out.
+    const gaps = [opts.delay];
+    for (let n = 1; n < FIREBILL_DURABLE_RETRY_ATTEMPTS; n++) {
+      gaps.push(opts.backoff.delay * 2 ** (n - 1));
+    }
+    expect(gaps.slice(0, 3)).toEqual([30_000, 60_000, 120_000]);
+    const total = gaps.reduce((a, b) => a + b, 0);
+    expect(total).toBeGreaterThan(2 * 60 * 60 * 1000);
+    expect(total).toBeLessThan(3 * 60 * 60 * 1000);
+    expect(await retryOutcomes()).toEqual({ "track/enqueued": 1 });
+    // The alerted counter still says what the caller saw.
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(logCalls("error")[0][1]).toMatchObject({
+      idempotencyKey: params.idempotencyKey,
+      handedToRetry: true,
+    });
+  });
+
+  it("enqueues a timed-out refund under the minted key it already sent", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(wrapped(abortError()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillTrack({ ...params, value: -3, idempotencyKey: undefined });
+
+    const sentKey = JSON.parse(fetchMock.mock.calls[0][1].body).idempotency_key;
+    const [name, data] = retryQueueAdd.mock.calls[0];
+    expect(name).toBe("refund");
+    expect(data).toMatchObject({ value: -3, idempotencyKey: sentKey });
+    expect(await retryOutcomes()).toEqual({ "refund/enqueued": 1 });
+  });
+
+  it("does not enqueue an explicit refusal or an accepted event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => refused()),
+    );
+    await firebillTrack(params);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ok()),
+    );
+    await firebillTrack(params);
+
+    expect(retryQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unanswered event out of the retry when the caller opts out", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ambiguous());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      firebillTrack({ ...params, value: -1, durableRetry: false }),
+    ).resolves.toBe(false);
+
+    expect(retryQueueAdd).not.toHaveBeenCalled();
+    expect(await retryOutcomes()).toEqual({});
+    expect(logCalls("error")[0][1]).toMatchObject({ handedToRetry: false });
+    // The flag is ours; firebill never sees it.
+    expect(
+      Object.hasOwn(
+        JSON.parse(fetchMock.mock.calls[0][1].body),
+        "durableRetry",
+      ),
+    ).toBe(false);
+  });
+
+  it("gives distinct keys distinct job ids even when they differ only in delimiters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+
+    await firebillTrack({ ...params, idempotencyKey: "a:b" });
+    await firebillTrack({ ...params, idempotencyKey: "a|b" });
+
+    const [first, second] = retryQueueAdd.mock.calls.map(c => c[2].jobId);
+    expect(first).not.toBe(second);
+  });
+
+  it("counts an enqueue that does not confirm in time as unknown, not lost", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueAdd.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueue_timeout": 1 });
+    expect(logCalls("error").map(c => c[0])).toContain(
+      "firebill durable retry enqueue timed out; the retry may or may not have been queued",
+    );
+  });
+
+  it("logs and counts an enqueue that fails, still reporting false", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueAdd.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueue_failed": 1 });
+    const messages = vi.mocked(logger.error).mock.calls.map(c => c[0]);
+    expect(messages).toContain(
+      "firebill durable retry could not be enqueued; the event will not be billed unless replayed",
+    );
+    expect(logCalls("error").at(-1)?.[1]).toMatchObject({
+      handedToRetry: false,
+    });
+  });
+
+  it("re-sends with the same key, customer, entity, feature and value", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+    const event = { ...params, externalRequestId: "partner-op-42" };
+
+    await processFirebillTrackRetry(retryJob(event, 0));
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://firebill.test/v1/track");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 3,
+      properties: {},
+      idempotency_key: params.idempotencyKey,
+      external_request_id: "partner-op-42",
+    });
+    expect(await retryOutcomes()).toEqual({
+      "track/retried": 1,
+      "track/settled": 1,
+    });
+  });
+
+  it("sends a refund retry to /v1/refund with the value made positive", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await processFirebillTrackRetry(retryJob({ ...params, value: -3 }, 2));
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://firebill.test/v1/refund");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      value: 3,
+      idempotency_key: params.idempotencyKey,
+    });
+  });
+
+  it("throws on a failed attempt so the queue backs off and tries again", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+
+    await expect(
+      processFirebillTrackRetry(retryJob(params, 0)),
+    ).rejects.toThrow(/retry 1\/8 failed/);
+
+    expect(await retryOutcomes()).toEqual({ "track/retried": 1 });
+    const messages = vi.mocked(logger.error).mock.calls.map(c => c[0]);
+    expect(messages).not.toContain(
+      "firebill durable retry exhausted; the event may not have been billed",
+    );
+  });
+
+  it("keeps retrying a refusal, since an earlier attempt may have landed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => refused()),
+    );
+
+    await expect(
+      processFirebillTrackRetry(retryJob(params, 3)),
+    ).rejects.toThrow();
+    expect(await retryOutcomes()).toEqual({ "track/retried": 1 });
+  });
+
+  it("logs the key and amount and counts the value when the last attempt fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(wrapped(abortError())));
+
+    await expect(
+      processFirebillTrackRetry(
+        retryJob(params, FIREBILL_DURABLE_RETRY_ATTEMPTS - 1),
+      ),
+    ).rejects.toThrow(/retry 8\/8 failed/);
+
+    expect(await retryOutcomes()).toEqual({
+      "track/retried": 1,
+      "track/exhausted": 1,
+    });
+    const [value] = (await firebillTrackRetryExhaustedValueTotal.get()).values;
+    expect(value).toMatchObject({
+      value: 3,
+      labels: { operation: "track", feature: "CREDITS" },
+    });
+    const exhausted = logCalls("error").find(
+      c =>
+        c[0] ===
+        "firebill durable retry exhausted; the event may not have been billed",
+    );
+    expect(exhausted?.[1]).toMatchObject({
+      idempotencyKey: params.idempotencyKey,
+      value: 3,
+      attempt: 8,
+      attempts: 8,
+      cause: "timeout",
+    });
+  });
+});
+
 describe("firebillCheck", () => {
   const checkParams = {
     customerId: "org-1",
@@ -620,6 +850,46 @@ describe("firebillCheck", () => {
       remaining: 25,
     });
   });
+
+  // What a 402 names as the time credits come back.
+  it("passes through the balance's reset time", async () => {
+    answer({
+      success: true,
+      allowed: false,
+      remaining: 0,
+      resets_at: 1_798_761_600_000,
+    });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 0,
+      resetsAt: 1_798_761_600_000,
+    });
+  });
+
+  // A reset time is decoration on the answer, never a reason to fail open.
+  it.each([
+    ["a string", "2026-12-01T00:00:00Z"],
+    ["a fraction", 1.5],
+    ["zero", 0],
+    ["past what a Date can hold", 8_640_000_000_000_001],
+    ["null", null],
+  ])(
+    "drops a resets_at that is %s and keeps the answer",
+    async (_label, resetsAt) => {
+      answer({
+        success: true,
+        allowed: false,
+        remaining: 0,
+        resets_at: resetsAt,
+      });
+      await expect(firebillCheck(checkParams)).resolves.toEqual({
+        status: "answered",
+        allowed: false,
+        remaining: 0,
+      });
+    },
+  );
 
   it("treats an absent remaining on an ALLOWED check as unbounded, not zero", async () => {
     answer({ success: true, allowed: true });

@@ -14,6 +14,12 @@ import * as schema from "../../../db/schema";
 import { and, desc, eq, gt } from "drizzle-orm";
 import request from "supertest";
 import { decryptKeylessSignupToken } from "../../../lib/keyless-signup-link";
+import {
+  adjustKeylessCredits,
+  chargeKeylessCredits,
+  keylessTeamId,
+  reserveKeylessCredits,
+} from "../../../lib/keyless";
 
 // The keyless tier is disabled unless both limits are configured. The harness
 // passes the shell env through to the server, so we read the same env here and
@@ -923,5 +929,70 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.body.success).toBe(true);
     },
     scrapeTimeout,
+  );
+});
+
+// The daily credit window opens on first use and must not move after that.
+describe("Keyless credit window", () => {
+  const ip = "198.51.100.21";
+  const key = `keyless_credits:${ip}`;
+  const teamId = keylessTeamId(ip);
+
+  async function expectWindowKept(previousTtl: number) {
+    const ttl = await redisRateLimitClient.ttl(key);
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(previousTtl);
+    return ttl;
+  }
+
+  beforeEach(async () => {
+    await redisRateLimitClient.del(key);
+  });
+
+  afterAll(async () => {
+    await redisRateLimitClient.del(key);
+  });
+
+  it("keeps the window's expiry when a reservation is reconciled", async () => {
+    await redisRateLimitClient.set(key, "5", "EX", 600);
+
+    expect(await adjustKeylessCredits(teamId, 3)).toBe(8);
+    const ttl = await expectWindowKept(600);
+
+    expect(await adjustKeylessCredits(teamId, -20)).toBe(0);
+    await expectWindowKept(ttl);
+  });
+
+  it("does not open a window when a refund finds no counter", async () => {
+    expect(await adjustKeylessCredits(teamId, -3)).toBe(0);
+    expect(await redisRateLimitClient.exists(key)).toBe(0);
+  });
+
+  it("opens the window when reconciliation finds none", async () => {
+    expect(await adjustKeylessCredits(teamId, 2)).toBe(2);
+    expect(await redisRateLimitClient.ttl(key)).toBeGreaterThan(600);
+
+    await redisRateLimitClient.set(key, "5");
+    expect(await adjustKeylessCredits(teamId, 1)).toBe(6);
+    expect(await redisRateLimitClient.ttl(key)).toBeGreaterThan(600);
+  });
+
+  it("keeps the window's expiry when a completed request is charged", async () => {
+    await redisRateLimitClient.set(key, "0", "EX", 600);
+
+    await chargeKeylessCredits(teamId, 2);
+    expect(await redisRateLimitClient.get(key)).toBe("2");
+    await expectWindowKept(600);
+  });
+
+  itIf(KEYLESS_CREDITS_PER_DAY > 0)(
+    "keeps the window's expiry when credits are reserved after a full refund",
+    async () => {
+      await redisRateLimitClient.set(key, "0", "EX", 600);
+
+      expect((await reserveKeylessCredits(teamId, 1)).ok).toBe(true);
+      expect(await redisRateLimitClient.get(key)).toBe("1");
+      await expectWindowKept(600);
+    },
   );
 });
