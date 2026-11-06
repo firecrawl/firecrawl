@@ -275,14 +275,10 @@ describe("V1 Types Validation", () => {
       expect(result.timeout).toBe(1000);
     });
 
-    it("should reject both agent and jsonOptions with fire-1 model", () => {
+    it("should reject jsonOptions.agent", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
         formats: ["json"],
-        agent: {
-          model: "fire-1",
-          prompt: "test",
-        },
         jsonOptions: {
           agent: {
             model: "fire-1",
@@ -298,7 +294,7 @@ describe("V1 Types Validation", () => {
       };
 
       expect(() => scrapeRequestSchema.parse(input)).toThrow(
-        "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both",
+        "The 'agent' option (FIRE-1) has been removed",
       );
     });
 
@@ -858,7 +854,7 @@ describe("V1 Types Validation", () => {
       expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
     });
 
-    it("should handle agent timeout transformation", () => {
+    it("should reject the agent option", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
         agent: {
@@ -867,8 +863,9 @@ describe("V1 Types Validation", () => {
         },
       };
 
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(300000); // Should be transformed
+      expect(() => scrapeRequestSchema.parse(input)).toThrow(
+        "The 'agent' option (FIRE-1) has been removed",
+      );
     });
 
     it("should handle stealth proxy timeout transformation", () => {
