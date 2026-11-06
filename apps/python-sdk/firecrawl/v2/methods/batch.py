@@ -372,12 +372,15 @@ def batch_scrape(
         options: Scraping options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False for backward compatibility.
         
     Returns:
-        BatchScrapeStatusResponse when job completes
+        BatchScrapeJob with the terminal status and available data
         
     Raises:
-        FirecrawlError: If the batch scrape fails to start or complete
+        FirecrawlError: If starting the job fails, or if raise_on_failure is True
+            and the job ends as failed or cancelled
         TimeoutError: If timeout is reached
     """
     # Start the batch scrape
