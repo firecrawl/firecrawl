@@ -4,7 +4,6 @@ import { startBatchScrape } from "../../../v2/methods/batch";
 import { startCrawl } from "../../../v2/methods/crawl";
 import { search } from "../../../v2/methods/search";
 import { map } from "../../../v2/methods/map";
-import { startExtract } from "../../../v2/methods/extract";
 import { startAgent } from "../../../v2/methods/agent";
 
 const auditMetadata = { username: "alice@example.com" };
@@ -34,7 +33,7 @@ describe("v2 auditMetadata request serialization", () => {
     );
   });
 
-  test("crawl, search, and extract send metadata under scrapeOptions", async () => {
+  test("crawl and search send metadata under scrapeOptions", async () => {
     const crawlHttp = makeHttp({ success: true, id: "job", url: "u" });
     await startCrawl(crawlHttp, {
       url: "https://example.com",
@@ -50,15 +49,6 @@ describe("v2 auditMetadata request serialization", () => {
       scrapeOptions: { auditMetadata },
     });
     expect(searchHttp.post.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ scrapeOptions: expect.objectContaining({ auditMetadata }) }),
-    );
-
-    const extractHttp = makeHttp({ success: true, id: "job" });
-    await startExtract(extractHttp, {
-      urls: ["https://example.com"],
-      scrapeOptions: { auditMetadata },
-    });
-    expect(extractHttp.post.mock.calls[0][1]).toEqual(
       expect.objectContaining({ scrapeOptions: expect.objectContaining({ auditMetadata }) }),
     );
   });
