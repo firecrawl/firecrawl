@@ -27,6 +27,7 @@ import {
 } from "../../services/alexandria/contracts";
 import {
   REQUEST_ID_PATTERN,
+  exchangeRequestId,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
 import type { RequestWithAuth } from "./types";
@@ -199,11 +200,12 @@ export async function providerScrapeController(
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
   markAlexandriaActivity(req.auth.team_id);
+  const usageRequestId = exchangeRequestId(req.auth.team_id, requestId);
   if (result.executed && !zeroDataRetention)
     markAlexandriaCalls(
       req.auth.team_id,
       body.alexandria.map(({ provider, capability }) => ({
-        requestId,
+        requestId: usageRequestId,
         provider,
         capability,
       })),
@@ -355,7 +357,7 @@ export async function providerScrapeController(
           const feedbackToken =
             provider && capability
               ? issueFeedbackToken({
-                  requestId,
+                  requestId: usageRequestId,
                   teamId: req.auth.team_id,
                   provider,
                   capability,
@@ -373,6 +375,7 @@ export async function providerScrapeController(
         success: false,
         code: first.error.code,
         error: first.error.message,
+        ...(first.feedbackToken ? { feedbackToken: first.feedbackToken } : {}),
       });
     }
     return res.json({ success: true, ...first });

@@ -5,6 +5,7 @@ vi.mock("../config", () => ({
 import { createHmac } from "node:crypto";
 import { config } from "../config";
 import {
+  MAX_FEEDBACK_TOKEN_LENGTH,
   issueFeedbackToken,
   verifyFeedbackToken,
 } from "./alexandria-feedback-token";
@@ -32,6 +33,18 @@ it("round-trips the call it names for the issuing team", () => {
     capability: "series/observations",
     issuedAt: now / 1000,
   });
+});
+
+it("issues no token that feedback would refuse as too long", () => {
+  const long = {
+    ...claims,
+    provider: "é".repeat(200),
+    capability: "能".repeat(200),
+  };
+  expect(issueFeedbackToken(long, now)).toBeUndefined();
+  expect(issueFeedbackToken(claims, now)!.length).toBeLessThanOrEqual(
+    MAX_FEEDBACK_TOKEN_LENGTH,
+  );
 });
 
 it("rejects the token for any other team", () => {

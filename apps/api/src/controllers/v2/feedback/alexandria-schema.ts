@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { integrationSchema } from "../../../utils/integration";
+import { MAX_FEEDBACK_TOKEN_LENGTH } from "../../../lib/alexandria-feedback-token";
 
 const detail = z.string().trim().min(1).max(2000);
 const name = z.string().trim().min(1).max(200);
 const rating = z.enum(["good", "partial", "bad"]);
-const feedbackToken = z.string().min(1).max(1024);
+const feedbackToken = z.string().min(1).max(MAX_FEEDBACK_TOKEN_LENGTH);
 const providerFeedback = z.strictObject({
   name,
   issue: z.enum([

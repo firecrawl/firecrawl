@@ -80,6 +80,10 @@ const hash = (value: unknown) =>
     .update(JSON.stringify(canonical(value)))
     .digest("hex");
 
+/** The request id Exchange records for a team's x-request-id (its usage_events.request_id). */
+export const exchangeRequestId = (teamId: string, requestId: string) =>
+  hash([teamId, requestId]);
+
 const unresolved = (chargeId: string) =>
   refusal(
     503,
@@ -185,7 +189,7 @@ export async function retrieveProviders(input: {
       ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
       : undefined;
   const billable = !input.bypassBilling;
-  const id = hash([input.teamId, input.requestId]);
+  const id = exchangeRequestId(input.teamId, input.requestId);
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);

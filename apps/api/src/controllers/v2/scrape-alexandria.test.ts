@@ -22,6 +22,8 @@ vi.mock("../../lib/alexandria-discovery", () => ({
 }));
 vi.mock("../../services/alexandria/retrieve", () => ({
   REQUEST_ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
+  exchangeRequestId: (teamId: string, requestId: string) =>
+    `hashed:${teamId}:${requestId}`,
   retrieveProviders: mocks.retrieve,
 }));
 vi.mock("../../services/logging/log_job", () => ({
@@ -636,8 +638,12 @@ it("remembers each provider call under its request id for feedback attribution",
     .set("x-request-id", "req-1")
     .send({ alexandria: [call, second] });
   expect(mocks.markCalls).toHaveBeenCalledExactlyOnceWith("team", [
-    { requestId: "req-1", provider: "fred", capability: "categories/category" },
-    { requestId: "req-1", provider: "sec", capability: "filings" },
+    {
+      requestId: "hashed:team:req-1",
+      provider: "fred",
+      capability: "categories/category",
+    },
+    { requestId: "hashed:team:req-1", provider: "sec", capability: "filings" },
   ]);
 });
 
@@ -685,21 +691,37 @@ describe("feedback tokens", () => {
       .send({ alexandria: [call, second] });
     const [first, failed] = response.body.data.alexandria;
     expect(verifyFeedbackToken(first.feedbackToken, "team")).toMatchObject({
-      requestId: "req-1",
+      requestId: "hashed:team:req-1",
       provider: "fred",
       capability: "categories/category",
     });
     expect(verifyFeedbackToken(failed.feedbackToken, "team")).toMatchObject({
-      requestId: "req-1",
+      requestId: "hashed:team:req-1",
       provider: "sec",
       capability: "filings",
     });
     expect(verifyFeedbackToken(first.feedbackToken, "other-team")).toBeNull();
   });
 
-  it("returns the token on the legacy single-call route", async () => {
+  it("returns the token on the legacy single-call route, errors included", async () => {
     const response = await request(app).post("/exchange/retrieve").send(call);
     expect(response.body.feedbackToken).toEqual(expect.any(String));
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { error: { code: "provider_error", message: "down", status: 502 } },
+      ]),
+    );
+    const failed = await request(app).post("/exchange/retrieve").send(call);
+    expect(failed.status).toBe(502);
+    expect(failed.body).toEqual({
+      success: false,
+      code: "provider_error",
+      error: "down",
+      feedbackToken: expect.any(String),
+    });
+    expect(
+      verifyFeedbackToken(failed.body.feedbackToken, "team"),
+    ).toMatchObject({ provider: "fred", capability: "categories/category" });
   });
 
   it.each([

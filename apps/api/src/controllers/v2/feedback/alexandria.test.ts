@@ -942,7 +942,7 @@ describe("call attribution", () => {
 
   it("keeps tokens out of the 8 KiB payload bound", async () => {
     const tokens = Array.from({ length: 20 }, (_, i) =>
-      token(`req-${i}`, "x".repeat(150)),
+      token(`${i}`.padStart(64, "a"), "x".repeat(200)),
     );
     expect(JSON.stringify(tokens).length).toBeGreaterThan(8 * 1024);
     expect((await submit({ ...minimal, tokens })).status).toBe(200);

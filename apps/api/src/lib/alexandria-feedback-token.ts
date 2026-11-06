@@ -5,6 +5,8 @@ const VERSION = "v1";
 const MAX_AGE_SEC = 24 * 60 * 60;
 const CLOCK_SKEW_SEC = 60;
 const SIGNATURE_BYTES = 16;
+/** The longest token feedback accepts; a call whose token would be longer gets none. */
+export const MAX_FEEDBACK_TOKEN_LENGTH = 1024;
 
 export type FeedbackTokenClaims = {
   requestId: string;
@@ -31,7 +33,8 @@ const sign = (key: Buffer, payload: string, teamId: string) =>
 
 /**
  * A token naming one Alexandria provider call, so feedback can prove which
- * calls it rates. Returns undefined when no signing key is configured.
+ * calls it rates. Returns undefined without a signing key or when the token
+ * would exceed MAX_FEEDBACK_TOKEN_LENGTH.
  * Callers must not issue tokens under zero data retention.
  */
 export function issueFeedbackToken(
@@ -48,7 +51,8 @@ export function issueFeedbackToken(
       Math.floor(now / 1000),
     ]),
   ).toString("base64url");
-  return `${VERSION}.${payload}.${sign(key, payload, claims.teamId).toString("base64url")}`;
+  const token = `${VERSION}.${payload}.${sign(key, payload, claims.teamId).toString("base64url")}`;
+  return token.length <= MAX_FEEDBACK_TOKEN_LENGTH ? token : undefined;
 }
 
 /** The token's claims if it was issued to teamId, its signature holds and it is under 24 hours old; otherwise null. */
