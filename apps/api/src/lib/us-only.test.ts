@@ -10,12 +10,18 @@ describe("usOnlyLocationRefusal", () => {
     );
   });
 
-  it.each(["us", "US", "us-generic", "US-generic", "us-whitelist", undefined])(
+  it.each(["us", "US", "us-generic", "US-generic", undefined])(
     "allows %s",
     country => {
       expect(usOnlyLocationRefusal(usOnly, country)).toBeUndefined();
     },
   );
+
+  it("refuses us-whitelist, which isn't the US", () => {
+    expect(usOnlyLocationRefusal(usOnly, "us-whitelist")).toContain(
+      'location.country "US-WHITELIST"',
+    );
+  });
 
   it("names the first country outside the US", () => {
     expect(
@@ -46,6 +52,12 @@ describe("checkPermissions for US-only teams", () => {
     const result = checkPermissions(request, usOnly);
     expect(result.code).toBe("US_ONLY_UNAVAILABLE");
     expect(result.error).toContain('location.country "NL"');
+  });
+
+  it("refuses us-whitelist with US_ONLY_UNAVAILABLE", () => {
+    expect(
+      checkPermissions({ location: { country: "us-whitelist" } }, usOnly).code,
+    ).toBe("US_ONLY_UNAVAILABLE");
   });
 
   it("allows a US location or none", () => {

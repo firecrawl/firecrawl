@@ -7,7 +7,7 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
-  safeModeParams,
+  requestOverrides,
 } from "./scrape";
 import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
@@ -27,7 +27,6 @@ import {
   UnsupportedFileError,
   FEPageLoadFailed,
   ProxySelectionError,
-  UsOnlyUnavailableError,
 } from "../../error";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
@@ -38,7 +37,6 @@ import {
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
 import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
 import { config } from "../../../../config";
-import { isUsOnly } from "../../../../lib/us-only";
 
 /** The handoff additionally requires the inbound allowlist bucket to be
  * configured: without it, a reference fire-engine returned could never be
@@ -165,8 +163,7 @@ async function performFireEngineScrape<
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
             error instanceof ProxySelectionError ||
-            error instanceof AddFeatureError ||
-            error instanceof UsOnlyUnavailableError
+            error instanceof AddFeatureError
           ) {
             fireEngineDelete(
               logger.child({
@@ -512,9 +509,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
-        ? { usOnly: true }
-        : {}),
       // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
       // it fire-engine grants no raise and PDFs keep its inline cap, so the
       // worker never captures bytes this team may not use.
@@ -529,7 +523,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             name: meta.options.profile.name,
           }
         : undefined,
-      ...safeModeParams(meta.internalOptions.safeMode),
+      ...requestOverrides(meta),
     };
 
     // Safe Mode worker-side hardening: neutralize anything that request-time
@@ -744,10 +738,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
-        ? { usOnly: true }
-        : {}),
-      ...safeModeParams(meta.internalOptions.safeMode),
+      ...requestOverrides(meta),
     };
 
     const sm = meta.internalOptions.safeMode;

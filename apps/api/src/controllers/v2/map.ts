@@ -26,7 +26,6 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { isUsOnly } from "../../lib/us-only";
 
 configDotenv();
 
@@ -129,14 +128,11 @@ export async function mapController(
 
   // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
   // entirely. Skipped under Safe Mode so results still flow through the
-  // standard path (domain-controls filtering + lockdown index-only). Skipped
-  // for US-only teams too, since that service picks its own exit and the
-  // standard path keeps their fetches on US exits.
+  // standard path (domain-controls filtering + lockdown index-only).
   try {
-    const avgrabResults =
-      safeMode.safeMode || isUsOnly(req.acuc?.flags ?? undefined)
-        ? null
-        : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
+    const avgrabResults = safeMode.safeMode
+      ? null
+      : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
 
     if (avgrabResults !== null) {
       const creditsCost = avgrabResults.length;

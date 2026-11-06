@@ -43,31 +43,4 @@ describe("scrapeURL for US-only teams", () => {
     expect(buildFallbackList).not.toHaveBeenCalled();
     expect(scrapeURLWithEngine).not.toHaveBeenCalled();
   });
-
-  it("stops the engine waterfall at fire-engine's US-only refusal", async () => {
-    vi.mocked(buildFallbackList).mockResolvedValue([
-      { engine: "fire-engine;chrome-cdp", unsupportedFeatures: new Set() },
-      { engine: "fetch", unsupportedFeatures: new Set() },
-    ]);
-    vi.mocked(scrapeURLWithEngine).mockRejectedValue(
-      new UsOnlyUnavailableError(
-        "No US exit was available to fetch this page.",
-      ),
-    );
-
-    const result = await scrapeURL(
-      "us-only-waterfall",
-      "https://example.com",
-      scrapeOptions.parse({}),
-      { ...usOnlyTeam },
-      new CostTracking(),
-    );
-
-    expect(!result.success && result.error).toBeInstanceOf(
-      UsOnlyUnavailableError,
-    );
-    expect(
-      vi.mocked(scrapeURLWithEngine).mock.calls.map(([, engine]) => engine),
-    ).toEqual(["fire-engine;chrome-cdp"]);
-  });
 });

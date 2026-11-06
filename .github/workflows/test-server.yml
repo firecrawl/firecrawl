@@ -389,7 +389,6 @@ jobs:
           src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
           src/scraper/scrapeURL/__tests__/usOnly.test.ts
           src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
-          src/controllers/v2/__tests__/map-us-only.test.ts
           --reporter=default
         working-directory: apps/api
 

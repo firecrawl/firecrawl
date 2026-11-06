@@ -71,8 +71,7 @@ export function hangarBrowserOptions(
     // Scrape's stealth proxy is Hangar's mobile pool. Omitted fields keep
     // Hangar's defaults: country "us", type "basic". Under ZDR, Hangar picks
     // only ZDR exits and fails the browser if none is available. A US-only
-    // team always asks for a US exit, and Hangar fails the browser rather
-    // than use any other.
+    // team always asks for a US exit.
     ...(options.location ||
     options.proxy === "stealth" ||
     zeroDataRetention ||
@@ -86,7 +85,6 @@ export function hangarBrowserOptions(
                 : {}),
             type: options.proxy === "stealth" ? "mobile" : "basic",
             ...(zeroDataRetention ? { zero_data_retention: true } : {}),
-            ...(usOnly ? { us_only: true } : {}),
           },
         }
       : {}),

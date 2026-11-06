@@ -1,7 +1,5 @@
 import { config } from "../config";
 import { type BrowserOptions, hangarBrowserOptions } from "./browser-options";
-import { US_ONLY_EXIT_UNAVAILABLE } from "./us-only";
-import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 export interface HangarBrowser {
   id: string;
@@ -47,11 +45,6 @@ export class HangarError extends Error {
   }
 }
 
-const usOnlyExitUnavailable = () =>
-  new UsOnlyUnavailableError(
-    "Browser sessions are not available for teams restricted to US-only processing right now: no US exit is available. Try again later.",
-  );
-
 async function request<T>(
   method: string,
   path: string,
@@ -60,7 +53,6 @@ async function request<T>(
     key?: string;
     timeout?: number;
     resource?: "browsers" | "profiles";
-    usOnly?: boolean;
   },
 ): Promise<T> {
   if (!config.HANGAR_URL)
@@ -87,13 +79,7 @@ async function request<T>(
   }
   // Do not expose upstream bodies: creation failures can contain capability URLs.
   if (!response.ok) {
-    if (options?.usOnly) {
-      const text = await response.text().catch(() => "");
-      if (text.includes(US_ONLY_EXIT_UNAVAILABLE))
-        throw usOnlyExitUnavailable();
-    } else {
-      await response.body?.cancel().catch(() => {});
-    }
+    await response.body?.cancel().catch(() => {});
     throw new HangarError(
       response.status,
       response.status === 409
@@ -108,17 +94,12 @@ async function request<T>(
   }
 }
 
-export const getHangarBrowser = (
-  id: string,
-  wait = 0,
-  timeout?: number,
-  usOnly?: boolean,
-) =>
+export const getHangarBrowser = (id: string, wait = 0, timeout?: number) =>
   request<HangarBrowser>(
     "GET",
     `/${encodeURIComponent(id)}${wait ? `?wait=${wait}` : ""}`,
     undefined,
-    { timeout, usOnly },
+    { timeout },
   );
 export const stopHangarBrowser = (id: string) =>
   request<HangarBrowser>("POST", `/${encodeURIComponent(id)}/stop`);
@@ -150,10 +131,7 @@ export async function createHangarBrowser(
   let created: HangarCreated | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      created = await request<HangarCreated>("POST", "?wait=30", body, {
-        key,
-        usOnly: options.usOnly,
-      });
+      created = await request<HangarCreated>("POST", "?wait=30", body, { key });
       break;
     } catch (error) {
       if (
@@ -172,14 +150,7 @@ export async function createHangarBrowser(
     let browser: HangarBrowser = created;
     const deadline = Date.now() + 300_000;
     while (browser.status === "starting" && Date.now() < deadline)
-      browser = await getHangarBrowser(
-        created.id,
-        30,
-        undefined,
-        options.usOnly,
-      );
-    if (options.usOnly && browser.error?.includes(US_ONLY_EXIT_UNAVAILABLE))
-      throw usOnlyExitUnavailable();
+      browser = await getHangarBrowser(created.id, 30);
     if (browser.status !== "running")
       throw new HangarError(502, "Browser failed to become ready.");
     return { ...created, ...browser };

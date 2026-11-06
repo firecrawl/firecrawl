@@ -8,8 +8,7 @@ import {
   hangarBrowserOptions,
   isBrowserOptions,
 } from "./browser-options";
-import { createHangarBrowser, HangarError } from "./hangar";
-import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import { createHangarBrowser } from "./hangar";
 
 async function hangarCreateBody(
   options: BrowserOptions,
@@ -151,7 +150,6 @@ describe("Hangar create body for US-only teams", () => {
     ).toEqual({
       country: "us",
       type: "basic",
-      us_only: true,
     });
     expect(
       (
@@ -161,7 +159,7 @@ describe("Hangar create body for US-only teams", () => {
           true,
         )
       ).proxy,
-    ).toEqual({ country: "us", type: "mobile", us_only: true });
+    ).toEqual({ country: "us", type: "mobile" });
   });
 
   it("keeps ZDR exits within the US", async () => {
@@ -170,87 +168,7 @@ describe("Hangar create body for US-only teams", () => {
       country: "us",
       type: "basic",
       zero_data_retention: true,
-      us_only: true,
     });
-  });
-});
-
-describe("Hangar's US-only refusal", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  const create = (usOnly: boolean) =>
-    createHangarBrowser("key", "team", {
-      blockAds: true,
-      ttl: 600,
-      activityTtl: 300,
-      streamWebView: true,
-      recordSession: false,
-      zeroDataRetention: false,
-      usOnly,
-    });
-
-  const failedBrowser = () =>
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) =>
-        url.endsWith("/stop")
-          ? Response.json({ id: "br_1", status: "stopping" })
-          : Response.json({
-              id: "br_1",
-              status: "failed",
-              cdp_url: "wss://hangar.test/cdp",
-              error: "US-only exit unavailable: no US exit for this browser",
-            }),
-      ),
-    );
-
-  it("maps a browser that found no US exit to US_ONLY_UNAVAILABLE", async () => {
-    failedBrowser();
-    await expect(create(true)).rejects.toBeInstanceOf(UsOnlyUnavailableError);
-  });
-
-  it("maps a refused create request to US_ONLY_UNAVAILABLE", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json(
-          { error: "US-only exit unavailable: no US exit for this browser" },
-          { status: 503 },
-        ),
-      ),
-    );
-    await expect(create(true)).rejects.toBeInstanceOf(UsOnlyUnavailableError);
-  });
-
-  it("maps a refused status poll to US_ONLY_UNAVAILABLE", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init?: RequestInit) =>
-        url.endsWith("/stop")
-          ? Response.json({ id: "br_1", status: "stopping" })
-          : init?.method === "GET"
-            ? Response.json(
-                {
-                  error:
-                    "US-only exit unavailable: no US exit for this browser",
-                },
-                { status: 503 },
-              )
-            : Response.json({
-                id: "br_1",
-                status: "starting",
-                cdp_url: "wss://hangar.test/cdp",
-              }),
-      ),
-    );
-    await expect(create(true)).rejects.toBeInstanceOf(UsOnlyUnavailableError);
-  });
-
-  it("keeps the generic failure for other teams", async () => {
-    failedBrowser();
-    await expect(create(false)).rejects.toBeInstanceOf(HangarError);
   });
 });
 

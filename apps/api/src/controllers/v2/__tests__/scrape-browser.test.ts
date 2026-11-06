@@ -45,7 +45,6 @@ import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { scrapeQueue } from "../../../services/worker/nuq-router";
 import { redlock } from "../../../services/redlock";
 import { updateKeylessBrowserCredits } from "../../../lib/keyless";
-import { UsOnlyUnavailableError } from "../../../scraper/scrapeURL/error";
 
 vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
 vi.mock("../../../services/rate-limiter", () => ({
@@ -823,20 +822,6 @@ describe("scrapeInteractController", () => {
         "team-123",
         expect.objectContaining({ usOnly: true }),
       );
-    });
-
-    it("reports Hangar's US-only refusal as US_ONLY_UNAVAILABLE", async () => {
-      vi.mocked(createHangarBrowser).mockRejectedValueOnce(
-        new UsOnlyUnavailableError("No US exit is available."),
-      );
-      const res = buildRes();
-      await browserCreateController(usOnlyRequest({}), res);
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith({
-        success: false,
-        code: "US_ONLY_UNAVAILABLE",
-        error: "No US exit is available.",
-      });
     });
 
     it("refuses to interact from a scrape located outside the US", async () => {

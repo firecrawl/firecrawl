@@ -40,7 +40,6 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 async function scrapeHelper(
   jobId: string,
@@ -155,13 +154,6 @@ async function scrapeHelper(
         success: false,
         error: e.message,
         returnCode: 408,
-      };
-    } else if (e instanceof UsOnlyUnavailableError) {
-      return {
-        success: false,
-        error: e.message,
-        code: e.code,
-        returnCode: 403,
       };
     } else if (
       typeof e === "string" &&
