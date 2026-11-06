@@ -25,6 +25,8 @@ const EXISTING = {
 
 type Key = keyof typeof EXISTING;
 
+const V0_GUIDE = "https://docs.firecrawl.dev/migrating-from-v0";
+
 // What the old middleware did, replayed on a copy, so we can compare bytes.
 function legacyAnnotate(body: any, message: string, replacement?: string) {
   const copy = JSON.parse(JSON.stringify(body));
@@ -60,7 +62,11 @@ describe("pre-existing deprecated routes are unchanged", () => {
         expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
         expect(res.headers["sunset"]).toBeUndefined();
         expect(res.headers["warning"]).toMatch(/^299 - "/);
-        if (EXISTING[key]) {
+        if (key.startsWith("v0_")) {
+          expect(res.headers["link"]).toBe(
+            `<${V0_GUIDE}>; rel="deprecation", <${EXISTING[key]}>; rel="successor-version"`,
+          );
+        } else if (EXISTING[key]) {
           expect(res.headers["link"]).toBe(
             `<${EXISTING[key]}>; rel="successor-version"`,
           );
