@@ -706,7 +706,7 @@ describe("authenticateUser", () => {
       {
         api_key: "00000000-0000-4000-8000-000000000000",
         api_key_id: 1,
-        team_id: "team-limited",
+        team_id: "33333333-3333-4333-8333-333333333333",
         org_id: "org-1",
         flags: null,
       },
@@ -739,6 +739,13 @@ describe("authenticateUser", () => {
         status: 429,
         retryAfterSeconds: 42,
         error: expect.stringContaining("retry after 42s"),
+      }),
+    );
+    expect(auth).toEqual(
+      expect.objectContaining({
+        error: expect.stringContaining(
+          "https://www.firecrawl.dev/app/t/33333333-3333-4333-8333-333333333333/settings?tab=billing",
+        ),
       }),
     );
   });

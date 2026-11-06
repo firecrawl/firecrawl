@@ -18,6 +18,7 @@ import {
   indexDailyLimitRefusal,
   reserveIndexCalls,
 } from "../index-daily-limit";
+import { teamBillingUrl } from "../team-billing-url";
 
 const NOW = new Date("2026-10-27T12:00:00Z");
 
@@ -66,5 +67,26 @@ describe("Government Index per-team overrides", () => {
     const refusal = indexDailyLimitRefusal("gov", OVERRIDDEN_TEAM, reservation);
     expect(refusal.limit).toBe(20000);
     expect(refusal.error).toContain("19,990 of its 20,000 calls today");
+    expect(refusal.upgradeUrl).toBe(teamBillingUrl(OVERRIDDEN_TEAM));
+    expect(refusal.error).toContain(teamBillingUrl(OVERRIDDEN_TEAM));
+  });
+
+  it("keeps the public pricing page for a keyless caller", () => {
+    const reservation = {
+      ok: false as const,
+      used: 1000,
+      limit: 1000,
+      requested: 1,
+      retryAfterSeconds: 3600,
+      resetsAt: new Date("2026-10-28T00:00:00.000Z"),
+    };
+    const refusal = indexDailyLimitRefusal(
+      "gov",
+      "preview_keyless_203.0.113.8",
+      reservation,
+    );
+    expect(refusal.upgradeUrl).toBe("https://firecrawl.dev/pricing");
+    expect(refusal.error).toContain("https://firecrawl.dev/pricing");
+    expect(refusal.error).toContain("without an API key");
   });
 });
