@@ -315,6 +315,10 @@ export class WebCrawler {
     }
 
     const scope = getCrawlScope(this.initialUrl);
+    const stripWww = (hostname: string) => hostname.replace(/^www\./, "");
+    const initialHostname = stripWww(new URL(this.initialUrl).hostname);
+    const baseHostname = stripWww(new URL(this.baseUrl).hostname);
+    const baseDomain = extractBaseDomain(this.baseUrl);
 
     const filteredLinks = sitemapLinks
       .filter(link => {
@@ -400,8 +404,6 @@ export class WebCrawler {
           }
         }
 
-        // Normalize the initial URL and the link to account for www and non-www versions
-        const normalizedInitialUrl = new URL(this.initialUrl);
         let normalizedLink;
         try {
           normalizedLink = new URL(link);
@@ -411,17 +413,29 @@ export class WebCrawler {
           }
           return false;
         }
-        const initialHostname = normalizedInitialUrl.hostname.replace(
-          /^www\./,
-          "",
-        );
-        const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
+        const linkHostname = stripWww(normalizedLink.hostname);
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        // Mirror the native filter's host scoping: links are compared to the
+        // base URL (the page being crawled), external links are only followed
+        // from pages on the initial host, and allowSubdomains admits any host
+        // with the same registrable domain.
+        if (
+          linkHostname !== baseHostname &&
+          !(
+            this.allowExternalContentLinks && initialHostname === baseHostname
+          ) &&
+          !(
+            this.allowSubdomains &&
+            baseDomain !== null &&
+            extractBaseDomain(link) === baseDomain
+          )
+        ) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            this.logger.debug(`${link} HOSTNAME FAIL`);
+          }
+          denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+          return false;
+        }
 
         if (!this.allowBackwardCrawling) {
           if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
