@@ -386,8 +386,11 @@ const FIRST_SCREEN_PX = 1000;
 
 export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   const pageBackground = resolvePageBackground(raw);
+  // A consent dialog's colors and controls are page chrome: out of the
+  // palette, the buttons, the inputs and the font counts alike.
+  const pageSnapshots = raw.snapshots.filter(s => !s.isConsent);
   const { linkMeasured, ...palette } = inferPalette(
-    raw.snapshots,
+    pageSnapshots,
     raw.cssData.colors,
     raw.colorScheme,
     pageBackground,
@@ -415,7 +418,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   // Spacing
   const baseUnit = inferBaseUnit(raw.cssData.spacings);
   const borderRadius = pickBorderRadius([
-    ...raw.snapshots.map(s => s.radius),
+    ...pageSnapshots.map(s => s.radius),
     ...raw.cssData.radii,
   ]);
 
@@ -424,7 +427,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   // generic font rather than with no font at all.
   const measuredStacks = [
     ...Object.values(raw.typography.stacks),
-    ...raw.snapshots.map(s => s.typography.fontStack),
+    ...pageSnapshots.map(s => s.typography.fontStack),
   ];
   let fontsList = inferFontsList(measuredStacks);
   if (fontsList.length === 0) {
@@ -451,13 +454,11 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
   let components: any = {};
 
   // Filter and score buttons
-  const candidateButtons = raw.snapshots
+  const candidateButtons = pageSnapshots
     .filter(s => {
       if (!s.isButton) return false;
       // Hidden copies (mobile menus, closed dialogs) aren't what visitors see.
       if (s.visible === false) return false;
-      // Consent dialogs are page chrome, not the brand's buttons.
-      if (s.isConsent) return false;
       if (s.rect.w < 30 || s.rect.h < 24) return false;
       if (!s.text || s.text.trim().length === 0) return false;
 
@@ -689,6 +690,7 @@ function extractInputSnapshots(
 ): InputSnapshot[] {
   // Filter input fields (excluding button inputs which are already in buttonSnapshots)
   const candidateInputs = raw.snapshots.filter(s => {
+    if (s.isConsent) return false;
     if (!s.isInput || !s.inputMetadata) return false;
     if (s.rect.w < 50 || s.rect.h < 20) return false; // Too small
     return true;

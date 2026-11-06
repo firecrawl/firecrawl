@@ -44,7 +44,11 @@ const CONSENT_CONTAINER = [
   "privacy-notice",
 ]
   .flatMap(n => [`[id*="${n}" i]`, `[class*="${n}" i]`])
-  .concat(['[aria-label*="cookie" i]', '[aria-label*="consent" i]'])
+  .concat([
+    '[aria-label*="cookie" i]',
+    '[aria-label*="consent" i]',
+    '[aria-label*="gdpr" i]',
+  ])
   .join(",");
 
 export const sampleElements = (): Element[] => {

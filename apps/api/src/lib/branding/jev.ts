@@ -458,11 +458,12 @@ function fileName(src: string): string {
 // Cookie-consent controls are page chrome, never the site's call to action.
 // The scan flags buttons inside a consent container; this catches the rest
 // by their label or their consent manager's class, in the languages we see.
+// Only wording that is consent-specific on its own: "Personnaliser mon
+// offre" or "Configurar mi plan" are real calls to action.
 const CONSENT =
-  /cookie|consent|gdpr|cmplz|cookiebot|onetrust|ot-sdk|didomi|osano|iubenda|qc-cmp|termly|borlabs|cky-consent|cky-btn|cky-modal|usercentrics|accept all|reject all|allow all|decline|\b(?:manage|view|save) (?:preferences|settings)|préférences|preferencias|preferenze|preferências|einstellungen|voorkeuren|tout accepter|tout refuser|personnaliser|akzeptieren|ablehnen|anpassen|accepter|refuser|aceptar|rechazar|configurar|accetta|rifiuta|aceitar|recusar|accepteren|weigeren/i;
+  /cookie|consent|gdpr|cmplz|cookiebot|onetrust|ot-sdk|didomi|osano|iubenda|qc-cmp|termly|borlabs|cky-consent|cky-btn|cky-modal|usercentrics|accept all|reject all|allow all|decline|\b(?:manage|view|save) (?:preferences|settings)|tout accepter|tout refuser|alles? (?:akzeptieren|ablehnen)|aceptar todo|rechazar todo|accetta tutt|rifiuta tutt|aceitar tudo|recusar tudo|alles (?:accepteren|weigeren)|^\s*(?:accepter|refuser|akzeptieren|ablehnen|aceptar|rechazar|accetta|rifiuta|aceitar|recusar|accepteren|weigeren)\s*$/i;
 const isConsentButton = (button: { text?: string; classes?: string }) =>
-  CONSENT.test(`${button.text ?? ""} ${button.classes ?? ""}`);
-
+  CONSENT.test(button.text ?? "") || CONSENT.test(button.classes ?? "");
 /** Everything merge copies from the chosen button, so look-alikes are truly alike. */
 const buttonStyle = (b: {
   background?: string;

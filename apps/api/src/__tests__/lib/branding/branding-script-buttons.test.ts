@@ -212,6 +212,19 @@ describe("branding script button detection", () => {
     expect(gradientFill("linear-gradient(to right, #FF385C, rgba(0, 0, 0, 0))")).toBe("#FF385C");
     expect(gradientFill('url("hero.png")')).toBeNull();
     expect(gradientFill("none")).toBeNull();
+    // Only the top layer shows; alpha counts in hex and modern syntax.
+    expect(gradientFill('linear-gradient(rgb(0, 97, 254), rgb(0, 97, 254)), url("x.png")')).toBe("rgb(0, 97, 254)");
+    expect(gradientFill('url("x.png"), linear-gradient(red, blue)')).toBeNull();
+    expect(gradientFill("linear-gradient(#FF385C00, #FF385C80)")).toBe("#FF385C80");
+    expect(gradientFill("linear-gradient(#FF385C00, #FF385C10)")).toBeNull();
+    expect(gradientFill("linear-gradient(oklch(0.7 0.15 30), oklch(0.5 0.1 250 / 0.05))")).toBe("oklch(0.7 0.15 30)");
+    expect(gradientFill("linear-gradient(color(display-p3 0.9 0.2 0.1), hsl(210 100% 50% / 50%))")).toBe("hsl(210 100% 50% / 50%)");
+
+    // A gradient that ends on the page's own white is still a fill.
+    const fades = scan(
+      `<a href="/go" data-top="300" data-w="200" data-h="40" style="color: rgb(255, 255, 255); padding: 5px 16px; background-image: linear-gradient(90deg, rgb(255, 56, 92), rgb(255, 255, 255))">Fades to white</a>`,
+    );
+    expect(byText(fades, "Fades to white")?.isButton).toBe(true);
   });
 
   it("marks buttons inside a consent dialog, whatever language they speak", () => {
@@ -221,10 +234,11 @@ describe("branding script button detection", () => {
       `<div id="cmplz-cookiebanner-container"><div class="cmplz-buttons">${cta("Voir les préférences")}</div></div>
        <div class="ot-sdk-container" role="dialog">${cta("Alle akzeptieren")}</div>
        <div aria-label="Cookie settings">${cta("Preferencias")}</div>
+       <div aria-label="GDPR settings">${cta("Save")}</div>
        <main>${cta("Demander un devis")}</main>`,
     );
 
-    for (const text of ["Voir les préférences", "Alle akzeptieren", "Preferencias"]) {
+    for (const text of ["Voir les préférences", "Alle akzeptieren", "Preferencias", "Save"]) {
       expect(byText(snaps, text)?.isConsent, text).toBe(true);
     }
     expect(byText(snaps, "Demander un devis")?.isConsent).toBe(false);

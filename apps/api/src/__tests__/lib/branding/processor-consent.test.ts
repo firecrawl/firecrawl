@@ -45,6 +45,39 @@ describe("consent dialogs in the button candidates", () => {
     expect(profile.__button_snapshots.map((b: any) => b.text)).toEqual(["Demander un devis"]);
   });
 
+  it("keeps a consent dialog's colors out of the palette", () => {
+    const text = (label: string, color: string, isConsent: boolean) => ({
+      ...button(label, "rgba(0, 0, 0, 0)", isConsent),
+      tag: "p",
+      isButton: false,
+      colors: { text: color, background: "rgba(0, 0, 0, 0)", border: "rgba(0, 0, 0, 0)", borderWidth: 0 },
+    });
+    const profile: any = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        // A loud lime banner with many controls, and a quiet brand page.
+        ...Array.from({ length: 8 }, (_, i) => button(`Consent ${i}`, "rgb(190, 255, 0)", true)),
+        ...Array.from({ length: 8 }, (_, i) => text(`Notice ${i}`, "rgb(190, 255, 0)", true)),
+        button("Get started", "rgb(0, 97, 254)", false),
+        text("Body", "rgb(30, 30, 30)", false),
+      ],
+      images: [],
+      logoCandidates: [],
+      brandName: "Acme",
+      pageTitle: "Acme",
+      pageUrl: "https://acme.test/",
+      typography: { stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] }, sizes: {} },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+      backgroundCandidates: [{ color: "rgb(255, 255, 255)", source: "body", priority: 100 }],
+    } as any);
+
+    const palette = Object.values(profile.colors ?? {}).map((c: any) => String(c).toUpperCase());
+    expect(palette).not.toContain("#BEFF00");
+    expect(profile.colors?.primary?.toUpperCase()).toBe("#0061FE");
+  });
+
   it("does not report a label the same color as its fill", () => {
     const withText = (bg: string, text: string, label: string) => ({
       ...button(label, bg, false),
