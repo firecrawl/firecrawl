@@ -300,7 +300,9 @@ def wait_for_batch_completion(
     client: HttpClient,
     job_id: str,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    *,
+    raise_on_failure: bool = False,
 ) -> BatchScrapeJob:
     """
     Wait for a batch scrape job to complete, polling for status updates.
@@ -310,12 +312,14 @@ def wait_for_batch_completion(
         job_id: ID of the batch scrape job
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False to preserve the historical return behavior.
         
     Returns:
-        BatchScrapeStatusResponse when job completes
+        BatchScrapeJob with the terminal status and available data
         
     Raises:
-        FirecrawlError: If the job fails or timeout is reached
+        FirecrawlError: If raise_on_failure is True and the job fails or is cancelled
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
@@ -323,8 +327,15 @@ def wait_for_batch_completion(
     while True:
         status_job = get_batch_scrape_status(client, job_id)
         
-        # Check if job is complete
-        if status_job.status in ["completed", "failed", "cancelled"]:
+        # Keep the historical return behavior unless callers opt in to
+        # exceptions for terminal states that did not complete successfully.
+        if status_job.status == "completed":
+            return status_job
+        if status_job.status in ["failed", "cancelled"]:
+            if raise_on_failure:
+                raise FirecrawlError(
+                    f"Batch scrape job {job_id} ended with status '{status_job.status}'"
+                )
             return status_job
         
         # Check timeout
@@ -349,7 +360,8 @@ def batch_scrape(
     audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    raise_on_failure: bool = False,
 ) -> BatchScrapeJob:
     """
     Start a batch scrape job and wait for it to complete.
@@ -360,12 +372,15 @@ def batch_scrape(
         options: Scraping options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False for backward compatibility.
         
     Returns:
-        BatchScrapeStatusResponse when job completes
+        BatchScrapeJob with the terminal status and available data
         
     Raises:
-        FirecrawlError: If the batch scrape fails to start or complete
+        FirecrawlError: If starting the job fails, or if raise_on_failure is True
+            and the job ends as failed or cancelled
         TimeoutError: If timeout is reached
     """
     # Start the batch scrape
@@ -387,7 +402,7 @@ def batch_scrape(
 
     # Wait for completion
     return wait_for_batch_completion(
-        client, job_id, poll_interval, timeout
+        client, job_id, poll_interval, timeout, raise_on_failure=raise_on_failure
     )
 
 
