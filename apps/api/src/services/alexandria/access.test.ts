@@ -42,6 +42,29 @@ it("serves the last requirements for up to an hour when the Exchange cannot answ
   expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
 });
 
+it("retries the lookup once when the connection drops or Exchange answers 5xx", async () => {
+  mocks.request
+    .mockRejectedValueOnce(new Error("other side closed"))
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+
+  mocks.request.mockReset();
+  mocks.request
+    .mockResolvedValueOnce({ status: 503, body: "draining" })
+    .mockResolvedValueOnce(requirement(false));
+  expect(await authorizeProviders("team", calls, {})).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+});
+
+it("does not retry a lookup that timed out", async () => {
+  const timeout = new Error("The operation was aborted due to timeout");
+  timeout.name = "TimeoutError";
+  mocks.request.mockRejectedValue(timeout);
+  expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+});
+
 it("refuses a provider the Exchange does not know before any quote or execution", async () => {
   mocks.request.mockResolvedValue({ status: 404, body: { code: "not_found" } });
   const denied = await authorizeProviders("team", calls, {});

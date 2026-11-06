@@ -69,17 +69,29 @@ export async function authorizeProviders(
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   let failure: unknown;
-  const response = await exchangeRequest({
-    teamId,
-    path: "/v1/provider-terms/requirements",
-    body: { providers },
-    timeoutMs: 10000,
-    clientIp,
-    billingCountry,
-  }).catch(error => {
-    failure = error;
-    return undefined;
-  });
+  const lookup = () =>
+    exchangeRequest({
+      teamId,
+      path: "/v1/provider-terms/requirements",
+      body: { providers },
+      timeoutMs: 10000,
+      clientIp,
+      billingCountry,
+    }).catch(error => {
+      failure = error;
+      return undefined;
+    });
+  let response = await lookup();
+  // A dropped connection or a 5xx usually means an Exchange pod was replaced mid-request;
+  // the lookup is read-only, so one immediate retry reaches a live pod. A timeout is not retried.
+  if (
+    (response === undefined &&
+      !(failure instanceof Error && failure.name === "TimeoutError")) ||
+    (response !== undefined && response.status >= 500)
+  ) {
+    failure = undefined;
+    response = await lookup();
+  }
   if (response?.status === 404)
     return refusal(404, "Unknown provider. No provider was executed.", {
       code: "unknown_provider",
