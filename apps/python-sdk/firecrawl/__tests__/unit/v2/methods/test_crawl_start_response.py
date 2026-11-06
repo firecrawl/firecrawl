@@ -63,3 +63,19 @@ def test_async_start_crawl_returns_prompt_options():
 
     assert res.prompt_generated_options == GENERATED
     assert res.final_crawler_options == FINAL
+
+
+def test_async_start_crawl_without_prompt_leaves_them_unset():
+    client = Mock()
+    client.post = AsyncMock(
+        return_value=_response(
+            {"success": True, "id": "job", "url": "https://api.firecrawl.dev/v2/crawl/job"}
+        )
+    )
+
+    res = asyncio.run(
+        async_crawl_module.start_crawl(client, CrawlRequest(url="https://example.com"))
+    )
+
+    assert res.prompt_generated_options is None
+    assert res.final_crawler_options is None
