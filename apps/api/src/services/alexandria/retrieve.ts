@@ -26,6 +26,12 @@ import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import { isUsOnly } from "../../lib/us-only";
 import {
+  adjustKeylessCredits,
+  isKeylessTeamId,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+import {
   answerSchema,
   refusal,
   type ExchangeResponse,
@@ -286,7 +292,17 @@ export async function retrieveProviders(input: {
 
   let lockId: string | undefined;
   let maximumCredits: number;
+  // A keyless caller has no Autumn customer: its hold is on the IP's daily keyless credits.
+  const keyless = isKeylessTeamId(input.teamId);
+  let keylessHeld = 0;
   const finalize = async (credits: number) => {
+    if (keylessHeld > 0) {
+      const held = keylessHeld;
+      keylessHeld = 0;
+      await adjustKeylessCredits(input.teamId, credits - held);
+      await logKeylessCreditUsage(input.teamId, credits);
+      return true;
+    }
     if (!lockId) return true;
     const settled = await autumnService.finalizeCreditsLock({
       // Omitted without an org: the settle goes through firebill when it is
@@ -395,7 +411,21 @@ export async function retrieveProviders(input: {
       );
     maximumCredits = parsedQuote.data.maximumCredits;
 
-    if (billable && maximumCredits > 0) {
+    if (billable && maximumCredits > 0 && keyless) {
+      const reservation = await reserveKeylessCredits(
+        input.teamId,
+        maximumCredits,
+      );
+      if (!reservation.ok)
+        return refuse(
+          refusal(
+            429,
+            `This request needs up to ${maximumCredits} keyless credits. No provider was executed.`,
+            { code: "keyless_limit" },
+          ),
+        );
+      keylessHeld = maximumCredits;
+    } else if (billable && maximumCredits > 0) {
       if (!config.USE_DB_AUTHENTICATION)
         return refuse(
           refusal(
@@ -463,7 +493,7 @@ export async function retrieveProviders(input: {
     record.maximumCredits = maximumCredits;
     await write(record);
   } catch (error) {
-    if (lockId) await finalize(0).catch(() => false);
+    if (lockId || keylessHeld > 0) await finalize(0).catch(() => false);
     await releaseIndexCalls();
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
@@ -539,7 +569,7 @@ export async function retrieveProviders(input: {
     const credits = answer.creditsCost;
     const settled = await finalize(credits);
     const recorded =
-      settled && billable && credits > 0
+      settled && billable && credits > 0 && !keyless
         ? await recordLedgerUsage(
             id,
             input.teamId,
@@ -549,7 +579,7 @@ export async function retrieveProviders(input: {
             hostedMcp,
           )
         : settled;
-    const charged = settled && billable && credits > 0;
+    const charged = settled && billable && credits > 0 && !keyless;
     if (charged && input.agentRequestId)
       await recordAgentCredits(input.agentRequestId, id, credits);
     if (!billable || recorded)

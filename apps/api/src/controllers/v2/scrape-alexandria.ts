@@ -13,6 +13,12 @@ import { orgIdFromAcuc } from "../../lib/team-org";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import {
+  isKeylessAlexandriaAllowed,
+  isKeylessTeamId,
+  keylessLimitBody,
+} from "../../lib/keyless";
+import { keylessClientIp } from "../auth";
+import {
   discoveryForCalls,
   recordDiscoveredTools,
 } from "../../lib/alexandria-discovery";
@@ -113,7 +119,8 @@ export async function providerScrapeController(
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
 
-  if (req.auth.team_id.startsWith("preview_keyless_")) {
+  const keyless = isKeylessTeamId(req.auth.team_id);
+  if (keyless && !isKeylessAlexandriaAllowed(body.alexandria)) {
     return res.status(403).json({
       success: false,
       error: "An API key is required for provider tools.",
@@ -179,7 +186,7 @@ export async function providerScrapeController(
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
       zeroDataRetention,
-      clientIp: req.ip,
+      clientIp: keyless ? keylessClientIp(req) : req.ip,
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
     });
@@ -324,6 +331,10 @@ export async function providerScrapeController(
       code?: unknown;
       retryAfterSeconds?: unknown;
     } | null;
+    if (refused?.code === "keyless_limit")
+      return res
+        .status(429)
+        .json(await keylessLimitBody(req.auth.team_id, "v2_alexandria", req));
     if (
       (refused?.code === "index_daily_limit" ||
         refused?.code === "index_rate_limit") &&

@@ -129,6 +129,27 @@ export function isKeylessTeamId(teamId: string): boolean {
   return teamId.startsWith(KEYLESS_TEAM_PREFIX);
 }
 
+const KEYLESS_ALEXANDRIA_CAPABILITIES = new Set(
+  (config.KEYLESS_ALEXANDRIA_CAPABILITIES ?? "")
+    .split(",")
+    .map(address => address.trim())
+    .filter(Boolean),
+);
+
+/** Whether a keyless caller may run every one of these Alexandria calls. */
+export function isKeylessAlexandriaAllowed(
+  calls: { provider: string; capability: string }[],
+): boolean {
+  return (
+    calls.length > 0 &&
+    calls.every(call =>
+      KEYLESS_ALEXANDRIA_CAPABILITIES.has(
+        `${call.provider}/${call.capability}`,
+      ),
+    )
+  );
+}
+
 // The keyless identity (quota bucket) of a team: a client IP or a World ID
 // identity. Quota keys take it as is; prompts take keylessPromptIp.
 function keylessIpFromTeamId(teamId: string): string | null {

@@ -143,6 +143,9 @@ const configSchema = z.object({
   // Non-negative integers; 0 means "enabled but no budget", unset means "off".
   KEYLESS_CREDITS_PER_DAY: z.coerce.number().int().nonnegative().optional(),
   KEYLESS_REQUESTS_PER_DAY: z.coerce.number().int().nonnegative().optional(),
+  // Alexandria capabilities the keyless tier may call, as comma-separated
+  // `provider/capability` addresses. Unset leaves every provider tool key-only.
+  KEYLESS_ALEXANDRIA_CAPABILITIES: emptyStringAsUndefined(z.string()),
   // Shared secret that lets a trusted proxy (e.g. the hosted MCP server)
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
