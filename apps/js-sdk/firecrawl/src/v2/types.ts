@@ -1141,6 +1141,10 @@ export interface CrawlOptions {
 export interface CrawlResponse {
   id: string;
   url: string;
+  /** Options generated from `prompt`, returned only when the crawl was started with one. */
+  promptGeneratedOptions?: Record<string, unknown>;
+  /** Options the crawl runs with after the generated ones are applied, returned only with `prompt`. */
+  finalCrawlerOptions?: Record<string, unknown>;
 }
 
 export interface CrawlJob {
