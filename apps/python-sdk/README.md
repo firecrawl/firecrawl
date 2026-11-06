@@ -381,37 +381,34 @@ firecrawl.stop_interaction(scrape_job_id)
 
 ### Crawling a Website with WebSockets
 
-To crawl a website with WebSockets, use the `crawl_url_and_watch` method. It takes the starting URL and optional parameters as arguments. The `params` argument allows you to specify additional options for the crawl job, such as the maximum number of pages to crawl, allowed domains, and the output format.
+To follow a crawl in real time, start it with `start_crawl` and pass the job ID to `watcher`. The watcher runs in a background thread and calls your handlers as documents arrive and when the job finishes.
 
-```python 
-# inside an async function...
-nest_asyncio.apply()
+```python
+import threading
 
-# Define event handlers
+finished = threading.Event()
+
 def on_document(detail):
-    print("DOC", detail)
+    print("DOC", detail['data'])
 
 def on_error(detail):
     print("ERR", detail['error'])
+    finished.set()
 
 def on_done(detail):
     print("DONE", detail['status'])
+    finished.set()
 
-    # Function to start the crawl and watch process
-async def start_crawl_and_watch():
-    # Initiate the crawl job and get the watcher
-    watcher = app.crawl_url_and_watch('firecrawl.dev', exclude_paths=['blog/*'], limit=5)
+job = firecrawl.start_crawl('https://firecrawl.dev', exclude_paths=['blog/*'], limit=5)
 
-    # Add event listeners
-    watcher.add_event_listener("document", on_document)
-    watcher.add_event_listener("error", on_error)
-    watcher.add_event_listener("done", on_done)
+watcher = firecrawl.watcher(job.id, kind='crawl', poll_interval=2, timeout=120)
+watcher.add_event_listener("document", on_document)
+watcher.add_event_listener("error", on_error)
+watcher.add_event_listener("done", on_done)
+watcher.start()
 
-    # Start the watcher
-    await watcher.connect()
-
-# Run the event loop
-await start_crawl_and_watch()
+finished.wait(timeout=120)
+watcher.stop()
 ```
 
 ## Error Handling
