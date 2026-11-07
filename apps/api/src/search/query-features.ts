@@ -64,7 +64,8 @@ export async function queryFeatures(
       : [];
     return { anyProvider, providers };
   } catch (error) {
-    logger.warn("Query-features router unavailable", { error });
+    if (!(error instanceof Error && error.name === "TimeoutError"))
+      logger.warn("Query-features router unavailable", { error });
     return undefined;
   }
 }
