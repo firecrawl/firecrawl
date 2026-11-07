@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { discover, httpUrl, isPageUrl } from "../archive/discovery.js";
 import { downloadMedia, retryDelay, type MediaResult } from "../archive/download.js";
+import { MediaProgress } from "../archive/media-progress.js";
 import { ensureApiReady } from "../archive/local-api.js";
 import { createRun, pagePath } from "../archive/paths.js";
 import { saveManifest, savePage, type Manifest, type PageResult } from "../archive/storage.js";
@@ -146,18 +147,30 @@ export async function runArchive(
               }
             }
             const headers = mediaHeaders(engine, req.headers, url, finalUrl);
-            for (const ref of discovered.media) {
-              let asset = assets.get(ref.url);
-              if (!asset || (asset.kind === "embed" && ref.kind !== "embed")) {
-                asset = await downloadMedia(ref, {
-                  root,
-                  maxBytes: opts.maxMediaMb * 1_000_000,
-                  headers,
-                  signal: opts.signal,
-                });
-                assets.set(ref.url, asset);
+            process.stderr.write(
+              `  captured page; ${discovered.media.length} media items to process\n`,
+            );
+            const progress = new MediaProgress();
+            try {
+              for (const [index, ref] of discovered.media.entries()) {
+                let asset = assets.get(ref.url);
+                const reused = Boolean(asset && !(asset.kind === "embed" && ref.kind !== "embed"));
+                progress.start(index + 1, discovered.media.length, ref.url, reused);
+                if (!asset || !reused) {
+                  asset = await downloadMedia(ref, {
+                    root,
+                    maxBytes: opts.maxMediaMb * 1_000_000,
+                    headers,
+                    signal: opts.signal,
+                    onProgress: progress.update,
+                  });
+                  assets.set(ref.url, asset);
+                }
+                progress.finish(asset, reused);
+                media.push(asset);
               }
-              media.push(asset);
+            } finally {
+              progress.stop();
             }
             result.status = "saved";
           }

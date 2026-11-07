@@ -48,7 +48,7 @@ data/<hostname>/<UTC-timestamp>-<unique-id>/
     └── videos/
 ```
 
-The command prints the absolute output directory and `index.md` location. `data/*` is gitignored. Runs never overwrite each other; URL hashes distinguish query variants, and shared media downloads once per run. These are content archives, not offline replicas: HTML keeps its original resource links, while `page.json` maps discovered assets to local files.
+The command prints the absolute output directory and `index.md` location. Media progress on stderr shows each item’s count, current file, bytes transferred, percentage when the server supplies a usable size, and elapsed seconds. A one-second heartbeat continues while waiting for a response or retrying, and each item ends with downloaded/reused/skipped/failed status. Interactive terminals update the current line; redirected output gets plain progress lines. Query strings are excluded from progress labels. `data/*` is gitignored. Runs never overwrite each other; URL hashes distinguish query variants, and shared media downloads once per run. These are content archives, not offline replicas: HTML keeps its original resource links, while `page.json` maps discovered assets to local files.
 
 Defaults are **100 attempted pages**, **100 MB per media file** (decimal MB), and a **1,000 ms gap between pages**, processed sequentially. The size cap applies to each file. Use `--limit`, `--max-media-mb`, and `--delay-ms` to change these. Direct CLI usage is `pnpm exec tsx src/cli.ts archive URL --engine cdp` (CDP is its default).
 

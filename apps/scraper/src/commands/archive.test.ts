@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { checkoutRoot, createRun } from "../archive/paths.js";
 import type { Manifest } from "../archive/storage.js";
 import { loadConfig } from "../config.js";
@@ -146,6 +146,20 @@ describe("site archives", () => {
       await readFile(join(root, "manifest.json"), "utf8"),
     ) as Manifest;
     expect(savedManifest).toEqual(manifest);
+  });
+
+  it("shows media counts, completed downloads and reused assets on stderr", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await runArchive(await options());
+      const output = stderr.mock.calls.map((call) => String(call[0])).join("");
+      expect(output).toContain("captured page; 3 media items to process");
+      expect(output).toMatch(/media \[1\/3\].*downloaded 5 B/);
+      expect(output).toMatch(/media \[1\/3\].*reused/);
+      expect(output).toContain("skipped: Embedded player");
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   it("stops normally at the page limit and creates distinct run directories", async () => {

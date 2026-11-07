@@ -1,9 +1,10 @@
 import { createServer, type Server } from "node:http";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { downloadMedia, retryDelay } from "./download.js";
+import { downloadMedia, retryDelay, type MediaTransferProgress } from "./download.js";
 
 let server: Server;
 let base = "";
@@ -41,6 +42,19 @@ beforeAll(async () => {
     }
     res.setHeader("Content-Type", "image/png");
     if (path === "/large") res.setHeader("Content-Length", "1000");
+    if (path === "/progress") {
+      res.setHeader("Content-Length", "8");
+      res.write("1234");
+      setTimeout(() => res.end("5678"), 30);
+      return;
+    }
+    if (path === "/compressed") {
+      const payload = gzipSync(Buffer.alloc(64));
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Content-Length", String(payload.length));
+      res.end(payload);
+      return;
+    }
     if (path === "/slow") {
       res.write(Buffer.alloc(1));
       const timer = setInterval(() => res.write(Buffer.alloc(1)), 20);
@@ -77,6 +91,62 @@ describe("media downloads", () => {
     expect(result.status).toBe("downloaded");
     expect(result.bytes).toBe(5);
     expect(await readFile(join(root, result.path!), "utf8")).toBe("image");
+  });
+
+  it("emits byte updates before a slow download completes", async () => {
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/progress`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(events[0]?.phase).toBe("requesting");
+    expect(
+      events.some(
+        (event) => event.phase === "downloading" && event.bytes === 4 && event.totalBytes === 8,
+      ),
+    ).toBe(true);
+    expect(events.at(-1)).toMatchObject({ phase: "downloading", bytes: 8, totalBytes: 8 });
+  });
+
+  it("does not use compressed wire sizes as decoded byte totals", async () => {
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/compressed`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.bytes).toBe(64);
+    expect(events.at(-1)?.totalBytes).toBeUndefined();
+  });
+
+  it("reports retry waits and the next attempt", async () => {
+    attempts = 0;
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/retry`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(events.filter((event) => event.phase === "retrying")).toHaveLength(2);
+    expect(
+      events.filter((event) => event.phase === "requesting").map((event) => event.attempt),
+    ).toEqual([1, 2, 3]);
+    attempts = 0;
   });
 
   it("rejects oversized files with and without Content-Length and leaves no partial files", async () => {

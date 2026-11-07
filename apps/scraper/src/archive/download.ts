@@ -18,12 +18,21 @@ export interface MediaResult extends MediaRef {
   reason?: string;
 }
 
+export interface MediaTransferProgress {
+  phase: "requesting" | "downloading" | "retrying";
+  attempt: number;
+  bytes: number;
+  totalBytes?: number;
+  retryAfterMs?: number;
+}
+
 export interface DownloadOptions {
   root: string;
   maxBytes: number;
   headers: (url: string) => Promise<Record<string, string>>;
   signal?: AbortSignal | undefined;
   timeoutMs?: number;
+  onProgress?: (progress: MediaTransferProgress) => void;
 }
 
 class TooLarge extends Error {}
@@ -43,6 +52,7 @@ export async function downloadMedia(ref: MediaRef, opts: DownloadOptions): Promi
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       opts.signal?.throwIfAborted();
+      opts.onProgress?.({ phase: "requesting", attempt: attempt + 1, bytes: 0 });
       const signal = AbortSignal.any([
         AbortSignal.timeout(opts.timeoutMs ?? 30_000),
         ...(opts.signal ? [opts.signal] : []),
@@ -65,6 +75,12 @@ export async function downloadMedia(ref: MediaRef, opts: DownloadOptions): Promi
       if ((response.status === 429 || response.status >= 500) && attempt < 2) {
         const delay = retryDelay(response.headers.get("retry-after"), 500 * 2 ** attempt);
         await response.body?.cancel();
+        opts.onProgress?.({
+          phase: "retrying",
+          attempt: attempt + 1,
+          bytes: 0,
+          retryAfterMs: delay,
+        });
         await sleep(delay, undefined, { signal: opts.signal });
         continue;
       }
@@ -92,9 +108,17 @@ export async function downloadMedia(ref: MediaRef, opts: DownloadOptions): Promi
       await mkdir(dirname(target), { recursive: true });
       temporary = `${target}.${randomUUID()}.part`;
       let bytes = 0;
+      const length = Number(response.headers.get("content-length"));
+      // fetch decodes compressed bodies; their wire Content-Length is not a byte total.
+      const total =
+        length > 0 && Number.isFinite(length) && !response.headers.get("content-encoding")
+          ? { totalBytes: length }
+          : {};
+      opts.onProgress?.({ phase: "downloading", attempt: attempt + 1, bytes, ...total });
       const counter = new Transform({
         transform(chunk: Buffer, _encoding, callback) {
           bytes += chunk.length;
+          opts.onProgress?.({ phase: "downloading", attempt: attempt + 1, bytes, ...total });
           callback(bytes > opts.maxBytes ? new TooLarge("Exceeds media size limit") : null, chunk);
         },
       });
