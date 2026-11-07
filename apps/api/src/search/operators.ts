@@ -79,6 +79,28 @@ export function parseQueryOperators(query: string): QueryOperators {
   return operators;
 }
 
+
+/**
+ * Removes site operators from a query when the provider accepts equivalent
+ * structured includeDomains/excludeDomains fields.
+ */
+export function stripSiteOperators(query: string): string {
+  if (hasUnsupportedOr(query)) return query;
+
+  return query
+    .replace(
+      OPERATOR_TOKEN,
+      (token, phrase, lead, _negated, name, _quoted, _bare, closing) => {
+        if (phrase !== undefined || name.toLowerCase() !== "site") return token;
+        return lead + closing;
+      },
+    )
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s+(?:OR|\|)\s+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Providers return empty or partly filtered results when site: is combined
  * with inurl: or intitle:, so that combination is sent as site: plus plain
