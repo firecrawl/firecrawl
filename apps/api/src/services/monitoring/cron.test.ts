@@ -1,4 +1,8 @@
-import { getNextMonitorRunAt, validateMonitorCron } from "./cron";
+import {
+  getNextMonitorRunAt,
+  parseMonitorScheduleText,
+  validateMonitorCron,
+} from "./cron";
 
 // Minute-by-minute reference: the previous implementation, kept here so the
 // jump-based search is checked against it over short horizons (it costs one
@@ -164,3 +168,41 @@ describe("validateMonitorCron", () => {
     );
   });
 });
+
+describe("parseMonitorScheduleText", () => {
+  it("normalizes offset minute start within interval to maintain cadence", () => {
+    // 55 % 5 == 0 -> */5 * * * *
+    expect(parseMonitorScheduleText("every 5 minutes starting at :55")).toBe(
+      "*/5 * * * *",
+    );
+    // 45 % 30 == 15 -> 15-59/30 * * * *
+    expect(parseMonitorScheduleText("every 30 minutes starting at :45")).toBe(
+      "15-59/30 * * * *",
+    );
+    // 37 % 15 == 7 -> 7-59/15 * * * *
+    expect(parseMonitorScheduleText("every 15 minutes starting at :37")).toBe(
+      "7-59/15 * * * *",
+    );
+    // 25 % 10 == 5 -> 5-59/10 * * * *
+    expect(parseMonitorScheduleText("every 10 minutes starting at :25")).toBe(
+      "5-59/10 * * * *",
+    );
+    // start minute < interval stays unchanged
+    expect(parseMonitorScheduleText("every 15 minutes starting at :07")).toBe(
+      "7-59/15 * * * *",
+    );
+  });
+
+  it("schedules consecutive runs every 5 minutes across the hour boundary", () => {
+    const cron = parseMonitorScheduleText("every 5 minutes starting at :55");
+    const first = getNextMonitorRunAt(
+      cron,
+      new Date("2026-10-15T10:55:00Z"),
+      "UTC",
+    );
+    expect(first.toISOString()).toBe("2026-10-15T11:00:00.000Z");
+    const second = getNextMonitorRunAt(cron, first, "UTC");
+    expect(second.toISOString()).toBe("2026-10-15T11:05:00.000Z");
+  });
+});
+
