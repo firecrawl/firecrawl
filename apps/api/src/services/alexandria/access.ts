@@ -11,10 +11,7 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { getACUCTeam } from "../../controllers/auth";
-import {
-  isAuthenticatedTeamId,
-  teamBillingUrl,
-} from "../../lib/team-billing-url";
+import { upgradeUrlForTeam } from "../../lib/team-billing-url";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -148,9 +145,7 @@ export async function authorizeProviders(
       const addresses = [
         ...new Set(gated.map(call => `${call.provider}/${call.capability}`)),
       ].join(", ");
-      const upgradeUrl = isAuthenticatedTeamId(teamId)
-        ? teamBillingUrl(teamId)
-        : (config.FIRECRAWL_DASHBOARD_URL ?? "https://www.firecrawl.dev");
+      const upgradeUrl = upgradeUrlForTeam(teamId);
       return refusal(
         403,
         `${addresses} ${gated.length === 1 ? "is" : "are"} available on paid plans only. Upgrade at ${upgradeUrl} to use ${gated.length === 1 ? "it" : "them"}. No provider was executed.`,

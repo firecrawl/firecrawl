@@ -1,14 +1,27 @@
+import { config } from "../config";
 import { isValidUuid } from "./owner-id";
 
 /** Public pricing page for callers that are not an authenticated team. */
 const GENERIC_PRICING_URL = "https://firecrawl.dev/pricing";
+
+/** Hosted dashboard, used when a deployment leaves the base unset. */
+const DEFAULT_DASHBOARD_URL = "https://www.firecrawl.dev";
+
+/**
+ * Dashboard origin for this deployment. `FIRECRAWL_DASHBOARD_URL` may carry a
+ * trailing slash; the billing path is appended to the stripped base.
+ */
+function dashboardBase(): string {
+  const configured = config.FIRECRAWL_DASHBOARD_URL?.replace(/\/+$/, "");
+  return configured || DEFAULT_DASHBOARD_URL;
+}
 
 /**
  * Billing settings for one team. The dashboard accepts the team's UUID and
  * redirects to its slug.
  */
 export function teamBillingUrl(teamId: string): string {
-  return `https://www.firecrawl.dev/app/t/${teamId}/settings?tab=billing`;
+  return `${dashboardBase()}/app/t/${teamId}/settings?tab=billing`;
 }
 
 /** A real team id. Preview, keyless, and the self-hosted bypass id are not. */

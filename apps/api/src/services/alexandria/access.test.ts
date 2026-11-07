@@ -472,7 +472,26 @@ describe("paid-plan-only capabilities", () => {
     expect(denied?.body).toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
     );
+    expect(String((denied?.body as { error: string }).error)).toContain(
+      "https://firecrawl.dev/pricing",
+    );
   });
+
+  it.each(["preview", "preview_keyless_203.0.113.8"])(
+    "points a %s paid-plan refusal at the public pricing page",
+    async teamId => {
+      mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+      mocks.team.mockResolvedValue({ is_paid_plan: false });
+      const denied = await authorizeProviders(teamId, wiim, enabled, "org");
+      const error = String((denied?.body as { error: string }).error);
+      expect(denied?.body).toEqual(
+        expect.objectContaining({ code: "paid_plan_required" }),
+      );
+      expect(error).toContain("https://firecrawl.dev/pricing");
+      expect(error).not.toContain("https://d");
+      expect(error).not.toContain("/app/t/");
+    },
+  );
 
   it("lets a team that bypasses credit checks through, and treats a missing field as ungated", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
