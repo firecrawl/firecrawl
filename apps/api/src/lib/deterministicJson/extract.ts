@@ -9,6 +9,7 @@ import {
   runExtractorInSandbox,
   type SandboxRunner,
 } from "./sandbox/runExtractor";
+import { validateGeneratedExtractor } from "./pipeline/validate";
 import { tooStrictFeedback, tooStrictSelectors } from "./html/selector-repair";
 import { errorMessage, log, sha } from "./core/util";
 
@@ -112,11 +113,36 @@ export async function extractDeterministicJson(
     return value;
   };
 
+  // A cached extractor that no longer passes validation — e.g. a script cached
+  // before the rules tightened — is discarded rather than run. Guard the check
+  // itself: a validator throw (e.g. RangeError on pathologically nested code)
+  // means we can't vouch for the script, so treat it as invalid too.
+  const cachedIsValid = (c: string): boolean => {
+    try {
+      return validateGeneratedExtractor(c).length === 0;
+    } catch (err) {
+      log(
+        "cached extractor validation threw; regenerating:",
+        errorMessage(err),
+      );
+      return false;
+    }
+  };
+
   let code: string;
-  if (cached) {
+  if (cached && cachedIsValid(cached.code)) {
     await cache.touch?.(key);
     code = cached.code;
   } else {
+    // Regenerating overwrites the bad row via `generate`'s setExtractor. Note
+    // getExtractor reads a possibly-lagging read replica while setExtractor
+    // writes the primary, so under replication lag concurrent requests keep
+    // regenerating until the replica converges — best-effort cleanup, not an
+    // atomic purge. Enough to stop a stale script from running; a hard purge of
+    // pre-existing rows is a separate one-time op.
+    if (cached) {
+      log("cached extractor rejected by validation; regenerating");
+    }
     code = await generate();
   }
 
