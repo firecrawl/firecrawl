@@ -474,6 +474,28 @@ export async function batchScrapeController(
       };
 
   if (req.body.appendToId) {
+    if (!sc || sc.team_id !== req.auth.team_id) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    const group = await crawlGroup.getGroup(req.body.appendToId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (group.status !== "active" || sc.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${sc.cancelled ? "cancelled" : group.status}". Please start a new batch without appendToId.`,
+      });
+    }
+
     sc.internalOptions.bypassBilling = !(
       req.body.__agentInterop?.shouldBill ?? true
     );
