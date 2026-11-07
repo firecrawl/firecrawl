@@ -40,6 +40,8 @@ SCRAPE_DOCUMENT_KEYS = {
     "actions",
     "pages",
     "warning",
+    "highlights",
+    "blocks",
 }
 
 async def search(

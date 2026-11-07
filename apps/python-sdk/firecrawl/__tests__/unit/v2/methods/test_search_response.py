@@ -263,3 +263,41 @@ class TestSearchScrapedContentPreservation:
         recreated = SearchDocument.model_validate(dumped)
         assert recreated.answer == "$19"
         assert recreated.url == "https://example.com/product"
+
+    def test_search_with_highlights_and_blocks_preserved_as_document(self):
+        from firecrawl.v2.types import Document, SearchDocument
+        from firecrawl.types import SearchDocument as ExportedSearchDocument
+
+        assert ExportedSearchDocument is SearchDocument
+
+        highlights_result = {
+            "url": "https://example.com/highlight-page",
+            "title": "Highlight page",
+            "highlights": "Key takeaway point",
+            "imageUrl": "https://example.com/thumb.jpg",
+            "imageWidth": 640,
+            "imageHeight": 480,
+        }
+        blocks_result = {
+            "url": "https://example.com/block-page",
+            "title": "Block page",
+            "blocks": [],
+        }
+
+        client = Mock()
+        client.post.return_value = _response({"web": [highlights_result, blocks_result]})
+
+        result = search(client, SearchRequest(query="highlights"))
+        assert len(result.web) == 2
+
+        item1 = result.web[0]
+        assert isinstance(item1, Document)
+        assert isinstance(item1, SearchDocument)
+        assert getattr(item1, "highlights", None) == "Key takeaway point"
+        assert item1.image_url == "https://example.com/thumb.jpg"
+        assert item1.image_width == 640
+        assert item1.image_height == 480
+
+        item2 = result.web[1]
+        assert isinstance(item2, Document)
+        assert getattr(item2, "blocks", None) == []
