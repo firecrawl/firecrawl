@@ -75,6 +75,16 @@ it.each([undefined, "compact", "summary", "full"] as const)(
     }
   },
 );
+it("scopes semantic matches to the given providers", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  await discoverTools({ ...input, providers: ["sample"] }, logger);
+  expect(request.mock.calls[0][0].body).toMatchObject({
+    options: { query: "records", providers: ["sample"] },
+  });
+});
 it("keeps a warning when discovery fails", async () => {
   request.mockResolvedValue({ status: 503, body: {} });
   const result = await discoverTools(input, logger);

@@ -116,6 +116,8 @@ const hash = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 const TICKER = /(?:^|\s)\$?([A-Z]{2,5}(?:[.-][A-Z]{1,2})?)(?=$|[\s,.?!'])/;
+const EXPLICIT_TICKER = /(?:^|\s)\$([A-Z]{1,5}(?:[.-][A-Z]{1,2})?)\b/;
+const MARKET_WORDS = /\b(?:stocks?|shares?|ticker|quote|price|market cap)\b/i;
 const URL_IN_QUERY = /https?:\/\/[^\s"'<>]+/;
 const COMPANY =
   /\b(?:at|for|from|of)\s+([A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,3})/;
@@ -126,7 +128,11 @@ export function valueFromQuery(
   query: string,
 ): string | undefined {
   const name = option.toLowerCase().replace(/[^a-z]/g, "");
-  if (name === "symbol" || name === "ticker") return TICKER.exec(query)?.[1];
+  if (name === "symbol" || name === "ticker")
+    return (
+      EXPLICIT_TICKER.exec(query)?.[1] ??
+      (MARKET_WORDS.test(query) ? TICKER.exec(query)?.[1] : undefined)
+    );
   if (name === "url") return URL_IN_QUERY.exec(query)?.[0];
   if (name === "domain" || name === "hostname" || name === "host")
     return parseSearchQuery(query).domains[0];
@@ -273,7 +279,7 @@ export async function runInlineTools(
     query: string;
     teamId: string;
     deadline: number;
-    route: () => Promise<RoutedProviders | undefined>;
+    route: (timeoutMs: number) => Promise<RoutedProviders | undefined>;
     discover: (
       providers: string[],
       timeoutMs: number,
@@ -307,7 +313,7 @@ export async function runInlineTools(
     ...extra,
   });
   try {
-    const routed = await input.route();
+    const routed = await input.route(remaining());
     if (!routed) return outcome("unrouted");
     if (routed.anyProvider < ANY_PROVIDER_MIN) return outcome("not_needed");
     const provider = routed.providers.find(item =>
@@ -357,9 +363,15 @@ export async function runInlineTools(
     });
     const cacheKey = `alexandria:inline-tools:response:v1:${input.teamId}:${hash(call)}`;
     const hit = await redisRateLimitClient.get(cacheKey).catch(() => null);
-    if (hit)
+    let cachedData: unknown;
+    try {
+      cachedData = hit ? JSON.parse(hit) : undefined;
+    } catch {
+      cachedData = undefined;
+    }
+    if (cachedData !== undefined)
       return outcome(undefined, {
-        results: [result(JSON.parse(hit), true)],
+        results: [result(cachedData, true)],
         filledBy,
         cached: true,
       });

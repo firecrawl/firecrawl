@@ -185,6 +185,7 @@ export interface SearchV2Response {
  */
 export type SearchResultCountsBySource = Record<SearchResultType, number> & {
   tools?: number;
+  alexandria?: number;
   skills?: number;
 };
 
@@ -196,6 +197,7 @@ export function countSearchResultsBySource(
     images: response.images?.length ?? 0,
     news: response.news?.length ?? 0,
     ...(response.tools ? { tools: response.tools.length } : {}),
+    ...(response.alexandria ? { alexandria: response.alexandria.length } : {}),
     ...(response.skills ? { skills: response.skills.length } : {}),
   };
 }

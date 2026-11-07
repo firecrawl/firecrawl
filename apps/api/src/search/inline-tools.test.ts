@@ -115,12 +115,13 @@ describe("valueFromQuery", () => {
     );
     expect(valueFromQuery("company_name", "jobs at Stripe")).toBe("Stripe");
     expect(valueFromQuery("symbol", "how to center a div")).toBeUndefined();
+    expect(valueFromQuery("symbol", "what is the FBI budget")).toBeUndefined();
   });
 });
 
 describe("runInlineTools", () => {
   it("does nothing when the router is unavailable", async () => {
-    const { result, discover } = run("NVDA stock price", [quote], undefined);
+    const { result, discover } = run("NVDA stock price", [quote], null);
     expect((await result).skipped).toBe("unrouted");
     expect(discover).not.toHaveBeenCalled();
   });

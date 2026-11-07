@@ -1,8 +1,9 @@
+import type { Logger } from "winston";
 import { config } from "../config";
 
 /** The router's confidence, at or above which a query needs provider data. */
 export const ANY_PROVIDER_MIN = 0.83;
-const TIMEOUT_MS = 800;
+const MAX_TIMEOUT_MS = 800;
 
 export type RoutedProviders = {
   /** Probability that any provider serves the query. */
@@ -17,8 +18,10 @@ export type RoutedProviders = {
  */
 export async function queryFeatures(
   query: string,
+  timeoutMs: number,
+  logger: Logger,
 ): Promise<RoutedProviders | undefined> {
-  if (!config.QUERY_FEATURES_URL) return undefined;
+  if (!config.QUERY_FEATURES_URL || timeoutMs <= 0) return undefined;
   try {
     const response = await fetch(config.QUERY_FEATURES_URL, {
       method: "POST",
@@ -31,9 +34,15 @@ export async function queryFeatures(
         top: 5,
         features: ["alexandria"],
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.min(MAX_TIMEOUT_MS, timeoutMs)),
     });
-    if (!response.ok) return undefined;
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      logger.warn("Query-features router unavailable", {
+        status: response.status,
+      });
+      return undefined;
+    }
     const body = (await response.json()) as {
       results?: {
         alexandria?: { any_provider?: unknown; providers?: unknown };
@@ -54,7 +63,8 @@ export async function queryFeatures(
         )
       : [];
     return { anyProvider, providers };
-  } catch {
+  } catch (error) {
+    logger.warn("Query-features router unavailable", { error });
     return undefined;
   }
 }

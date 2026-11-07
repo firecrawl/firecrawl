@@ -547,7 +547,7 @@ async function searchControllerInner(
       req.acuc &&
       config.FIRE_EXCHANGE_URL !== undefined &&
       config.QUERY_FEATURES_URL !== undefined &&
-      !req.auth.team_id.startsWith("preview_keyless_") &&
+      !req.auth.team_id.startsWith("preview") &&
       !req.body.__agentInterop &&
       !isSearchPreview &&
       !zeroDataRetention &&

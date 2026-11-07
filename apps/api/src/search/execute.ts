@@ -244,7 +244,7 @@ export async function executeSearch(
             query,
             teamId,
             deadline: inlineStarted + config.ALEXANDRIA_INLINE_TOOLS_BUDGET_MS,
-            route: () => queryFeatures(query),
+            route: timeoutMs => queryFeatures(query, timeoutMs, logger),
             discover: async (providers, timeoutMs) =>
               (
                 await discoverTools(
@@ -264,7 +264,21 @@ export async function executeSearch(
             retrieve: retrieveInline,
           },
           logger,
-        )
+        ).then(inline => {
+          logger.info("Inline tools", {
+            canonicalLog: "search/inline-tools",
+            teamId,
+            skipped: inline.skipped,
+            tools: inline.results.map(
+              result => `${result.provider}/${result.capability}`,
+            ),
+            filledBy: inline.filledBy,
+            cached: inline.cached,
+            providerCost: inline.providerCost,
+            timeMs: Date.now() - inlineStarted,
+          });
+          return inline;
+        })
       : null;
   const toolIntent =
     toolsAllowed &&
@@ -748,21 +762,9 @@ export async function executeSearch(
 
   if (inlineTools) {
     const inline = await inlineTools;
-    logger.info("Inline tools", {
-      canonicalLog: "search/inline-tools",
-      teamId,
-      skipped: inline.skipped,
-      tools: inline.results.map(
-        result => `${result.provider}/${result.capability}`,
-      ),
-      filledBy: inline.filledBy,
-      cached: inline.cached,
-      providerCost: inline.providerCost,
-      timeMs: Date.now() - inlineStarted,
-    });
     if (inline.results.length) {
       searchResponse.alexandria = inline.results;
-    } else if (!searchResponse.tools && inline.candidates.length) {
+    } else if (!searchResponse.tools?.length && inline.candidates.length) {
       searchResponse.tools = inline.candidates;
       toolsAuto = true;
     }
