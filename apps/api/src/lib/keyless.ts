@@ -129,12 +129,14 @@ export function isKeylessTeamId(teamId: string): boolean {
   return teamId.startsWith(KEYLESS_TEAM_PREFIX);
 }
 
-const KEYLESS_ALEXANDRIA_CAPABILITIES = new Set(
-  (config.KEYLESS_ALEXANDRIA_CAPABILITIES ?? "")
-    .split(",")
-    .map(address => address.trim())
-    .filter(Boolean),
-);
+// Alexandria capabilities the keyless tier may call. Every other provider tool needs an API key.
+const KEYLESS_ALEXANDRIA_CAPABILITIES = new Set([
+  "hunter/people/enrich",
+  "hunter/companies/enrich",
+  "enrichlayer/people/profile",
+  "enrichlayer/companies/profile",
+  "predictleads/companies/enrich",
+]);
 
 /** Whether a keyless caller may run every one of these Alexandria calls. */
 export function isKeylessAlexandriaAllowed(
