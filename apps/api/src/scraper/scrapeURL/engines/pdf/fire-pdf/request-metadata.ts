@@ -53,8 +53,7 @@ export function firePdfRequestKind(meta: Meta): "scrape" | "parse" {
 }
 
 /** Whether this PDF must go to FirePDF instead of direct extraction, the
- * FIRE_PDF_PERCENT sample, or the MinerU diversion (see
- * PARSE_PDF_ALWAYS_FIRE_PDF). Fast mode keeps its text-layer-only contract. */
+ * FIRE_PDF_PERCENT sample (see PARSE_PDF_ALWAYS_FIRE_PDF). Fast mode keeps its text-layer-only contract. */
 export function parseAlwaysFirePdf(meta: Meta): boolean {
   return (
     firePdfRequestKind(meta) === "parse" &&
