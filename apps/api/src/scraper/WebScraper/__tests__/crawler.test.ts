@@ -1,5 +1,12 @@
 import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
+vi.mock("@mendable/firecrawl-rs", () => ({
+  extractLinks: vi.fn(),
+  filterLinks: vi.fn().mockRejectedValue(new Error("Simulate Rust fallback")),
+  filterUrl: vi.fn(),
+  validateRegexes: vi.fn(),
+}));
+
 import { WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
@@ -10,9 +17,7 @@ vi.mock("robots-parser");
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
+  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
 
   let maxCrawledDepth: number;
 
@@ -180,5 +185,87 @@ describe("WebCrawler", () => {
       true,
     );
     expect(sourceValidationResult.links).toEqual([initialUrl]);
+  });
+
+  describe("host scoping in JS fallback", () => {
+    it("should reject external links when allowExternalContentLinks is false", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: false,
+        allowSubdomains: false,
+      });
+
+      const links = ["https://example.com/page", "https://external.com/page"];
+
+      const res = await crawler["filterLinks"](links, 10, 10);
+      expect(res.links).toEqual(["https://example.com/page"]);
+      expect(res.denialReasons.has("https://external.com/page")).toBe(true);
+    });
+
+    it("should reject subdomain links when allowSubdomains is false", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: false,
+        allowSubdomains: false,
+      });
+
+      const links = [
+        "https://example.com/page",
+        "https://sub.example.com/page",
+      ];
+
+      const res = await crawler["filterLinks"](links, 10, 10);
+      expect(res.links).toEqual(["https://example.com/page"]);
+      expect(res.denialReasons.has("https://sub.example.com/page")).toBe(true);
+    });
+
+    it("should allow external links when allowExternalContentLinks is true", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: true,
+        allowSubdomains: false,
+      });
+
+      const links = ["https://example.com/page", "https://external.com/page"];
+
+      const res = await crawler["filterLinks"](links, 10, 10);
+      expect(res.links).toContain("https://example.com/page");
+      expect(res.links).toContain("https://external.com/page");
+    });
+
+    it("should allow subdomain links when allowSubdomains is true", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: false,
+        allowSubdomains: true,
+      });
+
+      const links = [
+        "https://example.com/page",
+        "https://sub.example.com/page",
+      ];
+
+      const res = await crawler["filterLinks"](links, 10, 10);
+      expect(res.links).toContain("https://example.com/page");
+      expect(res.links).toContain("https://sub.example.com/page");
+    });
+
+    it("should identify files with fragment hashes in isFile", () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+      });
+
+      expect(crawler.isFile("https://example.com/download.zip#section")).toBe(
+        true,
+      );
+      expect(
+        crawler.isFile("https://example.com/image.png?size=large#top"),
+      ).toBe(true);
+    });
   });
 });
