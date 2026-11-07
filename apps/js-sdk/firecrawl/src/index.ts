@@ -11,6 +11,8 @@ export { FirecrawlClient } from "./v2/client";
 export * from "./v2/types";
 /** Watcher class and options for crawl/batch job monitoring. */
 export { Watcher, type WatcherOptions } from "./v2/watcher";
+/** Collects Alexandria feedback tokens from call results for a session rating. */
+export { collectFeedbackTokens } from "./v2/utils/feedbackTokens";
 /** Research sub-client (accessed via `firecrawl.research`). */
 export { ResearchClient } from "./v2/methods/research";
 /** Legacy v1 client (feature‑frozen). */
