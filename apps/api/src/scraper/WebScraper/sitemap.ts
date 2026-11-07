@@ -31,6 +31,7 @@ export async function getLinksFromSitemap(
     usOnly,
     location,
     headers,
+    sitemapMaxFiles = SITEMAP_LIMIT,
   }: {
     sitemapUrl: string;
     urlsHandler(urls: string[]): unknown;
@@ -40,6 +41,7 @@ export async function getLinksFromSitemap(
     usOnly?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
+    sitemapMaxFiles?: number;
   },
   logger: Logger,
   crawlId: string,
@@ -47,7 +49,7 @@ export async function getLinksFromSitemap(
   abort?: AbortSignal,
   mock?: string,
 ): Promise<number> {
-  if (sitemapsHit.size >= SITEMAP_LIMIT) {
+  if (sitemapsHit.size >= sitemapMaxFiles) {
     return 0;
   }
 
@@ -220,6 +222,7 @@ export async function getLinksFromSitemap(
               location,
               headers,
               maxAge,
+              sitemapMaxFiles,
             },
             logger,
             crawlId,
@@ -254,6 +257,7 @@ export async function getLinksFromSitemap(
                 location,
                 headers,
                 maxAge,
+                sitemapMaxFiles,
               },
               logger,
               crawlId,
@@ -304,6 +308,7 @@ export async function getLinksFromSitemap(
                 location,
                 headers,
                 maxAge,
+                sitemapMaxFiles,
               },
               logger,
               crawlId,

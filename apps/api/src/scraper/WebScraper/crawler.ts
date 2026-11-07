@@ -27,7 +27,7 @@ import {
   isMarkdownContentType,
 } from "../scrapeURL/lib/extractLinksFromMarkdown";
 
-export const SITEMAP_LIMIT = 25;
+export const SITEMAP_LIMIT = config.SITEMAP_MAX_FILES;
 const SITEMAP_FETCH_CONCURRENCY = 3;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -82,6 +82,7 @@ export class WebCrawler {
   private regexOnFullURL: boolean;
   private logger: typeof _logger;
   private sitemapsHit: Set<string> = new Set();
+  private sitemapMaxFiles: number;
   private maxDiscoveryDepth: number | undefined;
   private currentDiscoveryDepth: number;
   private zeroDataRetention: boolean;
@@ -102,6 +103,7 @@ export class WebCrawler {
     limit = 10000,
     generateImgAltText = false,
     maxCrawledDepth = 10,
+    sitemapMaxFiles = SITEMAP_LIMIT,
     allowBackwardCrawling = false,
     allowExternalContentLinks = false,
     allowSubdomains = false,
@@ -125,6 +127,7 @@ export class WebCrawler {
     limit?: number;
     generateImgAltText?: boolean;
     maxCrawledDepth?: number;
+    sitemapMaxFiles?: number;
     allowBackwardCrawling?: boolean;
     allowExternalContentLinks?: boolean;
     allowSubdomains?: boolean;
@@ -151,6 +154,7 @@ export class WebCrawler {
     // Deprecated, use limit instead
     this.maxCrawledLinks = maxCrawledLinks ?? limit;
     this.maxCrawledDepth = maxCrawledDepth ?? 10;
+    this.sitemapMaxFiles = sitemapMaxFiles ?? SITEMAP_LIMIT;
     this.generateImgAltText = generateImgAltText ?? false;
     this.allowBackwardCrawling = allowBackwardCrawling ?? false;
     this.allowExternalContentLinks = allowExternalContentLinks ?? false;
@@ -665,7 +669,7 @@ export class WebCrawler {
       });
 
       // Fetched in batches so children of early sitemap indexes claim
-      // SITEMAP_LIMIT slots before later top-level sitemaps do.
+      // sitemapMaxFiles slots before later top-level sitemaps do.
       const sitemapSources = [this.initialUrl, ...robotsSitemaps];
 
       const fetchSources = async () => {
@@ -673,7 +677,7 @@ export class WebCrawler {
         for (
           let i = 0;
           i < sitemapSources.length &&
-          this.sitemapsHit.size < SITEMAP_LIMIT &&
+          this.sitemapsHit.size < this.sitemapMaxFiles &&
           !fetchAbort.aborted;
           i += SITEMAP_FETCH_CONCURRENCY
         ) {
@@ -948,6 +952,7 @@ export class WebCrawler {
           location: this.location,
           usOnly: this.usOnly,
           headers: this.headers,
+          sitemapMaxFiles: this.sitemapMaxFiles,
         },
         this.logger,
         this.jobId,
@@ -1024,6 +1029,7 @@ export class WebCrawler {
                 location: this.location,
                 usOnly: this.usOnly,
                 headers: this.headers,
+                sitemapMaxFiles: this.sitemapMaxFiles,
               },
               this.logger,
               this.jobId,
@@ -1069,6 +1075,7 @@ export class WebCrawler {
             location: this.location,
             usOnly: this.usOnly,
             headers: this.headers,
+            sitemapMaxFiles: this.sitemapMaxFiles,
           },
           this.logger,
           this.jobId,
@@ -1098,6 +1105,7 @@ export class WebCrawler {
                 location: this.location,
                 usOnly: this.usOnly,
                 headers: this.headers,
+                sitemapMaxFiles: this.sitemapMaxFiles,
               },
               this.logger,
               this.jobId,
@@ -1110,7 +1118,7 @@ export class WebCrawler {
       }
     }
 
-    if (this.sitemapsHit.size >= SITEMAP_LIMIT) {
+    if (this.sitemapsHit.size >= this.sitemapMaxFiles) {
       this.logger.warn("Sitemap limit hit!", {
         crawlId: this.jobId,
         url: this.baseUrl,
