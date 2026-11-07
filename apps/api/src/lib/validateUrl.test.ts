@@ -1,4 +1,8 @@
-import { isSameDomain, removeDuplicateUrls } from "./validateUrl";
+import {
+  isSameDomain,
+  removeDuplicateUrls,
+  removeWwwFromUrl,
+} from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
 
 describe("isSameDomain", () => {
@@ -167,5 +171,92 @@ describe("removeDuplicateUrls", () => {
     const urls = ["https://example.com", "https://example.com/"];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual(["https://example.com"]);
+  });
+});
+
+describe("removeWwwFromUrl", () => {
+  it("should strip leading www. from standard https URLs", () => {
+    expect(removeWwwFromUrl("https://www.example.com")).toBe(
+      "https://example.com",
+    );
+    expect(removeWwwFromUrl("https://www.example.com/page")).toBe(
+      "https://example.com/page",
+    );
+  });
+
+  it("should strip leading www. from http URLs with custom ports", () => {
+    expect(removeWwwFromUrl("http://www.example.com:8080/path")).toBe(
+      "http://example.com:8080/path",
+    );
+  });
+
+  it("should preserve www. in paths and query strings when the host has no www.", () => {
+    expect(removeWwwFromUrl("https://example.com/www.tutorials/page")).toBe(
+      "https://example.com/www.tutorials/page",
+    );
+    expect(
+      removeWwwFromUrl("https://example.com/redirect?url=www.partner.com"),
+    ).toBe("https://example.com/redirect?url=www.partner.com");
+  });
+
+  it("should not corrupt hostnames that merely contain www as a substring", () => {
+    expect(removeWwwFromUrl("https://mywww.example.com")).toBe(
+      "https://mywww.example.com",
+    );
+    expect(removeWwwFromUrl("https://mywww.com/page")).toBe(
+      "https://mywww.com/page",
+    );
+  });
+
+  it("should only strip the leading www. from the hostname and preserve later occurrences in the path", () => {
+    expect(removeWwwFromUrl("https://www.example.com/www.example.com")).toBe(
+      "https://example.com/www.example.com",
+    );
+  });
+
+  it("should strip www. from bare domains without protocol", () => {
+    expect(removeWwwFromUrl("www.example.com")).toBe("example.com");
+    expect(removeWwwFromUrl("www.example.com/sub/page")).toBe(
+      "example.com/sub/page",
+    );
+    expect(removeWwwFromUrl("www.example.com:8080/path")).toBe(
+      "example.com:8080/path",
+    );
+  });
+
+  it("should handle case-insensitive WWW.", () => {
+    expect(removeWwwFromUrl("http://WWW.Example.com")).toBe(
+      "http://Example.com",
+    );
+  });
+
+  it("should preserve credentials in URLs while stripping leading www.", () => {
+    expect(removeWwwFromUrl("https://user:pass@www.example.com/test")).toBe(
+      "https://user:pass@example.com/test",
+    );
+    expect(removeWwwFromUrl("https://user@www.example.com")).toBe(
+      "https://user@example.com",
+    );
+    expect(removeWwwFromUrl("https://user:@www.example.com")).toBe(
+      "https://user:@example.com",
+    );
+    expect(removeWwwFromUrl("https://a@www.b@www.example.com")).toBe(
+      "https://a@www.b@example.com",
+    );
+  });
+
+  it("should not strip www. from username credentials", () => {
+    expect(removeWwwFromUrl("https://www.user@example.com")).toBe(
+      "https://www.user@example.com",
+    );
+    expect(removeWwwFromUrl("https://www.user:pass@example.com")).toBe(
+      "https://www.user:pass@example.com",
+    );
+  });
+
+  it("should not misinterpret @ characters in query strings as credentials", () => {
+    expect(
+      removeWwwFromUrl("https://www.example.com?email=user@www.example.com"),
+    ).toBe("https://example.com?email=user@www.example.com");
   });
 });

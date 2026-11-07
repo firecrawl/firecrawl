@@ -14,6 +14,7 @@ import {
   isSameDomain,
   isSameSubdomain,
   resolveRedirects,
+  removeWwwFromUrl,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
 import { isUsOnly } from "./us-only";
@@ -206,7 +207,7 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = removeWwwFromUrl(url);
     let mapUrl =
       search && allowExternalLinks
         ? `${search} ${urlWithoutWww}`
