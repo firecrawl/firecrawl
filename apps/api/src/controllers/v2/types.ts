@@ -8,6 +8,7 @@ import { z } from "zod";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
+import { isSafeOutboundUrl } from "../../lib/outbound-url";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
@@ -69,6 +70,10 @@ export const URL = z
   })
   .url()
   .regex(/^https?:\/\//i, "URL uses unsupported protocol")
+  .refine(
+    value => isSafeOutboundUrl(value, config.ALLOW_LOCAL_WEBHOOKS === true),
+    "URL must target a public address",
+  )
   .refine(x => {
     if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
       if (

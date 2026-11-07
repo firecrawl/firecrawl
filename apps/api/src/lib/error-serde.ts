@@ -46,6 +46,7 @@ import {
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
+import { InsecureConnectionError } from "./outbound-url";
 import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
@@ -74,6 +75,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_RETRY_LIMIT: ScrapeRetryLimitError,
   SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
   SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
+  SCRAPE_UNSAFE_DESTINATION: InsecureConnectionError,
   SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
   SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
   SCRAPE_PDF_FETCH_PROXY_ERROR: PDFFetchProxyError,

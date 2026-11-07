@@ -5,7 +5,22 @@ import {
   resolveSafeMode,
   ResolvedSafeMode,
   SafeModeConfig,
+  stripUrlUserinfo,
 } from "./safe-mode";
+
+describe("stripUrlUserinfo", () => {
+  it("removes embedded credentials from URLs used in logs", () => {
+    expect(
+      stripUrlUserinfo("https://user:p%40ss@private.example/path?q=1"),
+    ).toBe("https://private.example/path?q=1");
+  });
+
+  it("preserves URLs without embedded credentials", () => {
+    expect(stripUrlUserinfo("https://example.com/path?q=1")).toBe(
+      "https://example.com/path?q=1",
+    );
+  });
+});
 
 // Every sub-control is polarised so that `true` == the stricter setting.
 // Under the org defaults, that means every capability control is `true`

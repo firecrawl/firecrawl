@@ -5,7 +5,17 @@ import * as undici from "undici";
 import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
-import IPAddr from "ipaddr.js";
+import {
+  assertSafeOutboundUrl,
+  createSafeLookup,
+  InsecureConnectionError,
+  isIPPrivate,
+  resolvePublicOutboundAddresses,
+} from "../../../../lib/outbound-url";
+export {
+  InsecureConnectionError,
+  isIPPrivate,
+} from "../../../../lib/outbound-url";
 
 // Node's certificate verification errors, which rejectUnauthorized: false
 // suppresses. CRL and OpenSSL hostname codes are omitted: Node never checks those.
@@ -31,43 +41,24 @@ export const TLS_CERT_ERROR_CODES = new Set([
   "UNSPECIFIED",
   "ERR_TLS_CERT_ALTNAME_INVALID",
 ]);
-export class InsecureConnectionError extends Error {
-  constructor() {
-    super("Connection violated security rules.");
-  }
-}
-
-export function isIPPrivate(address: string): boolean {
-  if (!IPAddr.isValid(address)) return false;
-
-  const addr = IPAddr.parse(address);
-  return addr.range() !== "unicast";
-}
 
 /**
  * Reject private IP literals and localhost names before dispatch, on the
- * initial request and every redirect hop. With PROXY_SERVER set, the socket
- * check below never sees the destination, so this is the only local guard.
- * Other hostnames are resolved proxy-side and must be filtered by the proxy.
+ * initial request and every redirect hop. DNS is checked by the direct socket
+ * lookup or pinned to an IP literal in the proxy CONNECT request below.
  */
 export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
   dispatch => (options, handler) => {
-    if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
-      return dispatch(options, handler);
-    }
-
     let privateTarget = false;
 
     try {
-      const origin =
-        options.origin instanceof URL
-          ? options.origin
-          : new URL(options.origin.toString());
-      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
-      privateTarget =
-        isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
+      if (options.origin === undefined) throw new InsecureConnectionError();
+      assertSafeOutboundUrl(
+        options.origin.toString(),
+        config.ALLOW_LOCAL_WEBHOOKS === true,
+      );
     } catch {
-      // Let Undici report malformed origins through its normal path.
+      privateTarget = true;
     }
 
     if (privateTarget) {
@@ -90,7 +81,56 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
     return dispatch(options, handler);
   };
 
+// ProxyAgent's clientFactory is used only for its HTTP(S) CONNECT transport.
+// Resolve the destination here, immediately before opening each tunnel, and
+// send an IP literal so the proxy cannot resolve the hostname a second time.
+const pinProxyTargets: undici.Dispatcher.DispatcherComposeInterceptor =
+  dispatch => (options, handler) => {
+    if (config.ALLOW_LOCAL_WEBHOOKS === true) return dispatch(options, handler);
+
+    void (async () => {
+      if (options.method !== "CONNECT") throw new InsecureConnectionError();
+      const destination = new URL(`http://${options.path}`);
+      const [address] = await resolvePublicOutboundAddresses(destination);
+      const host =
+        address.family === 6 ? `[${address.address}]` : address.address;
+      const authority = `${host}:${destination.port || "80"}`;
+      dispatch(
+        {
+          ...options,
+          path: authority,
+          // ProxyAgent supplies a header record here (including proxy auth).
+          // The tunneled request's Host and TLS SNI remain the original host.
+          headers: { ...options.headers, host: authority },
+        },
+        handler,
+      );
+    })().catch(error => {
+      const compatibleHandler = handler as typeof handler & {
+        onResponseError?: (controller: unknown, error: Error) => void;
+      };
+      if (typeof compatibleHandler.onError === "function") {
+        compatibleHandler.onError(error);
+      } else {
+        compatibleHandler.onResponseError!(null, error);
+      }
+    });
+    return true;
+  };
+
 function createBaseAgent(skipTlsVerification: boolean) {
+  if (config.PROXY_SERVER && config.ALLOW_LOCAL_WEBHOOKS !== true) {
+    const protocol = new URL(
+      config.PROXY_SERVER.includes("://")
+        ? config.PROXY_SERVER
+        : `http://${config.PROXY_SERVER}`,
+    ).protocol;
+    if (protocol !== "http:" && protocol !== "https:") {
+      throw new Error(
+        "Secure outbound requests require an HTTP(S) CONNECT proxy",
+      );
+    }
+  }
   const baseAgent = config.PROXY_SERVER
     ? new undici.ProxyAgent({
         uri: config.PROXY_SERVER.includes("://")
@@ -102,9 +142,12 @@ function createBaseAgent(skipTlsVerification: boolean) {
         requestTls: {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
+        clientFactory: (origin, options) =>
+          new undici.Pool(origin, options).compose(pinProxyTargets),
       })
     : new undici.Agent({
         connect: {
+          lookup: createSafeLookup(() => config.ALLOW_LOCAL_WEBHOOKS === true),
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
       });
@@ -117,6 +160,9 @@ function createBaseAgent(skipTlsVerification: boolean) {
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {
+  // The proxy is operator-configured infrastructure and may itself be local.
+  // Its remoteAddress is not the target; pinProxyTargets checks that instead.
+  if (config.PROXY_SERVER) return;
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(

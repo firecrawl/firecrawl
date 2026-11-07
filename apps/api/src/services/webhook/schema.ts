@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { config } from "../../config";
+import { isSafeOutboundUrl } from "../../lib/outbound-url";
 
 const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
 
@@ -12,7 +14,13 @@ export function createWebhookSchema<T extends [string, ...string[]]>(
     x => (typeof x === "string" ? { url: x } : x),
     z
       .strictObject({
-        url: z.url(),
+        url: z
+          .url()
+          .refine(
+            value =>
+              isSafeOutboundUrl(value, config.ALLOW_LOCAL_WEBHOOKS === true),
+            "Webhook URL must use HTTP(S) and target a public address",
+          ),
         headers: z.record(z.string(), z.string()).prefault({}),
         metadata: z.record(z.string(), z.string()).prefault({}),
         events: z.array(z.enum(events)).prefault([...events]),
