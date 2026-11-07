@@ -9,6 +9,7 @@ import { isSelfHosted } from "../../lib/deployment";
 import {
   ConcurrencyQueueTimeoutError,
   TransportableError,
+  concurrencyQueueTimeoutMessage,
 } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
 import { nuqRedis, semaphoreKeys } from "./redis";
@@ -97,11 +98,15 @@ async function acquireBlocking(
 
   do {
     if (options.signal.aborted) {
-      throw new ConcurrencyQueueTimeoutError();
+      throw new ConcurrencyQueueTimeoutError(
+        concurrencyQueueTimeoutMessage(teamId),
+      );
     }
 
     if (deadline < Date.now()) {
-      throw new ConcurrencyQueueTimeoutError();
+      throw new ConcurrencyQueueTimeoutError(
+        concurrencyQueueTimeoutMessage(teamId),
+      );
     }
 
     const [granted, _count, _removed] = await runScript<

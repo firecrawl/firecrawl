@@ -32,6 +32,7 @@ import {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,
 } from "./agent-credit-gate";
+import { upgradeUrlForTeam } from "../../lib/team-billing-url";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -268,7 +269,7 @@ export async function agentController(
       });
       return res.status(402).json({
         success: false,
-        error: `Insufficient credits to start an agent run. Your team's credit balance is ${gate.balance} credits. Add credits at https://firecrawl.dev/pricing to continue.`,
+        error: `Insufficient credits to start an agent run. Your team's credit balance is ${gate.balance} credits. Add credits at ${upgradeUrlForTeam(req.auth.team_id)} to continue.`,
       });
     }
     maxCredits = gate.maxCredits;

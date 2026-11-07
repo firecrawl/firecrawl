@@ -40,6 +40,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { upgradeUrlForTeam } from "../../lib/team-billing-url";
 
 async function scrapeHelper(
   jobId: string,
@@ -322,8 +323,7 @@ export async function scrapeController(req: Request, res: Response) {
       if (autumnResult !== null && !autumnResult.allowed) {
         earlyReturn = true;
         return res.status(402).json({
-          error:
-            "Insufficient credits. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing",
+          error: `Insufficient credits. For more credits, you can upgrade your plan at ${upgradeUrlForTeam(team_id)}`,
         });
       }
     } catch (error) {

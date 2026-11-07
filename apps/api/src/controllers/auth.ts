@@ -29,6 +29,7 @@ import {
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { consumeIndexRateLimit } from "../lib/index-daily-limit";
+import { upgradeUrlForTeam } from "../lib/team-billing-url";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -1323,7 +1324,7 @@ async function supaAuthenticateUser(
 
     return {
       success: false,
-      error: `Rate limit exceeded. Consumed (req/min): ${rateLimiterRes.consumedPoints}, Remaining (req/min): ${rateLimiterRes.remainingPoints}. Upgrade your plan at https://firecrawl.dev/pricing for increased rate limits or please retry after ${secs}s, resets at ${retryDate}`,
+      error: `Rate limit exceeded. Consumed (req/min): ${rateLimiterRes.consumedPoints}, Remaining (req/min): ${rateLimiterRes.remainingPoints}. Upgrade your plan at ${upgradeUrlForTeam(teamId)} for increased rate limits or please retry after ${secs}s, resets at ${retryDate}`,
       status: 429,
       retryAfterSeconds: secs,
     };
