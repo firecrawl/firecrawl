@@ -455,3 +455,24 @@ class TestPrepareScrapeOptions:
         assert result["minAge"] == 1000
         assert "min_age" not in result
         assert result["maxAge"] == 5000
+
+    def test_prepare_attributes_format_model_keeps_selectors(self):
+        """A typed AttributesFormat must be sent with its selectors, not as the bare
+        string "attributes", which the API rejects because selectors are required."""
+        from firecrawl.v2.types import AttributeSelector, AttributesFormat, ScrapeFormats
+
+        attributes = AttributesFormat(
+            selectors=[AttributeSelector(selector="a", attribute="href")]
+        )
+        expected = {
+            "type": "attributes",
+            "selectors": [{"selector": "a", "attribute": "href"}],
+        }
+
+        list_result = prepare_scrape_options(ScrapeOptions(formats=[attributes]))
+        assert list_result["formats"] == [expected]
+
+        container_result = prepare_scrape_options(
+            ScrapeOptions(formats=ScrapeFormats(formats=[attributes], markdown=False))
+        )
+        assert container_result["formats"] == [expected]
