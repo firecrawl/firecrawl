@@ -447,6 +447,23 @@ const configSchema = z.object({
     .min(0)
     .max(5000)
     .default(1000),
+  // Run the best-matching allowlisted tool for searches that send inlineTools:
+  // true and return its data in data.alexandria, within the budget below.
+  // Needs the search-index query-features router at QUERY_FEATURES_URL.
+  ALEXANDRIA_INLINE_TOOLS: z.stringbool().default(false),
+  ALEXANDRIA_INLINE_TOOLS_BUDGET_MS: z.coerce
+    .number()
+    .int()
+    .min(500)
+    .max(5000)
+    .default(2500),
+  QUERY_FEATURES_URL: z.url().optional(),
+  // Provider calls one team's inline tools may start per UTC day; cache hits are free.
+  ALEXANDRIA_INLINE_TOOLS_DAILY_CAP: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(200),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
