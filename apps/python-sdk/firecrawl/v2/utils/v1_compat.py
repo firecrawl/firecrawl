@@ -37,6 +37,25 @@ def _snake_case(key: str) -> str:
     return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", key).lower()
 
 
+def _convert_json_options(data: Dict[str, Any]) -> Dict[str, Any]:
+    json_options = data.get("json_options")
+    formats = data.get("formats")
+    if json_options is None:
+        data.pop("json_options", None)
+        return data
+    if not isinstance(formats, (list, tuple)):
+        raise ValueError("json_options requires a list or tuple of formats")
+    data.pop("json_options")
+    if isinstance(json_options, BaseModel):
+        json_options = json_options.model_dump(by_alias=True, exclude_none=True)
+    json_options = {_snake_case(key): value for key, value in json_options.items()}
+    data["formats"] = [
+        v2_types.JsonFormat(**json_options).model_dump(exclude_none=True) if fmt == "json" else fmt
+        for fmt in formats
+    ]
+    return data
+
+
 class ScrapeOptions(V2ScrapeOptions):
     """v2 ScrapeOptions that also accepts the camelCase field names firecrawl-py 2.x used."""
 
@@ -46,11 +65,14 @@ class ScrapeOptions(V2ScrapeOptions):
         if not isinstance(data, dict):
             return data
         known = set(cls.model_fields) | {f.alias for f in cls.model_fields.values() if f.alias}
-        legacy = [key for key in data if key not in known and _snake_case(key) in cls.model_fields]
+        legacy = [
+            key for key in data
+            if key not in known and (_snake_case(key) in cls.model_fields or _snake_case(key) == "json_options")
+        ]
         if not legacy:
             return data
         warn_v1_usage()
-        return {(_snake_case(key) if key in legacy else key): value for key, value in data.items()}
+        return _convert_json_options({(_snake_case(key) if key in legacy else key): value for key, value in data.items()})
 
 
 ScrapeOptions.model_rebuild(_types_namespace=vars(v2_types))
@@ -71,7 +93,7 @@ def to_v2_kwargs(params: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> Di
         if name == "scrape_options" and isinstance(value, dict):
             value = ScrapeOptions(**value)
         converted[name] = value
-    return converted
+    return _convert_json_options(converted)
 
 
 def _success(self: Any) -> bool:
