@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { ScrapeResponseData } from "./formats/types.js";
 
 export interface ClientOptions {
@@ -58,8 +59,8 @@ interface CrawlStatusResponse {
 
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return delay(ms, undefined, { signal });
 }
 
 export class Client {
@@ -78,7 +79,8 @@ export class Client {
               Number.isFinite(retryAfter) && retryAfter > 0
                 ? retryAfter * 1000
                 : this.opts.retries.initialDelayMs * 2 ** attempt;
-            await sleep(delay);
+            await res.body?.cancel();
+            await sleep(delay, init.signal ?? undefined);
             continue;
           }
           const body = await res.text();
@@ -86,9 +88,10 @@ export class Client {
         }
         return (await res.json()) as T;
       } catch (err) {
+        init.signal?.throwIfAborted();
         lastErr = err;
         if (attempt < this.opts.retries.attempts) {
-          await sleep(this.opts.retries.initialDelayMs * 2 ** attempt);
+          await sleep(this.opts.retries.initialDelayMs * 2 ** attempt, init.signal ?? undefined);
           continue;
         }
         break;
@@ -97,8 +100,9 @@ export class Client {
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
 
-  async scrape(req: ScrapeRequest): Promise<ScrapeResponseData> {
+  async scrape(req: ScrapeRequest, signal?: AbortSignal): Promise<ScrapeResponseData> {
     const env = await this.request<ApiEnvelope<ScrapeResponseData>>("/v1/scrape", {
+      ...(signal ? { signal } : {}),
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),

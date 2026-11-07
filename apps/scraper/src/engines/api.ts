@@ -7,7 +7,7 @@ export class ApiEngine implements Engine {
 
   constructor(private readonly client: Client) {}
 
-  async scrape(req: ScrapeRequest): Promise<ScrapeResponseData> {
-    return this.client.scrape(req);
+  async scrape(req: ScrapeRequest, signal?: AbortSignal): Promise<ScrapeResponseData> {
+    return this.client.scrape(req, signal);
   }
 }

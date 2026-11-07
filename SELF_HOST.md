@@ -107,3 +107,20 @@ turning them off.
 Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)
 or join the [Firecrawl Discord community](https://discord.gg/firecrawl).
+
+## Archive a site with Task
+
+Install the CLI dependencies once with `task scraper:install`, then choose an engine:
+
+```bash
+# Normal API; starts the local Docker stack if needed
+task scrape:all:api -- "https://example.com"
+
+# Existing Chrome session; launch Chrome with a dedicated CDP profile first
+task scrape:all:cdp -- "https://example.com"
+```
+
+Both save page content and discovered image/direct-video files under the gitignored
+`data/<hostname>/<run>/` directory. Open the printed `index.md` path to browse results.
+Defaults are 100 attempted pages and 100 MB per media file. For Chrome setup,
+output layout, options and limitations, see [the scraper guide](apps/scraper/README.md#archive-a-whole-site).

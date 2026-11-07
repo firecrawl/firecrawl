@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig } from "./config.js";
+import { runArchive } from "./commands/archive.js";
 import { runBatch } from "./commands/batch.js";
 import { runCrawl } from "./commands/crawl.js";
 import { runMap } from "./commands/map.js";
@@ -50,6 +51,45 @@ program
       engineOverride: parseEngine(g["engine"]),
       cdpUrlOverride: g["cdpUrl"] as string | undefined,
     });
+  });
+
+program
+  .command("archive <url>")
+  .description("Archive linked site pages and download images/direct videos")
+  .option("-o, --out <path>", "archive root directory (default: checkout data/)")
+  .option("--limit <n>", "maximum attempted pages", Number, 100)
+  .option("--max-media-mb <n>", "maximum bytes per media file in decimal MB", Number, 100)
+  .option("--delay-ms <n>", "minimum delay between page navigations", Number, 1000)
+  .action(async (url: string, _opts: Record<string, unknown>, cmd: Command) => {
+    const g = program.opts();
+    const local = cmd.opts();
+    const config = await loadConfig(resolveUserPath(g["config"] as string));
+    if (g["apiUrl"]) config.apiUrl = g["apiUrl"] as string;
+    const controller = new AbortController();
+    const abort = (): void => {
+      controller.abort();
+    };
+    process.once("SIGINT", abort);
+    process.once("SIGTERM", abort);
+    try {
+      const { manifest } = await runArchive({
+        url,
+        config,
+        profileName: g["profile"] as string,
+        engineName: parseEngine(g["engine"]) ?? "cdp",
+        cdpUrlOverride: g["cdpUrl"] as string | undefined,
+        out: resolvePath(local["out"] as string | undefined),
+        limit: local["limit"] as number,
+        maxMediaMb: local["maxMediaMb"] as number,
+        delayMs: local["delayMs"] as number,
+        signal: controller.signal,
+      });
+      if (manifest.status === "partial") process.exitCode = 1;
+      if (manifest.status === "interrupted") process.exitCode = 130;
+    } finally {
+      process.removeListener("SIGINT", abort);
+      process.removeListener("SIGTERM", abort);
+    }
   });
 
 program

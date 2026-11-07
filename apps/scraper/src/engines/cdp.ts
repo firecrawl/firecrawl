@@ -54,6 +54,7 @@ const STRIP_SELECTORS: readonly string[] = [
 export class CdpEngine implements Engine {
   readonly name = "cdp";
   private browser: Browser | null = null;
+  private userAgent: string | undefined;
   private readonly turndown = (() => {
     const td = new TurndownService({
       headingStyle: "atx",
@@ -105,11 +106,30 @@ export class CdpEngine implements Engine {
     }
   }
 
-  async scrape(req: ScrapeRequest): Promise<ScrapeResponseData> {
+  async prepare(): Promise<void> {
+    await this.ensureBrowser();
+  }
+
+  async downloadHeaders(url: string): Promise<Record<string, string>> {
+    const context = await this.getContext(await this.ensureBrowser());
+    const cookies = await context.cookies(url);
+    const headers: Record<string, string> = {};
+    if (cookies.length > 0)
+      headers["Cookie"] = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    if (this.userAgent) headers["User-Agent"] = this.userAgent;
+    return headers;
+  }
+
+  async scrape(req: ScrapeRequest, signal?: AbortSignal): Promise<ScrapeResponseData> {
     const browser = await this.ensureBrowser();
     const context = await this.getContext(browser);
     const page = await context.newPage();
+    const abort = (): void => {
+      void page.close().catch(() => {});
+    };
+    signal?.addEventListener("abort", abort, { once: true });
     try {
+      signal?.throwIfAborted();
       // tsx/esbuild injects a `__name` helper for class-name preservation; when
       // Playwright serializes our evaluate() callbacks via .toString(), the
       // helper calls get carried into the browser where __name is undefined.
@@ -129,7 +149,78 @@ export class CdpEngine implements Engine {
         await page.waitForTimeout(req.waitFor);
       }
 
+      const warnings: string[] = [];
+      const readyTimeout = req.timeout && req.timeout > 0 ? req.timeout : DEFAULT_TIMEOUT;
+      const readyDeadline = Date.now() + readyTimeout;
+      const remaining = (): number => Math.max(1, readyDeadline - Date.now());
+      try {
+        await page.waitForLoadState("networkidle", { timeout: remaining() });
+        // A full-page screenshot includes below-fold images, which lazy loading
+        // otherwise leaves blank without issuing their requests.
+        await page.evaluate(() => {
+          for (const image of document.images) image.loading = "eager";
+        });
+        await page.waitForFunction(
+          () =>
+            (!document.fonts || document.fonts.status === "loaded") &&
+            [...document.images].every((image) => image.complete),
+          undefined,
+          { timeout: remaining() },
+        );
+      } catch (err) {
+        signal?.throwIfAborted();
+        if (!(err instanceof Error) || err.name !== "TimeoutError") throw err;
+        warnings.push(
+          `Page readiness timed out after ${readyTimeout} ms; some content may still be loading.`,
+        );
+      }
+
       const rawHtml = await page.content();
+      const wantedFormats = new Set(req.formats ?? ["markdown"]);
+      const out: ScrapeResponseData = {};
+      const meta = await page.evaluate(() => {
+        const get = (sel: string): string | undefined =>
+          (document.querySelector(sel) as HTMLMetaElement | null)?.content ?? undefined;
+        return {
+          title: document.title || undefined,
+          description: get('meta[name="description"]'),
+          ogTitle: get('meta[property="og:title"]'),
+          ogDescription: get('meta[property="og:description"]'),
+        };
+      });
+      this.userAgent = await page.evaluate(() => navigator.userAgent);
+      out.metadata = {
+        ...meta,
+        sourceURL: req.url,
+        url: page.url(),
+        statusCode: response?.status() ?? null,
+        retryAfter: response?.headers()["retry-after"],
+        captureReady: warnings.length === 0,
+      };
+      if (wantedFormats.has("links")) {
+        out.links = await page.evaluate(() =>
+          [
+            ...new Set(
+              [...document.querySelectorAll("a[href]")].map((a) => (a as HTMLAnchorElement).href),
+            ),
+          ].filter((h) => /^https?:/.test(h)),
+        );
+      }
+      if (wantedFormats.has("screenshot")) {
+        try {
+          const buf = await page.screenshot({
+            fullPage: true,
+            type: "png",
+            animations: "disabled",
+          });
+          out.screenshot = `data:image/png;base64,${buf.toString("base64")}`;
+        } catch (err) {
+          signal?.throwIfAborted();
+          warnings.push(
+            `Screenshot unavailable: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
 
       // Strip noise nodes + dangerous attributes in the live DOM, then read
       // the cleaned HTML back out. Mirrors removeUnwantedElements.ts in the API.
@@ -168,48 +259,15 @@ export class CdpEngine implements Engine {
         }
       }
 
-      const wantedFormats = new Set(req.formats ?? ["markdown"]);
-      const out: ScrapeResponseData = {};
-
       if (wantedFormats.has("html")) out.html = html;
       if (wantedFormats.has("rawHtml")) out.rawHtml = rawHtml;
       if (wantedFormats.has("markdown")) out.markdown = this.turndown.turndown(html);
 
-      if (wantedFormats.has("links")) {
-        out.links = await page.evaluate(() =>
-          [
-            ...new Set(
-              [...document.querySelectorAll("a[href]")].map((a) => (a as HTMLAnchorElement).href),
-            ),
-          ].filter((h) => h.startsWith("http")),
-        );
-      }
-
-      if (wantedFormats.has("screenshot")) {
-        const buf = await page.screenshot({ fullPage: true, type: "png" });
-        out.screenshot = `data:image/png;base64,${buf.toString("base64")}`;
-      }
-
-      const meta = await page.evaluate(() => {
-        const get = (sel: string): string | undefined =>
-          (document.querySelector(sel) as HTMLMetaElement | null)?.content ?? undefined;
-        return {
-          title: document.title || undefined,
-          description: get('meta[name="description"]'),
-          ogTitle: get('meta[property="og:title"]'),
-          ogDescription: get('meta[property="og:description"]'),
-        };
-      });
-      out.metadata = {
-        ...meta,
-        sourceURL: req.url,
-        url: page.url(),
-        statusCode: response?.status() ?? null,
-      };
-
+      if (warnings.length > 0) out["warning"] = warnings.join(" ");
       return out;
     } finally {
-      await page.close();
+      signal?.removeEventListener("abort", abort);
+      if (!page.isClosed()) await page.close();
     }
   }
 

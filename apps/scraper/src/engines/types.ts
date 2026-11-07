@@ -5,6 +5,8 @@ export type EngineName = "api" | "cdp";
 
 export interface Engine {
   readonly name: EngineName;
-  scrape(req: ScrapeRequest): Promise<ScrapeResponseData>;
+  scrape(req: ScrapeRequest, signal?: AbortSignal): Promise<ScrapeResponseData>;
+  prepare?(): Promise<void>;
+  downloadHeaders?(url: string): Promise<Record<string, string>>;
   close?(): Promise<void>;
 }
