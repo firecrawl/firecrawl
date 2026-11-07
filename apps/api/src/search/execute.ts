@@ -45,6 +45,7 @@ import {
   matchesQueryOperators,
   planOperatorQuery,
   siteHostnames,
+  stripSiteOperators,
 } from "./operators";
 import {
   highlightsEnvReady,
@@ -321,8 +322,11 @@ export async function executeSearch(
   // semantics, including date filtering. Fallback providers only accept query
   // syntax, so retain the query-builder filters for those paths.
   const domainFiltersInQuery = !config.FIRE_ENGINE_BETA_URL;
+  const searchQueryInput = domainFiltersInQuery
+    ? operatorPlan.query
+    : stripSiteOperators(operatorPlan.query);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    operatorPlan.query,
+    searchQueryInput,
     categories,
     domainFiltersInQuery
       ? {
