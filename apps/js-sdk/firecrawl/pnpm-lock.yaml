@@ -23,10 +23,7 @@ importers:
     dependencies:
       axios:
         specifier: 1.20.0
-        version: 1.20.0
-      firecrawl:
-        specifier: 4.49.1
-        version: 4.49.1
+        version: 1.20.0(debug@4.4.1)
       typescript-event-target:
         specifier: ^1.1.1
         version: 1.1.1
@@ -673,10 +670,6 @@ packages:
       picomatch:
         optional: true
 
-  firecrawl@4.49.1:
-    resolution: {integrity: sha512-ssm5wDo3xwiPyb7uPMu9sfSx57VOztW2SgP6cmOgswxARrWuHUSHL5InF/rWhddRtgdhEXVhJlA+bk9mNOUMOQ==}
-    engines: {node: '>=22.0.0'}
-
   fix-dts-default-cjs-exports@1.0.1:
     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
 
@@ -1144,11 +1137,6 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
-  zod-to-json-schema@3.24.6:
-    resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
-    peerDependencies:
-      zod: 4.6.7
-
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -1455,9 +1443,9 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@1.20.0:
+  axios@1.20.0(debug@4.4.1):
     dependencies:
-      follow-redirects: 1.16.2
+      follow-redirects: 1.16.2(debug@4.4.1)
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -1577,23 +1565,15 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  firecrawl@4.49.1:
-    dependencies:
-      axios: 1.20.0
-      typescript-event-target: 1.1.1
-      zod: 4.6.7
-      zod-to-json-schema: 3.24.6(zod@4.6.7)
-    transitivePeerDependencies:
-      - debug
-      - supports-color
-
   fix-dts-default-cjs-exports@1.0.1:
     dependencies:
       magic-string: 0.30.17
       mlly: 1.7.4
       rollup: 4.59.0
 
-  follow-redirects@1.16.2: {}
+  follow-redirects@1.16.2(debug@4.4.1):
+    optionalDependencies:
+      debug: 4.4.1
 
   form-data@4.0.6:
     dependencies:
@@ -1994,10 +1974,6 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
-
-  zod-to-json-schema@3.24.6(zod@4.6.7):
-    dependencies:
-      zod: 4.6.7
 
   zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
