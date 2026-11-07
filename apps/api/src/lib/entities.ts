@@ -1,3 +1,4 @@
+import type { InlineToolResult } from "../search/inline-tools";
 import type { Action } from "../controllers/v1/types";
 import type { SkillCard } from "../search/skill-cards";
 import type { BrandingProfile } from "../types/branding";
@@ -166,6 +167,8 @@ export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
   tools?: import("../services/alexandria/contracts").DiscoveredTool[];
+  /** Provider data the search ran for the query itself (inline tools). */
+  alexandria?: InlineToolResult[];
   skills?: SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];

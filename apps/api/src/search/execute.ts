@@ -16,7 +16,13 @@ import {
   inferToolIntent,
   verifyTools,
 } from "./tool-intent";
-import type { DiscoveredTool } from "../services/alexandria/contracts";
+import type {
+  DiscoveredTool,
+  ExchangeResponse,
+  ProviderCall,
+} from "../services/alexandria/contracts";
+import { runInlineTools } from "./inline-tools";
+import { queryFeatures } from "./query-features";
 import { search } from "./v2";
 import {
   SearchV2Response,
@@ -106,6 +112,11 @@ interface SearchContext {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   /** Set when the request legitimately opted out of Safe Mode at the controller. */
   safeModeBypassed?: boolean;
+  /** Runs one unbilled provider call for inline tool results; inline tools run only when set. */
+  retrieveInline?: (
+    call: ProviderCall,
+    timeoutMs: number,
+  ) => Promise<ExchangeResponse>;
 }
 
 interface SearchExecuteResult {
@@ -223,6 +234,37 @@ export async function executeSearch(
           logger.warn("Skill discovery failed", { error });
           return missedSkills;
         })
+      : null;
+  const inlineStarted = Date.now();
+  const retrieveInline = context.retrieveInline;
+  const inlineTools =
+    toolsAllowed && retrieveInline && query.trim()
+      ? runInlineTools(
+          {
+            query,
+            teamId,
+            deadline: inlineStarted + config.ALEXANDRIA_INLINE_TOOLS_BUDGET_MS,
+            route: () => queryFeatures(query),
+            discover: async (providers, timeoutMs) =>
+              (
+                await discoverTools(
+                  {
+                    toolDetail: "full",
+                    teamId,
+                    usOnly,
+                    limit: 5,
+                    queries: [query],
+                    providers,
+                    urls: [],
+                    timeoutMs,
+                  },
+                  logger,
+                )
+              ).items,
+            retrieve: retrieveInline,
+          },
+          logger,
+        )
       : null;
   const toolIntent =
     toolsAllowed &&
@@ -702,6 +744,28 @@ export async function executeSearch(
       ...result,
       position: index + 1,
     }));
+  }
+
+  if (inlineTools) {
+    const inline = await inlineTools;
+    logger.info("Inline tools", {
+      canonicalLog: "search/inline-tools",
+      teamId,
+      skipped: inline.skipped,
+      tools: inline.results.map(
+        result => `${result.provider}/${result.capability}`,
+      ),
+      filledBy: inline.filledBy,
+      cached: inline.cached,
+      providerCost: inline.providerCost,
+      timeMs: Date.now() - inlineStarted,
+    });
+    if (inline.results.length) {
+      searchResponse.alexandria = inline.results;
+    } else if (!searchResponse.tools && inline.candidates.length) {
+      searchResponse.tools = inline.candidates;
+      toolsAuto = true;
+    }
   }
 
   let skillsDiscovered = false;

@@ -66,6 +66,9 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyNotice, type Notice } from "../../lib/deprecations";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
+import { retrieveProviders } from "../../services/alexandria/retrieve";
+import { orgIdFromAcuc } from "../../lib/team-org";
+import { billingCountryForTeam } from "../../lib/billing-country";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
@@ -537,6 +540,20 @@ async function searchControllerInner(
       }
     }
 
+    // Inline tool runs are not charged to the caller; see search/inline-tools.ts.
+    const inlineAcuc =
+      config.ALEXANDRIA_INLINE_TOOLS &&
+      req.body.inlineTools === true &&
+      req.acuc &&
+      config.FIRE_EXCHANGE_URL !== undefined &&
+      config.QUERY_FEATURES_URL !== undefined &&
+      !req.auth.team_id.startsWith("preview_keyless_") &&
+      !req.body.__agentInterop &&
+      !isSearchPreview &&
+      !zeroDataRetention &&
+      !(req as any).agentIndexOnly
+        ? req.acuc
+        : null;
     const result = await executeSearch(
       {
         query: req.body.query,
@@ -582,6 +599,26 @@ async function searchControllerInner(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ...(inlineAcuc
+          ? {
+              retrieveInline: async (call, timeoutMs) =>
+                retrieveProviders({
+                  teamId: req.auth.team_id,
+                  orgId: orgIdFromAcuc(inlineAcuc),
+                  apiKeyId: inlineAcuc.api_key_id ?? null,
+                  apiKeyIdText: inlineAcuc.api_key_id_text ?? null,
+                  flags: inlineAcuc.flags,
+                  calls: [call],
+                  requestId: "search-inline:" + jobId,
+                  scrapeId: uuidv7(),
+                  timeoutMs,
+                  bypassBilling: true,
+                  clientIp: req.ip,
+                  billingCountry: await billingCountryForTeam(req.auth.team_id),
+                  rateLimitMultiplier: inlineAcuc.rate_limit_multiplier,
+                }),
+            }
+          : {}),
       },
       logger,
     );

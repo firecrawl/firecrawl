@@ -2641,6 +2641,8 @@ export const searchRequestSchema = z
     highlights: z.boolean().optional(),
     domainTools: z.boolean().optional(),
     toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
+    // Run the best-matching provider tool and return its data in data.alexandria.
+    inlineTools: z.boolean().optional(),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

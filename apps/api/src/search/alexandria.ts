@@ -79,6 +79,8 @@ export async function discoverTools(
     toolDetail?: "compact" | "summary" | "full";
     /** Semantic queries, best first; their results are interleaved by rank. */
     queries?: string[];
+    /** Limits semantic matches to these providers. */
+    providers?: string[];
     /** May still be pending; the semantic lookup starts without waiting for it. */
     urls?: string[] | Promise<string[]>;
     limit: number;
@@ -195,7 +197,14 @@ export async function discoverTools(
   const semantic = queries.length
     ? leg("Semantic tool discovery unavailable", semanticDeadline, async () => {
         const settled = await Promise.allSettled(
-          queries.map(query => lookup({ query }, semanticDeadline)),
+          queries.map(query =>
+            lookup(
+              input.providers
+                ? { query, providers: input.providers }
+                : { query },
+              semanticDeadline,
+            ),
+          ),
         );
         const lists = settled.flatMap(result =>
           result.status === "fulfilled" ? [result.value] : [],
