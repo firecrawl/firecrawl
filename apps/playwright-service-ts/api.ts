@@ -12,6 +12,7 @@ import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
 import { Server } from 'proxy-chain';
 import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
+import { createProxyWarningEmitter } from './helpers/proxy_warning';
 
 dotenv.config();
 
@@ -32,6 +33,12 @@ const ALLOW_LOCAL_WEBHOOKS =
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+
+const warnNoProxyIfNeeded = createProxyWarningEmitter({
+  proxyServer: PROXY_SERVER,
+  warnNoProxy: process.env.WARN_NO_PROXY,
+  silenceProxyWarning: process.env.SILENCE_PROXY_WARNING,
+});
 
 class InsecureConnectionError extends Error {
   constructor(
@@ -389,11 +396,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     throw error;
   }
 
-  if (!PROXY_SERVER) {
-    console.warn(
-      '⚠️ WARNING: No proxy server provided. Your IP address may be blocked.',
-    );
-  }
+  warnNoProxyIfNeeded();
 
   if (!browser) {
     await initializeBrowser();
@@ -542,6 +545,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
 const start = async () => {
   ssrfProxyPort = await startSSRFProxy();
   await initializeBrowser();
+  warnNoProxyIfNeeded();
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
   });
