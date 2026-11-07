@@ -35,6 +35,11 @@ import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { type AuthDenialReason, logAuthDenied } from "../lib/auth-denied-log";
+import {
+  denylistLabel,
+  recordKeySeen,
+  recordRejectedKey,
+} from "../lib/access-events";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
@@ -990,6 +995,15 @@ async function supaAuthenticateUser(
     }
 
     const resolvedApi = parseApi(delegation.api_key);
+    const resolvedLabel = denylistLabel(resolvedApi);
+    if (resolvedLabel !== undefined) {
+      recordRejectedKey(req, resolvedLabel);
+      return denied(req, "unknown_key", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
     chunk = await getACUC(
       resolvedApi,
       false,
@@ -1048,6 +1062,15 @@ async function supaAuthenticateUser(
     }
 
     const resolvedApi = parseApi(introspection.api_key);
+    const resolvedLabel = denylistLabel(resolvedApi);
+    if (resolvedLabel !== undefined) {
+      recordRejectedKey(req, resolvedLabel);
+      return denied(req, "unknown_key", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
     chunk = await getACUC(
       resolvedApi,
       false,
@@ -1161,7 +1184,13 @@ async function supaAuthenticateUser(
       });
     }
 
+    const listedLabel = denylistLabel(normalizedApi);
+    if (listedLabel !== undefined) recordRejectedKey(req, listedLabel);
+
+    // A listed key goes through the same lookups as an unknown key and is
+    // refused the same way.
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
+    if (listedLabel !== undefined) chunk = null;
 
     // Agent runs from the hosted MCP hold the grant's hosted_mcp_oauth key,
     // not a general one. Accept it only from the trusted agent service, only
@@ -1180,7 +1209,7 @@ async function supaAuthenticateUser(
       );
     }
 
-    if (chunk === null) {
+    if (chunk === null || listedLabel !== undefined) {
       return denied(req, "unknown_key", {
         success: false,
         error: "Unauthorized: Invalid token",
@@ -1378,6 +1407,8 @@ async function supaAuthenticateUser(
       });
     }
   }
+
+  if (chunk) recordKeySeen(req, chunk);
 
   return {
     success: true,
