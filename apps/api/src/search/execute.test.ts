@@ -75,6 +75,7 @@ vi.mock("./safe-search", () => ({
 }));
 
 import { executeSearch } from "./execute";
+import { config } from "../config";
 import { searchRequestSchema } from "../controllers/v2/types";
 
 const logger = {
@@ -977,6 +978,48 @@ describe("executeSearch query operators", () => {
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({ tbs, type: ["web"] }),
     );
+  });
+
+  it("keeps Fire Engine news domain filters structured so date metadata survives", async () => {
+    const previousFireEngineUrl = config.FIRE_ENGINE_BETA_URL;
+    config.FIRE_ENGINE_BETA_URL = "https://fire-engine.example";
+    mocks.search.mockResolvedValue({
+      news: [
+        {
+          url: "https://news.example/electric-vehicles",
+          title: "Electric vehicle news",
+          snippet: "Latest developments",
+          date: "2026-11-06",
+        },
+      ],
+    });
+
+    try {
+      const result = await executeSearch(
+        {
+          ...options([]),
+          query: "electric vehicles",
+          sources: [{ type: "news" }],
+          tbs: "qdr:w",
+          excludeDomains: ["facebook.com", "x.com"],
+        },
+        context,
+        logger,
+      );
+
+      expect(mocks.search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: "electric vehicles",
+          type: ["news"],
+          tbs: "qdr:w",
+          excludeDomains: ["facebook.com", "x.com"],
+        }),
+      );
+      expect(mocks.search.mock.calls[0][0].query).not.toContain("-site:");
+      expect(result.response.news?.[0]?.date).toBe("2026-11-06");
+    } finally {
+      config.FIRE_ENGINE_BETA_URL = previousFireEngineUrl;
+    }
   });
 });
 
