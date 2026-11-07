@@ -2507,3 +2507,5 @@ export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;
 }
+
+export type { ScrapeCallOptions } from "./methods/scrape";
