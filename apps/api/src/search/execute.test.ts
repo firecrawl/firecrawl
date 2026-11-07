@@ -1021,6 +1021,56 @@ describe("executeSearch query operators", () => {
       config.FIRE_ENGINE_BETA_URL = previousFireEngineUrl;
     }
   });
+
+  it("keeps explicit -site filters structured for Fire Engine news searches", async () => {
+    const previousFireEngineUrl = config.FIRE_ENGINE_BETA_URL;
+    config.FIRE_ENGINE_BETA_URL = "https://fire-engine.example";
+    mocks.search.mockResolvedValue({
+      news: [
+        {
+          url: "https://news.example/electric-vehicles",
+          title: "Electric vehicle news",
+          snippet: "Latest developments",
+          date: "2026-11-06",
+        },
+        {
+          url: "https://facebook.com/electric-vehicles",
+          title: "Social post",
+          snippet: "Excluded domain",
+          date: "2026-11-06",
+        },
+      ],
+    });
+
+    try {
+      const result = await executeSearch(
+        {
+          ...options([]),
+          query: "electric vehicles -site:facebook.com",
+          sources: [{ type: "news" }],
+          tbs: "qdr:w",
+        },
+        context,
+        logger,
+      );
+
+      expect(mocks.search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: "electric vehicles",
+          type: ["news"],
+          tbs: "qdr:w",
+          excludeDomains: ["facebook.com"],
+        }),
+      );
+      expect(result.response.news?.map(x => x.url)).toEqual([
+        "https://news.example/electric-vehicles",
+      ]);
+      expect(result.response.news?.[0]?.date).toBe("2026-11-06");
+    } finally {
+      config.FIRE_ENGINE_BETA_URL = previousFireEngineUrl;
+    }
+  });
+
 });
 
 describe("executeSearch skill cards", () => {
