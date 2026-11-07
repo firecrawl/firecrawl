@@ -25,7 +25,6 @@ export interface Notice {
   replacement?: string;
 }
 
-// Every legacy entry shipped together in #3469, so they share one date.
 // Every v1 route below shares one deprecation date, sunset and extension flag.
 const V1 = {
   docs: "https://docs.firecrawl.dev/migrate-to-v2",
@@ -34,6 +33,7 @@ const V1 = {
   surface: "v1",
 };
 
+// Every legacy entry shipped together in #3469, so they share one date.
 const DEPRECATIONS = {
   v1_extract: {
     message:
