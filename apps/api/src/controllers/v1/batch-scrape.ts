@@ -365,18 +365,37 @@ export async function batchScrapeController(
         origin: req.body.origin,
       };
 
-  if (req.body.appendToId && (!sc || sc.team_id !== req.auth.team_id)) {
-    return res.status(404).json({
-      success: false,
-      error: "Job not found",
-    });
-  }
-  if (req.body.appendToId && sc?.internalOptions) {
-    // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
-    // current policy, not whatever was stored when the batch was created.
-    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
-    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
-    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+  if (req.body.appendToId) {
+    if (!sc || sc.team_id !== req.auth.team_id) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    const group = await crawlGroup.getGroup(req.body.appendToId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (group.status !== "active" || sc.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${sc.cancelled ? "cancelled" : group.status}". Please start a new batch without appendToId.`,
+      });
+    }
+
+    if (sc?.internalOptions) {
+      // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
+      // current policy, not whatever was stored when the batch was created.
+      sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+      sc.internalOptions.threatProtection =
+        threatProtection.policy ?? undefined;
+      sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+    }
   }
 
   if (!req.body.appendToId) {
