@@ -1,13 +1,19 @@
 import { describe, test, expect } from "vitest";
 import axios, { type AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
+import { type ScrapeCallOptions } from "../../../v2/methods/scrape";
 
 const API_URL = "https://api.firecrawl.dev";
 
 function makeClient(apiKey: string) {
   const client = new FirecrawlClient({ apiKey, apiUrl: API_URL });
-  const sent: Array<{ method?: string; url: string; authorization: unknown; body: unknown }> = [];
-  const adapter: AxiosAdapter = async config => {
+  const sent: Array<{
+    method?: string;
+    url: string;
+    authorization: unknown;
+    body: unknown;
+  }> = [];
+  const adapter: AxiosAdapter = async (config) => {
     sent.push({
       method: config.method,
       url: axios.getUri(config),
@@ -29,7 +35,9 @@ function makeClient(apiKey: string) {
 describe("v2.scrape unit", () => {
   test("constructs without an API key and scrapes keyless, without an Authorization header", async () => {
     const { client, sent } = makeClient("");
-    const doc = await client.scrape(" https://example.com ", { formats: ["markdown"] });
+    const doc = await client.scrape(" https://example.com ", {
+      formats: ["markdown"],
+    });
 
     expect(doc.markdown).toBe("# hello");
     expect(sent).toHaveLength(1);
@@ -56,5 +64,17 @@ describe("v2.scrape unit", () => {
 
     await expect(client.scrape("  ")).rejects.toThrow("URL cannot be empty");
     expect(sent).toHaveLength(0);
+  });
+
+  test("sends zeroDataRetention payload when provided in ScrapeCallOptions", async () => {
+    const { client, sent } = makeClient("fc-test");
+    const options: ScrapeCallOptions = { zeroDataRetention: true };
+    await client.scrape("https://example.com", options);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body).toMatchObject({
+      url: "https://example.com",
+      zeroDataRetention: true,
+    });
   });
 });
