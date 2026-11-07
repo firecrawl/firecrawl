@@ -16,6 +16,7 @@ import {
   isSameDomain,
   isSameSubdomain,
   removeDuplicateUrls,
+  removeWwwFromUrl,
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
 import { isUsOnly } from "../../lib/us-only";
@@ -162,7 +163,7 @@ export async function getMapResults({
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = removeWwwFromUrl(url);
 
     let mapUrl =
       search && allowExternalLinks
