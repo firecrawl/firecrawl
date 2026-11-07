@@ -15,6 +15,10 @@ import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 const creditsPerPDFPage = 1;
+// Whether a PDF parse that succeeded but found no text (blank or photo-only
+// pages, metadata.noTextFound) bills like any other parse. Pending a billing
+// decision; false keeps the pre-fix cost, when these were 0-credit failures.
+export const BILL_EMPTY_PDF_PARSES = false;
 const unblockedDomainCostBonus = 4;
 const xTwitterCostBonus = 29;
 const jsonCostBonus = 4;
@@ -151,6 +155,10 @@ export async function calculateCreditsToBeBilled(
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
     return creditsToBeBilled + threatScanCredits;
+  }
+
+  if (document.metadata?.noTextFound && !BILL_EMPTY_PDF_PARSES) {
+    return threatScanCredits;
   }
 
   // An Exchange access is priced by its provider in place of the base

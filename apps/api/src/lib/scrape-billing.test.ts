@@ -1,4 +1,5 @@
 import {
+  BILL_EMPTY_PDF_PARSES,
   calculateCreditsToBeBilled,
   calculateThreatScanCredits,
 } from "./scrape-billing";
@@ -10,6 +11,34 @@ import {
 } from "../scraper/scrapeURL/error";
 
 describe("calculateCreditsToBeBilled", () => {
+  it("bills a PDF parse that found no text per BILL_EMPTY_PDF_PARSES", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+        parsers: [{ type: "pdf", mode: "ocr", maxPages: 1 }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          url: "https://parse.firecrawl.dev/uploads/document.pdf",
+          proxyUsed: "basic",
+          numPages: 1,
+          noTextFound: true,
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(BILL_EMPTY_PDF_PARSES ? 1 : 0);
+  });
+
   it("bills handled Exchange successes at the reported credit cost", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
