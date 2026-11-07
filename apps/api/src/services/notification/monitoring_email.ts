@@ -14,6 +14,10 @@ import {
   touchRecipientsNotified,
   type MonitorEmailRecipientRow,
 } from "../monitoring/email_recipients";
+import {
+  humanFacingAlertPages,
+  omittedNoiseCount,
+} from "./monitoring_alert_pages";
 
 const logger = _logger.child({ module: "monitoring-email" });
 
@@ -85,6 +89,9 @@ export type MonitoringEmailPayload = {
   };
   pages: MonitoringEmailPage[];
   creditsUsed: number | null;
+  // Changed pages removed from `pages` because judging called them noise.
+  // The changed total stays the check counter; this only labels that gap.
+  noiseOmitted?: number;
   // When omitted, the footer drops the unsubscribe row.
   unsubscribeUrl?: string;
 };
@@ -163,6 +170,24 @@ export function buildRecipientUnsubscribeUrl(token: string): string {
   return buildPublicWebUrl("/monitoring/email/unsubscribe", token);
 }
 
+function formatChangedLine(params: {
+  changed: number;
+  meaningfulCount: number;
+  listedNoiseCount: number;
+  noiseOmitted: number;
+  hasJudgment: boolean;
+}): string {
+  const { changed, meaningfulCount, listedNoiseCount, noiseOmitted } = params;
+  if (!params.hasJudgment) return `Changed: ${changed}`;
+  if (noiseOmitted > 0 && listedNoiseCount === 0) {
+    return `Changed: ${changed} (${meaningfulCount} meaningful, ${noiseOmitted} noise omitted)`;
+  }
+  if (noiseOmitted > 0) {
+    return `Changed: ${changed} (${meaningfulCount} meaningful, ${listedNoiseCount} noise, ${noiseOmitted} noise omitted)`;
+  }
+  return `Changed: ${changed} (${meaningfulCount} meaningful, ${listedNoiseCount} noise)`;
+}
+
 function buildUnsubscribeFooter(unsubscribeUrl: string): string {
   const safe = escapeHtml(unsubscribeUrl);
   return `<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px;" />
@@ -210,11 +235,18 @@ export function buildHtml(payload: MonitoringEmailPayload): string {
   const meaningfulCount = judgedPages.filter(
     p => p.judgment!.meaningful,
   ).length;
-  const noiseCount = judgedPages.length - meaningfulCount;
-  const changedLine =
-    judgedPages.length > 0
-      ? `Changed: ${payload.summary.changed} (${meaningfulCount} meaningful, ${noiseCount} noise)`
-      : `Changed: ${payload.summary.changed}`;
+  const listedNoiseCount = judgedPages.length - meaningfulCount;
+  const noiseOmitted = payload.noiseOmitted ?? 0;
+  // Counts come from the pages still rendered, plus noise rows removed above.
+  // A filtered list must not report "0 noise" while the changed total still
+  // includes those pages, and an empty list must not leave a heading.
+  const changedLine = formatChangedLine({
+    changed: payload.summary.changed,
+    meaningfulCount,
+    listedNoiseCount,
+    noiseOmitted,
+    hasJudgment: judgedPages.length > 0 || noiseOmitted > 0,
+  });
 
   return `Hey there,<br/>
 <p>Your Firecrawl monitor <strong>${escapeHtml(payload.monitorName)}</strong> detected activity.</p>
@@ -568,6 +600,11 @@ export async function sendMonitoringEmailSummary(params: {
     checkId: params.check.id,
   });
 
+  // Suppression already ran on the full page list. The rendered list drops
+  // changed pages the judge called noise; new/removed/error/unjudged stay.
+  const alertPages = humanFacingAlertPages(params.monitor, params.pages);
+  const noiseOmitted = omittedNoiseCount(params.monitor, params.pages);
+
   // One email per recipient: unique unsubscribe links + no recipient leakage.
   const sendResults = await Promise.all(
     resolved.confirmedRecipients.map(async recipient => {
@@ -583,7 +620,8 @@ export async function sendMonitoringEmailSummary(params: {
           error: params.check.error_count,
           totalPages: params.check.total_pages,
         },
-        pages: params.pages,
+        pages: alertPages,
+        noiseOmitted,
         creditsUsed: params.check.actual_credits,
         unsubscribeUrl: buildRecipientUnsubscribeUrl(recipient.token),
       };
