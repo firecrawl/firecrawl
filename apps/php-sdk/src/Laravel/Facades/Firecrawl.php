@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Firecrawl\Laravel\Facades;
 
 use Firecrawl\Client\FirecrawlClient;
+use Firecrawl\Models\AgentListResponse;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentStatusResponse;
 use Firecrawl\Models\BatchScrapeJob;
@@ -20,6 +21,7 @@ use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\MapOptions;
+use Firecrawl\Models\ParseFormat;
 use Firecrawl\Models\ScrapeOptions;
 use Firecrawl\Models\SearchData;
 use Firecrawl\Models\SearchOptions;
@@ -38,12 +40,14 @@ use Illuminate\Support\Facades\Facade;
  * @method static SearchData search(string $query, ?SearchOptions $options = null)
  * @method static AgentStatusResponse agent(AgentOptions $options, int $pollIntervalSec = 2, int $timeoutSec = 300)
  * @method static array<string, mixed> cancelAgent(string $jobId)
- * @method static BrowserCreateResponse browser(?int $ttl = null, ?int $activityTtl = null, ?bool $streamWebView = null)
+ * @method static AgentListResponse listAgents(?int $before = null)
+ * @method static BrowserCreateResponse browser(?int $ttl = null, ?int $activityTtl = null, ?bool $streamWebView = null, array<string, string>|null $profile = null, array{country: string}|null $location = null)
  * @method static BrowserExecuteResponse browserExecute(string $sessionId, string $code, string $language = 'bash', ?int $timeout = null)
  * @method static BrowserDeleteResponse deleteBrowser(string $sessionId)
  * @method static BrowserListResponse listBrowsers(?string $status = null)
  * @method static ConcurrencyCheck getConcurrency()
  * @method static CreditUsage getCreditUsage()
+ * @method static list<ParseFormat> getParseFormats()
  *
  * @see FirecrawlClient
  */

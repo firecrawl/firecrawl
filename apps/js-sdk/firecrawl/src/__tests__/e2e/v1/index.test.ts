@@ -1,7 +1,7 @@
 import FirecrawlApp, { type CrawlParams, type CrawlResponse, type CrawlStatusResponse, type MapResponse, type ScrapeResponse } from '../../../index';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 dotenv.config();
 
@@ -26,10 +26,10 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should throw error for invalid API key on scrape', async () => {
     if (API_URL.includes('api.firecrawl.dev')) {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.scrapeUrl('https://roastmywebsite.ai')).rejects.toThrow("Unexpected error occurred while trying to scrape URL. Status code: 401");
+      await expect(invalidApp.scrapeUrl('https://firecrawl-test-site.vercel.app')).rejects.toThrow("Unexpected error occurred while trying to scrape URL. Status code: 401");
     } else {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.scrapeUrl('https://roastmywebsite.ai')).resolves.not.toThrow();
+      await expect(invalidApp.scrapeUrl('https://firecrawl-test-site.vercel.app')).resolves.not.toThrow();
     }
   });
 
@@ -42,7 +42,7 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should return successful response for valid scrape', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
 
-    const response = await app.scrapeUrl('https://roastmywebsite.ai');
+    const response = await app.scrapeUrl('https://firecrawl-test-site.vercel.app');
     if (!response.success) {
       throw new Error(response.error);
     }
@@ -51,7 +51,7 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should return successful response with valid API key and options', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const response = await app.scrapeUrl(
-      'https://roastmywebsite.ai', {
+      'https://firecrawl-test-site.vercel.app', {
       formats: ['markdown', 'html', 'rawHtml', 'screenshot', 'links'],
       headers: { "x-key": "test" },
       includeTags: ['h1'],
@@ -69,7 +69,7 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should return successful response with valid API key and screenshot fullPage', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const response = await app.scrapeUrl(
-      'https://roastmywebsite.ai', {
+      'https://firecrawl-test-site.vercel.app', {
       formats: ['screenshot@fullPage'],
     });
     if (!response.success) {
@@ -132,16 +132,16 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should throw error for invalid API key on crawl', async () => {
     if (API_URL.includes('api.firecrawl.dev')) {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.crawlUrl('https://roastmywebsite.ai')).rejects.toThrow("Request failed with status code 401");
+      await expect(invalidApp.crawlUrl('https://firecrawl-test-site.vercel.app')).rejects.toThrow("Request failed with status code 401");
     } else {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.crawlUrl('https://roastmywebsite.ai')).resolves.not.toThrow();
+      await expect(invalidApp.crawlUrl('https://firecrawl-test-site.vercel.app')).resolves.not.toThrow();
     }
   });
 
   test.concurrent('should return successful response for crawl and wait for completion', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
-    const response = await app.crawlUrl('https://roastmywebsite.ai', {}, 30) as CrawlStatusResponse;
+    const response = await app.crawlUrl('https://firecrawl-test-site.vercel.app', {}, 30) as CrawlStatusResponse;
     expect(response).not.toHaveProperty("next"); // wait until done
     expect(response.data.length).toBeGreaterThan(0);
     if (response.data[0]) {
@@ -151,7 +151,7 @@ describe('FirecrawlApp E2E Tests', () => {
 
   test.concurrent('should return successful response for crawl with options and wait for completion', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
-    const response = await app.crawlUrl('https://roastmywebsite.ai', {
+    const response = await app.crawlUrl('https://firecrawl-test-site.vercel.app', {
       excludePaths: ['blog/*'],
       includePaths: ['/'],
       maxDepth: 2,
@@ -183,11 +183,11 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should handle idempotency key for crawl', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const uniqueIdempotencyKey = uuidv4();
-    const response = await app.asyncCrawlUrl('https://roastmywebsite.ai', {}, uniqueIdempotencyKey) as CrawlResponse;
+    const response = await app.asyncCrawlUrl('https://firecrawl-test-site.vercel.app', {}, uniqueIdempotencyKey) as CrawlResponse;
     expect(response).not.toBeNull();
     expect(response.id).toBeDefined();
 
-    await expect(app.crawlUrl('https://roastmywebsite.ai', {}, 2, uniqueIdempotencyKey)).rejects.toThrow("Request failed with status code 409");
+    await expect(app.crawlUrl('https://firecrawl-test-site.vercel.app', {}, 2, uniqueIdempotencyKey)).rejects.toThrow("Request failed with status code 409");
   });
 
   test.concurrent('should check crawl status', async () => {
@@ -236,10 +236,10 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should throw error for invalid API key on map', async () => {
     if (API_URL.includes('api.firecrawl.dev')) {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.mapUrl('https://roastmywebsite.ai')).rejects.toThrow("Request failed with status code 401");
+      await expect(invalidApp.mapUrl('https://firecrawl-test-site.vercel.app')).rejects.toThrow("Request failed with status code 401");
     } else {
       const invalidApp = new FirecrawlApp({ apiKey: "invalid_api_key", apiUrl: API_URL });
-      await expect(invalidApp.mapUrl('https://roastmywebsite.ai')).resolves.not.toThrow();
+      await expect(invalidApp.mapUrl('https://firecrawl-test-site.vercel.app')).resolves.not.toThrow();
     }
   });
 
@@ -250,12 +250,12 @@ describe('FirecrawlApp E2E Tests', () => {
   });
 
   test.concurrent('should return successful response for valid map', async () => {
-    const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL }); const response = await app.mapUrl('https://roastmywebsite.ai') as MapResponse;
+    const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL }); const response = await app.mapUrl('https://firecrawl-test-site.vercel.app') as MapResponse;
     expect(response).not.toBeNull();
 
     expect(response.links?.length).toBeGreaterThan(0);
     expect(response.links?.[0]).toContain("https://");
-    const filteredLinks = response.links?.filter((link: string) => link.includes("roastmywebsite.ai"));
+    const filteredLinks = response.links?.filter((link: string) => link.includes("firecrawl-test-site.vercel.app"));
     expect(filteredLinks?.length).toBeGreaterThan(0);
   }, 30000); // 30 seconds timeout
 

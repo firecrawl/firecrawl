@@ -1,0 +1,61 @@
+---
+// Fixture for the branding declared-logo fallback: this page declares its
+// logo via JSON-LD and an apple-touch icon, but renders NO logo image in the
+// DOM — so the branding pipeline's candidate/heuristic/LLM path finds
+// nothing and must fall back to the declared marks. Keep this page free of
+// <img>/<svg> elements.
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Declared Brand Co — Branding Fixture</title>
+		<meta
+			name="description"
+			content="Test fixture: logo declared via JSON-LD and apple-touch icon only, never rendered in the DOM."
+		/>
+		<link
+			rel="apple-touch-icon"
+			sizes="57x57 180x180"
+			href="/favicon-declared-180.png"
+		/>
+		<script
+			type="application/ld+json"
+			set:html={JSON.stringify({
+				'@context': 'https://schema.org',
+				'@type': 'Organization',
+				name: 'Declared Brand Co',
+				url: 'https://firecrawl-test-site.vercel.app',
+				logo: {
+					'@type': 'ImageObject',
+					contentUrl:
+						'https://firecrawl-test-site.vercel.app/declared-logo.png',
+				},
+			})}
+		/>
+	</head>
+	<body>
+		<header>
+			<span>Declared Brand Co</span>
+			<nav>
+				<a href="/">Home</a>
+				<a href="/about">About</a>
+			</nav>
+		</header>
+		<main>
+			<h1>Declared Brand Co</h1>
+			<p>
+				This page intentionally renders no logo image. The brand mark is
+				declared only via JSON-LD structured data and an apple-touch icon,
+				exercising the branding declared-logo fallback.
+			</p>
+			<button style="background:#0a6b5c;color:#fff;border-radius:8px;padding:12px 24px;border:0">
+				Get Started
+			</button>
+		</main>
+		<footer>
+			<p>Declared Brand Co — a Firecrawl test fixture.</p>
+		</footer>
+	</body>
+</html>

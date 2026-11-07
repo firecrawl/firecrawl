@@ -1,9 +1,10 @@
 import asyncio
 from functools import partial
 import json
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, List, Tuple
 
-from ...types import Document, ParseOptions
+from ...types import Document, ParseFormat, ParseOptions
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
@@ -19,8 +20,9 @@ async def _prepare_parse_request(
     *,
     filename: Optional[str] = None,
     content_type: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Tuple[str, bytes, str]]]:
-    request_data = _prepare_parse_options_payload(options)
+    request_data = _prepare_parse_options_payload(options, origin)
     multipart_fields = {"options": json.dumps(request_data)}
     loop = asyncio.get_running_loop()
     multipart_files = await loop.run_in_executor(
@@ -48,6 +50,7 @@ async def parse(
         options,
         filename=filename,
         content_type=content_type,
+        origin=client.origin,
     )
 
     response = await client.post_multipart("/v2/parse", data=fields, files=files)
@@ -56,8 +59,19 @@ async def parse(
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        handle_response_error(response, "parse")
 
     document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
+    normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
     return Document(**normalized)
+
+
+async def get_parse_formats(client: AsyncHttpClient) -> List[ParseFormat]:
+    resp = await client.get("/v2/parse/formats")
+    if resp.status_code >= 400:
+        handle_response_error(resp, "get parse formats")
+    body = resp.json()
+    if not body.get("success"):
+        handle_response_error(resp, "get parse formats")
+    data = body.get("data") or {}
+    return [ParseFormat.model_validate(item) for item in data.get("formats") or []]

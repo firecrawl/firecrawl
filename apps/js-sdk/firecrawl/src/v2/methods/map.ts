@@ -1,5 +1,6 @@
 import { type MapData, type MapOptions, type SearchResultWeb } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import {
   throwForBadResponse,
   normalizeAxiosError,
@@ -24,6 +25,10 @@ function prepareMapPayload(
       payload.integration = options.integration.trim();
     if (options.origin) payload.origin = options.origin;
     if (options.location != null) payload.location = options.location;
+    if (options.threatProtection != null)
+      payload.threatProtection = options.threatProtection;
+    if (options.auditMetadata != null)
+      payload.auditMetadata = options.auditMetadata;
   }
   return payload;
 }
@@ -37,6 +42,7 @@ export async function map(
   try {
     const res = await http.post<{
       success: boolean;
+      id?: string;
       error?: string;
       links?: Array<string | SearchResultWeb>;
     }>(
@@ -60,7 +66,7 @@ export async function map(
           description: (item as any).description,
         });
     }
-    return { links };
+    return { id: res.data.id, links, ...agentHintMetadata(res.data) };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "map");
     throw err;

@@ -13,5 +13,10 @@ const SITE_URL =
 export default defineConfig({
   site: SITE_URL,
   output: 'static',
-  integrations: [mdx(), sitemap()],
+  integrations: [
+    mdx(),
+    // Keep the robots.txt fixture out of the sitemap so that only crawls
+    // that start at /robots-test/ see it.
+    sitemap({ filter: page => !page.includes("/robots-test/") }),
+  ],
 });

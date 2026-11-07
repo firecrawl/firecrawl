@@ -9,7 +9,15 @@ class MonitorCheck
 {
     /**
      * @param array<string, mixed>      $summary
-     * @param mixed                     $targetResults
+     * @param mixed                     $targetResults A list of per-target
+     *     result arrays. Each entry has a `targetId` (string) and a `type`
+     *     of `scrape`, `crawl`, or `search`. `scrape`/`crawl` results carry
+     *     `expectedJobs` (list<string>) and `crawlId` (string). `search`
+     *     results carry optional `searchCompleted` (bool), `resultCount`
+     *     (int), `matches` (int), `summary` (string), `judgeDegraded`
+     *     (bool), `degradedReason` (string|null), `searchCredits` (number),
+     *     `judgeCredits` (number), and `resultsJudged` (int). All keys are
+     *     camelCase.
      * @param mixed                     $notificationStatus
      */
     public function __construct(

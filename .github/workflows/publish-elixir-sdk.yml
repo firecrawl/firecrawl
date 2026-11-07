@@ -15,14 +15,21 @@ defaults:
   run:
     working-directory: ./apps/elixir-sdk
 
+permissions: {}
+
 jobs:
   regenerate:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up Elixir
         uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1
@@ -36,6 +43,9 @@ jobs:
       - name: Regenerate from OpenAPI spec
         run: mix run generate.exs
 
+      - name: Test regenerated code
+        run: mix test
+
       - name: Check for changes
         id: check_changes
         run: |
@@ -45,10 +55,36 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The regen PR must come from the App, not github-actions[bot], so its CI runs without approval.
+      - name: Check for regen App credentials
+        id: app_creds
+        if: steps.check_changes.outputs.changed == 'true'
+        env:
+          CLIENT_ID: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$CLIENT_ID" ] && [ -n "$PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ELIXIR_REGEN_APP_CLIENT_ID or ELIXIR_REGEN_APP_PRIVATE_KEY is not set; falling back to github.token."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create regen App token
+        id: app_token
+        if: steps.app_creds.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Create PR with regenerated code
         if: steps.check_changes.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token || github.token }}
+          APP_SLUG: ${{ steps.app_token.outputs.app-slug }}
         run: |
           cd "$GITHUB_WORKSPACE"
 
@@ -71,8 +107,16 @@ jobs:
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$APP_SLUG" ]; then
+            BOT_LOGIN="${APP_SLUG}[bot]"
+            BOT_ID=$(gh api "/users/${BOT_LOGIN}" --jq .id)
+            git config user.name "$BOT_LOGIN"
+            git config user.email "${BOT_ID}+${BOT_LOGIN}@users.noreply.github.com"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
           # Delete stale remote branch if it exists (no open PR at this point)
           git push origin --delete "$BRANCH" 2>/dev/null || true
@@ -99,13 +143,80 @@ jobs:
             --head "$BRANCH" \
             --base main
 
+  supersede:
+    name: Supersede unapproved runs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - uses: ./.github/actions/supersede-waiting-runs
+        continue-on-error: true
+        timeout-minutes: 2
+
+  release-summary:
+    name: Release summary
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Read the version
+        id: version
+        continue-on-error: true
+        run: |
+          local=$(grep '@version' apps/elixir-sdk/mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          published=$(curl -fsS https://hex.pm/api/packages/firecrawl | jq -r '.releases[0].version // "0.0.0"')
+          newest=$(printf '%s\n%s\n' "$local" "$published" | sort -V | tail -1)
+          echo "version=$local" >> "$GITHUB_OUTPUT"
+          if [ "$local" != "$published" ] && [ "$newest" = "$local" ]; then publishes=true; else publishes=false; fi
+          echo "publishes=$publishes" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-summary
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          gated-job: publish
+          version: firecrawl ${{ steps.version.outputs.version }} (hex.pm)
+          publishes: ${{ steps.version.outputs.publishes }}
+          published-step: Publish to hex.pm
+          paths: apps/elixir-sdk
+
   publish:
-    if: github.event_name == 'push'
+    needs: release-summary
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up Elixir
         uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1

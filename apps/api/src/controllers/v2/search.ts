@@ -1,5 +1,7 @@
-import { Response } from "express";
+import { NextFunction, Request, Response } from "express";
+import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import {
   RequestWithAuth,
   SearchRequest,
@@ -7,59 +9,269 @@ import {
   searchRequestSchema,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
+import {
+  adjustKeylessCredits,
+  keylessLimitBody,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
-import { logSearch, logRequest } from "../../services/logging/log_job";
+import {
+  logSearch,
+  logRequest,
+  logResearchEndpoint,
+} from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
-import {
-  applyZdrScope,
-  captureExceptionWithZdrCheck,
-} from "../../services/sentry";
+import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
+import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import {
+  isFreeCatalogueSearch,
+  isToolsOnlySearch,
+} from "../../search/alexandria";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+  getEffectiveSearchForcedKind,
+} from "../../lib/safe-mode";
+import { checkPermissions } from "../../lib/permissions";
+import {
+  actionTypesOf,
+  checkKeyEndpointRestriction,
+  checkKeyFormatRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
+import { wantsDeveloperCategory } from "../../search/developer";
+import { wantsGovCategory } from "../../search/gov";
+import {
+  consumeIndexRateLimit,
+  indexDailyLimitRefusal,
+  reserveIndexCalls,
+} from "../../lib/index-daily-limit";
+import { requestOrigin } from "../../lib/request-origin";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyNotice, type Notice } from "../../lib/deprecations";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
+import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
+import {
+  autoToolsEnabled,
+  queryInferenceEnabled,
+  toolFusionEnabled,
+} from "../../search/tool-intent";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
+
+const RESEARCH_CATEGORY_NOTICE: Notice = {
+  message:
+    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
+  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
+};
+
+const GITHUB_CATEGORY_REMOVED =
+  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
+
+// Ahead of auth and validation so rejected requests carry the notice too.
+export function researchCategoryNoticeMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (hasCategory(req.body?.categories, "research")) {
+    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
+  }
+  next();
+}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
+) {
+  // Resolved before any span starts so the whole request stays unrecorded for
+  // zero-data-retention and anonymous searches (see otel-tracer).
+  const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
+    ? req.body.enterprise
+    : [];
+  const zeroDataRetentionTrace =
+    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    enterprise.includes("zdr") ||
+    enterprise.includes("anon") ||
+    isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      req.body?.scrapeOptions?.safeMode,
+    );
+
+  return withSpan(
+    "api.search.request",
+    span => searchControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v2",
+        "search.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
+    },
+  );
+}
+
+async function searchControllerInner(
+  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse>,
+  span: Span,
 ) {
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
+  const searchZDRMode = getSearchZDR(req.acuc?.flags);
+  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
+  // (see getEffectiveSearchForcedKind).
+  const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const teamForcedKind = getEffectiveSearchForcedKind(
+    req.acuc?.flags,
+    req.body?.scrapeOptions?.safeMode,
+  );
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "searchController",
-    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention: teamForcedKind !== null,
+    teamForcedKind,
   });
 
-  if (getSearchZDR(req.acuc?.flags) === "forced") {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
-
   const middlewareTime = controllerStartTime - middlewareStartTime;
-  const isSearchPreview =
-    config.SEARCH_PREVIEW_TOKEN !== undefined &&
-    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+  const isSearchPreview = timingSafeSecretEqual(
+    req.body.__searchPreviewToken,
+    config.SEARCH_PREVIEW_TOKEN,
+  );
 
-  let zeroDataRetention = false;
+  let zeroDataRetention = teamForcedKind !== null;
+  let reservedKeylessCredits = 0;
+  let reconciledKeylessCredits = false;
 
   try {
+    const rawOrigin =
+      typeof req.body?.origin === "string" ? req.body.origin : undefined;
+    delete (req.body as Record<string, unknown>)?.objective;
+    delete (req.body as Record<string, unknown>)?.clientModel;
+    if (hasCategory(req.body?.categories, "github")) {
+      logger.warn("Removed search category requested", {
+        module: "deprecations",
+        category: "github",
+        origin: requestOrigin({ origin: rawOrigin }, req),
+      });
+      return res.status(400).json({
+        success: false,
+        code: "CATEGORY_REMOVED",
+        error: GITHUB_CATEGORY_REMOVED,
+        replacement: "developer",
+        documentation_url: "https://docs.firecrawl.dev/features/developer",
+      });
+    }
+    const sourcesOmitted =
+      (req.body as Record<string, unknown>)?.sources === undefined;
     req.body = searchRequestSchema.parse(req.body);
+
+    const wantsTools = req.body.sources.some(
+      source => source.type === "alexandria",
+    );
+    const wantsSkills = req.body.sources.some(
+      source => source.type === "skills",
+    );
+    if (
+      (wantsTools || wantsSkills || req.body.domainTools) &&
+      req.auth.team_id.startsWith("preview_keyless_")
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "An API key is required for provider tools.",
+      });
+    }
+    if ((wantsTools || wantsSkills) && !req.body.query.trim())
+      return res.status(400).json({
+        success: false,
+        error: wantsTools
+          ? "A query is required for tool search."
+          : "A query is required for skill search.",
+      });
+    if (
+      (wantsTools || wantsSkills || req.body.domainTools) &&
+      (teamForcedKind ||
+        req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+    )
+      return res.status(403).json({
+        success: false,
+        error:
+          "Provider discovery requires access and does not support zero data retention.",
+      });
+
+    const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
+    const keyRestriction = await checkKeyFormatRestriction(
+      requestedFormats,
+      // Search only scrapes (and only runs actions) when formats are
+      // requested; without them scrapeOptions is ignored entirely.
+      requestedFormats.length > 0
+        ? actionTypesOf(req.body.scrapeOptions?.actions)
+        : [],
+      req.acuc?.api_key_id,
+      req.acuc?.flags ?? null,
+    );
+    if (!keyRestriction.allowed) {
+      return res.status(keyRestriction.status).json({
+        success: false,
+        error: keyRestriction.error,
+      });
+    }
+
+    const categories = req.body.categories as CategoryOption[];
+    // Index categories reach the same upstream as their dedicated endpoint, so
+    // they share its key restriction and its request ledger.
+    const indexCategory = wantsDeveloperCategory(categories)
+      ? { endpoint: "/v2/developer/search", table: "code_searches" as const }
+      : wantsGovCategory(categories)
+        ? {
+            endpoint: "/v2/search/gov",
+            table: "gov_searches" as const,
+          }
+        : null;
+
+    if (indexCategory) {
+      const indexRestriction = await checkKeyEndpointRestriction(
+        indexCategory.endpoint,
+        req.acuc?.api_key_id,
+        req.acuc?.flags ?? null,
+      );
+      if (!indexRestriction.allowed) {
+        return res.status(indexRestriction.status).json({
+          success: false,
+          error: indexRestriction.error,
+        });
+      }
+    }
 
     if (
       req.body.__agentInterop &&
       config.AGENT_INTEROP_SECRET &&
-      req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+      !isAgentInteropSecretValid(req.body.__agentInterop.auth)
     ) {
       return res.status(403).json({
         success: false,
@@ -72,11 +284,108 @@ export async function searchController(
       });
     }
 
+    // Image search has no US-only route: it is dropped with a warning, or
+    // refused when nothing else was asked for.
+    let usOnlyImagesWarning: string | undefined;
+    const sources = req.body.sources as Array<{ type: string }>;
+    if (
+      isUsOnly(req.acuc?.flags) &&
+      sources.some(source => source.type === "images")
+    ) {
+      req.body.sources = sources.filter(
+        source => source.type !== "images",
+      ) as SearchRequest["sources"];
+      if (req.body.sources.length === 0 && !indexCategory) {
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+        });
+      }
+      usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+    }
+
+    // Safe Mode: validate the per-request param up front and reject scrape
+    // options it forbids (the worker backstop would otherwise strip them
+    // silently). Domain controls force threat protection over the results.
+    const safeMode = resolveSafeMode(
+      req.acuc?.flags,
+      req.body.scrapeOptions?.safeMode,
+    );
+    if (safeMode.error) {
+      return res.status(403).json({
+        success: false,
+        code: safeMode.code,
+        error: safeMode.error,
+      });
+    }
+
+    // Threat protection: resolve the effective policy. Blocked domains are
+    // removed from search results entirely, and scraped results inherit the
+    // policy through the scrape pipeline.
+    const threatProtection = await resolveThreatProtection({
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      flags: req.acuc?.flags ?? null,
+      override:
+        req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
+      force: safeMode.safeMode?.domainControls === true,
+    });
+    if (threatProtection.error) {
+      return res.status(403).json({
+        success: false,
+        error: threatProtection.error,
+      });
+    }
+
+    const usOnlyLocationError =
+      requestedFormats.length > 0
+        ? usOnlyLocationRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
+      });
+    }
+
+    // Search only scrapes (and only honors scrapeOptions) when formats are
+    // requested, so the scrape-option checks apply only then.
+    if (
+      safeMode.safeMode &&
+      requestedFormats.length > 0 &&
+      req.body.scrapeOptions
+    ) {
+      const permissions = checkPermissions(
+        req.body.scrapeOptions,
+        req.acuc?.flags,
+        {
+          threatProtectionOrgConfig: threatProtection.orgConfig,
+          safeMode: safeMode.safeMode,
+        },
+      );
+      if (permissions.error) {
+        return res.status(403).json({
+          success: false,
+          code: permissions.code,
+          error: permissions.error,
+        });
+      }
+    }
+
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
-    const billing: BillingMetadata = req.body.__agentInterop
-      ? { endpoint: "agent" as const, jobId }
-      : { endpoint: "search" as const, jobId };
+    const billing: BillingMetadata = {
+      ...(req.body.__agentInterop
+        ? { endpoint: "agent" as const, jobId }
+        : { endpoint: "search" as const, jobId }),
+      externalRequestId: externalRequestId(req),
+      hostedMcp: req.auth.hostedMcp,
+    };
 
     logger = logger.child({
       version: "v2",
@@ -84,16 +393,33 @@ export async function searchController(
       origin: req.body.origin,
     });
 
+    // Kinds the request itself asked for, captured before the forced kind is
+    // injected: the entitlement check below applies to these only.
+    const requestedZDROrAnon =
+      req.body.enterprise?.includes("zdr") ||
+      req.body.enterprise?.includes("anon") ||
+      false;
+
+    // Inject the team-forced enterprise mode so downstream billing,
+    // upstream routing, and ZDR cleanup all see it.
+    if (teamForcedKind) {
+      const existing = req.body.enterprise ?? [];
+      if (!existing.includes(teamForcedKind)) {
+        req.body.enterprise = [...existing, teamForcedKind];
+      }
+    }
+
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
-    applyZdrScope(isZDROrAnon ?? false);
+    logger = logger.child({ zeroDataRetention });
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
-    if (isZDROrAnon) {
-      const searchMode = getSearchZDR(req.acuc?.flags);
-      if (searchMode !== "allowed" && searchMode !== "forced") {
+    // it asked for. Only the flag-forced kind exempts a team: a lockdown-forced
+    // "zdr" must not let an unentitled request add "anon".
+    if (requestedZDROrAnon && !flagForcedKind) {
+      if (searchZDRMode !== "allowed") {
         return res.status(403).json({
           success: false,
           error:
@@ -102,18 +428,113 @@ export async function searchController(
       }
     }
 
+    // Kick off the `requests` row insert without blocking: it queues on the
+    // Postgres pool and can take seconds under pool pressure. We only need it
+    // committed before the child-row writes (logSearch et al. below) to keep
+    // the request_id FK ordering — same pattern as the scrape controllers.
+    let logRequestPromise: Promise<void> | undefined;
     if (!agentRequestId) {
-      await logRequest({
+      logRequestPromise = logRequest({
         id: jobId,
         kind: "search",
         api_version: "v2",
+        external_request_id: externalRequestId(req),
         team_id: req.auth.team_id,
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
         target_hint: req.body.query,
-        zeroDataRetention: isZDROrAnon ?? false,
+        zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
+      // The rejection is surfaced where the promise is awaited below; this
+      // only stops it counting as unhandled until then.
+      logRequestPromise.catch(() => {});
+    }
+
+    const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      req.body.sources,
+      req.body.categories,
+    );
+    const govSearch = wantsGovCategory(categories);
+    const projectedKeylessCredits =
+      !isSearchPreview &&
+      shouldBill &&
+      !freeCatalogue &&
+      (!govSearch || requestedFormats.length > 0)
+        ? projectSearchTotalCredits(
+            {
+              limit: req.body.limit,
+              enterprise: req.body.enterprise,
+              scrapeOptions: req.body.scrapeOptions,
+              freeSearch: govSearch,
+            },
+            req.acuc?.flags ?? null,
+            zeroDataRetention,
+          )
+        : 0;
+    // The request must be on record before anything is reserved, runs, or
+    // bills. A failed log fails the request here, ahead of the keyless
+    // reservation and the search, so there is nothing to refund or unbill.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
+    if (govSearch) {
+      const perMinute = await consumeIndexRateLimit(
+        "gov",
+        req.auth.team_id,
+        req.acuc?.rate_limit_multiplier ?? 1,
+        req.acuc?.flags,
+        1,
+      );
+      if (!perMinute.ok) {
+        res.setHeader("Retry-After", String(perMinute.retryAfterSeconds));
+        return res.status(429).json({
+          success: false,
+          error: perMinute.error,
+          retry_after_seconds: perMinute.retryAfterSeconds,
+        });
+      }
+    }
+
+    if (projectedKeylessCredits > 0) {
+      const reservation = await reserveKeylessCredits(
+        req.auth.team_id,
+        projectedKeylessCredits,
+      );
+      if (!reservation.ok) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(429)
+          .json(await keylessLimitBody(req.auth.team_id, "v2_search", req));
+      }
+      reservedKeylessCredits = projectedKeylessCredits;
+    }
+
+    if (wantsGovCategory(categories)) {
+      const indexBudget = await reserveIndexCalls(
+        "gov",
+        req.auth.team_id,
+        req.acuc?.rate_limit_multiplier ?? 1,
+        1,
+      );
+      if (!indexBudget.ok) {
+        if (reservedKeylessCredits > 0) {
+          await adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits);
+          reconciledKeylessCredits = true;
+        }
+        res.setHeader("Retry-After", String(indexBudget.retryAfterSeconds));
+        return res.status(429).json({
+          success: false,
+          code: "INDEX_DAILY_LIMIT",
+          ...indexDailyLimitRefusal("gov", req.auth.team_id, indexBudget),
+        });
+      }
     }
 
     const result = await executeSearch(
@@ -125,65 +546,153 @@ export async function searchController(
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
+        safe: req.body.safe,
         sources: req.body.sources as Array<{ type: string }>,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
+        highlights: req.body.highlights,
+        domainTools: req.body.domainTools,
+        toolDetail: req.body.toolDetail,
+        inferToolQuery: queryInferenceEnabled(),
+        toolFusion: toolFusionEnabled(req.acuc?.flags),
+        autoTools:
+          (sourcesOmitted || req.body.domainTools === true) &&
+          !req.auth.team_id.startsWith("preview_keyless_") &&
+          config.FIRE_EXCHANGE_URL !== undefined &&
+          autoToolsEnabled(req.acuc?.flags),
         timeout: req.body.timeout,
       },
       {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
+        integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         requestId: agentRequestId ?? jobId,
         jobId,
         apiVersion: "v2",
         bypassBilling: !shouldBill,
-        zeroDataRetention: isZDROrAnon,
+        zeroDataRetention,
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
+        keylessReserved: reservedKeylessCredits > 0,
+        threatProtectionPolicy: threatProtection.policy,
+        safeModeBypassed: safeMode.bypassed === true,
       },
       logger,
     );
+
+    if (toolsOnly && result.toolsUnavailable) {
+      const error =
+        "Tool discovery is temporarily unavailable. Retry the request.";
+      setSpanAttributes(span, { "search.status_code": 503 });
+      logSearch({
+        id: jobId,
+        request_id: agentRequestId ?? jobId,
+        query: req.body.query,
+        is_successful: false,
+        error,
+        results: result.response as any,
+        num_results: 0,
+        time_taken: (Date.now() - middlewareStartTime) / 1000,
+        team_id: req.auth.team_id,
+        options: req.body,
+        credits_cost: 0,
+        zeroDataRetention,
+      }).catch(error => {
+        logger.error("Failed to log search", { error, jobId });
+      });
+      return res.status(503).json({
+        success: false,
+        code: "TOOL_DISCOVERY_UNAVAILABLE",
+        error,
+      });
+    }
 
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
+        req.acuc?.org_id ?? null,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
-        billing,
+        { ...billing, chargeId: jobId },
       ).catch(error =>
-        logger.error(
-          `Failed to bill team ${req.acuc?.sub_id} for ${result.searchCredits} credits: ${error}`,
-        ),
+        logger.error("Failed to bill team for search credits", {
+          teamId: req.auth.team_id,
+          searchCredits: result.searchCredits,
+          error,
+        }),
+      );
+    }
+
+    if (reservedKeylessCredits > 0) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(
+        req.auth.team_id,
+        result.totalCredits - reservedKeylessCredits,
+      ).catch(() => {});
+      logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
+        () => {},
       );
     }
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logSearch(
-      {
-        id: jobId,
+    logSearch({
+      id: jobId,
+      request_id: agentRequestId ?? jobId,
+      query: req.body.query,
+      is_successful: true,
+      error: undefined,
+      results: result.response as any,
+      num_results: result.totalResultsCount,
+      num_results_by_source: result.resultCountsBySource,
+      result_categories: result.resultCategories,
+      time_taken: timeTakenInSeconds,
+      team_id: req.auth.team_id,
+      options: req.body,
+      // Don't record preview tokens as billed in the ledger — only record
+      // credits when billing is actually applied.
+      credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+      zeroDataRetention,
+    }).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
+
+    if (indexCategory) {
+      logResearchEndpoint({
+        table: indexCategory.table,
+        id: uuidv7(),
         request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: result.response as any,
-        num_results: result.totalResultsCount,
-        time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
-        options: req.body,
-        credits_cost: shouldBill ? result.searchCredits : 0,
-        zeroDataRetention: isZDROrAnon ?? false,
-      },
-      false,
-    );
+        target: req.body.query,
+        options: {
+          origin: requestOrigin({ origin: rawOrigin }, req),
+          integration: req.body.integration ?? null,
+          api_version: "v2",
+          categories: req.body.categories,
+          via: "search_category",
+        },
+        response: null,
+        num_results: result.indexResultsCount,
+        time_taken: timeTakenInSeconds,
+        // Ensure preview-mode searches don't get a non-zero credits_cost
+        // in the research ledger when preview tokens are used.
+        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+        is_successful: true,
+        zeroDataRetention,
+      }).catch(ledgerError => {
+        logger.warn("Failed to log index category usage", {
+          error: ledgerError,
+        });
+      });
+    }
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
@@ -203,13 +712,39 @@ export async function searchController(
       scrapeful: result.shouldScrape,
     });
 
+    if (result.response.tools || result.skillsDiscovered) {
+      markAlexandriaActivity(req.auth.team_id);
+    }
+    if (result.response.tools) {
+      recordDiscoveredTools(
+        req.auth.team_id,
+        result.toolsAuto ? "auto_search" : "search",
+        jobId,
+        result.response.tools,
+      );
+    }
+    const warning = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
+      ...(warning ? { warning } : {}),
     });
   } catch (error) {
+    if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+        () => {},
+      );
+    }
+
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });
       return res.status(400).json({
@@ -227,13 +762,32 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
+    if (error instanceof UsOnlyUnavailableError) {
+      setSpanAttributes(span, { "search.status_code": 403 });
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUpstreamRefusalError) {
+      setSpanAttributes(span, { "search.status_code": error.status });
+      return res.status(error.status).json({
+        success: false,
+        ...(error.status === 403
+          ? { code: "US_ONLY_UNAVAILABLE" as const }
+          : {}),
+        error: error.message,
+      });
+    }
+
     logger.error("Unhandled error occurred in search", {
       version: "v2",
       error,
     });
+    recordSpanException(span, error);
+    setSpanAttributes(span, { "search.status_code": 500 });
     return res.status(500).json({
       success: false,
       error: error.message,

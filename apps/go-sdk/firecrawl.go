@@ -1,4 +1,5 @@
-// Package firecrawl provides a Go client for the Firecrawl v2 web scraping API.
+// Package firecrawl provides a Go client for Firecrawl, the context API for AI agents:
+// search, scrape, parse, crawl, map, interact, agent, and monitor on the v2 API.
 //
 // Create a client using [NewClient] with functional options:
 //
@@ -56,12 +57,9 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 	if apiKey == "" {
 		apiKey = strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY"))
 	}
-	if apiKey == "" {
-		return nil, &FirecrawlError{
-			Message: "API key is required. Set it via option.WithAPIKey(), " +
-				"or FIRECRAWL_API_KEY environment variable.",
-		}
-	}
+	// An empty API key is allowed: scrape, search, and interact fall back to the
+	// keyless free tier (rate-limited per IP). Other methods return 401 from the
+	// API until a key is provided.
 
 	// Resolve API URL.
 	apiURL := cfg.APIURL
@@ -95,9 +93,21 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape", body, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	// Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+	var envelope struct {
+		Success *bool `json:"success"`
+	}
+	if json.Unmarshal(raw, &envelope) == nil && envelope.Success != nil && !*envelope.Success {
+		msg, code, requiresAction := extractError(raw, 200)
+		return nil, &FirecrawlError{StatusCode: 200, ErrorCode: code, Message: msg, RequiresAction: requiresAction}
 	}
 
 	doc, err := extractDataAs[Document](raw)
@@ -132,6 +142,9 @@ func (c *Client) Interact(ctx context.Context, jobID, code string, params *Inter
 		}
 	}
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape/"+jobID+"/interact", body, nil)
 	if err != nil {
 		return nil, err
@@ -178,6 +191,9 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/crawl", body, nil)
 	if err != nil {
 		return nil, err
@@ -204,6 +220,11 @@ func (c *Client) GetCrawlStatus(ctx context.Context, jobID string) (*CrawlJob, e
 	var job CrawlJob
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
 	}
 	return &job, nil
 }
@@ -294,6 +315,9 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 		}
 	}
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/batch/scrape", body, extraHeaders)
 	if err != nil {
 		return nil, err
@@ -321,21 +345,84 @@ func (c *Client) GetBatchScrapeStatus(ctx context.Context, jobID string) (*Batch
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
+	}
 	return &job, nil
 }
 
+// GetBatchScrapeErrors gets the URLs of a batch scrape job that failed to
+// scrape, along with the URLs blocked by robots.txt.
+//
+// Pages that responded with an HTTP error such as 404 or 429 are not reported
+// here; they are returned as documents with the original status in
+// Metadata["statusCode"].
+func (c *Client) GetBatchScrapeErrors(ctx context.Context, jobID string) (*BatchScrapeErrorsResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/batch/scrape/"+jobID+"/errors")
+	if err != nil {
+		return nil, err
+	}
+
+	// The API returns the payload at the top level; accept a `data` envelope
+	// as well, like the other SDKs do.
+	var envelope struct {
+		BatchScrapeErrorsResponse
+		Data *BatchScrapeErrorsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	resp := envelope.BatchScrapeErrorsResponse
+	if envelope.Data != nil {
+		resp = *envelope.Data
+	}
+	if resp.Errors == nil {
+		resp.Errors = []BatchScrapeError{}
+	}
+	if resp.RobotsBlocked == nil {
+		resp.RobotsBlocked = []string{}
+	}
+	return &resp, nil
+}
+
 // BatchScrape batch-scrapes URLs and waits for completion with auto-polling.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrape(ctx context.Context, urls []string, opts *BatchScrapeOptions) (*BatchScrapeJob, error) {
 	return c.BatchScrapeWithPolling(ctx, urls, opts, defaultPollInterval, defaultJobTimeout)
 }
 
 // BatchScrapeWithPolling batch-scrapes URLs and waits for completion with custom polling settings.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrapeWithPolling(ctx context.Context, urls []string, opts *BatchScrapeOptions, pollIntervalSec, timeoutSec int) (*BatchScrapeJob, error) {
 	start, err := c.StartBatchScrape(ctx, urls, opts)
 	if err != nil {
 		return nil, err
 	}
-	return c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	job, err := c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	if err != nil {
+		return nil, err
+	}
+
+	// The status endpoint only reports successful documents, and its counters
+	// exclude failed URLs, so the errors endpoint is the only place a caller can
+	// learn which URLs were dropped and why.
+	errs, err := c.GetBatchScrapeErrors(ctx, start.ID)
+	if err != nil {
+		return nil, err
+	}
+	job.Errors = errs.Errors
+	job.RobotsBlocked = errs.RobotsBlocked
+	return job, nil
 }
 
 // CancelBatchScrape cancels a running batch scrape job.
@@ -372,6 +459,9 @@ func (c *Client) Map(ctx context.Context, url string, opts *MapOptions) (*MapDat
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/map", body, nil)
 	if err != nil {
 		return nil, err
@@ -529,7 +619,7 @@ func (c *Client) GetMonitorCheck(ctx context.Context, monitorID, checkID string,
 
 // Search performs a web search.
 func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) (*SearchData, error) {
-	if query == "" {
+	if strings.TrimSpace(query) == "" {
 		return nil, &FirecrawlError{Message: "query is required"}
 	}
 	if opts != nil && opts.Limit != nil && *opts.Limit <= 0 {
@@ -539,6 +629,9 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	body := map[string]interface{}{"query": query}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/search", body, nil)
 	if err != nil {
 		return nil, err
@@ -548,7 +641,176 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	if err != nil {
 		return nil, err
 	}
+	var envelope struct {
+		Warning string `json:"warning"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	data.Warning = envelope.Warning
 	return data, nil
+}
+
+// SearchPapers searches research papers.
+func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPapersOptions) (*SearchPapersResponse, error) {
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil {
+		if opts.K != nil {
+			values.Set("k", fmt.Sprint(*opts.K))
+		}
+		for _, author := range opts.Authors {
+			values.Add("authors", author)
+		}
+		for _, category := range opts.Categories {
+			values.Add("categories", category)
+		}
+		if opts.From != "" {
+			values.Set("from", opts.From)
+		}
+		if opts.To != "" {
+			values.Set("to", opts.To)
+		}
+		if opts.Sort != "" {
+			values.Set("sort", opts.Sort)
+		}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp SearchPapersResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// InspectPaper fetches paper metadata.
+func (c *Client) InspectPaper(ctx context.Context, paperID string) (*PaperMetadataResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID))
+	if err != nil {
+		return nil, err
+	}
+	var resp PaperMetadataResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// ReadPaper fetches paper metadata and relevant passages.
+func (c *Client) ReadPaper(ctx context.Context, paperID, query string, opts *ReadPaperOptions) (*ReadPaperResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil && opts.K != nil {
+		values.Set("k", fmt.Sprint(*opts.K))
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID)+"?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp ReadPaperResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// RelatedPapers finds papers related to a paper.
+func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts *RelatedPapersOptions) (*SimilarPapersResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	if intent == "" {
+		return nil, &FirecrawlError{Message: "intent is required"}
+	}
+	values := url.Values{}
+	values.Set("intent", intent)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil {
+		if opts.Mode != "" {
+			values.Set("mode", opts.Mode)
+		}
+		if opts.K != nil {
+			values.Set("k", fmt.Sprint(*opts.K))
+		}
+		if opts.Rerank != nil {
+			values.Set("rerank", fmt.Sprint(*opts.Rerank))
+		}
+		for _, anchor := range opts.Anchor {
+			values.Add("anchor", anchor)
+		}
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID)+"/similar?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp SimilarPapersResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// SearchGitHub searches GitHub research content.
+//
+// Deprecated: the research index GitHub search endpoint was removed after
+// 2026-11-03. Use DeveloperSearch instead.
+func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil && opts.K != nil {
+		values.Set("k", fmt.Sprint(*opts.K))
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/github?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp GitHubSearchResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// DeveloperSearch searches the developer index (public repositories, GitHub
+// issues, merged pull requests, READMEs and code documentation).
+func (c *Client) DeveloperSearch(ctx context.Context, query string, opts *DeveloperSearchOptions) (*DeveloperSearchResponse, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	body := map[string]interface{}{"query": query}
+	mergeOptions(body, opts)
+	body["origin"] = "go-sdk@" + Version
+	raw, err := c.http.post(ctx, "/v2/search/developer", body, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp DeveloperSearchResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
 }
 
 // ================================================================
@@ -585,6 +847,34 @@ func (c *Client) GetAgentStatus(ctx context.Context, jobID string) (*AgentStatus
 	}
 
 	var resp AgentStatusResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// ListAgents lists agent runs, most recent first.
+//
+// Pages are fixed at 20 runs. To fetch the next page, pass the before value
+// from the previous page's Next URL via ListAgentsOptions. This method does
+// not auto-paginate.
+func (c *Client) ListAgents(ctx context.Context, opts *ListAgentsOptions) (*AgentListResponse, error) {
+	values := url.Values{}
+	if opts != nil && opts.Before != nil {
+		values.Set("before", fmt.Sprint(*opts.Before))
+	}
+
+	path := "/v2/agent"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentListResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
@@ -653,6 +943,50 @@ func (c *Client) CancelAgent(ctx context.Context, jobID string) (map[string]inte
 	return resp, nil
 }
 
+// GetAgentTrace gets the event trace of an agent task. When liveView is true,
+// the response also includes any active browser sessions with live view URLs.
+func (c *Client) GetAgentTrace(ctx context.Context, jobID string, liveView bool) (*AgentTraceResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	path := "/v2/agent/" + jobID + "/trace"
+	if liveView {
+		path += "?liveView=true"
+	}
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentTraceResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// GetAgentSnapshot gets a snapshot of an agent task.
+func (c *Client) GetAgentSnapshot(ctx context.Context, jobID string, snapshotID string) (*AgentSnapshotResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+	if snapshotID == "" {
+		return nil, &FirecrawlError{Message: "snapshot ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/agent/"+jobID+"/snapshots/"+snapshotID)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentSnapshotResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
 // ================================================================
 // BROWSER
 // ================================================================
@@ -669,6 +1003,9 @@ func (c *Client) Browser(ctx context.Context, opts *BrowserOptions) (*BrowserCre
 		}
 		if opts.StreamWebView != nil {
 			body["streamWebView"] = *opts.StreamWebView
+		}
+		if opts.Location != nil {
+			body["location"] = opts.Location
 		}
 	}
 
@@ -907,6 +1244,14 @@ type BrowserOptions struct {
 	TTL           *int
 	ActivityTTL   *int
 	StreamWebView *bool
+	// Location sets the country the session browses from (default US).
+	Location *BrowserLocation
+}
+
+// BrowserLocation selects a browser session's country.
+type BrowserLocation struct {
+	// Country is an ISO 3166-1 alpha-2 code, such as "GB".
+	Country string `json:"country"`
 }
 
 // BrowserExecuteParams holds optional parameters for browser code execution.

@@ -2,11 +2,16 @@ import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { ErrorResponse, extractOptions, RequestWithAuth } from "./types";
 import { getDeepResearchQueue } from "../../services/queue-service";
-import * as Sentry from "@sentry/node";
-import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
+import {
+  DEEP_RESEARCH_TTL,
+  saveDeepResearch,
+} from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { researchModels } from "../../lib/deep-research/research-manager";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 const deepResearchRequestSchema = z
   .object({
@@ -90,6 +95,17 @@ export async function deepResearchController(
     });
   }
 
+  try {
+    researchModels(req.acuc?.flags);
+  } catch (error) {
+    if (!(error instanceof UsOnlyUnavailableError)) throw error;
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+    });
+  }
+
   req.body = deepResearchRequestSchema.parse(req.body);
 
   const researchId = uuidv7();
@@ -98,18 +114,20 @@ export async function deepResearchController(
     id: researchId,
     kind: "deep_research",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: "api",
     target_hint: req.body.query ?? "",
     zeroDataRetention: false, // not supported for deep research
     api_key_id: req.acuc?.api_key_id ?? null,
+    jobAccessExpiresAt: new Date(Date.now() + DEEP_RESEARCH_TTL * 1000),
   });
 
   const jobData = {
     request: req.body,
     teamId: req.auth.team_id,
-    subId: req.acuc?.sub_id ?? undefined,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
     researchId,
   };
 

@@ -1,4 +1,4 @@
-import { TokenUsage } from "../../../../controllers/v1/types";
+import { TeamFlags, TokenUsage } from "../../../../controllers/v1/types";
 import { z } from "zod";
 import {
   buildAnalyzeSchemaPrompt,
@@ -15,7 +15,8 @@ export async function analyzeSchemaAndPrompt_F0(
   urls: string[],
   schema: any,
   prompt: string,
-  metadata: { teamId: string; extractId?: string },
+  metadata: { teamId: string; functionId?: string; extractId?: string },
+  teamFlags?: TeamFlags | null,
 ): Promise<{
   isMultiEntity: boolean;
   multiEntityKeys: string[];
@@ -24,17 +25,20 @@ export async function analyzeSchemaAndPrompt_F0(
   tokenUsage: TokenUsage;
 }> {
   if (!schema) {
-    schema = await generateSchemaFromPrompt_F0(prompt, metadata);
+    schema = await generateSchemaFromPrompt_F0(prompt, metadata, teamFlags);
   }
 
   const schemaString = JSON.stringify(schema);
 
-  const model = getModel("gpt-4.1");
+  const model = getModel("gpt-4.1", undefined, {
+    teamFlags,
+    feature: "Extract",
+  });
 
   const checkSchema = z
     .object({
       isMultiEntity: z.boolean(),
-      multiEntityKeys: z.array(z.string()).optional().prefault([]),
+      multiEntityKeys: z.array(z.string()),
       reasoning: z.string(),
       keyIndicators: z.array(z.string()),
     })
@@ -54,7 +58,12 @@ export async function analyzeSchemaAndPrompt_F0(
       },
       markdown: "",
       model,
-      metadata,
+      metadata: {
+        ...metadata,
+        functionId: metadata.functionId
+          ? metadata.functionId + "/analyzeSchemaAndPrompt_F0"
+          : "analyzeSchemaAndPrompt_F0",
+      },
     });
 
     const { isMultiEntity, multiEntityKeys, reasoning, keyIndicators } =

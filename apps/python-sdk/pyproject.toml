@@ -5,20 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 dynamic = ["version"]
 name = "firecrawl-py"
-description = "Python SDK for Firecrawl API"
+description = "Python SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)"
 readme = {file="README.md", content-type = "text/markdown"}
 requires-python = ">=3.8"
 dependencies = [
     "requests",
     "httpx",
+    "certifi>=2026.10.19",
     "python-dotenv",
     "websockets",
     "nest-asyncio",
     "pydantic>=2.0",
     "aiohttp"
 ]
-authors = [{name = "Mendable.ai",email = "nick@mendable.ai"}]
-maintainers = [{name = "Mendable.ai",email = "nick@mendable.ai"}]
+authors = [{name = "Firecrawl",email = "nick@mendable.ai"}]
+maintainers = [{name = "Firecrawl",email = "nick@mendable.ai"}]
 license = {text = "MIT License"}
 
 classifiers = [
@@ -41,9 +42,33 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Text Processing",
     "Topic :: Text Processing :: Indexing",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
 ]
 
-keywords = ["SDK", "API", "firecrawl"]
+keywords = [
+    "SDK",
+    "API",
+    "firecrawl",
+    "web scraping",
+    "crawler",
+    "web search",
+    "literature search",
+    "research",
+    "scientific papers",
+    "academic search",
+    "biomedical",
+    "life sciences",
+    "pubmed",
+    "biorxiv",
+    "medrxiv",
+    "arxiv",
+    "preprints",
+    "citations",
+    "bioinformatics",
+]
 
 [project.urls]
 "Documentation" = "https://docs.firecrawl.dev"

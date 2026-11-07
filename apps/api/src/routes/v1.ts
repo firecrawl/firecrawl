@@ -1,12 +1,11 @@
 import express from "express";
-import { config } from "../config";
 import { crawlController } from "../controllers/v1/crawl";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import { scrapeController } from "../../src/controllers/v1/scrape";
 import { crawlStatusController } from "../controllers/v1/crawl-status";
 import { mapController } from "../controllers/v1/map";
-import { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
+import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { crawlStatusWSController } from "../controllers/v1/crawl-status-ws";
 import { crawlCancelController } from "../controllers/v1/crawl-cancel";
@@ -17,7 +16,6 @@ import { extractController } from "../controllers/v1/extract";
 import { extractStatusController } from "../controllers/v1/extract-status";
 import { creditUsageController } from "../controllers/v1/credit-usage";
 import { searchController } from "../controllers/v1/search";
-import { x402SearchController } from "../controllers/v1/x402-search";
 import { crawlErrorsController } from "../controllers/v1/crawl-errors";
 import { generateLLMsTextController } from "../controllers/v1/generate-llmstxt";
 import { generateLLMsTextStatusController } from "../controllers/v1/generate-llmstxt-status";
@@ -30,112 +28,43 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
-  countryCheck,
+  scrapeBlocklistMiddleware,
+  restrictedOptionsCountryCheck,
   idempotencyMiddleware,
   requestTimingMiddleware,
   validateJobIdParam,
   wrap,
+  inferIntegrationMiddleware,
 } from "./shared";
 import { queueStatusController } from "../controllers/v1/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 
 import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
-import {
-  paymentMiddleware,
-  getX402ResourceServer,
-  createX402RouteConfig,
-  isX402Enabled,
-} from "../lib/x402";
 import { deprecationMiddleware } from "../lib/deprecations";
 
-expressWs(express());
-
 export const v1Router = express.Router();
+expressWs(express()).applyTo(v1Router);
 
 // Add timing middleware to all v1 routes
 v1Router.use(requestTimingMiddleware("v1"));
 
-// Configure payment middleware to enable micropayment-protected endpoints
-// This middleware handles payment verification and processing for premium API features
-// x402 payments protocol - https://github.com/coinbase/x402
-// v1Router.use(
-//   paymentMiddleware(
-//     (config.X402_PAY_TO_ADDRESS as `0x${string}`) ||
-//       "0x0000000000000000000000000000000000000000",
-//     {
-//       "POST /x402/search": {
-//         price: config.X402_ENDPOINT_PRICE_USD as string,
-//         network: config.X402_NETWORK as
-//           | "base-sepolia"
-//           | "base"
-//           | "avalanche-fuji"
-//           | "avalanche"
-//           | "iotex",
-//         config: {
-//           discoverable: true,
-//           description:
-//             "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-//           mimeType: "application/json",
-//           maxTimeoutSeconds: 120,
-//           inputSchema: {
-//             body: {
-//               query: {
-//                 type: "string",
-//                 description: "Search query to find relevant web pages",
-//                 required: true,
-//               },
-//               limit: {
-//                 type: "number",
-//                 description: "Maximum number of results to return (max 10)",
-//                 required: false,
-//               },
-//               scrapeOptions: {
-//                 type: "object",
-//                 description: "Options for scraping the found pages",
-//                 required: false,
-//               },
-//             },
-//           },
-//           outputSchema: {
-//             type: "object",
-//             properties: {
-//               success: { type: "boolean" },
-//               data: {
-//                 type: "array",
-//                 items: {
-//                   type: "object",
-//                   properties: {
-//                     url: { type: "string" },
-//                     title: { type: "string" },
-//                     description: { type: "string" },
-//                     markdown: { type: "string" },
-//                   },
-//                 },
-//               },
-//             },
-//           },
-//         },
-//       },
-//     },
-//     facilitator,
-//   ),
-// );
-
 v1Router.post(
   "/scrape",
-  authMiddleware(RateLimiterMode.Scrape),
-  countryCheck,
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
 
 v1Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
-  countryCheck,
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
 );
@@ -143,7 +72,8 @@ v1Router.post(
 v1Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape),
-  countryCheck,
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   idempotencyMiddleware,
@@ -152,15 +82,17 @@ v1Router.post(
 
 v1Router.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search),
-  countryCheck,
-  checkCreditsMiddleware(),
+  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   wrap(searchController),
 );
 
 v1Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
+  inferIntegrationMiddleware,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(mapController),
@@ -223,8 +155,9 @@ v1Router.ws("/crawl/:jobId", crawlStatusWSController);
 v1Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
+  inferIntegrationMiddleware,
   deprecationMiddleware("v1_extract"),
-  countryCheck,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(20),
   wrap(extractController),
 );
@@ -240,7 +173,7 @@ v1Router.post(
   "/llmstxt",
   authMiddleware(RateLimiterMode.Scrape),
   deprecationMiddleware("v1_llmstxt"),
-  countryCheck,
+  restrictedOptionsCountryCheck,
   blocklistMiddleware,
   wrap(generateLLMsTextController),
 );
@@ -256,7 +189,7 @@ v1Router.post(
   "/deep-research",
   authMiddleware(RateLimiterMode.Crawl),
   deprecationMiddleware("v1_deep_research"),
-  countryCheck,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
   wrap(deepResearchController),
 );
@@ -329,22 +262,3 @@ v1Router.get(
   authMiddleware(RateLimiterMode.Account),
   wrap(queueStatusController),
 );
-
-// Only register x402 routes if X402_PAY_TO_ADDRESS is configured
-if (isX402Enabled()) {
-  v1Router.post(
-    "/x402/search",
-    authMiddleware(RateLimiterMode.Search),
-    countryCheck,
-    paymentMiddleware(
-      createX402RouteConfig(
-        "POST /x402/search",
-        "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-        {},
-        {},
-      ),
-      getX402ResourceServer(),
-    ),
-    wrap(x402SearchController),
-  );
-}

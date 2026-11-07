@@ -1,13 +1,13 @@
 # Firecrawl Python SDK
 
-The Firecrawl Python SDK is a library that allows you to easily search, scrape, and interact with the web, and output the data in a format ready for use with language models (LLMs). It provides a simple and intuitive interface for the Firecrawl API.
+The Firecrawl Python SDK is the Python client for Firecrawl, the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and get back clean Markdown or structured data your agents can ship with.
 
 ## Installation
 
 To install the Firecrawl Python SDK, you can use pip:
 
 ```bash 
-pip install firecrawl-py
+pip install firecrawl
 ```
 
 ## Usage
@@ -39,6 +39,16 @@ crawl_status = firecrawl.crawl(
 print(crawl_status)
 ```
 
+### Request origin
+
+Requests carry an `origin` tag that identifies the client. Pass the `origin` argument to set the client default. Per-call overrides are available on methods that explicitly accept an `origin` argument, such as `interact`.
+
+```python
+firecrawl = Firecrawl(api_key="fc-YOUR_API_KEY", origin="python-sdk.my-wrapper@1.0.0")
+```
+
+By default the tag is `python-sdk@<version>`. When the client is created by code inside an installed package (a wrapper library), the default is `python-sdk.<package>@<version>` instead, for example `python-sdk.some-agent@<version>`. Application code, REPLs and notebooks keep the plain default. Detection runs once when the client is created and sends only the installed distribution name, lowercased and sanitized into a slug. Set `FIRECRAWL_DISABLE_CALLER_ORIGIN=1` to always use the plain default.
+
 ### Scraping a URL
 
 To scrape a single URL, use the `scrape` method. It takes the URL as a parameter and returns a document with the requested formats.
@@ -49,10 +59,37 @@ scrape_result = firecrawl.scrape('https://firecrawl.dev', formats=['markdown', '
 print(scrape_result)
 ```
 
+### Video extraction
+
+Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+
+```python
+doc = firecrawl.scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', formats=['video'])
+print(doc.video)
+```
+
+### Product extraction
+
+Use the `product` format on product pages to deterministically pull structured product data (title, price, availability, variants). It is the deterministic counterpart to the LLM-based `json` format.
+
+```python
+doc = firecrawl.scrape('https://firecrawl.dev', formats=['product'])
+print(doc.product)
+```
+
+### Menu extraction
+
+Use the `menu` format on menu pages to deterministically pull structured menu data (merchant, sections, items, prices, availability). It is the deterministic counterpart to the LLM-based `json` format.
+
+```python
+doc = firecrawl.scrape('https://example.com/restaurant/menu', formats=['menu'])
+print(doc.menu)
+```
+
 ### Parsing uploaded files
 
 Use `parse` to upload local bytes/files (`html`, `pdf`, `docx`, etc.) as multipart form data and return the parsed document.
-`parse` does not support change tracking or browser-only options (actions, wait_for, location, mobile, screenshot, branding).
+`parse` does not support change tracking or browser-only options (actions, wait_for, location, mobile, screenshot, branding, audio, video).
 
 ```python
 from firecrawl import Firecrawl
@@ -70,6 +107,13 @@ doc = firecrawl.parse(
 print(doc.markdown)
 ```
 
+To see which file formats `parse` accepts, call `get_parse_formats` (also available on `AsyncFirecrawl`). Each entry has `format`, `kind` (`"document"` or `"image"`), `extensions`, `mime_types`, and `available`, which is `False` when a format is disabled on the deployment.
+
+```python
+for f in firecrawl.get_parse_formats():
+  print(f.format, f.kind, f.extensions, f.mime_types, f.available)
+```
+
 ### Crawling a Website
 
 To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.
@@ -83,6 +127,19 @@ crawl_status = firecrawl.crawl(
 )
 print(crawl_status)
 ```
+
+The result is a `CrawlJob`. It includes the job `id` and any `warning` from the API, so you can use the job after the crawl ends, for example with `get_crawl_errors(crawl_status.id)`. If the crawl does not finish within `timeout`, the SDK raises `CrawlJobTimeoutError`. It is a `TimeoutError` subclass with a `job_id` attribute, so you can check or cancel the job later.
+
+```python
+from firecrawl import CrawlJobTimeoutError
+
+try:
+  crawl_status = firecrawl.crawl('https://firecrawl.dev', limit=100, timeout=120)
+except CrawlJobTimeoutError as e:
+  firecrawl.cancel_crawl(e.job_id)
+```
+
+With `AsyncFirecrawl`, you can stop waiting for `crawl()` with `Task.cancel()`, `asyncio.timeout` or `asyncio.wait_for`. If the crawl already has a job id, the SDK then sends a best-effort cancel for it. If the cancellation comes before `start_crawl` returns the id, the SDK sends no cancel, and the crawl can keep running. After the cancel, `Task.cancel()` gives you `asyncio.CancelledError`. `asyncio.timeout` and `asyncio.wait_for` give you `TimeoutError`. To keep the crawl running after you stop waiting, use `start_crawl` and `wait_crawl`.
 
 ### Asynchronous Crawling
 
@@ -136,7 +193,7 @@ if status.next:
 
 ### Cancelling a Crawl
 
-To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status.
+To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status. It returns `False` if the crawl already completed.
 
 ```python 
 cancel_crawl = firecrawl.cancel_crawl(id)
@@ -152,6 +209,144 @@ Use `map` to generate a list of URLs from a website. Options let you customize t
 map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
 ```
+
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```python
+# Search the web (v2):
+results = firecrawl.search("what is retrieval augmented generation?", limit=5)
+for result in results.web or []:
+    print(result.url, "-", result.title)
+
+# Scrape every result as part of the search:
+results = firecrawl.search(
+    "firecrawl changelog",
+    limit=3,
+    scrape_options={"formats": ["markdown"]},
+)
+```
+
+Results are grouped by source: `.web`, `.news` and `.images`. Developer and gov
+category results are served inside `.web`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```python
+results = firecrawl.search("nanopore basecalling accuracy", categories=["research"])
+```
+
+> **`categories=["research"]` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `search_papers` below.
+
+### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
+Use `developer_search` for the dedicated developer index and its complete
+filter and response contract. Generic `search(categories=["developer"])`
+returns only the first passage as a description and does not accept these
+filters.
+
+```python
+evidence = firecrawl.developer_search(
+    "configure retry backoff",
+    repos=["firecrawl/firecrawl"],
+    types=["issue", "pull_request", "readme"],
+    passages=3,
+    language="TypeScript",
+    license="MIT",
+)
+
+for result in evidence.results:
+    # Result kind is the id prefix; the API intentionally omits a type field.
+    print(result.id, result.license)
+    for passage in result.passages:
+        print(passage.text, passage.citation_url)
+print(evidence.repos)  # indexed-status echoes for requested repos
+```
+
+`developer_search` also supports `sources`, `topic`, `min_stars`, `max_stars`,
+`archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
+### Government search
+
+Use `gov_search` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search("food labeling requirements", categories=["gov"])` returns
+index results inside `.web`; like `developer`, it cannot be combined with other
+categories.
+
+```python
+law = firecrawl.gov_search("food labeling requirements", k=5)
+
+for result in law.data.web:
+    print(result.position, result.title, result.url)
+
+# State supreme court opinions that cite a federal statute:
+cases = firecrawl.gov_search(
+    "qualified immunity",
+    court_type="state-supreme",
+    cites="42 U.S.C. § 1983",
+)
+```
+
+Filters, all optional and combined with AND: `jurisdiction` (`"us"` for
+federal, or `"us-"` plus a two-letter state or territory code, such as
+`"us-ca"`), `court` (a CourtListener court id, such as `"scotus"` or `"ca9"`),
+`court_type`, `cites` (one printed citation or citation id, such as
+`"us:usc:42:1983"`), and `domain` (one site, such as `"irs.gov"`). Filters
+keep only pages the index has labeled, so a filtered search can leave out
+relevant pages, and no results does not mean none exist. Court labels are most
+complete for federal courts and case-law collections.
+
+### Research / paper search
+
+Use `search_papers` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```python
+# Search the paper index (semantic search over abstracts):
+papers = firecrawl.search_papers(
+    "CRISPR base editing off-target effects in primary human T cells",
+    k=10,
+)
+for paper in papers["results"]:
+    print(paper["primaryId"], "-", paper["title"])
+
+# Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+paper = firecrawl.inspect_paper("pmid:<id>")
+
+# Read the passages inside a paper that answer a specific question:
+passages = firecrawl.read_paper(
+    "pmid:<id>",
+    "what was the primary endpoint and the reported hazard ratio?",
+    k=4,
+)
+
+# Expand along the citation graph, re-ranked for your stated intent:
+related = firecrawl.related_papers(
+    "pmid:<id>",
+    intent="replication attempts in larger cohorts",
+    k=20,
+)
+```
+
+> **Response keys are camelCase.** Unlike the rest of the SDK, the research
+> methods return the raw JSON body as a `dict` — they are not parsed into typed
+> models and not normalized to snake_case. Expect `paperId`, `primaryId`,
+> `createdDate`, `articleRank`, `poolSize`, and so on.
+
+Every method above is also available on `AsyncFirecrawl` with the same name.
 
 ### Scrape-bound interactive browsing (v2)
 
@@ -265,4 +460,56 @@ firecrawl = Firecrawl(api_key="YOUR_API_KEY")
 doc_v1 = firecrawl.v1.scrape_url('https://firecrawl.dev', formats=['markdown', 'html'])
 crawl_v1 = firecrawl.v1.crawl_url('https://firecrawl.dev', limit=100)
 map_v1 = firecrawl.v1.map_url('https://firecrawl.dev')
+```
+
+### Alexandria
+
+With a matching API deployment, `search()` returns complete contracts in `tools`.
+`domain_tools=True` adds domain matches to that same list. Find Tools provides free,
+progressive catalogue lookup; Search always requires a query.
+
+```python
+result = firecrawl.search("podcast conversations about AI agents",
+                         sources=["web", "alexandria"], domain_tools=True, limit=2)
+print(result.tools[0].options)
+
+catalogue = firecrawl.find_tools(providers=["particle"], limit=2)
+if catalogue.items and catalogue.items[0].get("next"):
+    details = firecrawl.scrape(alexandria=catalogue.items[0]["next"])
+    for item in details.alexandria:
+        if item.error:
+            print(f"Lookup failed: {item.error.message}")
+        else:
+            print(item.data)
+```
+
+Use `scrape(alexandria={"provider": ..., "capability": ..., "options": ...})` to
+execute a selected tool, or pass a list of up to ten calls. Check each item's
+`error` before using `data`. Results and execution exceptions expose `request_id`;
+reuse it with the identical payload when retrying. Automatic retries retain it.
+The same methods are available with `await` on `AsyncFirecrawl`.
+
+Each Alexandria call result can carry an opaque `feedback_token`, valid for 24 hours. It
+is absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandria_feedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `call_ratings` (at most 20) rate individual calls. The response includes
+`rejected_tokens` when some tokens failed verification.
+
+```python
+from firecrawl import collect_feedback_tokens
+
+scraped = firecrawl.scrape(alexandria={
+    "provider": "particle",
+    "capability": "podcasts/episodes/search",
+    "options": {"semantic_search": "AI agents"},
+})
+first_token = scraped.alexandria[0].feedback_token
+response = firecrawl.alexandria_feedback({
+    "rating": "partial",
+    "requested_website": {"url": "https://example.com", "requested_functionality": "Find episodes"},
+    "rationale": "Found the episodes but the dates were missing",
+    "tokens": collect_feedback_tokens(scraped.alexandria),
+    "call_ratings": [{"token": first_token, "rating": "bad"}] if first_token else None,
+})
+print(response.rejected_tokens or 0)
 ```

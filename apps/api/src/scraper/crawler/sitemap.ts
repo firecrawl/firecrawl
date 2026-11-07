@@ -1,28 +1,27 @@
 import type { Logger } from "winston";
-import { config } from "../../config";
 import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
 import { Engine } from "../scrapeURL/engines";
 import { scrapeURL } from "../scrapeURL";
+import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "../../lib/cost-tracking";
 import {
   processSitemap,
   SitemapProcessingResult,
 } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
-import { gunzip } from "node:zlib";
-import { promisify } from "node:util";
+import {
+  gunzipBounded,
+  MAX_GUNZIPPED_FILE_SIZE,
+} from "../scrapeURL/engines/utils/gunzip";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 type SitemapScrapeOptions = {
   url: string;
   maxAge: number;
   zeroDataRetention: boolean;
+  usOnly?: boolean;
   location: ScrapeOptions["location"];
   crawlId: string;
   logger?: Logger;
@@ -34,13 +33,26 @@ type SitemapData = {
   sitemaps: URL[];
 };
 
-const gunzipAsync = promisify(gunzip);
-
 async function _getSitemapXMLGZ(
   options: SitemapScrapeOptions,
 ): Promise<string> {
-  const { buffer } = await fetchFileToBuffer(options.url);
-  const decompressed = await gunzipAsync(buffer);
+  const { buffer } = await fetchFileToBuffer(
+    options.url,
+    false,
+    undefined,
+    MAX_GUNZIPPED_FILE_SIZE,
+  );
+  let decompressed: Buffer;
+  try {
+    decompressed = await gunzipBounded(buffer);
+  } catch (error) {
+    throw new SitemapError(
+      error instanceof RangeError
+        ? "The gzipped sitemap inflates past the 50 MB limit."
+        : "The gzipped sitemap could not be decompressed.",
+      error,
+    );
+  }
   return decompressed.toString("utf-8");
 }
 
@@ -88,7 +100,9 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       v0DisableJsDom: true,
       // externalAbort: options.abort,
       teamId: "sitemap",
+      orgId: null,
       zeroDataRetention: options.zeroDataRetention,
+      ...(options.usOnly ? { teamFlags: { usOnly: true } } : {}),
       crawlId: options.crawlId,
       isPreCrawl: options.isPreCrawl,
     },

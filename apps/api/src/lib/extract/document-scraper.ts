@@ -12,11 +12,12 @@ import { addScrapeJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { scrapeQueue } from "../../services/worker/nuq";
+import { scrapeQueue } from "../../services/worker/nuq-router";
 
 interface ScrapeDocumentOptions {
   url: string;
   teamId: string;
+  orgId?: string | null;
   origin: string;
   timeout: number;
   isSingleUrl?: boolean;
@@ -37,7 +38,13 @@ export async function scrapeDocument(
     trace.timing.scrapedAt = new Date().toISOString();
   }
 
-  if (isUrlBlocked(options.url, options.flags ?? null)) {
+  if (
+    isUrlBlocked(options.url, options.flags ?? null, {
+      team_id: options.teamId,
+      org_id: options.orgId ?? null,
+      origin: options.origin,
+    })
+  ) {
     return null;
   }
 
@@ -59,10 +66,13 @@ export async function scrapeDocument(
         }),
         internalOptions: {
           teamId: options.teamId,
+          orgId: options.orgId ?? null,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           bypassBilling: true,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: options.flags ?? undefined,
         },
         origin: options.origin,
         is_scrape: true,

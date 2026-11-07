@@ -37,6 +37,9 @@ public class Document
     [JsonPropertyName("audio")]
     public object? Audio { get; set; }
 
+    [JsonPropertyName("video")]
+    public string? Video { get; set; }
+
     [JsonPropertyName("actions")]
     public object? Actions { get; set; }
 
@@ -54,4 +57,22 @@ public class Document
 
     [JsonPropertyName("branding")]
     public object? Branding { get; set; }
+
+    [JsonPropertyName("product")]
+    public ProductProfile? Product { get; set; }
+
+    [JsonPropertyName("menu")]
+    public MenuProfile? Menu { get; set; }
+
+    /// <summary>
+    /// Physical PDF pages, present only when parsers[].pages is true.
+    /// </summary>
+    [JsonPropertyName("pages")]
+    public List<PdfPage>? Pages { get; set; }
+
+    /// <summary>
+    /// Typed PDF layout blocks, present only when parsers[].blocks is true.
+    /// </summary>
+    [JsonPropertyName("blocks")]
+    public List<PdfPageBlocks>? Blocks { get; set; }
 }

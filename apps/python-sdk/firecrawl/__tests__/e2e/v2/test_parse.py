@@ -3,6 +3,7 @@ import pytest
 from dotenv import load_dotenv
 from firecrawl import Firecrawl
 from firecrawl.v2.types import Document, ScrapeOptions
+from firecrawl.v2.utils.error_handler import FirecrawlError
 
 load_dotenv()
 API_KEY = (os.getenv("API_KEY") or "").strip()
@@ -27,3 +28,13 @@ class TestParseE2E:
         assert isinstance(doc, Document)
         assert doc.markdown is not None
         assert "Python Parse E2E" in doc.markdown
+
+    def test_get_parse_formats(self):
+        try:
+            formats = self.client.get_parse_formats()
+        except FirecrawlError as e:
+            if e.status_code == 404:
+                pytest.skip("GET /v2/parse/formats is not deployed on this API")
+            raise
+        assert len(formats) > 0
+        assert any(f.format == "pdf" and f.kind == "document" for f in formats)

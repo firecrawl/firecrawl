@@ -1,0 +1,46 @@
+name: Elixir SDK Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/elixir-sdk/**
+      - .github/workflows/test-elixir-sdk.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/elixir-sdk/**
+      - .github/workflows/test-elixir-sdk.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: ./apps/elixir-sdk
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@ee09b1e59bb240681c382eb1f0abc6a04af72764 # v1.23.0
+        with:
+          elixir-version: '1.17'
+          otp-version: '27'
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Run unit tests
+        run: mix test

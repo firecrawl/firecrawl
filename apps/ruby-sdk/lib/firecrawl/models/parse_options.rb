@@ -5,21 +5,30 @@ module Firecrawl
     # Options for parsing uploaded files via `/v2/parse`.
     #
     # Parse does not support browser-rendering features (actions, waitFor,
-    # location, mobile) nor screenshot/branding/changeTracking formats. The
+    # location, mobile) nor screenshot/branding/product/menu/audio/video/changeTracking formats. The
     # proxy field only accepts "auto" or "basic".
+    #
+    # check_prompt_injection scans the parsed content for prompt injection
+    # before LLM-backed formats run. A detection fails the parse with
+    # SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans
+    # the whole content.
     class ParseOptions
-      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding].freeze
+      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding product menu audio video].freeze
 
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
         timeout parsers skip_tls_verification remove_base64_images
-        block_ads proxy integration json_options
+        block_ads proxy integration redact_pii json_options audit_metadata
+        check_prompt_injection
       ].freeze
 
       attr_reader(*FIELDS)
 
       def initialize(**kwargs)
         FIELDS.each { |f| instance_variable_set(:"@#{f}", kwargs[f]) }
+        if audit_metadata && !audit_metadata.is_a?(AuditMetadata)
+          raise ArgumentError, "audit_metadata must be an AuditMetadata"
+        end
 
         validate!
       end
@@ -32,13 +41,16 @@ module Firecrawl
           "excludeTags" => exclude_tags,
           "onlyMainContent" => only_main_content,
           "timeout" => timeout,
-          "parsers" => parsers,
+          "parsers" => parsers&.map { |parser| parser.respond_to?(:to_h) ? parser.to_h : parser },
           "skipTlsVerification" => skip_tls_verification,
           "removeBase64Images" => remove_base64_images,
           "blockAds" => block_ads,
           "proxy" => proxy,
           "integration" => integration,
+          "redactPII" => redact_pii,
+          "checkPromptInjection" => check_prompt_injection,
           "jsonOptions" => json_options.is_a?(Hash) ? json_options : json_options&.to_h,
+          "auditMetadata" => audit_metadata&.to_h,
         }.compact
       end
 

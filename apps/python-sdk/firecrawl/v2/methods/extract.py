@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 import time
 import warnings
 
-from ..types import ExtractResponse, ScrapeOptions
+from ..types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
 from ..types import AgentOptions
 from ..utils.http_client import HttpClient
 from ..utils.validation import prepare_scrape_options
@@ -28,6 +28,7 @@ def _prepare_extract_request(
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
     agent: Optional[AgentOptions] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -57,6 +58,10 @@ def _prepare_extract_request(
             body["agent"] = agent.model_dump(exclude_none=True)  # type: ignore[attr-defined]
         except AttributeError:
             body["agent"] = agent  # fallback
+    if threat_protection is not None:
+        body["threatProtection"] = threat_protection.model_dump(
+            by_alias=True, exclude_none=True
+        )
     return body
 
 
@@ -85,6 +90,7 @@ def start_extract(
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
     agent: Optional[AgentOptions] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Start an extract job (non-blocking).
 
@@ -106,6 +112,7 @@ def start_extract(
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
         agent=agent,
+        threat_protection=threat_protection,
     )
     resp = client.post("/v2/extract", body)
     if not resp.ok:
@@ -163,6 +170,7 @@ def extract(
     timeout: Optional[int] = None,
     integration: Optional[str] = None,
     agent: Optional[AgentOptions] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Extract structured data and wait until completion.
 
@@ -185,6 +193,7 @@ def extract(
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
         agent=agent,
+        threat_protection=threat_protection,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

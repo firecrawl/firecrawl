@@ -2,13 +2,10 @@ import { Autumn } from "autumn-js";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 
-let missingKeyWarned = false;
-
-if (!config.AUTUMN_SECRET_KEY && !missingKeyWarned) {
+if (!config.AUTUMN_SECRET_KEY) {
   logger.warn(
     "AUTUMN_SECRET_KEY is not set - add AUTUMN_SECRET_KEY to enable Autumn",
   );
-  missingKeyWarned = true;
 }
 
 export const autumnClient = config.AUTUMN_SECRET_KEY

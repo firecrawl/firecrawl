@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { JOB_ACCESS_TTL_MS } from "../../lib/job-access-store";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import {
@@ -6,9 +7,11 @@ import {
   getExtractExpiry,
   getExtractResult,
 } from "../../lib/extract/extract-redis";
-import { supabaseGetExtractByIdDirect } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { getExtractJobAccess } from "../../lib/operational-job-access";
+import { readExtractJobState } from "../../lib/job-state-store";
+import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -37,6 +40,21 @@ export async function extractStatusController(
     extractId: req.params.jobId,
   });
 
+  const access = config.USE_DB_AUTHENTICATION
+    ? await getExtractJobAccess(req.params.jobId)
+    : null;
+  if (
+    config.USE_DB_AUTHENTICATION &&
+    (!access ||
+      access.expiresAtMs <= Date.now() ||
+      access.teamId !== normalizeJobAccessTeamId(req.auth.team_id))
+  ) {
+    return res.status(404).json({
+      success: false,
+      error: "Extract job not found",
+    });
+  }
+
   // Get extract status from Redis (for in-progress jobs)
   const extract = await getExtract(req.params.jobId);
 
@@ -48,39 +66,25 @@ export async function extractStatusController(
     });
   }
 
-  // If not in Redis, check the database for completed jobs
+  // Not in Redis: the job finished (or never existed). Bigtable holds the
+  // terminal state for 24 hours; after that the job has expired.
   if (!extract) {
-    if (config.USE_DB_AUTHENTICATION) {
-      const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
-      if (!dbExtract) {
-        logger.warn("Extract job was not found");
-        return res.status(404).json({
-          success: false,
-          error: "Extract job not found",
-        });
-      }
-
-      if (dbExtract.team_id !== req.auth.team_id) {
-        return res.status(404).json({
-          success: false,
-          error: "Extract job not found",
-        });
-      }
-
-      let data: any = [];
-      if (dbExtract.is_successful) {
-        data = await getExtractData(req.params.jobId);
-      }
-
-      // Return DB-based status
+    // A failed Bigtable read is an outage, not a missing job: it propagates
+    // to the error handler rather than answering 404.
+    const state = await readExtractJobState(req.params.jobId);
+    if (state) {
       return res.status(200).json({
-        success: dbExtract.is_successful,
-        data,
-        status: dbExtract.is_successful ? "completed" : "failed",
-        error: dbExtract.error || undefined,
+        success: state.status === "completed",
+        data:
+          state.status === "completed"
+            ? await getExtractData(req.params.jobId)
+            : [],
+        status: state.status,
+        error: state.error,
         expiresAt: new Date(
-          new Date(dbExtract.created_at).getTime() + 1000 * 60 * 60 * 24,
+          access?.expiresAtMs ?? state.completedAtMs + JOB_ACCESS_TTL_MS,
         ).toISOString(),
+        creditsUsed: state.creditsBilled,
       });
     }
 

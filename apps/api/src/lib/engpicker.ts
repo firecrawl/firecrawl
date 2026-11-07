@@ -3,7 +3,10 @@ import { z } from "zod";
 import { scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import type { Engine } from "../scraper/scrapeURL/engines";
-import { index_supabase_service } from "../services";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { dbIndex } from "../db/connection";
+import * as schema from "../db/schema";
+import { queryIndexAtDomainSplitLevelOmce } from "../db/rpc";
 import { CostTracking } from "./cost-tracking";
 import { getModel } from "./generic-ai";
 import { logger as _logger } from "./logger";
@@ -15,7 +18,7 @@ import {
 
 type EngpickerJob = {
   id: number;
-  domain_hash: string;
+  domain_hash: Buffer;
   domain_level: number;
   picked_up_at: string | null;
   done: boolean;
@@ -45,6 +48,7 @@ async function evaluateURL(
     {
       forceEngine: engine,
       teamId: "engpicker",
+      orgId: null,
     },
     new CostTracking(),
   );
@@ -115,17 +119,26 @@ export async function processEngpickerJob() {
     method: "processEngpickerJob",
   });
 
-  const { data: jobData, error: getJobError } = await index_supabase_service
-    .from("engpicker_queue")
-    .update({
-      picked_up_at: new Date().toISOString(),
-    })
-    .is("picked_up_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .select("*");
+  let jobData: EngpickerJob[];
+  try {
+    const candidate = dbIndex
+      .select({ id: schema.engpicker_queue.id })
+      .from(schema.engpicker_queue)
+      .where(isNull(schema.engpicker_queue.picked_up_at))
+      .orderBy(desc(schema.engpicker_queue.created_at))
+      .limit(1);
 
-  if (getJobError) {
+    jobData = await dbIndex
+      .update(schema.engpicker_queue)
+      .set({ picked_up_at: new Date().toISOString() })
+      .where(
+        and(
+          inArray(schema.engpicker_queue.id, candidate),
+          isNull(schema.engpicker_queue.picked_up_at),
+        ),
+      )
+      .returning();
+  } catch (getJobError) {
     logger.error("Error picking up engpicker job", { getJobError });
     await new Promise(resolve => setTimeout(resolve, 1000));
     return;
@@ -146,18 +159,17 @@ export async function processEngpickerJob() {
 
   // main shit here
 
-  const { data: indexRows, error: indexRowsError } =
-    await index_supabase_service
-      .rpc("query_index_at_domain_split_level_omce", {
-        i_level: job.domain_level,
-        i_domain_hash: job.domain_hash,
-        i_newer_than: new Date(
-          new Date(job.created_at).valueOf() - 1000 * 60 * 60 * 24,
-        ).toISOString(),
-      })
-      .limit(100);
-
-  if (indexRowsError || !indexRows) {
+  let indexRows: { url: string }[];
+  try {
+    indexRows = await queryIndexAtDomainSplitLevelOmce<{ url: string }>(
+      job.domain_level,
+      job.domain_hash,
+      new Date(
+        new Date(job.created_at).valueOf() - 1000 * 60 * 60 * 24,
+      ).toISOString(),
+      100,
+    );
+  } catch (indexRowsError) {
     logger.error("Error querying index rows", { indexRowsError });
     await new Promise(resolve => setTimeout(resolve, 1000));
     return;
@@ -287,27 +299,23 @@ export async function processEngpickerJob() {
   // This is the verdict - "TlsClientOk", "ChromeCdpRequired", or "Uncertain"
   const verdict = verdictResult.verdict;
 
-  const { error: insertVerdictError } = await index_supabase_service
-    .from("engpicker_verdicts")
-    .insert({
+  try {
+    await dbIndex.insert(schema.engpicker_verdicts).values({
       domain_hash: job.domain_hash,
       verdict,
     });
-
-  if (insertVerdictError) {
+  } catch (insertVerdictError) {
     logger.error("Error inserting engpicker verdict", { insertVerdictError });
     await new Promise(resolve => setTimeout(resolve, 1000));
     return;
   }
 
-  const { error: updateJobError } = await index_supabase_service
-    .from("engpicker_queue")
-    .update({
-      done: true,
-    })
-    .eq("id", job.id);
-
-  if (updateJobError) {
+  try {
+    await dbIndex
+      .update(schema.engpicker_queue)
+      .set({ done: true })
+      .where(eq(schema.engpicker_queue.id, job.id));
+  } catch (updateJobError) {
     logger.error("Error updating engpicker job", { updateJobError });
     await new Promise(resolve => setTimeout(resolve, 1000));
     return;

@@ -21,24 +21,31 @@ pub mod error;
 pub(crate) mod serde_helpers;
 
 mod agent;
+mod audit_metadata;
 mod batch_scrape;
 mod client;
 mod crawl;
 mod map;
 mod monitor;
 mod parse;
+mod research;
 mod scrape;
 mod search;
 mod types;
 
 pub use agent::*;
+pub use audit_metadata::*;
 pub use batch_scrape::*;
 pub use client::Client;
 pub use crawl::*;
-pub use error::FirecrawlError;
+pub use error::{FirecrawlAPIError, FirecrawlError, RequiresAction};
 pub use map::*;
 pub use monitor::*;
 pub use parse::*;
+pub use research::*;
 pub use scrape::*;
 pub use search::*;
 pub use types::*;
+
+mod tools;
+pub use tools::*;

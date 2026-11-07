@@ -13,7 +13,9 @@ public class MonitorCheckPage {
     private Integer statusCode;
     private String error;
     private Object metadata;
-    private Object diff;
+    private MonitorPageDiff diff;
+    private MonitorPageSnapshot snapshot;
+    private MonitorPageJudgment judgment;
     private String createdAt;
 
     public String getId() { return id; }
@@ -25,6 +27,8 @@ public class MonitorCheckPage {
     public Integer getStatusCode() { return statusCode; }
     public String getError() { return error; }
     public Object getMetadata() { return metadata; }
-    public Object getDiff() { return diff; }
+    public MonitorPageDiff getDiff() { return diff; }
+    public MonitorPageSnapshot getSnapshot() { return snapshot; }
+    public MonitorPageJudgment getJudgment() { return judgment; }
     public String getCreatedAt() { return createdAt; }
 }

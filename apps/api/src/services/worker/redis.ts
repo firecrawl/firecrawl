@@ -51,8 +51,8 @@ return 1`,
 } as const;
 
 type ScriptHashes = {
-  [K in keyof typeof luaScripts]: {
-    [K2 in keyof (typeof luaScripts)[K]]: string;
+  -readonly [K in keyof typeof luaScripts]: {
+    -readonly [K2 in keyof (typeof luaScripts)[K]]: string;
   };
 };
 
@@ -123,6 +123,24 @@ export const ensureRedis = async () => {
   return initPromise;
 };
 
+export const shutdownRedis = async () => {
+  initPromise = null;
+  for (const key of Object.keys(scripts) as (keyof ScriptHashes)[]) {
+    scripts[key] = {} as ScriptHashes[typeof key];
+  }
+
+  if (redis.status === "wait" || redis.status === "end") {
+    return;
+  }
+
+  try {
+    await redis.quit();
+  } catch (err) {
+    logger.warn("Error while closing NuQ Redis connection", { err });
+    redis.disconnect();
+  }
+};
+
 export const semaphoreKeys = (teamId: string) => {
   return {
     leases: `nuq:sema:{${teamId}}:leases`,
@@ -147,10 +165,12 @@ type NuQRedis = Redis & {
   scripts: typeof scripts;
   runScript: typeof runScript;
   ensure: typeof ensureRedis;
+  shutdown: typeof shutdownRedis;
 };
 
 export const nuqRedis: NuQRedis = Object.assign(redis, {
   scripts,
   runScript,
   ensure: ensureRedis,
+  shutdown: shutdownRedis,
 });

@@ -1,17 +1,17 @@
-jest.mock("uuid", () => ({
-  v7: jest.fn(() => "job-1"),
+vi.mock("uuid", () => ({
+  v7: vi.fn(() => "job-1"),
 }));
 
 import { scrapeSearchResults } from "./scrape";
 import { getJobPriority } from "../lib/job-priority";
 import { processJobInternal } from "../services/worker/scrape-worker";
 
-jest.mock("../lib/job-priority", () => ({
-  getJobPriority: jest.fn().mockResolvedValue(10),
+vi.mock("../lib/job-priority", () => ({
+  getJobPriority: vi.fn().mockResolvedValue(10),
 }));
 
-jest.mock("../services/worker/scrape-worker", () => ({
-  processJobInternal: jest.fn().mockResolvedValue({
+vi.mock("../services/worker/scrape-worker", () => ({
+  processJobInternal: vi.fn().mockResolvedValue({
     markdown: "body",
     metadata: { creditsUsed: 1, statusCode: 200, proxyUsed: "basic" },
   }),
@@ -36,7 +36,7 @@ describe("scrapeSearchResults", () => {
         requestId: "req-1",
         billing: { endpoint: "agent" },
       },
-      { debug: jest.fn(), info: jest.fn(), error: jest.fn() } as any,
+      { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
       null as any,
     );
 

@@ -13,7 +13,7 @@ from ...types import (
     MonitorUpdateRequest,
     ScrapeOptions,
 )
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 
@@ -61,7 +61,7 @@ async def _data_or_error(response, action: str) -> Any:
         handle_response_error(response, action)
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     return body.get("data")
 
 
@@ -70,7 +70,7 @@ async def _monitor_check_data_or_error(response, action: str) -> Dict[str, Any]:
         handle_response_error(response, action)
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     data = body.get("data") or {}
     if body.get("next") is not None:
         data["next"] = body.get("next")
@@ -151,7 +151,7 @@ async def delete_monitor(client: AsyncHttpClient, monitor_id: str) -> bool:
         handle_response_error(response, "delete monitor")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     return True
 
 

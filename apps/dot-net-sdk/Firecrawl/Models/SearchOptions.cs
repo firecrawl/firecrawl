@@ -43,6 +43,11 @@ public class SearchOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Timeout { get; set; }
 
+    /// <summary>Generate query-relevant highlights for search results. Defaults to true.</summary>
+    [JsonPropertyName("highlights")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Highlights { get; set; }
+
     [JsonPropertyName("scrapeOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ScrapeOptions? ScrapeOptions { get; set; }
@@ -55,7 +60,11 @@ public class SearchOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Country { get; set; }
 
+    /// <summary>
+    /// Enterprise search options. Use <c>["zdr"]</c> for end-to-end Zero Data
+    /// Retention or <c>["anon"]</c> for anonymized search. Must be enabled for your team.
+    /// </summary>
     [JsonPropertyName("enterprise")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? Enterprise { get; set; }
+    public List<string>? Enterprise { get; set; }
 }

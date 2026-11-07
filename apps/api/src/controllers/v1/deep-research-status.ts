@@ -11,7 +11,7 @@ export async function deepResearchStatusController(
 ) {
   const research = await getDeepResearch(req.params.jobId);
 
-  if (!research) {
+  if (!research || research.team_id !== req.auth.team_id) {
     return res.status(404).json({
       success: false,
       error: "Deep research job not found",

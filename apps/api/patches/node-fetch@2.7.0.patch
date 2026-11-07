@@ -1,0 +1,31 @@
+diff --git a/lib/index.js b/lib/index.js
+index 567ff5da58e83683bec0ea9e86221041ddf9435f..7ca5fc0c441fe25201ce1757d255c945724e7364 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1738,13 +1738,19 @@ function fixResponseChunkedTransferBadEnding(request, errorCallback) {
+ 
+ 		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
+ 			response.once('close', function (hadError) {
+-				// tests for socket presence, as in some situations the
+-				// the 'socket' event is not triggered for the request
+-				// (happens in deno), avoids `TypeError`
+-				// if a data listener is still present we didn't end cleanly
+-				const hasDataListener = socket && socket.listenerCount('data') > 0;
+-
+-				if (hasDataListener && !hadError) {
++				// PATCH (firecrawl): use Node's HTTP-parser-backed completion flag
++				// instead of the socket data-listener heuristic. The listener count is
++				// teardown-order dependent and false-positives on COMPLETE chunked
++				// responses on Node >=22.23.0, breaking gtoken/gaxios OAuth token
++				// fetches to googleapis.com/oauth2/v4/token. Genuine truncation still
++				// leaves response.complete === false, so real errors still surface.
++				// Refs:
++				//   node-fetch bug:   https://github.com/node-fetch/node-fetch/issues/1767
++				//   related variant:  https://github.com/node-fetch/node-fetch/issues/1576
++				//   upstream PR (diff bug): https://github.com/node-fetch/node-fetch/pull/1687
++				//   Node trigger:     https://nodejs.org/en/blog/release/v22.23.0 (CVE-2026-48931; llhttp 9.4.2)
++				//   completion flag:  https://nodejs.org/api/http.html#messagecomplete
++				if (response.complete === false && !hadError) {
+ 					const err = new Error('Premature close');
+ 					err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+ 					errorCallback(err);

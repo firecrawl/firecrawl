@@ -29,6 +29,7 @@ final class CrawlOptions
         private readonly ?bool $regexOnFullURL = null,
         private readonly ?bool $zeroDataRetention = null,
         private readonly ?string $integration = null,
+        private readonly ?string $idempotencyKey = null,
     ) {}
 
     /**
@@ -54,13 +55,20 @@ final class CrawlOptions
         ?bool $regexOnFullURL = null,
         ?bool $zeroDataRetention = null,
         ?string $integration = null,
+        ?string $idempotencyKey = null,
     ): self {
         return new self(
             $prompt, $excludePaths, $includePaths, $maxDiscoveryDepth, $sitemap,
             $ignoreQueryParameters, $deduplicateSimilarURLs, $limit, $crawlEntireDomain,
             $allowExternalLinks, $allowSubdomains, $delay, $maxConcurrency, $webhook,
             $scrapeOptions, $regexOnFullURL, $zeroDataRetention, $integration,
+            $idempotencyKey,
         );
+    }
+
+    public function getIdempotencyKey(): ?string
+    {
+        return $this->idempotencyKey;
     }
 
     /** @return array<string, mixed> */

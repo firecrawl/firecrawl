@@ -142,6 +142,21 @@ class TestScrapeRequestPreparation:
         data = _prepare_scrape_request("https://example.com", opts)
         assert data["integration"] == "_unit-test"
 
+    def test_domain_tools_serializes_to_camel_case(self):
+        """domain_tools=True should be sent as domainTools: true."""
+        options = ScrapeOptions(domain_tools=True)
+        data = _prepare_scrape_request("https://example.com", options)
+        assert data["domainTools"] is True
+
+    def test_domain_tools_omitted_when_unset(self):
+        """domain_tools should never be sent when unset or False."""
+        data = _prepare_scrape_request("https://example.com", ScrapeOptions())
+        assert "domainTools" not in data
+        assert "domain_tools" not in data
+
+        data_false = _prepare_scrape_request("https://example.com", ScrapeOptions(domain_tools=False))
+        assert "domainTools" not in data_false
+
     def test_interact_request_and_response_normalization(self):
         client = _FakeClient(
             post_response=_FakeResponse(
@@ -179,6 +194,7 @@ class TestScrapeRequestPreparation:
                 {
                     "success": True,
                     "output": "Clicked the button",
+                    "cdpUrl": "wss://browser.example.com/cdp",
                     "liveViewUrl": "https://live.example.com/view",
                     "interactiveLiveViewUrl": "https://live.example.com/interactive",
                     "stdout": "",
@@ -200,6 +216,7 @@ class TestScrapeRequestPreparation:
         }
         assert response.success is True
         assert response.output == "Clicked the button"
+        assert response.cdp_url == "wss://browser.example.com/cdp"
         assert response.live_view_url == "https://live.example.com/view"
         assert response.interactive_live_view_url == "https://live.example.com/interactive"
 

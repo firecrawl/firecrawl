@@ -14,6 +14,8 @@ final class Document
      * @param array<string, mixed>|null               $actions
      * @param array<string, mixed>|null               $changeTracking
      * @param array<string, mixed>|null               $branding
+     * @param list<array<string, mixed>>|null         $pages
+     * @param list<array<string, mixed>>|null         $blocks
      */
     public function __construct(
         private readonly ?string $markdown = null,
@@ -26,6 +28,7 @@ final class Document
         private readonly ?array $images = null,
         private readonly ?string $screenshot = null,
         private readonly ?string $audio = null,
+        private readonly ?string $video = null,
         private readonly ?array $attributes = null,
         private readonly ?array $actions = null,
         private readonly ?string $answer = null,
@@ -33,6 +36,10 @@ final class Document
         private readonly ?string $warning = null,
         private readonly ?array $changeTracking = null,
         private readonly ?array $branding = null,
+        private readonly ?Product $product = null,
+        private readonly ?Menu $menu = null,
+        private readonly ?array $pages = null,
+        private readonly ?array $blocks = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -49,6 +56,7 @@ final class Document
             images: $data['images'] ?? null,
             screenshot: $data['screenshot'] ?? null,
             audio: $data['audio'] ?? null,
+            video: $data['video'] ?? null,
             attributes: $data['attributes'] ?? null,
             actions: $data['actions'] ?? null,
             answer: $data['answer'] ?? null,
@@ -56,6 +64,18 @@ final class Document
             warning: $data['warning'] ?? null,
             changeTracking: $data['changeTracking'] ?? null,
             branding: $data['branding'] ?? null,
+            product: isset($data['product']) && is_array($data['product'])
+                ? Product::fromArray($data['product'])
+                : null,
+            menu: isset($data['menu']) && is_array($data['menu'])
+                ? Menu::fromArray($data['menu'])
+                : null,
+            pages: isset($data['pages']) && is_array($data['pages'])
+                ? $data['pages']
+                : null,
+            blocks: isset($data['blocks']) && is_array($data['blocks'])
+                ? $data['blocks']
+                : null,
         );
     }
 
@@ -112,6 +132,11 @@ final class Document
         return $this->audio;
     }
 
+    public function getVideo(): ?string
+    {
+        return $this->video;
+    }
+
     /** @return list<array<string, mixed>>|null */
     public function getAttributes(): ?array
     {
@@ -149,5 +174,35 @@ final class Document
     public function getBranding(): ?array
     {
         return $this->branding;
+    }
+
+    public function getProduct(): ?Product
+    {
+        return $this->product;
+    }
+
+    public function getMenu(): ?Menu
+    {
+        return $this->menu;
+    }
+
+    /**
+     * Physical PDF pages, present only when parsers[].pages is true.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function getPages(): ?array
+    {
+        return $this->pages;
+    }
+
+    /**
+     * Typed PDF layout blocks, present only when parsers[].blocks is true.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function getBlocks(): ?array
+    {
+        return $this->blocks;
     }
 }

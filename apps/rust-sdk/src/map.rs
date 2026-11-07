@@ -1,10 +1,9 @@
 //! Map endpoint for Firecrawl API v2.
 
-use serde::{Deserialize, Serialize};
-
 use crate::client::Client;
 use crate::types::{LocationConfig, SearchResultWeb, SitemapMode};
-use crate::FirecrawlError;
+use crate::{AuditMetadata, FirecrawlError};
+use serde::{Deserialize, Serialize};
 
 /// Options for mapping a URL.
 #[serde_with::skip_serializing_none]
@@ -32,8 +31,15 @@ pub struct MapOptions {
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
     /// Location configuration for proxy routing.
     pub location: Option<LocationConfig>,
+
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
 }
 
 /// Request body for map endpoint.
@@ -106,9 +112,13 @@ impl Client {
         url: impl AsRef<str>,
         options: impl Into<Option<MapOptions>>,
     ) -> Result<MapResponse, FirecrawlError> {
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
         let body = MapRequest {
             url: url.as_ref().to_string(),
-            options: options.into().unwrap_or_default(),
+            options,
         };
 
         let headers = self.prepare_headers(None);
@@ -168,6 +178,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
     use serde_json::json;
 
     #[tokio::test]
@@ -207,6 +218,29 @@ mod tests {
         assert_eq!(response.links.len(), 3);
         assert_eq!(response.links[0].url, "https://example.com/");
         assert_eq!(response.links[0].title, Some("Example Domain".to_string()));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_map_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/map")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "links": []}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.map("https://example.com", None).await.unwrap();
+
+        assert!(response.success);
         mock.assert();
     }
 

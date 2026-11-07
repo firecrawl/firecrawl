@@ -1,5 +1,7 @@
 export interface BrandingProfile {
   colorScheme?: "light" | "dark";
+  /** Site name from og:site_name / title / h1 / domain, collected in-page. */
+  brandName?: string;
   logo?: string | null;
   fonts?: Array<{
     family: string;

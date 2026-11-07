@@ -1,0 +1,92 @@
+import type { Logger } from "winston";
+import type { WebSearchResult } from "../lib/entities";
+import {
+  fetchResearchUpstream,
+  usOnlySkippedWarning,
+  usOnlyUpstreamRefusal,
+  UsOnlyUpstreamRefusalError,
+} from "../lib/research-upstream";
+import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
+
+const DEVELOPER_QUERY_KEYS = ["query", "k"];
+
+export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
+  return hasCategory(categories, "developer");
+}
+
+export async function searchDeveloperCategory(
+  options: {
+    query: string;
+    limit: number;
+    teamId: string;
+    timeout: number;
+    zeroDataRetention: boolean;
+    usOnly?: boolean;
+    /** Receives the warnings for parts the upstream skipped for a US-only request. */
+    warnings?: string[];
+  },
+  logger: Logger,
+): Promise<WebSearchResult[]> {
+  try {
+    const upstream = await fetchResearchUpstream({
+      path: "/v2/code/search",
+      params: { query: options.query, k: options.limit },
+      queryKeys: DEVELOPER_QUERY_KEYS,
+      headers: {
+        "firecrawl-team-id": options.teamId,
+        "firecrawl-zero-data-retention": String(options.zeroDataRetention),
+        ...(options.usOnly ? { "firecrawl-us-only": "true" } : {}),
+      },
+      timeoutMs: options.timeout,
+    });
+    if (upstream === null) {
+      return [];
+    }
+    if (options.usOnly && upstream.status >= 400 && upstream.status < 500) {
+      throw await usOnlyUpstreamRefusal(
+        upstream,
+        "Developer search refused the request.",
+      );
+    }
+    if (!upstream.ok) {
+      await upstream.body?.cancel().catch(() => {});
+      logger.warn("Developer category upstream failed", {
+        status: upstream.status,
+      });
+      return [];
+    }
+
+    const skipped = options.usOnly
+      ? usOnlySkippedWarning(upstream.headers)
+      : undefined;
+    if (skipped) options.warnings?.push(skipped);
+
+    const body: any = await upstream.json();
+    const results: any[] = Array.isArray(body?.results) ? body.results : [];
+    // Exact WebSearchResult shape: developer results are indistinguishable
+    // from ordinary web results on the wire. Passage text serves as the
+    // description; nothing from the upstream payload leaks through.
+    return results
+      .slice(0, options.limit)
+      .map((result, index) => ({
+        url: typeof result?.url === "string" ? result.url : "",
+        title:
+          typeof result?.title === "string" && result.title.trim().length > 0
+            ? result.title
+            : typeof result?.url === "string"
+              ? result.url
+              : "",
+        description:
+          typeof result?.passages?.[0]?.text === "string"
+            ? result.passages[0].text
+            : "",
+        position: index + 1,
+        category: "developer",
+      }))
+      .filter(result => result.url.length > 0);
+  } catch (error) {
+    if (error instanceof UsOnlyUpstreamRefusalError) throw error;
+    logger.warn("Developer category upstream error", { error });
+    return [];
+  }
+}

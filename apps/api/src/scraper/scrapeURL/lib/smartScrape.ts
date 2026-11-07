@@ -100,7 +100,7 @@ export async function smartScrape({
             },
           },
           toolModel: {
-            model: "gemini-2.5-flash",
+            model: "gemini-3.5-flash",
             provider: "google",
           },
         },

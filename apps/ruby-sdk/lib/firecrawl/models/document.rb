@@ -6,8 +6,9 @@ module Firecrawl
     class Document
       attr_reader :markdown, :html, :raw_html, :json, :summary,
                   :metadata, :links, :images, :screenshot, :audio,
-                  :attributes, :actions, :answer, :highlights, :warning,
-                  :change_tracking, :branding
+                  :video, :attributes, :actions, :answer, :highlights,
+                  :warning, :change_tracking, :branding, :product, :menu,
+                  :pages, :blocks
 
       def initialize(data)
         @markdown = data["markdown"]
@@ -20,6 +21,7 @@ module Firecrawl
         @images = data["images"]
         @screenshot = data["screenshot"]
         @audio = data["audio"]
+        @video = data["video"]
         @attributes = data["attributes"]
         @actions = data["actions"]
         @answer = data["answer"]
@@ -27,6 +29,10 @@ module Firecrawl
         @warning = data["warning"]
         @change_tracking = data["changeTracking"]
         @branding = data["branding"]
+        @product = data["product"] && ProductProfile.new(data["product"])
+        @menu = data["menu"] && MenuProfile.new(data["menu"])
+        @pages = data["pages"]
+        @blocks = data["blocks"]
       end
 
       def to_s

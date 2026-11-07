@@ -19,6 +19,8 @@ public class Monitor {
     private int retentionDays;
     private Integer estimatedCreditsPerMonth;
     private MonitorSummary lastCheckSummary;
+    private String goal;
+    private Boolean judgeEnabled;
     private String createdAt;
     private String updatedAt;
 
@@ -35,6 +37,8 @@ public class Monitor {
     public int getRetentionDays() { return retentionDays; }
     public Integer getEstimatedCreditsPerMonth() { return estimatedCreditsPerMonth; }
     public MonitorSummary getLastCheckSummary() { return lastCheckSummary; }
+    public String getGoal() { return goal; }
+    public Boolean getJudgeEnabled() { return judgeEnabled; }
     public String getCreatedAt() { return createdAt; }
     public String getUpdatedAt() { return updatedAt; }
 }

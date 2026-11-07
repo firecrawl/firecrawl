@@ -5,6 +5,8 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
+import { serializeTraceContext } from "../../../../lib/otel-tracer";
+import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,
   AddFeatureError,
@@ -14,9 +16,12 @@ import {
   ProxySelectionError,
   SSLError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
+import { isUsOnly } from "../../../../lib/us-only";
 
 import { config } from "../../../../config";
 
@@ -30,6 +35,7 @@ const browserCookieSchema = z
 export type FireEngineScrapeRequestCommon = {
   url: string;
   scrapeId?: string;
+  format?: "html" | "rawBase64";
 
   headers?: { [K: string]: string };
 
@@ -49,24 +55,75 @@ export type FireEngineScrapeRequestCommon = {
   geolocation?: { country?: string; languages?: string[] };
 
   mobileProxy?: boolean; // leave it undefined if user doesn't specify
+  autoProxy?: boolean;
 
   timeout?: number;
+  maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+
+  behaviorOverrides?: {
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+  };
 };
+
+export function safeModeParams(
+  safeMode: ResolvedSafeMode | undefined,
+): Pick<FireEngineScrapeRequestCommon, "behaviorOverrides"> {
+  if (!safeMode) return {};
+  return {
+    behaviorOverrides: {
+      disableSiteHandling: safeMode.disableSiteHandling,
+      exposeWebdriver: safeMode.exposeWebdriver,
+      useHeadlessUserAgent: safeMode.useHeadlessUserAgent,
+      disablePlatformSelection: safeMode.disablePlatformSelection,
+      disableCountrySelection: safeMode.disableCountrySelection,
+      disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
+    },
+  };
+}
+
+/**
+ * Safe Mode's overrides, plus a pin for US-only teams: their fetches use the
+ * country "us" with fire-engine's own country selection turned off.
+ */
+export function requestOverrides(
+  meta: Meta,
+): Pick<FireEngineScrapeRequestCommon, "geolocation" | "behaviorOverrides"> {
+  const params = safeModeParams(meta.internalOptions.safeMode);
+  if (!isUsOnly(meta.internalOptions.teamFlags ?? undefined)) return params;
+  return {
+    geolocation: { ...meta.options.location, country: "us" },
+    behaviorOverrides: {
+      ...params.behaviorOverrides,
+      disableCountrySelection: true,
+    },
+  };
+}
 
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
   skipTlsVerification?: boolean;
+  /** Team-scoped ceiling (bytes) for fire-engine's large-PDF GCS handoff.
+   * Absent = fire-engine grants no raise and PDFs keep its inline cap. */
+  pdfMaxSize?: number;
   actions?: InternalAction[];
   blockMedia?: boolean;
+  /** Opt out of render-engine routing (blockMedia: false normally forces it). */
+  forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
-  persistentStorage?: { uniqueId: string };
+  profile?: { owner: string; name: string };
 };
 
 export type FireEngineScrapeRequestTLSClient = {
   engine: "tlsclient";
+  skipTlsVerification?: boolean;
   atsv?: boolean; // v0 only, default: false
   disableJsDom?: boolean; // v0 only, default: false
 };
@@ -83,6 +140,7 @@ const successSchema = z.object({
 
   // TODO: this needs to be non-optional, might need fixes on f-e side to ensure reliability
   responseHeaders: z.record(z.string(), z.string()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 
   // timeTakenCookie: z.number().optional(),
   // timeTakenRequest: z.number().optional(),
@@ -145,14 +203,12 @@ const successSchema = z.object({
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler
-  file: z
-    .object({
-      name: z.string(),
-      content: z.string(),
-    })
-    .optional()
-    .or(z.null()),
+  // chrome-cdp only -- file download handler (inline base64 or a GCS
+  // handoff reference; see fileSchema.ts). Must accept exactly what the
+  // poll parser in checkStatus.ts accepts: fire-engine returns finished
+  // jobs from POST /scrape too, and a handoff rejected here surfaced as
+  // "response not matched by any schema" -> a spurious engine failure.
+  file: fireEngineFileSchema,
 
   docUrl: z.string().optional(),
 
@@ -171,6 +227,7 @@ const processingSchema = z.object({
 const failedSchema = z.object({
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export const fireEngineURL =
@@ -190,10 +247,14 @@ export async function fireEngineScrape<
   abort?: AbortSignal,
   baseUrl: string = fireEngineURL,
 ): Promise<z.infer<typeof processingSchema> | FireEngineCheckStatusSuccess> {
+  const { traceparent, tracestate } = serializeTraceContext();
   let status = await robustFetch({
     url: `${baseUrl}/scrape`,
     method: "POST",
-    headers: {},
+    headers: {
+      ...(traceparent ? { traceparent } : {}),
+      ...(tracestate ? { tracestate } : {}),
+    },
     body: request,
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
     tryCount: 3,
@@ -233,6 +294,12 @@ export async function fireEngineScrape<
       status,
     });
     if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
+      throw new SiteRestrictionError();
+    }
+    if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&
       !meta.featureFlags.has("stealthProxy")
@@ -266,10 +333,10 @@ export async function fireEngineScrape<
       );
     } else if (
       typeof status.error === "string" &&
-      status.error.includes("File size exceeds")
+      status.error.includes("File exceeds size limit")
     ) {
       throw new UnsupportedFileError(
-        "File size exceeds " + status.error.split("File size exceeds ")[1],
+        status.error.slice(status.error.indexOf("File exceeds size limit")),
       );
     } else if (
       typeof status.error === "string" &&

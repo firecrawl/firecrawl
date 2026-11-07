@@ -7,22 +7,23 @@ namespace Firecrawl.Tests;
 public class FirecrawlClientTests
 {
     [Fact]
-    public void Constructor_RequiresApiKey()
+    public void Constructor_AllowsEmptyApiKey_ForKeylessFreeTier()
     {
         // Clear env variable in case it's set
         Environment.SetEnvironmentVariable("FIRECRAWL_API_KEY", null);
 
-        var ex = Assert.Throws<FirecrawlException>(() => new FirecrawlClient(apiKey: ""));
-        Assert.Contains("API key is required", ex.Message);
+        // No key: scrape/search use the keyless free tier; no longer throws.
+        var client = new FirecrawlClient(apiKey: "");
+        Assert.NotNull(client);
     }
 
     [Fact]
-    public void Constructor_RequiresApiKey_WhenNull()
+    public void Constructor_AllowsNullApiKey_ForKeylessFreeTier()
     {
         Environment.SetEnvironmentVariable("FIRECRAWL_API_KEY", null);
 
-        var ex = Assert.Throws<FirecrawlException>(() => new FirecrawlClient(apiKey: null));
-        Assert.Contains("API key is required", ex.Message);
+        var client = new FirecrawlClient(apiKey: null);
+        Assert.NotNull(client);
     }
 
     [Fact]

@@ -127,6 +127,7 @@ class TestAsyncScrapeRequestPreparation:
                 {
                     "success": True,
                     "output": "Clicked the button",
+                    "cdpUrl": "wss://browser.example.com/cdp",
                     "liveViewUrl": "https://live.example.com/view",
                     "interactiveLiveViewUrl": "https://live.example.com/interactive",
                     "stdout": "",
@@ -148,6 +149,7 @@ class TestAsyncScrapeRequestPreparation:
         }
         assert response.success is True
         assert response.output == "Clicked the button"
+        assert response.cdp_url == "wss://browser.example.com/cdp"
         assert response.live_view_url == "https://live.example.com/view"
         assert response.interactive_live_view_url == "https://live.example.com/interactive"
 

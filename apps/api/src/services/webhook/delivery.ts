@@ -13,12 +13,38 @@ import type {
   WebhookQueueMessage,
 } from "./types";
 import { redisEvictConnection } from "../redis";
-import { supabase_service } from "../supabase";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { webhookQueue } from "./queue";
 import { randomUUID } from "crypto";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+
+type WebhookSendResult = {
+  attempted: boolean;
+  delivered?: boolean;
+  queued?: boolean;
+  skipped?: boolean;
+  statusCode?: number;
+};
+
+export function webhookEventMatchesFilter(
+  configuredEvents: string[] | undefined,
+  event: WebhookEvent,
+): boolean {
+  if (!configuredEvents?.length) {
+    return true;
+  }
+
+  const legacySubType = event.split(".")[1];
+  const namespaceSuffix = event.split(".").slice(1).join(".");
+  return (
+    configuredEvents.includes(event) ||
+    configuredEvents.includes(legacySubType) ||
+    configuredEvents.includes(namespaceSuffix)
+  );
+}
 
 export class WebhookSender {
   private config: WebhookConfig;
@@ -45,8 +71,10 @@ export class WebhookSender {
   async send<T extends WebhookEvent>(
     event: T,
     data: WebhookEventDataMap[T],
-  ): Promise<void> {
-    if (!this.shouldSendEvent(event)) return;
+  ): Promise<WebhookSendResult> {
+    if (!this.shouldSendEvent(event)) {
+      return { attempted: false, skipped: true };
+    }
 
     const payload = {
       success: data.success,
@@ -64,10 +92,15 @@ export class WebhookSender {
     );
 
     if (data.awaitWebhook) {
-      await delivery;
-    } else {
-      delivery.catch(() => {});
+      return { attempted: true, ...(await delivery) };
     }
+
+    delivery.catch(() => {});
+    return {
+      attempted: true,
+      delivered: false,
+      queued: this.usesWebhookQueue(),
+    };
   }
 
   private shouldSendEvent(event: WebhookEvent): boolean {
@@ -75,24 +108,26 @@ export class WebhookSender {
       return false;
     }
 
-    if (!this.config.events?.length) {
-      return true;
-    }
-
-    const subType = event.split(".")[1];
-    return this.config.events.includes(subType as any);
+    return webhookEventMatchesFilter(this.config.events, event);
   }
 
-  private async deliver(payload: any, scrapeId?: string): Promise<void> {
+  private usesWebhookQueue(): boolean {
+    return Boolean(config.WEBHOOK_USE_RABBITMQ && config.NUQ_RABBITMQ_URL);
+  }
+
+  private async deliver(
+    payload: any,
+    scrapeId?: string,
+  ): Promise<Omit<WebhookSendResult, "attempted">> {
     const webhookHost = new URL(this.config.url).hostname;
     if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
       });
-      return;
+      return { delivered: false, skipped: true };
     }
 
-    if (config.WEBHOOK_USE_RABBITMQ && config.NUQ_RABBITMQ_URL) {
+    if (this.usesWebhookQueue()) {
       const queueMessage: WebhookQueueMessage = {
         webhook_url: this.config.url,
         payload,
@@ -118,7 +153,7 @@ export class WebhookSender {
         throw error;
       }
 
-      return;
+      return { delivered: false, queued: true };
     }
 
     const payloadString = JSON.stringify(payload);
@@ -165,6 +200,7 @@ export class WebhookSender {
         event: payload.type,
         statusCode: res.status,
       });
+      return { delivered: true, queued: false, statusCode: res.status };
     } catch (error) {
       this.logger.error("Failed to send webhook", {
         error,
@@ -219,7 +255,7 @@ export async function processWebhookInsertJobs() {
   });
 
   try {
-    await supabase_service.from("webhook_logs").insert(parsedJobs);
+    await db.insert(schema.webhook_logs).values(parsedJobs);
     _logger.info("Webhook inserter inserted jobs", {
       jobCount: parsedJobs.length,
     });

@@ -1,10 +1,17 @@
 import express, { Request, Response } from 'express';
-import { chromium, Browser, BrowserContext, Route, Request as PlaywrightRequest, Page } from 'playwright';
+import {
+  chromium,
+  Browser,
+  BrowserContext,
+  Route,
+  Request as PlaywrightRequest,
+  Page,
+} from 'playwright';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
-import { lookup } from 'dns/promises';
-import IPAddr from 'ipaddr.js';
+import { Server } from 'proxy-chain';
+import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
 
 dotenv.config();
 
@@ -13,50 +20,28 @@ const port = process.env.PORT || 3003;
 
 app.use(express.json());
 
-const BLOCK_MEDIA = (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
-const MAX_CONCURRENT_PAGES = Math.max(1, Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10);
-const ALLOW_LOCAL_WEBHOOKS = (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
-const DNS_CACHE_TTL_MS = 30_000;
+const BLOCK_MEDIA =
+  (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
+const MAX_CONCURRENT_PAGES = Math.max(
+  1,
+  Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10,
+);
+const ALLOW_LOCAL_WEBHOOKS =
+  (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
-const dnsLookupCache = new Map<string, { addresses: string[]; expiresAt: number }>();
 
 class InsecureConnectionError extends Error {
-  constructor(public readonly blockedUrl: string, reason: string) {
+  constructor(
+    public readonly blockedUrl: string,
+    reason: string,
+  ) {
     super(`Blocked insecure target URL "${blockedUrl}": ${reason}`);
     this.name = 'InsecureConnectionError';
   }
 }
-
-const normalizeHostname = (hostname: string): string => hostname.toLowerCase().replace(/\.$/, '');
-
-const isHttpProtocol = (protocol: string): boolean => protocol === 'http:' || protocol === 'https:';
-
-const isIPPrivate = (address: string): boolean => {
-  if (!IPAddr.isValid(address)) return false;
-  const parsedAddress = IPAddr.parse(address);
-  return parsedAddress.range() !== 'unicast';
-};
-
-const isLocalHostname = (hostname: string): boolean =>
-  hostname === 'localhost' || hostname.endsWith('.localhost');
-
-const lookupWithCache = async (hostname: string): Promise<string[]> => {
-  const cached = dnsLookupCache.get(hostname);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.addresses;
-  }
-
-  const resolvedAddresses = await lookup(hostname, { all: true, verbatim: true });
-  const uniqueAddresses = [...new Set(resolvedAddresses.map(x => x.address))];
-  dnsLookupCache.set(hostname, {
-    addresses: uniqueAddresses,
-    expiresAt: Date.now() + DNS_CACHE_TTL_MS,
-  });
-  return uniqueAddresses;
-};
 
 const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
   let parsedUrl: URL;
@@ -65,52 +50,45 @@ const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
   } catch {
     throw new InsecureConnectionError(urlString, 'URL is invalid');
   }
-
-  if (!isHttpProtocol(parsedUrl.protocol)) {
-    throw new InsecureConnectionError(urlString, `unsupported protocol "${parsedUrl.protocol}"`);
-  }
-
-  if (ALLOW_LOCAL_WEBHOOKS) {
-    return;
-  }
-
-  const hostname = normalizeHostname(parsedUrl.hostname);
-  if (!hostname) {
-    throw new InsecureConnectionError(urlString, 'hostname is missing');
-  }
-
-  if (isLocalHostname(hostname)) {
-    throw new InsecureConnectionError(urlString, 'localhost targets are not allowed');
-  }
-
-  if (IPAddr.isValid(hostname)) {
-    if (isIPPrivate(hostname)) {
-      throw new InsecureConnectionError(urlString, `private IP "${hostname}" is not allowed`);
-    }
-    return;
-  }
-
-  let resolvedAddresses: string[];
-  try {
-    resolvedAddresses = await lookupWithCache(hostname);
-  } catch {
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
     throw new InsecureConnectionError(
       urlString,
-      `DNS lookup failed for "${hostname}", cannot verify target is safe`,
+      `unsupported protocol "${parsedUrl.protocol}"`,
     );
   }
-
-  if (resolvedAddresses.length === 0) {
+  if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(parsedUrl.hostname))) {
     throw new InsecureConnectionError(
       urlString,
-      `hostname "${hostname}" did not resolve to any IP address`,
+      'resolves to a private/internal address',
     );
-  }
-
-  if (resolvedAddresses.some(address => isIPPrivate(address))) {
-    throw new InsecureConnectionError(urlString, `hostname "${hostname}" resolves to a private IP`);
   }
 };
+
+const buildUpstreamProxyUrl = (): string | undefined => {
+  if (!PROXY_SERVER) return undefined;
+  const server = PROXY_SERVER.includes('://')
+    ? PROXY_SERVER
+    : `http://${PROXY_SERVER}`;
+  const url = new URL(server);
+  if (PROXY_USERNAME) url.username = PROXY_USERNAME;
+  if (PROXY_PASSWORD) url.password = PROXY_PASSWORD;
+  return url.toString();
+};
+
+const startSSRFProxy = async (): Promise<number> => {
+  const server = new Server({
+    port: 0,
+    host: '127.0.0.1',
+    prepareRequestFunction: ssrfPrepareRequest({
+      allowLocal: ALLOW_LOCAL_WEBHOOKS,
+      upstreamProxyUrl: buildUpstreamProxyUrl(),
+    }),
+  });
+  await server.listen();
+  return server.port;
+};
+
+let ssrfProxyPort: number;
 
 type ContextSecurityState = {
   blockedNavigationRequestUrl: string | null;
@@ -168,7 +146,7 @@ const AD_SERVING_DOMAINS = [
   'ads-twitter.com',
   'facebook.net',
   'fbcdn.net',
-  'amazon-adsystem.com'
+  'amazon-adsystem.com',
 ];
 
 interface UrlModel {
@@ -192,12 +170,18 @@ const initializeBrowser = async () => {
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
-    ]
+      '--disable-gpu',
+    ],
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false, userAgentOverride?: string): Promise<{ context: BrowserContext; securityState: ContextSecurityState }> => {
+const createContext = async (
+  skipTlsVerification: boolean = false,
+  userAgentOverride?: string,
+): Promise<{
+  context: BrowserContext;
+  securityState: ContextSecurityState;
+}> => {
   const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
   const securityState: ContextSecurityState = {
@@ -211,52 +195,49 @@ const createContext = async (skipTlsVerification: boolean = false, userAgentOver
     serviceWorkers: 'block',
   };
 
-  if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
-    contextOptions.proxy = {
-      server: PROXY_SERVER,
-      username: PROXY_USERNAME,
-      password: PROXY_PASSWORD,
-    };
-  } else if (PROXY_SERVER) {
-    contextOptions.proxy = {
-      server: PROXY_SERVER,
-    };
-  }
+  contextOptions.proxy = {
+    server: `http://127.0.0.1:${ssrfProxyPort}`,
+  };
 
   const newContext = await browser.newContext(contextOptions);
 
   if (BLOCK_MEDIA) {
-    await newContext.route('**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}', async (route: Route, request: PlaywrightRequest) => {
-      await route.abort();
-    });
+    await newContext.route(
+      '**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}',
+      async (route: Route, request: PlaywrightRequest) => {
+        await route.abort();
+      },
+    );
   }
 
   // Intercept all requests to avoid loading ads
-  await newContext.route('**/*', async (route: Route, request: PlaywrightRequest) => {
-    const requestUrlString = request.url();
-    try {
-      await assertSafeTargetUrl(requestUrlString);
-    } catch (error) {
-      if (error instanceof InsecureConnectionError) {
-        if (request.isNavigationRequest()) {
-          securityState.blockedNavigationRequestUrl = requestUrlString;
+  await newContext.route(
+    '**/*',
+    async (route: Route, request: PlaywrightRequest) => {
+      const requestUrlString = request.url();
+      try {
+        await assertSafeTargetUrl(requestUrlString);
+      } catch (error) {
+        if (error instanceof InsecureConnectionError) {
+          if (request.isNavigationRequest()) {
+            securityState.blockedNavigationRequestUrl = requestUrlString;
+          }
+          console.warn(`Blocked request: ${requestUrlString}`);
+          return route.abort('blockedbyclient');
         }
-        console.warn(`Blocked request: ${requestUrlString}`);
-        return route.abort('blockedbyclient');
+        throw error;
       }
-      throw error;
-    }
 
-    const requestUrl = new URL(requestUrlString);
-    const hostname = normalizeHostname(requestUrl.hostname);
+      const hostname = new URL(requestUrlString).hostname.toLowerCase();
 
-    if (AD_SERVING_DOMAINS.some(domain => hostname.includes(domain))) {
-      console.log(hostname);
-      return route.abort();
-    }
-    return route.continue();
-  });
-  
+      if (AD_SERVING_DOMAINS.some((domain) => hostname.includes(domain))) {
+        console.log(hostname);
+        return route.abort();
+      }
+      return route.continue();
+    },
+  );
+
   return { context: newContext, securityState };
 };
 
@@ -284,7 +265,9 @@ const scrapePage = async (
   checkSelector: string | undefined,
   securityState: ContextSecurityState,
 ) => {
-  console.log(`Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`);
+  console.log(
+    `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
+  );
   let response;
   try {
     response = await page.goto(url, { waitUntil, timeout });
@@ -310,18 +293,31 @@ const scrapePage = async (
     }
   }
 
-  let headers = null, content = await page.content();
+  let headers = null,
+    content = await page.content(),
+    landedUrl = page.url();
   let ct: string | undefined = undefined;
   if (response) {
     headers = await response.allHeaders();
-    ct = Object.entries(headers).find(([key]) => key.toLowerCase() === "content-type")?.[1];
-    if (ct && (ct.toLowerCase().includes("application/json") || ct.toLowerCase().includes("text/plain"))) {
-      content = (await response.body()).toString("utf8"); // TODO: determine real encoding
+    ct = Object.entries(headers).find(
+      ([key]) => key.toLowerCase() === 'content-type',
+    )?.[1];
+    if (
+      ct &&
+      (ct.toLowerCase().includes('application/json') ||
+        ct.toLowerCase().includes('text/plain'))
+    ) {
+      content = (await response.body()).toString('utf8'); // TODO: determine real encoding
+      landedUrl = response.url();
     }
   }
 
   return {
     content,
+    // Where the returned content came from: page.url() for rendered HTML
+    // (covers HTTP 3xx and client-side redirects), response.url() for raw
+    // JSON/text bodies, which come from the page.goto response.
+    url: landedUrl,
     status: response ? response.status() : null,
     headers,
     contentType: ct,
@@ -333,28 +329,35 @@ app.get('/health', async (req: Request, res: Response) => {
     if (!browser) {
       await initializeBrowser();
     }
-    
+
     const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
     await testPage.close();
     await testContext.close();
-    
-    res.status(200).json({ 
+
+    res.status(200).json({
       status: 'healthy',
       maxConcurrentPages: MAX_CONCURRENT_PAGES,
-      activePages: MAX_CONCURRENT_PAGES - pageSemaphore.getAvailablePermits()
+      activePages: MAX_CONCURRENT_PAGES - pageSemaphore.getAvailablePermits(),
     });
   } catch (error) {
     console.error('Health check failed:', error);
-    res.status(503).json({ 
-      status: 'unhealthy', 
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     });
   }
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
+  const {
+    url,
+    wait_after_load = 0,
+    timeout = 15000,
+    headers,
+    check_selector,
+    skip_tls_verification = false,
+  }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
@@ -387,7 +390,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
   }
 
   if (!PROXY_SERVER) {
-    console.warn('⚠️ WARNING: No proxy server provided. Your IP address may be blocked.');
+    console.warn(
+      '⚠️ WARNING: No proxy server provided. Your IP address may be blocked.',
+    );
   }
 
   if (!browser) {
@@ -395,7 +400,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   }
 
   await pageSemaphore.acquire();
-  
+
   let requestContext: BrowserContext | null = null;
   let securityState: ContextSecurityState | null = null;
   let page: Page | null = null;
@@ -405,19 +410,83 @@ app.post('/scrape', async (req: Request, res: Response) => {
     // be applied at the context level.  Playwright ignores user-agent in
     // setExtraHTTPHeaders when the context already defines one (#2802).
     const userAgentOverride = headers
-      ? Object.entries(headers).find(([k]) => k.toLowerCase() === 'user-agent')?.[1]
+      ? Object.entries(headers).find(
+          ([k]) => k.toLowerCase() === 'user-agent',
+        )?.[1]
       : undefined;
 
-    const contextBundle = await createContext(skip_tls_verification, userAgentOverride);
+    const contextBundle = await createContext(
+      skip_tls_verification,
+      userAgentOverride,
+    );
     requestContext = contextBundle.context;
     securityState = contextBundle.securityState;
     page = await requestContext.newPage();
 
     if (headers) {
-      // Remove the user-agent key before calling setExtraHTTPHeaders since
-      // we already forwarded it to the context-level userAgent option.
+      // A Cookie header passed through setExtraHTTPHeaders is sent on the first
+      // request but DROPPED on any redirect hop (the browser regenerates the
+      // redirected request from its cookie jar, which is empty). Authenticated
+      // sites that 302 (e.g. to /signin when the session looks absent) then
+      // land on the login page. Seed the cookie jar instead so Chromium re-sends
+      // it on every request, including redirects — matching what a raw HTTP
+      // client does.
+      const cookieHeader = Object.entries(headers).find(
+        ([k]) => k.toLowerCase() === 'cookie',
+      )?.[1];
+      if (cookieHeader) {
+        // Scope cookies to the registrable domain (e.g. ".example.com"), not
+        // host-only. Authenticated pages often 302 across sibling subdomains
+        // (example.com -> app.example.com); a host-only cookie set for the
+        // original host would not be sent to the redirect target, leaving the
+        // request unauthenticated. The Cookie header carries no domain info, so
+        // we apply the eTLD+1 — broad enough to follow the redirect, and these
+        // are first-party cookies being returned to their own origin anyway.
+        let cookieDomain: string | undefined;
+        try {
+          const host = new URL(url).hostname;
+          const labels = host.split('.');
+          cookieDomain = labels.length > 2 ? labels.slice(-2).join('.') : host;
+        } catch {
+          cookieDomain = undefined;
+        }
+        type SeedCookie = {
+          name: string;
+          value: string;
+          url?: string;
+          domain?: string;
+          path?: string;
+        };
+        const cookies = cookieHeader
+          .split(';')
+          .map((pair) => pair.trim())
+          .filter(Boolean)
+          .map((pair): SeedCookie | null => {
+            const eq = pair.indexOf('=');
+            if (eq === -1) return null;
+            const name = pair.slice(0, eq).trim();
+            const value = pair.slice(eq + 1).trim();
+            return cookieDomain
+              ? { name, value, domain: `.${cookieDomain}`, path: '/' }
+              : { name, value, url };
+          })
+          .filter((c): c is SeedCookie => c !== null);
+        if (cookies.length > 0) {
+          try {
+            await requestContext.addCookies(cookies);
+          } catch (error) {
+            console.warn('Failed to seed cookies from Cookie header:', error);
+          }
+        }
+      }
+
+      // Remove user-agent (already applied at the context level) and cookie
+      // (now seeded into the jar) before forwarding the rest verbatim.
       const filteredHeaders = Object.fromEntries(
-        Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'user-agent')
+        Object.entries(headers).filter(([k]) => {
+          const lower = k.toLowerCase();
+          return lower !== 'user-agent' && lower !== 'cookie';
+        }),
       );
       if (Object.keys(filteredHeaders).length > 0) {
         await page.setExtraHTTPHeaders(filteredHeaders);
@@ -433,21 +502,24 @@ app.post('/scrape', async (req: Request, res: Response) => {
       check_selector,
       securityState,
     );
-    const pageError = result.status !== 200 ? getError(result.status) : undefined;
+    const pageError =
+      result.status !== 200 ? getError(result.status) : undefined;
 
     if (!pageError) {
       console.log(`✅ Scrape successful!`);
     } else {
-      console.log(`🚨 Scrape failed with status code: ${result.status} ${pageError}`);
+      console.log(
+        `🚨 Scrape failed with status code: ${result.status} ${pageError}`,
+      );
     }
 
     res.json({
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
-      ...(pageError && { pageError })
+      url: result.url,
+      ...(pageError && { pageError }),
     });
-
   } catch (error) {
     if (error instanceof InsecureConnectionError) {
       return res.json({
@@ -457,7 +529,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
       });
     }
     console.error('Scrape error:', error);
-    res.status(500).json({ error: 'An error occurred while fetching the page.' });
+    res
+      .status(500)
+      .json({ error: 'An error occurred while fetching the page.' });
   } finally {
     if (page) await page.close();
     if (requestContext) await requestContext.close();
@@ -465,10 +539,16 @@ app.post('/scrape', async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
-  initializeBrowser().then(() => {
+const start = async () => {
+  ssrfProxyPort = await startSSRFProxy();
+  await initializeBrowser();
+  app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
   });
+};
+start().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });
 
 if (require.main === module) {

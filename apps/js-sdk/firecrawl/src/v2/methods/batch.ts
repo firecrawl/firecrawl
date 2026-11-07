@@ -152,7 +152,7 @@ export async function getBatchScrapeErrors(
   try {
     const res = await http.get<{
       success?: boolean;
-      data?: { errors: Array<Record<string, string>>; robotsBlocked: string[] };
+      data?: CrawlErrorsResponse;
     }>(`/v2/batch/scrape/${jobId}/errors`);
     if (res.status !== 200) throwForBadResponse(res, "get batch scrape errors");
     const payload = res.data?.data ?? (res.data as any);

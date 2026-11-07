@@ -17,6 +17,35 @@ export type BillingEndpoint =
 export type BillingMetadata = {
   endpoint: BillingEndpoint;
   jobId?: string;
+  /**
+   * Unique-per-CHARGE identity, set by the call site that knows what "one
+   * charge" is. billTeam derives the firebill idempotency key from it
+   * (`fc:track:{endpoint}:{chargeId}`), so a retried call — or a re-run job —
+   * dedupes instead of double-billing.
+   *
+   * Rules: it must never be shared by two charges that should BOTH bill
+   * (collision = silent underbilling). A jobId shared with another charge on
+   * the same endpoint needs a suffix (e.g. `${extractId}:threat` for the
+   * threat-scan fee vs the extract's main charge). Sites with no unique
+   * identity (fireclaw, grouped charges) leave it unset and keep firebill's
+   * per-request UUID, which dedupes only firebill's own retries.
+   */
+  chargeId?: string;
+  /**
+   * The caller's own id for the operation, from its `External-Request-Id`
+   * header — the value `logRequest` records. Carried on the charge so
+   * firebill can report the operation to the partner without looking the
+   * request up in ClickHouse, which lands a few seconds after the charge.
+   * Unset when the caller sent no header or the charge has no request.
+   */
+  externalRequestId?: string | null;
+  /**
+   * The hosted MCP made the request, as verified at authentication (see
+   * `AuthObject.hostedMcp`). Its charges are made on MCP credits (see
+   * AutumnService.hostedMcpFeatureId). Rides the job payload like the rest of
+   * this metadata, so a crawl's pages carry it too.
+   */
+  hostedMcp?: boolean;
 };
 
 export function resolveBillingMetadata({
@@ -50,3 +79,22 @@ export function toAutumnBillingProperties(
   }
   return props;
 }
+
+/**
+ * Payload of a `bill_team` job on the billing queue. `org_id` is required so a
+ * new producer cannot omit it; the consumer still tolerates its absence, which
+ * is all that a job enqueued by the previous deploy can be.
+ */
+export type BillTeamJobData = {
+  team_id: string;
+  org_id: string | null;
+  credits: number;
+  billing?: BillingMetadata;
+  endpoint?: BillingEndpoint;
+  is_extract: boolean;
+  timestamp: string;
+  originating_job_id?: string;
+  api_key_id: number | null;
+  autumnTrackInRequest: boolean;
+  exchangeAccessEventId?: string;
+};

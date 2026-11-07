@@ -42,6 +42,24 @@ try {
   nativeGetComputedStyle = () => ({}) as CSSStyleDeclaration;
 }
 
+/** Computed style of a pseudo-element ("::before" / "::after"), or null. */
+export const getPseudoStyle = (
+  el: Element,
+  pseudo: string,
+): CSSStyleDeclaration | null => {
+  try {
+    return (
+      nativeGetComputedStyle as (
+        el: Element,
+        pseudo?: string,
+      ) => CSSStyleDeclaration
+    )(el, pseudo);
+  } catch (e) {
+    recordError("getPseudoStyle", e);
+    return null;
+  }
+};
+
 // Style caching
 const styleCache = new WeakMap<Element, CSSStyleDeclaration>();
 
@@ -62,13 +80,26 @@ function getComputedStyleSafe(el: Element): CSSStyleDeclaration {
         }),
       ),
     );
-    return nativeGetComputedStyle(document.documentElement);
+    return getRootStyle();
+  }
+}
+
+// Computed style of <html>, or an empty style when the document has no root
+// yet (script ran before the page was parsed).
+function getRootStyle(): CSSStyleDeclaration {
+  const root: Element | null = document.documentElement;
+  if (!root) return {} as CSSStyleDeclaration;
+  try {
+    return nativeGetComputedStyle(root);
+  } catch (e) {
+    recordError("getComputedStyle:root", e);
+    return {} as CSSStyleDeclaration;
   }
 }
 
 export const getComputedStyleCached = (el: Element): CSSStyleDeclaration => {
   if (!el || typeof el !== "object" || !(el instanceof Element)) {
-    return getComputedStyleSafe(document.documentElement);
+    return getRootStyle();
   }
   if (styleCache.has(el)) {
     return styleCache.get(el)!;
@@ -83,21 +114,16 @@ export const toPx = (v: string | null | undefined): number | null => {
   if (!v || v === "auto") return null;
   if (v.endsWith("px")) return parseFloat(v);
   if (v.endsWith("rem"))
+    return parseFloat(v) * parseFloat(getRootStyle().fontSize || "16");
+  if (v.endsWith("em")) {
+    const base: Element | null = document.body ?? document.documentElement;
     return (
       parseFloat(v) *
       parseFloat(
-        getComputedStyleSafe(document.documentElement).fontSize || "16",
+        (base ? getComputedStyleSafe(base) : getRootStyle()).fontSize || "16",
       )
     );
-  if (v.endsWith("em"))
-    return (
-      parseFloat(v) *
-      parseFloat(
-        getComputedStyleSafe(
-          document.body ?? (document.documentElement as unknown as Element),
-        ).fontSize || "16",
-      )
-    );
+  }
   if (v.endsWith("%")) return null;
   const num = parseFloat(v);
   return Number.isFinite(num) ? num : null;

@@ -1,12 +1,13 @@
+import type { MockedFunction } from "vitest";
 import { sendDocumentToSearchIndex } from "../sendToSearchIndex";
 import { indexDocumentIfEnabled } from "../../../../lib/search-index-client";
 import { config } from "../../../../config";
 
-jest.mock("../../../../lib/search-index-client", () => ({
-  indexDocumentIfEnabled: jest.fn(),
+vi.mock("../../../../lib/search-index-client", () => ({
+  indexDocumentIfEnabled: vi.fn(),
 }));
 
-const mockedIndex = indexDocumentIfEnabled as jest.MockedFunction<
+const mockedIndex = indexDocumentIfEnabled as MockedFunction<
   typeof indexDocumentIfEnabled
 >;
 
@@ -52,10 +53,10 @@ describe("sendDocumentToSearchIndex lockdown guard", () => {
         zeroDataRetention: false,
       },
       logger: {
-        warn: jest.fn(),
-        info: jest.fn(),
-        debug: jest.fn(),
-        error: jest.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
       },
       ...overrides,
     }) as any;

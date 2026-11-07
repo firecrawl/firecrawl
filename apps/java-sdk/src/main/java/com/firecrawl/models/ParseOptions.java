@@ -1,6 +1,7 @@
 package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -10,8 +11,8 @@ import java.util.Map;
 /**
  * Options for parsing uploaded files via /v2/parse.
  *
- * <p>Parse does not support browser-rendering formats/options such as
- * change tracking, screenshot, branding, actions, waitFor, location, or mobile.
+     * <p>Parse does not support browser-rendering formats/options such as
+     * change tracking, screenshot, branding, product, menu, audio, video, actions, waitFor, location, or mobile.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ParseOptions {
@@ -28,6 +29,10 @@ public class ParseOptions {
     private Boolean blockAds;
     private String proxy;
     private String integration;
+    private Boolean checkPromptInjection;
+    @JsonProperty("redactPII")
+    private Boolean redactPII;
+    private AuditMetadata auditMetadata;
 
     private ParseOptions() {}
 
@@ -43,6 +48,11 @@ public class ParseOptions {
     public Boolean getBlockAds() { return blockAds; }
     public String getProxy() { return proxy; }
     public String getIntegration() { return integration; }
+    public Boolean getCheckPromptInjection() { return checkPromptInjection; }
+    @JsonProperty("redactPII")
+    public Boolean getRedactPII() { return redactPII; }
+    @JsonProperty("auditMetadata")
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -60,6 +70,9 @@ public class ParseOptions {
         b.blockAds = this.blockAds;
         b.proxy = this.proxy;
         b.integration = this.integration;
+        b.checkPromptInjection = this.checkPromptInjection;
+        b.redactPII = this.redactPII;
+        b.auditMetadata = this.auditMetadata;
         return b;
     }
 
@@ -86,7 +99,11 @@ public class ParseOptions {
                 || normalized.equals("change_tracking")
                 || normalized.equals("screenshot")
                 || normalized.equals("screenshot@fullPage")
-                || normalized.equals("branding");
+                || normalized.equals("branding")
+                || normalized.equals("product")
+                || normalized.equals("menu")
+                || normalized.equals("audio")
+                || normalized.equals("video");
     }
 
     public static final class Builder {
@@ -102,6 +119,9 @@ public class ParseOptions {
         private Boolean blockAds;
         private String proxy;
         private String integration;
+        private Boolean checkPromptInjection;
+        private Boolean redactPII;
+        private AuditMetadata auditMetadata;
 
         private Builder() {}
 
@@ -111,12 +131,20 @@ public class ParseOptions {
         public Builder excludeTags(List<String> excludeTags) { this.excludeTags = excludeTags; return this; }
         public Builder onlyMainContent(Boolean onlyMainContent) { this.onlyMainContent = onlyMainContent; return this; }
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
+        /** Parsers to use (e.g., "pdf" or PdfParser with maxPages, pages, blocks, pageMarkers). */
         public Builder parsers(List<Object> parsers) { this.parsers = parsers; return this; }
         public Builder skipTlsVerification(Boolean skipTlsVerification) { this.skipTlsVerification = skipTlsVerification; return this; }
         public Builder removeBase64Images(Boolean removeBase64Images) { this.removeBase64Images = removeBase64Images; return this; }
         public Builder blockAds(Boolean blockAds) { this.blockAds = blockAds; return this; }
         public Builder proxy(String proxy) { this.proxy = proxy; return this; }
         public Builder integration(String integration) { this.integration = integration; return this; }
+        /**
+         * Scans the parsed content for prompt injection before LLM-backed formats run.
+         * A detection fails the parse with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole content.
+         */
+        public Builder checkPromptInjection(Boolean checkPromptInjection) { this.checkPromptInjection = checkPromptInjection; return this; }
+        public Builder redactPII(Boolean redactPII) { this.redactPII = redactPII; return this; }
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public ParseOptions build() {
             if (timeout != null && timeout <= 0) {
@@ -149,6 +177,9 @@ public class ParseOptions {
             o.blockAds = this.blockAds;
             o.proxy = this.proxy;
             o.integration = this.integration;
+            o.checkPromptInjection = this.checkPromptInjection;
+            o.redactPII = this.redactPII;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

@@ -1,0 +1,82 @@
+[
+  {
+    "time": 1782145899000,
+    "options": {
+      "url": "http://www.firecrawl.dev/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "http://www.firecrawl.dev/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  },
+  {
+    "time": 1782145899001,
+    "options": {
+      "url": "https://www.firecrawl.dev/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.firecrawl.dev/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  },
+  {
+    "time": 1782145899002,
+    "options": {
+      "url": "http://127.0.0.1:4321/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "http://127.0.0.1:4321/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  },
+  {
+    "time": 1782145899003,
+    "options": {
+      "url": "http://0.0.0.0:4321/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "http://0.0.0.0:4321/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  },
+  {
+    "time": 1782145899004,
+    "options": {
+      "url": "http://0.0.0.1:4321/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "http://0.0.0.1:4321/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>http://www.firecrawl.dev/</loc></url>\n  <url><loc>http://www.firecrawl.dev/about</loc></url>\n  <url><loc>http://www.firecrawl.dev/blog</loc></url>\n</urlset>",
+      "status": 200,
+      "headers": [["content-type", "application/xml"]]
+    }
+  }
+]

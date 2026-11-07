@@ -1,5 +1,6 @@
 import { redisEvictConnection } from "../services/redis";
-import { supabase_service } from "../services/supabase";
+import { db } from "../db/connection";
+import * as schema from "../db/schema";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
@@ -36,16 +37,7 @@ export async function processBrowserSessionActivityJobs() {
   const rows: BrowserSessionActivityEvent[] = raw.map(x => JSON.parse(x));
 
   try {
-    const { error } = await supabase_service
-      .from("browser_session_activities")
-      .insert(rows);
-
-    if (error) {
-      logger.error("Failed to insert browser session activities", {
-        error,
-        count: rows.length,
-      });
-    }
+    await db.insert(schema.browser_session_activities).values(rows);
   } catch (err) {
     logger.error("Error inserting browser session activities", {
       err,

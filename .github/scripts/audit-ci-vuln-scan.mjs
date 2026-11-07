@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const AUDITS = [
   { name: "API", appPath: "apps/api", outputName: "api" },
@@ -17,16 +18,6 @@ const AUDITS = [
     name: "JavaScript SDK Firecrawl",
     appPath: "apps/js-sdk/firecrawl",
     outputName: "js-sdk-firecrawl",
-  },
-  {
-    name: "Test Suite",
-    appPath: "apps/test-suite",
-    outputName: "test-suite",
-  },
-  {
-    name: "Ingestion UI",
-    appPath: "apps/ui/ingestion-ui",
-    outputName: "ingestion-ui",
   },
   { name: "Test Site", appPath: "apps/test-site", outputName: "test-site" },
 ];
@@ -286,10 +277,27 @@ async function listOpenPullRequests() {
   return pulls;
 }
 
-function extractCoveredKeys(pulls) {
+export function isTrustedCoveragePull(pull, repository = GITHUB_REPOSITORY) {
+  if (!repository) {
+    return false;
+  }
+
+  const headRepo = pull?.head?.repo?.full_name;
+  if (typeof headRepo !== "string") {
+    return false;
+  }
+
+  return headRepo.toLowerCase() === repository.toLowerCase();
+}
+
+export function extractCoveredKeys(pulls, repository = GITHUB_REPOSITORY) {
   const covered = new Map();
 
   for (const pull of pulls) {
+    if (!isTrustedCoveragePull(pull, repository)) {
+      continue;
+    }
+
     const body = pull.body || "";
     const markers = body.matchAll(MARKER_REGEX);
 
@@ -308,7 +316,6 @@ function extractCoveredKeys(pulls) {
           const existing = covered.get(key) || [];
           existing.push({
             number: pull.number,
-            title: pull.title,
             url: pull.html_url,
           });
           covered.set(key, existing);
@@ -409,7 +416,6 @@ Override safety rules (important):
 
 Mandatory local verification (must match workflow commands):
 - Run exactly these commands locally (same tool/flags/targets as CI):
-  - \`pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc\`
   - \`pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc\`
 - If broader validation is needed, also run the other audit commands defined in \`.github/workflows/npm-audit.yml\`.
 - Do not claim success unless these CI-equivalent local commands pass (or a documented temporary ignore/blocked path is approved).
@@ -591,7 +597,18 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+function isDirectRun() {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+
+  return import.meta.url === pathToFileURL(realpathSync(path.resolve(entry))).href;
+}
+
+if (isDirectRun()) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

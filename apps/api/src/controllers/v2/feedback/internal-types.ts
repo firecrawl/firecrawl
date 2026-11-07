@@ -1,0 +1,96 @@
+import { logger as _logger } from "../../../lib/logger";
+import type { SearchResultType } from "../../../lib/entities";
+import {
+  EndpointFeedbackEndpoint,
+  EndpointFeedbackErrorCode,
+  EndpointFeedbackResponse,
+  SearchFeedbackErrorCode,
+} from "../types";
+import type { RefundClass } from "../../../lib/feedback-job-store";
+
+export type FeedbackRating = "good" | "partial" | "bad";
+
+/** A valuable result addressed by its group and 1-indexed position in it. */
+export type ValuableResultInput = {
+  source: SearchResultType;
+  position: number;
+  reason?: string;
+};
+
+export type FeedbackInput = {
+  rating: FeedbackRating;
+  issues?: string[];
+  tags?: string[];
+  note?: string;
+  valuableSources?: Array<{ url: string; reason?: string }>;
+  valuableResults?: ValuableResultInput[];
+  missingContent?: Array<{ topic: string; description?: string }>;
+  querySuggestions?: string;
+  url?: string;
+  pageNumbers?: number[];
+  metadata?: Record<string, unknown>;
+  origin?: string;
+  integration?: string | null;
+};
+
+export type FeedbackJobRow = {
+  endpoint: EndpointFeedbackEndpoint;
+  id: string;
+  request_id: string | null;
+  team_id: string;
+  credits_cost: number | null;
+  created_at: string;
+  is_successful: boolean | null;
+  options: unknown;
+  /**
+   * Per-source result counts (search only), e.g. `{"web":3,"images":0}`, read
+   * from the Bigtable feedback job. Null on jobs written before the field
+   * existed; `{}` means the search ran and every group was empty.
+   */
+  num_results_by_source?: unknown;
+  /**
+   * Which vertical served each position (search only), e.g.
+   * `{"web":{"1":"developer"}}`. Sparse: untagged results and untagged groups
+   * are absent. Null on jobs written before the field existed and on
+   * zero-data-retention searches.
+   */
+  result_categories?: unknown;
+  feedback_deadline_ms?: number;
+  refund_class?: RefundClass;
+  zero_data_retention?: boolean;
+};
+
+export type FeedbackRecordOptions = {
+  endpoint: EndpointFeedbackEndpoint;
+  jobId: string;
+  feedback: FeedbackInput;
+  requireSuccessfulJob?: boolean;
+  notFoundCode?: EndpointFeedbackErrorCode | SearchFeedbackErrorCode;
+  failedJobCode?: SearchFeedbackErrorCode;
+  dbDisabledMessage?: string;
+  windowExpiredMessage?: string;
+  maxAgeSec?: number;
+  dailyCapCredits?: number;
+  refundFeatureId?: string;
+  skipZdrPersistence?: boolean;
+  source: "feedback" | "search_feedback";
+};
+
+export type FeedbackRecordResult = {
+  status: number;
+  body: EndpointFeedbackResponse | any;
+};
+
+export type RefundPolicySnapshot = {
+  version: "feedback_refund_v1";
+  enabled: boolean;
+  endpoint: EndpointFeedbackEndpoint | "alexandria";
+  mode: "none" | "flat" | "percentage_with_cap";
+  refundableRatings: FeedbackRating[];
+  matchedReason: string;
+  flatCredits?: number;
+  percent?: number;
+  maxCredits?: number;
+};
+
+export type FeedbackLogger = ReturnType<typeof _logger.child>;

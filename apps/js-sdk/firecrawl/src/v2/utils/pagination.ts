@@ -39,7 +39,10 @@ export async function fetchAllPages<T = Document>(
       docs.push(d as T);
     }
     if (maxResults != null && docs.length >= maxResults) break;
-    current = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
+    const next = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
+    // A running job's cursor can point back at itself until new documents land; re-requesting it here only spins.
+    if (next === current) break;
+    current = next;
     pageCount += 1;
   }
   return docs;

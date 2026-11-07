@@ -1,0 +1,50 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+
+// Static, deterministic JSON-LD Product fixture used by the API `product`
+// scrape-format e2e (snips) test. Keep the title/price/currency/availability
+// stable — `apps/api/src/__tests__/snips/v2/product.test.ts` asserts on them.
+const productJsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'Product',
+	name: 'Firecrawl Test Widget',
+	description: 'A deterministic sample product used for end-to-end scrape testing.',
+	sku: 'FC-WIDGET-001',
+	brand: { '@type': 'Brand', name: 'Firecrawl' },
+	image: 'https://firecrawl.dev/firecrawl-logo.png',
+	offers: {
+		'@type': 'Offer',
+		price: '49.99',
+		priceCurrency: 'USD',
+		availability: 'https://schema.org/InStock',
+	},
+};
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title="Firecrawl Test Widget" description="A deterministic sample product used for end-to-end scrape testing." />
+		<script type="application/ld+json" is:inline set:html={JSON.stringify(productJsonLd)}></script>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<h1>Firecrawl Test Widget</h1>
+			<p>
+				This page is a deterministic sample product page. It embeds a
+				schema.org <code>Product</code> as JSON-LD so the Firecrawl
+				<code>product</code> scrape format has a stable target to extract.
+			</p>
+			<ul>
+				<li>Title: Firecrawl Test Widget</li>
+				<li>Brand: Firecrawl</li>
+				<li>Price: $49.99 USD</li>
+				<li>Availability: In stock</li>
+			</ul>
+		</main>
+		<Footer />
+	</body>
+</html>

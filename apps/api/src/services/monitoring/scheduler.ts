@@ -5,19 +5,41 @@ import {
   advanceMonitorAfterSkippedCheck,
   claimDueMonitors,
   createMonitorCheck,
+  deferMonitorClaim,
   dispatchScheduledMonitorCheck,
+  getMonitorCheckForUpdate,
   updateMonitorCheck,
+  updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
 } from "./store";
+import { autumnService } from "../autumn/autumn.service";
+import { orgIdForTeam } from "../../lib/team-org";
+import { isMonitorCheckStale, MONITOR_CHECK_STALE_ERROR } from "./stale";
+import { validateMonitorCron } from "./cron";
+import { monitorJitterOffsetMs } from "./jitter";
+import type { MonitorRow } from "./types";
 
 const logger = _logger.child({ module: "monitoring-scheduler" });
+
+// Search monitors route to a dedicated check queue (see queue.ts).
+export function monitorIsSearch(monitor: MonitorRow): boolean {
+  return (monitor.targets ?? []).some(target => target.type === "search");
+}
 
 export async function enqueueMonitorCheck(params: {
   monitorId: string;
   checkId: string;
   teamId: string;
+  search?: boolean;
 }): Promise<void> {
-  await addMonitorCheckJob(params);
+  await addMonitorCheckJob(
+    {
+      monitorId: params.monitorId,
+      checkId: params.checkId,
+      teamId: params.teamId,
+    },
+    { search: params.search },
+  );
 }
 
 export async function enqueueDueMonitorChecks(
@@ -35,10 +57,20 @@ export async function enqueueDueMonitorChecks(
   });
 
   let enqueued = 0;
-  for (const monitor of monitors) {
+  for (let monitor of monitors) {
     let check: Awaited<ReturnType<typeof createMonitorCheck>> | null = null;
     let dispatched = false;
     try {
+      if (await deferForJitter(monitor)) continue;
+
+      if (monitor.current_check_id) {
+        const resolution = await clearFinishedOrStaleCurrentCheck(monitor);
+        if (resolution === "lost_claim") continue;
+        if (resolution === "cleared") {
+          monitor = { ...monitor, current_check_id: null };
+        }
+      }
+
       if (monitor.current_check_id) {
         const skipped = await createMonitorCheck({
           monitor,
@@ -78,6 +110,7 @@ export async function enqueueDueMonitorChecks(
         monitorId: monitor.id,
         checkId: check.id,
         teamId: monitor.team_id,
+        search: monitorIsSearch(monitor),
       });
       enqueued++;
     } catch (error) {
@@ -122,4 +155,105 @@ export async function enqueueDueMonitorChecks(
   }
 
   return enqueued;
+}
+
+async function deferForJitter(monitor: MonitorRow): Promise<boolean> {
+  if (!monitor.next_run_at) return false;
+  const { intervalMs } = validateMonitorCron(
+    monitor.schedule_cron,
+    monitor.schedule_timezone,
+  );
+  const dueAt =
+    new Date(monitor.next_run_at).getTime() +
+    monitorJitterOffsetMs(monitor.id, intervalMs);
+  if (Date.now() >= dueAt) return false;
+  try {
+    await deferMonitorClaim(monitor.id, new Date(dueAt));
+  } catch (error) {
+    logger.warn("Failed to defer monitor claim for jitter", {
+      error,
+      monitorId: monitor.id,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function clearFinishedOrStaleCurrentCheck(
+  monitor: MonitorRow,
+): Promise<"cleared" | "active" | "lost_claim"> {
+  if (!monitor.current_check_id) return "cleared";
+
+  const current = await getMonitorCheckForUpdate(
+    monitor.team_id,
+    monitor.id,
+    monitor.current_check_id,
+  );
+  if (!current) return "active";
+
+  if (current.status === "running" || current.status === "queued") {
+    if (!isMonitorCheckStale(current, new Date(), monitor.targets))
+      return "active";
+
+    // Compete with the reconciler before releasing its hold. A failed claim
+    // means another worker owns completion; leave its billing and schedule alone.
+    const failed = await updateMonitorCheckIfStatus(
+      current.id,
+      current.status,
+      {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        actual_credits: 0,
+        error: MONITOR_CHECK_STALE_ERROR,
+      },
+    );
+    if (!failed) return "lost_claim";
+
+    let released = true;
+    if (failed.autumn_lock_id) {
+      // The billing service no longer finds the org for itself; without one
+      // the release goes through firebill when it is configured, settled by
+      // lock id alone.
+      const orgId = await orgIdForTeam(monitor.team_id);
+      released = await autumnService
+        .finalizeCreditsLock({
+          lockId: failed.autumn_lock_id,
+          action: "release",
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: failed.id,
+          },
+          team: orgId ? { teamId: monitor.team_id, orgId } : undefined,
+        })
+        .catch(error => {
+          logger.warn("Failed to release stale monitor check credit lock", {
+            error,
+            monitorId: monitor.id,
+            checkId: failed.id,
+            lockId: failed.autumn_lock_id,
+          });
+          return false;
+        });
+    }
+
+    const finalized = await updateMonitorCheck(failed.id, {
+      billing_status: failed.autumn_lock_id
+        ? released
+          ? "released"
+          : "failed"
+        : "not_applicable",
+    });
+    await updateMonitorScheduleAfterRun({
+      monitor,
+      check: finalized,
+    });
+    return "cleared";
+  }
+
+  await updateMonitorScheduleAfterRun({
+    monitor,
+    check: current,
+  });
+  return "cleared";
 }

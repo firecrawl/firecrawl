@@ -1,0 +1,67 @@
+{{- if .Values.cclogWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.fullname" . }}-cclog-worker
+  labels:
+    app: {{ include "firecrawl.name" . }}-cclog-worker
+spec:
+  replicas: {{ .Values.cclogWorker.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ include "firecrawl.name" . }}-cclog-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "firecrawl.name" . }}-cclog-worker
+    spec:
+      {{- if .Values.image.dockerSecretEnabled }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: cclog-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "node" ]
+          args: [ "--max-old-space-size=1024", "dist/src/services/cclog-worker.js" ]
+          ports:
+            - containerPort: {{ .Values.cclogWorker.port | int }}
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: "cclog-worker"
+            - name: CCLOG_WORKER_PORT
+              value: {{ .Values.cclogWorker.port | quote }}
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: {{ include "firecrawl.fullname" . }}-config
+            - secretRef:
+                name: {{ include "firecrawl.fullname" . }}-secret
+          {{- if and .Values.resources.enabled .Values.cclogWorker.resources }}
+          resources:
+            {{- toYaml .Values.cclogWorker.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.cclogWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.cclogWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+{{- end }}

@@ -1,6 +1,7 @@
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { describeIf, testIf, TEST_PRODUCTION } from "../lib";
 import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
 import { expectScrapeIsCleanedUp } from "../zdr-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import crypto from "crypto";
 
@@ -73,7 +74,7 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
     scrapeTimeout,
   );
 
-  test(
+  testIf(HAS_JOB_LOG)(
     "should treat lockdown as ZDR — no URL in DB, no GCS blob",
     async () => {
       const id = crypto.randomUUID();
@@ -99,10 +100,10 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
   );
 
   test(
-    "should serve cache and skip audio fetch even when audio format is requested",
+    "should serve cache and skip media fetch even when audio and video formats are requested",
     async () => {
       const id = crypto.randomUUID();
-      const url = "https://firecrawl.dev/?testAudioGate=" + id;
+      const url = "https://firecrawl.dev/?testMediaGate=" + id;
 
       const seed = await scrape({ url }, identity);
       expect(seed).toBeDefined();
@@ -110,15 +111,15 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
 
       await new Promise(resolve => setTimeout(resolve, 20000));
 
-      // Without the lockdown audio gate this would either throw
-      // AudioUnsupportedUrlError (firecrawl.dev is not an audio source) or
+      // Without the lockdown media gate this would either throw an unsupported
+      // media URL error (firecrawl.dev is not an avgrab source) or
       // POST to AVGRAB_SERVICE_URL with the target URL. Success here implies
       // the gate short-circuited before any outbound call.
       const data = await scrape(
         {
           url,
           lockdown: true,
-          formats: ["markdown", "audio"],
+          formats: ["markdown", "audio", "video"],
         },
         identity,
       );
@@ -126,6 +127,7 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
       expect(data).toBeDefined();
       expect(data.metadata.cacheState).toBe("hit");
       expect(data.audio).toBeUndefined();
+      expect(data.video).toBeUndefined();
     },
     scrapeTimeout * 2 + 20000,
   );

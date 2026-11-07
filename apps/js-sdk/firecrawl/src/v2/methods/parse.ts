@@ -1,11 +1,11 @@
-import { type Document, type ParseFile, type ParseOptions } from "../types";
+import { type Document, type ParseFile, type ParseFormatInfo, type ParseOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidParseOptions } from "../utils/validation";
 import {
   throwForBadResponse,
   normalizeAxiosError,
 } from "../utils/errorHandler";
-import { getVersion } from "../utils/getVersion";
 
 function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
   if (typeof Blob !== "undefined" && input instanceof Blob) {
@@ -56,13 +56,9 @@ export async function parse(
 
   if (options) ensureValidParseOptions(options);
 
-  const version = getVersion();
   const normalizedOptions: ParseOptions = {
     ...(options ?? {}),
-    origin:
-      typeof options?.origin === "string" && options.origin.includes("mcp")
-        ? options.origin
-        : (options?.origin ?? `js-sdk@${version}`),
+    origin: options?.origin || http.getOrigin(),
   };
 
   const formData = new FormData();
@@ -88,9 +84,20 @@ export async function parse(
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "parse");
     }
-    return (res.data.data || {}) as Document;
+    return { ...res.data.data, ...agentHintMetadata(res.data) };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "parse");
+    throw err;
+  }
+}
+
+export async function getParseFormats(http: HttpClient): Promise<ParseFormatInfo[]> {
+  try {
+    const res = await http.get<{ success: boolean; data?: { formats: ParseFormatInfo[] } }>("/v2/parse/formats");
+    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get parse formats");
+    return res.data.data?.formats ?? [];
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "get parse formats");
     throw err;
   }
 }
