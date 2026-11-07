@@ -316,13 +316,20 @@ export async function executeSearch(
   const operatorPlan = planOperatorQuery(query);
   const { operators } = operatorPlan;
   const nonEmpty = (list: string[]) => (list.length > 0 ? list : undefined);
+  // Fire Engine accepts domain filters as structured request fields. Do not
+  // also encode them as `site:` operators: that changes news provider query
+  // semantics, including date filtering. Fallback providers only accept query
+  // syntax, so retain the query-builder filters for those paths.
+  const domainFiltersInQuery = !config.FIRE_ENGINE_BETA_URL;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     operatorPlan.query,
     categories,
-    {
-      includeDomains: options.includeDomains,
-      excludeDomains: options.excludeDomains,
-    },
+    domainFiltersInQuery
+      ? {
+          includeDomains: options.includeDomains,
+          excludeDomains: options.excludeDomains,
+        }
+      : {},
   );
 
   // The developer and gov categories are each exclusive (schema-enforced) and
