@@ -212,7 +212,7 @@ export async function getMapResults({
         ? `${search} ${urlWithoutWww}`
         : search
           ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+          : `site:${urlWithoutWww}`;
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
