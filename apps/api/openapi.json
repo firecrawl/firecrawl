@@ -6425,6 +6425,7 @@
                 "type": "string",
                 "enum": ["web", "gov"]
               },
+              "minItems": 1,
               "default": ["web"]
             },
             "style": "form",
@@ -6557,14 +6558,22 @@
                     "example": "irs.gov"
                   },
                   "sources": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": ["web", "gov"]
-                    },
-                    "minItems": 1,
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "enum": ["web", "gov"]
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": ["web", "gov"]
+                        },
+                        "minItems": 1
+                      }
+                    ],
                     "default": ["web"],
-                    "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`."
+                    "description": "Result groups to return, as one name or a list. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`."
                   }
                 }
               },
@@ -12271,7 +12280,8 @@
                       "type": "integer",
                       "description": "When the page was crawled into the index, in Unix milliseconds. Omitted for results that were never crawled into the index."
                     }
-                  }
+                  },
+                  "required": ["url", "title", "description", "position"]
                 }
               }
             }
