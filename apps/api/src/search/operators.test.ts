@@ -140,10 +140,13 @@ describe("stripSiteOperators", () => {
 
   it("preserves non-site OR expressions and quoted user text", () => {
     expect(stripSiteOperators('"rock OR roll" cats or dogs site:a.com')).toBe(
-      '"rock OR roll" cats or dogs site:a.com',
+      '"rock OR roll" cats or dogs',
     );
     expect(stripSiteOperators("site:a.com OR cats")).toBe(
       "site:a.com OR cats",
+    );
+    expect(stripSiteOperators("-site:a.com OR site:b.com")).toBe(
+      "-site:a.com OR site:b.com",
     );
   });
 });
