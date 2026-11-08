@@ -104,7 +104,7 @@ export function stripSiteOperators(query: string): string {
     )
     // Only remove OR connectors between site filters. Never rewrite ordinary
     // user text such as "rock OR roll" or "cats or dogs".
-    .replace(/\u0000SITE_FILTER\u0000\s+(?:OR|\|)\s+\u0000SITE_FILTER\u0000/gi, siteFilter)
+    .replace(/\u0000SITE_FILTER\u0000(?:\s+(?:OR|\|)\s+\u0000SITE_FILTER\u0000)+/gi, siteFilter)
     .replace(/\u0000SITE_FILTER\u0000/g, "")
     // Remove groups emptied by stripping site-only filters after connectors
     // have been collapsed.
