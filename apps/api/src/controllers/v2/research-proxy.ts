@@ -568,6 +568,10 @@ function createResearchController(
   };
 }
 
+function paperId(req: Request) {
+  return (req.params.id as string[]).filter(Boolean).join("/");
+}
+
 export function createResearchRouter(options: { legacy?: boolean } = {}) {
   const router = express.Router();
 
@@ -609,7 +613,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   );
 
   router.get(
-    "/papers/:id/similar",
+    "/papers/*id/similar",
     wrap(
       createResearchController(
         similarPapersSchema,
@@ -619,9 +623,9 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           table: "research_related_papers",
           action: "similarPapers",
           targetHint: (params, req) =>
-            `${req.params.id}: ${String(params.intent)}`,
+            `${paperId(req)}: ${String(params.intent)}`,
           upstreamPath: (_params, req) =>
-            `/v2/research/papers/${encodeURIComponent(req.params.id)}/similar`,
+            `/v2/research/papers/${encodeURIComponent(paperId(req))}/similar`,
           timeoutMs: SIMILAR_PAPERS_TIMEOUT_MS,
           billAs: "search",
         },
@@ -631,7 +635,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   );
 
   router.get(
-    "/papers/:id",
+    "/papers/*id",
     wrap(async (req: Request, res: Response) => {
       const authedReq = req as RequestWithAuth<any, any, any>;
       const parsed = paperSchema.safeParse(req.query);
@@ -643,9 +647,9 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           kind: isRead ? "research_paper_read" : "research_paper_inspect",
           table: isRead ? "research_paper_reads" : "research_paper_inspects",
           action: isRead ? "readPaper" : "inspectPaper",
-          targetHint: (_params, request) => request.params.id,
+          targetHint: (_params, request) => paperId(request),
           upstreamPath: (_params, request) =>
-            `/v2/research/papers/${encodeURIComponent(request.params.id)}`,
+            `/v2/research/papers/${encodeURIComponent(paperId(request))}`,
           timeoutMs: isRead ? PAPER_READ_TIMEOUT_MS : PAPER_INSPECT_TIMEOUT_MS,
           billAs: "scrape",
         },
