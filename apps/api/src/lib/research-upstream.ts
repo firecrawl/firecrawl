@@ -88,7 +88,7 @@ export async function fetchGovUpstream(options: {
   jurisdiction?: string;
   court?: string;
   courtType?: string;
-  cites?: string[];
+  cites?: string | string[];
   domain?: string;
   sources?: ("web" | "gov")[];
   headers: Record<string, string>;

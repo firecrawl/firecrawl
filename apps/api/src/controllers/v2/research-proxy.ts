@@ -208,7 +208,8 @@ const govSearchSchema = z.strictObject({
         );
         return z.NEVER;
       }
-      return [...new Set([parsed.data].flat())];
+      const cites = [...new Set([parsed.data].flat())];
+      return cites.length === 1 ? cites[0] : cites;
     })
     .optional(),
   domain: z.string().trim().min(1).optional(),
