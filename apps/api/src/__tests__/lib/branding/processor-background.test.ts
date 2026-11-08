@@ -67,11 +67,7 @@ describe("page background", () => {
     expect(
       pickPageBackground(
         [
-          {
-            color: "rgba(0,0,0,0.95)",
-            source: "most-common-visible",
-            priority: 12,
-          },
+          { color: "rgba(0,0,0,0.95)", source: "most-common-visible", priority: 12 },
           { color: "rgb(20, 20, 20)", source: "hero", priority: 11 },
           { color: "rgb(255, 255, 255)", source: "body", priority: 10 },
         ],
@@ -84,11 +80,7 @@ describe("page background", () => {
     expect(
       pickPageBackground(
         [
-          {
-            color: "rgb(255, 255, 255)",
-            source: "header-container",
-            priority: 12,
-          },
+          { color: "rgb(255, 255, 255)", source: "header-container", priority: 12 },
           { color: "rgb(17, 17, 17)", source: "body", priority: 10 },
         ],
         "dark",
@@ -102,11 +94,7 @@ describe("page background", () => {
       raw(paragraphs, {
         scheme: "light",
         backgrounds: [
-          {
-            color: "rgba(0,0,0,0.95)",
-            source: "most-common-visible",
-            priority: 12,
-          },
+          { color: "rgba(0,0,0,0.95)", source: "most-common-visible", priority: 12 },
           { color: "rgb(255, 255, 255)", source: "body", priority: 10 },
         ],
       }),
@@ -119,9 +107,7 @@ describe("page background", () => {
 describe("link color", () => {
   const page = {
     scheme: "light" as const,
-    backgrounds: [
-      { color: "rgb(255, 255, 255)", source: "body", priority: 10 },
-    ],
+    backgrounds: [{ color: "rgb(255, 255, 255)", source: "body", priority: 10 }],
   };
 
   it("is what the content's links are written in, not the navigation's", () => {
@@ -130,26 +116,10 @@ describe("link color", () => {
         [
           ...paragraphs,
           ...["Docs", "Pricing", "Blog"].map(text =>
-            snap({
-              tag: "a",
-              text,
-              textColor: "rgb(255, 255, 255)",
-              isLink: true,
-              isNavigation: true,
-            }),
+            snap({ tag: "a", text, textColor: "rgb(255, 255, 255)", isLink: true, isNavigation: true }),
           ),
-          snap({
-            tag: "a",
-            text: "Read more",
-            textColor: "rgb(51, 102, 204)",
-            isLink: true,
-          }),
-          snap({
-            tag: "a",
-            text: "Terms",
-            textColor: "rgb(51, 102, 204)",
-            isLink: true,
-          }),
+          snap({ tag: "a", text: "Read more", textColor: "rgb(51, 102, 204)", isLink: true }),
+          snap({ tag: "a", text: "Terms", textColor: "rgb(51, 102, 204)", isLink: true }),
         ],
         page,
       ),
@@ -163,13 +133,7 @@ describe("link color", () => {
       raw(
         [
           ...paragraphs,
-          snap({
-            tag: "a",
-            text: "Docs",
-            textColor: "rgb(200, 30, 30)",
-            isLink: true,
-            isNavigation: true,
-          }),
+          snap({ tag: "a", text: "Docs", textColor: "rgb(200, 30, 30)", isLink: true, isNavigation: true }),
         ],
         page,
       ),
@@ -186,31 +150,10 @@ describe("link color", () => {
       raw(
         [
           ...paragraphs,
-          snap({
-            tag: "a",
-            text: "Unstyled",
-            textColor: "rgb(0, 0, 238)",
-            isLink: true,
-          }),
-          snap({
-            tag: "a",
-            text: "Plain",
-            textColor: "rgb(17, 17, 17)",
-            isLink: true,
-          }),
-          snap({
-            tag: "a",
-            text: "Plain too",
-            textColor: "rgb(17, 17, 17)",
-            isLink: true,
-          }),
-          snap({
-            tag: "a",
-            text: "Docs",
-            textColor: "rgb(255, 255, 255)",
-            isLink: true,
-            isNavigation: true,
-          }),
+          snap({ tag: "a", text: "Unstyled", textColor: "rgb(0, 0, 238)", isLink: true }),
+          snap({ tag: "a", text: "Plain", textColor: "rgb(17, 17, 17)", isLink: true }),
+          snap({ tag: "a", text: "Plain too", textColor: "rgb(17, 17, 17)", isLink: true }),
+          snap({ tag: "a", text: "Docs", textColor: "rgb(255, 255, 255)", isLink: true, isNavigation: true }),
         ],
         page,
       ),
@@ -225,24 +168,12 @@ describe("link color", () => {
           ...Array.from({ length: 12 }, (_, i) =>
             snap({ text: `Paragraph ${i}`, textColor: "rgb(255, 255, 255)" }),
           ),
-          snap({
-            text: "Get started",
-            textColor: "rgb(255, 255, 255)",
-            background: "rgb(0, 97, 254)",
-            isButton: true,
-          }),
-          snap({
-            tag: "a",
-            text: "Docs",
-            textColor: "rgb(255, 255, 255)",
-            isLink: true,
-          }),
+          snap({ text: "Get started", textColor: "rgb(255, 255, 255)", background: "rgb(0, 97, 254)", isButton: true }),
+          snap({ tag: "a", text: "Docs", textColor: "rgb(255, 255, 255)", isLink: true }),
         ],
         {
           scheme: "dark",
-          backgrounds: [
-            { color: "rgb(17, 17, 17)", source: "body", priority: 10 },
-          ],
+          backgrounds: [{ color: "rgb(17, 17, 17)", source: "body", priority: 10 }],
         },
       ),
     );
@@ -255,31 +186,19 @@ describe("link color", () => {
       raw(
         [
           ...paragraphs,
-          snap({
-            tag: "button",
-            text: "Get started",
-            textColor: "rgb(255, 255, 255)",
-            background: "rgba(0, 97, 254, 0.5)",
-            isButton: true,
-          }),
+          snap({ tag: "button", text: "Get started", textColor: "rgb(255, 255, 255)", background: "rgba(0, 97, 254, 0.5)", isButton: true }),
         ],
         {
           scheme: "light",
           backgrounds: [
-            {
-              color: "rgba(0,0,0,0.95)",
-              source: "most-common-visible",
-              priority: 12,
-            },
+            { color: "rgba(0,0,0,0.95)", source: "most-common-visible", priority: 12 },
             { color: "rgb(255, 255, 255)", source: "body", priority: 10 },
           ],
         },
       ),
     );
     // 50% brand blue over white, not over the backdrop's black.
-    expect((profile as any).__button_snapshots?.[0]?.background).toBe(
-      "#80B0FF",
-    );
+    expect((profile as any).__button_snapshots?.[0]?.background).toBe("#80B0FF");
   });
 
   it("does not blend an overlay into gray when nothing measured can be the page", () => {
@@ -287,11 +206,7 @@ describe("link color", () => {
       raw(paragraphs, {
         scheme: "light",
         backgrounds: [
-          {
-            color: "rgba(0,0,0,0.5)",
-            source: "most-common-visible",
-            priority: 12,
-          },
+          { color: "rgba(0,0,0,0.5)", source: "most-common-visible", priority: 12 },
         ],
       }),
     );
