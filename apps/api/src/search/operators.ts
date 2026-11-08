@@ -87,16 +87,28 @@ export function parseQueryOperators(query: string): QueryOperators {
 export function stripSiteOperators(query: string): string {
   if (hasUnsupportedOr(query)) return query;
 
+  const siteFilter = "\u0000SITE_FILTER\u0000";
   return query
     .replace(
       OPERATOR_TOKEN,
-      (token, phrase, lead, _negated, name, _quoted, _bare, closing) => {
+      (token, phrase, lead, _negated, name, quoted, bare, closing) => {
         if (phrase !== undefined || name.toLowerCase() !== "site") return token;
-        return lead + closing;
+
+        // Structured domain filters cannot represent a path restriction.
+        // Keep path-scoped operators in the provider query.
+        const value = quoted ?? bare ?? "";
+        if (value.includes("/")) return token;
+
+        return lead + siteFilter + closing;
       },
     )
+    // Only remove OR connectors between site filters. Never rewrite ordinary
+    // user text such as "rock OR roll" or "cats or dogs".
+    .replace(/\u0000SITE_FILTER\u0000\s+(?:OR|\|)\s+\u0000SITE_FILTER\u0000/gi, siteFilter)
+    .replace(/\u0000SITE_FILTER\u0000/g, "")
+    // Remove groups emptied by stripping site-only filters after connectors
+    // have been collapsed.
     .replace(/\(\s*\)/g, " ")
-    .replace(/\s+(?:OR|\|)\s+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
