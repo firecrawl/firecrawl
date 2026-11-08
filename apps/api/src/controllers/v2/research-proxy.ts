@@ -164,6 +164,8 @@ const govSource = z.enum(["web", "gov"]);
 
 const govCite = z.string().trim().min(1);
 
+const govCites = z.array(govCite).min(1).max(32);
+
 const govSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
@@ -193,11 +195,22 @@ const govSearchSchema = z.strictObject({
     ])
     .optional(),
   cites: z
-    .union([govCite, z.array(govCite).min(1).max(32)])
-    .optional()
-    .transform(value =>
-      value === undefined ? undefined : [...new Set([value].flat())],
-    ),
+    .unknown()
+    .transform((value, ctx) => {
+      const parsed = (Array.isArray(value) ? govCites : govCite).safeParse(
+        value,
+      );
+      if (!parsed.success) {
+        ctx.issues.push(
+          ...parsed.error.issues.map(
+            issue => ({ ...issue, input: value }) as z.core.$ZodRawIssue,
+          ),
+        );
+        return z.NEVER;
+      }
+      return [...new Set([parsed.data].flat())];
+    })
+    .optional(),
   domain: z.string().trim().min(1).optional(),
   sources: z
     .union([govSource, z.array(govSource).min(1)])
