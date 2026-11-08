@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import { shouldCheckRobots } from "../shouldCheckRobots";
 
 describe("shouldCheckRobots", () => {
@@ -33,5 +34,21 @@ describe("shouldCheckRobots", () => {
         { teamFlags: { checkRobotsOnScrape: true } as any },
       ),
     ).toBe(true);
+  });
+});
+
+describe("shouldCheckRobots FAST_CRAWL", () => {
+  afterEach(() => {
+    delete (config as any).FAST_CRAWL;
+  });
+
+  it("returns false when FAST_CRAWL is set, even if the team flag is on", () => {
+    (config as any).FAST_CRAWL = true;
+    expect(
+      shouldCheckRobots(
+        { lockdown: false },
+        { teamFlags: { checkRobotsOnScrape: true } as any },
+      ),
+    ).toBe(false);
   });
 });

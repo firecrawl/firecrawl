@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { checkPermissions } from "./permissions";
 
 describe("checkPermissions — threat protection", () => {
@@ -50,6 +51,32 @@ describe("checkPermissions — threat protection", () => {
         { threatProtection: "allowed" },
         { threatProtectionOrgConfig: null },
       ),
+    ).toEqual({});
+  });
+});
+
+describe("checkPermissions — FAST_CRAWL robots overrides", () => {
+  const robotsRequest = { crawlerOptions: { robotsUserAgent: "CustomBot" } };
+
+  afterEach(() => {
+    delete (config as any).FAST_CRAWL;
+  });
+
+  it("rejects robotsUserAgent without the enterprise flag when FAST_CRAWL is unset", () => {
+    expect(checkPermissions(robotsRequest, null).error).toMatch(
+      /enterprise feature/,
+    );
+  });
+
+  it("allows robotsUserAgent without the enterprise flag when FAST_CRAWL is set", () => {
+    (config as any).FAST_CRAWL = true;
+    expect(checkPermissions(robotsRequest, null)).toEqual({});
+  });
+
+  it("still allows robotsUserAgent with the enterprise flag when FAST_CRAWL is set", () => {
+    (config as any).FAST_CRAWL = true;
+    expect(
+      checkPermissions(robotsRequest, { customRobotsAgent: "allowed" } as any),
     ).toEqual({});
   });
 });

@@ -74,6 +74,7 @@ export function checkPermissions(
   // customRobotsAgent perms — separate flag for robotsUserAgent
   const customAgentMode = getCustomRobotsAgent(flags);
   if (
+    config.FAST_CRAWL !== true &&
     request.crawlerOptions?.robotsUserAgent &&
     customAgentMode !== "allowed"
   ) {

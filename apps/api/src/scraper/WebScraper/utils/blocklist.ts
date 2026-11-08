@@ -271,6 +271,9 @@ export function isUrlBlocked(
   flags: TeamFlags,
   context?: BlockContext,
 ): boolean {
+  if (config.FAST_CRAWL === true) {
+    return false;
+  }
   if (blob === null) {
     throw new Error("Blocklist not initialized");
   }

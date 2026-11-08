@@ -1,3 +1,4 @@
+import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v1/types";
 
 // The invariant "lockdown never fetches robots.txt" is load-bearing for the
@@ -8,6 +9,9 @@ export function shouldCheckRobots(
   options: { lockdown?: boolean },
   internalOptions: { teamFlags?: TeamFlags },
 ): boolean {
+  if (config.FAST_CRAWL === true) {
+    return false;
+  }
   if (options.lockdown) {
     return false;
   }

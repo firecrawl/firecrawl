@@ -197,6 +197,10 @@ type KeylessCreditReservationResult = {
 export async function consumeKeylessRequest(
   ip: string,
 ): Promise<KeylessConsumeResult> {
+  if (config.FAST_CRAWL === true) {
+    return { ok: true, requestsUsed: 0, creditsUsed: 0 };
+  }
+
   const requestLimit = KEYLESS_REQUESTS_PER_DAY ?? 0;
   const creditLimit = KEYLESS_CREDITS_PER_DAY ?? 0;
 
@@ -240,6 +244,10 @@ export async function reserveKeylessCredits(
   teamId: string,
   projectedCredits: number,
 ): Promise<KeylessCreditReservationResult> {
+  if (config.FAST_CRAWL === true) {
+    return { ok: true, creditsUsed: 0, limit: KEYLESS_CREDITS_PER_DAY ?? 0 };
+  }
+
   const ip = keylessIpFromTeamId(teamId);
   const limit = KEYLESS_CREDITS_PER_DAY ?? 0;
   if (!ip || !Number.isFinite(projectedCredits) || projectedCredits <= 0) {

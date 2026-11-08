@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { config } from "../../../config";
 import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { CrawlDenialError } from "../../../lib/error";
@@ -95,6 +96,23 @@ describe("Scrape robots policy", () => {
 
       expect(result.success).toBe(true);
       expect(engines.scrapeURLWithEngine).toHaveBeenCalled();
+    },
+    scrapeTimeout,
+  );
+
+  itIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "skips robots entirely when FAST_CRAWL is set, even with the team flag on",
+    async () => {
+      (config as any).FAST_CRAWL = true;
+      try {
+        const result = await runScrape();
+
+        expect(result.success).toBe(true);
+        expect(robots.fetchRobotsTxt).not.toHaveBeenCalled();
+        expect(engines.scrapeURLWithEngine).toHaveBeenCalled();
+      } finally {
+        delete (config as any).FAST_CRAWL;
+      }
     },
     scrapeTimeout,
   );

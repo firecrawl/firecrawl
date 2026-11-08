@@ -1,4 +1,5 @@
 import type { TeamFlags } from "../../../controllers/v1/types";
+import { config } from "../../../config";
 import {
   hasOrgScopedBlocklist,
   initializeBlocklist,
@@ -219,5 +220,28 @@ describe("isUrlBlocked", () => {
         "No global blocklist row",
       );
     });
+  });
+});
+
+describe("isUrlBlocked FAST_CRAWL", () => {
+  beforeAll(async () => {
+    dbState.rows = [GLOBAL_ROW];
+    await initializeBlocklist();
+  });
+
+  afterEach(() => {
+    delete (config as any).FAST_CRAWL;
+  });
+
+  it("returns false for blocklisted URLs when FAST_CRAWL is set", () => {
+    (config as any).FAST_CRAWL = true;
+    expect(isUrlBlocked("https://facebook.com/profile", null)).toBe(false);
+    expect(isUrlBlocked("https://facebook.com/profile", null, ctx(ORG_A))).toBe(
+      false,
+    );
+  });
+
+  it("keeps blocking when FAST_CRAWL is unset", () => {
+    expect(isUrlBlocked("https://facebook.com/profile", null)).toBe(true);
   });
 });
