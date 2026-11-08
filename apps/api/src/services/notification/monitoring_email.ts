@@ -79,12 +79,17 @@ export type MonitoringEmailPayload = {
   summary: {
     changed: number;
     new: number;
+    same: number;
     removed: number;
     error: number;
     totalPages: number;
   };
   pages: MonitoringEmailPage[];
   creditsUsed: number | null;
+  // Search monitors only ever produce new/same/error (never changed/removed), so the
+  // summary is rendered as matches / already seen / checked instead of the
+  // scrape/crawl change breakdown.
+  isSearch?: boolean;
   // When omitted, the footer drops the unsubscribe row.
   unsubscribeUrl?: string;
 };
@@ -172,8 +177,19 @@ You're receiving this because you opted in to Firecrawl monitor alerts at this a
 </p>`;
 }
 
+// Search pages are matches, not tracked-page transitions — relabel new/same for the
+// email so a search alert reads "match" / "already seen" instead of "new" / "same".
+function pageStatusLabel(status: string, isSearch: boolean): string {
+  if (!isSearch) return status;
+  if (status === "new") return "match";
+  if (status === "same") return "already seen";
+  return status;
+}
+
 export function buildHtml(payload: MonitoringEmailPayload): string {
-  const sortedPages = [...payload.pages].sort((a, b) => {
+  const sortedPages = payload.pages.filter(page => page.status !== "error");
+
+  sortedPages.sort((a, b) => {
     const aMeaningful = a.judgment?.meaningful === true ? 0 : 1;
     const bMeaningful = b.judgment?.meaningful === true ? 0 : 1;
     return aMeaningful - bMeaningful;
@@ -199,7 +215,7 @@ export function buildHtml(payload: MonitoringEmailPayload): string {
           ? renderDiffBlock(page.diffText)
           : "";
       const pageError = userFacingPageError(page.error);
-      return `<li style="margin:0 0 14px;"><strong>${escapeHtml(page.status)}</strong>${badge}: <a href="${url}">${url}</a>${
+      return `<li style="margin:0 0 14px;"><strong>${escapeHtml(pageStatusLabel(page.status, payload.isSearch ?? false))}</strong>${badge}: <a href="${url}">${url}</a>${
         pageError ? ` &mdash; ${escapeHtml(pageError)}` : ""
       }${reason}${diffBlock}</li>`;
     })
@@ -216,14 +232,33 @@ export function buildHtml(payload: MonitoringEmailPayload): string {
       ? `Changed: ${payload.summary.changed} (${meaningfulCount} meaningful, ${noiseCount} noise)`
       : `Changed: ${payload.summary.changed}`;
 
-  return `Hey there,<br/>
-<p>Your Firecrawl monitor <strong>${escapeHtml(payload.monitorName)}</strong> detected activity.</p>
-<ul>
-  <li>${changedLine}</li>
+  // Search monitors find results; scrape/crawl monitors track page changes — so the
+  // intro line + breakdown read differently for each. Search never produces
+  // changed/removed, so those rows are dropped in favour of matches/already-seen/checked.
+  let activityLine: string;
+  if (!payload.isSearch) {
+    activityLine = "detected activity";
+  } else if (payload.summary.new > 0) {
+    activityLine =
+      payload.summary.new === 1
+        ? "found a new match"
+        : `found ${payload.summary.new} new matches`;
+  } else {
+    activityLine = "detected activity";
+  }
+  const summaryItems = payload.isSearch
+    ? `  <li>Matches: ${payload.summary.new}</li>
+  <li>Already seen: ${payload.summary.same}</li>
+  <li>Checked: ${payload.summary.totalPages}</li>`
+    : `  <li>${changedLine}</li>
   <li>New: ${payload.summary.new}</li>
   <li>Removed: ${payload.summary.removed}</li>
-  <li>Errors: ${payload.summary.error}</li>
-  <li>Total pages checked: ${payload.summary.totalPages}</li>
+  <li>Total pages checked: ${payload.summary.totalPages}</li>`;
+
+  return `Hey there,<br/>
+<p>Your Firecrawl monitor <strong>${escapeHtml(payload.monitorName)}</strong> ${activityLine}.</p>
+<ul>
+${summaryItems}
 </ul>
 ${pageItems ? `<p>Top pages:</p><ul>${pageItems}</ul>` : ""}
 <p><a href="${dashboardUrl}">View this check in the dashboard</a></p>
@@ -463,11 +498,19 @@ export async function sendMonitoringEmailSummary(params: {
     return { attempted: false, success: true, recipients: [] };
   }
 
+  if (params.check.status === "failed") {
+    logger.info("Skipping monitoring email summary; check failed", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+      error: params.check.error,
+    });
+    return { attempted: false, success: true, recipients: [] };
+  }
+
   if (
     params.check.changed_count +
       params.check.new_count +
-      params.check.removed_count +
-      params.check.error_count <=
+      params.check.removed_count <=
     0
   ) {
     logger.info("Skipping monitoring email summary; no changes detected", {
@@ -579,12 +622,16 @@ export async function sendMonitoringEmailSummary(params: {
         summary: {
           changed: params.check.changed_count,
           new: params.check.new_count,
+          same: params.check.same_count,
           removed: params.check.removed_count,
           error: params.check.error_count,
           totalPages: params.check.total_pages,
         },
         pages: params.pages,
         creditsUsed: params.check.actual_credits,
+        isSearch:
+          (params.monitor.targets?.length ?? 0) > 0 &&
+          (params.monitor.targets ?? []).every(t => t.type === "search"),
         unsubscribeUrl: buildRecipientUnsubscribeUrl(recipient.token),
       };
 

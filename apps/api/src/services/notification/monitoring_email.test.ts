@@ -12,7 +12,7 @@ const {
   mockResendSend: vi.fn(),
 }));
 
-vi.mock("../monitoring/email_recipients", async (importOriginal) => {
+vi.mock("../monitoring/email_recipients", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../monitoring/email_recipients")>();
   return {
@@ -135,6 +135,7 @@ describe("monitoring email URLs", () => {
       summary: {
         changed: 1,
         new: 0,
+        same: 0,
         removed: 0,
         error: 0,
         totalPages: 1,
@@ -166,11 +167,126 @@ describe("monitoring email URLs", () => {
       monitorName: "M",
       checkId: "c1",
       dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
-      summary: { changed: 0, new: 1, removed: 0, error: 0, totalPages: 1 },
+      summary: {
+        changed: 0,
+        new: 1,
+        same: 0,
+        removed: 0,
+        error: 0,
+        totalPages: 1,
+      },
       pages: [{ url: "https://example.com", status: "new" }],
       creditsUsed: 1,
     });
     expect(html).not.toContain("Unsubscribe from this monitor");
+  });
+
+  it("renders search monitors as matches/already-seen/checked, not the change breakdown", () => {
+    const html = buildHtml({
+      monitorId: "m1",
+      monitorName: "AI news",
+      checkId: "c1",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      summary: {
+        changed: 0,
+        new: 2,
+        same: 6,
+        removed: 0,
+        error: 0,
+        totalPages: 8,
+      },
+      pages: [{ url: "https://example.com", status: "new" }],
+      creditsUsed: 1,
+      isSearch: true,
+    });
+    // search-appropriate language
+    expect(html).toContain("found 2 new matches");
+    expect(html).toContain("Matches: 2");
+    expect(html).toContain("Already seen: 6");
+    expect(html).toContain("Checked: 8");
+    // the scrape/crawl-only rows are gone
+    expect(html).not.toContain("Removed:");
+    expect(html).not.toContain("Changed:");
+    expect(html).not.toContain("Total pages checked:");
+    // no errors → no error row
+    expect(html).not.toContain("Errors:");
+  });
+
+  it("uses singular match phrasing and hides page errors (search)", () => {
+    const html = buildHtml({
+      monitorId: "m1",
+      monitorName: "AI news",
+      checkId: "c1",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      summary: {
+        changed: 0,
+        new: 1,
+        same: 3,
+        removed: 0,
+        error: 1,
+        totalPages: 8,
+      },
+      pages: [
+        { url: "https://example.com/new", status: "new" },
+        { url: "https://example.com/failed", status: "error" },
+      ],
+      creditsUsed: 1,
+      isSearch: true,
+    });
+    expect(html).toContain("found a new match");
+    expect(html).not.toContain("Errors:");
+    expect(html).toContain("https://example.com/new");
+    expect(html).not.toContain("https://example.com/failed");
+  });
+
+  it("does not render error details for an error-only search check", () => {
+    const html = buildHtml({
+      monitorId: "m1",
+      monitorName: "AI news",
+      checkId: "c1",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      summary: {
+        changed: 0,
+        new: 0,
+        same: 8,
+        removed: 0,
+        error: 2,
+        totalPages: 8,
+      },
+      pages: [{ url: "https://example.com", status: "error" }],
+      creditsUsed: 1,
+      isSearch: true,
+    });
+    expect(html).not.toContain("ran into");
+    expect(html).not.toContain("0 new matches");
+    expect(html).not.toContain("Errors:");
+    expect(html).not.toContain("Top pages:");
+    expect(html).not.toContain("https://example.com");
+  });
+
+  it("does not render singular error details for an error-only search check", () => {
+    const html = buildHtml({
+      monitorId: "m1",
+      monitorName: "AI news",
+      checkId: "c1",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      summary: {
+        changed: 0,
+        new: 0,
+        same: 5,
+        removed: 0,
+        error: 1,
+        totalPages: 6,
+      },
+      pages: [{ url: "https://example.com", status: "error" }],
+      creditsUsed: 1,
+      isSearch: true,
+    });
+    expect(html).not.toContain("ran into");
+    expect(html).not.toContain("new match");
+    expect(html).not.toContain("Errors:");
+    expect(html).not.toContain("Top pages:");
+    expect(html).not.toContain("https://example.com");
   });
 });
 
@@ -234,6 +350,7 @@ describe("sendMonitoringEmailSummary", () => {
     goal?: string | null;
     emailEnabled?: boolean;
     recipients?: string[];
+    status?: string;
     pages: Array<{
       status: string;
       meaningful?: boolean | null;
@@ -257,10 +374,12 @@ describe("sendMonitoringEmailSummary", () => {
       } as any,
       check: {
         id: "check-1",
+        status: opts.status ?? "completed",
         changed_count: opts.pages.filter(p => p.status === "changed").length,
         new_count: opts.pages.filter(p => p.status === "new").length,
         removed_count: opts.pages.filter(p => p.status === "removed").length,
         error_count: opts.pages.filter(p => p.status === "error").length,
+        error: opts.status === "failed" ? "scrape failed" : null,
       } as any,
       pages: opts.pages.map((p, i) => ({
         url: `https://example.com/${i}`,
@@ -277,6 +396,49 @@ describe("sendMonitoringEmailSummary", () => {
       })),
     };
   }
+
+  it("does not send email summaries for failed checks", async () => {
+    mockListRecipients.mockResolvedValue([
+      fakeRecipient("a@b.com", "confirmed"),
+    ]);
+
+    const result = await sendMonitoringEmailSummary(
+      buildArgs({
+        emailEnabled: true,
+        status: "failed",
+        pages: [{ status: "error" }],
+      }),
+    );
+
+    expect(result).toEqual({
+      attempted: false,
+      success: true,
+      recipients: [],
+    });
+    expect(mockListRecipients).not.toHaveBeenCalled();
+    expect(mockResendSend).not.toHaveBeenCalled();
+  });
+
+  it("does not send email summaries for error-only checks", async () => {
+    mockListRecipients.mockResolvedValue([
+      fakeRecipient("a@b.com", "confirmed"),
+    ]);
+
+    const result = await sendMonitoringEmailSummary(
+      buildArgs({
+        emailEnabled: true,
+        pages: [{ status: "error" }],
+      }),
+    );
+
+    expect(result).toEqual({
+      attempted: false,
+      success: true,
+      recipients: [],
+    });
+    expect(mockListRecipients).not.toHaveBeenCalled();
+    expect(mockResendSend).not.toHaveBeenCalled();
+  });
 
   describe("judgment gating", () => {
     beforeEach(() => {
