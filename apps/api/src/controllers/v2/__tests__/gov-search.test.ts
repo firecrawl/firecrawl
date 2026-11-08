@@ -274,15 +274,15 @@ describe("/v2/search/gov", () => {
   );
 
   it.each([
-    ["GET", "us:usc:42:1983", ["us:usc:42:1983"]],
+    ["GET", "us:usc:42:1983", "us:usc:42:1983"],
     [
       "GET",
       ["us:usc:42:1983", "us:us-reports:5:137"],
       ["us:usc:42:1983", "us:us-reports:5:137"],
     ],
-    ["POST", [" us:usc:42:1983 ", "us:usc:42:1983"], ["us:usc:42:1983"]],
+    ["POST", [" us:usc:42:1983 ", "us:usc:42:1983"], "us:usc:42:1983"],
   ] as const)(
-    "forwards a %s cites filter %j as a list",
+    "forwards a %s cites filter %j as %j",
     async (method, cites, expected) => {
       const res = makeRes();
       await handler(method === "GET" ? "get" : "post")(
