@@ -211,6 +211,8 @@ Only for sites you have a legitimate subscription to. Pick one of three approach
 
 Launch a dedicated Chrome instance with a CDP port open, log into your subscription **once** in that window, then point the scraper at it. This reuses your browser session; sites can still detect automation.
 
+**Shortcut (Linux/macOS):** `task scraper:chrome` starts it with the flags below (logs go to `~/.scraper-chrome/chrome.log`), waits until the port answers, and does nothing if Chrome is already listening. Use `CDP_PORT=9333` for another port.
+
 **One-time setup (Linux):**
 
 ```bash

@@ -114,6 +114,37 @@ tasks:
     cmds:
       - pnpm exec tsx src/cli.ts
 
+  scraper:chrome:
+    desc: 'Start the dedicated Chrome (profile ~/.scraper-chrome) with CDP on :9222 for --engine cdp. Override: task scraper:chrome CDP_PORT=9333'
+    silent: true
+    vars:
+      CDP_PORT: '{{.CDP_PORT | default "9222"}}'
+      PROFILE: '{{.HOME}}/.scraper-chrome'
+    cmds:
+      - |
+        if curl -sf "http://localhost:{{.CDP_PORT}}/json/version" >/dev/null; then
+          echo "Chrome already listening on :{{.CDP_PORT}}"
+          exit 0
+        fi
+        mkdir -p "{{.PROFILE}}"
+        args="--remote-debugging-port={{.CDP_PORT}} --user-data-dir={{.PROFILE}} --no-first-run --no-default-browser-check"
+        if [ "$(uname)" = "Darwin" ]; then
+          open -na "Google Chrome" --args $args
+        else
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser) \
+            || { echo "Chrome not found on PATH" >&2; exit 1; }
+          nohup "$chrome" $args >"{{.PROFILE}}/chrome.log" 2>&1 &
+        fi
+        for _ in $(seq 1 50); do
+          if curl -sf "http://localhost:{{.CDP_PORT}}/json/version" >/dev/null; then
+            echo "Chrome CDP ready → http://localhost:{{.CDP_PORT}} (logs: {{.PROFILE}}/chrome.log)"
+            exit 0
+          fi
+          sleep 0.3
+        done
+        echo "Chrome did not answer on :{{.CDP_PORT}} within 15s; see {{.PROFILE}}/chrome.log" >&2
+        exit 1
+
   scraper:install:
     desc: Install scraper deps
     dir: apps/cli/scraper
