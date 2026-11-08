@@ -101,45 +101,58 @@ tasks:
       - docker compose exec redis redis-cli
 
   # ----- Scraper CLI (run via tsx — no build needed) -----
+  # The one entry point: a terminal wizard picks every option (archive a site
+  # through Chrome/CDP or the API, transcribe media, set up whisper.cpp) and
+  # then shows a live dashboard. The flag-based tasks below remain for scripts.
+  scraper:
+    desc: Open the interactive scraper (archive a site, transcribe media, set up transcription)
+    dir: apps/cli/scraper
+    interactive: true
+    silent: true
+    env:
+      SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - pnpm exec tsx src/cli.ts
+
   scraper:install:
     desc: Install scraper deps
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
       - pnpm install
 
   scraper:typecheck:
     desc: Typecheck scraper with tsgo
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
       - pnpm exec tsgo --noEmit
 
   scraper:lint:
     desc: Lint scraper with oxlint
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
       - pnpm exec oxlint .
 
   scraper:format:
     desc: Format scraper with oxfmt
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
       - pnpm exec oxfmt --write .
 
   scraper:test:
     desc: Run scraper unit tests with vitest
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
       - pnpm exec vitest run
 
   scraper:build:
     desc: Bundle scraper with tsdown (optional — tsx is the default runner)
-    dir: apps/scraper
+    dir: apps/cli/scraper
     cmds:
-      - pnpm exec tsdown
+      - pnpm run build
 
   scrape:
     desc: 'Scrape one URL → markdown on stdout. Usage: task scrape -- https://example.com'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:
@@ -152,7 +165,7 @@ tasks:
   # Use --limit 1 to archive only the supplied URL.
   scrape:all:cdp:
     desc: 'Archive a site through Chrome/CDP into data/. Usage: task scrape:all:cdp -- https://example.com'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:
@@ -160,7 +173,7 @@ tasks:
 
   scrape:all:api:
     desc: 'Archive a site through the local API into data/. Usage: task scrape:all:api -- https://example.com'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:
@@ -168,7 +181,7 @@ tasks:
 
   scrape:batch:
     desc: 'Batch scrape from file. Usage: task scrape:batch -- --file urls.txt --out ./out/'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:
@@ -176,7 +189,7 @@ tasks:
 
   crawl:
     desc: 'Crawl a site. Usage: task crawl -- https://example.com --limit 50 --out ./crawl/'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:
@@ -184,7 +197,7 @@ tasks:
 
   map:
     desc: 'List URLs on a site. Usage: task map -- https://example.com'
-    dir: apps/scraper
+    dir: apps/cli/scraper
     env:
       SCRAPER_INVOKE_CWD: "{{.USER_WORKING_DIR}}"
     cmds:

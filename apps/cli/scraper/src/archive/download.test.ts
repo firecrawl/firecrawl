@@ -1,0 +1,266 @@
+import { createServer, type Server } from "node:http";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { downloadMedia, retryDelay, type MediaTransferProgress } from "./download.js";
+
+let server: Server;
+let base = "";
+let root = "";
+let leaked: string | undefined;
+let attempts = 0;
+
+beforeAll(async () => {
+  root = await mkdtemp(join(tmpdir(), "archive-download-"));
+  server = createServer((req, res) => {
+    const path = req.url ?? "";
+    if (path === "/redirect") {
+      res.writeHead(302, { Location: base.replace("127.0.0.1", "localhost") + "/received" });
+      res.end();
+      return;
+    }
+    if (path === "/received") leaked = req.headers.cookie ?? req.headers.authorization;
+    if (path === "/retry") {
+      attempts++;
+      if (attempts < 3) {
+        res.writeHead(429, { "Retry-After": "0" });
+        res.end();
+        return;
+      }
+    }
+    if (path === "/html") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("login");
+      return;
+    }
+    if (path === "/audio") {
+      res.writeHead(200, { "Content-Type": "audio/mpeg" });
+      res.end("audio");
+      return;
+    }
+    if (path === "/ogg") {
+      res.writeHead(200, { "Content-Type": "application/ogg" });
+      res.end("ogg");
+      return;
+    }
+    if (path === "/stream") {
+      res.writeHead(200, { "Content-Type": "application/x-mpegURL" });
+      res.end("playlist");
+      return;
+    }
+    res.setHeader("Content-Type", "image/png");
+    if (path === "/large") res.setHeader("Content-Length", "1000");
+    if (path === "/progress") {
+      res.setHeader("Content-Length", "8");
+      res.write("1234");
+      setTimeout(() => res.end("5678"), 30);
+      return;
+    }
+    if (path === "/compressed") {
+      const payload = gzipSync(Buffer.alloc(64));
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Content-Length", String(payload.length));
+      res.end(payload);
+      return;
+    }
+    if (path === "/slow") {
+      res.write(Buffer.alloc(1));
+      const timer = setInterval(() => res.write(Buffer.alloc(1)), 20);
+      req.on("close", () => clearInterval(timer));
+      return;
+    }
+    if (path === "/chunked") {
+      res.write(Buffer.alloc(20));
+      res.end(Buffer.alloc(20));
+      return;
+    }
+    res.end("image");
+  });
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No fixture port");
+  base = `http://127.0.0.1:${address.port}`;
+});
+
+afterAll(async () => {
+  server.closeAllConnections();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await rm(root, { recursive: true, force: true });
+});
+
+const headers = async (): Promise<Record<string, string>> => ({});
+
+describe("media downloads", () => {
+  it("streams media to a named asset file", async () => {
+    const result = await downloadMedia(
+      { url: `${base}/image`, kind: "image" },
+      { root, maxBytes: 100, headers },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(result.bytes).toBe(5);
+    expect(await readFile(join(root, result.path!), "utf8")).toBe("image");
+  });
+
+  it("saves audio served as audio/* or application/ogg and rejects HTML", async () => {
+    const mp3 = await downloadMedia(
+      { url: `${base}/audio`, kind: "audio" },
+      { root, maxBytes: 100, headers },
+    );
+    expect(mp3).toMatchObject({ status: "downloaded", bytes: 5 });
+    expect(mp3.path).toMatch(/^assets\/audio\/audio--[a-f0-9]{16}\.mp3$/);
+    const ogg = await downloadMedia(
+      { url: `${base}/ogg`, kind: "audio" },
+      { root, maxBytes: 100, headers },
+    );
+    expect(ogg.status).toBe("downloaded");
+    const html = await downloadMedia(
+      { url: `${base}/html`, kind: "audio" },
+      { root, maxBytes: 100, headers },
+    );
+    expect(html).toMatchObject({
+      status: "failed",
+      reason: "Expected audio content, received text/html",
+    });
+  });
+
+  it("emits byte updates before a slow download completes", async () => {
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/progress`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(events[0]?.phase).toBe("requesting");
+    expect(
+      events.some(
+        (event) => event.phase === "downloading" && event.bytes === 4 && event.totalBytes === 8,
+      ),
+    ).toBe(true);
+    expect(events.at(-1)).toMatchObject({ phase: "downloading", bytes: 8, totalBytes: 8 });
+  });
+
+  it("does not use compressed wire sizes as decoded byte totals", async () => {
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/compressed`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.bytes).toBe(64);
+    expect(events.at(-1)?.totalBytes).toBeUndefined();
+  });
+
+  it("reports retry waits and the next attempt", async () => {
+    attempts = 0;
+    const events: MediaTransferProgress[] = [];
+    const result = await downloadMedia(
+      { url: `${base}/retry`, kind: "image" },
+      {
+        root,
+        maxBytes: 100,
+        headers,
+        onProgress: (progress) => events.push(progress),
+      },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(events.filter((event) => event.phase === "retrying")).toHaveLength(2);
+    expect(
+      events.filter((event) => event.phase === "requesting").map((event) => event.attempt),
+    ).toEqual([1, 2, 3]);
+    attempts = 0;
+  });
+
+  it("rejects oversized files with and without Content-Length and leaves no partial files", async () => {
+    for (const path of ["/large", "/chunked"]) {
+      const result = await downloadMedia(
+        { url: base + path, kind: "image" },
+        { root, maxBytes: 10, headers },
+      );
+      expect(result.status).toBe("skipped");
+      expect(result.reason).toMatch(/size limit/);
+    }
+    expect((await readdir(root, { recursive: true })).some((name) => name.endsWith(".part"))).toBe(
+      false,
+    );
+  });
+
+  it("recomputes credentials for a cross-host redirect", async () => {
+    const scoped = vi.fn(
+      async (url: string): Promise<Record<string, string>> =>
+        new URL(url).hostname === "127.0.0.1"
+          ? { Cookie: "session=private", Authorization: "Bearer private" }
+          : {},
+    );
+    const result = await downloadMedia(
+      { url: `${base}/redirect`, kind: "image" },
+      { root, maxBytes: 100, headers: scoped },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(scoped).toHaveBeenCalledTimes(2);
+    expect(leaked).toBeUndefined();
+  });
+
+  it("backs off and retries 429 responses", async () => {
+    const result = await downloadMedia(
+      { url: `${base}/retry`, kind: "image" },
+      { root, maxBytes: 100, headers },
+    );
+    expect(result.status).toBe("downloaded");
+    expect(attempts).toBe(3);
+    expect(retryDelay("2")).toBe(2000);
+    expect(retryDelay("invalid", 20)).toBe(20);
+  });
+
+  it("records login responses as failures and streaming media as skipped", async () => {
+    expect(
+      (
+        await downloadMedia(
+          { url: `${base}/html`, kind: "image" },
+          { root, maxBytes: 100, headers },
+        )
+      ).status,
+    ).toBe("failed");
+    expect(
+      (
+        await downloadMedia(
+          { url: `${base}/stream`, kind: "video" },
+          { root, maxBytes: 100, headers },
+        )
+      ).status,
+    ).toBe("skipped");
+  });
+
+  it("aborts an in-flight stream and removes its partial file", async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 100);
+    try {
+      await expect(
+        downloadMedia(
+          { url: `${base}/slow`, kind: "image" },
+          {
+            root,
+            maxBytes: 100,
+            headers,
+            signal: controller.signal,
+          },
+        ),
+      ).rejects.toThrow();
+      expect(
+        (await readdir(root, { recursive: true })).some((name) => name.endsWith(".part")),
+      ).toBe(false);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+});

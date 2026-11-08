@@ -123,4 +123,4 @@ task scrape:all:cdp -- "https://example.com"
 Both save page content and discovered image/direct-video files under the gitignored
 `data/<hostname>/<run>/` directory. Open the printed `index.md` path to browse results.
 Defaults are 100 attempted pages and 100 MB per media file. For Chrome setup,
-output layout, options and limitations, see [the scraper guide](apps/scraper/README.md#archive-a-whole-site).
+output layout, options and limitations, see [the scraper guide](apps/cli/scraper/README.md#archive-a-whole-site).

@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/scraper/**"
+      - "apps/cli/scraper/**"
       - ".github/workflows/scraper-ci.yml"
   pull_request:
     paths:
-      - "apps/scraper/**"
+      - "apps/cli/scraper/**"
       - ".github/workflows/scraper-ci.yml"
 
 env:
@@ -19,27 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/scraper
+        working-directory: apps/cli/scraper
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/scraper/package.json
+          package_json_file: apps/cli/scraper/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: apps/scraper/pnpm-lock.yaml
+          cache-dependency-path: apps/cli/scraper/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -57,4 +51,4 @@ jobs:
         run: pnpm exec vitest run
 
       - name: Build
-        run: pnpm exec tsdown
+        run: pnpm run build
