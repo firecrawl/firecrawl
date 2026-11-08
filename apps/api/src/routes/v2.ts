@@ -674,7 +674,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Browser, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   countryCheck,
-  checkCreditsMiddleware(2),
+  checkCreditsMiddleware(2, undefined, { mcpCredits: true }),
   wrap(browserCreateController),
 );
 
