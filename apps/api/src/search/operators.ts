@@ -48,8 +48,10 @@ function normalizeSite(value: string): string {
 function hasUnsupportedOr(query: string): boolean {
   const unquoted = query.replace(/"[^"]*"/g, " ");
   const ors = unquoted.match(/(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/g)?.length ?? 0;
+  // Only positive site: filters on both sides are representable as a union
+  // of structured includeDomains. A negated filter changes OR semantics.
   const siteOrs =
-    unquoted.match(/site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=\(*site:)/gi)?.length ??
+    unquoted.match(/(?:^|[\s(])site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=site:)/gi)?.length ??
     0;
   return ors > siteOrs;
 }
