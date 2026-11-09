@@ -119,7 +119,7 @@ function quoteWarningText(s: string): string {
 }
 
 // Copies the body: the research controllers log the same object after responding.
-export function applyNotice(res: Response, notice: Notice) {
+function applyNotice(res: Response, notice: Notice) {
   if (notice.links?.length) res.setHeader("Link", notice.links.join(", "));
   // RFC 7234 Warning header, code 299 = "Miscellaneous Persistent Warning".
   res.setHeader("Warning", `299 - ${quoteWarningText(notice.message)}`);
