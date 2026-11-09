@@ -640,13 +640,14 @@ describe("sendMonitoringEmailSummary", () => {
         row: fakeRecipient("unknown@example.com", "confirmed", "legacy"),
       });
 
-      const result = await sendMonitoringEmailSummary(
-        buildArgs({
-          emailEnabled: true,
-          recipients: ["unknown@example.com"],
-          pages: [{ status: "changed" }],
-        }),
-      );
+      const args = buildArgs({
+        emailEnabled: true,
+        recipients: ["unknown@example.com"],
+        pages: [{ status: "changed" }],
+      });
+      args.monitor.created_at = "2026-01-01T00:00:00Z";
+
+      const result = await sendMonitoringEmailSummary(args);
       expect(result.attempted).toBe(true);
       expect(result.recipients).toEqual(["unknown@example.com"]);
       expect(mockEnsureRecipient).toHaveBeenCalledWith({
