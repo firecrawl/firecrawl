@@ -42,7 +42,9 @@ const parentRows = () => inserted("alexandria_feedback");
 const providerRows = () => inserted("alexandria_feedback_providers");
 const capabilityRows = () => inserted("alexandria_feedback_capabilities");
 const callRows = () => inserted("alexandria_feedback_calls");
-vi.mock("../../../lib/logger", () => ({ logger: { error: mocks.logError } }));
+vi.mock("../../../lib/logger", () => ({
+  logger: { error: mocks.logError, warn: vi.fn() },
+}));
 vi.mock("./record", () => ({
   recordEndpointFeedback: mocks.recordEndpointFeedback,
 }));

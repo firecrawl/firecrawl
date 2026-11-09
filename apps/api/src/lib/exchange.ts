@@ -958,9 +958,12 @@ export async function forwardExchangeToolFeedback(
       });
       return;
     }
-    const outcome = toolFeedbackResponseSchema.safeParse(
-      await response.json().catch(() => null),
-    );
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const outcome = toolFeedbackResponseSchema.safeParse(parsed);
     rootLogger.info("Exchange tool feedback recorded", {
       ...context,
       attribution: input.attribution,
