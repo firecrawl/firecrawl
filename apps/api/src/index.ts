@@ -43,8 +43,10 @@ import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
-import { shutdownPubSubLogging } from "./services/logging/log_job";
-import { drainZdrEnqueues } from "./lib/zdr-queue";
+import {
+  drainZdrRequestLogs,
+  shutdownPubSubLogging,
+} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
 
 const { createBullBoard } = require("@bull-board/api");
@@ -243,7 +245,7 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
-      await drainZdrEnqueues();
+      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {

@@ -17,8 +17,10 @@ const READY_ROUTING_KEY = "ready";
 const DLQ_ROUTING_KEY = "dead";
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
-// 5 attempts back off 1+2+4+8 = 15s, well inside the API pod's shutdown grace.
+// 5 attempts of at most 5s each, with 1+2+4+8s between them: at most 40s,
+// well inside the API pod's shutdown grace.
 const PUBLISH_MAX_ATTEMPTS = 5;
+const PUBLISH_ATTEMPT_TIMEOUT_MS = 5_000;
 
 const logger = _logger.child({ module: "zdr-queue" });
 
@@ -39,7 +41,6 @@ let subscribed = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
 let closed = false;
-const inFlightEnqueues = new Set<Promise<void>>();
 const pendingPublishes = new WeakMap<
   amqp.ConfirmChannel,
   Map<string, { returned: boolean }>
@@ -263,26 +264,13 @@ function publishConfirmed(
 }
 
 export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
-  const enqueue = publishWithRetries(requestId);
-  inFlightEnqueues.add(enqueue);
-  try {
-    await enqueue;
-  } finally {
-    inFlightEnqueues.delete(enqueue);
-  }
-}
-
-export async function drainZdrEnqueues(): Promise<void> {
-  await Promise.allSettled([...inFlightEnqueues]);
-}
-
-async function publishWithRetries(requestId: string): Promise<void> {
   if (!config.NUQ_RABBITMQ_URL) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
   let delayMs = RECONNECT_BASE_DELAY_MS;
   for (let attempt = 1; !closed; attempt++) {
+    let attemptTimer: NodeJS.Timeout | undefined;
     try {
       await withSpan("zdr.rabbitmq.publish", async span => {
         setSpanAttributes(span, {
@@ -292,8 +280,15 @@ async function publishWithRetries(requestId: string): Promise<void> {
           "messaging.message.id": requestId,
           "zdr.rabbitmq.retry_delay_ms": delayMs,
         });
-        const ch = await getPublishChannel();
-        await publishConfirmed(ch, { requestId });
+        await Promise.race([
+          getPublishChannel().then(ch => publishConfirmed(ch, { requestId })),
+          new Promise<never>((_, reject) => {
+            attemptTimer = setTimeout(
+              () => reject(new Error("ZDR publish attempt timed out")),
+              PUBLISH_ATTEMPT_TIMEOUT_MS,
+            );
+          }),
+        ]);
         setSpanAttributes(span, {
           "zdr.rabbitmq.outcome": "confirmed",
         });
@@ -320,6 +315,8 @@ async function publishWithRetries(requestId: string): Promise<void> {
       publishChannelPromise = null;
       await new Promise(resolve => setTimeout(resolve, delayMs));
       delayMs = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+    } finally {
+      clearTimeout(attemptTimer);
     }
   }
 
