@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   addScrapeJobs: vi.fn(),
   logRequest: vi.fn(),
   billTeam: vi.fn(),
+  resolveThreatProtection: vi.fn(),
+  checkUrlsAgainstThreatPolicy: vi.fn(),
 }));
 
 vi.mock("../../../lib/crawl-redis", () => ({
@@ -47,9 +49,13 @@ vi.mock("../../../services/redis", () => ({
   },
 }));
 
-vi.mock("../../../lib/logging/log_job", () => ({
+vi.mock("../../../services/logging/log_job", () => ({
   logRequest: mocks.logRequest,
   externalRequestId: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock("../../../services/queue-jobs", () => ({
+  addScrapeJobs: mocks.addScrapeJobs,
 }));
 
 vi.mock("../../../lib/request-credits-store", () => ({
@@ -62,13 +68,19 @@ vi.mock("../../../services/billing/credit_billing", () => ({
   billTeam: mocks.billTeam,
 }));
 
+vi.mock("../../../lib/threat-protection/request", () => ({
+  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
+  resolveThreatProtection: mocks.resolveThreatProtection,
+}));
+
 vi.mock("../../../lib/threat-protection", () => ({
-  checkUrlsAgainstThreatPolicy: vi.fn().mockResolvedValue({
-    blocked: [],
-    decisionsByUrl: new Map(),
-  }),
+  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
   calculateThreatScanCredits: vi.fn().mockReturnValue(0),
   getThreatProtectionState: vi.fn().mockResolvedValue({ policy: null }),
+}));
+
+vi.mock("../../../lib/scrape-billing", () => ({
+  calculateThreatScanCredits: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock("../../../lib/safe-mode", () => ({
@@ -126,6 +138,11 @@ function makeRes() {
 describe("v1 batch-scrape appendToId terminal guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      blocked: [],
+      decisionsByUrl: new Map(),
+    });
   });
 
   it("rejects append to a completed batch with 409 Conflict", async () => {
@@ -153,6 +170,48 @@ describe("v1 batch-scrape appendToId terminal guard", () => {
     });
     expect(mocks.addScrapeJobs).not.toHaveBeenCalled();
     expect(mocks.logRequest).not.toHaveBeenCalled();
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
+  it("does not bill threat scans for an append that a completed batch rejects", async () => {
+    mocks.getCrawl.mockResolvedValue({
+      team_id: TEAM_ID,
+      cancelled: false,
+      createdAt: Date.now() - 60000,
+      internalOptions: {},
+    });
+    mocks.getGroup.mockResolvedValue({
+      id: APPEND_TO_ID,
+      status: "completed",
+    });
+
+    // Threat protection is on and the URL is blocked, so the scan has a fee to
+    // charge. The batch is already finished, so the append must be refused
+    // before that fee is taken.
+    mocks.resolveThreatProtection.mockResolvedValue({
+      policy: { mode: "enforce" },
+    });
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      blocked: [
+        { url: "https://example.com/test-append", decision: "malicious" },
+      ],
+      decisionsByUrl: new Map([
+        ["https://example.com/test-append", "malicious"],
+      ]),
+    });
+
+    const req = makeReq({ appendToId: APPEND_TO_ID });
+    const res = makeRes();
+
+    await batchScrapeController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error:
+        'Cannot append to a batch with status "completed". Please start a new batch without appendToId.',
+    });
+    expect(mocks.billTeam).not.toHaveBeenCalled();
   });
 
   it("rejects append to a cancelled batch with 409 Conflict", async () => {
@@ -180,6 +239,7 @@ describe("v1 batch-scrape appendToId terminal guard", () => {
     });
     expect(mocks.addScrapeJobs).not.toHaveBeenCalled();
     expect(mocks.logRequest).not.toHaveBeenCalled();
+    expect(mocks.billTeam).not.toHaveBeenCalled();
   });
 
   it("rejects append to a missing batch with 404 Not Found", async () => {
