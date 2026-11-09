@@ -21,7 +21,11 @@ export type ProviderCall = z.infer<typeof callSchema>;
 const credits = z.number().int().nonnegative().safe();
 const identity = { provider: z.string(), capability: z.string() };
 // Where Exchange says the provider is built; logged per call, never returned to the caller.
-const provenance = z.string().optional();
+// An unknown or null value is dropped rather than failing a call that already ran.
+const provenance = z
+  .enum(["connector", "exchange", "workflows_programs"])
+  .nullish()
+  .catch(undefined);
 const resultSchema = z.union([
   z
     .object({
