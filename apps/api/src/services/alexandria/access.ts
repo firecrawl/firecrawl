@@ -11,6 +11,7 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { getACUCTeam } from "../../controllers/auth";
+import { logger } from "../../lib/logger";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -50,7 +51,11 @@ export async function authorizeProviders(
     timeoutMs: 10000,
     clientIp,
     billingCountry,
-  }).catch(() => undefined);
+    retryConnection: true,
+  }).catch(error => {
+    logger.warn("Provider agreements unavailable", { error, teamId });
+    return undefined;
+  });
   if (response?.status === 404)
     return refusal(404, "Unknown provider. No provider was executed.", {
       code: "unknown_provider",

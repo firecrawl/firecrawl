@@ -374,6 +374,7 @@ export async function retrieveProviders(input: {
       path: "/v1/retrieve/quote",
       body: { requests: input.calls },
       timeoutMs: Math.min(10000, remaining()),
+      retryConnection: true,
       clientIp: input.clientIp,
       billingCountry: input.billingCountry,
       connectors: input.flags?.exchangeRetrieve === true,
