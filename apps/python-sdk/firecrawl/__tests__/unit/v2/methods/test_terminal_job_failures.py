@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from firecrawl.v2.client import FirecrawlClient
@@ -56,49 +58,70 @@ def test_wait_helpers_return_completed_jobs_when_raise_on_failure_is_enabled(mon
     assert crawl.wait_for_crawl_completion(None, "job-id", raise_on_failure=True) is crawl_job
 
 
+@pytest.mark.parametrize("status", ["failed", "cancelled", "completed"])
 @pytest.mark.parametrize("raise_on_failure", [False, True])
-def test_public_crawl_forwards_raise_on_failure(monkeypatch, raise_on_failure):
+def test_public_crawl_handles_terminal_statuses(monkeypatch, status, raise_on_failure):
     client = FirecrawlClient(api_key="test")
-    received = {}
+    partial_document = Document(markdown="partial result")
+    started_job = CrawlJob(id="job-id", status="scraping", completed=0, total=2, data=[])
+    terminal_job = CrawlJob(
+        id="job-id",
+        status=status,
+        completed=1,
+        total=2,
+        data=[partial_document],
+    )
+    monkeypatch.setattr(crawl, "start_crawl", lambda *args, **kwargs: started_job)
+    monkeypatch.setattr(crawl, "get_crawl_status", lambda *args, **kwargs: terminal_job)
 
-    def fake_crawl(http_client, request, **kwargs):
-        received.update(kwargs)
-        return CrawlJob(id="job-id", status="completed", completed=1, total=1, data=[])
+    if status in ["failed", "cancelled"] and raise_on_failure:
+        with pytest.raises(CrawlJobFailedError) as exc_info:
+            client.crawl("https://example.com", raise_on_failure=True)
+        assert exc_info.value.job is terminal_job
+        assert exc_info.value.job.data == [partial_document]
+    else:
+        assert client.crawl(
+            "https://example.com",
+            raise_on_failure=raise_on_failure,
+        ) is terminal_job
 
-    monkeypatch.setattr("firecrawl.v2.client.crawl_module.crawl", fake_crawl)
 
-    client.crawl("https://example.com", raise_on_failure=raise_on_failure)
-
-    assert received["raise_on_failure"] is raise_on_failure
-
-
+@pytest.mark.parametrize("status", ["failed", "cancelled", "completed"])
 @pytest.mark.parametrize("raise_on_failure", [False, True])
-def test_public_wait_crawl_forwards_raise_on_failure(monkeypatch, raise_on_failure):
+def test_public_wait_crawl_handles_terminal_statuses(monkeypatch, status, raise_on_failure):
     client = FirecrawlClient(api_key="test")
-    received = {}
+    job = CrawlJob(id="job-id", status=status, completed=1, total=2, data=[])
+    monkeypatch.setattr(crawl, "get_crawl_status", lambda *args, **kwargs: job)
 
-    def fake_wait(http_client, job_id, **kwargs):
-        received.update(kwargs)
-        return CrawlJob(id=job_id, status="completed", completed=1, total=1, data=[])
+    if status in ["failed", "cancelled"] and raise_on_failure:
+        with pytest.raises(CrawlJobFailedError):
+            client.wait_crawl("job-id", raise_on_failure=True)
+    else:
+        assert client.wait_crawl(
+            "job-id",
+            raise_on_failure=raise_on_failure,
+        ) is job
 
-    monkeypatch.setattr("firecrawl.v2.client.crawl_module.wait_for_crawl_completion", fake_wait)
 
-    client.wait_crawl("job-id", raise_on_failure=raise_on_failure)
-
-    assert received["raise_on_failure"] is raise_on_failure
-
-
+@pytest.mark.parametrize("status", ["failed", "cancelled", "completed"])
 @pytest.mark.parametrize("raise_on_failure", [False, True])
-def test_public_batch_scrape_forwards_raise_on_failure(monkeypatch, raise_on_failure):
+def test_public_batch_scrape_handles_terminal_statuses(monkeypatch, status, raise_on_failure):
     client = FirecrawlClient(api_key="test")
-    received = {}
+    started_job = SimpleNamespace(id="job-id")
+    terminal_job = BatchScrapeJob(
+        status=status,
+        completed=1,
+        total=2,
+        data=[Document(markdown="partial result")],
+    )
+    monkeypatch.setattr(batch, "start_batch_scrape", lambda *args, **kwargs: started_job)
+    monkeypatch.setattr(batch, "get_batch_scrape_status", lambda *args, **kwargs: terminal_job)
 
-    def fake_batch_scrape(http_client, urls, **kwargs):
-        received.update(kwargs)
-        return BatchScrapeJob(status="completed", completed=1, total=1, data=[])
-
-    monkeypatch.setattr("firecrawl.v2.client.batch_module.batch_scrape", fake_batch_scrape)
-
-    client.batch_scrape(["https://example.com"], raise_on_failure=raise_on_failure)
-
-    assert received["raise_on_failure"] is raise_on_failure
+    if status in ["failed", "cancelled"] and raise_on_failure:
+        with pytest.raises(FirecrawlError):
+            client.batch_scrape(["https://example.com"], raise_on_failure=True)
+    else:
+        assert client.batch_scrape(
+            ["https://example.com"],
+            raise_on_failure=raise_on_failure,
+        ) is terminal_job
