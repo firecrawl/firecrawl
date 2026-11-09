@@ -547,3 +547,35 @@ describe("skill discovery source", () => {
     expect(mockExecuteSearch).not.toHaveBeenCalled();
   });
 });
+
+describe("searches row", () => {
+  it("stores the served tool impression in the row options", async () => {
+    const toolImpression = {
+      auto: true,
+      fusion: { enabled: true, ran: true },
+      rewrite: "arrived",
+      tools: [{ id: "a/data/get", rank: 1, source: "both" }],
+      fitRejected: { semantic: 0, domain: 1 },
+      exchangeRequestIds: { raw: ["job:tools:raw:1"], rewrite: [] },
+    };
+    mockExecuteSearch.mockResolvedValue(executeResult({ toolImpression }));
+
+    await searchController(makeReq({ query: "apple stock price" }), makeRes());
+    await flushAsync();
+
+    expect(mockLogSearch).toHaveBeenCalledTimes(1);
+    const row = mockLogSearch.mock.calls[0][0];
+    expect(row.options.query).toBe("apple stock price");
+    expect(row.options.toolImpression).toEqual(toolImpression);
+  });
+
+  it("adds no impression when no tools were served", async () => {
+    await searchController(makeReq({ query: "apple stock price" }), makeRes());
+    await flushAsync();
+
+    expect(mockLogSearch).toHaveBeenCalledTimes(1);
+    expect(mockLogSearch.mock.calls[0][0].options).not.toHaveProperty(
+      "toolImpression",
+    );
+  });
+});

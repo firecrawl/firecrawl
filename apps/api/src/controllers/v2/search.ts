@@ -656,7 +656,9 @@ async function searchControllerInner(
       result_categories: result.resultCategories,
       time_taken: timeTakenInSeconds,
       team_id: req.auth.team_id,
-      options: req.body,
+      options: result.toolImpression
+        ? { ...req.body, toolImpression: result.toolImpression }
+        : req.body,
       // Don't record preview tokens as billed in the ledger — only record
       // credits when billing is actually applied.
       credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
