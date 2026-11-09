@@ -293,11 +293,18 @@ const configSchema = z.object({
     .nonnegative()
     .default(10),
 
-  // Vercel Marketplace integration id (oac_...). When set, Vercel OIDC resource
-  // tokens (iss https://integrations.vercel.com/<id>) are accepted as bearer
-  // credentials. Unset disables the branch. Not a secret.
-  VERCEL_MARKETPLACE_INTEGRATION_ID: emptyStringAsUndefined(
-    z.string().regex(/^oac_[A-Za-z0-9]+$/),
+  // Vercel Marketplace integration id (oac_...). Vercel OIDC resource tokens
+  // (iss https://integrations.vercel.com/<id>) are accepted as bearer
+  // credentials when DB authentication is on. Unset uses Firecrawl's
+  // integration; an empty value disables the branch. Not a secret.
+  VERCEL_MARKETPLACE_INTEGRATION_ID: z.preprocess(
+    value => (value === "" ? null : value),
+    z
+      .string()
+      .regex(/^oac_[A-Za-z0-9]+$/)
+      .nullable()
+      .default("oac_jkJx3wOqOMTpj4TqJJcwA4l8")
+      .transform(value => value ?? undefined),
   ),
 
   // OAuth token introspection
