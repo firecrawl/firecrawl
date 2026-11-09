@@ -285,6 +285,9 @@ export async function providerScrapeController(
                 ? {
                     code: served.data.results[i].error?.code ?? null,
                     creditsCost: served.data.results[i].creditsCost ?? 0,
+                    ...(served.data.results[i].provenance
+                      ? { provenance: served.data.results[i].provenance }
+                      : {}),
                   }
                 : {}),
               ...(isFindTools({ provider, capability })
@@ -347,7 +350,13 @@ export async function providerScrapeController(
       res.setHeader("Retry-After", String(refused.retryAfterSeconds));
     return res.status(result.status).json(result.body);
   }
-  const parsed = answerSchema.parse(result.body);
+  const exchangeAnswer = answerSchema.parse(result.body);
+  const parsed = {
+    ...exchangeAnswer,
+    results: exchangeAnswer.results.map(
+      ({ provenance: _provenance, ...item }) => item,
+    ),
+  };
   const answer = zeroDataRetention
     ? parsed
     : {

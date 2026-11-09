@@ -373,6 +373,42 @@ it("executes with supplied arguments but stores only tool identifiers in activit
   });
 });
 
+it("logs each call's provenance and keeps it out of the response", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      { ...call, provenance: "workflows_programs", creditsCost: 0, data: {} },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call] });
+  expect(response.status).toBe(200);
+  expect(response.body.data.alexandria[0]).not.toHaveProperty("provenance");
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  expect(mocks.scrapeLog.mock.calls[0][0].options.alexandria[0]).toEqual(
+    expect.objectContaining({ provenance: "workflows_programs" }),
+  );
+  const legacy = await request(app).post("/exchange/retrieve").send(call);
+  expect(legacy.status).toBe(200);
+  expect(legacy.body).not.toHaveProperty("provenance");
+});
+
+it("drops an unknown or null provenance instead of failing the call", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      { ...call, provenance: "elsewhere", creditsCost: 0, data: {} },
+      { ...call, provenance: null, creditsCost: 0, data: {} },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call] });
+  expect(response.status).toBe(200);
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  for (const logged of mocks.scrapeLog.mock.calls[0][0].options.alexandria)
+    expect(logged).not.toHaveProperty("provenance");
+});
+
 it("logs each call's own outcome code and credits in request order", async () => {
   const other = { provider: "sec", capability: "filings/search", options: {} };
   const answer = result([
