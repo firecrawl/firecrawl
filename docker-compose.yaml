@@ -150,7 +150,10 @@ services:
       - backend
     command: rabbitmq-server
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      # A bare TCP connect to the AMQP port. The listener opens once the broker
+      # has booted, and the probe costs ~1ms, whereas `rabbitmq-diagnostics
+      # check_running` boots an Erlang VM (~0.6 CPU-seconds) on every run.
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/5672"]
       interval: 5s
       timeout: 5s
       retries: 3
