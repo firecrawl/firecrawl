@@ -17,7 +17,6 @@ const READY_ROUTING_KEY = "ready";
 const DLQ_ROUTING_KEY = "dead";
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
-const PUBLISH_ERROR_AFTER_ATTEMPTS = 3;
 
 const logger = _logger.child({ module: "zdr-queue" });
 
@@ -266,9 +265,7 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
   }
 
   let delayMs = RECONNECT_BASE_DELAY_MS;
-  let attempt = 0;
   while (!closed) {
-    attempt++;
     try {
       await withSpan("zdr.rabbitmq.publish", async span => {
         setSpanAttributes(span, {
@@ -284,31 +281,13 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
           "zdr.rabbitmq.outcome": "confirmed",
         });
       });
-      if (attempt > 1) {
-        logger.info("ZDR cleanup job confirmed after retry", {
-          requestId,
-          attempts: attempt,
-        });
-      }
       return;
     } catch (error) {
-      // A single dropped channel is expected when a broker restarts; only
-      // repeated failures use the error message the publish-failure alert matches.
-      if (attempt < PUBLISH_ERROR_AFTER_ATTEMPTS) {
-        logger.warn("ZDR cleanup publish not confirmed; retrying", {
-          error,
-          requestId,
-          attempt,
-          delayMs,
-        });
-      } else {
-        logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
-          error,
-          requestId,
-          attempt,
-          delayMs,
-        });
-      }
+      logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
+        error,
+        requestId,
+        delayMs,
+      });
       await publishChannel?.close().catch(() => {});
       publishChannel = null;
       publishChannelPromise = null;
@@ -317,9 +296,8 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
     }
   }
 
-  logger.error("Failed to durably enqueue ZDR cleanup job; queue closed", {
+  logger.error("Gave up enqueueing ZDR cleanup job; queue closed", {
     requestId,
-    attempts: attempt,
   });
   throw new Error("ZDR queue closed before the cleanup job was confirmed");
 }
