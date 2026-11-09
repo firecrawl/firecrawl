@@ -419,7 +419,8 @@ def wait_for_crawl_completion(
         CrawlJob with the terminal status and available data
         
     Raises:
-        FirecrawlError: If raise_on_failure is True and the job fails or is cancelled
+        CrawlJobFailedError: If raise_on_failure is True and the job fails or is cancelled.
+            The exception retains the terminal job and any partial results.
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
@@ -476,8 +477,9 @@ def crawl(
         
     Raises:
         ValueError: If request is invalid
-        FirecrawlError: If starting the job fails, or if raise_on_failure is True
-            and the job ends as failed or cancelled
+        FirecrawlError: If starting the job fails
+        CrawlJobFailedError: If raise_on_failure is True and the job ends as failed
+            or cancelled; the exception retains the terminal job and partial data
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """

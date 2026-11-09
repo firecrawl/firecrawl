@@ -1977,11 +1977,21 @@ class FirecrawlClient:
         raise_on_failure: bool = False,
     ):
         """
-        Start a batch scrape job and wait until completion.
+        Start a batch scrape job and wait until it reaches a terminal state.
 
         Args:
             raise_on_failure: Raise FirecrawlError if the job ends as failed or
-                cancelled. Defaults to False for backward compatibility.
+                cancelled. Defaults to False for backward compatibility. When
+                disabled, failed and cancelled jobs are returned with available
+                partial data.
+
+        Returns:
+            BatchScrapeJob with the terminal status and any available results.
+
+        Raises:
+            FirecrawlError: If starting the batch job fails, or if
+                raise_on_failure is True and the job fails or is cancelled.
+            TimeoutError: If the wait timeout is reached.
         """
         options = ScrapeOptions(
             **{k: v for k, v in dict(
