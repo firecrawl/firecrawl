@@ -66,7 +66,7 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(16);
   });
 
-  it("bills X/Twitter scrapes at 30 credits", async () => {
+  it("bills an X/Twitter scrape at the Exchange's price, with no X surcharge", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
         formats: [{ type: "markdown" }],
@@ -79,16 +79,18 @@ describe("calculateCreditsToBeBilled", () => {
         metadata: {
           statusCode: 200,
           proxyUsed: "basic",
-          postprocessorsUsed: ["x-twitter"],
         },
       } as any,
       {
         totalCost: 0,
       } as any,
       {} as any,
+      undefined,
+      undefined,
+      { provider: { id: "x-com", creditsCost: 5, steps: [] } },
     );
 
-    expect(credits).toBe(30);
+    expect(credits).toBe(5);
   });
 
   it("bills enhanced proxy scrapes the same as basic ones", async () => {

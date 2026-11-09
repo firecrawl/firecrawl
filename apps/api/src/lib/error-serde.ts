@@ -41,7 +41,6 @@ import {
   MediaAccessDeniedError,
   PromptInjectionDetectedError,
   JsonExtractionContentTooLargeError,
-  XTwitterConfigurationError,
   UsOnlyUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
@@ -96,7 +95,6 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
   SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
-  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   US_ONLY_UNAVAILABLE: UsOnlyUnavailableError,
   MAP_FAILED: MapFailedError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,

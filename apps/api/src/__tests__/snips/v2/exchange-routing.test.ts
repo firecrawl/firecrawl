@@ -293,6 +293,51 @@ describe("Exchange routing", () => {
     });
   });
 
+  describe("X/Twitter", () => {
+    const X_PROFILE_URL = "https://x.com/firecrawl";
+    const X_POST_URL =
+      "https://twitter.com/firecrawl/status/2037202150690844778";
+
+    beforeEach(() => {
+      exchange.setExchangeProvidersForTest([
+        {
+          id: "x-com",
+          creditsCost: 5,
+          routes: [{ domains: ["x.com", "twitter.com"], pathPrefixes: ["/"] }],
+        },
+      ]);
+    });
+
+    it("routes posts and profiles to the Exchange for a team outside the beta", async () => {
+      for (const url of [X_PROFILE_URL, X_POST_URL]) {
+        const meta = buildStubMeta(url, {});
+        const fallback = await buildFallbackList(meta);
+
+        expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
+        expect(meta.exchangeProviderId).toBe("x-com");
+      }
+    });
+
+    it("scrapes other X pages normally for a team outside the beta", async () => {
+      const fallback = await buildFallbackList(
+        buildStubMeta("https://x.com/explore", {}),
+      );
+
+      expect(fallback.map(f => f.engine)).not.toContain("exchange");
+    });
+
+    it("refuses a US-only team before reaching the Exchange", async () => {
+      const error = await buildFallbackList(
+        buildStubMeta(X_PROFILE_URL, { usOnly: true }),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.UsOnlyUnavailableError);
+      expect(error.message).toBe(
+        "X/Twitter scraping is not available for teams restricted to US-only processing.",
+      );
+    });
+  });
+
   describe("exchange engine", () => {
     const failure = (code: string, message: string) => ({
       success: false,
