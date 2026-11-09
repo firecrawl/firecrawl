@@ -481,7 +481,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     if (
       pipeline.exchange === undefined &&
-      job.data.origin !== "monitor" &&
+      job.data.billing?.endpoint !== "monitor" &&
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&
       doc.metadata.sourceURL !== undefined &&
