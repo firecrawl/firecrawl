@@ -553,11 +553,11 @@ describe("executeSearch tool intent", () => {
           queries?: string[];
           exchangeRequestIds?: { prefix: string; sent: string[] };
         }) => {
-          if (input.queries?.[0] === "who owns apple stock")
-            return Promise.resolve({ items: [tool("a")], semanticMatches: 1 });
           input.exchangeRequestIds?.sent.push(
             `${input.exchangeRequestIds.prefix}:1`,
           );
+          if (input.queries?.[0] === "who owns apple stock")
+            return Promise.resolve({ items: [tool("a")], semanticMatches: 1 });
           return new Promise(() => {});
         },
       );
@@ -580,7 +580,7 @@ describe("executeSearch tool intent", () => {
             rewrite: "late",
             tools: [{ id: "a/data/get", rank: 1, source: "raw" }],
             exchangeRequestIds: {
-              raw: [],
+              raw: ["job-1:tools:raw:1"],
               rewrite: ["job-1:tools:rewrite:1"],
             },
           }),
