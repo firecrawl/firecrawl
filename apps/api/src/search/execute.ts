@@ -623,6 +623,7 @@ export async function executeSearch(
       event: "search_tool_impression",
       searchId: context.jobId,
       teamId,
+      servedAt: new Date().toISOString(),
       auto: toolsAuto,
       fusion: { enabled: fuseTools, ran: toolFusionRan },
       rewrite: !extraDiscovery

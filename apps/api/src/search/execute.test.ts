@@ -467,6 +467,7 @@ describe("executeSearch tool intent", () => {
         event: "search_tool_impression",
         searchId: "job-1",
         teamId: "team-1",
+        servedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         auto: false,
         fusion: { enabled: true, ran: true },
         rewrite: "arrived",
