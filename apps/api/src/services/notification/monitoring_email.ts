@@ -23,6 +23,8 @@ const logger = _logger.child({ module: "monitoring-email" });
 
 const FROM_ADDRESS = "Firecrawl <notifications@notifications.firecrawl.dev>";
 const REPLY_TO_ADDRESS = "help@firecrawl.com";
+// Monitors created after email opt-in shipped always have recipient rows.
+const EMAIL_OPT_IN_CUTOFF = Date.parse("2026-06-01T00:00:00Z");
 
 type MonitoringEmailPage = {
   url: string;
@@ -400,7 +402,10 @@ async function resolveSendableRecipients(
     // as confirmed so existing alerts keep flowing without a DB backfill.
     // Partial-row monitors keep strict gating — missing addresses stay
     // pending rather than getting auto-confirmed.
-    if (rows.length === 0) {
+    if (
+      rows.length === 0 &&
+      Date.parse(monitor.created_at) < EMAIL_OPT_IN_CUTOFF
+    ) {
       const legacyRows = await Promise.all(
         explicitConfigured.map(async email => {
           const { row } = await ensureMonitorEmailRecipient({
