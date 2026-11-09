@@ -94,8 +94,7 @@ describe("Engine Forcing", () => {
 
     it("should throw error if not initialized", async () => {
       delete config.FORCED_ENGINE_DOMAINS;
-      // Re-import a fresh, uninitialized module instance (mirrors the original
-      // require() which, under ts-jest, returned a separate module evaluation).
+      // Re-import a fresh, uninitialized module instance.
       vi.resetModules();
       const { getEngineForUrl: freshGetEngineForUrl } = await import(
         "../engine-forcing.js"

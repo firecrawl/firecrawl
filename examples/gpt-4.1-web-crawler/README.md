@@ -11,7 +11,7 @@ A smart web crawler powered by GPT-4.1 that intelligently searches websites to f
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - Firecrawl API key
 - OpenAI API key (with access to GPT-4.1 models)
 

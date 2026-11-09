@@ -17,4 +17,9 @@ public class JsonFormat
     [JsonPropertyName("schema")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, object>? Schema { get; set; }
+
+    [Obsolete("Use the top-level ScrapeOptions.CheckPromptInjection option instead.")]
+    [JsonPropertyName("checkPromptInjection")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckPromptInjection { get; set; }
 }

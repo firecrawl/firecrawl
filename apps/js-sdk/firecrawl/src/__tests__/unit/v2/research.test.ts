@@ -1,4 +1,4 @@
-import { describe, test, expect } from "@jest/globals";
+import { describe, test, expect } from "vitest";
 import { ResearchClient } from "../../../v2/methods/research";
 import { SdkError } from "../../../v2/types";
 import type { HttpClient } from "../../../v2/utils/httpClient";
@@ -12,6 +12,7 @@ function makeClient(
 ) {
   const calls: string[] = [];
   const http = {
+    getOrigin: () => "js-sdk@test",
     get: async (url: string) => {
       calls.push(url);
       return responder(url);
@@ -37,6 +38,7 @@ describe("research.searchPapers", () => {
       categories: ["cs.LG", "stat.ML"],
       from: "2020-01-01",
       to: "2024-12-31",
+      sort: "date_desc",
     });
     const url = calls[0];
     expect(url.startsWith("/v2/search/research/papers?")).toBe(true);
@@ -47,13 +49,15 @@ describe("research.searchPapers", () => {
     expect(qs.getAll("categories")).toEqual(["cs.LG", "stat.ML"]);
     expect(qs.get("from")).toBe("2020-01-01");
     expect(qs.get("to")).toBe("2024-12-31");
+    expect(qs.get("sort")).toBe("date_desc");
   });
 
   test("omits absent options", async () => {
     const { client, calls } = makeClient(() => ({ status: 200, data: { results: [] } }));
     await client.searchPapers("q");
     const qs = new URLSearchParams(calls[0].split("?")[1]);
-    expect([...qs.keys()]).toEqual(["query"]);
+    expect([...qs.keys()]).toEqual(["query", "origin"]);
+    expect(qs.get("origin")).toMatch(/^js-sdk@/);
   });
 
   test("rejects empty query", async () => {
@@ -74,10 +78,14 @@ describe("research.searchPapers", () => {
 });
 
 describe("research.getPaper", () => {
-  test("detail mode encodes the id and sends no query params", async () => {
+  test("detail mode encodes the id and sends only the origin param", async () => {
     const { client, calls } = makeClient(() => ({ status: 200, data: { paper: {} } }));
     await client.getPaper("arxiv:2105.05233");
-    expect(calls[0]).toBe("/v2/search/research/papers/arxiv%3A2105.05233");
+    const [path, query] = calls[0].split("?");
+    expect(path).toBe("/v2/search/research/papers/arxiv%3A2105.05233");
+    const qs = new URLSearchParams(query);
+    expect([...qs.keys()]).toEqual(["origin"]);
+    expect(qs.get("origin")).toMatch(/^js-sdk@/);
   });
 
   test("read mode adds query and k", async () => {

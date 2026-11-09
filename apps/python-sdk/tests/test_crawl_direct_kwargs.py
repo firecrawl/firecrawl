@@ -190,3 +190,72 @@ class TestAsyncCrawlDirectKwargs:
 
         assert captured["integration"] == "test-int"
         assert captured["scrape_options"] is not None
+
+
+class TestThreatProtectionDirectKwargs:
+    EXPECTED_WIRE_PAYLOAD = {
+        "mode": "normal",
+        "riskScoreThreshold": 80,
+        "blockedTlds": ["zip"],
+    }
+
+    @staticmethod
+    def _threat_protection():
+        from firecrawl.v2.types import ThreatProtectionOptions
+
+        return ThreatProtectionOptions(
+            mode="normal", risk_score_threshold=80, blocked_tlds=["zip"]
+        )
+
+    def test_sync_threat_protection_kwarg_lands_in_wire_body(self, client, monkeypatch):
+        captured = {}
+
+        def fake_start_crawl(http, request):
+            captured["request"] = request
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(crawl_mod, "start_crawl", fake_start_crawl)
+
+        with pytest.raises(ConnectionError):
+            client.start_crawl(
+                "https://example.com",
+                threat_protection=self._threat_protection(),
+            )
+
+        request = captured["request"]
+        assert request.scrape_options is not None
+        assert request.scrape_options.threat_protection is not None
+        wire_body = crawl_mod._prepare_crawl_request(request)
+        assert (
+            wire_body["scrapeOptions"]["threatProtection"]
+            == self.EXPECTED_WIRE_PAYLOAD
+        )
+
+    def test_async_threat_protection_kwarg_lands_in_wire_body(self, async_client, monkeypatch):
+        captured = {}
+
+        async def fake_start_crawl(http, request):
+            captured["request"] = request
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(async_crawl_mod, "start_crawl", fake_start_crawl)
+
+        with pytest.raises(ConnectionError):
+            asyncio.get_event_loop().run_until_complete(
+                async_client.start_crawl(
+                    "https://example.com",
+                    threat_protection=self._threat_protection(),
+                )
+            )
+
+        request = captured["request"]
+        assert request.scrape_options is not None
+        assert request.scrape_options.threat_protection is not None
+        wire_body = async_crawl_mod._prepare_crawl_request(request)
+        assert (
+            wire_body["scrapeOptions"]["threatProtection"]
+            == self.EXPECTED_WIRE_PAYLOAD
+        )
+
+    def test_threat_protection_in_scrape_option_keys(self):
+        assert "threat_protection" in _SCRAPE_OPTION_KEYS

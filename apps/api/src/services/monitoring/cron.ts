@@ -177,16 +177,29 @@ function validateTimeZone(timeZone: string): void {
   }
 }
 
+// One formatter per zone: constructing Intl.DateTimeFormat is the expensive
+// part, and the next-run search below calls this hundreds of times.
+const zonedFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = zonedFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      minute: "2-digit",
+      hour: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      weekday: "short",
+    });
+    zonedFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function getZonedParts(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    minute: "2-digit",
-    hour: "2-digit",
-    day: "2-digit",
-    month: "2-digit",
-    weekday: "short",
-  }).formatToParts(date);
+  const parts = zonedFormatter(timeZone).formatToParts(date);
 
   const values = Object.fromEntries(
     parts
@@ -203,17 +216,74 @@ function getZonedParts(date: Date, timeZone: string) {
   };
 }
 
-function matches(date: Date, cron: CronSpec, timeZone: string): boolean {
-  const zoned = getZonedParts(date, timeZone);
+type ZonedParts = ReturnType<typeof getZonedParts>;
+
+function dayMatches(zoned: ZonedParts, cron: CronSpec): boolean {
   return (
-    cron.minutes.has(zoned.minutes) &&
-    cron.hours.has(zoned.hours) &&
     cron.daysOfMonth.has(zoned.daysOfMonth) &&
     cron.months.has(zoned.months) &&
     cron.daysOfWeek.has(zoned.daysOfWeek)
   );
 }
 
+function matches(zoned: ZonedParts, cron: CronSpec): boolean {
+  return (
+    cron.minutes.has(zoned.minutes) &&
+    cron.hours.has(zoned.hours) &&
+    dayMatches(zoned, cron)
+  );
+}
+
+/**
+ * Local wall-clock position relative to the start of `base`'s local day:
+ * negative on the previous day, 0-1439 on the same day, 1440+ on the next.
+ * A jump never spans more than one day, so day/month alone identify it.
+ */
+function localMinutesFrom(base: ZonedParts, zoned: ZonedParts): number {
+  const sameDay =
+    zoned.daysOfMonth === base.daysOfMonth && zoned.months === base.months;
+  const nextDay =
+    !sameDay &&
+    ((zoned.months === base.months &&
+      zoned.daysOfMonth === base.daysOfMonth + 1) ||
+      (zoned.months !== base.months && zoned.daysOfMonth === 1));
+  const dayOffset = sameDay ? 0 : nextDay ? 24 * 60 : -(24 * 60);
+  return dayOffset + zoned.hours * 60 + zoned.minutes;
+}
+
+/**
+ * The next local wall-clock position (minutes from the start of `zoned`'s
+ * local day) that could match: the next day's 00:00 when the day does not
+ * match, the next hour when the hour does not, otherwise the next listed
+ * minute (or the next hour when none is left in this one).
+ */
+function nextLocalTarget(zoned: ZonedParts, cron: CronSpec): number {
+  const localMinutes = zoned.hours * 60 + zoned.minutes;
+  if (!dayMatches(zoned, cron)) return 24 * 60;
+  if (!cron.hours.has(zoned.hours)) return (zoned.hours + 1) * 60;
+  let nextMinute = Infinity;
+  for (const minute of cron.minutes) {
+    if (minute > zoned.minutes && minute < nextMinute) nextMinute = minute;
+  }
+  return nextMinute === Infinity
+    ? (zoned.hours + 1) * 60
+    : zoned.hours * 60 + nextMinute;
+}
+
+/**
+ * First instant strictly after `from` (at minute precision) matching the cron
+ * in `timeZone`, or an error when none falls within the next year.
+ *
+ * The search jumps to the next local day, hour or listed minute instead of
+ * stepping every minute: a yearly cron used to cost ~500k `Intl` formats
+ * (tens of seconds on the event loop, enough to fail the liveness probe); it
+ * now costs a few hundred. Jumps are made in UTC minutes, so a UTC offset
+ * change inside a jump can land past the intended local target (a two-hour
+ * spring-forward, say); the landing point is read back and pulled to the
+ * target when that happens. A target that does not exist locally (a gap at
+ * midnight) keeps the first instant after it. Landing short (fall-back) just
+ * leaves the loop to jump again.
+ */
 export function getNextMonitorRunAt(
   cronExpression: string,
   from = new Date(),
@@ -225,11 +295,32 @@ export function getNextMonitorRunAt(
   candidate.setUTCSeconds(0, 0);
   candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
 
-  for (let i = 0; i < SEARCH_LIMIT_MINUTES; i++) {
-    if (matches(candidate, cron, timeZone)) {
+  let advanced = 0;
+  while (advanced < SEARCH_LIMIT_MINUTES) {
+    const zoned = getZonedParts(candidate, timeZone);
+    if (matches(zoned, cron)) {
       return new Date(candidate);
     }
-    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+
+    const target = nextLocalTarget(zoned, cron);
+    const step = Math.max(1, target - (zoned.hours * 60 + zoned.minutes));
+    let next = new Date(candidate.getTime() + step * 60_000);
+    const landed = localMinutesFrom(zoned, getZonedParts(next, timeZone));
+    if (landed > target) {
+      const pulled = new Date(next.getTime() - (landed - target) * 60_000);
+      // Only pull back to an instant that is still after the candidate and
+      // still at or past the target: a gap (the target does not exist
+      // locally) can otherwise send the search backwards.
+      if (
+        pulled.getTime() > candidate.getTime() &&
+        localMinutesFrom(zoned, getZonedParts(pulled, timeZone)) >= target
+      ) {
+        next = pulled;
+      }
+    }
+
+    advanced += (next.getTime() - candidate.getTime()) / 60_000;
+    candidate.setTime(next.getTime());
   }
 
   throw new Error("Cron expression did not produce a run within one year");

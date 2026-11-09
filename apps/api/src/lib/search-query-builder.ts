@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf";
+  type: "research" | "pdf" | "developer" | "gov";
   sites?: string[];
 }
 
@@ -38,6 +38,16 @@ const DEFAULT_RESEARCH_SITES = [
   "medrxiv.org",
 ];
 
+export function hasCategory(
+  categories: unknown,
+  type: CategoryInput["type"] | "github",
+): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(c => (typeof c === "string" ? c : c?.type) === type)
+  );
+}
+
 /**
  * Builds a search query with category filters
  * @param baseQuery The base search query
@@ -57,10 +67,7 @@ export function buildSearchQuery(
   for (const category of categories ?? []) {
     if (typeof category === "string") {
       // Simple string format
-      if (category === "github") {
-        siteFilters.push("site:github.com");
-        categoryMap.set("github.com", "github");
-      } else if (category === "research") {
+      if (category === "research") {
         // Use default research sites
         for (const site of DEFAULT_RESEARCH_SITES) {
           siteFilters.push(`site:${site}`);
@@ -72,10 +79,7 @@ export function buildSearchQuery(
       }
     } else {
       // Object format with options
-      if (category.type === "github") {
-        siteFilters.push("site:github.com");
-        categoryMap.set("github.com", "github");
-      } else if (category.type === "research") {
+      if (category.type === "research") {
         // Use custom sites if provided, otherwise defaults
         const sites = category.sites || DEFAULT_RESEARCH_SITES;
         for (const site of sites) {
@@ -102,9 +106,11 @@ export function buildSearchQuery(
 
   const includeDomains = domainOptions.includeDomains ?? [];
   const excludeDomains = domainOptions.excludeDomains ?? [];
+  // Bare `site:` operators, not a parenthesized group: some backends don't
+  // parse `(site:foo.com)` and drop the filter, leaking off-domain results.
   const includeFilter =
     includeDomains.length > 0
-      ? " (" + includeDomains.map(domain => `site:${domain}`).join(" OR ") + ")"
+      ? " " + includeDomains.map(domain => `site:${domain}`).join(" OR ")
       : "";
   const excludeFilter =
     excludeDomains.length > 0

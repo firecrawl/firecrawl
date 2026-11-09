@@ -81,6 +81,10 @@ module Firecrawl
       body.merge!(options.to_h) if options
       body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/scrape", body)
+      # Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+      if raw["success"] == false
+        raise FirecrawlError.new(raw["error"] || "Scrape failed", status_code: 200, error_code: raw["code"], details: raw["details"])
+      end
       data = raw["data"] || raw
       Models::Document.new(data)
     end
@@ -129,11 +133,29 @@ module Firecrawl
 
     # Search GitHub research content.
     #
+    # @deprecated The research index GitHub search endpoint was removed after
+    #   2026-11-03. Use {#developer_search} instead.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]
     def search_github(query_text, options = {})
       @http.get("/v2/search/research/github#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Searches the developer index: public repositories, GitHub issues, merged
+    # pull requests, READMEs and code documentation.
+    #
+    # @param query [String] the search query
+    # @param options [Models::DeveloperSearchOptions, nil] developer search filters
+    # @return [Models::DeveloperSearchResponse]
+    # @raise [ArgumentError] if the query is blank
+    def developer_search(query, options = nil)
+      raise ArgumentError, "Query is required" if query.nil? || query.to_s.strip.empty?
+
+      body = { "query" => query }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      Models::DeveloperSearchResponse.new(@http.post("/v2/search/developer", body))
     end
 
     # Interacts with the scrape-bound browser session for a scrape job.
@@ -191,6 +213,15 @@ module Firecrawl
       Models::Document.new(data)
     end
 
+    # Lists the file formats accepted by {#parse} on this deployment.
+    #
+    # @return [Array<Models::ParseFormat>]
+    def get_parse_formats
+      raw = @http.get("/v2/parse/formats")
+      formats = (raw["data"] || {})["formats"] || []
+      formats.map { |f| Models::ParseFormat.new(f) }
+    end
+
     # ================================================================
     # CRAWL
     # ================================================================
@@ -205,6 +236,7 @@ module Firecrawl
 
       body = { "url" => url }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/crawl", body)
       Models::CrawlResponse.new(raw)
     end
@@ -279,6 +311,7 @@ module Firecrawl
         body.merge!(opts_hash)
         body.merge!(nested) if nested
       end
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/batch/scrape", body, extra_headers: extra_headers)
       Models::BatchScrapeResponse.new(raw)
     end
@@ -330,6 +363,7 @@ module Firecrawl
 
       body = { "url" => url }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/map", body)
       data = raw["data"] || raw
       Models::MapData.new(data)
@@ -463,6 +497,20 @@ module Firecrawl
       Models::AgentStatusResponse.new(raw)
     end
 
+    # Lists agent tasks, most recent first.
+    #
+    # Pages are fixed at 20 runs. To fetch the next page, pass the before
+    # value from the previous page's next URL. This method does not
+    # auto-paginate.
+    #
+    # @param before [Integer, nil] only return agent runs created before this
+    #   unix millisecond timestamp
+    # @return [Models::AgentListResponse]
+    def list_agents(before: nil)
+      raw = @http.get("/v2/agent#{query(before: before)}")
+      Models::AgentListResponse.new(raw)
+    end
+
     # Runs an agent task and waits for completion (auto-polling).
     #
     # @param options [Models::AgentOptions] agent configuration
@@ -491,6 +539,31 @@ module Firecrawl
       raise ArgumentError, "Job ID is required" if job_id.nil?
 
       @http.delete("/v2/agent/#{job_id}")
+    end
+
+    # Gets the trace of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param live_view [Boolean] include live view URLs for active browser sessions
+    # @return [Models::AgentTraceResponse]
+    def get_agent_trace(job_id, live_view: false)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/trace#{query(liveView: live_view ? true : nil)}")
+      Models::AgentTraceResponse.new(raw)
+    end
+
+    # Gets a snapshot of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param snapshot_id [String] the snapshot ID
+    # @return [Models::AgentSnapshotResponse]
+    def get_agent_snapshot(job_id, snapshot_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+      raise ArgumentError, "Snapshot ID is required" if snapshot_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/snapshots/#{snapshot_id}")
+      Models::AgentSnapshotResponse.new(raw)
     end
 
     # ================================================================

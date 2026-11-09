@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "firecrawl/firecrawl-sdk",
-    "description": "PHP SDK for the Firecrawl v2 API with Laravel support",
+    "description": "PHP SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and manage browser sessions, with Laravel support",
     "license": "MIT",
     "type": "library",
     "keywords": [
@@ -23,6 +23,7 @@
         "friendsofphp/php-cs-fixer": "^3",
         "illuminate/contracts": "^10.0|^11.0|^12.0",
         "illuminate/support": "^10.0|^11.0|^12.0",
+        "laravel/ai": "^0.9",
         "orchestra/testbench": "^8|^9|^10",
         "pestphp/pest": "^2|^3",
         "phpstan/phpstan": "^1|^2",
@@ -30,7 +31,8 @@
     },
     "suggest": {
         "illuminate/contracts": "Required for Laravel integration (^10.0|^11.0|^12.0)",
-        "illuminate/support": "Required for Laravel integration (^10.0|^11.0|^12.0)"
+        "illuminate/support": "Required for Laravel integration (^10.0|^11.0|^12.0)",
+        "laravel/ai": "Required for the Laravel AI SDK tool classes in Firecrawl\\Laravel\\Tools (^0.9, needs PHP 8.3+ and Laravel 12+)"
     },
     "autoload": {
         "psr-4": {

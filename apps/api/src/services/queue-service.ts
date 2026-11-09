@@ -4,13 +4,16 @@ import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
+import type { BillTeamJobData } from "./billing/types";
+import type { TrackParams } from "./autumn/types";
 
 let loggingQueue: Queue;
 let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
-let billingQueue: Queue;
+let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
+let firebillTrackRetryQueue: Queue<FirebillTrackRetryJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -29,6 +32,12 @@ const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
+const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
+
+/** A usage event firebill never confirmed, re-sent as the identical event. */
+export type FirebillTrackRetryJobData = TrackParams & {
+  idempotencyKey: string;
+};
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -76,7 +85,7 @@ export function getDeepResearchQueue() {
 
 export function getBillingQueue() {
   if (!billingQueue) {
-    billingQueue = new Queue(billingQueueName, {
+    billingQueue = new Queue<BillTeamJobData>(billingQueueName, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         removeOnComplete: {
@@ -89,6 +98,28 @@ export function getBillingQueue() {
     });
   }
   return billingQueue;
+}
+
+export function getFirebillTrackRetryQueue() {
+  if (!firebillTrackRetryQueue) {
+    firebillTrackRetryQueue = new Queue<FirebillTrackRetryJobData>(
+      firebillTrackRetryQueueName,
+      {
+        connection: getRedisConnection(),
+        defaultJobOptions: {
+          removeOnComplete: {
+            age: 60 * 60, // 1 hour
+          },
+          // Exhausted retries stay inspectable for a week: each one is an
+          // event that may not have been billed.
+          removeOnFail: {
+            age: 7 * 24 * 60 * 60, // 7 days
+          },
+        },
+      },
+    );
+  }
+  return firebillTrackRetryQueue;
 }
 
 export function getPrecrawlQueue() {

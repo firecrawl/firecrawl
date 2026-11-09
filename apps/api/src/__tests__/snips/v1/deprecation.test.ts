@@ -23,7 +23,7 @@ describe("Deprecation warnings on legacy endpoints", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.headers["deprecation"]).toBe("true");
+    expect(res.headers["deprecation"]).toBe("@1778025600");
     expect(res.headers["warning"]).toMatch(/^299 - "/);
     expect(res.headers["warning"]).toMatch(/llmstxt/i);
     expect(Array.isArray(res.body.warnings)).toBe(true);
@@ -43,7 +43,7 @@ describe("Deprecation warnings on legacy endpoints", () => {
       .set("Authorization", `Bearer ${identity.apiKey}`);
 
     expect(res.statusCode).toBe(404);
-    expect(res.headers["deprecation"]).toBe("true");
+    expect(res.headers["deprecation"]).toBe("@1778025600");
     expect(res.headers["warning"]).toMatch(/deprecated/i);
     expect(Array.isArray(res.body.warnings)).toBe(true);
     expect(res.body.warnings.some((w: string) => /deprecated/i.test(w))).toBe(
@@ -64,7 +64,7 @@ describe("Deprecation warnings on legacy endpoints", () => {
       });
 
     expect(res.statusCode).toBe(200);
-    expect(res.headers["deprecation"]).toBe("true");
+    expect(res.headers["deprecation"]).toBe("@1778025600");
     expect(res.headers["warning"]).toMatch(/deep-research/i);
     expect(res.headers["link"]).toContain(
       '</v2/search>; rel="successor-version"',

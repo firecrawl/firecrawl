@@ -248,6 +248,18 @@ type SearchTargetRunResult = {
   }>;
 };
 
+function judgmentFromSearchVerdict(
+  verdict: SearchVerdict,
+  meaningful: boolean,
+): NonNullable<SearchTargetRunResult["pageUpserts"][number]["judgment"]> {
+  return {
+    meaningful,
+    confidence: "high",
+    reason: verdict.rationale,
+    meaningfulChanges: [],
+  };
+}
+
 export async function runSearchTarget(params: {
   monitor: {
     id: string;
@@ -259,13 +271,18 @@ export async function runSearchTarget(params: {
   target: SearchTargetInput;
   monitorCheckId: string;
   scrapePage: ScrapeSearchPage;
+  // Injected blocklist predicate (keeps this module free of worker/auth deps).
+  // Blocked URLs are dropped before scrape/judge/billing. Defaults to allow-all.
+  isBlocked?: (url: string) => boolean;
   goalVersion: string;
   knownPages: Map<string, KnownPage>;
   knownEvents: KnownEvent[];
   zeroDataRetention: boolean;
+  usOnly?: boolean;
   logger: Logger;
 }): Promise<SearchTargetRunResult> {
   const { target, knownPages, goalVersion, logger } = params;
+  const isBlocked = params.isBlocked ?? (() => false);
   const judgeEnabled = params.monitor.judgeEnabled;
   const runStart = Date.now();
 
@@ -285,6 +302,7 @@ export async function runSearchTarget(params: {
   let skipped = 0;
   let matches = 0;
   let searchResultsBilled = 0;
+  let blocked = 0;
   let resultsJudged = 0;
   let judgeScrapeFailures = 0;
 
@@ -307,6 +325,7 @@ export async function runSearchTarget(params: {
         logger,
         num_results: target.maxResults,
         tbs,
+        usOnly: params.usOnly,
       },
       logger,
     );
@@ -315,6 +334,10 @@ export async function runSearchTarget(params: {
     for (const r of results) {
       if (!r.url) continue;
       if (isExcludedDomain(r.url, target.excludeDomains)) continue;
+      if (isBlocked(r.url)) {
+        blocked += 1;
+        continue;
+      }
       const canonical = canonicalizeUrl(r.url);
       const existingIdx = seenThisRun.get(canonical);
       if (existingIdx !== undefined) {
@@ -335,6 +358,13 @@ export async function runSearchTarget(params: {
     }
   }
   resultCount = candidates.length;
+
+  if (blocked > 0) {
+    logger.info("search monitor: dropped blocklisted results before judging", {
+      blocked,
+      kept: resultCount,
+    });
+  }
 
   // An empty retrieval is indistinguishable from "nothing matched"; log to diagnose.
   if (resultCount === 0) {
@@ -416,7 +446,7 @@ export async function runSearchTarget(params: {
       skipped += 1;
       sources.push({ url: c.url, title: c.title, status: "skipped" });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: "skipped",
         scraped: false,
@@ -442,7 +472,7 @@ export async function runSearchTarget(params: {
             : "watching";
       sources.push({ url: c.url, title: c.title, status: reusedStatus });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: reusedStatus,
         metadata: {
@@ -466,7 +496,7 @@ export async function runSearchTarget(params: {
         goalVersion,
         searchStatus: alreadyAlerted ? "already_seen" : "alert",
         eventKey: rawKey,
-        eventLabel: c.title || canonical,
+        eventLabel: c.title || c.url,
         query: c.query,
         matchedQueries: c.matchedQueries,
       };
@@ -478,7 +508,7 @@ export async function runSearchTarget(params: {
           eventKey: rawKey,
         });
         pageUpserts.push({
-          url: canonical,
+          url: c.url,
           urlHash: hashMonitorUrl(canonical),
           status: "already_seen",
           scraped: false,
@@ -497,7 +527,7 @@ export async function runSearchTarget(params: {
       } else {
         events.unshift({
           key: rawKey,
-          label: c.title || canonical,
+          label: c.title || c.url,
           satisfiedAt: eventSatisfiedAt,
           alertCount: eventAlertCount,
         });
@@ -509,7 +539,7 @@ export async function runSearchTarget(params: {
         eventKey: rawKey,
       });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: "alert",
         scraped: false,
@@ -589,6 +619,10 @@ export async function runSearchTarget(params: {
     resultsJudged += 1;
 
     const decision = verdictToDecision(verdict);
+    const meaningfulJudgment = judgmentFromSearchVerdict(
+      verdict,
+      decision === "notify",
+    );
 
     const baseMeta = {
       fingerprint,
@@ -609,11 +643,12 @@ export async function runSearchTarget(params: {
         ...baseMeta,
       });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: "ignored",
         scraped: depth === "deep",
         metadata: { ...baseMeta, searchStatus: "ignored" },
+        judgment: meaningfulJudgment,
       });
       continue;
     }
@@ -625,18 +660,19 @@ export async function runSearchTarget(params: {
         ...baseMeta,
       });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: "watching",
         scraped: depth === "deep",
         metadata: { ...baseMeta, searchStatus: "watching" },
+        judgment: meaningfulJudgment,
       });
       continue;
     }
 
     // Deterministic event key: dedup by canonical URL (no LLM event resolver).
     const eventKey = canonical;
-    const eventLabel = verdict.concept || canonical;
+    const eventLabel = verdict.concept || c.url;
 
     // Re-alert on every new result only in every_new_result mode; otherwise dedup.
     const alreadySatisfied =
@@ -652,11 +688,12 @@ export async function runSearchTarget(params: {
         ...baseMeta,
       });
       pageUpserts.push({
-        url: canonical,
+        url: c.url,
         urlHash: hashMonitorUrl(canonical),
         status: "already_seen",
         scraped: depth === "deep",
         metadata: { ...eventMeta, searchStatus: "already_seen" },
+        judgment: meaningfulJudgment,
       });
       continue;
     }
@@ -686,7 +723,7 @@ export async function runSearchTarget(params: {
       ...baseMeta,
     });
     pageUpserts.push({
-      url: canonical,
+      url: c.url,
       urlHash: hashMonitorUrl(canonical),
       status: "alert",
       scraped: depth === "deep",
@@ -697,12 +734,7 @@ export async function runSearchTarget(params: {
         eventAlertCount,
         eventLastAlertAt: nowIso,
       },
-      judgment: {
-        meaningful: true,
-        confidence: "high",
-        reason: verdict.rationale,
-        meaningfulChanges: [],
-      },
+      judgment: meaningfulJudgment,
     });
   }
 

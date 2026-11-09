@@ -43,6 +43,7 @@ def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
         "statusCode": "status_code",
         "scrapeId": "scrape_id",
         "numPages": "num_pages",
+        "totalPages": "total_pages",
         "contentType": "content_type",
         "proxyUsed": "proxy_used",
         "cacheState": "cache_state",

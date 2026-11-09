@@ -1,12 +1,8 @@
 import { config } from "../config";
 import { SearchResult } from "../../src/lib/entities";
-import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
 import { executeWithRetry, attemptRequest } from "../lib/retry-utils";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
+import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 
 function hasResults(results: unknown): results is SearchResult[] {
   return Array.isArray(results) && results.length > 0;
@@ -22,6 +18,7 @@ export async function fire_engine_search(
     location?: string;
     numResults: number;
     page?: number;
+    usOnly?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
@@ -37,6 +34,7 @@ export async function fire_engine_search(
     tbs: options.tbs,
     numResults: options.numResults,
     page: options.page ?? 1,
+    ...(options.usOnly ? { usOnly: true } : {}),
   };
 
   const url = `${config.FIRE_ENGINE_BETA_URL}/search`;
@@ -61,6 +59,8 @@ export async function fireEngineMap(
     location?: string;
     numResults: number;
     page?: number;
+    usOnly?: boolean;
+    zeroDataRetention?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
@@ -79,6 +79,8 @@ export async function fireEngineMap(
     tbs: options.tbs,
     numResults: options.numResults,
     page: options.page ?? 1,
+    ...(options.usOnly ? { usOnly: true } : {}),
+    ...(options.zeroDataRetention ? { zeroDataRetention: true } : {}),
   };
 
   const url = `${config.FIRE_ENGINE_BETA_URL}/map`;

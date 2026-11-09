@@ -1,4 +1,5 @@
 import { fetchAudio } from "../audio";
+import { MediaAccessDeniedError } from "../../error";
 import { config } from "../../../../config";
 
 describe("fetchAudio lockdown guard", () => {
@@ -52,6 +53,29 @@ describe("fetchAudio lockdown guard", () => {
     expect(result.audio).toBeUndefined();
   });
 
+  it("refuses the audio format under zero data retention without calling avgrab", async () => {
+    const fetchSpy = mockSuccessfulAvgrab();
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      internalOptions: { zeroDataRetention: true },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+    const document: any = {};
+
+    const result = await fetchAudio(meta, document);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.audio).toBeUndefined();
+    expect(result.warning).toBe(
+      "Audio format is not supported with zero data retention.",
+    );
+  });
+
   it("returns early when audio format is not requested regardless of lockdown", async () => {
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
@@ -91,6 +115,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -109,6 +134,84 @@ describe("fetchAudio lockdown guard", () => {
     });
   });
 
+  it("relays the message when the service reports a structured user-facing error", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+
+      return {
+        ok: false,
+        status: 403,
+        json: async () => ({
+          detail: {
+            code: "content_unavailable",
+            message:
+              "This content requires an authenticated session to access.",
+          },
+        }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      internalOptions: { zeroDataRetention: false },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaAccessDeniedError);
+    expect(error.code).toBe("SCRAPE_MEDIA_ACCESS_DENIED");
+    expect(error.message).toBe(
+      "This content requires an authenticated session to access.",
+    );
+  });
+
+  it("keeps the generic error for other service failures", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ detail: "Download failed: some other error" }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      internalOptions: { zeroDataRetention: false },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(MediaAccessDeniedError);
+    expect(error.message).toBe(
+      "Audio download failed: Download failed: some other error",
+    );
+  });
+
   it("omits cookies from the avgrab request when no audio cookies are available", async () => {
     const fetchSpy = mockSuccessfulAvgrab();
 
@@ -118,6 +221,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};

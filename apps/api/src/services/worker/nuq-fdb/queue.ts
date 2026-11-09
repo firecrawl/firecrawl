@@ -24,6 +24,7 @@ import {
   F_ZDR,
   F_COUNTABLE,
   F_GACC,
+  F_KEY_GATED,
   normalizeOwnerId,
 } from "./keyspace";
 
@@ -40,6 +41,7 @@ import {
   newTxContext,
   pushReady,
   appendTeamPending,
+  appendKeyPending,
   appendCrawlPending,
   popTeamPending,
   setStatusQueued,
@@ -110,6 +112,9 @@ export type NuQFdbGate = {
   // null = unlimited (self-hosted)
   teamLimit: number | null;
   queueCap: number;
+  // API-key-scoped concurrency limit; null/absent = the key is unlimited.
+  // Only applies when the batch is team-gated (teamLimit !== null).
+  key?: { id: string; limit: number } | null;
 };
 
 type AddJobInput<Data> = {
@@ -202,7 +207,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       throw new Error("addJobs requires all jobs to share an owner");
     }
 
-    const prepared = jobs.map(j => this.prepareAddJob(j, ownerId));
+    const prepared = jobs.map(j =>
+      this.prepareAddJob(j, ownerId, gate.key?.id ?? null),
+    );
     const results: NuQFdbJob<JobData, JobReturnValue>[] = [];
     let batch: PreparedAddJob<JobData>[] = [];
     let batchBytes = 0;
@@ -248,12 +255,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   private prepareAddJob(
     job: AddJobInput<JobData>,
     ownerId: string | null,
+    keyId: string | null,
   ): PreparedAddJob<JobData> {
     const dataBuf = Buffer.from(JSON.stringify(job.data ?? null), "utf8");
     const dataChunks = chunkBuffer(dataBuf, DATA_CHUNK_BYTES);
     const estimatedAffectedBytes = this.estimateEnqueueAffectedBytes(
       job,
       ownerId,
+      keyId,
       dataChunks,
     );
     return {
@@ -267,6 +276,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   private estimateEnqueueAffectedBytes(
     job: AddJobInput<JobData>,
     ownerId: string | null,
+    keyId: string | null,
     dataChunks: Buffer[],
   ): number {
     const ks = this.ks;
@@ -278,8 +288,16 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       i: job.id,
       o: owner,
       g: gid,
+      k: keyId ?? undefined,
       p: priority,
-      f: F_GATED | F_CRAWL_GATED | F_LISTENABLE | F_ZDR | F_COUNTABLE | F_GACC,
+      f:
+        F_GATED |
+        F_CRAWL_GATED |
+        F_KEY_GATED |
+        F_LISTENABLE |
+        F_ZDR |
+        F_COUNTABLE |
+        F_GACC,
       c: now,
       to: job.options.timesOutAt?.getTime(),
     };
@@ -288,6 +306,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       p: priority,
       o: owner,
       g: gid,
+      k: entry.k,
       f: entry.f,
       to: entry.to,
       dc: dataChunks.length,
@@ -320,6 +339,18 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         ks.teamShardCount(owner, 0).length +
         8 +
         ks.teamPendingKey(owner, 0, priority, now, job.id).length +
+        encodedJsonBytes(entry);
+    }
+
+    if (keyId) {
+      bytes +=
+        ks.keyLimit(keyId).length +
+        8 +
+        ks.keyActive(keyId).length +
+        8 +
+        ks.keyPendingCount(keyId).length +
+        8 +
+        ks.keyPendingKey(keyId, priority, now, job.id).length +
         encodedJsonBytes(entry);
     }
 
@@ -388,6 +419,23 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         free = Math.max(0, gate.teamLimit - active);
       }
 
+      // API-key gate state; only meaningful inside the team-gated world
+      let keyFree = Infinity;
+      const keyId = gate.teamLimit !== null && gate.key ? gate.key.id : null;
+      if (keyId !== null && gate.key) {
+        const storedBuf = await tn.get(ks.keyLimit(keyId));
+        const stored = storedBuf ? decodeI64(storedBuf) : null;
+        if (stored !== gate.key.limit) {
+          tn.set(ks.keyLimit(keyId), encodeI64(gate.key.limit));
+          if (stored !== null && gate.key.limit > stored) {
+            tn.set(ks.taskKeyRaise(keyId), EMPTY);
+          }
+        }
+        // key limits are small by definition: always the strict read
+        const kActive = decodeI64(await tn.get(ks.keyActive(keyId)));
+        keyFree = Math.max(0, gate.key.limit - kActive);
+      }
+
       // crawl gate state per distinct live group
       const groupMetas = new Map<string, GroupMeta | null>();
       const crawlFree = new Map<string, number>();
@@ -408,6 +456,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       }
 
       let granted = 0;
+      let keyGranted = 0;
       const crawlAcquired = new Map<string, number>();
 
       for (const j of jobs) {
@@ -416,6 +465,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         const groupLive = !!gMeta && gMeta.s === "active";
         const gated = gate.teamLimit !== null && !j.options.bypassGate;
         const crawlGated = gated && !!gid && groupLive && crawlFree.has(gid!);
+        const keyGated = gated && keyId !== null;
         const countable =
           this.options.hasGroups &&
           groupLive &&
@@ -424,6 +474,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         let flags = 0;
         if (gated) flags |= F_GATED;
         if (crawlGated) flags |= F_CRAWL_GATED;
+        if (keyGated) flags |= F_KEY_GATED;
         if (j.options.listenable) flags |= F_LISTENABLE;
         if ((j.data as any)?.zeroDataRetention) flags |= F_ZDR;
         if (countable) flags |= F_COUNTABLE;
@@ -434,6 +485,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           i: j.id,
           o: ownerId ?? "",
           g: gid,
+          k: keyGated ? keyId! : undefined,
           p: j.options.priority ?? 0,
           f: flags,
           c: now,
@@ -445,6 +497,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           p: entry.p,
           o: entry.o,
           g: gid,
+          k: entry.k,
           f: flags,
           to: timesOutAt,
           dc: j.dataChunks.length,
@@ -463,10 +516,23 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const loc = appendCrawlPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
+        } else if (keyGated && keyFree <= 0) {
+          // holds the crawl slot (if any) while waiting in the key gate
+          if (crawlGated) {
+            crawlFree.set(gid!, crawlFree.get(gid!)! - 1);
+            crawlAcquired.set(gid!, (crawlAcquired.get(gid!) ?? 0) + 1);
+          }
+          const loc = appendKeyPending(tn, ks, entry);
+          setStatusPending(tn, ks, j.id, loc);
+          placedStatus = "pending";
         } else {
           if (crawlGated) {
             crawlFree.set(gid!, crawlFree.get(gid!)! - 1);
             crawlAcquired.set(gid!, (crawlAcquired.get(gid!) ?? 0) + 1);
+          }
+          if (keyGated) {
+            keyFree--;
+            keyGranted++;
           }
           if (free > 0) {
             free--;
@@ -500,6 +566,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
       if (granted > 0 && ownerId !== null) {
         bumpTeamActive(tn, ks, ownerId, granted);
+      }
+      if (keyGranted > 0 && keyId !== null) {
+        tn.add(ks.keyActive(keyId), encodeI64(keyGranted));
       }
       for (const [gid, n] of crawlAcquired) {
         tn.add(ks.groupCrawlActive(gid), encodeI64(n));
@@ -662,7 +731,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             tn,
             ks,
             e,
-            { team: true, crawl: true },
+            { team: true, key: true, crawl: true },
             now,
             txc,
           );
@@ -837,6 +906,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         i: id,
         o: meta.o,
         g: meta.g,
+        k: meta.k,
         p: meta.p,
         f: meta.f,
         c: meta.c,
@@ -846,7 +916,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         tn,
         ks,
         entry,
-        { team: true, crawl: true },
+        { team: true, key: true, crawl: true },
         now,
         txc,
       );
@@ -997,6 +1067,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         i: id,
         o: meta.o,
         g: meta.g,
+        k: meta.k,
         p: meta.p,
         f: meta.f,
         c: meta.c,
@@ -1006,14 +1077,24 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const accounted = !!(meta.f & F_GACC) && !!meta.g && !!this.groupOps;
 
       if (st.s === "pending") {
-        clearPendingPlacement(tn, ks, id, meta.o, meta.g, st.loc!, meta.to);
-        // team-pending and delayed jobs hold a crawl slot
+        clearPendingPlacement(
+          tn,
+          ks,
+          id,
+          meta.o,
+          meta.g,
+          meta.k,
+          st.loc!,
+          meta.to,
+        );
+        // key-pending and delayed jobs hold a crawl slot; team-pending jobs
+        // hold a key slot on top
         if (st.loc!.k !== "gq") {
           await releaseSlotsAndPromote(
             tn,
             ks,
             entry,
-            { team: false, crawl: true },
+            { team: false, key: st.loc!.k === "tq", crawl: true },
             now,
             txc,
           );
@@ -1037,7 +1118,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           tn,
           ks,
           entry,
-          { team: true, crawl: true },
+          { team: true, key: true, crawl: true },
           now,
           txc,
         );
@@ -1209,20 +1290,55 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return job;
   }
 
-  public async getCrawlJobsForListing(
+  public async getGroupJobs(
     groupId: string,
-    limit: number,
-    offset: number,
+    status: "completed" | "failed",
+    limit?: number,
+    offset = 0,
     logger: Logger = _logger,
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     const ks = this.ks;
+    if (status === "failed") {
+      const r = ks.groupJobRange(groupId);
+      const ids: string[] = [];
+      const target = limit === undefined ? Infinity : offset + limit;
+      let begin: Buffer | FdbKeySelector = r.begin;
+
+      while (ids.length < target) {
+        const rows = await this.db.doTn(async tn =>
+          tn.snapshot().getRangeAll(begin as any, r.end, { limit: 500 }),
+        );
+        for (const [key, value] of rows) {
+          const groupJob = decodeJson<GroupJobIndexValue>(value as Buffer);
+          if (groupJob?.m === 1 && groupJob.s === "failed") {
+            ids.push(ks.unpackId(key as Buffer));
+            if (ids.length === target) break;
+          }
+        }
+        if (rows.length < 500 || ids.length === target) break;
+        begin = {
+          key: rows[rows.length - 1][0] as Buffer,
+          orEqual: true,
+          offset: 1,
+          _isKeySelector: true,
+        };
+      }
+
+      return (await this.getJobs(ids.slice(offset), logger)).filter(
+        job => job.status === "failed",
+      );
+    }
+
     const ids = await this.db.doTn(async tn => {
       const r = ks.groupDoneRange(groupId);
-      const rows = await tn
-        .snapshot()
-        .getRangeAll(r.begin, r.end, { limit: offset + limit });
+      const rows =
+        limit === undefined
+          ? await tn.snapshot().getRangeAll(r.begin, r.end)
+          : await tn
+              .snapshot()
+              .getRangeAll(r.begin, r.end, { limit: offset + limit });
       return rows
-        .slice(offset)
+        .slice(offset, limit === undefined ? undefined : offset + limit)
         .map(([, value]) => (value as Buffer).toString("utf8"));
     });
     const jobs = await this.getJobs(ids, logger);

@@ -1,6 +1,4 @@
-import { RateLimiterMode } from "../types";
 import { getRedisConnection } from "../services/queue-service";
-import { getACUCTeam } from "../controllers/auth";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
@@ -20,6 +18,16 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
+import { getACUCTeam } from "../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
+import { reportPipelineError } from "./redis-pipeline";
+
+/**
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
+ */
+export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -67,7 +75,15 @@ export async function removeConcurrencyLimitedJobs(
     for (const id of chunk) {
       pipeline.del(constructJobKey(id));
     }
-    await pipeline.exec();
+    // Do not throw on command errors: cancel has already been recorded on
+    // the crawl, and the stale entries self-expire via their PX timeout.
+    // But never let the failure pass silently.
+    reportPipelineError(await pipeline.exec(), logger, {
+      module: "concurrency-limit",
+      method: "removeConcurrencyLimitedJobs",
+      teamId: team_id,
+      jobCount: chunk.length,
+    });
   }
 }
 
@@ -127,7 +143,16 @@ export async function pushConcurrencyLimitedJobs(
 
   pipeline.zadd(queueKey, ...zaddArgs);
   pipeline.sadd("concurrency-limit-queues", queueKey);
-  await pipeline.exec();
+  // Do not throw on command errors: the jobs are already durable in the
+  // NuQ backlog, and the concurrency-queue reconciler requeues anything
+  // missing from this derived Redis index on its next run. But never let
+  // the failure pass silently.
+  reportPipelineError(await pipeline.exec(), logger, {
+    module: "concurrency-limit",
+    method: "pushConcurrencyLimitedJobs",
+    teamId: team_id,
+    jobCount: jobs.length,
+  });
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
@@ -304,15 +329,10 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
+    // Once per call, not once per job promoted below.
     const maxTeamConcurrency =
-      (
-        await getACUCTeam(
-          job.data.team_id,
-          false,
-          true,
-          job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-        )
-      )?.concurrency ?? 2;
+      (await getACUCTeam(job.data.team_id).catch(() => null))
+        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

@@ -1,5 +1,5 @@
 /**
- * Firecrawl Java SDK — a type-safe client for the Firecrawl v2 web scraping API.
+ * Firecrawl Java SDK: a type-safe client for the Firecrawl v2 API, the context API for AI agents.
  *
  * <p>Quick start:
  * <pre>{@code

@@ -1,4 +1,4 @@
-from ..utils import HttpClient, handle_response_error
+from ..utils import FirecrawlError, HttpClient, handle_response_error
 from ..types import ConcurrencyCheck, CreditUsage, QueueStatusResponse, TokenUsage, CreditUsageHistoricalResponse, TokenUsageHistoricalResponse
 
 
@@ -8,7 +8,7 @@ def get_concurrency(client: HttpClient) -> ConcurrencyCheck:
         handle_response_error(resp, "get concurrency")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return ConcurrencyCheck(
         concurrency=data.get("concurrency"),
@@ -22,7 +22,7 @@ def get_credit_usage(client: HttpClient) -> CreditUsage:
         handle_response_error(resp, "get credit usage")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return CreditUsage(
         remaining_credits=data.get("remainingCredits", data.get("remaining_credits", 0)),
@@ -38,7 +38,7 @@ def get_token_usage(client: HttpClient) -> TokenUsage:
         handle_response_error(resp, "get token usage")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return TokenUsage(
         remaining_tokens=data.get("remainingTokens", data.get("remaining_tokens", 0)),
@@ -53,7 +53,7 @@ def get_queue_status(client: HttpClient) -> QueueStatusResponse:
         handle_response_error(resp, "get queue status")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return QueueStatusResponse(
         jobs_in_queue=data.get("jobsInQueue", 0),
@@ -70,7 +70,7 @@ def get_credit_usage_historical(client: HttpClient, by_api_key: bool = False) ->
         handle_response_error(resp, "get credit usage historical")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     return CreditUsageHistoricalResponse(**body)
 
 
@@ -80,5 +80,5 @@ def get_token_usage_historical(client: HttpClient, by_api_key: bool = False) -> 
         handle_response_error(resp, "get token usage historical")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     return TokenUsageHistoricalResponse(**body)

@@ -116,6 +116,25 @@ class TestPrepareScrapeOptions:
         assert result["timeout"] == 30000
         assert result["waitFor"] == 2000
 
+    def test_prepare_top_level_check_prompt_injection(self):
+        """check_prompt_injection is sent as the top-level checkPromptInjection."""
+        result = prepare_scrape_options(
+            ScrapeOptions(formats=["markdown"], check_prompt_injection=True)
+        )
+
+        assert result["checkPromptInjection"] is True
+        assert "check_prompt_injection" not in result
+
+    def test_prepare_json_format_check_prompt_injection_still_sent(self):
+        """The deprecated json-format field keeps working."""
+        result = prepare_scrape_options(
+            ScrapeOptions(
+                formats=[JsonFormat(prompt="Extract", check_prompt_injection=True)]
+            )
+        )
+
+        assert result["formats"][0]["checkPromptInjection"] is True
+
     def test_prepare_snake_case_conversion(self):
         """Test snake_case to camelCase conversion."""
         options = ScrapeOptions(
@@ -388,3 +407,51 @@ class TestPrepareScrapeOptions:
         result = prepare_scrape_options(options)
 
         assert result["parsers"][0]["maxPages"] == 5
+
+    def test_prepare_parsers_blocks_and_pages(self):
+        """PDF parser blocks, pages, and page_markers are forwarded to the API."""
+        parser = PDFParser(mode="auto", pages=True, blocks=True, page_markers=True)
+        options = ScrapeOptions(parsers=[parser])
+
+        result = prepare_scrape_options(options)
+
+        assert result["parsers"][0] == {
+            "type": "pdf",
+            "mode": "auto",
+            "pages": True,
+            "blocks": True,
+            "pageMarkers": True,
+        }
+
+        markers_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markers": True}]
+        )
+        markers_result = prepare_scrape_options(markers_options)
+        assert markers_result["parsers"][0]["pageMarkers"] is True
+        assert "page_markers" not in markers_result["parsers"][0]
+
+        dict_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markdown": True, "blocks": True}]
+        )
+        dict_result = prepare_scrape_options(dict_options)
+        assert dict_result["parsers"][0]["pages"] is True
+        assert dict_result["parsers"][0]["blocks"] is True
+        assert "page_markdown" not in dict_result["parsers"][0]
+        assert "pageMarkdown" not in dict_result["parsers"][0]
+
+        camel_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "pageMarkdown": True}]
+        )
+        camel_result = prepare_scrape_options(camel_options)
+        assert camel_result["parsers"][0]["pages"] is True
+        assert "pageMarkdown" not in camel_result["parsers"][0]
+
+    def test_prepare_min_age_maps_to_camel_case(self):
+        """min_age must be sent as minAge; the server drops the snake_case key."""
+        options = ScrapeOptions(min_age=1000, max_age=5000)
+
+        result = prepare_scrape_options(options)
+
+        assert result["minAge"] == 1000
+        assert "min_age" not in result
+        assert result["maxAge"] == 5000

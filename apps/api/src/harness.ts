@@ -748,7 +748,7 @@ async function setupFdb(): Promise<Services["fdb"]> {
   // configured" failure and surface any real configure error.
   const configure = execForward(
     `${runtime}@fdb-configure`,
-    `${runtime} exec ${containerName} sh -c 'out=$(fdbcli --exec "configure new single memory" 2>&1); status=$?; printf "%s\\n" "$out"; if [ "$status" -eq 0 ]; then exit 0; fi; printf "%s\\n" "$out" | grep -Eiq "already.*configured|database.*configured"'`,
+    `${runtime} exec ${containerName} sh -c 'out=$(fdbcli --exec "configure new single memory" 2>&1); status=$?; printf "%s\\n" "$out"; if [ "$status" -eq 0 ]; then exit 0; fi; printf "%s\\n" "$out" | grep -Eiq "already.*configured|database.*configured|database.*already exists"'`,
   );
   await configure.promise;
 
@@ -920,12 +920,11 @@ async function startServices(command?: string[]): Promise<Services> {
       )
     : undefined;
 
-  // tests hammer the API instantly, so we need to ensure it's running before launching tests
   if (
     command &&
     Array.isArray(command) &&
     command[0] === "pnpm" &&
-    command[1].startsWith("test:snips")
+    (command[1].startsWith("test:snips") || command[1] === "exec")
   ) {
     logger.info(`Waiting for API on localhost:${PORT}`);
     await waitForPort(Number(PORT), "localhost");
@@ -1074,7 +1073,15 @@ async function runDevMode(): Promise<void> {
   });
 
   logger.section("Starting development mode");
-  watch.start("--project", ".");
+  // The typescript package is aliased to @typescript/typescript6 (which only
+  // ships tsc6), so tsc-watch's default typescript/bin/tsc does not resolve;
+  // point it at TypeScript 7's tsc explicitly, like the package.json scripts.
+  watch.start(
+    "--compiler",
+    "./node_modules/typescript-7/bin/tsc",
+    "--project",
+    ".",
+  );
 
   await new Promise<void>(resolve => {
     const stop = () => {

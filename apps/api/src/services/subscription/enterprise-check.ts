@@ -1,5 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
-import { db } from "../../db/connection";
+import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 
 const RATE_LIMIT_CHANGE_NOTIFICATION_START_DATE = new Date("2025-03-12");
@@ -8,7 +8,7 @@ export async function isEnterpriseTeamCreatedAfterRateLimitChange(
   team_id: string,
 ): Promise<boolean> {
   try {
-    const data = await db
+    const data = await dbRr
       .select({ is_enterprise: schema.products.is_enterprise })
       .from(schema.subscriptions)
       .innerJoin(

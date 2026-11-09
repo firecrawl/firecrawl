@@ -1,10 +1,11 @@
-import { diffGetLastScrape } from "../../../db/rpc";
+import { changeTrackingGetLastScrape } from "../../../lib/change-tracking-store";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
 import { generateCompletions } from "./llmExtract";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import { createMarkdownChangeDiff } from "../../../lib/change-tracking-diff";
+import { UsOnlyUnavailableError } from "../error";
 
 async function extractDataWithSchema(
   content: string,
@@ -39,9 +40,11 @@ async function extractDataWithSchema(
         functionId: "deriveDiff/extractDataWithSchema",
         scrapeId: meta.id,
       },
+      teamFlags: meta.internalOptions.teamFlags,
     });
     return { extract };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) throw error;
     meta.logger.error("Error extracting data with schema", { error });
     return null;
   }
@@ -88,13 +91,13 @@ export async function deriveDiff(
     }
 
     const start = Date.now();
-    let resData: { o_job_id: string; o_date_added: string }[];
+    let last: Awaited<ReturnType<typeof changeTrackingGetLastScrape>>;
     try {
-      resData = await diffGetLastScrape(
-        meta.internalOptions.teamId!,
-        document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
-        changeTrackingFormat?.tag ?? null,
-      );
+      last = await changeTrackingGetLastScrape({
+        team_id: meta.internalOptions.teamId!,
+        url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
+        tag: changeTrackingFormat?.tag ?? null,
+      });
     } catch (error) {
       meta.logger.error("Error fetching previous scrape", { error });
       document.warning =
@@ -113,25 +116,17 @@ export async function deriveDiff(
       });
     }
 
-    const data:
-      | {
-          o_job_id: string;
-          o_date_added: string;
-        }
-      | undefined
-      | null = resData[0];
-
-    const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
+    const rawJob = last?.job_id ? await getJobFromGCS(last.job_id) : null;
     const job: Document | null = rawJob?.[0] ?? null;
 
     meta.logger.debug("Change tracking debugging", {
-      isDataPresent: !!data,
-      data,
+      isDataPresent: !!last,
+      data: last,
       isRawJobPresent: !!rawJob,
       isJobPresent: !!job,
     });
 
-    if (data && job) {
+    if (last && job) {
       const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
 
@@ -149,7 +144,7 @@ export async function deriveDiff(
             : "same";
 
       document.changeTracking = {
-        previousScrapeAt: data.o_date_added,
+        previousScrapeAt: last.date_added,
         changeStatus,
         visibility: meta.internalOptions.urlInvisibleInCurrentCrawl
           ? "hidden"
@@ -217,16 +212,22 @@ export async function deriveDiff(
                 functionId: "deriveDiff",
                 scrapeId: meta.id,
               },
+              teamFlags: meta.internalOptions.teamFlags,
             });
 
             document.changeTracking.json = extract;
           }
         } catch (error) {
-          meta.logger.error("Error generating structured diff with LLM", {
-            error,
-          });
+          const usOnly = error instanceof UsOnlyUnavailableError;
+          if (!usOnly) {
+            meta.logger.error("Error generating structured diff with LLM", {
+              error,
+            });
+          }
           document.warning =
-            "Structured diff generation failed." +
+            (usOnly
+              ? "Change tracking JSON mode is not available for teams restricted to US-only processing."
+              : "Structured diff generation failed.") +
             (document.warning ? ` ${document.warning}` : "");
         }
       }

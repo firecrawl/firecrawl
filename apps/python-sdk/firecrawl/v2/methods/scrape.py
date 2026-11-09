@@ -2,15 +2,23 @@
 Scraping functionality for Firecrawl v2 API.
 """
 
-from typing import Optional, Dict, Any, Literal
+import time
+import re
+from uuid import uuid4
+from typing import Optional, Dict, Any, List, Literal, Union
 from ..types import (
     ScrapeOptions,
     Document,
     BrowserExecuteResponse,
     BrowserDeleteResponse,
+    AlexandriaCall,
+    AlexandriaScrapeData,
+    AlexandriaScrapeResult,
 )
+from ..utils.agent_hints import agent_hint_metadata
 from ..utils.normalize import normalize_document_input
-from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
+from ..utils import FirecrawlError, HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
+from ..utils.auto_resume import ResumeTracker
 
 
 def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -38,7 +46,15 @@ def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -
 
     return request_data
 
-def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+
+
+def scrape(
+    client: HttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     """
     Scrape a single URL and return the document.
     
@@ -55,18 +71,114 @@ def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None
     """
     payload = _prepare_scrape_request(url, options)
 
-    response = client.post("/v2/scrape", payload)
+    resume = ResumeTracker(enabled=auto_resume is not False)
+    while True:
+        response = client.post("/v2/scrape", payload)
 
-    if not response.ok:
-        handle_response_error(response, "scrape")
+        if not response.ok:
+            delay_s = resume.delay_or_none(response)
+            if delay_s is not None:
+                # The document keeps processing server-side; the retry
+                # attaches to the same in-flight job (content adoption)
+                # and returns the finished result.
+                time.sleep(delay_s)
+                continue
+            handle_response_error(response, "scrape")
 
-    body = response.json()
-    if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        body = response.json()
+        if not body.get("success"):
+            handle_response_error(response, "scrape")
 
-    document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
-    return Document(**normalized)
+        document_data = body.get("data", {})
+        normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
+        return Document(**normalized)
+
+
+MAX_ALEXANDRIA_CALLS = 10
+# Matches the API's default and maximum execution timeout for Alexandria calls.
+MAX_ALEXANDRIA_TIMEOUT_MS = 120_000
+# Extra time for the API to deliver a response after its execution deadline.
+ALEXANDRIA_RESPONSE_MARGIN_MS = 30_000
+
+
+def _prepare_scrape_alexandria_request(
+    calls: List[Union[AlexandriaCall, Dict[str, Any]]],
+    *,
+    timeout: Optional[int] = None,
+    integration: Optional[str] = None,
+) -> Dict[str, Any]:
+    if isinstance(calls, (dict, AlexandriaCall)):
+        calls = [calls]
+    if not calls:
+        raise ValueError("At least one alexandria call is required")
+    if len(calls) > MAX_ALEXANDRIA_CALLS:
+        raise ValueError(f"At most {MAX_ALEXANDRIA_CALLS} alexandria calls are allowed per request")
+    items: List[Dict[str, Any]] = []
+    for call in calls:
+        if isinstance(call, dict):
+            call = AlexandriaCall(**call)
+        elif not isinstance(call, AlexandriaCall):
+            raise ValueError(f"Invalid alexandria call: {call!r}")
+        provider = (call.provider or "").strip()
+        capability = (call.capability or "").strip()
+        if not provider:
+            raise ValueError("Alexandria call provider cannot be empty")
+        if not capability:
+            raise ValueError("Alexandria call capability cannot be empty")
+        item: Dict[str, Any] = {"provider": provider, "capability": capability}
+        if call.options is not None:
+            item["options"] = call.options
+        items.append(item)
+    payload: Dict[str, Any] = {"alexandria": items}
+    if timeout is not None:
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            raise ValueError("Timeout must be a positive integer")
+        payload["timeout"] = timeout
+    if integration is not None and str(integration).strip():
+        payload["integration"] = str(integration).strip()
+    return payload
+
+
+def _parse_scrape_alexandria_response(body: Dict[str, Any], request_id: str) -> AlexandriaScrapeData:
+    data = body["data"]
+    results = [AlexandriaScrapeResult(**item) for item in data["alexandria"]]
+    return AlexandriaScrapeData(
+        scrape_id=body.get("scrape_id"),
+        alexandria=results,
+        credits_cost=data["creditsCost"],
+        request_id=request_id,
+    )
+
+
+def _alexandria_request_id(request_id: Optional[str]) -> str:
+    value = str(uuid4()) if request_id is None else request_id
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value):
+        raise ValueError("Invalid request_id")
+    return value
+
+
+def _alexandria_transport_timeout(timeout: Optional[int]) -> float:
+    """Return the HTTP timeout in seconds for an Alexandria request."""
+    execution_ms = min(timeout if timeout is not None else MAX_ALEXANDRIA_TIMEOUT_MS, MAX_ALEXANDRIA_TIMEOUT_MS)
+    return (execution_ms + ALEXANDRIA_RESPONSE_MARGIN_MS) / 1000
+
+
+def scrape_alexandria(client: HttpClient, calls, *, timeout: Optional[int] = None,
+                    integration: Optional[str] = None, request_id: Optional[str] = None) -> AlexandriaScrapeData:
+    payload = _prepare_scrape_alexandria_request(calls, timeout=timeout, integration=integration)
+    request_id = _alexandria_request_id(request_id)
+    headers = {**client._prepare_headers(), "x-request-id": request_id}
+    try:
+        response = client.post("/v2/scrape", payload, headers=headers,
+                                    timeout=_alexandria_transport_timeout(timeout))
+        if response.status_code != 200 or not response.json().get("success"):
+            handle_response_error(response, "scrape alexandria")
+        return _parse_scrape_alexandria_response(response.json(), request_id)
+    except FirecrawlError as error:
+        error.request_id = request_id
+        raise
+    except Exception as error:
+        raise FirecrawlError(str(error), request_id=request_id) from error
 
 
 def interact(
@@ -123,7 +235,7 @@ def interact(
 
     payload = response.json()
     if not payload.get("success"):
-        raise Exception(payload.get("error", "Unknown error occurred"))
+        raise FirecrawlError(payload.get("error", "Unknown error occurred"))
 
     normalized = dict(payload)
     if "exitCode" in normalized and "exit_code" not in normalized:

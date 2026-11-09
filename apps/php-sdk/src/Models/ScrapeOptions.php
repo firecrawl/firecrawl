@@ -11,8 +11,9 @@ final class ScrapeOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null $actions
+     * @param AuditMetadata|null           $auditMetadata
      */
     private function __construct(
         private readonly ?array $formats = null,
@@ -34,11 +35,13 @@ final class ScrapeOptions
         private readonly ?int $minAge = null,
         private readonly ?bool $storeInCache = null,
         private readonly ?bool $lockdown = null,
+        private readonly ?bool $checkPromptInjection = null,
         private readonly ?string $integration = null,
         /** @var array<string, string>|null */
         private readonly ?array $profile = null,
         private readonly ?bool $changeTracking = null,
         private readonly ?bool $redactPII = null,
+        private readonly ?AuditMetadata $auditMetadata = null,
     ) {}
 
     /**
@@ -46,9 +49,13 @@ final class ScrapeOptions
      * @param array<string, string>|null                    $headers
      * @param list<string>|null                             $includeTags
      * @param list<string>|null                             $excludeTags
-     * @param list<mixed>|null                              $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null               $actions
      * @param array<string, string>|null                    $profile
+     * @param AuditMetadata|null                            $auditMetadata
+     * @param bool|null                                     $checkPromptInjection Scans the page content for prompt
+     *     injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape
+     *     with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole page.
      */
     public static function with(
         ?array $formats = null,
@@ -74,13 +81,15 @@ final class ScrapeOptions
         ?array $profile = null,
         ?bool $changeTracking = null,
         ?bool $redactPII = null,
+        ?AuditMetadata $auditMetadata = null,
+        ?bool $checkPromptInjection = null,
     ): self {
         return new self(
             $formats, $headers, $includeTags, $excludeTags, $onlyMainContent,
             $timeout, $waitFor, $mobile, $parsers, $actions, $location,
             $skipTlsVerification, $removeBase64Images, $blockAds, $proxy,
-            $maxAge, $minAge, $storeInCache, $lockdown, $integration, $profile,
-            $changeTracking, $redactPII,
+            $maxAge, $minAge, $storeInCache, $lockdown, $checkPromptInjection,
+            $integration, $profile, $changeTracking, $redactPII, $auditMetadata,
         );
     }
 
@@ -103,6 +112,21 @@ final class ScrapeOptions
             );
         }
 
+        if ($this->changeTracking === true) {
+            $formats = $data['formats'] ?? [];
+            $hasFormat = static fn (string $type): bool => array_filter(
+                $formats,
+                static fn (string|array $f): bool => (is_array($f) ? ($f['type'] ?? null) : $f) === $type,
+            ) !== [];
+            if (!$hasFormat('markdown')) {
+                $formats[] = 'markdown';
+            }
+            if (!$hasFormat('changeTracking')) {
+                $formats[] = 'changeTracking';
+            }
+            $data['formats'] = $formats;
+        }
+
         $fields = [
             'headers' => $this->headers,
             'includeTags' => $this->includeTags,
@@ -111,7 +135,10 @@ final class ScrapeOptions
             'timeout' => $this->timeout,
             'waitFor' => $this->waitFor,
             'mobile' => $this->mobile,
-            'parsers' => $this->parsers,
+            'parsers' => $this->parsers === null ? null : array_map(
+                fn (mixed $parser): mixed => $parser instanceof PDFParser ? $parser->toArray() : $parser,
+                $this->parsers,
+            ),
             'actions' => $this->actions,
             'location' => $this->location?->toArray(),
             'skipTlsVerification' => $this->skipTlsVerification,
@@ -122,10 +149,11 @@ final class ScrapeOptions
             'minAge' => $this->minAge,
             'storeInCache' => $this->storeInCache,
             'lockdown' => $this->lockdown,
+            'checkPromptInjection' => $this->checkPromptInjection,
             'integration' => $this->integration,
             'profile' => $this->profile,
-            'changeTracking' => $this->changeTracking,
             'redactPII' => $this->redactPII,
+            'auditMetadata' => $this->auditMetadata?->toArray(),
         ];
 
         foreach ($fields as $key => $value) {
@@ -186,7 +214,7 @@ final class ScrapeOptions
         return $this->redactPII;
     }
 
-    /** @return list<mixed>|null */
+    /** @return list<string|PDFParser|array<string, mixed>>|null */
     public function getParsers(): ?array
     {
         return $this->parsers;
@@ -238,6 +266,11 @@ final class ScrapeOptions
         return $this->lockdown;
     }
 
+    public function getCheckPromptInjection(): ?bool
+    {
+        return $this->checkPromptInjection;
+    }
+
     public function getIntegration(): ?string
     {
         return $this->integration;
@@ -257,5 +290,10 @@ final class ScrapeOptions
     public function getChangeTracking(): ?bool
     {
         return $this->changeTracking;
+    }
+
+    public function getAuditMetadata(): ?AuditMetadata
+    {
+        return $this->auditMetadata;
     }
 }

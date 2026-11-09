@@ -10,9 +10,8 @@ import {
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
-import { lookup } from 'dns/promises';
-import IPAddr from 'ipaddr.js';
-import { Server, RequestError } from 'proxy-chain';
+import { Server } from 'proxy-chain';
+import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
 
 dotenv.config();
 
@@ -43,26 +42,6 @@ class InsecureConnectionError extends Error {
     this.name = 'InsecureConnectionError';
   }
 }
-
-const isInternalHost = async (hostname: string): Promise<boolean> => {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (!host) return true;
-
-  let addresses: string[];
-  if (IPAddr.isValid(host)) {
-    addresses = [host];
-  } else {
-    try {
-      addresses = (await lookup(host, { all: true })).map((a) => a.address);
-    } catch {
-      return true;
-    }
-  }
-  return (
-    addresses.length === 0 ||
-    addresses.some((a) => IPAddr.parse(a).range() !== 'unicast')
-  );
-};
 
 const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
   let parsedUrl: URL;
@@ -100,15 +79,10 @@ const startSSRFProxy = async (): Promise<number> => {
   const server = new Server({
     port: 0,
     host: '127.0.0.1',
-    prepareRequestFunction: async ({ hostname }) => {
-      if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(hostname))) {
-        throw new RequestError(
-          'Blocked: target resolves to a private/internal address',
-          403,
-        );
-      }
-      return { upstreamProxyUrl: buildUpstreamProxyUrl() };
-    },
+    prepareRequestFunction: ssrfPrepareRequest({
+      allowLocal: ALLOW_LOCAL_WEBHOOKS,
+      upstreamProxyUrl: buildUpstreamProxyUrl(),
+    }),
   });
   await server.listen();
   return server.port;
@@ -320,7 +294,8 @@ const scrapePage = async (
   }
 
   let headers = null,
-    content = await page.content();
+    content = await page.content(),
+    landedUrl = page.url();
   let ct: string | undefined = undefined;
   if (response) {
     headers = await response.allHeaders();
@@ -333,11 +308,16 @@ const scrapePage = async (
         ct.toLowerCase().includes('text/plain'))
     ) {
       content = (await response.body()).toString('utf8'); // TODO: determine real encoding
+      landedUrl = response.url();
     }
   }
 
   return {
     content,
+    // Where the returned content came from: page.url() for rendered HTML
+    // (covers HTTP 3xx and client-side redirects), response.url() for raw
+    // JSON/text bodies, which come from the page.goto response.
+    url: landedUrl,
     status: response ? response.status() : null,
     headers,
     contentType: ct,
@@ -537,6 +517,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
+      url: result.url,
       ...(pageError && { pageError }),
     });
   } catch (error) {

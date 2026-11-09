@@ -1,10 +1,28 @@
 import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
-import { and, asc, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
-import { shouldParsePDF } from "../../controllers/v2/types";
+import { config } from "../../config";
+import {
+  getPDFMaxPages,
+  liftCheckPromptInjection,
+  shouldParsePDF,
+} from "../../controllers/v2/types";
+import { isXTwitterUrl } from "../../scraper/scrapeURL/engines/x-twitter/url";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -37,7 +55,7 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
 }
 
 const BASE_SCRAPE_CREDITS_PER_PAGE = 1;
-const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
+const JSON_SCRAPE_CREDIT_BONUS = 4;
 const DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE = 7;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
@@ -49,7 +67,6 @@ const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
   numPages?: unknown;
-  proxyUsed?: unknown;
   postprocessorsUsed?: unknown;
 };
 
@@ -95,10 +112,8 @@ function requestsJsonChangeTracking(formats: unknown): boolean {
 
 function estimateBaseCreditsPerPage(
   options: MonitorTarget["scrapeOptions"],
-  params: { includeProxy?: boolean } = {},
 ): number {
   const formats = options?.formats;
-  const includeProxy = params.includeProxy ?? true;
   const usesDeterministicJson = hasFormatOfType(formats, "deterministicJson");
   const usesJsonCredits =
     hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
@@ -108,11 +123,19 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  // Deterministic JSON costs more than plain JSON; both override the base scrape credit.
+  // Deterministic JSON is a flat per-page rate that overrides the base scrape
+  // credit. Plain JSON adds its premium on top, so an earlier surcharge such
+  // as lockdown survives. This mirrors calculateCreditsToBeBilled.
   if (usesDeterministicJson) {
     credits = DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE;
   } else if (usesJsonCredits) {
-    credits = JSON_SCRAPE_CREDITS_PER_PAGE;
+    credits += JSON_SCRAPE_CREDIT_BONUS;
+  }
+
+  // The prompt injection guard bills +4 in calculateCreditsToBeBilled. The
+  // estimate cannot know whether the guard ran, so it assumes it does.
+  if (liftCheckPromptInjection(options ?? {}).checkPromptInjection === true) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
   if (hasAnyFormatOfType(formats, ["question", "query"])) {
@@ -128,13 +151,6 @@ function estimateBaseCreditsPerPage(
   }
 
   if (hasFormatOfType(formats, "video")) {
-    credits += SCRAPE_OPTION_CREDIT_BONUS;
-  }
-
-  if (
-    includeProxy &&
-    (options?.proxy === "stealth" || options?.proxy === "enhanced")
-  ) {
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
@@ -163,13 +179,37 @@ function estimateSearchTargetCredits(
   );
 }
 
+/**
+ * The x-twitter engine's surcharge, which billing adds per page (see
+ * fallbackBaseCreditsForPage). Left out of the estimate, a judged one-URL X
+ * monitor reserves 2 credits and costs 31, and an account with a few credits
+ * left passes every hold and is never charged.
+ */
+function xTwitterSurcharge(
+  url: string,
+  options: MonitorTarget["scrapeOptions"],
+): number {
+  // Mirrors the engine router (scrapeURL/engines/index.ts): the engine exists
+  // only with an xAI key or DB auth, lockdown serves from the index alone, and
+  // a browser profile routes around it.
+  const engineEnabled =
+    (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
+    config.USE_DB_AUTHENTICATION === true;
+  if (!engineEnabled || options?.lockdown || options?.profile) return 0;
+  return isXTwitterUrl(url) ? X_TWITTER_POSTPROCESSOR_CREDIT_BONUS : 0;
+}
+
 function estimateTargetBaseCredits(
   target: MonitorTarget,
   judgeEnabled: boolean = false,
 ): number {
   const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
   if (target.type === "scrape") {
-    return target.urls.length * creditsPerPage;
+    return target.urls.reduce(
+      (sum, url) =>
+        sum + creditsPerPage + xTwitterSurcharge(url, target.scrapeOptions),
+      0,
+    );
   }
   if (target.type === "search") {
     return estimateSearchTargetCredits(target, judgeEnabled);
@@ -200,6 +240,9 @@ function estimateTargetPageCount(target: MonitorTarget): number {
 export function estimateMonitorCreditsPerRun(
   targets: MonitorTarget[],
   judgeEnabled: boolean = false,
+  previousPages: Array<
+    Pick<MonitorPageRow, "target_id" | "url" | "metadata">
+  > = [],
 ): number {
   const baseCredits = targets.reduce(
     (sum, target) => sum + estimateTargetBaseCredits(target, judgeEnabled),
@@ -215,7 +258,45 @@ export function estimateMonitorCreditsPerRun(
         0,
       )
     : 0;
-  return baseCredits + judgeCredits;
+  // The base estimate counts URLs, but a PDF bills per document page. Keep
+  // the allowance for new URLs and add the extra pages we already know about.
+  const pdfCredits = targets.reduce((sum, target) => {
+    if (
+      target.type === "search" ||
+      !shouldParsePDF(target.scrapeOptions?.parsers as any)
+    ) {
+      return sum;
+    }
+    const maxPages = getPDFMaxPages(target.scrapeOptions?.parsers as any);
+    const urls = target.type === "scrape" ? new Set(target.urls) : null;
+    const extraPages = previousPages
+      .filter(
+        page => page.target_id === target.id && (!urls || urls.has(page.url)),
+      )
+      .map(page => {
+        const numPages = (page.metadata as MonitorCreditMetadata | null)
+          ?.numPages;
+        if (
+          typeof numPages !== "number" ||
+          !Number.isSafeInteger(numPages) ||
+          numPages <= 1
+        ) {
+          return 0;
+        }
+        return Math.max(0, Math.min(numPages, maxPages ?? numPages) - 1);
+      })
+      .sort((a, b) => b - a)
+      .slice(0, estimateTargetPageCount(target));
+    const creditsPerExtraPage = 1 + (target.scrapeOptions?.redactPII ? 4 : 0);
+    return (
+      sum +
+      extraPages.reduce(
+        (total, pages) => total + pages * creditsPerExtraPage,
+        0,
+      )
+    );
+  }, 0);
+  return baseCredits + judgeCredits + pdfCredits;
 }
 
 export function calculateMonitorCheckActualCreditsFromPages(
@@ -230,9 +311,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
   const baseCreditsByTarget = new Map(
     targets.map(target => [
       target.id,
-      estimateBaseCreditsPerPage(target.scrapeOptions, {
-        includeProxy: false,
-      }),
+      estimateBaseCreditsPerPage(target.scrapeOptions),
     ]),
   );
   const targetsById = new Map(targets.map(target => [target.id, target]));
@@ -261,18 +340,6 @@ export function calculateMonitorCheckActualCreditsFromPages(
       metadata.numPages > 1
     ) {
       credits += metadata.numPages - 1;
-    }
-
-    const requestedPremiumProxy =
-      target?.scrapeOptions?.proxy === "stealth" ||
-      target?.scrapeOptions?.proxy === "enhanced";
-    const usedPremiumProxy =
-      metadata?.proxyUsed === "stealth" || metadata?.proxyUsed === "enhanced";
-    if (
-      usedPremiumProxy ||
-      (metadata?.proxyUsed == null && requestedPremiumProxy)
-    ) {
-      credits += SCRAPE_OPTION_CREDIT_BONUS;
     }
 
     if (
@@ -375,6 +442,8 @@ export async function createMonitor(params: {
   input: CreateMonitorRequest;
   nextRunAt: Date;
   intervalMs: number;
+  /** Partner's `External-Request-Id`; a scheduled run writes no requests row to find it on later. */
+  partnerJobToken?: string | null;
 }): Promise<MonitorRow> {
   const targets = ensureTargetIds(params.input.targets);
   const judgeEnabled =
@@ -387,7 +456,7 @@ export async function createMonitor(params: {
   const estimatedCreditsPerMonth =
     estimatedCreditsPerRun * estimateRunsPerMonth(params.intervalMs);
 
-  // Omit goal/judge_enabled when undefined so a pre-migration DB doesn't reject the insert.
+  // Omit goal/judge_enabled/partner_job_token when undefined so a pre-migration DB doesn't reject the insert.
   const insert: typeof schema.monitors.$inferInsert = {
     id: uuidv7(),
     team_id: params.teamId,
@@ -401,6 +470,9 @@ export async function createMonitor(params: {
     webhook: params.input.webhook ?? null,
     notification: params.input.notification ?? null,
   };
+  if (params.partnerJobToken) {
+    insert.partner_job_token = params.partnerJobToken;
+  }
   if (params.input.goal !== undefined) {
     insert.goal = normalizeGoal(params.input.goal);
   }
@@ -610,9 +682,45 @@ export async function createMonitorCheck(params: {
   scheduledFor?: string | null;
   status?: MonitorCheckRow["status"];
 }): Promise<MonitorCheckRow> {
+  const pdfTargetIds = params.monitor.targets
+    .filter(
+      target =>
+        target.type !== "search" &&
+        shouldParsePDF(target.scrapeOptions?.parsers as any),
+    )
+    .map(target => target.id);
+  const previousPages = pdfTargetIds.length
+    ? await run(
+        () =>
+          // This decides how much balance is held: a lagging replica can hide
+          // pages saved by the previous run and under-reserve known PDF costs.
+          db
+            .select({
+              target_id: schema.monitor_pages.target_id,
+              url: schema.monitor_pages.url,
+              metadata: schema.monitor_pages.metadata,
+            })
+            .from(schema.monitor_pages)
+            .where(
+              and(
+                eq(schema.monitor_pages.monitor_id, params.monitor.id),
+                eq(schema.monitor_pages.team_id, params.monitor.team_id),
+                inArray(schema.monitor_pages.target_id, pdfTargetIds),
+                eq(schema.monitor_pages.is_removed, false),
+                inArray(schema.monitor_pages.last_status, [
+                  "new",
+                  "changed",
+                  "same",
+                ]),
+              ),
+            ),
+        "Failed to read previous monitor pages for credit reservation",
+      )
+    : [];
   const estimated = estimateMonitorCreditsPerRun(
     params.monitor.targets,
     Boolean(params.monitor.judge_enabled) && Boolean(params.monitor.goal),
+    previousPages,
   );
   const [data] = await run(
     () =>
@@ -776,20 +884,75 @@ export async function getMonitorCheck(
   return (data ?? null) as MonitorCheckRow | null;
 }
 
-export async function listRunningMonitorChecks(
-  limit: number = 100,
-): Promise<MonitorCheckRow[]> {
-  const data = await run(
+// Finalizers must observe terminal writes before deciding whether to settle a hold.
+export async function getMonitorCheckForUpdate(
+  teamId: string,
+  monitorId: string,
+  checkId: string,
+): Promise<MonitorCheckRow | null> {
+  const [data] = await run(
     () =>
       db
         .select()
         .from(schema.monitor_checks)
-        .where(eq(schema.monitor_checks.status, "running"))
-        .orderBy(asc(schema.monitor_checks.created_at))
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.monitor_id, monitorId),
+            eq(schema.monitor_checks.team_id, teamId),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor check for update",
+  );
+  return (data ?? null) as MonitorCheckRow | null;
+}
+
+export async function listRunningMonitorChecks(
+  limit: number = 100,
+  page?: {
+    after?: Pick<MonitorCheckRow, "created_at" | "id">;
+    through?: Pick<MonitorCheckRow, "created_at" | "id">;
+    newest?: boolean;
+  },
+): Promise<
+  Pick<MonitorCheckRow, "id" | "monitor_id" | "team_id" | "created_at">[]
+> {
+  const order = page?.newest ? desc : asc;
+  const data = await run(
+    () =>
+      dbRr
+        .select({
+          id: schema.monitor_checks.id,
+          monitor_id: schema.monitor_checks.monitor_id,
+          team_id: schema.monitor_checks.team_id,
+          created_at: schema.monitor_checks.created_at,
+        })
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.status, "running"),
+            page?.through &&
+              lte(schema.monitor_checks.created_at, page.through.created_at),
+            page?.through &&
+              sql`(${schema.monitor_checks.created_at}, ${schema.monitor_checks.id}) <= (${page.through.created_at}::timestamptz, ${page.through.id}::uuid)`,
+            page?.after &&
+              gte(schema.monitor_checks.created_at, page.after.created_at),
+            page?.after &&
+              sql`(${schema.monitor_checks.created_at}, ${schema.monitor_checks.id}) > (${page.after.created_at}::timestamptz, ${page.after.id}::uuid)`,
+          ),
+        )
+        .orderBy(
+          order(schema.monitor_checks.created_at),
+          order(schema.monitor_checks.id),
+        )
         .limit(limit),
     "Failed to list running monitor checks",
   );
-  return data as MonitorCheckRow[];
+  return data as Pick<
+    MonitorCheckRow,
+    "id" | "monitor_id" | "team_id" | "created_at"
+  >[];
 }
 
 export async function listMonitorChecks(params: {
@@ -821,6 +984,60 @@ export async function listMonitorChecks(params: {
   return data as MonitorCheckRow[];
 }
 
+/**
+ * The leading run of credit-skipped checks ending at the newest, so one
+ * successful check resets it. Derived rather than counted: a stored counter
+ * would be a second source of truth to keep correct across retries.
+ */
+export async function countRecentConsecutiveSkippedForCredits(params: {
+  teamId: string;
+  monitorId: string;
+  limit: number;
+}): Promise<number> {
+  const rows = await run(
+    () =>
+      dbRr
+        .select({ status: schema.monitor_checks.status })
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.monitor_id, params.monitorId),
+            eq(schema.monitor_checks.team_id, params.teamId),
+          ),
+        )
+        .orderBy(desc(schema.monitor_checks.created_at))
+        .limit(params.limit),
+    "Failed to count skipped monitor checks",
+  );
+
+  let streak = 0;
+  for (const row of rows) {
+    if (row.status !== "skipped_no_credits") break;
+    streak += 1;
+  }
+  return streak;
+}
+
+/**
+ * `paused`, not `deleted`: nothing a partner says should destroy a customer's
+ * configuration. `monitoring_claim_due_monitors` only claims `active` rows, so
+ * this is enough to stop the runs.
+ */
+export async function pauseMonitor(monitorId: string): Promise<void> {
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          status: "paused",
+          next_run_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, monitorId)),
+    "Failed to pause monitor",
+  );
+}
+
 export async function updateMonitorCheck(
   checkId: string,
   patch: Partial<MonitorCheckRow>,
@@ -848,6 +1065,16 @@ export async function updateMonitorCheckIfRunning(
   checkId: string,
   patch: Partial<MonitorCheckRow>,
 ): Promise<MonitorCheckRow | null> {
+  return updateMonitorCheckIfStatus(checkId, "running", patch);
+}
+
+// The terminal transition grants ownership of settlement and its follow-up work.
+// A competing worker must not confirm/release the hold when this returns null.
+export async function updateMonitorCheckIfStatus(
+  checkId: string,
+  expectedStatus: "queued" | "running",
+  patch: Partial<MonitorCheckRow>,
+): Promise<MonitorCheckRow | null> {
   const [data] = await run(
     () =>
       db
@@ -859,7 +1086,7 @@ export async function updateMonitorCheckIfRunning(
         .where(
           and(
             eq(schema.monitor_checks.id, checkId),
-            eq(schema.monitor_checks.status, "running"),
+            eq(schema.monitor_checks.status, expectedStatus),
           ),
         )
         .returning(),

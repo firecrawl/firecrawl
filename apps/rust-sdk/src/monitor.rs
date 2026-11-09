@@ -440,7 +440,7 @@ impl Client {
         while let Some(next) = check.next.clone() {
             let response = self
                 .client
-                .get(next)
+                .get(self.pin_to_api_origin(&next)?)
                 .headers(self.prepare_headers(None))
                 .send()
                 .await
@@ -563,5 +563,78 @@ mod tests {
         assert_eq!(json["type"], "search");
         assert_eq!(json["targetId"], "t1");
         assert_eq!(json["searchCredits"], 2.5);
+    }
+
+    #[tokio::test]
+    async fn test_get_monitor_check_pins_next_to_api_origin() {
+        use mockito::Matcher;
+
+        let check = |next: Option<&str>, page_id: &str| {
+            serde_json::json!({
+                "success": true,
+                "data": {
+                    "id": "check-1",
+                    "monitorId": "mon-1",
+                    "status": "completed",
+                    "trigger": "manual",
+                    "billingStatus": "billed",
+                    "summary": { "totalPages": 2, "same": 2, "changed": 0, "new": 0, "removed": 0, "error": 0 },
+                    "createdAt": "2026-09-01T00:00:00Z",
+                    "updatedAt": "2026-09-01T00:00:00Z",
+                    "pages": [{
+                        "id": page_id,
+                        "targetId": "t1",
+                        "url": "https://example.com",
+                        "status": "same",
+                        "createdAt": "2026-09-01T00:00:00Z"
+                    }],
+                    "next": next
+                }
+            })
+            .to_string()
+        };
+        let mut server = mockito::Server::new_async().await;
+        let mut other = mockito::Server::new_async().await;
+        let foreign = other
+            .mock("GET", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let path = "/v2/monitor/mon-1/checks/check-1?skip=1";
+        let mut nexts = vec![format!("{}{}", server.url(), path)];
+        nexts.extend(crate::client::foreign_next_urls(
+            &server.url(),
+            &other.url(),
+            path,
+        ));
+
+        for next in nexts {
+            let first = server
+                .mock("GET", "/v2/monitor/mon-1/checks/check-1")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(check(Some(&next), "p1"))
+                .create_async()
+                .await;
+            let page = server
+                .mock("GET", path)
+                .match_header("authorization", "Bearer test_key")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(check(None, "p2"))
+                .create_async()
+                .await;
+
+            let detail = client
+                .get_monitor_check("mon-1", "check-1", None, None, None)
+                .await
+                .unwrap();
+
+            assert_eq!(detail.pages.len(), 2, "next = {}", next);
+            first.assert_async().await;
+            page.assert_async().await;
+        }
+        foreign.assert_async().await;
     }
 }

@@ -1,6 +1,5 @@
 import { logger } from "../../../lib/logger";
 import { config } from "../../../config";
-import * as Sentry from "@sentry/node";
 import { Request, Response } from "express";
 
 export async function checkFireEngine(req: Request, res: Response) {
@@ -63,14 +62,12 @@ export async function checkFireEngine(req: Request, res: Response) {
       method: "checkFireEngine",
       error: lastError,
     });
-    Sentry.captureException(lastError);
     return res.status(500).json({
       success: false,
       error: "Internal server error - all retry attempts failed",
     });
   } catch (error) {
     logger.error(error);
-    Sentry.captureException(error);
     return res.status(500).json({
       success: false,
       error: "Internal server error",

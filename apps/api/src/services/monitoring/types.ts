@@ -139,15 +139,36 @@ const monitorScheduleSchema = z
     timezone: schedule.timezone,
   }));
 
-const monitorNotificationInner = z.strictObject({
-  email: z
-    .strictObject({
-      enabled: z.boolean().optional().default(false),
-      recipients: z.array(z.email()).max(25).optional().default([]),
-      includeDiffs: z.boolean().optional().default(false),
-    })
-    .optional(),
-});
+const monitorNotificationInner = z
+  .strictObject({
+    email: z
+      .strictObject({
+        enabled: z.boolean().optional().default(false),
+        recipients: z.array(z.email()).max(25).optional().default([]),
+        includeDiffs: z.boolean().optional().default(false),
+      })
+      .optional(),
+    // Slack delivery goes to a single channel in the team's connected
+    // workspace. The bot token lives on the slack_installations row, so only
+    // the channel reference is stored on the monitor.
+    slack: z
+      .strictObject({
+        enabled: z.boolean().optional().default(false),
+        channelId: z.string().trim().min(1).max(64).optional(),
+        channelName: z.string().max(128).optional(),
+      })
+      .optional(),
+  })
+  .superRefine((notification, ctx) => {
+    if (notification.slack?.enabled && !notification.slack.channelId) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "A Slack channel is required when Slack notifications are enabled",
+        path: ["slack", "channelId"],
+      });
+    }
+  });
 // Create defaults a missing notification to {}; the UPDATE schema deliberately does
 // not (a default there would materialize {} on a PATCH and wipe the stored email config).
 const monitorNotificationSchema = monitorNotificationInner
@@ -176,7 +197,7 @@ const createMonitorBaseSchema = z.strictObject({
   retentionDays: z.number().int().positive().max(365).optional().default(30),
   goal: z.string().max(2000).nullish(),
   judgeEnabled: z.boolean().optional(),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
 });
 
 function requireGoalForSearchTargets(
@@ -307,6 +328,7 @@ export type MonitorRow = {
   last_check_summary: MonitorSummary | null;
   goal: string | null;
   judge_enabled: boolean;
+  partner_job_token: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -332,6 +354,8 @@ export type MonitorCheckRow = {
   reserved_credits: number | null;
   actual_credits: number | null;
   autumn_lock_id: string | null;
+  /** The partner's id for this occurrence; carried back on the finalize. */
+  partner_run_token: string | null;
   billing_status:
     | "not_applicable"
     | "reserved"

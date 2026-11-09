@@ -1,5 +1,23 @@
-import { concurrentIf, HAS_AI, TEST_PRODUCTION } from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
+import {
+  type CostTrackingCall,
+  getCostTrackingCalls,
+} from "../cost-tracking-helpers";
+import { HAS_JOB_LOG } from "../job-log";
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  concurrentIf,
+  HAS_AI,
+  TEST_PRODUCTION,
+  TEST_SELF_HOST,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
+import {
+  scrape,
+  scrapeTimeout,
+  scrapeWithFailure,
+  idmux,
+  Identity,
+} from "./lib";
 
 let identity: Identity;
 
@@ -10,6 +28,222 @@ beforeAll(async () => {
     credits: 1000000,
   });
 }, 10000 + scrapeTimeout);
+
+describe("Branding declared-logo fallback", () => {
+  // The fixture page declares its logo via JSON-LD + apple-touch icon but
+  // renders no logo image in the DOM, forcing the declared-mark fallback.
+  concurrentIf(TEST_PRODUCTION)(
+    "uses the JSON-LD declared logo when the DOM has none",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.branding?.images?.logo).toBe(
+        "https://firecrawl-test-site.vercel.app/declared-logo.png",
+      );
+    },
+    scrapeTimeout,
+  );
+});
+
+const isBrandingCall = (call: CostTrackingCall) =>
+  call.metadata?.module === "branding" &&
+  call.metadata?.method === "enhanceBrandingWithLLM";
+
+// Jev answers branding whenever the server has a TypeSafe key, unless
+// BRANDING_JEV=false. The LLM-only assertion below holds only when it doesn't.
+const JEV_ON =
+  !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV !== "false";
+
+describe("Branding cost tracking", () => {
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && !JEV_ON)(
+    "records the branding LLM call with its model and cost",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+      expect(response.branding).toBeDefined();
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      const brandingCalls = calls.filter(isBrandingCall);
+
+      expect(brandingCalls).toHaveLength(1);
+      expect(brandingCalls[0].model).toMatch(/^gpt-4o/);
+      expect(brandingCalls[0].tokens?.input).toBeGreaterThan(0);
+      expect(brandingCalls[0].cost).toBeGreaterThan(0);
+    },
+    scrapeTimeout + 15000,
+  );
+
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG)(
+    "records no branding call when branding is not requested",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["markdown"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+
+      expect(calls.filter(isBrandingCall)).toHaveLength(0);
+    },
+    scrapeTimeout + 15000,
+  );
+});
+
+// Runs when the API server answers branding with Jev (see JEV_ON above).
+
+describe("Branding with Jev", () => {
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && JEV_ON)(
+    "answers branding with Jev and records its cost, not an LLM call",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.branding?.logo).toContain("firecrawl");
+      expect(response.branding?.colors?.primary).toMatch(/^#[0-9A-F]{6}$/);
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      const jevCalls = calls.filter(
+        call =>
+          call.metadata?.module === "branding" &&
+          call.metadata?.method === "enhanceBrandingWithJev",
+      );
+      expect(jevCalls).toHaveLength(1);
+      expect(jevCalls[0].model).toMatch(/^jev/);
+      expect(jevCalls[0].cost).toBeGreaterThan(0);
+      expect(calls.filter(isBrandingCall)).toHaveLength(0);
+    },
+    scrapeTimeout + 15000,
+  );
+
+  // `__experimental_screenshot` shows Jev the page's first screen; that
+  // capture is internal.
+  concurrentIf(TEST_PRODUCTION && JEV_ON)(
+    "keeps the first screen it shows Jev out of the response",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: [{ type: "branding", __experimental_screenshot: true }],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.screenshot).toBeUndefined();
+      expect(response.actions).toBeUndefined();
+    },
+    scrapeTimeout,
+  );
+});
+
+describe("Branding response", () => {
+  concurrentIf(TEST_PRODUCTION)(
+    "returns no internal fields to teams that aren't debugging branding",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      // Still a real extraction, not an empty object.
+      expect(response.branding?.logo).toContain("firecrawl");
+      expect(response.branding?.colors?.primary).toMatch(/^#[0-9A-F]{6}$/);
+      expect(
+        Object.keys(response.branding!).filter(key => key.startsWith("__")),
+      ).toEqual([]);
+    },
+    scrapeTimeout,
+  );
+});
+
+const PDF_URL = "https://www.orimi.com/pdf-test.pdf";
+
+describe("Branding on pages it can't run on", () => {
+  concurrentIf(TEST_PRODUCTION)(
+    "keeps the other formats and warns when the page is a PDF",
+    async () => {
+      const response = await scrape(
+        {
+          url: PDF_URL,
+          formats: ["markdown", "branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown?.length).toBeGreaterThan(0);
+      expect(response.branding).toBeUndefined();
+      expect(response.warning).toContain("Branding was skipped");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "still fails a branding-only request for a PDF",
+    async () => {
+      const response = await scrapeWithFailure(
+        { url: PDF_URL, formats: ["branding"], timeout: scrapeTimeout },
+        identity,
+      );
+
+      expect(response.error).toContain(
+        "Branding extraction is only supported for HTML web pages",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  // Self-hosted has no fire-engine, so branding can never run there.
+  concurrentIf(TEST_SELF_HOST && ALLOW_TEST_SUITE_WEBSITE)(
+    "keeps the other formats when branding can't run self-hosted",
+    async () => {
+      const response = await scrape(
+        {
+          url: TEST_SUITE_WEBSITE,
+          formats: ["markdown", "branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown?.length).toBeGreaterThan(0);
+      expect(response.branding).toBeUndefined();
+      expect(response.warning).toContain("Branding was skipped");
+    },
+    scrapeTimeout,
+  );
+});
 
 // TODO: fix this test
 // Need to run on fire-engine

@@ -1,6 +1,7 @@
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { describeIf, testIf, TEST_PRODUCTION } from "../lib";
 import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
 import { expectScrapeIsCleanedUp } from "../zdr-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import crypto from "crypto";
 
@@ -73,7 +74,7 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
     scrapeTimeout,
   );
 
-  test(
+  testIf(HAS_JOB_LOG)(
     "should treat lockdown as ZDR — no URL in DB, no GCS blob",
     async () => {
       const id = crypto.randomUUID();

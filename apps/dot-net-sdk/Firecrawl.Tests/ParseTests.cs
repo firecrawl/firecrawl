@@ -57,6 +57,7 @@ public class ParseTests
             Timeout = 30000,
             Proxy = "auto",
             RedactPII = true,
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" },
         };
 
         var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
@@ -65,6 +66,19 @@ public class ParseTests
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"proxy\":\"auto\"", json);
         Assert.Contains("\"redactPII\":true", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
+    }
+
+    [Fact]
+    public void ParseOptions_Serializes_CheckPromptInjection()
+    {
+        var options = new ParseOptions { CheckPromptInjection = true };
+
+        var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
+        Assert.Contains("\"checkPromptInjection\":true", json);
+
+        var unset = JsonSerializer.Serialize(new ParseOptions(), FirecrawlHttpClient.JsonOptions);
+        Assert.DoesNotContain("\"checkPromptInjection\"", unset);
     }
 
     [Fact]
@@ -224,6 +238,97 @@ public class ParseTests
         var ex = await Assert.ThrowsAsync<FirecrawlException>(
             () => client.ParseAsync(file));
         Assert.Contains("Unsupported upload type", ex.Message);
+    }
+
+    private static FirecrawlClient ClientReturning(HttpStatusCode status, string body, out CapturingHandler handler)
+    {
+        handler = new CapturingHandler((req, ct) => Task.FromResult(new HttpResponseMessage(status)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        }));
+
+        return new FirecrawlClient(
+            apiKey: "fc-test-key",
+            apiUrl: "https://api.firecrawl.test",
+            maxRetries: 0,
+            httpClient: new HttpClient(handler));
+    }
+
+    [Fact]
+    public async Task GetParseFormatsAsync_ReturnsFormats()
+    {
+        var client = ClientReturning(HttpStatusCode.OK,
+            "{\"success\":true,\"data\":{\"formats\":[" +
+            "{\"format\":\"pdf\",\"kind\":\"document\",\"extensions\":[\".pdf\"],\"mimeTypes\":[\"application/pdf\"],\"available\":true}," +
+            "{\"format\":\"png\",\"kind\":\"image\",\"extensions\":[\".png\"],\"mimeTypes\":[\"image/png\"],\"available\":false}" +
+            "]}}",
+            out var handler);
+
+        var formats = await client.GetParseFormatsAsync();
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
+        Assert.Equal("/v2/parse/formats", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
+        Assert.Equal("fc-test-key", handler.LastRequest.Headers.Authorization.Parameter);
+
+        Assert.Equal(2, formats.Count);
+
+        var pdf = formats[0];
+        Assert.Equal("pdf", pdf.Format);
+        Assert.Equal("document", pdf.Kind);
+        Assert.Equal(ParseFormatKind.Document, pdf.KindValue);
+        Assert.Equal(new List<string> { ".pdf" }, pdf.Extensions);
+        Assert.Equal(new List<string> { "application/pdf" }, pdf.MimeTypes);
+        Assert.True(pdf.Available);
+
+        var png = formats[1];
+        Assert.Equal(ParseFormatKind.Image, png.KindValue);
+        Assert.Equal(new List<string> { "image/png" }, png.MimeTypes);
+        Assert.False(png.Available);
+    }
+
+    [Fact]
+    public async Task GetParseFormatsAsync_ToleratesUnknownKindAndFields()
+    {
+        var client = ClientReturning(HttpStatusCode.OK,
+            "{\"success\":true,\"data\":{\"formats\":[" +
+            "{\"format\":\"mp3\",\"kind\":\"audio\",\"extensions\":[\".mp3\"],\"mimeTypes\":[\"audio/mpeg\"],\"available\":true,\"maxSizeBytes\":123}" +
+            "],\"extra\":{\"nested\":true}}}",
+            out _);
+
+        var formats = await client.GetParseFormatsAsync();
+
+        var mp3 = Assert.Single(formats);
+        Assert.Equal("mp3", mp3.Format);
+        Assert.Equal("audio", mp3.Kind);
+        Assert.Equal(ParseFormatKind.Unknown, mp3.KindValue);
+        Assert.Equal(new List<string> { "audio/mpeg" }, mp3.MimeTypes);
+        Assert.True(mp3.Available);
+    }
+
+    [Fact]
+    public async Task GetParseFormatsAsync_ThrowsAuthenticationExceptionOn401()
+    {
+        var client = ClientReturning(HttpStatusCode.Unauthorized,
+            "{\"success\":false,\"error\":\"Unauthorized: Invalid token\"}",
+            out _);
+
+        var ex = await Assert.ThrowsAsync<AuthenticationException>(
+            () => client.GetParseFormatsAsync());
+        Assert.Contains("Invalid token", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetParseFormatsAsync_ThrowsFirecrawlExceptionOn500()
+    {
+        var client = ClientReturning(HttpStatusCode.InternalServerError,
+            "{\"success\":false,\"error\":\"Internal server error\"}",
+            out _);
+
+        var ex = await Assert.ThrowsAsync<FirecrawlException>(
+            () => client.GetParseFormatsAsync());
+        Assert.Equal(500, ex.StatusCode);
     }
 
     private sealed class CapturingHandler : HttpMessageHandler

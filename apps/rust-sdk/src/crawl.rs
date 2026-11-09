@@ -60,6 +60,10 @@ pub struct CrawlOptions {
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
     /// Idempotency key for the request.
     #[serde(skip)]
     pub idempotency_key: Option<String>,
@@ -101,8 +105,8 @@ pub struct CrawlJob {
     pub total: u32,
     /// Number of pages completed.
     pub completed: u32,
-    /// Credits used by the crawl.
-    pub credits_used: Option<u32>,
+    /// Credits used by the crawl; `-1` when no billing record exists.
+    pub credits_used: Option<i64>,
     /// Expiry time of the crawl data.
     pub expires_at: Option<String>,
     /// URL for the next page of results.
@@ -157,7 +161,10 @@ impl Client {
         url: impl AsRef<str>,
         options: impl Into<Option<CrawlOptions>>,
     ) -> Result<CrawlResponse, FirecrawlError> {
-        let options = options.into().unwrap_or_default();
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
         let body = CrawlRequest {
             url: url.as_ref().to_string(),
             options: options.clone(),
@@ -239,7 +246,7 @@ impl Client {
     async fn get_crawl_status_next(&self, next: &str) -> Result<CrawlJob, FirecrawlError> {
         let response = self
             .client
-            .get(next)
+            .get(self.pin_to_api_origin(next)?)
             .headers(self.prepare_headers(None))
             .send()
             .await
@@ -419,6 +426,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
     use serde_json::json;
 
     #[tokio::test]
@@ -448,6 +456,61 @@ mod tests {
         assert!(response.success);
         assert_eq!(response.id, "crawl-123");
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_crawl_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/crawl")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "crawl-123",
+                    "url": "https://api.firecrawl.dev/v2/crawl/crawl-123"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .start_crawl("https://example.com", None)
+            .await
+            .unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_crawl_scrape_options_send_json_options_as_json_format() {
+        let options = CrawlOptions {
+            scrape_options: Some(ScrapeOptions {
+                formats: Some(vec![crate::Format::Json]),
+                json_options: Some(crate::JsonOptions {
+                    prompt: Some("Extract the title".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["scrapeOptions"]["formats"],
+            json!([{ "type": "json", "prompt": "Extract the title" }])
+        );
+        assert!(payload["scrapeOptions"].get("jsonOptions").is_none());
     }
 
     #[tokio::test]
@@ -493,6 +556,38 @@ mod tests {
         assert_eq!(status.total, 5);
         assert_eq!(status.completed, 5);
         assert_eq!(status.data.len(), 2);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_crawl_status_accepts_negative_credits_used() {
+        // Self-hosted instances without a billing record report creditsUsed: -1.
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/crawl/crawl-selfhosted")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "status": "completed",
+                    "total": 1,
+                    "completed": 1,
+                    "creditsUsed": -1,
+                    "expiresAt": "2024-12-31T23:59:59Z",
+                    "data": [{ "markdown": "# Page" }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let status = client.get_crawl_status("crawl-selfhosted").await.unwrap();
+
+        assert_eq!(status.status, JobStatus::Completed);
+        assert_eq!(status.credits_used, Some(-1));
+        assert_eq!(status.data.len(), 1);
         mock.assert();
     }
 
@@ -607,5 +702,68 @@ mod tests {
         assert_eq!(result.data.len(), 1);
         start_mock.assert();
         status_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_crawl_status_pins_next_to_api_origin() {
+        let mut server = mockito::Server::new_async().await;
+        let mut other = mockito::Server::new_async().await;
+        let foreign = other
+            .mock("GET", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let path = "/v2/crawl/crawl-123?skip=1";
+        let mut nexts = vec![format!("{}{}", server.url(), path)];
+        nexts.extend(crate::client::foreign_next_urls(
+            &server.url(),
+            &other.url(),
+            path,
+        ));
+
+        for next in nexts {
+            let first = server
+                .mock("GET", "/v2/crawl/crawl-123")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    json!({
+                        "status": "completed",
+                        "total": 2,
+                        "completed": 2,
+                        "creditsUsed": 2,
+                        "next": next,
+                        "data": [{ "markdown": "# Page 1" }]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
+            let page = server
+                .mock("GET", path)
+                .match_header("authorization", "Bearer test_key")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    json!({
+                        "status": "completed",
+                        "total": 2,
+                        "completed": 2,
+                        "creditsUsed": 2,
+                        "data": [{ "markdown": "# Page 2" }]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
+
+            let status = client.get_crawl_status("crawl-123").await.unwrap();
+
+            assert_eq!(status.data.len(), 2, "next = {}", next);
+            first.assert_async().await;
+            page.assert_async().await;
+        }
+        foreign.assert_async().await;
     }
 }

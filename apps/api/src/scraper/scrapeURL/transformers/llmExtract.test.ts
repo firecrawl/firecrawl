@@ -1,9 +1,25 @@
-import { removeDefaultProperty } from "./llmExtract";
+import { vi } from "vitest";
+
+vi.mock("../lib/extractSmartScrape", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../lib/extractSmartScrape")>();
+  return {
+    ...actual,
+    extractData: vi.fn(async () => ({
+      extractedDataArray: [],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    })),
+  };
+});
+import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
+import { extractData } from "../lib/extractSmartScrape";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
+import { config } from "../../../config";
 
 vi.mock("@dqbd/tiktoken", () => ({
   encoding_for_model: vi.fn(),
@@ -336,5 +352,258 @@ describe("performCleanContent", () => {
 
     expect(result.markdown).toBe("Some content");
     expect(result.warning).toBeUndefined();
+  });
+});
+
+function makeJsonMeta(internalOptions: Record<string, unknown> = {}) {
+  return {
+    options: {
+      formats: [
+        {
+          type: "json",
+          schema: {
+            type: "object",
+            properties: { rows: { type: "array" } },
+          },
+        },
+      ],
+    },
+    internalOptions: {
+      zeroDataRetention: false,
+      teamId: "test-team",
+      ...internalOptions,
+    },
+    logger: {
+      child: vi.fn(() => ({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      })),
+      debug: vi.fn(),
+      info: vi.fn(),
+    },
+    costTracking: {},
+    id: "test-id",
+    url: "https://example.com",
+  } as any;
+}
+
+describe("performLLMExtract telemetry attribution", () => {
+  beforeEach(() => {
+    (extractData as Mock).mockClear();
+  });
+
+  function extractDataArgs() {
+    const calls = (extractData as Mock).mock.calls;
+    expect(calls).toHaveLength(1);
+    return calls[0][0];
+  }
+
+  it("traces plain JSON extraction as performLLMExtract", async () => {
+    await performLLMExtract(makeJsonMeta(), {
+      markdown: "# page",
+      metadata: {},
+    } as any);
+
+    const args = extractDataArgs();
+    expect(args.extractOptions.metadata).toEqual({
+      teamId: "test-team",
+      functionId: "performLLMExtract",
+      scrapeId: "test-id",
+      telemetry: undefined,
+    });
+    expect(args.metadata.functionId).toBe("performLLMExtract");
+  });
+
+  it("traces the extraction as the requesting feature when set", async () => {
+    const metadata = {
+      teamId: "test-team",
+      monitorId: "test-monitor",
+      jobId: "test-check",
+      jobKind: "monitor",
+      feature: "monitor_search_judge",
+    };
+    await performLLMExtract(
+      makeJsonMeta({
+        llmTelemetry: { functionId: "monitor/searchJudge", metadata },
+      }),
+      { markdown: "# page", metadata: {} } as any,
+    );
+
+    const args = extractDataArgs();
+    expect(args.extractOptions.metadata).toEqual({
+      teamId: "test-team",
+      functionId: "monitor/searchJudge",
+      scrapeId: "test-id",
+      telemetry: metadata,
+    });
+    expect(args.metadata.functionId).toBe("monitor/searchJudge");
+  });
+});
+
+describe("performLLMExtract empty-result handling", () => {
+  it("keeps the json key (null) and adds a warning when extraction produces nothing", async () => {
+    const mockMeta = {
+      options: {
+        formats: [
+          {
+            type: "json",
+            schema: {
+              type: "object",
+              properties: { rows: { type: "array" } },
+            },
+          },
+        ],
+      },
+      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
+      logger: {
+        child: vi.fn(() => ({
+          info: vi.fn(),
+          debug: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        })),
+        debug: vi.fn(),
+        info: vi.fn(),
+      },
+      costTracking: {},
+      id: "test-id",
+      url: "https://example.com/doc.pdf",
+    } as any;
+
+    const document = { markdown: "# some content", metadata: {} } as any;
+
+    const result = await performLLMExtract(mockMeta, document);
+
+    // the requested format must never vanish silently
+    expect(result.json).toBeNull();
+    expect(result.warning).toContain(
+      "JSON extraction did not produce a result",
+    );
+  });
+});
+
+describe("performLLMExtract extraction provider fallback", () => {
+  const listSchema = {
+    type: "object",
+    properties: {
+      jobs: {
+        type: "array",
+        items: { type: "object", properties: { title: { type: "string" } } },
+      },
+    },
+  };
+  const longPage = "Open roles: Line cook. Pizza cook. Apply now. ".repeat(60); // > 2,000 chars
+  const saved: Partial<typeof config> = {};
+
+  function withProvider(overrides: Partial<typeof config> = {}) {
+    const values: Partial<typeof config> = {
+      EXTRACTION_PROVIDER_BASE_URL: "http://provider.local/v1",
+      EXTRACTION_PROVIDER_MODEL: "extraction-v1",
+      EXTRACTION_PROVIDER_TEAM_IDS: "test-team",
+      EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS: true,
+      ...overrides,
+    };
+    for (const k of Object.keys(values) as (keyof typeof config)[]) {
+      (saved as any)[k] = config[k];
+      (config as any)[k] = values[k];
+    }
+  }
+
+  function meta() {
+    const m = makeJsonMeta();
+    m.options.formats[0].schema = listSchema as any;
+    (m.logger as any).warn = vi.fn(); // the fallback path logs a warning
+    return m;
+  }
+
+  function modelIds() {
+    return (extractData as Mock).mock.calls.map(
+      c => c[0].extractOptions.model.modelId,
+    );
+  }
+
+  beforeEach(() => {
+    (extractData as Mock).mockReset();
+  });
+
+  afterEach(() => {
+    Object.assign(config, saved);
+    for (const k of Object.keys(saved)) delete (saved as any)[k];
+  });
+
+  it("falls back to the default model when the provider answers with only empty lists on a long page", async () => {
+    withProvider();
+    (extractData as Mock)
+      .mockResolvedValueOnce({
+        extractedDataArray: [{ jobs: [] }],
+        warning: undefined,
+        costLimitExceededTokenUsage: null,
+      })
+      .mockResolvedValueOnce({
+        extractedDataArray: [{ jobs: [{ title: "Line cook" }] }],
+        warning: undefined,
+        costLimitExceededTokenUsage: null,
+      });
+
+    const result = await performLLMExtract(meta(), {
+      markdown: longPage,
+      metadata: {},
+    } as any);
+
+    expect(modelIds()).toEqual(["extraction-v1", "gpt-4o-mini"]);
+    expect(result.json).toEqual({ jobs: [{ title: "Line cook" }] });
+  });
+
+  it("keeps the provider's empty lists on a short page", async () => {
+    withProvider();
+    (extractData as Mock).mockResolvedValueOnce({
+      extractedDataArray: [{ jobs: [] }],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    });
+
+    const result = await performLLMExtract(meta(), {
+      markdown: "No openings right now.",
+      metadata: {},
+    } as any);
+
+    expect(modelIds()).toEqual(["extraction-v1"]);
+    expect(result.json).toEqual({ jobs: [] });
+  });
+
+  it("keeps the provider's empty lists when the fallback is switched off", async () => {
+    withProvider({ EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS: false });
+    (extractData as Mock).mockResolvedValueOnce({
+      extractedDataArray: [{ jobs: [] }],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    });
+
+    const result = await performLLMExtract(meta(), {
+      markdown: longPage,
+      metadata: {},
+    } as any);
+
+    expect(modelIds()).toEqual(["extraction-v1"]);
+    expect(result.json).toEqual({ jobs: [] });
+  });
+
+  it("does not fall back when the provider found items", async () => {
+    withProvider();
+    (extractData as Mock).mockResolvedValueOnce({
+      extractedDataArray: [{ jobs: [{ title: "Pizza cook" }] }],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    });
+
+    const result = await performLLMExtract(meta(), {
+      markdown: longPage,
+      metadata: {},
+    } as any);
+
+    expect(modelIds()).toEqual(["extraction-v1"]);
+    expect(result.json).toEqual({ jobs: [{ title: "Pizza cook" }] });
   });
 });

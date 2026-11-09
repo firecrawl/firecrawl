@@ -1,6 +1,6 @@
 # Firecrawl Ruby SDK
 
-Ruby SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
+Ruby SDK for [Firecrawl](https://firecrawl.dev), the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs on the v2 API.
 
 ## Prerequisites
 
@@ -126,6 +126,15 @@ doc = client.parse(file,
 puts doc.markdown
 ```
 
+List the file formats the parse endpoint accepts. `available` is `false` for
+formats the deployment can't currently handle (e.g. images when OCR is off).
+
+```ruby
+client.get_parse_formats.each do |f|
+  puts "#{f.format} (#{f.kind}) #{f.extensions.join(", ")} #{f.mime_types.join(", ")} available=#{f.available}"
+end
+```
+
 ### Crawl
 
 ```ruby
@@ -184,6 +193,25 @@ results = client.search("latest news",
   Firecrawl::Models::SearchOptions.new(limit: 5, location: "US"))
 ```
 
+### Developer Search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
+
+```ruby
+response = client.developer_search(
+  "retry an http request with exponential backoff",
+  Firecrawl::Models::DeveloperSearchOptions.new(
+    k: 5,
+    types: ["issue", "pull_request"],
+    repos: ["square/okhttp"]
+  )
+)
+
+response.results.each do |result|
+  puts "#{result.title} #{result.url}"
+end
+```
+
 ### Agent
 
 ```ruby
@@ -194,6 +222,17 @@ status = client.agent(
     urls: ["https://example.com"]
   ))
 puts status.data
+
+# Use Alexandria data providers connected in the dashboard
+status = client.agent(
+  Firecrawl::Models::AgentOptions.new(
+    prompt: "Find the work email of the CEO of example.com",
+    exchange: Firecrawl::Models::AgentExchangeOptions.new(
+      enabled: true,
+      toolkits: ["apollo"]
+    )
+  ))
+puts status.exchange&.paid_calls
 ```
 
 ### Usage & Metrics

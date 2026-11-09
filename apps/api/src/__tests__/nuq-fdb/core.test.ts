@@ -604,7 +604,7 @@ describeIf("NuQ FDB core", () => {
     expect(j?.returnvalue?.blob?.length).toBe(300 * 1024);
   });
 
-  test("getCrawlJobsForListing paginates completed jobs in finish order", async () => {
+  test("getGroupJobs paginates completed jobs in finish order", async () => {
     const { queue, group } = await makeCtx("listing");
     const owner = freshOwner();
     const gid = randomUUID();
@@ -627,10 +627,74 @@ describeIf("NuQ FDB core", () => {
       finishOrder.push(j.id);
     }
 
-    const page1 = await queue.getCrawlJobsForListing(gid, 3, 0);
-    const page2 = await queue.getCrawlJobsForListing(gid, 3, 3);
+    const page1 = await queue.getGroupJobs(gid, "completed", 3, 0);
+    const page2 = await queue.getGroupJobs(gid, "completed", 3, 3);
     expect(page1.map(j => j.id)).toEqual(finishOrder.slice(0, 3));
     expect(page2.map(j => j.id)).toEqual(finishOrder.slice(3));
+  });
+
+  test("getGroupJobs paginates failed jobs with error data", async () => {
+    const { queue, group } = await makeCtx("failed-listing");
+    const owner = freshOwner();
+    const gid = randomUUID();
+    await group.addGroup(gid, owner);
+
+    const ids = Array.from({ length: 4 }, () => randomUUID());
+    await queue.addJobs(
+      ids.map((id, index) => ({
+        id,
+        data: scrapeData({ url: `https://example.com/${index}` }),
+        options: { ownerId: owner, groupId: gid },
+      })),
+      gate(10),
+    );
+    const taken = await takeAll(queue, 4);
+    const expectedFailed: {
+      id: string;
+      failedReason: string;
+      url: string;
+    }[] = [];
+    for (const [index, job] of taken.entries()) {
+      await queue.jobFail(job.id, job.lock!, `failure-${index}`);
+      expectedFailed.push({
+        id: job.id,
+        failedReason: `failure-${index}`,
+        url: job.data.url,
+      });
+    }
+    expectedFailed.sort((a, b) => a.id.localeCompare(b.id));
+
+    const page1 = await queue.getGroupJobs(gid, "failed", 2, 0);
+    const page2 = await queue.getGroupJobs(gid, "failed", 2, 2);
+    expect(
+      [...page1, ...page2].map(job => ({
+        id: job.id,
+        failedReason: job.failedReason,
+        url: job.data.url,
+      })),
+    ).toEqual(expectedFailed);
+    expect(await queue.getGroupJobs(gid, "completed")).toEqual([]);
+  });
+
+  test("getGroupJobs keeps failed ZDR jobs listable after input cleanup", async () => {
+    const { queue, group } = await makeCtx("failed-zdr-listing");
+    const owner = freshOwner();
+    const gid = randomUUID();
+    const id = randomUUID();
+    await group.addGroup(gid, owner);
+    await queue.addJob(
+      id,
+      scrapeData({ zeroDataRetention: true }),
+      { ownerId: owner, groupId: gid },
+      gate(10),
+    );
+    const [job] = await takeAll(queue, 1);
+    await queue.jobFail(job.id, job.lock!, "zdr failure");
+
+    const failed = await queue.getGroupJobs(gid, "failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ id, failedReason: "zdr failure" });
+    expect(failed[0].data).toBeNull();
   });
 
   test("getGroupAnyJob returns a single_urls member and checks ownership", async () => {

@@ -5,6 +5,7 @@ import {
   buildJudgePrompt,
 } from "./judge";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
+import { hashMonitorUrl } from "../store";
 import { scrapeRequestSchema } from "../../../controllers/v2/types";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
@@ -89,6 +90,7 @@ function run(
     knownEvents?: { key: string; label: string }[];
     goalVersion?: string;
     alertMode?: "first_match" | "every_new_result" | "material_dev";
+    isBlocked?: (url: string) => boolean;
   } = {},
 ) {
   return runSearchTarget({
@@ -100,6 +102,7 @@ function run(
     },
     monitorCheckId: "check-1",
     scrapePage: (...a: unknown[]) => scrapePageMock(...a),
+    isBlocked: over.isBlocked,
     goalVersion: over.goalVersion ?? "gv1",
     knownPages: over.knownPages ?? new Map(),
     knownEvents: over.knownEvents ?? [],
@@ -131,6 +134,22 @@ describe("runSearchTarget orchestration", () => {
     expect(out.pageUpserts[0].status).toBe("alert");
     expect(out.summary).toBe("1 match across 1 result.");
     expect(scrapePageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves original URL case in the stored page (paths/query params are case-sensitive)", async () => {
+    const mixedUrl = "https://example.com/watch?v=DAlfGz8tPc4";
+    setSearchResults([
+      { url: mixedUrl, title: "OpenAI reel", description: "clip" },
+    ]);
+    setVerdictsByUrl({ [mixedUrl]: verdict() });
+
+    const out = await run();
+
+    expect(out.pageUpserts[0].url).toBe(mixedUrl);
+    expect(out.sources[0].url).toBe(mixedUrl);
+    expect(out.pageUpserts[0].urlHash).toEqual(
+      hashMonitorUrl(canonicalizeUrl(mixedUrl)),
+    );
   });
 
   it("skips scrape/judge for an already-seen unchanged page (same goalVersion)", async () => {
@@ -240,6 +259,21 @@ describe("runSearchTarget orchestration", () => {
       expect(byStatus(status).metadata.searchStatus).toBe(status);
       expect(byStatus(status).scraped).toBe(true);
     }
+    expect(byStatus("alert").judgment).toMatchObject({
+      meaningful: true,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
+    expect(byStatus("watching").judgment).toMatchObject({
+      meaningful: false,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
+    expect(byStatus("ignored").judgment).toMatchObject({
+      meaningful: false,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
   });
 
   it("re-evaluates a known page when the goalVersion changed (stale memory)", async () => {
@@ -289,6 +323,11 @@ describe("runSearchTarget orchestration", () => {
     const seen = out.pageUpserts.find(u => u.status === "already_seen")!;
     expect(seen.scraped).toBe(true);
     expect(seen.metadata.searchStatus).toBe("already_seen");
+    expect(seen.judgment).toMatchObject({
+      meaningful: true,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
   });
 
   it("uses the canonical URL as the event key (label is the verdict concept)", async () => {
@@ -520,5 +559,27 @@ describe("domain scoping", () => {
     expect(out.resultCount).toBe(1);
     expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
     expect(scrapePageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocklisted URLs are dropped before scrape/judge/billing", async () => {
+    setSearchResults([
+      { url: "https://blocked.com/x", title: "blocked", description: "x" },
+      {
+        url: "https://news.com/openai",
+        title: "OpenAI files S-1",
+        description: "x",
+      },
+    ]);
+    setVerdictsByUrl({ "https://news.com/openai": verdict() });
+    const out = await run({
+      isBlocked: url => url.includes("blocked.com"),
+    });
+    expect(out.resultCount).toBe(1);
+    expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
+    expect(out.pageUpserts.map(p => p.url)).toEqual([
+      "https://news.com/openai",
+    ]);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
+    expect(out.resultsJudged).toBe(1);
   });
 });

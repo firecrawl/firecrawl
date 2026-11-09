@@ -8,11 +8,16 @@ import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
 
 /**
- * If you do not know the subscription_id in the current context, pass subscription_id as undefined.
+ * `org_id` is the team's Autumn customer. It is nullable here and nowhere
+ * below: this is the facade every controller and worker bills through, and
+ * preview/keyless teams legitimately have no org. Without one there is no
+ * customer to charge, so the Autumn track is skipped — the same `false` it
+ * already answers for those teams — while the ledger enqueue, which needs no
+ * org, still runs.
  */
 export async function billTeam(
   team_id: string,
-  subscription_id: string | null | undefined,
+  org_id: string | null,
   credits: number,
   api_key_id: number | null,
   billing: BillingMetadata,
@@ -21,7 +26,7 @@ export async function billTeam(
   return withAuth(
     async (
       team_id: string,
-      subscription_id: string | null | undefined,
+      org_id: string | null,
       credits: number,
       api_key_id: number | null,
       billing: BillingMetadata,
@@ -32,17 +37,40 @@ export async function billTeam(
         ...toAutumnBillingProperties(billing),
         apiKeyId: api_key_id,
       };
-      const featureId = featureIdForBillingEndpoint(billing.endpoint);
-      const trackedInRequest = await autumnService.trackCredits({
-        teamId: team_id,
-        value: credits,
-        properties: autumnProperties,
-        featureId,
-      });
+      const featureId = billing.hostedMcp
+        ? await autumnService.hostedMcpFeatureId(
+            team_id,
+            featureIdForBillingEndpoint(billing.endpoint),
+          )
+        : featureIdForBillingEndpoint(billing.endpoint);
+
+      let trackedInRequest = false;
+      if (org_id !== null) {
+        // Stable per-charge key: a caller retry or re-run
+        // job with the same chargeId dedupes instead of double-billing.
+        trackedInRequest = await autumnService.trackCredits({
+          teamId: team_id,
+          orgId: org_id,
+          value: credits,
+          properties: autumnProperties,
+          featureId,
+          idempotencyKey: billing.chargeId
+            ? `fc:track:${billing.endpoint}:${billing.chargeId}`
+            : undefined,
+          externalRequestId: billing.externalRequestId ?? undefined,
+        });
+      } else if (team_id !== "preview" && !team_id.startsWith("preview_")) {
+        // Preview teams are never tracked anyway; a real team arriving without
+        // an org is not expected, and its usage is about to go unmetered.
+        logger?.error(
+          "No org for the team; billing the ledger but not Autumn",
+          { team_id, credits, billing },
+        );
+      }
 
       const result = await queueBillingOperation(
         team_id,
-        subscription_id,
+        org_id,
         credits,
         api_key_id,
         billing,
@@ -51,16 +79,20 @@ export async function billTeam(
       );
 
       if (!result.success && trackedInRequest) {
-        await autumnService.refundCredits({
-          teamId: team_id,
-          value: credits,
-          properties: autumnProperties,
-          featureId,
+        // No compensating refund: the tracked charge is durable and correct,
+        // and a refund here poisons a retried request — its track would be
+        // deduped by Autumn against the same idempotency key (no new charge)
+        // while the ledger enqueue succeeds, leaving Autumn net-zero for
+        // billed work.
+        logger?.error("billing enqueue failed after tracking; charge stands", {
+          team_id,
+          credits,
+          billing,
         });
       }
 
       return result;
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, subscription_id, credits, api_key_id, billing, logger);
+  )(team_id, org_id, credits, api_key_id, billing, logger);
 }

@@ -1,11 +1,11 @@
 [package]
 name = "firecrawl"
-version = "2.10.0"
+version = "2.21.10"
 edition = "2021"
 license = "MIT"
 homepage = "https://www.firecrawl.dev/"
 repository = "https://github.com/firecrawl/firecrawl"
-description = "Official Rust SDK for Firecrawl API v2."
+description = "Official Rust SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs."
 authors = ["Gergő Móricz <mogery@firecrawl.dev>", "sanix-darker <sanixdk@gmail.com>", "kkharji <kkharji@protonmail.com>"]
 keywords = ["firecrawl", "web-scraping", "crawling", "api"]
 categories = ["api-bindings", "web-programming"]
@@ -15,6 +15,7 @@ path = "src/lib.rs"
 name = "firecrawl"
 
 [dependencies]
+uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

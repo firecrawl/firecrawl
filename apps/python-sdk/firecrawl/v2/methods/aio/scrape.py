@@ -1,14 +1,25 @@
-from typing import Optional, Dict, Any, Literal
+import asyncio
+from typing import Optional, Dict, Any, List, Literal, Union
 from ...types import (
     ScrapeOptions,
     Document,
     BrowserExecuteResponse,
     BrowserDeleteResponse,
+    AlexandriaCall,
+    AlexandriaScrapeData,
 )
+from ..scrape import (
+    _alexandria_request_id,
+    _alexandria_transport_timeout,
+    _prepare_scrape_alexandria_request,
+    _parse_scrape_alexandria_response,
+)
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.normalize import normalize_document_input
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
+from ...utils.auto_resume import ResumeTracker
 
 
 async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -24,17 +35,51 @@ async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = N
     return payload
 
 
-async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+async def scrape(
+    client: AsyncHttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     payload = await _prepare_scrape_request(url, options)
-    response = await client.post("/v2/scrape", payload)
-    if response.status_code >= 400:
-        handle_response_error(response, "scrape")
-    body = response.json()
-    if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
-    document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
-    return Document(**normalized)
+
+    resume = ResumeTracker(enabled=auto_resume is not False)
+    while True:
+        response = await client.post("/v2/scrape", payload)
+        if response.status_code >= 400:
+            delay_s = resume.delay_or_none(response)
+            if delay_s is not None:
+                # The document keeps processing server-side; the retry
+                # attaches to the same in-flight job (content adoption)
+                # and returns the finished result.
+                await asyncio.sleep(delay_s)
+                continue
+            handle_response_error(response, "scrape")
+        body = response.json()
+        if not body.get("success"):
+            handle_response_error(response, "scrape")
+        document_data = body.get("data", {})
+        normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
+        return Document(**normalized)
+
+
+async def scrape_alexandria(client: AsyncHttpClient, calls, *, timeout: Optional[int] = None,
+                          integration: Optional[str] = None, request_id: Optional[str] = None) -> AlexandriaScrapeData:
+    payload = _prepare_scrape_alexandria_request(calls, timeout=timeout, integration=integration)
+    request_id = _alexandria_request_id(request_id)
+    headers = {"x-request-id": request_id}
+    try:
+        response = await client.post("/v2/scrape", payload, headers=headers,
+                                    timeout=_alexandria_transport_timeout(timeout))
+        if response.status_code != 200 or not response.json().get("success"):
+            handle_response_error(response, "scrape alexandria")
+        return _parse_scrape_alexandria_response(response.json(), request_id)
+    except FirecrawlError as error:
+        error.request_id = request_id
+        raise
+    except Exception as error:
+        raise FirecrawlError(str(error), request_id=request_id) from error
 
 
 async def interact(
@@ -72,7 +117,7 @@ async def interact(
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     normalized = dict(body)
     if "exitCode" in normalized and "exit_code" not in normalized:
@@ -143,4 +188,3 @@ async def delete_scrape_browser(
 ) -> BrowserDeleteResponse:
     """Deprecated alias for stop_interaction()."""
     return await stop_interaction(client, job_id)
-

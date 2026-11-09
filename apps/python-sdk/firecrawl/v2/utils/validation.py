@@ -388,6 +388,8 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     # schema is recommended; if provided, normalize Pydantic forms
     schema = format_obj.get('schema')
     normalized = dict(format_obj)
+    if "check_prompt_injection" in normalized:
+        normalized["checkPromptInjection"] = normalized.pop("check_prompt_injection")
     if schema is not None:
         normalized_schema = _normalize_schema(schema)
         if normalized_schema is not None:
@@ -535,7 +537,6 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
     default_values = {
         "only_main_content": True,
         "mobile": False,
-        "skip_tls_verification": True,
         "remove_base64_images": True,
         "fast_mode": False,
         "block_ads": True,
@@ -566,7 +567,11 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "block_ads": "blockAds",
         "store_in_cache": "storeInCache",
         "max_age": "maxAge",
+        "min_age": "minAge",
         "redact_pii": "redactPII",
+        "check_prompt_injection": "checkPromptInjection",
+        "threat_protection": "threatProtection",
+        "audit_metadata": "auditMetadata",
     }
     
     # Apply field mappings
@@ -581,6 +586,18 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
             scrape_data["redactPII"]["replaceStyle"] = scrape_data["redactPII"].pop(
                 "replace_style"
             )
+
+    # threatProtection is a nested object whose inner fields also need
+    # camel-casing.
+    if isinstance(scrape_data.get("threatProtection"), dict):
+        threat_data = scrape_data["threatProtection"]
+        for snake_case, camel_case in (
+            ("risk_score_threshold", "riskScoreThreshold"),
+            ("blocked_tlds", "blockedTlds"),
+            ("failure_policy", "failurePolicy"),
+        ):
+            if snake_case in threat_data:
+                threat_data[camel_case] = threat_data.pop(snake_case)
     
     # Handle special cases
     for key, value in options_data.items():
@@ -775,12 +792,21 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         parser_data = dict(parser)
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
+                        # Deprecated alias from the pre-rename pageMarkdown option.
+                        if "page_markdown" in parser_data:
+                            parser_data.setdefault("pages", parser_data.pop("page_markdown"))
+                        if "pageMarkdown" in parser_data:
+                            parser_data.setdefault("pages", parser_data.pop("pageMarkdown"))
+                        if "page_markers" in parser_data:
+                            parser_data["pageMarkers"] = parser_data.pop("page_markers")
                         converted_parsers.append(parser_data)
                     else:
                         parser_data = parser.model_dump(exclude_none=True)
                         # Convert snake_case to camelCase for API
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
+                        if "page_markers" in parser_data:
+                            parser_data["pageMarkers"] = parser_data.pop("page_markers")
                         converted_parsers.append(parser_data)
                 scrape_data["parsers"] = converted_parsers
             elif key == "location":
@@ -788,6 +814,12 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                     scrape_data["location"] = value
                 else:
                     scrape_data["location"] = value.model_dump(exclude_none=True)
+            elif key == "tool_detail":
+                scrape_data["toolDetail"] = value
+            elif key == "domain_tools":
+                # Only ever sent when explicitly enabled; never emit `false`.
+                if value:
+                    scrape_data["domainTools"] = True
             elif key == "profile":
                 if isinstance(value, dict):
                     profile_data = {
@@ -804,4 +836,4 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value
     
-    return scrape_data  
+    return scrape_data

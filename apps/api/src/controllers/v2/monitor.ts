@@ -2,6 +2,7 @@ import { Response } from "express";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
 import {
@@ -210,6 +211,7 @@ export async function createMonitorController(
     input,
     nextRunAt: schedule.nextRunAt,
     intervalMs: schedule.intervalMs,
+    partnerJobToken: externalRequestId(req),
   });
 
   trackMonitorConfiguredInterest({

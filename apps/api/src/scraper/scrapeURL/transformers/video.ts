@@ -2,6 +2,12 @@ import { Meta } from "..";
 import { Document, VideoItem } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { throwIfMediaAccessDenied } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
+
+// Video downloads can be large; generous but bounded so a hung fetch can't
+// silently consume the whole scrape budget.
+const DOWNLOAD_FETCH_TIMEOUT_MS = 240_000;
 
 let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
@@ -170,12 +176,14 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaAccessDenied(error);
     throw new Error(`Video download failed: ${error.detail}`);
   }
 
@@ -201,6 +209,20 @@ export async function fetchVideo(
   // Lockdown forbids outbound requests that touch the target URL. avgrab
   // fetches the source on our behalf, so skip it here.
   if (meta.options.lockdown) {
+    return document;
+  }
+
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Video format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Video format is not supported for teams restricted to US-only processing." +
+      (document.warning ? " " + document.warning : "");
     return document;
   }
 

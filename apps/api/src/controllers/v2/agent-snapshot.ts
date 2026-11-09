@@ -1,0 +1,51 @@
+import { Response } from "express";
+import { validate as isUuid } from "uuid";
+import { config } from "../../config";
+import { getAgentJobAccess } from "../../lib/operational-job-access";
+import { AgentSnapshotResponse, RequestWithAuth } from "./types";
+
+export async function agentSnapshotController(
+  req: RequestWithAuth<
+    { jobId: string; snapshotId: string },
+    AgentSnapshotResponse,
+    any
+  >,
+  res: Response<AgentSnapshotResponse>,
+) {
+  if (!isUuid(req.params.snapshotId)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid snapshot ID format. Snapshot ID must be a valid UUID.",
+    });
+  }
+
+  const access = await getAgentJobAccess(req.params.jobId);
+
+  if (
+    !access ||
+    access.expiresAtMs <= Date.now() ||
+    access.teamId !== req.auth.team_id
+  ) {
+    return res.status(404).json({
+      success: false,
+      error: "Agent job not found",
+    });
+  }
+
+  if (!config.EXTRACT_V3_BETA_URL) {
+    throw new Error("Agent beta is not enabled.");
+  }
+
+  const upstream = await fetch(
+    `${config.EXTRACT_V3_BETA_URL}/internal/extracts/${encodeURIComponent(req.params.jobId)}/snapshots/${encodeURIComponent(req.params.snapshotId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+        "x-team-id": req.auth.team_id,
+      },
+    },
+  );
+  const body = (await upstream.json()) as AgentSnapshotResponse;
+
+  return res.status(upstream.status).json(body);
+}

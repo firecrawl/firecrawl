@@ -1,0 +1,143 @@
+{
+  "name": "FirecrawlScrapeActivityPush",
+  "apiVersion": "2022-09-01-preview",
+  "type": "Microsoft.SecurityInsights/dataConnectorDefinitions",
+  "location": "[parameters('workspace-location')]",
+  "kind": "Customizable",
+  "properties": {
+    "connectorUiConfig": {
+      "id": "FirecrawlScrapeActivityPush",
+      "title": "Firecrawl Scrape Activity (Push)",
+      "publisher": "Firecrawl",
+      "descriptionMarkdown": "Pushes Firecrawl scrape activity into Microsoft Sentinel through the Azure Monitor Logs Ingestion API. The customer-owned DCR normalizes native events into ASimWebSessionLogs.",
+      "graphQueries": [
+        {
+          "metricName": "Scrape activity",
+          "legend": "Firecrawl",
+          "baseQuery": "ASimWebSessionLogs | where EventVendor == \"Firecrawl\""
+        }
+      ],
+      "sampleQueries": [
+        {
+          "description": "Recent scrape activity",
+          "query": "ASimWebSessionLogs | where EventVendor == \"Firecrawl\" | sort by TimeGenerated desc"
+        },
+        {
+          "description": "Blocked activity and security alerts",
+          "query": "ASimWebSessionLogs | where EventVendor == \"Firecrawl\" and DvcAction == \"Deny\" | project TimeGenerated, SrcUsername, Url, RuleName, ThreatCategory, EventSeverity"
+        }
+      ],
+      "dataTypes": [
+        {
+          "name": "ASimWebSessionLogs",
+          "lastDataReceivedQuery": "ASimWebSessionLogs | where EventVendor == \"Firecrawl\" | summarize Time = max(TimeGenerated) | where isnotempty(Time)"
+        }
+      ],
+      "connectivityCriteria": [
+        {
+          "type": "IsConnectedQuery",
+          "value": [
+            "ASimWebSessionLogs | where EventVendor == \"Firecrawl\" | summarize LastLogReceived = max(TimeGenerated) | project IsConnected = LastLogReceived > ago(7d)"
+          ]
+        }
+      ],
+      "availability": {
+        "status": 1
+      },
+      "permissions": {
+        "resourceProvider": [
+          {
+            "provider": "Microsoft.OperationalInsights/workspaces",
+            "permissionsDisplayText": "Read and write permissions are required.",
+            "providerDisplayName": "Workspace",
+            "scope": "Workspace",
+            "requiredPermissions": {
+              "write": true,
+              "read": true,
+              "delete": true
+            }
+          }
+        ],
+        "customs": [
+          {
+            "name": "Microsoft Entra",
+            "description": "Permission to create an app registration and client secret."
+          },
+          {
+            "name": "Microsoft Azure",
+            "description": "Permission to assign Monitoring Metrics Publisher on the data collection rule."
+          }
+        ]
+      },
+      "instructionSteps": [
+        {
+          "title": "1. Deploy the push connector resources",
+          "description": "Create the data collection endpoint, data collection rule, Entra application, and role assignment.",
+          "instructions": [
+            {
+              "type": "Markdown",
+              "parameters": {
+                "content": "The DCR transforms Firecrawl's native scrape activity schema into ASimWebSessionLogs. Review the transform before deployment because it is controlled by your workspace."
+              }
+            },
+            {
+              "type": "DeployPushConnectorButton",
+              "parameters": {
+                "label": "Deploy Firecrawl push connector resources",
+                "applicationDisplayName": "Firecrawl Scrape Activity Push Connector"
+              }
+            }
+          ]
+        },
+        {
+          "title": "2. Configure Firecrawl",
+          "description": "Copy the generated values into the Firecrawl Enterprise Controls SIEM form.",
+          "instructions": [
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "Tenant ID",
+                "fillWith": ["TenantId"]
+              }
+            },
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "Application ID",
+                "fillWith": ["ApplicationId"]
+              }
+            },
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "Application Secret",
+                "fillWith": ["ApplicationSecret"]
+              }
+            },
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "Data Collection Endpoint",
+                "fillWith": ["DataCollectionEndpoint"]
+              }
+            },
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "DCR Immutable ID",
+                "fillWith": ["DataCollectionRuleId"]
+              }
+            },
+            {
+              "type": "CopyableLabel",
+              "parameters": {
+                "label": "Stream Name",
+                "value": "Custom-FirecrawlScrapeActivity"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

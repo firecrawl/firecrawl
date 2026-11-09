@@ -44,15 +44,15 @@ final class FirecrawlHttpClient
      * @param array<string, string> $extraHeaders
      * @return array<string, mixed>
      */
-    public function post(string $path, array $body, array $extraHeaders = []): array
+    public function post(string $path, array $body, array $extraHeaders = [], ?float $timeoutSeconds = null): array
     {
-        return $this->request('POST', $this->baseUrl . $path, $body, $extraHeaders);
+        return $this->request('POST', $this->baseUrl . $path, $body, $extraHeaders, timeoutSeconds: $timeoutSeconds);
     }
 
     /** @return array<string, mixed> */
-    public function get(string $path): array
+    public function get(string $path, ?float $timeoutSeconds = null): array
     {
-        return $this->request('GET', $this->baseUrl . $path);
+        return $this->request('GET', $this->baseUrl . $path, timeoutSeconds: $timeoutSeconds);
     }
 
     /** @return array<string, mixed> */
@@ -134,6 +134,7 @@ final class FirecrawlHttpClient
         array $body = [],
         array $extraHeaders = [],
         ?array $multipart = null,
+        ?float $timeoutSeconds = null,
     ): array {
         $defaultHeaders = [
             'Accept' => 'application/json',
@@ -155,6 +156,10 @@ final class FirecrawlHttpClient
             RequestOptions::HEADERS => $headers,
             RequestOptions::HTTP_ERRORS => false,
         ];
+
+        if ($timeoutSeconds !== null) {
+            $options[RequestOptions::TIMEOUT] = $timeoutSeconds;
+        }
 
         if ($multipart !== null) {
             $options[RequestOptions::MULTIPART] = $multipart;

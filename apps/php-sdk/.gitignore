@@ -6,3 +6,4 @@ composer.lock
 .phpstan-cache
 phpstan.neon
 .env
+/.phpunit.cache/

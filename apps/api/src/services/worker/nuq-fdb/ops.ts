@@ -17,6 +17,7 @@ import {
   F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,
+  F_KEY_GATED,
 } from "./keyspace";
 
 export const ONE = encodeI64(1);
@@ -112,6 +113,20 @@ export function appendTeamPending(
   return { k: "tq", s: shard, p: e.p, c: e.c };
 }
 
+export function appendKeyPending(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  e: QueueEntry,
+): PendingLoc {
+  tn.set(ks.keyPendingKey(e.k!, e.p, e.c, e.i), encodeJson(e));
+  tn.add(ks.keyPendingCount(e.k!), ONE);
+  tn.add(ks.teamPendingCount(e.o), ONE);
+  if (e.to !== undefined) {
+    tn.set(ks.backlogTimeout(timeBucket(e.i), e.to, e.i), EMPTY);
+  }
+  return { k: "kq", p: e.p, c: e.c };
+}
+
 export function appendCrawlPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
@@ -158,10 +173,12 @@ export function pendingKeyFromLoc(
   id: string,
   ownerId: string,
   groupId: string | undefined,
+  keyId: string | undefined,
   loc: PendingLoc,
 ): Buffer {
   if (loc.k === "tq")
     return ks.teamPendingKey(ownerId, loc.s, loc.p, loc.c, id);
+  if (loc.k === "kq") return ks.keyPendingKey(keyId!, loc.p, loc.c, id);
   if (loc.k === "gq") return ks.groupPendingKey(groupId!, loc.p, loc.c, id);
   return ks.delayed(timeBucket(id), loc.at, id);
 }
@@ -174,12 +191,16 @@ export function clearPendingPlacement(
   id: string,
   ownerId: string,
   groupId: string | undefined,
+  keyId: string | undefined,
   loc: PendingLoc,
   timesOutAt: number | undefined,
 ): void {
-  tn.clear(pendingKeyFromLoc(ks, id, ownerId, groupId, loc));
+  tn.clear(pendingKeyFromLoc(ks, id, ownerId, groupId, keyId, loc));
   if (loc.k === "tq") {
     tn.add(ks.teamShardCount(ownerId, loc.s), MINUS_ONE);
+    tn.add(ks.teamPendingCount(ownerId), MINUS_ONE);
+  } else if (loc.k === "kq") {
+    tn.add(ks.keyPendingCount(keyId!), MINUS_ONE);
     tn.add(ks.teamPendingCount(ownerId), MINUS_ONE);
   } else if (loc.k === "gq") {
     tn.add(ks.groupPendingCount(groupId!), MINUS_ONE);
@@ -255,6 +276,26 @@ export async function popTeamPending(
   return null;
 }
 
+// Like popCrawlPending, key-pending is a single range: concurrent finishers of
+// the same key conflict on the head, but per-key concurrency is small by
+// definition (it is the key's limit), so the retry pressure stays bounded.
+export async function popKeyPending(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  kid: string,
+): Promise<QueueEntry | null> {
+  const r = ks.keyPendingRange(kid);
+  const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
+  if (head.length === 0) return null;
+  const [key, value] = head[0];
+  const e = decodeJson<QueueEntry>(value as Buffer)!;
+  tn.clear(key as Buffer);
+  tn.add(ks.keyPendingCount(kid), MINUS_ONE);
+  tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
+  clearBacklogTimeout(tn, ks, e);
+  return e;
+}
+
 export async function popCrawlPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
@@ -278,24 +319,29 @@ export async function popCrawlPending(
 // the same transaction whenever possible, so this function never does a
 // conflicting read of the team active counter on the handoff path.
 //
+// The gate chain is crawl -> key -> team -> ready. A job entering an inner
+// gate keeps the outer slots it already won.
+//
 // `held` describes which slots the leaving job actually holds:
-//  - active / ready jobs: team + crawl (if crawl-gated)
-//  - team-pending / delayed jobs: crawl only (if crawl-gated)
+//  - active / ready jobs: team + key (if key-gated) + crawl (if crawl-gated)
+//  - team-pending jobs: key + crawl only
+//  - key-pending / delayed jobs: crawl only
 //  - crawl-pending jobs: none
 
 export async function releaseSlotsAndPromote(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   e: QueueEntry,
-  held: { team: boolean; crawl: boolean },
+  held: { team: boolean; key: boolean; crawl: boolean },
   now: number,
   txc: TxContext,
 ): Promise<void> {
   if (!(e.f & F_GATED)) return;
   const tid = e.o;
 
+  const holdsKey = held.key && !!e.k && !!(e.f & F_KEY_GATED);
   const holdsCrawl = held.crawl && !!e.g && !!(e.f & F_CRAWL_GATED);
-  if (!held.team && !holdsCrawl) return;
+  if (!held.team && !holdsKey && !holdsCrawl) return;
 
   // Limit-lowering convergence: if the team is over its limit, don't hand off.
   let overLimit = false;
@@ -312,6 +358,41 @@ export async function releaseSlotsAndPromote(
   let teamHead: QueueEntry | null | "consumed" = null;
   if (held.team && !overLimit) {
     teamHead = await popTeamPending(tn, ks, tid);
+  }
+  // whether the freed team slot is still unassigned after the pops so far
+  const teamSlotFree = () => held.team && !overLimit && teamHead === null;
+
+  // Key slot handoff: promote the key-pending head into the team gate. Runs
+  // before the crawl handoff so the longest-gated job gets the slot first.
+  let keyHandedOff = false;
+  if (holdsKey) {
+    let keyOverLimit = false;
+    const kLimitBuf = await tn.get(ks.keyLimit(e.k!)); // cold key
+    if (kLimitBuf) {
+      const kLimit = decodeI64(kLimitBuf);
+      const kActive = decodeI64(await tn.snapshot().get(ks.keyActive(e.k!)));
+      keyOverLimit = kActive > kLimit;
+    }
+    if (keyOverLimit) {
+      // limit-lowering convergence: swallow the slot instead of handing off
+      tn.add(ks.keyActive(e.k!), MINUS_ONE);
+      keyHandedOff = true; // accounted for; don't decrement again below
+    } else {
+      const keyHead = await popKeyPending(tn, ks, e.k!);
+      if (keyHead) {
+        keyHandedOff = true;
+        // the key head now owns the freed key slot; it still needs a team slot
+        if (teamSlotFree()) {
+          promoteEntryToReady(tn, ks, keyHead, txc);
+          teamHead = "consumed";
+        } else if (!held.team) {
+          await admitThroughTeamGate(tn, ks, keyHead, txc);
+        } else {
+          const loc = appendTeamPending(tn, ks, keyHead);
+          setStatusPending(tn, ks, keyHead.i, loc);
+        }
+      }
+    }
   }
 
   // Crawl slot handoff: promote the crawl-pending head out of the crawl gate.
@@ -336,28 +417,58 @@ export async function releaseSlotsAndPromote(
   if (crawlPromoted) {
     const j2 = crawlPromoted;
     if (crawlDelaySeconds > 0) {
-      // crawl delay: park with a not-before timestamp; keeps the crawl slot.
+      // crawl delay: park with a not-before timestamp; keeps the crawl slot
+      // only (the key gate is passed on wake-up).
       const notBefore = now + crawlDelaySeconds * 1000;
       tn.set(ks.delayed(timeBucket(j2.i), notBefore, j2.i), encodeJson(j2));
       setStatusPending(tn, ks, j2.i, { k: "dl", at: notBefore });
-    } else if (held.team && !overLimit && teamHead === null) {
-      // the freed team slot goes directly to the crawl-promoted job
-      promoteEntryToReady(tn, ks, j2, txc);
-      teamHead = "consumed";
-    } else if (!held.team) {
-      // no team slot was freed here (job removal/cancellation paths), so the
-      // promoted job must be admitted through the gate on its own
-      await admitThroughTeamGate(tn, ks, j2, txc);
     } else {
-      // waits in the team gate; keeps the crawl slot
-      const loc = appendTeamPending(tn, ks, j2);
-      setStatusPending(tn, ks, j2.i, loc);
+      // key gate for the crawl-promoted job
+      const j2KeyGated = !!j2.k && !!(j2.f & F_KEY_GATED);
+      let hasKeySlot = !j2KeyGated;
+      if (!hasKeySlot) {
+        if (holdsKey && !keyHandedOff && j2.k === e.k) {
+          // the freed key slot goes directly to the crawl-promoted job
+          keyHandedOff = true;
+          hasKeySlot = true;
+        } else {
+          // rare path: acquire on its own (conflicting read of keyActive)
+          const kLimitBuf = await tn.get(ks.keyLimit(j2.k!));
+          const kLimit = kLimitBuf ? decodeI64(kLimitBuf) : Infinity;
+          const kActive = decodeI64(await tn.get(ks.keyActive(j2.k!)));
+          if (kActive < kLimit) {
+            tn.add(ks.keyActive(j2.k!), ONE);
+            hasKeySlot = true;
+          }
+        }
+      }
+      if (!hasKeySlot) {
+        // waits in the key gate; keeps the crawl slot
+        const loc = appendKeyPending(tn, ks, j2);
+        setStatusPending(tn, ks, j2.i, loc);
+      } else if (teamSlotFree()) {
+        // the freed team slot goes directly to the crawl-promoted job
+        promoteEntryToReady(tn, ks, j2, txc);
+        teamHead = "consumed";
+      } else if (!held.team) {
+        // no team slot was freed here (job removal/cancellation paths), so the
+        // promoted job must be admitted through the gate on its own
+        await admitThroughTeamGate(tn, ks, j2, txc);
+      } else {
+        // waits in the team gate; keeps the crawl + key slots
+        const loc = appendTeamPending(tn, ks, j2);
+        setStatusPending(tn, ks, j2.i, loc);
+      }
     }
+  }
+
+  if (holdsKey && !keyHandedOff) {
+    tn.add(ks.keyActive(e.k!), MINUS_ONE);
   }
 
   if (held.team) {
     if (teamHead === "consumed") {
-      // slot handed to crawlPromoted above
+      // slot handed to the key head or crawlPromoted above
     } else if (teamHead !== null) {
       promoteEntryToReady(tn, ks, teamHead, txc);
     } else {
@@ -366,9 +477,10 @@ export async function releaseSlotsAndPromote(
   }
 }
 
-// Admits a slotless entry through the team gate, used when a job enters the
-// team gate outside of a one-for-one handoff (delayed promotion, limit raise).
-// Does a conflicting read of the team active counter -- callers are rare paths.
+// Admits an entry holding no team slot through the team gate, used when a job
+// enters the team gate outside of a one-for-one handoff (delayed promotion,
+// limit raise). Does a conflicting read of the team active counter -- callers
+// are rare paths.
 export async function admitThroughTeamGate(
   tn: Transaction,
   ks: NuqFdbKeyspace,
@@ -385,6 +497,28 @@ export async function admitThroughTeamGate(
     const loc = appendTeamPending(tn, ks, e);
     setStatusPending(tn, ks, e.i, loc);
   }
+}
+
+// Admits an entry holding only its crawl slot through the key gate and then
+// the team gate (delayed promotion wake-up). Conflicting reads; rare path.
+export async function admitThroughGates(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  e: QueueEntry,
+  txc: TxContext,
+): Promise<void> {
+  if (e.k && e.f & F_KEY_GATED) {
+    const kLimitBuf = await tn.get(ks.keyLimit(e.k));
+    const kLimit = kLimitBuf ? decodeI64(kLimitBuf) : Infinity;
+    const kActive = decodeI64(await tn.get(ks.keyActive(e.k)));
+    if (kActive >= kLimit) {
+      const loc = appendKeyPending(tn, ks, e);
+      setStatusPending(tn, ks, e.i, loc);
+      return;
+    }
+    tn.add(ks.keyActive(e.k), ONE);
+  }
+  await admitThroughTeamGate(tn, ks, e, txc);
 }
 
 // === Job record cleanup

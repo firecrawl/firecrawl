@@ -85,6 +85,88 @@ class ClientTest < Minitest::Test
     assert_equal "Example", doc.metadata["title"]
   end
 
+  def test_scrape_hydrates_pdf_pages
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: {
+          markdown: "# Annual Report 2025",
+          pages: [
+            { pageNumber: 1, markdown: "# Cover" },
+            { pageNumber: 2, markdown: "## Intro" }
+          ]
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/report.pdf")
+    assert_equal "# Annual Report 2025", doc.markdown
+    assert_equal 2, doc.pages.length
+    assert_equal 1, doc.pages[0]["pageNumber"]
+    assert_equal "# Cover", doc.pages[0]["markdown"]
+  end
+
+  def test_scrape_hydrates_pdf_blocks
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: {
+          markdown: "# Annual Report 2025",
+          blocks: [{
+            pageNumber: 1,
+            width: 1700,
+            height: 2200,
+            status: "ok",
+            items: [{
+              id: "p1.b0",
+              type: "title",
+              content: "# Annual Report 2025",
+              readingOrder: 0
+            }]
+          }]
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/report.pdf")
+    assert_equal "# Annual Report 2025", doc.markdown
+    assert_equal 1, doc.blocks.length
+    assert_equal 1, doc.blocks[0]["pageNumber"]
+    assert_equal "title", doc.blocks[0]["items"][0]["type"]
+  end
+
+  def test_scrape_serializes_pdf_parser_page_markers
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .with { |req|
+        body = JSON.parse(req.body)
+        body["parsers"] == [{
+          "type" => "pdf",
+          "mode" => "auto",
+          "pages" => true,
+          "blocks" => true,
+          "pageMarkers" => true
+        }]
+      }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Cover" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::ScrapeOptions.new(
+      parsers: [
+        Firecrawl::Models::PDFParser.new(
+          mode: "auto",
+          pages: true,
+          blocks: true,
+          page_markers: true
+        )
+      ]
+    )
+    doc = @client.scrape("https://example.com/report.pdf", options)
+    assert_equal "# Cover", doc.markdown
+  end
+
   def test_scrape_with_options
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .with { |req| body = JSON.parse(req.body); body["formats"] == ["markdown", "html"] && body["onlyMainContent"] == true }
@@ -102,6 +184,20 @@ class ClientTest < Minitest::Test
 
   def test_scrape_raises_on_nil_url
     assert_raises(ArgumentError) { @client.scrape(nil) }
+  end
+
+  def test_scrape_raises_on_success_false
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: false, code: "SCRAPE_DNS_RESOLUTION_ERROR", error: "DNS resolution failed for hostname \"nonexistent.example\"."),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::FirecrawlError) { @client.scrape("https://nonexistent.example") }
+    assert_equal 200, error.status_code
+    assert_equal "SCRAPE_DNS_RESOLUTION_ERROR", error.error_code
+    assert_equal "DNS resolution failed for hostname \"nonexistent.example\".", error.message
   end
 
   def test_scrape_with_product_format
@@ -412,6 +508,26 @@ class ClientTest < Minitest::Test
     assert_equal "batch-123", response.id
   end
 
+  def test_start_calls_send_sdk_origin
+    origin = "ruby-sdk@#{Firecrawl::VERSION}"
+    stub_request(:post, "#{BASE_URL}/v2/crawl")
+      .with(body: hash_including("origin" => origin))
+      .to_return(status: 200, body: JSON.generate(id: "crawl-origin"), headers: { "Content-Type" => "application/json" })
+    stub_request(:post, "#{BASE_URL}/v2/batch/scrape")
+      .with(body: hash_including("origin" => origin, "formats" => ["markdown"]))
+      .to_return(status: 200, body: JSON.generate(id: "batch-origin"), headers: { "Content-Type" => "application/json" })
+    stub_request(:post, "#{BASE_URL}/v2/map")
+      .with(body: hash_including("origin" => origin))
+      .to_return(status: 200, body: JSON.generate(data: { links: [] }), headers: { "Content-Type" => "application/json" })
+
+    batch_options = Firecrawl::Models::BatchScrapeOptions.new(
+      options: Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"])
+    )
+    assert_equal "crawl-origin", @client.start_crawl("https://example.com").id
+    assert_equal "batch-origin", @client.start_batch_scrape(["https://a.com"], batch_options).id
+    assert_empty @client.map("https://example.com").links
+  end
+
   def test_batch_scrape_with_idempotency_key
     stub_request(:post, "#{BASE_URL}/v2/batch/scrape")
       .with(headers: { "x-idempotency-key" => "my-key" })
@@ -510,6 +626,110 @@ class ClientTest < Minitest::Test
     assert_equal 0, result.web.size
   end
 
+  def test_search_with_country
+    stub_request(:post, "#{BASE_URL}/v2/search")
+      .with { |req| body = JSON.parse(req.body); body["country"] == "de" }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { web: [], news: [], images: [] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::SearchOptions.new(limit: 5, country: "de")
+    result = @client.search("test query", options)
+    assert_equal 0, result.web.size
+  end
+
+  def test_search_omits_country_when_unset
+    stub_request(:post, "#{BASE_URL}/v2/search")
+      .with { |req| body = JSON.parse(req.body); !body.key?("country") }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { web: [], news: [], images: [] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::SearchOptions.new(limit: 5)
+    result = @client.search("test query", options)
+    assert_equal 0, result.web.size
+  end
+
+  # ================================================================
+  # DEVELOPER SEARCH
+  # ================================================================
+
+  def test_developer_search_posts_query_and_options
+    origin = "ruby-sdk@#{Firecrawl::VERSION}"
+    stub = stub_request(:post, "#{BASE_URL}/v2/search/developer")
+      .with(body: {
+        "query" => "retry backoff", "k" => 5, "types" => ["issue"], "repos" => ["square/okhttp"],
+        "min_stars" => 100, "archived" => false, "origin" => origin
+      })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          partial: false,
+          results: [
+            {
+              id: "r1", url: "https://github.com/square/okhttp/issues/1", title: "retry",
+              passages: [{ text: "use backoff", citation_url: "https://github.com/square/okhttp/issues/1#c1" }],
+              license: { state: "licensed", spdx_id: "Apache-2.0" }
+            },
+            { id: "r2", url: "https://github.com/square/okhttp", passages: [], license: "Apache-2.0" }
+          ],
+          repos: [{ repo: "square/okhttp", indexed: true, types: { issue: true, pullRequest: true, readme: false } }]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::DeveloperSearchOptions.new(
+      k: 5, types: ["issue"], repos: ["square/okhttp"], min_stars: 100, archived: false
+    )
+    response = @client.developer_search("retry backoff", options)
+
+    assert_requested stub
+    assert_instance_of Firecrawl::Models::DeveloperSearchResponse, response
+    assert response.success
+    refute response.partial
+    assert_equal 2, response.results.size
+    assert_equal "https://github.com/square/okhttp/issues/1#c1", response.results[0].passages[0].citation_url
+    assert_equal "Apache-2.0", response.results[0].license["spdx_id"]
+    assert_equal "Apache-2.0", response.results[1].license
+    assert_nil response.results[1].title
+    assert response.repos[0].indexed?
+    assert response.repos[0].types["pullRequest"]
+    assert_nil response.sources
+  end
+
+  def test_developer_search_without_options_sends_only_query_and_origin
+    stub = stub_request(:post, "#{BASE_URL}/v2/search/developer")
+      .with(body: { "query" => "okhttp interceptor", "origin" => "ruby-sdk@#{Firecrawl::VERSION}" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, partial: true, results: []),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.developer_search("okhttp interceptor")
+
+    assert_requested stub
+    assert response.partial
+    assert_empty response.results
+  end
+
+  def test_developer_search_options_reject_unknown_keys
+    error = assert_raises(ArgumentError) { Firecrawl::Models::DeveloperSearchOptions.new(min_star: 5) }
+    assert_includes error.message, "min_star"
+  end
+
+  def test_developer_search_rejects_blank_query
+    assert_raises(ArgumentError) { @client.developer_search(nil) }
+    assert_raises(ArgumentError) { @client.developer_search("") }
+    assert_raises(ArgumentError) { @client.developer_search("   ") }
+    assert_not_requested :post, "#{BASE_URL}/v2/search/developer"
+  end
+
   # ================================================================
   # AGENT
   # ================================================================
@@ -554,6 +774,435 @@ class ClientTest < Minitest::Test
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new }
   end
 
+  def test_start_agent_with_effort
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body); body["effort"] == "high" && body["model"] == "spark-1-pro" }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-effort"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing info", model: "spark-1-pro", effort: "high")
+    response = @client.start_agent(options)
+    assert_equal "agent-effort", response.id
+  end
+
+  def test_get_agent_status_with_effort
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-effort")
+      .to_return(
+        status: 200,
+        body: JSON.generate(status: "completed", effort: "high"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-effort")
+    assert_equal "completed", status.status
+    assert_equal "high", status.effort
+  end
+
+  def test_get_agent_trace
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [{ type: "run.started" }, { type: "run.finished" }],
+          creditsUsed: 5
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123")
+    assert_instance_of Firecrawl::Models::AgentTraceResponse, trace
+    assert_equal true, trace.success
+    assert_equal "agent-123", trace.id
+    assert_equal 5, trace.credits_used
+    assert_equal 2, trace.events.size
+    assert_equal "run.started", trace.events.first["type"]
+    assert_nil trace.active_browser_sessions
+  end
+
+  def test_get_agent_trace_with_live_view
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .with(query: { liveView: "true" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [],
+          creditsUsed: 5,
+          activeBrowserSessions: [
+            { id: "bs-1", liveViewUrl: "https://live.example.com/bs-1", viewport: { width: 1280, height: 720 } }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123", live_view: true)
+    assert_equal 1, trace.active_browser_sessions.size
+    assert_equal "https://live.example.com/bs-1", trace.active_browser_sessions.first["liveViewUrl"]
+    assert_equal 1280, trace.active_browser_sessions.first["viewport"]["width"]
+  end
+
+  def test_get_agent_snapshot
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/snapshots/snap-1")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-123", snapshotId: "snap-1", snapshot: "<html>snapshot</html>"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    snapshot = @client.get_agent_snapshot("agent-123", "snap-1")
+    assert_instance_of Firecrawl::Models::AgentSnapshotResponse, snapshot
+    assert_equal true, snapshot.success
+    assert_equal "agent-123", snapshot.id
+    assert_equal "snap-1", snapshot.snapshot_id
+    assert_equal "<html>snapshot</html>", snapshot.snapshot
+  end
+
+  def test_list_agents
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [
+            {
+              id: "agent-123",
+              createdAt: "2026-08-31T12:00:00.000Z",
+              targetHint: "https://example.com",
+              origin: "api",
+              settings: { hidden: false, starred: true, label: "prod" },
+              status: "completed",
+              options: { urls: ["https://example.com"], prompt: "find pricing", model: "spark-1-pro" }
+            }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents
+    assert_instance_of Firecrawl::Models::AgentListResponse, response
+    assert_equal true, response.success
+    assert_nil response.next
+    assert_equal 1, response.agents.size
+    assert_equal "agent-123", response.agents.first["id"]
+    assert_equal "completed", response.agents.first["status"]
+    assert_equal true, response.agents.first["settings"]["starred"]
+  end
+
+  def test_list_agents_with_before
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .with(query: { before: "1756600000000" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [],
+          next: "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents(before: 1756600000000)
+    assert_equal true, response.success
+    assert_equal "https://api.firecrawl.dev/v2/agent?before=1756600000000", response.next
+  end
+
+  def test_start_agent_with_exchange_thread_and_mode
+    thread_id = "0199bbbb-0000-7000-8000-000000000000"
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-turn-2", threadId: thread_id, threadTurn: 2),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(
+      prompt: "Go ahead",
+      thread_id: thread_id,
+      mode: "chat",
+      exchange: Firecrawl::Models::AgentExchangeOptions.new(
+        enabled: true,
+        toolkits: ["apollo", "clearbit"],
+        max_calls: 4,
+        require_approval: true,
+        approve: Firecrawl::Models::AgentExchangeOptions::Approve.new(
+          approval_id: approval_id,
+          call_ids: ["call-1"],
+          always: false
+        ),
+        on_terms_required: "ask"
+      )
+    )
+    response = @client.start_agent(options)
+
+    assert_equal(
+      {
+        "prompt" => "Go ahead",
+        "threadId" => thread_id,
+        "mode" => "chat",
+        "exchange" => {
+          "enabled" => true,
+          "toolkits" => ["apollo", "clearbit"],
+          "maxCalls" => 4,
+          "requireApproval" => true,
+          "approve" => { "approvalId" => approval_id, "callIds" => ["call-1"], "always" => false },
+          "onTermsRequired" => "ask",
+        },
+      },
+      body
+    )
+    assert_equal "agent-turn-2", response.id
+    assert_equal thread_id, response.thread_id
+    assert_equal 2, response.thread_turn
+  end
+
+  def test_agent_with_exchange_decline
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-decline"),
+        headers: { "Content-Type" => "application/json" }
+      )
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-decline")
+      .to_return(
+        status: 200,
+        body: JSON.generate(status: "completed", mode: "chat", message: "Skipped the paid lookup."),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(
+      prompt: "No thanks",
+      thread_id: "0199bbbb-0000-7000-8000-000000000000",
+      mode: "chat",
+      exchange: Firecrawl::Models::AgentExchangeOptions.new(
+        decline: Firecrawl::Models::AgentExchangeOptions::Decline.new(approval_id: approval_id)
+      )
+    )
+    status = @client.agent(options, poll_interval: 0, timeout: 10)
+
+    assert_equal({ "decline" => { "approvalId" => approval_id } }, body["exchange"])
+    assert_equal "chat", status.mode
+    assert_equal "Skipped the paid lookup.", status.message
+  end
+
+  def test_start_agent_omits_unset_thread_and_exchange_fields
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-plain"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.start_agent(Firecrawl::Models::AgentOptions.new(prompt: "Find pricing info"))
+
+    assert_equal({ "prompt" => "Find pricing info" }, body)
+    assert_nil response.thread_id
+    assert_nil response.thread_turn
+    assert_equal({ "enabled" => true }, Firecrawl::Models::AgentExchangeOptions.new(enabled: true).to_h)
+    assert_equal(
+      { "approvalId" => "a-1" },
+      Firecrawl::Models::AgentExchangeOptions::Approve.new(approval_id: "a-1").to_h
+    )
+  end
+
+  def test_get_agent_status_with_exchange_and_pending_calls_approval
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-calls")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          status: "completed",
+          expiresAt: "2026-09-02T00:00:00.000Z",
+          threadId: "0199bbbb-0000-7000-8000-000000000000",
+          threadTurn: 1,
+          mode: "chat",
+          message: "Apollo can verify these emails for about 3 credits.",
+          suggestions: [{ label: "Approve", prompt: "Go ahead" }],
+          unknownField: "ignored",
+          exchange: {
+            enabled: true,
+            toolkits: ["apollo"],
+            requireApproval: true,
+            onTermsRequired: "skip",
+            paidCalls: 0,
+            creditsUsed: nil,
+            skippedProviders: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                capability: "company/enrich",
+                adds: "company size",
+                reason: "terms_required",
+                version: "F-1.0.0",
+                termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+          },
+          pendingApproval: {
+            id: approval_id,
+            kind: "calls",
+            reason: "Apollo charges per lookup.",
+            calls: [
+              {
+                id: "call-1",
+                provider: "apollo",
+                capability: "people/match",
+                input: { domain: "example.com" },
+                more: [{ domain: "example.org" }],
+                creditsEstimate: 3,
+              },
+            ],
+            resolution: {
+              approved: true,
+              callIds: ["call-1"],
+              always: false,
+              byRunId: "agent-turn-2",
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-calls")
+
+    assert_equal "0199bbbb-0000-7000-8000-000000000000", status.thread_id
+    assert_equal 1, status.thread_turn
+    assert_equal "chat", status.mode
+    assert_equal "Apollo can verify these emails for about 3 credits.", status.message
+
+    exchange = status.exchange
+    assert_instance_of Firecrawl::Models::AgentExchangeSummary, exchange
+    assert_equal true, exchange.enabled
+    assert_equal ["apollo"], exchange.toolkits
+    assert_equal true, exchange.require_approval
+    assert_equal "skip", exchange.on_terms_required
+    assert_equal 0, exchange.paid_calls
+    assert_nil exchange.credits_used
+    assert_nil exchange.requires_action
+    skipped = exchange.skipped_providers.first
+    assert_equal "clearbit", skipped.provider
+    assert_equal "terms_required", skipped.reason
+    assert_equal "F-1.0.0", skipped.version
+    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", skipped.terms_url
+
+    pending = status.pending_approval
+    assert_instance_of Firecrawl::Models::AgentPendingApproval, pending
+    assert_equal approval_id, pending.id
+    assert_equal "calls", pending.kind
+    assert_equal "Apollo charges per lookup.", pending.reason
+    assert_nil pending.terms
+    assert_equal true, pending.resolution.approved
+    assert_equal ["call-1"], pending.resolution.call_ids
+    assert_equal false, pending.resolution.always
+    assert_equal "agent-turn-2", pending.resolution.by_run_id
+    call = pending.calls.first
+    assert_equal "call-1", call.id
+    assert_equal "apollo", call.provider
+    assert_equal "people/match", call.capability
+    assert_equal({ "domain" => "example.com" }, call.input)
+    assert_equal [{ "domain" => "example.org" }], call.more
+    assert_equal 3, call.credits_estimate
+  end
+
+  def test_get_agent_status_with_terms_required_action
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-terms")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          status: "completed",
+          expiresAt: "2026-09-02T00:00:00.000Z",
+          exchange: {
+            enabled: true,
+            onTermsRequired: "ask",
+            paidCalls: 0,
+            creditsUsed: nil,
+            skippedProviders: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                reason: "terms_required",
+                version: "F-1.0.0",
+                termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+            requiresAction: {
+              type: "accept_terms",
+              approvalId: approval_id,
+              providers: [
+                {
+                  provider: "clearbit",
+                  name: "Clearbit",
+                  version: "F-1.0.0",
+                  digest: nil,
+                  url: "https://www.firecrawl.dev/app/alexandria/clearbit",
+                  show: { provider: "firecrawl", capability: "terms/show", options: { provider: "clearbit" } },
+                  accept: {
+                    provider: "firecrawl",
+                    capability: "terms/accept",
+                    options: { provider: "clearbit", version: "F-1.0.0", digest: nil, confirmed: true },
+                  },
+                },
+              ],
+            },
+          },
+          pendingApproval: {
+            id: approval_id,
+            kind: "terms",
+            reason: "Clearbit could add company size.",
+            calls: [],
+            terms: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                version: "F-1.0.0",
+                digest: nil,
+                url: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+            resolution: nil,
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-terms")
+
+    action = status.exchange.requires_action
+    assert_equal "accept_terms", action.type
+    assert_equal approval_id, action.approval_id
+    provider = action.providers.first
+    assert_equal "clearbit", provider.provider
+    assert_equal "F-1.0.0", provider.version
+    assert_nil provider.digest
+    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", provider.url
+    assert_equal "terms/show", provider.show["capability"]
+    assert_equal "terms/accept", provider.accept["capability"]
+    assert_equal true, provider.accept["options"]["confirmed"]
+
+    pending = status.pending_approval
+    assert_equal "terms", pending.kind
+    assert_equal [], pending.calls
+    assert_equal "clearbit", pending.terms.first.provider
+    assert_nil pending.terms.first.digest
+    assert_nil pending.resolution
+  end
+
   # ================================================================
   # USAGE & METRICS
   # ================================================================
@@ -584,6 +1233,86 @@ class ClientTest < Minitest::Test
     assert_instance_of Firecrawl::Models::CreditUsage, result
     assert_equal 500, result.remaining_credits
     assert_equal 1000, result.plan_credits
+  end
+
+  # ================================================================
+  # PARSE FORMATS
+  # ================================================================
+
+  def test_get_parse_formats
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .with(headers: { "Authorization" => "Bearer #{API_KEY}" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, data: { formats: [
+          { format: "pdf", kind: "document", extensions: [".pdf"], mimeTypes: ["application/pdf"], available: true },
+          { format: "png", kind: "image", extensions: [".png"], mimeTypes: ["image/png"], available: false },
+        ] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    formats = @client.get_parse_formats
+
+    assert_requested :get, "#{BASE_URL}/v2/parse/formats", times: 1
+    assert_equal 2, formats.size
+    pdf, png = formats
+    assert_instance_of Firecrawl::Models::ParseFormat, pdf
+    assert_equal "pdf", pdf.format
+    assert_equal Firecrawl::Models::ParseFormat::KIND_DOCUMENT, pdf.kind
+    assert pdf.document?
+    refute pdf.image?
+    assert_equal [".pdf"], pdf.extensions
+    assert_equal ["application/pdf"], pdf.mime_types
+    assert_equal true, pdf.available
+    assert_equal "png", png.format
+    assert png.image?
+    assert_equal ["image/png"], png.mime_types
+    assert_equal false, png.available
+  end
+
+  def test_get_parse_formats_tolerates_unknown_kind_and_fields
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, data: { formats: [
+          { format: "mp4", kind: "video", extensions: [".mp4"], mimeTypes: ["video/mp4"], available: true, maxSizeMb: 50 },
+        ] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    format = @client.get_parse_formats.first
+    assert_equal "mp4", format.format
+    assert_equal "video", format.kind
+    refute format.document?
+    refute format.image?
+    assert_equal ["video/mp4"], format.mime_types
+    assert_equal true, format.available
+  end
+
+  def test_get_parse_formats_authentication_error
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 401,
+        body: JSON.generate(error: "Invalid API key"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::AuthenticationError) { @client.get_parse_formats }
+    assert_equal 401, error.status_code
+  end
+
+  def test_get_parse_formats_server_error
+    client = Firecrawl::Client.new(api_key: API_KEY, max_retries: 0, backoff_factor: 0.0)
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 500,
+        body: JSON.generate(error: "Internal server error"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::FirecrawlError) { client.get_parse_formats }
+    assert_equal 500, error.status_code
+    assert_equal "Internal server error", error.message
   end
 
   # ================================================================
@@ -693,6 +1422,39 @@ class ClientTest < Minitest::Test
     )
   end
 
+  def test_json_format_to_h
+    format = Firecrawl::Models::JsonFormat.new(
+      schema: { "type" => "object" },
+      prompt: "Extract the title",
+      check_prompt_injection: true
+    )
+    opts = Firecrawl::Models::ScrapeOptions.new(formats: [format])
+
+    assert_equal(
+      [{
+        "type" => "json",
+        "schema" => { "type" => "object" },
+        "prompt" => "Extract the title",
+        "checkPromptInjection" => true,
+      }],
+      opts.to_h["formats"]
+    )
+  end
+
+  def test_scrape_options_to_h_check_prompt_injection
+    opts = Firecrawl::Models::ScrapeOptions.new(
+      formats: ["markdown"],
+      check_prompt_injection: true
+    )
+    assert_equal true, opts.to_h["checkPromptInjection"]
+    refute Firecrawl::Models::ScrapeOptions.new.to_h.key?("checkPromptInjection")
+  end
+
+  def test_json_format_to_h_keeps_explicit_false
+    format = Firecrawl::Models::JsonFormat.new(check_prompt_injection: false)
+    assert_equal false, format.to_h["checkPromptInjection"]
+  end
+
   def test_query_format_rejects_invalid_mode
     assert_raises(ArgumentError) do
       Firecrawl::Models::QueryFormat.new(prompt: "What is Firecrawl?", mode: "quoted")
@@ -742,6 +1504,7 @@ class ClientTest < Minitest::Test
       limit: 10,
       location: "US",
       tbs: "qdr:w",
+      highlights: false,
       include_domains: ["firecrawl.dev"],
       exclude_domains: ["example.com"]
     )
@@ -749,6 +1512,7 @@ class ClientTest < Minitest::Test
     assert_equal 10, h["limit"]
     assert_equal "US", h["location"]
     assert_equal "qdr:w", h["tbs"]
+    assert_equal false, h["highlights"]
     assert_equal ["firecrawl.dev"], h["includeDomains"]
     assert_equal ["example.com"], h["excludeDomains"]
   end
@@ -765,6 +1529,41 @@ class ClientTest < Minitest::Test
     assert_equal ["https://example.com"], h["urls"]
     assert_equal 100, h["maxCredits"]
     assert_equal "spark-1-pro", h["model"]
+  end
+
+  def test_agent_options_to_h_with_effort
+    opts = Firecrawl::Models::AgentOptions.new(
+      prompt: "Find data",
+      model: "spark-1-pro",
+      effort: "high"
+    )
+    h = opts.to_h
+    assert_equal "spark-1-pro", h["model"]
+    assert_equal "high", h["effort"]
+  end
+
+  def test_audit_metadata_to_h
+    metadata = Firecrawl::Models::AuditMetadata.new(username: "alice@example.com")
+    serialized = { "username" => "alice@example.com" }
+
+    assert_equal serialized, Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::MapOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized,
+                 Firecrawl::Models::AgentOptions.new(
+                   prompt: "find pricing",
+                   audit_metadata: metadata
+                 ).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::ParseOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    crawl = Firecrawl::Models::CrawlOptions.new(
+      scrape_options: Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata)
+    )
+    assert_equal serialized, crawl.to_h.dig("scrapeOptions", "auditMetadata")
+  end
+
+  def test_audit_metadata_rejects_arbitrary_hashes
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ScrapeOptions.new(audit_metadata: { "session" => "session-123" })
+    end
   end
 
   def test_batch_scrape_options_to_h
@@ -871,9 +1670,11 @@ class ClientTest < Minitest::Test
       only_main_content: true,
       timeout: 30000,
       proxy: "auto",
-      redact_pii: true
+      redact_pii: true,
+      check_prompt_injection: true
     )
     h = opts.to_h
+    assert_equal true, h["checkPromptInjection"]
     assert_equal ["markdown"], h["formats"]
     assert_equal true, h["onlyMainContent"]
     assert_equal 30000, h["timeout"]

@@ -21,7 +21,7 @@ const bundledCode = result.outputFiles[0].text;
 // Wrap in a self-executing function that returns the result
 const script = `(function __extractBrandDesign() {
 ${bundledCode}
-return __extractBrandDesign.extractBrandDesign();
+return __extractBrandDesign.extractBrandDesignWithLogoColors();
 })();`;
 
 process.stdout.write(script);

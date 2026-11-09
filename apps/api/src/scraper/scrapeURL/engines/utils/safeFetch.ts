@@ -6,6 +6,31 @@ import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
 import IPAddr from "ipaddr.js";
+
+// Node's certificate verification errors, which rejectUnauthorized: false
+// suppresses. CRL and OpenSSL hostname codes are omitted: Node never checks those.
+export const TLS_CERT_ERROR_CODES = new Set([
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "CERT_SIGNATURE_FAILURE",
+  "CERT_NOT_YET_VALID",
+  "CERT_HAS_EXPIRED",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "CERT_CHAIN_TOO_LONG",
+  "INVALID_CA",
+  "PATH_LENGTH_EXCEEDED",
+  "INVALID_PURPOSE",
+  "CERT_UNTRUSTED",
+  "CERT_REJECTED",
+  "UNSPECIFIED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
 export class InsecureConnectionError extends Error {
   constructor() {
     super("Connection violated security rules.");
@@ -18,6 +43,52 @@ export function isIPPrivate(address: string): boolean {
   const addr = IPAddr.parse(address);
   return addr.range() !== "unicast";
 }
+
+/**
+ * Reject private IP literals and localhost names before dispatch, on the
+ * initial request and every redirect hop. With PROXY_SERVER set, the socket
+ * check below never sees the destination, so this is the only local guard.
+ * Other hostnames are resolved proxy-side and must be filtered by the proxy.
+ */
+export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
+  dispatch => (options, handler) => {
+    if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
+      return dispatch(options, handler);
+    }
+
+    let privateTarget = false;
+
+    try {
+      const origin =
+        options.origin instanceof URL
+          ? options.origin
+          : new URL(options.origin.toString());
+      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
+      privateTarget =
+        isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
+    } catch {
+      // Let Undici report malformed origins through its normal path.
+    }
+
+    if (privateTarget) {
+      const error = new InsecureConnectionError();
+      const compatibleHandler = handler as typeof handler & {
+        onResponseError?: (controller: unknown, error: Error) => void;
+      };
+
+      if (typeof compatibleHandler.onError === "function") {
+        compatibleHandler.onError(error);
+      } else if (typeof compatibleHandler.onResponseError === "function") {
+        compatibleHandler.onResponseError(null, error);
+      } else {
+        throw error;
+      }
+
+      return true;
+    }
+
+    return dispatch(options, handler);
+  };
 
 function createBaseAgent(skipTlsVerification: boolean) {
   const baseAgent = config.PROXY_SERVER
@@ -39,7 +110,10 @@ function createBaseAgent(skipTlsVerification: boolean) {
       });
 
   // Add redirect interceptor for handling redirects
-  return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
+  return baseAgent.compose(
+    rejectPrivateIPLiteralTargets,
+    interceptors.redirect({ maxRedirections: 5000 }),
+  );
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {
@@ -60,11 +134,8 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
   });
 }
 
-// Dispatcher WITH cookie handling (for scraping - needs cookies for auth flows)
 function makeSecureDispatcher(skipTlsVerification: boolean) {
-  const baseAgent = createBaseAgent(skipTlsVerification);
-  const cookieJar = new CookieJar();
-  const agent = baseAgent.compose(cookie({ jar: cookieJar }));
+  const agent = createBaseAgent(skipTlsVerification);
   attachSecurityCheck(agent);
   return agent;
 }
@@ -82,8 +153,13 @@ const secureDispatcherNoCookies = makeSecureDispatcherNoCookies(false);
 const secureDispatcherNoCookiesSkipTlsVerification =
   makeSecureDispatcherNoCookies(true);
 
-export const getSecureDispatcher = (skipTlsVerification: boolean = false) =>
-  skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher;
+export const getSecureDispatcher = (skipTlsVerification: boolean = false) => {
+  const dispatcher = skipTlsVerification
+    ? secureDispatcherSkipTlsVerification
+    : secureDispatcher;
+
+  return dispatcher.compose(cookie({ jar: new CookieJar() }));
+};
 
 // Use this for webhook delivery to avoid sending empty cookie headers
 export const getSecureDispatcherNoCookies = (

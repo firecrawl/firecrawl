@@ -1,140 +1,71 @@
-# Contributors guide:
+# Contributing to Firecrawl
 
-Welcome to [Firecrawl](https://firecrawl.dev) 🔥! Here are some instructions on how to get the project locally, so you can run it on your own (and contribute)
+Thanks for helping make Firecrawl better. Keep each change focused, prove the behavior you changed, and make the pull request easy to review.
 
-If you're contributing, note that the process is similar to other open source repos i.e. (fork firecrawl, make changes, run tests, PR). If you have any questions, and would like help getting on board, reach out to help@firecrawl.com for more or submit an issue!
+## Choose the right workflow
 
-## Running the project locally
+| If you want to | Start here |
+| --- | --- |
+| Change the API, workers, or tests | [Run Firecrawl locally for development](https://docs.firecrawl.dev/contributing/guide) |
+| Run Firecrawl on your own infrastructure without changing product code | [Self-hosting Firecrawl](https://docs.firecrawl.dev/contributing/self-host) |
+| Change an SDK | The matching directory under [`apps/`](./apps/) and its package scripts |
+| Improve the public documentation | The [`firecrawl-docs`](https://github.com/firecrawl/firecrawl-docs) repository |
 
-First, start by installing dependencies:
+Local development and self-hosting are different paths. Development uses the API harness and `apps/api/.env`; the Docker Compose deployment uses the root configuration. Do not copy one environment file into the other.
 
-1. node.js [instructions](https://nodejs.org/en/learn/getting-started/how-to-install-nodejs)
-2. rust [instructions](https://www.rust-lang.org/tools/install)
-3. pnpm [instructions](https://pnpm.io/installation)
-4. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
-5. postgresql
-6. Docker (optional) (for running postgres)
+## Set up API development
 
-You need to set up the PostgreSQL database by running the SQL file at `apps/nuq-postgres/nuq.sql`. Easiest way is to use the docker image inside `apps/nuq-postgres`. With Docker running, build the image:
+The public [Running Locally](https://docs.firecrawl.dev/contributing/guide) guide is the canonical first-success path. It covers Node.js 22, pnpm `11.4.0`, Redis, the harness-managed PostgreSQL and RabbitMQ containers, and a verified local scrape.
 
-```bash
-docker build -t nuq-postgres .
-```
-
-and then run:
+The source-owned commands live in [`apps/api/package.json`](./apps/api/package.json). From `apps/api`:
 
 ```bash
-docker run --name nuqdb \          
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5433:5432 \
-  -v nuq-data:/var/lib/postgresql/data \
-  -d nuq-postgres
-```
-
-Set environment variables in a .env in the /apps/api/ directory you can copy over the template in .env.example.
-
-To start, we won't set up authentication, or any optional sub services (pdf parsing, JS blocking support, AI features)
-
-.env:
-
-```
-# ===== Required ENVS ======
-NUM_WORKERS_PER_QUEUE=8
-PORT=3002
-HOST=0.0.0.0
-REDIS_URL=redis://localhost:6379
-REDIS_RATE_LIMIT_URL=redis://localhost:6379
-
-## To turn on DB authentication, you need to set up supabase.
-USE_DB_AUTHENTICATION=false
-
-## Using the PostgreSQL for queuing -- change if credentials, host, or DB is different
-NUQ_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres
-
-# ===== Optional ENVS ======
-
-# Supabase Setup (used to support DB authentication, advanced logging, etc.)
-SUPABASE_ANON_TOKEN=
-SUPABASE_URL=
-SUPABASE_SERVICE_TOKEN=
-
-# Other Optionals
-TEST_API_KEY= # use if you've set up authentication and want to test with a real API key
-OPENAI_API_KEY= # add for LLM dependent features (image alt generation, etc.)
-BULL_AUTH_KEY= @
-PLAYWRIGHT_MICROSERVICE_URL=  # set if you'd like to run a playwright fallback
-LLAMAPARSE_API_KEY= #Set if you have a llamaparse key you'd like to use to parse pdfs
-SLACK_WEBHOOK_URL= # set if you'd like to send slack server health status messages
-
-
-```
-
-### Installing dependencies
-
-First, install the dependencies using pnpm.
-
-```bash
-# cd apps/api # to make sure you're in the right folder
-pnpm install # make sure you have pnpm version 9+!
-```
-
-### Running the project
-
-You're going to need to open 3 terminals.
-
-### Terminal 1 - setting up redis
-
-Run the command anywhere within your project
-
-```bash
-redis-server
-```
-
-### Terminal 2 - setting up the service
-
-Now, navigate to the apps/api/ directory and run:
-
-```bash
+pnpm install
 pnpm start
-# if you are going to use the [llm-extract feature](https://github.com/firecrawl/firecrawl/pull/586/), you should also export OPENAI_API_KEY=sk-______
 ```
 
-This will start the workers who are responsible for processing crawl jobs.
+`pnpm start` builds Firecrawl and launches the API, workers, and local dependency containers. Keep Redis running separately as described in the public guide.
 
-### Terminal 3 - sending our first request.
+## Make a focused change
 
-Alright: now let’s send our first request.
+1. Fork the repository and create a branch whose name describes the change.
+2. Reproduce the current behavior before editing.
+3. Add or update coverage for the successful path and relevant failures.
+4. Make the smallest change that satisfies those tests.
+5. Run the narrowest useful checks before opening a pull request.
 
-```curl
-curl -X GET http://localhost:3002/test
-```
+For API changes, prefer end-to-end snippet coverage when the behavior crosses routes, workers, queues, or scraping engines.
 
-This should return the response Hello, world!
+## Run API tests with the harness
 
-If you’d like to test the crawl endpoint, you can run this
-
-```curl
-curl -X POST http://localhost:3002/v1/crawl \
-    -H 'Content-Type: application/json' \
-    -d '{
-      "url": "https://mendable.ai"
-    }'
-```
-
-### Alternative: Using Docker Compose
-
-For a simpler setup, you can use Docker Compose to run all services:
-
-1. Prerequisites: Make sure you have Docker and Docker Compose installed
-2. Copy the `.env.example` file to `.env` in the `/apps/api/` directory and configure as needed
-3. From the root directory, run:
+From `apps/api`, run the snippet suites with their dependencies:
 
 ```bash
-docker compose up
+pnpm harness pnpm test:snips
 ```
 
-This will start Redis, the API server, and workers automatically in the correct configuration.
+For a narrower test, pass the relevant Vitest path through the same harness:
 
-## Tests:
+```bash
+pnpm harness pnpm exec vitest run path/to/test.ts
+```
 
-The best way to do this is run the test with `npm run test:snips`.
+The harness starts the API, workers, PostgreSQL, and RabbitMQ for the command, then cleans up the processes and containers it started.
+
+Do not bypass failing checks. Fix failures caused by your change and call out unrelated repository failures with enough detail for a reviewer to reproduce them.
+
+## Open the pull request
+
+Include:
+
+- why the change is needed;
+- what behavior changed;
+- the exact tests or checks you ran;
+- any configuration, migration, security, or deployment impact; and
+- screenshots or request/response evidence when they make the result easier to verify.
+
+Keep credentials, local environment files, raw user data, and generated secrets out of commits and pull requests.
+
+## Get help
+
+Use [GitHub issues](https://github.com/firecrawl/firecrawl/issues) for reproducible bugs and feature discussions. For community help, join the [Firecrawl Discord](https://discord.gg/firecrawl).

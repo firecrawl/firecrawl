@@ -3,12 +3,14 @@
 //! The Agent endpoint provides autonomous web browsing capabilities using AI
 //! to accomplish complex tasks that may require multiple page interactions.
 
+use crate::client::Client;
+use crate::types::{
+    AgentEffort, AgentExchangeOptions, AgentMode, AgentModel, AgentOnTermsRequired,
+    AgentWebhookConfig,
+};
+use crate::{AuditMetadata, FirecrawlError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::client::Client;
-use crate::types::{AgentModel, AgentWebhookConfig};
-use crate::FirecrawlError;
 
 /// Options for running an agent task.
 #[serde_with::skip_serializing_none]
@@ -27,17 +29,36 @@ pub struct AgentOptions {
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
     /// Maximum credits the agent can use.
     pub max_credits: Option<u32>,
 
     /// Strictly constrain the agent to the provided URLs.
     pub strict_constrain_to_urls: Option<bool>,
 
-    /// Agent model to use.
+    /// Agent model to use. Defaults to `spark-2` server-side when unset.
     pub model: Option<AgentModel>,
+
+    /// Reasoning effort for the agent task. Every level runs spark-2.
+    pub effort: Option<AgentEffort>,
 
     /// Webhook configuration for agent notifications.
     pub webhook: Option<AgentWebhookConfig>,
+
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
+
+    /// Continue this thread as its next turn. Omitted starts a new thread.
+    pub thread_id: Option<String>,
+
+    /// Conversation mode. The server defaults to `AgentMode::Extract`.
+    pub mode: Option<AgentMode>,
+
+    /// Let the agent use the team's Exchange (Alexandria) data providers.
+    pub exchange: Option<AgentExchangeOptions>,
 
     /// Poll interval for synchronous agent execution (milliseconds).
     #[serde(skip)]
@@ -58,6 +79,10 @@ pub struct AgentResponse {
     pub id: String,
     /// Error message if the request failed.
     pub error: Option<String>,
+    /// Thread this run belongs to; pass it back to continue the conversation.
+    pub thread_id: Option<String>,
+    /// 1-based position of this run in its thread.
+    pub thread_turn: Option<u32>,
 }
 
 /// Agent task status.
@@ -89,10 +114,508 @@ pub struct AgentStatusResponse {
     pub data: Option<Value>,
     /// Model used for the agent task.
     pub model: Option<AgentModel>,
+    /// Reasoning effort the task ran with, if one was requested.
+    pub effort: Option<AgentEffort>,
     /// Expiry time of the task data.
     pub expires_at: Option<String>,
     /// Credits used by the agent task.
     pub credits_used: Option<u32>,
+    /// Thread this run belongs to; pass it back to continue the conversation.
+    pub thread_id: Option<String>,
+    /// 1-based position of this run in its thread.
+    pub thread_turn: Option<u32>,
+    pub mode: Option<AgentMode>,
+    /// Text reply. Chat-mode runs answer here instead of in `data`.
+    pub message: Option<String>,
+    /// Set when the turn ended waiting for the caller to answer it.
+    pub pending_approval: Option<AgentPendingApproval>,
+    /// What the run did with Exchange, when it was enabled.
+    pub exchange: Option<AgentExchangeSummary>,
+}
+
+/// A turn that ended waiting for the caller. Answer it on the next turn of
+/// the thread with `AgentExchangeOptions::approve` or `decline`.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApproval {
+    pub id: String,
+    /// `None` on approvals written before terms offers existed; those are
+    /// call approvals.
+    pub kind: Option<AgentPendingApprovalKind>,
+    pub reason: String,
+    /// Paid calls waiting for approval. Always empty on a terms approval.
+    pub calls: Vec<AgentPendingApprovalCall>,
+    /// Providers whose data terms need accepting, on a terms approval.
+    pub terms: Option<Vec<AgentTermsGate>>,
+    /// How a later turn answered it, once answered.
+    pub resolution: Option<AgentPendingApprovalResolution>,
+}
+
+/// What a pending approval is waiting for.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentPendingApprovalKind {
+    Calls,
+    Terms,
+    /// A kind this SDK release does not know about.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A paid provider call held back by a pending approval.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApprovalCall {
+    pub id: String,
+    pub provider: String,
+    pub capability: String,
+    pub input: Value,
+    pub more: Option<Vec<Value>>,
+    pub credits_estimate: Option<u32>,
+}
+
+/// How a pending approval was answered.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApprovalResolution {
+    pub approved: bool,
+    /// Calls approved. Empty on terms approvals.
+    pub call_ids: Vec<String>,
+    pub always: bool,
+    pub by_run_id: String,
+}
+
+/// A provider whose data terms the team has not accepted.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsGate {
+    pub provider: String,
+    pub name: String,
+    pub logo: Option<String>,
+    pub capability: Option<String>,
+    /// What it would have added, in the agent's words.
+    pub adds: Option<String>,
+    pub version: String,
+    /// `None` when the catalog published no digest.
+    pub digest: Option<String>,
+    /// Where a person accepts the terms in the dashboard.
+    pub url: String,
+}
+
+/// What a run did with Exchange. `toolkits` and `require_approval` are what
+/// the run resolved to after thread inheritance, not what it requested.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExchangeSummary {
+    pub enabled: bool,
+    pub toolkits: Option<Vec<String>>,
+    pub require_approval: Option<bool>,
+    pub on_terms_required: Option<AgentOnTermsRequired>,
+    pub paid_calls: u32,
+    pub credits_used: Option<u32>,
+    /// Gated providers that would have helped and were not used.
+    pub skipped_providers: Option<Vec<AgentSkippedProvider>>,
+    /// Set in `AgentOnTermsRequired::Ask` mode when a terms offer ended the
+    /// turn.
+    pub requires_action: Option<AgentTermsRequiredAction>,
+}
+
+/// A gated provider the run would have used but did not.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSkippedProvider {
+    pub provider: String,
+    pub name: String,
+    pub capability: Option<String>,
+    pub adds: Option<String>,
+    /// Why it was skipped, such as `terms_required`.
+    pub reason: String,
+    pub version: String,
+    /// Where a person accepts the terms in the dashboard.
+    pub terms_url: String,
+}
+
+/// The Exchange calls that view and accept gated providers' terms. Nothing
+/// runs them for you; only call `accept` after the user has agreed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsRequiredAction {
+    /// Identifies the step, such as `accept_terms`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The terms pending approval to approve once the terms are accepted.
+    pub approval_id: String,
+    pub providers: Vec<AgentTermsActionProvider>,
+}
+
+/// A provider in an `AgentTermsRequiredAction`.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsActionProvider {
+    pub provider: String,
+    pub name: String,
+    pub capability: Option<String>,
+    pub adds: Option<String>,
+    pub version: String,
+    /// `None` when the catalog published no digest.
+    pub digest: Option<String>,
+    pub url: String,
+    /// The terms/show call, as `{provider, capability, options}`.
+    pub show: Value,
+    /// The terms/accept call, as `{provider, capability, options}`.
+    pub accept: Value,
+}
+
+/// Per-session settings attached to an agent run.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItemSettings {
+    /// Whether the run is hidden.
+    pub hidden: bool,
+    /// Whether the run is starred.
+    pub starred: bool,
+    /// User-assigned label for the run.
+    pub label: Option<String>,
+}
+
+/// Options an agent run was started with.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItemOptions {
+    /// URLs the agent was constrained to.
+    pub urls: Option<Vec<String>>,
+    /// The prompt describing what the agent should accomplish.
+    pub prompt: String,
+    /// JSON schema for the expected output structure.
+    pub schema: Option<Value>,
+    /// Agent model the run used.
+    pub model: Option<AgentModel>,
+    /// Reasoning effort the run used, if one was requested.
+    pub effort: Option<AgentEffort>,
+}
+
+/// A single agent run as returned by the agent list endpoint.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItem {
+    /// The agent task ID.
+    pub id: String,
+    /// When the run was created (ISO 8601).
+    pub created_at: String,
+    /// Short hint describing the run's target.
+    pub target_hint: String,
+    /// Origin of the run (e.g. "api").
+    pub origin: String,
+    /// Integration identifier, if any.
+    pub integration: Option<String>,
+    /// Per-session settings for the run.
+    pub settings: AgentListItemSettings,
+    /// Current status of the run.
+    pub status: AgentStatus,
+    /// Options the run was started with.
+    pub options: Option<AgentListItemOptions>,
+}
+
+/// Response from listing agent runs.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListResponse {
+    /// Whether the request was successful.
+    pub success: bool,
+    /// The agent runs, most recent first.
+    pub agents: Option<Vec<AgentListItem>>,
+    /// Absolute URL of the next page; only present when more pages exist.
+    pub next: Option<String>,
+    /// Error message if the request failed.
+    pub error: Option<String>,
+}
+
+// Agent trace types (GET /v2/agent/:id/trace). These mirror the agent
+// service's canonical event schema (schemaVersion 1): usage.recorded events
+// are withheld server-side and agent.started carries no model name.
+
+/// Which agent produced a trace event.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceAgentIdentity {
+    pub id: String,
+    pub role: AgentTraceAgentRole,
+    pub name: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
+
+/// Role of the agent that produced a trace event.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentTraceAgentRole {
+    Orchestrator,
+    Subagent,
+    Browser,
+    System,
+}
+
+/// Structured error attached to terminal and error trace events.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceError {
+    pub code: AgentTraceErrorCode,
+    pub source: AgentTraceErrorSource,
+    pub retryable: bool,
+    pub message: String,
+}
+
+/// Machine-readable trace error code.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTraceErrorCode {
+    Cancelled,
+    CreditLimitReached,
+    ParentFinished,
+    Refused,
+    Internal,
+}
+
+/// Where a trace error originated.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentTraceErrorSource {
+    Agent,
+    Tool,
+    Billing,
+    System,
+}
+
+/// Reference to an artifact snapshot; fetch the content with
+/// [`Client::get_agent_snapshot`].
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceArtifactChange {
+    pub kind: AgentTraceArtifactKind,
+    pub artifact_id: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    pub snapshot_id: String,
+    pub change: AgentTraceArtifactChangeKind,
+    #[serde(default)]
+    pub changed_fields: Option<Vec<String>>,
+    #[serde(default)]
+    pub item_count: Option<u64>,
+    #[serde(default)]
+    pub source_tool_call_id: Option<String>,
+}
+
+/// Kind of artifact content behind a snapshot.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentTraceArtifactKind {
+    Json,
+    Markdown,
+    Html,
+    Screenshot,
+    Text,
+}
+
+/// How an artifact changed in an artifact.updated event.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentTraceArtifactChangeKind {
+    Init,
+    Partial,
+    Append,
+    Modify,
+    Update,
+}
+
+/// Fields every trace event carries.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceEventBase {
+    /// Canonical event schema version (1 at the time of writing).
+    pub schema_version: u32,
+    pub event_id: String,
+    pub run_id: String,
+    /// ISO 8601 timestamp with offset.
+    pub occurred_at: String,
+    pub producer_sequence: u64,
+    pub agent: AgentTraceAgentIdentity,
+}
+
+macro_rules! trace_event_struct {
+    ($name:ident { $( $(#[$meta:meta])* $field:ident : $ty:ty ),* $(,)? }) => {
+        #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        pub struct $name {
+            #[serde(flatten)]
+            pub base: AgentTraceEventBase,
+            $( $(#[$meta])* pub $field : $ty ),*
+        }
+    };
+    ($name:ident) => {
+        #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        pub struct $name {
+            #[serde(flatten)]
+            pub base: AgentTraceEventBase,
+        }
+    };
+}
+
+trace_event_struct!(AgentTraceRunStartedEvent);
+trace_event_struct!(AgentTraceRunCancelRequestedEvent {
+    /// Always "user" at present.
+    reason: String
+});
+trace_event_struct!(AgentTraceRunFinishedEvent {
+    outcome: AgentTraceRunOutcome,
+    error: Option<AgentTraceError>
+});
+trace_event_struct!(AgentTraceAgentStartedEvent);
+trace_event_struct!(AgentTraceAgentFinishedEvent {
+    outcome: AgentTraceAgentOutcome,
+    duration_ms: u64,
+    error: Option<AgentTraceError>
+});
+trace_event_struct!(AgentTraceBrowserSessionStartedEvent { session_id: String });
+trace_event_struct!(AgentTraceBrowserSessionFinishedEvent {
+    session_id: String,
+    duration_ms: u64
+});
+trace_event_struct!(AgentTraceProgressReportedEvent {
+    phase: AgentTraceProgressPhase,
+    message: String
+});
+trace_event_struct!(AgentTraceReasoningSummaryEvent { text: String });
+trace_event_struct!(AgentTraceToolCallStartedEvent {
+    tool_call_id: String,
+    tool_name: String,
+    parameters: Value
+});
+trace_event_struct!(AgentTraceToolCallFinishedEvent {
+    tool_call_id: String,
+    tool_name: String,
+    result: Value
+});
+trace_event_struct!(AgentTraceArtifactUpdatedEvent {
+    artifact: AgentTraceArtifactChange
+});
+trace_event_struct!(AgentTraceErrorOccurredEvent {
+    error: AgentTraceError
+});
+
+/// Terminal outcome of a run.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTraceRunOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Refused,
+    CreditLimitReached,
+}
+
+/// Terminal outcome of a single agent.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTraceAgentOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Refused,
+}
+
+/// Phase a progress.reported event belongs to.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentTraceProgressPhase {
+    Planning,
+    Working,
+    Finalizing,
+}
+
+/// One event in an agent job's execution trace.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type")]
+pub enum AgentTraceEvent {
+    #[serde(rename = "run.started")]
+    RunStarted(AgentTraceRunStartedEvent),
+    #[serde(rename = "run.cancel_requested")]
+    RunCancelRequested(AgentTraceRunCancelRequestedEvent),
+    #[serde(rename = "run.finished")]
+    RunFinished(AgentTraceRunFinishedEvent),
+    #[serde(rename = "agent.started")]
+    AgentStarted(AgentTraceAgentStartedEvent),
+    #[serde(rename = "agent.finished")]
+    AgentFinished(AgentTraceAgentFinishedEvent),
+    #[serde(rename = "browser.session.started")]
+    BrowserSessionStarted(AgentTraceBrowserSessionStartedEvent),
+    #[serde(rename = "browser.session.finished")]
+    BrowserSessionFinished(AgentTraceBrowserSessionFinishedEvent),
+    #[serde(rename = "progress.reported")]
+    ProgressReported(AgentTraceProgressReportedEvent),
+    #[serde(rename = "reasoning.summary")]
+    ReasoningSummary(AgentTraceReasoningSummaryEvent),
+    #[serde(rename = "tool_call.started")]
+    ToolCallStarted(AgentTraceToolCallStartedEvent),
+    #[serde(rename = "tool_call.finished")]
+    ToolCallFinished(AgentTraceToolCallFinishedEvent),
+    #[serde(rename = "artifact.updated")]
+    ArtifactUpdated(AgentTraceArtifactUpdatedEvent),
+    #[serde(rename = "error.occurred")]
+    ErrorOccurred(AgentTraceErrorOccurredEvent),
+}
+
+/// Live browser session, present only when the trace is requested with
+/// live view enabled.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceActiveBrowserSession {
+    pub id: String,
+    pub live_view_url: String,
+    pub viewport: AgentTraceViewport,
+}
+
+/// Browser viewport dimensions.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AgentTraceViewport {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Response from getting an agent job's execution trace.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTraceResponse {
+    pub success: bool,
+    pub id: Option<String>,
+    pub events: Option<Vec<AgentTraceEvent>>,
+    pub credits_used: Option<u32>,
+    pub active_browser_sessions: Option<Vec<AgentTraceActiveBrowserSession>>,
+    pub error: Option<String>,
+}
+
+/// Response from getting an artifact snapshot of an agent job.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSnapshotResponse {
+    pub success: bool,
+    pub id: Option<String>,
+    pub snapshot_id: Option<String>,
+    /// Full artifact content as a JSON/string blob.
+    pub snapshot: Option<String>,
+    pub error: Option<String>,
 }
 
 impl Client {
@@ -133,6 +656,11 @@ impl Client {
         &self,
         options: AgentOptions,
     ) -> Result<AgentResponse, FirecrawlError> {
+        let mut options = options;
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+
         let headers = self.prepare_headers(None);
 
         let response = self
@@ -194,6 +722,135 @@ impl Client {
             .await
     }
 
+    /// Lists agent runs, most recent first.
+    ///
+    /// Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+    /// value from the previous page's `next` URL. This method does not
+    /// auto-paginate.
+    ///
+    /// # Arguments
+    ///
+    /// * `before` - Only return agent runs created before this unix
+    ///   millisecond timestamp.
+    ///
+    /// # Returns
+    ///
+    /// The list of agent runs and an optional next page URL.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     let page = client.list_agents(None).await?;
+    ///     for run in page.agents.unwrap_or_default() {
+    ///         println!("{}: {:?}", run.id, run.status);
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn list_agents(
+        &self,
+        before: Option<u64>,
+    ) -> Result<AgentListResponse, FirecrawlError> {
+        let path = match before {
+            Some(before) => format!("/agent?before={}", before),
+            None => "/agent".to_string(),
+        };
+
+        let response = self
+            .client
+            .get(self.url(&path))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("Listing agents".to_string(), e))?;
+
+        self.handle_response(response, "list agents").await
+    }
+
+    /// Gets the execution trace of an agent task (spark-2 runs only).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The agent task ID.
+    /// * `live_view` - Also include currently active browser sessions with
+    ///   live view URLs.
+    ///
+    /// # Returns
+    ///
+    /// An `AgentTraceResponse` containing the ordered trace events.
+    pub async fn get_agent_trace(
+        &self,
+        id: impl AsRef<str>,
+        live_view: bool,
+    ) -> Result<AgentTraceResponse, FirecrawlError> {
+        let path = if live_view {
+            format!("/agent/{}/trace?liveView=true", id.as_ref())
+        } else {
+            format!("/agent/{}/trace", id.as_ref())
+        };
+
+        let response = self
+            .client
+            .get(self.url(&path))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(format!("Getting agent trace {}", id.as_ref()), e)
+            })?;
+
+        self.handle_response(response, format!("agent trace {}", id.as_ref()))
+            .await
+    }
+
+    /// Gets the full content of an artifact snapshot referenced by a trace
+    /// event.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The agent task ID.
+    /// * `snapshot_id` - Snapshot ID from an `artifact.updated` trace event.
+    ///
+    /// # Returns
+    ///
+    /// An `AgentSnapshotResponse` containing the snapshot content.
+    pub async fn get_agent_snapshot(
+        &self,
+        id: impl AsRef<str>,
+        snapshot_id: impl AsRef<str>,
+    ) -> Result<AgentSnapshotResponse, FirecrawlError> {
+        let response = self
+            .client
+            .get(self.url(&format!(
+                "/agent/{}/snapshots/{}",
+                id.as_ref(),
+                snapshot_id.as_ref()
+            )))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(
+                    format!(
+                        "Getting agent snapshot {} of {}",
+                        snapshot_id.as_ref(),
+                        id.as_ref()
+                    ),
+                    e,
+                )
+            })?;
+
+        self.handle_response(response, format!("agent snapshot {}", id.as_ref()))
+            .await
+    }
+
     /// Runs an agent task and waits for completion.
     ///
     /// This method starts an agent task and polls until it completes, fails, or times out.
@@ -235,7 +892,7 @@ impl Client {
     ///                 }
     ///             }
     ///         })),
-    ///         model: Some(AgentModel::Spark1Pro),
+    ///         model: Some(AgentModel::Spark2),
     ///         poll_interval: Some(3000),
     ///         timeout: Some(300),
     ///         ..Default::default()
@@ -429,6 +1086,8 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{AgentExchangeApprove, AgentExchangeDecline};
+    use mockito::Matcher;
     use serde_json::json;
 
     #[tokio::test]
@@ -463,6 +1122,282 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_start_agent_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = AgentOptions {
+            prompt: "Find the contact information".to_string(),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await.unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_preserves_custom_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::PartialJson(json!({"origin": "my-app@1.0"})))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = AgentOptions {
+            prompt: "Find the contact information".to_string(),
+            origin: Some("my-app@1.0".to_string()),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await.unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_trace_events_deserialize_every_type() {
+        let base = json!({
+            "schemaVersion": 1,
+            "eventId": "018f3c5e-0000-7000-8000-000000000000",
+            "runId": "018f3c5e-0000-7000-8000-000000000001",
+            "occurredAt": "2026-08-26T12:00:00+00:00",
+            "producerSequence": 1,
+            "agent": {
+                "id": "018f3c5e-0000-7000-8000-000000000002",
+                "role": "orchestrator",
+                "name": "main"
+            }
+        });
+        let cases = [
+            ("run.started", json!({})),
+            ("run.cancel_requested", json!({"reason": "user"})),
+            (
+                "run.finished",
+                json!({"outcome": "credit_limit_reached", "error": {
+                    "code": "credit_limit_reached",
+                    "source": "billing",
+                    "retryable": false,
+                    "message": "out of credits"
+                }}),
+            ),
+            ("agent.started", json!({})),
+            (
+                "agent.finished",
+                json!({"outcome": "succeeded", "durationMs": 1234, "error": null}),
+            ),
+            ("browser.session.started", json!({"sessionId": "sess-1"})),
+            (
+                "browser.session.finished",
+                json!({"sessionId": "sess-1", "durationMs": 42}),
+            ),
+            (
+                "progress.reported",
+                json!({"phase": "working", "message": "reading page"}),
+            ),
+            ("reasoning.summary", json!({"text": "thinking"})),
+            (
+                "tool_call.started",
+                json!({"toolCallId": "tc-1", "toolName": "scrape", "parameters": {"url": "https://example.com"}}),
+            ),
+            (
+                "tool_call.finished",
+                json!({"toolCallId": "tc-1", "toolName": "scrape", "result": {"ok": true}}),
+            ),
+            (
+                "artifact.updated",
+                json!({"artifact": {
+                    "kind": "json",
+                    "artifactId": "result",
+                    "path": "/workspace/data.json",
+                    "snapshotId": "018f3c5e-0000-7000-8000-000000000003",
+                    "change": "partial",
+                    "changedFields": ["price"],
+                    "itemCount": 3,
+                    "sourceToolCallId": "tc-1"
+                }}),
+            ),
+            (
+                "error.occurred",
+                json!({"error": {
+                    "code": "internal",
+                    "source": "system",
+                    "retryable": true,
+                    "message": "boom"
+                }}),
+            ),
+        ];
+
+        for (event_type, extra) in cases {
+            let mut value = base.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            value["type"] = json!(event_type);
+
+            let event: AgentTraceEvent = serde_json::from_value(value.clone())
+                .unwrap_or_else(|e| panic!("{event_type} should deserialize: {e}"));
+            let round_tripped = serde_json::to_value(&event).unwrap();
+            assert_eq!(round_tripped["type"], json!(event_type));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_trace_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent/agent-123/trace")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "agent-123",
+                    "events": [{
+                        "schemaVersion": 1,
+                        "eventId": "018f3c5e-0000-7000-8000-000000000000",
+                        "runId": "018f3c5e-0000-7000-8000-000000000001",
+                        "occurredAt": "2026-08-26T12:00:00+00:00",
+                        "producerSequence": 1,
+                        "agent": {
+                            "id": "018f3c5e-0000-7000-8000-000000000002",
+                            "role": "orchestrator",
+                            "name": "main"
+                        },
+                        "type": "run.started"
+                    }],
+                    "creditsUsed": 5
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let trace = client.get_agent_trace("agent-123", false).await.unwrap();
+
+        assert!(trace.success);
+        let events = trace.events.unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], AgentTraceEvent::RunStarted(_)));
+        assert_eq!(trace.credits_used, Some(5));
+        assert!(trace.active_browser_sessions.is_none());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_trace_with_live_view() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent/agent-123/trace")
+            .match_query(Matcher::UrlEncoded("liveView".into(), "true".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "agent-123",
+                    "events": [],
+                    "creditsUsed": 0,
+                    "activeBrowserSessions": [{
+                        "id": "sess-1",
+                        "liveViewUrl": "https://browser.example.com/sess-1",
+                        "viewport": {"width": 1280, "height": 720}
+                    }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let trace = client.get_agent_trace("agent-123", true).await.unwrap();
+
+        let sessions = trace.active_browser_sessions.unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].viewport.width, 1280);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_snapshot_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock(
+                "GET",
+                "/v2/agent/agent-123/snapshots/018f3c5e-0000-7000-8000-000000000003",
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "agent-123",
+                    "snapshotId": "018f3c5e-0000-7000-8000-000000000003",
+                    "snapshot": "{\"price\": 42}"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let snapshot = client
+            .get_agent_snapshot("agent-123", "018f3c5e-0000-7000-8000-000000000003")
+            .await
+            .unwrap();
+
+        assert!(snapshot.success);
+        assert_eq!(snapshot.snapshot.unwrap(), "{\"price\": 42}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_sends_effort() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::PartialJson(json!({"effort": "high"})))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = AgentOptions {
+            prompt: "Find the contact information".to_string(),
+            effort: Some(AgentEffort::High),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await.unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_get_agent_status_with_mock() {
         let mut server = mockito::Server::new_async().await;
 
@@ -492,6 +1427,82 @@ mod tests {
         assert_eq!(status.status, AgentStatus::Completed);
         assert!(status.data.is_some());
         assert_eq!(status.credits_used, Some(5));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "agents": [{
+                        "id": "agent-123",
+                        "createdAt": "2026-08-31T12:00:00.000Z",
+                        "targetHint": "https://example.com",
+                        "origin": "api",
+                        "settings": {"hidden": false, "starred": true, "label": "prod"},
+                        "status": "completed",
+                        "options": {
+                            "urls": ["https://example.com"],
+                            "prompt": "find pricing",
+                            "model": "spark-1-pro"
+                        }
+                    }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let page = client.list_agents(None).await.unwrap();
+
+        assert!(page.success);
+        assert!(page.next.is_none());
+        let agents = page.agents.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].id, "agent-123");
+        assert_eq!(agents[0].status, AgentStatus::Completed);
+        assert!(agents[0].settings.starred);
+        assert_eq!(agents[0].settings.label.as_deref(), Some("prod"));
+        let options = agents[0].options.as_ref().unwrap();
+        assert_eq!(options.prompt, "find pricing");
+        assert_eq!(options.model, Some(AgentModel::Spark1Pro));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_with_before() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent")
+            .match_query(Matcher::UrlEncoded("before".into(), "1756600000000".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "agents": [],
+                    "next": "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let page = client.list_agents(Some(1756600000000)).await.unwrap();
+
+        assert!(page.success);
+        assert_eq!(
+            page.next.as_deref(),
+            Some("https://api.firecrawl.dev/v2/agent?before=1756600000000")
+        );
         mock.assert();
     }
 
@@ -670,5 +1681,255 @@ mod tests {
 
         assert!(response.success);
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_sends_thread_mode_and_exchange() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::Json(json!({
+                "prompt": "Find the CTO's work email",
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+                "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                "mode": "chat",
+                "exchange": {
+                    "enabled": true,
+                    "toolkits": ["acme"],
+                    "maxCalls": 4,
+                    "requireApproval": true,
+                    "approve": {
+                        "approvalId": "0199aaaa-0000-7000-8000-000000000002",
+                        "callIds": ["call-1"],
+                        "always": true
+                    },
+                    "decline": {"approvalId": "0199aaaa-0000-7000-8000-000000000003"},
+                    "onTermsRequired": "ask"
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "agent-123",
+                    "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                    "threadTurn": 2
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let options = AgentOptions {
+            prompt: "Find the CTO's work email".to_string(),
+            thread_id: Some("0199aaaa-0000-7000-8000-000000000001".to_string()),
+            mode: Some(AgentMode::Chat),
+            exchange: Some(AgentExchangeOptions {
+                enabled: Some(true),
+                toolkits: Some(vec!["acme".to_string()]),
+                max_calls: Some(4),
+                require_approval: Some(true),
+                approve: Some(AgentExchangeApprove {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000002".to_string(),
+                    call_ids: Some(vec!["call-1".to_string()]),
+                    always: Some(true),
+                }),
+                decline: Some(AgentExchangeDecline {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000003".to_string(),
+                }),
+                on_terms_required: Some(AgentOnTermsRequired::Ask),
+            }),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await?;
+
+        assert_eq!(
+            response.thread_id.as_deref(),
+            Some("0199aaaa-0000-7000-8000-000000000001")
+        );
+        assert_eq!(response.thread_turn, Some(2));
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_omits_unset_exchange_fields() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::Json(json!({
+                "prompt": "Find the CTO's work email",
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+                "exchange": {
+                    "approve": {"approvalId": "0199aaaa-0000-7000-8000-000000000002"}
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let options = AgentOptions {
+            prompt: "Find the CTO's work email".to_string(),
+            exchange: Some(AgentExchangeOptions {
+                approve: Some(AgentExchangeApprove {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000002".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await?;
+
+        assert!(response.thread_id.is_none());
+        assert!(response.thread_turn.is_none());
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_status_with_exchange_and_pending_approval() -> Result<(), FirecrawlError>
+    {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent/agent-123")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "status": "completed",
+                    "model": "spark-2",
+                    "expiresAt": "2026-10-07T12:00:00.000Z",
+                    "creditsUsed": 12,
+                    "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                    "threadTurn": 1,
+                    "mode": "chat",
+                    "message": "Two calls need your approval.",
+                    "suggestions": [{"label": "Approve", "prompt": "Go ahead"}],
+                    "futureField": {"ignored": true},
+                    "pendingApproval": {
+                        "id": "0199aaaa-0000-7000-8000-000000000002",
+                        "kind": "calls",
+                        "reason": "These calls cost credits.",
+                        "calls": [{
+                            "id": "call-1",
+                            "provider": "acme",
+                            "capability": "people/search",
+                            "input": {"company": "example.com", "title": "CTO"},
+                            "more": [{"company": "example.org"}],
+                            "creditsEstimate": 50
+                        }],
+                        "resolution": null
+                    },
+                    "exchange": {
+                        "enabled": true,
+                        "toolkits": ["acme"],
+                        "requireApproval": true,
+                        "onTermsRequired": "ask",
+                        "paidCalls": 0,
+                        "creditsUsed": null,
+                        "skippedProviders": [{
+                            "provider": "globex",
+                            "name": "Globex",
+                            "capability": "company/lookup",
+                            "adds": "verified company records",
+                            "reason": "terms_required",
+                            "version": "F-1.0.0",
+                            "termsUrl": "https://www.firecrawl.dev/app/alexandria/globex"
+                        }],
+                        "requiresAction": {
+                            "type": "accept_terms",
+                            "approvalId": "0199aaaa-0000-7000-8000-000000000003",
+                            "providers": [{
+                                "provider": "globex",
+                                "name": "Globex",
+                                "version": "F-1.0.0",
+                                "digest": null,
+                                "url": "https://www.firecrawl.dev/app/alexandria/globex",
+                                "show": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/show",
+                                    "options": {"provider": "globex"}
+                                },
+                                "accept": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/accept",
+                                    "options": {
+                                        "provider": "globex",
+                                        "version": "F-1.0.0",
+                                        "digest": null,
+                                        "confirmed": true
+                                    }
+                                }
+                            }]
+                        }
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let status = client.get_agent_status("agent-123").await?;
+
+        assert_eq!(status.status, AgentStatus::Completed);
+        assert_eq!(
+            status.thread_id.as_deref(),
+            Some("0199aaaa-0000-7000-8000-000000000001")
+        );
+        assert_eq!(status.thread_turn, Some(1));
+        assert_eq!(status.mode, Some(AgentMode::Chat));
+        assert_eq!(
+            status.message.as_deref(),
+            Some("Two calls need your approval.")
+        );
+
+        let approval = status.pending_approval.ok_or_else(|| {
+            FirecrawlError::Misuse("pendingApproval did not deserialize".to_string())
+        })?;
+        assert_eq!(approval.id, "0199aaaa-0000-7000-8000-000000000002");
+        assert_eq!(approval.kind, Some(AgentPendingApprovalKind::Calls));
+        assert!(approval.terms.is_none());
+        assert!(approval.resolution.is_none());
+        assert_eq!(approval.calls.len(), 1);
+        assert_eq!(approval.calls[0].id, "call-1");
+        assert_eq!(approval.calls[0].provider, "acme");
+        assert_eq!(approval.calls[0].input["title"], "CTO");
+        assert_eq!(approval.calls[0].more.as_ref().map(Vec::len), Some(1));
+        assert_eq!(approval.calls[0].credits_estimate, Some(50));
+
+        let exchange = status
+            .exchange
+            .ok_or_else(|| FirecrawlError::Misuse("exchange did not deserialize".to_string()))?;
+        assert!(exchange.enabled);
+        assert_eq!(exchange.on_terms_required, Some(AgentOnTermsRequired::Ask));
+        assert_eq!(exchange.paid_calls, 0);
+        assert!(exchange.credits_used.is_none());
+        let skipped = exchange.skipped_providers.unwrap_or_default();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].reason, "terms_required");
+        assert_eq!(
+            skipped[0].terms_url,
+            "https://www.firecrawl.dev/app/alexandria/globex"
+        );
+        let action = exchange.requires_action.ok_or_else(|| {
+            FirecrawlError::Misuse("requiresAction did not deserialize".to_string())
+        })?;
+        assert_eq!(action.kind, "accept_terms");
+        assert_eq!(action.approval_id, "0199aaaa-0000-7000-8000-000000000003");
+        assert_eq!(action.providers.len(), 1);
+        assert!(action.providers[0].digest.is_none());
+        assert_eq!(action.providers[0].accept["capability"], "terms/accept");
+        mock.assert();
+        Ok(())
     }
 }

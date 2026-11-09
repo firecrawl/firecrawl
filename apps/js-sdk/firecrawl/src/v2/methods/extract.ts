@@ -1,4 +1,4 @@
-import { type ExtractResponse, type ScrapeOptions, type AgentOptions, type WebhookConfig } from "../types";
+import { type ExtractResponse, type ScrapeOptions, type AgentOptions, type ThreatProtectionOptions, type WebhookConfig } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
@@ -19,6 +19,7 @@ function prepareExtractPayload(args: {
   origin?: string;
   agent?: AgentOptions;
   webhook?: string | WebhookConfig | null;
+  threatProtection?: ThreatProtectionOptions;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -35,9 +36,12 @@ function prepareExtractPayload(args: {
   if (args.origin) body.origin = args.origin;
   if (args.agent) body.agent = args.agent;
   if (args.webhook != null) body.webhook = args.webhook;
+  if (args.threatProtection != null)
+    body.threatProtection = args.threatProtection;
   if (args.scrapeOptions) {
     ensureValidScrapeOptions(args.scrapeOptions);
-    body.scrapeOptions = args.scrapeOptions;
+    const { toolDetail, domainTools, ...scrapeOptions } = args.scrapeOptions;
+    body.scrapeOptions = scrapeOptions;
   }
   return body;
 }

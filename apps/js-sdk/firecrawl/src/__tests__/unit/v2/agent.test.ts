@@ -1,4 +1,4 @@
-import { describe, test, expect } from "@jest/globals";
+import { describe, test, expect } from "vitest";
 
 // We need to test the prepareAgentPayload function, but it's not exported.
 // Since the function is internal, we'll test the behavior through type checking

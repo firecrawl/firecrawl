@@ -6,14 +6,16 @@
 
 describe("Audio format engine routing (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
-  let clearDataLayerCapabilitiesForTest: typeof import("../../../lib/data-layer.js").clearDataLayerCapabilitiesForTest;
-  let setDataLayerCapabilitiesForTest: typeof import("../../../lib/data-layer.js").setDataLayerCapabilitiesForTest;
+  let clearExchangeProvidersForTest: typeof import("../../../lib/exchange.js").clearExchangeProvidersForTest;
+  let setExchangeProvidersForTest: typeof import("../../../lib/exchange.js").setExchangeProvidersForTest;
 
   const originalFireEngineUrl = process.env.FIRE_ENGINE_BETA_URL;
   const originalIndexUrl = process.env.INDEX_DATABASE_URL;
+  const originalExchangeUrl = process.env.FIRE_EXCHANGE_URL;
 
   beforeAll(async () => {
     process.env.FIRE_ENGINE_BETA_URL = "http://test-fire-engine";
+    process.env.FIRE_EXCHANGE_URL = "http://test-exchange";
     process.env.INDEX_DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/postgres";
 
@@ -23,13 +25,13 @@ describe("Audio format engine routing (buildFallbackList)", () => {
       "../../../scraper/scrapeURL/engines/index.js"
     ));
     ({
-      clearDataLayerCapabilitiesForTest,
-      setDataLayerCapabilitiesForTest,
-    } = await import("../../../lib/data-layer.js"));
+      clearExchangeProvidersForTest,
+      setExchangeProvidersForTest,
+    } = await import("../../../lib/exchange.js"));
   });
 
   afterEach(() => {
-    clearDataLayerCapabilitiesForTest();
+    clearExchangeProvidersForTest();
   });
 
   afterAll(() => {
@@ -42,6 +44,11 @@ describe("Audio format engine routing (buildFallbackList)", () => {
       delete process.env.INDEX_DATABASE_URL;
     } else {
       process.env.INDEX_DATABASE_URL = originalIndexUrl;
+    }
+    if (originalExchangeUrl === undefined) {
+      delete process.env.FIRE_EXCHANGE_URL;
+    } else {
+      process.env.FIRE_EXCHANGE_URL = originalExchangeUrl;
     }
   });
 
@@ -120,16 +127,16 @@ describe("Audio format engine routing (buildFallbackList)", () => {
     expect(engines).toContain("fire-engine;chrome-cdp");
   });
 
-  it("does not route agent index-only requests through the data layer", async () => {
-    setDataLayerCapabilitiesForTest({
-      domains: ["profiles.example"],
-    });
+  it("does not route agent index-only requests through the Exchange", async () => {
+    setExchangeProvidersForTest([
+      { id: "acme", routes: [{ domains: ["profiles.example"] }] },
+    ]);
 
     const meta = buildStubMeta([]);
     meta.url = "https://profiles.example/person/example-person";
     meta.options.formats = [{ type: "markdown" }];
     meta.internalOptions.agentIndexOnly = true;
-    meta.internalOptions.teamFlags = { enrichBeta: true };
+    meta.internalOptions.teamFlags = { professionalProfileCompanyDataBeta: true };
 
     const fallback = await buildFallbackList(meta);
     const engines = fallback.map(f => f.engine);

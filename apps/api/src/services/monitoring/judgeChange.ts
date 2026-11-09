@@ -1,8 +1,13 @@
 import { generateText } from "ai";
 import type { Logger } from "winston";
+import { withUsageTelemetry } from "../../lib/ai-usage-telemetry";
+import { isZeroDataRetentionActive } from "../../lib/otel-tracer";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import {
   googleModel,
   googleProviderOptions,
+  monitorTelemetryMetadata,
   type LlmUsageLabels,
 } from "./search/tuning";
 
@@ -83,7 +88,12 @@ interface JudgeChangeArgs {
   };
   // Vertex billing labels so this LLM call is traceable at the billing level by
   // function, team, monitor, and monitor check (mirrors the search service).
+  // Also tag the call's AI SDK span.
   labels?: LlmUsageLabels;
+  // Turns off AI SDK telemetry for the call, as does running in a zero data
+  // retention context.
+  zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
 }
 
 function isMeaningfulChangeEvent(
@@ -117,16 +127,35 @@ function sanitizeMeaningfulChanges(
   return value.filter(isMeaningfulChangeEvent);
 }
 
-const JUDGE_MODEL_NAME = "gemini-3-flash-preview";
+const JUDGE_MODEL_NAME = "gemini-3.5-flash";
 const JUDGE_ATTEMPT_TIMEOUT_MS = 30_000;
 const JUDGE_MAX_ATTEMPTS = 3;
 const JUDGE_BACKOFF_MS = [300, 800];
-const judgeModel = googleModel(JUDGE_MODEL_NAME);
+const JUDGE_FUNCTION_ID = "judgeChange";
+
+function judgeTelemetry(
+  labels: LlmUsageLabels | undefined,
+  zeroDataRetention: boolean | undefined,
+) {
+  return {
+    isEnabled: !(zeroDataRetention || isZeroDataRetentionActive()),
+    functionId: `monitor/${JUDGE_FUNCTION_ID}`,
+    metadata: monitorTelemetryMetadata("monitor_judge", labels),
+  };
+}
 
 async function callGemini(args: {
   userBlock: string;
   labels?: LlmUsageLabels;
+  zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
 }): Promise<{ text: string }> {
+  const judgeModel = withUsageTelemetry(
+    googleModel(JUDGE_MODEL_NAME, {
+      teamFlags: args.teamFlags,
+      feature: "The monitor change judge",
+    }),
+  );
   let lastError: unknown;
   for (let attempt = 1; attempt <= JUDGE_MAX_ATTEMPTS; attempt++) {
     const controller = new AbortController();
@@ -141,7 +170,12 @@ async function callGemini(args: {
         prompt: args.userBlock,
         temperature: 0,
         abortSignal: controller.signal,
-        ...googleProviderOptions("judgeChange", args.labels),
+        // Each attempt is its own provider call, so each gets its own span.
+        experimental_telemetry: judgeTelemetry(
+          args.labels,
+          args.zeroDataRetention,
+        ),
+        ...googleProviderOptions(JUDGE_FUNCTION_ID, args.labels),
       });
       return { text: result.text?.trim() ?? "" };
     } catch (error) {
@@ -160,8 +194,16 @@ async function callGemini(args: {
 export async function judgeChange(
   args: JudgeChangeArgs,
 ): Promise<JudgmentResult> {
-  const { logger, goal, extractionPrompt, jsonDiff, markdownDiff, labels } =
-    args;
+  const {
+    logger,
+    goal,
+    extractionPrompt,
+    jsonDiff,
+    markdownDiff,
+    labels,
+    zeroDataRetention,
+    teamFlags,
+  } = args;
 
   const parts: string[] = [`MONITOR GOAL:\n${goal.trim()}`];
   if (extractionPrompt?.trim()) {
@@ -190,7 +232,12 @@ export async function judgeChange(
   const userBlock = parts.join("\n\n");
 
   try {
-    const { text } = await callGemini({ userBlock, labels });
+    const { text } = await callGemini({
+      userBlock,
+      labels,
+      zeroDataRetention,
+      teamFlags,
+    });
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
       logger.warn("Judge returned unparseable response", {
@@ -242,6 +289,7 @@ export async function judgeChange(
       ),
     };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) throw error;
     logger.error("Judge call failed", { error });
     return {
       meaningful: true,

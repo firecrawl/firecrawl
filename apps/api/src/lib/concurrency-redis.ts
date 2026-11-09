@@ -42,6 +42,32 @@ export async function pushConcurrencyLimitActiveJob(
   );
 }
 
+/** Admit and register a browser in the same operation as the capacity check. */
+export async function reserveConcurrencyLimitSlot(
+  teamId: string,
+  id: string,
+  timeout: number,
+  limit: number,
+): Promise<boolean> {
+  return (
+    (await getRedisConnection().eval(
+      `
+    local now = tonumber(ARGV[1])
+    if redis.call('ZSCORE', KEYS[1], ARGV[2]) then return 1 end
+    if redis.call('ZCOUNT', KEYS[1], now, '+inf') >= tonumber(ARGV[4]) then return 0 end
+    redis.call('ZADD', KEYS[1], now + tonumber(ARGV[3]), ARGV[2])
+    return 1
+  `,
+      1,
+      constructConcurrencyLimitKey(teamId),
+      Date.now(),
+      id,
+      timeout,
+      limit,
+    )) === 1
+  );
+}
+
 export async function removeConcurrencyLimitActiveJob(
   team_id: string,
   id: string,

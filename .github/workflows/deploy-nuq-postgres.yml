@@ -52,12 +52,17 @@ jobs:
           platform=${{ matrix.platform }}
           echo "PLATFORM_SUFFIX=${platform//\//-}" >> $GITHUB_ENV
 
+      - name: Resolve short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
       - name: 'Build and Push Image'
         uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
         with:
           context: ./apps/nuq-postgres
           push: true
-          tags: ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:${{ env.PLATFORM_SUFFIX }}
+          tags: |
+            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:${{ env.PLATFORM_SUFFIX }}
+            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:sha-${{ env.SHORT_SHA }}-${{ env.PLATFORM_SUFFIX }}
           platforms: ${{ matrix.platform }}
           provenance: false
 
@@ -81,9 +86,16 @@ jobs:
         env:
           GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
 
-      - name: 'Create and Push Multi-Arch Manifest'
+      - name: Resolve short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
+      - name: 'Create and Push Multi-Arch Manifests'
         run: |
-          docker manifest create ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:latest \
-            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:linux-amd64 \
-            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:linux-arm64
-          docker manifest push ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:latest
+          set -euo pipefail
+          image=ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres
+          for tag in "sha-${SHORT_SHA}" latest; do
+            docker manifest create "${image}:${tag}" \
+              "${image}:sha-${SHORT_SHA}-linux-amd64" \
+              "${image}:sha-${SHORT_SHA}-linux-arm64"
+            docker manifest push "${image}:${tag}"
+          done

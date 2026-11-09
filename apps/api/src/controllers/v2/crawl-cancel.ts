@@ -6,7 +6,6 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth, scrapeOptions } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
@@ -41,6 +40,7 @@ export async function crawlCancelController(
       scrapeOptions: scrapeOptions.parse({}),
       internalOptions: {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
       },
     };
 
@@ -62,7 +62,6 @@ export async function crawlCancelController(
       status: "cancelled",
     });
   } catch (error) {
-    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({ error: error.message });
   }

@@ -1,6 +1,6 @@
 # Firecrawl Node SDK
 
-The Firecrawl Node SDK is a library that lets you easily search, scrape, and interact with the web for AI agents — returning clean Markdown or structured data your agents can ship with. It provides a simple and intuitive interface for the Firecrawl API.
+The Firecrawl Node SDK is the JavaScript client for the Firecrawl API, the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and get back clean Markdown or structured data your agents can ship with.
 
 ## Installation
 
@@ -13,9 +13,9 @@ npm install firecrawl
 ## Usage
 
 1. Get an API key from [firecrawl.dev](https://firecrawl.dev)
-2. Set the API key as an environment variable named `FIRECRAWL_API_KEY` or pass it as a parameter to the `FirecrawlApp` class.
+2. Set the API key as an environment variable named `FIRECRAWL_API_KEY` or pass it as the `apiKey` option to the `Firecrawl` class.
 
-Here's an example of how to use the SDK with error handling:
+Here's an example of how to use the SDK with error handling. It uses ES modules and top-level `await`, so save it as an `.mjs` file or set `"type": "module"` in your `package.json`:
 
 ```js
 import { Firecrawl } from 'firecrawl';
@@ -36,6 +36,16 @@ const crawlResponse = await app.crawl('https://firecrawl.dev', {
 });
 console.log(crawlResponse);
 ```
+
+### Request origin
+
+Requests carry an `origin` tag that identifies the client. Pass the `origin` option to set it. Set `origin` on a single call to override it for that call, except for `app.research` methods, which always use the client origin.
+
+```js
+const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY', origin: 'js-sdk.my-wrapper@1.0.0' });
+```
+
+By default the tag is `js-sdk@<version>`. When the client is created by code inside an installed package (a wrapper library), the default is `js-sdk.<package>@<version>` instead, for example `js-sdk.scope-name@<version>`. Application code, REPLs and bundled files without `node_modules` in their path keep the plain default. Detection runs once when the client is created and sends only the package name, lowercased and sanitized into a slug. Set `FIRECRAWL_DISABLE_CALLER_ORIGIN=1` to always use the plain default.
 
 ### Scraping a URL
 
@@ -102,6 +112,13 @@ const parsed = await app.parse(
 console.log(parsed.markdown);
 ```
 
+To see which file formats `parse` accepts, call `getParseFormats`. Each entry has `format`, `kind` (for example, `document` or `image`), `extensions`, `mimeTypes`, and `available` (false when the format is not enabled on this deployment).
+
+```js
+const formats = await app.getParseFormats();
+console.log(formats.filter((f) => f.available).map((f) => f.format));
+```
+
 ### Crawling a Website
 
 To crawl a website with error handling, use the `crawl` method. It takes the starting URL and optional parameters, including limits and per‑page `scrapeOptions`.
@@ -119,7 +136,7 @@ const crawlResponse = await app.crawl('https://firecrawl.dev', {
 To start an asynchronous crawl, use `startCrawl`. It returns a job ID you can poll with `getCrawlStatus`.
 
 ```js
-const start = await app.startCrawl('https://mendable.ai', {
+const start = await app.startCrawl('https://firecrawl.dev', {
   excludePaths: ['blog/*'],
   limit: 5,
 });
@@ -130,7 +147,7 @@ const start = await app.startCrawl('https://mendable.ai', {
 To check the status of a crawl job with error handling, use the `getCrawlStatus` method. It takes the job ID as a parameter and returns the current status.
 
 ```js
-const status = await app.getCrawlStatus(id);
+const status = await app.getCrawlStatus(start.id);
 ```
 
 ### Extracting structured data from URLs
@@ -166,6 +183,140 @@ const mapResult = await app.map('https://example.com');
 console.log(mapResult);
 ```
 
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```js
+const results = await app.search('what is retrieval augmented generation?', { limit: 5 });
+for (const result of results.web ?? []) {
+  console.log(result.url, '-', result.title);
+}
+
+// Scrape every result as part of the search:
+const scraped = await app.search('firecrawl changelog', {
+  limit: 3,
+  scrapeOptions: { formats: ['markdown'] },
+});
+```
+
+Results are grouped by source: `.web`, `.news` and `.images`. Developer
+and gov category results are served inside `.web`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```js
+const results = await app.search('nanopore basecalling accuracy', {
+  categories: ['research'],
+});
+```
+
+> **`categories: ['research']` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `research.searchPapers` below.
+
+### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
+Use `developerSearch` for the dedicated developer index and its complete filter
+and response contract. Generic `search(..., { categories: ['developer'] })`
+returns developer results inside `.web` in the ordinary web-result shape
+(first passage as the description) and does not accept these filters.
+
+```js
+const evidence = await app.developerSearch('configure retry backoff', {
+  repos: ['firecrawl/firecrawl'],
+  types: ['issue', 'pull_request', 'readme'],
+  passages: 3,
+  language: 'TypeScript',
+  license: 'MIT',
+});
+
+for (const result of evidence.results) {
+  // Result kind is the id prefix; the API intentionally omits a type field.
+  console.log(result.id, result.license);
+  for (const passage of result.passages) {
+    console.log(passage.text, passage.citation_url);
+  }
+}
+console.log(evidence.repos); // indexed-status echoes for requested repos
+```
+
+`developerSearch` also supports `sources`, `topic`, `minStars`, `maxStars`,
+`archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
+### Government search
+
+Use `govSearch` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search('food labeling requirements', { categories: ['gov'] })`
+returns index results inside `.web`; like `developer`, it cannot be combined
+with other categories.
+
+```js
+const law = await app.govSearch('food labeling requirements', {
+  k: 5,
+});
+
+for (const result of law.data.web) {
+  console.log(result.position, result.title, result.url);
+}
+
+// State supreme court opinions that cite a federal statute:
+const cases = await app.govSearch('qualified immunity', {
+  courtType: 'state-supreme',
+  cites: '42 U.S.C. § 1983',
+});
+```
+
+Filters, all optional and combined with AND: `jurisdiction` (`'us'` for
+federal, or `'us-'` plus a two-letter state or territory code, such as
+`'us-ca'`), `court` (a CourtListener court id, such as `'scotus'` or `'ca9'`),
+`courtType`, `cites` (one printed citation or citation id, such as
+`'us:usc:42:1983'`), and `domain` (one site, such as `'irs.gov'`). Filters keep
+only pages the index has labeled, so a filtered search can leave out relevant
+pages, and no results does not mean none exist. Court labels are most complete
+for federal courts and case-law collections.
+
+### Research / paper search
+
+Use `app.research` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```js
+// Search the paper index (semantic search over abstracts):
+const papers = await app.research.searchPapers(
+  'CRISPR base editing off-target effects in primary human T cells',
+  { k: 10 },
+);
+for (const paper of papers.results) {
+  console.log(paper.primaryId, '-', paper.title);
+}
+
+// Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+const paper = await app.research.getPaper('pmid:<id>');
+
+// Read the passages inside a paper that answer a specific question:
+const read = await app.research.getPaper('pmid:<id>', {
+  query: 'what was the primary endpoint and the reported hazard ratio?',
+  k: 4,
+});
+
+// Expand along the citation graph, re-ranked for your stated intent:
+const related = await app.research.similarPapers('pmid:<id>', {
+  intent: 'replication attempts in larger cohorts',
+  k: 20,
+});
+```
+
 ### Scrape-bound interactive browsing (v2)
 
 Use a scrape job ID to keep interacting with the replayed browser context:
@@ -193,7 +344,7 @@ await app.stopInteraction(scrapeJobId);
 To receive real‑time updates, start a crawl and attach a watcher.
 
 ```js
-const start = await app.startCrawl('https://mendable.ai', { excludePaths: ['blog/*'], limit: 5 });
+const start = await app.startCrawl('https://firecrawl.dev', { excludePaths: ['blog/*'], limit: 5 });
 const watch = app.watcher(start.id, { kind: 'crawl', pollInterval: 2 });
 
 watch.on('document', (doc) => {
@@ -216,7 +367,7 @@ await watch.start();
 To batch scrape multiple URLs with error handling, use the `batchScrape` method.
 
 ```js
-const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'https://mendable.ai'], {
+const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], {
   formats: ['markdown', 'html'],
 });
 ```
@@ -227,7 +378,7 @@ const batchScrapeResponse = await app.batchScrape(['https://firecrawl.dev', 'htt
 To start an asynchronous batch scrape, use `startBatchScrape` and poll with `getBatchScrapeStatus`.
 
 ```js
-const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.dev', 'https://mendable.ai'], {
+const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], {
   formats: ['markdown', 'html'],
 });
 ```
@@ -237,7 +388,7 @@ const asyncBatchScrapeResult = await app.startBatchScrape(['https://firecrawl.de
 To use batch scrape with real‑time updates, start the job and watch it using the watcher.
 
 ```js
-const start = await app.startBatchScrape(['https://firecrawl.dev', 'https://mendable.ai'], { formats: ['markdown', 'html'] });
+const start = await app.startBatchScrape(['https://firecrawl.dev', 'https://docs.firecrawl.dev'], { formats: ['markdown', 'html'] });
 const watch = app.watcher(start.id, { kind: 'batch', pollInterval: 2 });
 
 watch.on('document', (doc) => {
@@ -283,3 +434,70 @@ The Firecrawl Node SDK is licensed under the MIT License. This means you are fre
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Please note that while this SDK is MIT licensed, it is part of a larger project which may be under different licensing terms. Always refer to the license information in the root directory of the main project for overall licensing details.
+
+### Alexandria
+
+With a matching API deployment, Search returns complete tool contracts in `tools`.
+`domainTools: true` adds domain matches to that same array. Find Tools walks the catalogue
+without executing the tools it returns.
+
+```ts
+const results = await firecrawl.search("podcast conversations about AI agents", {
+  sources: ["web", "alexandria"],
+  domainTools: true,
+  limit: 2,
+});
+console.log(results.tools?.[0].options);
+
+const catalogue = await firecrawl.findTools({ providers: ["particle"], limit: 2 });
+const next = catalogue.items[0]?.next;
+if (next) console.log(await firecrawl.scrape({ alexandria: next }));
+```
+
+Execute a selected contract with `scrape({ alexandria, requestId })`, where `alexandria`
+is one `{ provider, capability, options }` call or an array of up to ten calls:
+
+```ts
+const requestId = crypto.randomUUID();
+const result = await firecrawl.scrape({
+  alexandria: {
+    provider: "particle",
+    capability: "podcasts/episodes/search",
+    options: { semantic_search: "AI agents" },
+  },
+  requestId,
+});
+for (const item of result.alexandria) {
+  if (item.error) console.error(item.error.code, item.error.message);
+  else console.log(item.data);
+}
+```
+
+Check each returned `alexandria` item's `error` before using its `data`. The result and
+execution errors expose `requestId`; reuse it with the identical payload for a retry.
+Automatic retries retain the same ID. Find Tools costs zero credits; provider execution
+uses its published price. A provider whose data terms have not been accepted rejects the
+call with a 403 whose `SdkError` carries `code: "THIRD_PARTY_DATA_TERMS_REQUIRED"` and a
+`requiresAction: { type: "accept_terms", terms, version, url }` pointing at the page where
+an organization admin can accept them.
+
+Each Alexandria call result can carry an opaque `feedbackToken`, valid for 24 hours. It is
+absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandriaFeedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `callRatings` (at most 20) rate individual calls. The response includes
+`rejectedTokens` when some tokens failed verification.
+
+```ts
+import { collectFeedbackTokens } from "@mendable/firecrawl-js";
+
+const response = await firecrawl.alexandriaFeedback({
+  rating: "partial",
+  requestedWebsite: { url: "https://example.com", requestedFunctionality: "Find episodes" },
+  rationale: "Found the episodes but the dates were missing",
+  tokens: collectFeedbackTokens(result.alexandria),
+  callRatings: result.alexandria[0].feedbackToken
+    ? [{ token: result.alexandria[0].feedbackToken, rating: "bad" }]
+    : undefined,
+});
+console.log(response.rejectedTokens ?? 0);
+```

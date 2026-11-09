@@ -7,7 +7,9 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
+  requestOverrides,
 } from "./scrape";
+import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
 import {
   fireEngineCheckStatus,
@@ -20,16 +22,35 @@ import {
   EngineError,
   DNSResolutionError,
   SiteError,
+  SiteRestrictionError,
   SSLError,
   UnsupportedFileError,
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
-import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import {
+  byReferenceReachableForRequest,
+  largePdfLimitBytes,
+} from "../pdf/fire-pdf/by-reference";
+import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
+import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
+import { config } from "../../../../config";
+
+/** The handoff additionally requires the inbound allowlist bucket to be
+ * configured: without it, a reference fire-engine returned could never be
+ * consumed, so granting the raise would only turn large-PDF scrapes into
+ * prefetch failures. */
+function fireEngineHandoffEligible(meta: Meta): boolean {
+  return (
+    config.FIRE_ENGINE_PDF_GCS_BUCKET !== undefined &&
+    byReferenceReachableForRequest(meta)
+  );
+}
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
+import { redactRequestBodyForLog } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { InternalAction } from "../../../../controllers/v1/types";
@@ -37,14 +58,13 @@ import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
+import { wantsBrandingScreenshot } from "../../../../lib/branding/jev";
+import { brandingScreenshotCapturesTotal } from "../../../../lib/branding/metrics";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
-import { createHash } from "node:crypto";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
-
-const MAX_GUNZIPPED_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -136,6 +156,7 @@ async function performFireEngineScrape<
           } else if (
             error instanceof EngineError ||
             error instanceof SiteError ||
+            error instanceof SiteRestrictionError ||
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||
@@ -185,7 +206,6 @@ async function performFireEngineScrape<
               `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
               { error, jobId: (scrape as any).jobId },
             );
-            Sentry.captureException(error);
           }
         }
 
@@ -195,24 +215,40 @@ async function performFireEngineScrape<
       status = scrape as FireEngineCheckStatusSuccess;
     }
 
-    await specialtyScrapeCheck(
-      logger.child({
-        method: "performFireEngineScrape/specialtyScrapeCheck",
-      }),
-      status.responseHeaders,
-      status,
-    );
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+
+    if (!wantsRawBase64) {
+      await specialtyScrapeCheck(
+        logger.child({
+          method: "performFireEngineScrape/specialtyScrapeCheck",
+        }),
+        status.responseHeaders,
+        status,
+        meta.abort.asSignal(),
+        // Handoff downloads only admit large files when the FirePDF
+        // by-reference route can actually take them, and only up to the
+        // requesting team's large-PDF limit.
+        fireEngineHandoffEligible(meta)
+          ? largePdfLimitBytes(meta)
+          : PDF_DOWNLOAD_MAX_FILE_SIZE,
+        meta.imageOcrEnabled,
+      );
+    }
 
     const contentType =
       (Object.entries(status.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? "";
 
-    if (contentType.includes("application/json")) {
+    if (!wantsRawBase64 && contentType.includes("application/json")) {
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file) {
+    // Reference-shaped files (gcs_uri without content) belong to the
+    // specialty prefetch path above and never reach this inline-decode
+    // block; guard on `content` so one slipping through can't crash it.
+    if (status.file?.content !== undefined && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
@@ -273,6 +309,42 @@ async function performFireEngineScrape<
   });
 }
 
+// Action types that only read or drive the DOM and don't depend on rendered
+// output. Anything not listed here (screenshot, pdf, and any future visual
+// action) keeps render-engine routing — fail safe, not open.
+const DOM_SAFE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "wait",
+  "click",
+  "write",
+  "press",
+  "scroll",
+  "scrape",
+  "executeJavascript",
+]);
+
+// Branding needs media *loaded* (real image dimensions in the DOM), not
+// *rendered* — but blockMedia: false routes to the render engine, where
+// visually heavy pages can stall the renderer. Opt out of render routing
+// unless something actually needs visual output.
+export function shouldForceNonRender(input: {
+  formats: Meta["options"]["formats"];
+  actions?: Array<{ type: string }>;
+  youtubePostprocessorWillRun: boolean;
+}): boolean {
+  if (!hasFormatOfType(input.formats, "branding")) {
+    return false;
+  }
+
+  const needsVisualRendering =
+    hasFormatOfType(input.formats, "screenshot") !== undefined ||
+    (input.actions ?? []).some(a => !DOM_SAFE_ACTION_TYPES.has(a.type)) ||
+    hasFormatOfType(input.formats, "audio") !== undefined ||
+    hasFormatOfType(input.formats, "video") !== undefined ||
+    input.youtubePostprocessorWillRun;
+
+  return !needsVisualRendering;
+}
+
 export async function scrapeURLWithFireEngineChromeCDP(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
@@ -282,18 +354,61 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+    if (
+      wantsRawBase64 &&
+      ((meta.options.waitFor ?? 0) > 0 ||
+        (meta.options.actions?.length ?? 0) > 0)
+    ) {
+      meta.logger.warn(
+        "rawBase64 returns the original response body; waitFor and actions are ignored.",
+        {
+          waitFor: meta.options.waitFor,
+          actionTypes: meta.options.actions?.map(action => action.type),
+        },
+      );
+    }
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
-    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
-      meta,
-      new URL(meta.rewrittenUrl ?? meta.url),
-    );
+    const shouldRunYoutubePostprocessor =
+      !wantsRawBase64 &&
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL(meta.rewrittenUrl ?? meta.url),
+      );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
-    const effectiveWait =
-      meta.options.waitFor != null && meta.options.waitFor !== 0
+    const effectiveWait = wantsRawBase64
+      ? 0
+      : meta.options.waitFor != null && meta.options.waitFor !== 0
         ? meta.options.waitFor
         : defaultWait;
+
+    // The page's first screen for Jev's branding call: taken after the branding
+    // scan (so the scan still measures the real viewport), as a 1280x720 JPEG.
+    // TypeSafe accepts at most 1568 px a side; 1280 is what the quality eval
+    // used and costs about a third fewer image tokens.
+    const brandingFormat = hasFormatOfType(meta.options.formats, "branding");
+    const brandingScreenshotVia =
+      !wantsRawBase64 && brandingFormat
+        ? wantsBrandingScreenshot(
+            brandingFormat.__experimental_screenshot,
+            meta.internalOptions.teamId,
+            meta.internalOptions.zeroDataRetention,
+          )
+        : undefined;
+    const brandingScreenshotAction = brandingScreenshotVia
+      ? ({
+          type: "screenshot" as const,
+          fullPage: false,
+          quality: 70,
+          // Spread like the screenshot format's viewport: fire-engine takes
+          // it, the v1 action type doesn't declare it.
+          ...{ viewport: { width: 1280, height: 720 } },
+          metadata: { __firecrawl_internal: true },
+        } as InternalAction)
+      : undefined;
 
     const actions: InternalAction[] = [
       // Transform waitFor option into an action (unsupported by chrome-cdp).
@@ -308,7 +423,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : []),
 
       // Include specified actions
-      ...(meta.options.actions ?? []).map(action => {
+      ...(!wantsRawBase64 ? (meta.options.actions ?? []) : []).map(action => {
         const { metadata: _, ...rest } = action as InternalAction;
         return rest;
       }),
@@ -337,10 +452,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
             {
               type: "executeJavascript" as const,
               script: getBrandingScript(),
+              realViewport: true,
               metadata: { __firecrawl_internal: true },
             },
           ]
         : []),
+      ...(brandingScreenshotAction ? [brandingScreenshotAction] : []),
       ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
         ? ([
             {
@@ -360,11 +477,18 @@ export async function scrapeURLWithFireEngineChromeCDP(
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;
 
+    const forceNonRender = shouldForceNonRender({
+      formats: meta.options.formats,
+      actions: meta.options.actions ?? undefined,
+      youtubePostprocessorWillRun: shouldRunYoutubePostprocessor,
+    });
+
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
       engine: "chrome-cdp",
+      ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
       headers: meta.options.headers,
@@ -379,30 +503,101 @@ export async function scrapeURLWithFireEngineChromeCDP(
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
+      autoProxy: meta.options.proxy === "auto",
       maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
+      // it fire-engine grants no raise and PDFs keep its inline cap, so the
+      // worker never captures bytes this team may not use.
+      ...(fireEngineHandoffEligible(meta)
+        ? { pdfMaxSize: largePdfLimitBytes(meta) }
+        : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
-      persistentStorage: meta.options.profile
+      ...(forceNonRender ? { forceNonRender: true } : {}),
+      profile: meta.options.profile
         ? {
-            uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
+            owner: meta.internalOptions.teamId,
+            name: meta.options.profile.name,
           }
         : undefined,
+      ...requestOverrides(meta),
     };
+
+    // Safe Mode worker-side hardening: neutralize anything that request-time
+    // enforcement would reject but that inherited scrape options can still carry.
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.profile = undefined;
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,
       meta.logger.child({
         method: "scrapeURLWithFireEngineChromeCDP/callFireEngine",
-        request,
+        request: redactRequestBodyForLog(request),
       }),
       request,
       meta.mock,
       meta.abort.asSignal(),
       true,
+    ).catch(error => {
+      // Counted apart from `missing`: a failed scrape says nothing about
+      // whether captures work, but keeps every requested capture counted.
+      if (brandingScreenshotAction) {
+        brandingScreenshotCapturesTotal.inc({
+          outcome: "scrape_failed",
+          via: brandingScreenshotVia,
+        });
+        setSpanAttributes(span, {
+          "engine.branding_screenshot": "scrape_failed",
+          "engine.branding_screenshot_via": brandingScreenshotVia,
+        });
+      }
+      throw error;
+    });
+
+    // Take ours out, found by its own action's result, before the screenshot
+    // format and the user's actions claim theirs.
+    const brandingScreenshotIdx = brandingScreenshotAction
+      ? actions.indexOf(brandingScreenshotAction)
+      : -1;
+    const brandingScreenshotResult = (response.actionResults ?? []).find(
+      x => x.type === "screenshot" && x.idx === brandingScreenshotIdx,
     );
+    let brandingScreenshotUrl: string | undefined;
+    if (brandingScreenshotResult?.type === "screenshot") {
+      const at =
+        response.screenshots?.lastIndexOf(
+          brandingScreenshotResult.result.path,
+        ) ?? -1;
+      if (at >= 0) {
+        brandingScreenshotUrl = response.screenshots![at];
+        response.screenshots = response.screenshots!.filter((_, i) => i !== at);
+      }
+    }
+    if (brandingScreenshotAction) {
+      const outcome = brandingScreenshotUrl ? "captured" : "missing";
+      brandingScreenshotCapturesTotal.inc({
+        outcome,
+        via: brandingScreenshotVia,
+      });
+      setSpanAttributes(span, {
+        "engine.branding_screenshot": outcome,
+        "engine.branding_screenshot_via": brandingScreenshotVia,
+      });
+      if (!brandingScreenshotUrl) {
+        meta.logger.warn("Branding screenshot not returned by fire-engine", {
+          actionResults: (response.actionResults ?? []).length,
+        });
+      }
+    }
 
     let screenshot: string | undefined;
     if (hasFormatOfType(meta.options.formats, "screenshot")) {
@@ -460,20 +655,34 @@ export async function scrapeURLWithFireEngineChromeCDP(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? undefined;
 
+    // A GCS-reference file cannot serve rawBase64 (the caller wants inline
+    // bytes). fire-engine never grants the large-PDF raise to rawBase64
+    // requests, so this is defense in depth with a clear error rather than
+    // a silent rawBase64: undefined.
+    if (
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined &&
+      response.file &&
+      response.file.content === undefined &&
+      response.file.gcs_uri !== undefined
+    ) {
+      throw new UnsupportedFileError("File exceeds size limit");
+    }
+
     return {
       url: response.url ?? meta.url,
 
       html: response.content,
+      rawBase64: response.file?.content,
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 
       contentType,
 
       screenshot,
+      brandingScreenshot: brandingScreenshotUrl,
       ...(actions.length > 0
         ? {
             actions: {
@@ -512,6 +721,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       scrapeId: meta.id,
       engine: "tlsclient",
       instantReturn: false,
+      skipTlsVerification: meta.options.skipTlsVerification,
 
       headers: meta.options.headers,
       priority: meta.internalOptions.priority,
@@ -520,6 +730,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       geolocation: meta.options.location,
       disableJsDom: meta.internalOptions.v0DisableJsDom,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
+      autoProxy: meta.options.proxy === "auto",
 
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       maxAge: meta.options.maxAge,
@@ -527,13 +738,22 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      ...requestOverrides(meta),
     };
+
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,
       meta.logger.child({
         method: "scrapeURLWithFireEngineTLSClient/callFireEngine",
-        request,
+        request: redactRequestBodyForLog(request),
       }),
       request,
       meta.mock,
@@ -558,7 +778,6 @@ export async function scrapeURLWithFireEngineTLSClient(
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 

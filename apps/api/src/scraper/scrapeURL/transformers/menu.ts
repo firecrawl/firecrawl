@@ -2,6 +2,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 
 export async function fetchMenu(
   meta: Meta,
@@ -12,10 +13,17 @@ export async function fetchMenu(
   }
 
   // Beta gate: during beta the menu format is limited to teams with the menuBeta
-  // flag. Fail closed and silent (mirrors highlightsBeta) -- a team without the
-  // flag gets no menu field, no error, and no engine call.
+  // flag. Fail closed and silent: a team without the flag gets no menu field,
+  // no error, and no engine call.
   if (meta.internalOptions?.teamFlags?.menuBeta !== true) {
     meta.logger.info("menu format requested without menuBeta flag; skipping");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Menu format is not supported for teams restricted to US-only processing." +
+      (document.warning ? " " + document.warning : "");
     return document;
   }
 

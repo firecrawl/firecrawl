@@ -1,10 +1,10 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, vi } from "vitest";
 import { interact, stopInteraction } from "../../../v2/methods/scrape";
 import { SdkError } from "../../../v2/types";
 
 describe("JS SDK v2 scrape-browser methods", () => {
   test("interact posts to scrape interact endpoint", async () => {
-    const post = jest.fn(async () => ({
+    const post = vi.fn(async () => ({
       status: 200,
       data: {
         success: true,
@@ -28,7 +28,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
   });
 
   test("interact with prompt posts prompt to endpoint", async () => {
-    const post = jest.fn(async () => ({
+    const post = vi.fn(async () => ({
       status: 200,
       data: {
         success: true,
@@ -61,14 +61,14 @@ describe("JS SDK v2 scrape-browser methods", () => {
   });
 
   test("interact throws when neither code nor prompt provided", async () => {
-    const http = { post: jest.fn() } as any;
+    const http = { post: vi.fn() } as any;
     await expect(interact(http, "job-123", {})).rejects.toThrow(
       "Either 'code' or 'prompt' must be provided",
     );
   });
 
   test("interact throws on non-200 response", async () => {
-    const post = jest.fn(async () => ({
+    const post = vi.fn(async () => ({
       status: 400,
       data: {
         success: false,
@@ -83,7 +83,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
   });
 
   test("stopInteraction calls delete endpoint", async () => {
-    const del = jest.fn(async () => ({
+    const del = vi.fn(async () => ({
       status: 200,
       data: {
         success: true,
@@ -98,7 +98,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
   });
 
   test("stopInteraction throws on non-200 response", async () => {
-    const del = jest.fn(async () => ({
+    const del = vi.fn(async () => ({
       status: 404,
       data: {
         success: false,
@@ -113,7 +113,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
   });
 
   test("interact converts seconds-based body timeout to ms axios timeout", async () => {
-    const post = jest.fn(async () => ({
+    const post = vi.fn(async () => ({
       status: 200,
       data: { success: true, stdout: "ok", exitCode: 0 },
     }));

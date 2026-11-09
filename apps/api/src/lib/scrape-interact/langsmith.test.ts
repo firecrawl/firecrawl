@@ -7,7 +7,7 @@ import * as ai from "ai";
 
 // langsmith.ts pulls the SDK in via lazy require() (not static import), and
 // vi.doMock only intercepts dynamic import(), not require(). So these two are
-// mocked statically (hoisted, like jest.mock) with a mutable backing the enabled
+// mocked statically (hoisted by vi.mock) with a mutable backing the enabled
 // tests wire up per-run. The disabled tests never hit the require() branch
 // (isLangSmithEnabled is false), so these factories simply never execute there.
 const sdkMocks = vi.hoisted(() => ({
@@ -154,11 +154,11 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
   // NOTE: langsmith.ts loads the SDK via a lazy CommonJS require() at module
   // eval time (intentionally, so a missing install degrades gracefully). Vitest
   // injects a *native* require() into ESM source that bypasses the mock registry,
-  // so vi.mock / vi.doMock cannot intercept these. Under Jest these were mocked
-  // via jest.doMock + require. The only ways to restore this coverage are to
-  // change production source (make the SDK load a dynamic import / top-level
-  // await), which would alter module-init semantics. Skipped pending that
-  // decision — the disabled path (the default) remains fully covered above.
+  // so vi.mock / vi.doMock cannot intercept these. The only ways to restore
+  // this coverage are to change production source (make the SDK load a
+  // dynamic import / top-level await), which would alter module-init
+  // semantics. Skipped pending that decision — the disabled path (the
+  // default) remains fully covered above.
 
   const ORIGINAL_ENV = { ...process.env };
   const fakeWrappedFns = {

@@ -1,16 +1,29 @@
 import { logger as _logger } from "../../lib/logger";
-import { config } from "../../config";
 import {
   finishCrawl,
   getCrawlJobs,
   getDoneJobsOrderedLength,
 } from "../../lib/crawl-redis";
 import { getCrawl } from "../../lib/crawl-redis";
-import { creditsBilledByCrawlId } from "../../db/rpc";
+import { readRequestCredits } from "../../lib/request-credits-store";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
+import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
+import {
+  createInAppNotification,
+  isDashboardOrigin,
+} from "../notification/in_app";
+
+/**
+ * How often, and how long apart, finalization re-reads the ClickHouse credits
+ * sum before believing an empty result. ClickPipes lands a child's row one to
+ * two seconds after the worker logs it; five reads two seconds apart outwait
+ * that with room to spare without holding the finalizer for long.
+ */
+const FINALIZE_CREDITS_ATTEMPTS = 5;
+const FINALIZE_CREDITS_RETRY_MS = 2_000;
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
   const crawlId = job.groupId;
@@ -70,41 +83,35 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       .filter(x => x !== null);
 
     if (sc.crawlerOptions !== null) {
-      await logCrawl(
-        {
-          id: crawlId,
-          request_id: requestId,
-          url: sc.originUrl!,
-          team_id: teamId,
-          options: sc.crawlerOptions,
-          num_docs: fullDocs.length,
-          credits_cost: fullDocs.reduce(
-            (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-            0,
-          ),
-          zeroDataRetention,
-          cancelled: sc.cancelled ?? false,
-          monitor_id: monitoring?.monitorId,
-          monitor_check_id: monitoring?.checkId,
-        },
-        false,
-      );
+      await logCrawl({
+        id: crawlId,
+        request_id: requestId,
+        url: sc.originUrl!,
+        team_id: teamId,
+        options: sc.crawlerOptions,
+        num_docs: fullDocs.length,
+        credits_cost: fullDocs.reduce(
+          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
+          0,
+        ),
+        zeroDataRetention,
+        cancelled: sc.cancelled ?? false,
+        monitor_id: monitoring?.monitorId,
+        monitor_check_id: monitoring?.checkId,
+      });
     } else {
-      await logBatchScrape(
-        {
-          id: crawlId,
-          request_id: requestId,
-          team_id: teamId,
-          num_docs: fullDocs.length,
-          credits_cost: fullDocs.reduce(
-            (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-            0,
-          ),
-          zeroDataRetention,
-          cancelled: sc.cancelled ?? false,
-        },
-        false,
-      );
+      await logBatchScrape({
+        id: crawlId,
+        request_id: requestId,
+        team_id: teamId,
+        num_docs: fullDocs.length,
+        credits_cost: fullDocs.reduce(
+          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
+          0,
+        ),
+        zeroDataRetention,
+        cancelled: sc.cancelled ?? false,
+      });
     }
 
     // v0 web hooks, call when done with all the data
@@ -142,48 +149,92 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
     let credits_billed: number | null = null;
 
-    if (config.USE_DB_AUTHENTICATION) {
-      try {
-        const creditsRows = await creditsBilledByCrawlId(crawlId);
-        credits_billed = creditsRows?.[0]?.credits_billed ?? null;
-      } catch (error) {
-        logger.warn("Credits billed is null", { error });
-      }
+    try {
+      credits_billed = await readRequestCredits(requestId);
+    } catch (error) {
+      logger.warn("Bigtable request credits read failed", { error });
+    }
 
-      if (credits_billed === null) {
-        logger.warn("Credits billed is null", {});
+    if (credits_billed === null) {
+      // Requests from before the Bigtable credit rows existed: sum the scrape
+      // job log. Finalization records credits_cost for good, and ClickPipes
+      // lands the last children a second or two after they are logged, so an
+      // empty sum is retried before it is believed.
+      for (let attempt = 1; attempt <= FINALIZE_CREDITS_ATTEMPTS; attempt++) {
+        try {
+          credits_billed = await readRequestCreditsFromAnalytics(requestId, {
+            emptyAsZero: false,
+          });
+        } catch (error) {
+          logger.warn("Analytics request credits read failed", {
+            error,
+            attempt,
+          });
+        }
+        if (credits_billed !== null) break;
+        if (attempt < FINALIZE_CREDITS_ATTEMPTS) {
+          await new Promise(resolve =>
+            setTimeout(resolve, FINALIZE_CREDITS_RETRY_MS),
+          );
+        }
       }
     }
 
-    if (sc.crawlerOptions !== null) {
-      await logCrawl(
-        {
-          id: crawlId,
-          request_id: requestId,
-          url: sc.originUrl!,
-          team_id: teamId,
-          options: sc.crawlerOptions,
-          num_docs: num_docs,
-          credits_cost: credits_billed ?? 0,
-          zeroDataRetention,
-          cancelled: sc.cancelled ?? false,
-          monitor_id: monitoring?.monitorId,
-          monitor_check_id: monitoring?.checkId,
-        },
-        false,
+    if (credits_billed === null) {
+      // The row's credits_cost is NOT NULL, so the record has to carry a
+      // number; 0 is written and the gap is loud rather than silent.
+      logger.error(
+        "Credits billed unknown at crawl finalization; recording 0",
+        { requestId, attempts: FINALIZE_CREDITS_ATTEMPTS },
       );
+    }
+
+    if (sc.crawlerOptions !== null) {
+      await logCrawl({
+        id: crawlId,
+        request_id: requestId,
+        url: sc.originUrl!,
+        team_id: teamId,
+        options: sc.crawlerOptions,
+        num_docs: num_docs,
+        credits_cost: credits_billed ?? 0,
+        zeroDataRetention,
+        cancelled: sc.cancelled ?? false,
+        monitor_id: monitoring?.monitorId,
+        monitor_check_id: monitoring?.checkId,
+      });
     } else {
-      await logBatchScrape(
+      await logBatchScrape({
+        id: crawlId,
+        request_id: requestId,
+        team_id: teamId,
+        num_docs: num_docs,
+        credits_cost: credits_billed ?? 0,
+        zeroDataRetention,
+        cancelled: sc.cancelled ?? false,
+      });
+    }
+
+    // The origin is client-supplied, so this only scopes which of the caller's
+    // own jobs reach their team's feed. Runs with no successful page are not
+    // reported as completed.
+    if (
+      !sc.cancelled &&
+      num_docs > 0 &&
+      isDashboardOrigin(sc.origin ?? data?.origin)
+    ) {
+      const isCrawl = sc.crawlerOptions !== null;
+      await createInAppNotification(
+        teamId,
+        isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
         {
-          id: crawlId,
-          request_id: requestId,
-          team_id: teamId,
-          num_docs: num_docs,
-          credits_cost: credits_billed ?? 0,
-          zeroDataRetention,
-          cancelled: sc.cancelled ?? false,
+          jobId: crawlId,
+          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
+          completed: num_docs,
+          creditsUsed: credits_billed,
+          link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
         },
-        false,
+        { dedupeKey: crawlId },
       );
     }
 

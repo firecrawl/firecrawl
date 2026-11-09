@@ -10,9 +10,16 @@ use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\JsonFormat;
+use Firecrawl\Models\AgentOptions;
+use Firecrawl\Models\AuditMetadata;
+use Firecrawl\Models\MapOptions;
+use Firecrawl\Models\ParseOptions;
+use Firecrawl\Models\PDFParser;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
+use Firecrawl\Models\SearchOptions;
 use Firecrawl\Models\Monitor;
 use Firecrawl\Models\MonitorCheck;
 
@@ -96,6 +103,48 @@ it('preserves null creditsUsed in CrawlJob', function (): void {
     $job = CrawlJob::fromArray($raw);
 
     expect($job->getCreditsUsed())->toBeNull();
+});
+
+it('hydrates PDF pages in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Annual Report 2025',
+        'pages' => [
+            ['pageNumber' => 1, 'markdown' => '# Cover'],
+            ['pageNumber' => 2, 'markdown' => '## Intro'],
+        ],
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Annual Report 2025');
+    expect($doc->getPages())->toHaveCount(2);
+    expect($doc->getPages()[0]['pageNumber'])->toBe(1);
+    expect($doc->getPages()[0]['markdown'])->toBe('# Cover');
+});
+
+it('hydrates PDF blocks in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Annual Report 2025',
+        'blocks' => [
+            [
+                'pageNumber' => 1,
+                'width' => 1700,
+                'height' => 2200,
+                'status' => 'ok',
+                'items' => [
+                    [
+                        'id' => 'p1.b0',
+                        'type' => 'title',
+                        'content' => '# Annual Report 2025',
+                        'readingOrder' => 0,
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Annual Report 2025');
+    expect($doc->getBlocks())->toHaveCount(1);
+    expect($doc->getBlocks()[0]['pageNumber'])->toBe(1);
+    expect($doc->getBlocks()[0]['items'][0]['type'])->toBe('title');
 });
 
 it('hydrates video URL in Document', function (): void {
@@ -259,6 +308,12 @@ it('returns null menu when absent in Document', function (): void {
     expect($doc->getMenu())->toBeNull();
 });
 
+it('serializes the search highlights option', function (): void {
+    $options = SearchOptions::with(highlights: false);
+
+    expect($options->toArray())->toBe(['highlights' => false]);
+});
+
 it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {
     // Defensive: upstream data could carry a non-string scalar (e.g. a numeric
     // brand). Under declare(strict_types=1) these must be cast, not passed raw.
@@ -308,6 +363,20 @@ it('preserves positional integration in ScrapeOptions::with', function (): void 
     ]);
 });
 
+it('serializes PDF parser pageMarkers in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        parsers: [PDFParser::with(mode: 'auto', pages: true, blocks: true, pageMarkers: true)],
+    );
+
+    expect($options->toArray()['parsers'][0])->toMatchArray([
+        'type' => 'pdf',
+        'mode' => 'auto',
+        'pages' => true,
+        'blocks' => true,
+        'pageMarkers' => true,
+    ]);
+});
+
 it('serializes lockdown in ScrapeOptions', function (): void {
     $options = ScrapeOptions::with(
         lockdown: true,
@@ -331,6 +400,45 @@ it('serializes redactPII in ScrapeOptions', function (): void {
         'redactPII' => true,
     ]);
     expect(array_key_exists('formats', $options->toArray()))->toBeFalse();
+});
+
+it('serializes top-level checkPromptInjection in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        formats: [JsonFormat::with(prompt: 'Extract the title')],
+        checkPromptInjection: true,
+    );
+
+    expect($options->getCheckPromptInjection())->toBeTrue();
+    expect($options->toArray())->toMatchArray([
+        'checkPromptInjection' => true,
+    ]);
+    expect(array_key_exists('checkPromptInjection', $options->toArray()['formats'][0]))->toBeFalse();
+    expect(array_key_exists('checkPromptInjection', ScrapeOptions::with()->toArray()))->toBeFalse();
+});
+
+it('still serializes the deprecated JsonFormat checkPromptInjection', function (): void {
+    expect(JsonFormat::with(prompt: 'Extract the title', checkPromptInjection: true)->toArray())
+        ->toBe([
+            'type' => 'json',
+            'prompt' => 'Extract the title',
+            'checkPromptInjection' => true,
+        ]);
+});
+
+it('serializes audit metadata across request options', function (): void {
+    $metadata = AuditMetadata::with('alice@example.com');
+    $serialized = ['username' => 'alice@example.com'];
+
+    $scrape = ScrapeOptions::with(auditMetadata: $metadata);
+    expect($scrape->toArray())->toMatchArray(['auditMetadata' => $serialized]);
+    expect($scrape->getAuditMetadata())->toBe($metadata);
+    expect(MapOptions::with(auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $serialized]);
+    expect(AgentOptions::with(prompt: 'find pricing', auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $serialized]);
+    $parse = ParseOptions::with(auditMetadata: $metadata);
+    expect($parse->toArray())->toMatchArray(['auditMetadata' => $serialized]);
+    expect($parse->getAuditMetadata())->toBe($metadata);
 });
 
 it('serializes query format mode in ScrapeOptions', function (): void {

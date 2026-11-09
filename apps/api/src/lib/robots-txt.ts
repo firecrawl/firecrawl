@@ -1,17 +1,13 @@
 import robotsParser, { Robot } from "robots-parser";
-import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
+import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -23,12 +19,16 @@ export async function fetchRobotsTxt(
   {
     url,
     zeroDataRetention,
+    usOnly,
     location,
     headers,
     skipCache,
+    skipTlsVerification,
   }: {
     url: string;
     zeroDataRetention: boolean;
+    usOnly?: boolean;
+    skipTlsVerification?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     skipCache?: boolean;
@@ -75,10 +75,12 @@ export async function fetchRobotsTxt(
       ...(skipCache ? { maxAge: 0 } : { maxAge: ROBOTS_MAX_AGE }),
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
+      ...(skipTlsVerification ? { skipTlsVerification } : {}),
     }),
     {
       forceEngine,
       v0DisableJsDom: true,
+      orgId: null,
       externalAbort: abort
         ? {
             signal: abort,
@@ -90,6 +92,7 @@ export async function fetchRobotsTxt(
         : undefined,
       teamId: "robots-txt",
       zeroDataRetention,
+      ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
     },
     new CostTracking(),
   );

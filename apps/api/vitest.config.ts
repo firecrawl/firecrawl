@@ -19,7 +19,7 @@ export default defineConfig({
     // snips use a 90s scrapeTimeout constant; give per-test/hook headroom.
     testTimeout: 120_000,
     hookTimeout: 120_000,
-    // Real servers/sockets need a moment to drain (was Jest's openHandlesTimeout).
+    // Real servers/sockets need a moment to drain.
     teardownTimeout: 30_000,
     // junit is built-in; same output path the CI Python parser reads.
     reporters: ["default", "junit"],

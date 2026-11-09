@@ -6,7 +6,10 @@ import { config } from "../../config";
 import { isFdbTeam } from "./nuq-router";
 import { externalSlotsFdb, nuqFdbHealthCheck, withFdbTimeout } from "./nuq-fdb";
 import { isSelfHosted } from "../../lib/deployment";
-import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
+import {
+  ConcurrencyQueueTimeoutError,
+  TransportableError,
+} from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
 import { nuqRedis, semaphoreKeys } from "./redis";
 import { Gauge, Histogram, register } from "prom-client";
@@ -94,11 +97,11 @@ async function acquireBlocking(
 
   do {
     if (options.signal.aborted) {
-      throw new ScrapeJobTimeoutError();
+      throw new ConcurrencyQueueTimeoutError();
     }
 
     if (deadline < Date.now()) {
-      throw new ScrapeJobTimeoutError();
+      throw new ConcurrencyQueueTimeoutError();
     }
 
     const [granted, _count, _removed] = await runScript<

@@ -1,7 +1,4 @@
-import { RateLimiterMode } from "../../types";
-import { getACUCTeam } from "../auth";
 import { RequestWithAuth } from "./types";
-import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
 import { isFdbTeam } from "../../services/worker/nuq-router";
@@ -17,6 +14,7 @@ import {
   getConcurrencyLimitActiveJobsCount,
   getConcurrencyQueueJobsCount,
 } from "../../lib/concurrency-limit";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 type QueueStatusResponse = {
   success: boolean;
@@ -33,23 +31,6 @@ export async function queueStatusController(
   req: RequestWithAuth<{}, undefined, QueueStatusResponse>,
   res: Response<QueueStatusResponse>,
 ) {
-  let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
-  if (!req.acuc?.is_extract) {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Extract,
-    );
-  } else {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Crawl,
-    );
-  }
-
   await cleanOldConcurrencyLimitEntries(req.auth.team_id);
   let activeJobsOfTeam = await getConcurrencyLimitActiveJobsCount(
     req.auth.team_id,
@@ -96,10 +77,8 @@ export async function queueStatusController(
     jobsInQueue: activeJobsOfTeam + queuedJobsOfTeam,
     activeJobsInQueue: activeJobsOfTeam,
     waitingJobsInQueue: queuedJobsOfTeam,
-    maxConcurrency: Math.max(
-      req.acuc?.concurrency ?? 1,
-      otherACUC?.concurrency ?? 1,
-    ),
+    maxConcurrency:
+      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
 
     mostRecentSuccess: mostRecentSuccess
       ? new Date(mostRecentSuccess).toISOString()

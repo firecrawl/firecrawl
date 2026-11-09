@@ -7,8 +7,9 @@
 //! Run with: cargo test --test v2_e2e -- --ignored
 
 use firecrawl::{
-    AgentOptions, BatchScrapeOptions, Client, CrawlOptions, Format, JobStatus, MapOptions,
-    ParseFile, ParseFormat, ParseOptions, ScrapeOptions, SearchOptions, SitemapMode,
+    AgentOptions, BatchScrapeOptions, Client, CrawlOptions, FirecrawlError, Format, JobStatus,
+    MapOptions, ParseFile, ParseFormat, ParseFormatKind, ParseOptions, ScrapeOptions,
+    SearchOptions, SitemapMode,
 };
 use serde_json::json;
 use std::env;
@@ -51,6 +52,32 @@ async fn test_parse() {
         .await
         .expect("Parse should succeed");
     assert!(doc.markdown.is_some(), "Response should contain markdown");
+}
+
+#[tokio::test]
+#[ignore = "Requires API access"]
+async fn test_get_parse_formats() -> Result<(), FirecrawlError> {
+    let client = get_client();
+    let formats = match client.get_parse_formats().await {
+        Err(FirecrawlError::APIError(_, e)) if e.code.as_deref() == Some("NOT_FOUND") => {
+            eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
+            return Ok(());
+        }
+        Err(FirecrawlError::HttpRequestFailed(_, 404, _)) => {
+            eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
+            return Ok(());
+        }
+        result => result?,
+    };
+
+    assert!(!formats.is_empty(), "Formats list should not be empty");
+    assert!(
+        formats
+            .iter()
+            .any(|f| f.format == "pdf" && f.kind == ParseFormatKind::Document),
+        "Formats should include a pdf document entry"
+    );
+    Ok(())
 }
 
 #[tokio::test]

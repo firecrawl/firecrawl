@@ -60,7 +60,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   const baseUrl = new URL(base);
   const baseDomain = baseUrl.hostname;
 
-  it.concurrent(
+  it(
     "works",
     async () => {
       const results = await crawl(
@@ -76,7 +76,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "works with ignoreSitemap: true",
     async () => {
       const results = await crawl(
@@ -93,12 +93,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "filters URLs properly",
     async () => {
       const res = await crawl(
         {
-          url: base,
+          url: `${TEST_SUITE_WEBSITE}/blog`,
           includePaths: ["^/blog$"],
           limit: 10,
         },
@@ -140,7 +140,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   //   10 * scrapeTimeout,
   // );
 
-  it.concurrent(
+  it(
     "delay parameter works",
     async () => {
       await crawl(

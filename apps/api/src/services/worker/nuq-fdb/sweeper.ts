@@ -9,6 +9,7 @@ import {
   GroupMeta,
   QueueEntry,
   decodeI64,
+  encodeI64,
   decodeJson,
   encodeJson,
   timeBucket,
@@ -17,6 +18,7 @@ import {
   F_CRAWL_GATED,
   F_COUNTABLE,
   F_GACC,
+  F_KEY_GATED,
 } from "./keyspace";
 import {
   ONE,
@@ -31,8 +33,10 @@ import {
   clearPendingPlacement,
   releaseSlotsAndPromote,
   admitThroughTeamGate,
+  admitThroughGates,
   deleteJobRecords,
   popTeamPending,
+  popKeyPending,
   setGroupJobIndex,
   bumpGroupStatusCount,
   bumpTeamActive,
@@ -62,6 +66,7 @@ function entryFromMeta(id: string, meta: JobMeta): QueueEntry {
     i: id,
     o: meta.o,
     g: meta.g,
+    k: meta.k,
     p: meta.p,
     f: meta.f,
     c: meta.c,
@@ -164,6 +169,7 @@ export class NuqFdbSweeper {
       await this.sweepGroupFinishTasks(queue, now, logger);
       await this.sweepGroupCancelTasks(queue, now, logger);
       await this.sweepTeamRaiseTasks(queue, now, logger);
+      await this.sweepKeyRaiseTasks(queue, now, logger);
       await this.sweepJobExpiry(queue, now, logger);
       await this.sweepGroupExpiry(queue, now, logger);
     }
@@ -275,7 +281,7 @@ export class NuqFdbSweeper {
               tn,
               ks,
               entry,
-              { team: true, crawl: true },
+              { team: true, key: true, crawl: true },
               now,
               txc,
             );
@@ -325,13 +331,22 @@ export class NuqFdbSweeper {
           if (!st || st.s !== "pending" || !st.loc) return;
           const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
           if (!meta) return;
-          clearPendingPlacement(tn, ks, id, meta.o, meta.g, st.loc, meta.to);
-          if (st.loc.k !== "gq" && meta.f & F_CRAWL_GATED) {
+          clearPendingPlacement(
+            tn,
+            ks,
+            id,
+            meta.o,
+            meta.g,
+            meta.k,
+            st.loc,
+            meta.to,
+          );
+          if (st.loc.k !== "gq") {
             await releaseSlotsAndPromote(
               tn,
               ks,
               entryFromMeta(id, meta),
-              { team: false, crawl: true },
+              { team: false, key: st.loc.k === "tq", crawl: true },
               now,
               txc,
             );
@@ -378,8 +393,9 @@ export class NuqFdbSweeper {
           );
           tn.clear(key as Buffer);
           if (!st || st.s !== "pending" || st.loc?.k !== "dl") return;
-          // the job already holds its crawl slot; admit through the team gate
-          await admitThroughTeamGate(tn, ks, e, txc);
+          // the job already holds its crawl slot; admit through the key gate
+          // and then the team gate
+          await admitThroughGates(tn, ks, e, txc);
         });
         stats.processedCount++;
       }
@@ -459,11 +475,26 @@ export class NuqFdbSweeper {
             }
             const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
             if (!meta) continue;
-            clearPendingPlacement(tn, ks, id, meta.o, meta.g, st.loc, meta.to);
-            // team-pending/delayed members hold a crawl slot; the group is
-            // cancelled so there is nothing to promote -- just release it
+            clearPendingPlacement(
+              tn,
+              ks,
+              id,
+              meta.o,
+              meta.g,
+              meta.k,
+              st.loc,
+              meta.to,
+            );
+            // team-/key-pending/delayed members hold a crawl slot; the group
+            // is cancelled so there is nothing to promote -- just release it
             if (st.loc.k !== "gq" && meta.f & F_CRAWL_GATED) {
               tn.add(ks.groupCrawlActive(gid), MINUS_ONE);
+            }
+            // team-pending members also hold a key slot; release it and let
+            // the raise task hand it to key-pending jobs outside this group
+            if (st.loc.k === "tq" && meta.k && meta.f & F_KEY_GATED) {
+              tn.add(ks.keyActive(meta.k), MINUS_ONE);
+              tn.set(ks.taskKeyRaise(meta.k), EMPTY);
             }
             tn.clear(mKey as Buffer);
             tn.add(ks.groupRemaining(gid), MINUS_ONE);
@@ -521,6 +552,45 @@ export class NuqFdbSweeper {
           free--;
         }
         if (promoted > 0) bumpTeamActive(tn, ks, tid, promoted);
+        // done when no free slots remain or the pending queue is drained
+        return free > 0 || limit - active <= 0;
+      });
+      if (done) {
+        await this.db.doTn(async tn => tn.clear(key as Buffer));
+      }
+    }
+  }
+
+  // Key raises admit key-pending heads through the team gate: each promoted
+  // job acquires a key slot here and a team slot (or a team-pending place)
+  // in admitThroughTeamGate.
+  private async sweepKeyRaiseTasks(
+    queue: NuQFdbQueue,
+    now: number,
+    logger: Logger,
+  ): Promise<void> {
+    const ks = queue.ks;
+    const r = ks.taskKeyRaiseRange();
+    const tasks = await this.db.doTn(async tn =>
+      tn.snapshot().getRangeAll(r.begin, r.end, { limit: 50 }),
+    );
+    for (const [key] of tasks) {
+      const kid = ks.unpackId(key as Buffer);
+      const done = await this.db.doTn(async tn => {
+        const txc = newTxContext();
+        const limitBuf = await tn.get(ks.keyLimit(kid));
+        const limit = limitBuf ? decodeI64(limitBuf) : Infinity;
+        const active = decodeI64(await tn.get(ks.keyActive(kid)));
+        let free = Math.min(Math.max(0, limit - active), 32);
+        let promoted = 0;
+        while (free > 0) {
+          const e = await popKeyPending(tn, ks, kid);
+          if (!e) break;
+          await admitThroughTeamGate(tn, ks, e, txc);
+          promoted++;
+          free--;
+        }
+        if (promoted > 0) tn.add(ks.keyActive(kid), encodeI64(promoted));
         // done when no free slots remain or the pending queue is drained
         return free > 0 || limit - active <= 0;
       });

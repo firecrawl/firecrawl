@@ -31,7 +31,8 @@ final class ParseOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
+     * @param AuditMetadata|null           $auditMetadata
      */
     private function __construct(
         private readonly ?array $formats = null,
@@ -44,9 +45,11 @@ final class ParseOptions
         private readonly ?bool $skipTlsVerification = null,
         private readonly ?bool $removeBase64Images = null,
         private readonly ?bool $blockAds = null,
+        private readonly ?bool $checkPromptInjection = null,
         private readonly ?string $proxy = null,
         private readonly ?string $integration = null,
         private readonly ?bool $redactPII = null,
+        private readonly ?AuditMetadata $auditMetadata = null,
     ) {}
 
     /**
@@ -54,7 +57,11 @@ final class ParseOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
+     * @param AuditMetadata|null           $auditMetadata
+     * @param bool|null                    $checkPromptInjection Scans the parsed content for prompt injection
+     *     before LLM-backed formats run. A detection fails the parse with SCRAPE_PROMPT_INJECTION_DETECTED.
+     *     Adds 4 credits when the check scans the whole content.
      */
     public static function with(
         ?array $formats = null,
@@ -70,6 +77,8 @@ final class ParseOptions
         ?string $proxy = null,
         ?string $integration = null,
         ?bool $redactPII = null,
+        ?AuditMetadata $auditMetadata = null,
+        ?bool $checkPromptInjection = null,
     ): self {
         if ($timeout !== null && $timeout <= 0) {
             throw new FirecrawlException('timeout must be positive');
@@ -99,9 +108,11 @@ final class ParseOptions
             $skipTlsVerification,
             $removeBase64Images,
             $blockAds,
+            $checkPromptInjection,
             $proxy,
             $integration,
             $redactPII,
+            $auditMetadata,
         );
     }
 
@@ -129,13 +140,18 @@ final class ParseOptions
             'excludeTags' => $this->excludeTags,
             'onlyMainContent' => $this->onlyMainContent,
             'timeout' => $this->timeout,
-            'parsers' => $this->parsers,
+            'parsers' => $this->parsers === null ? null : array_map(
+                fn (mixed $parser): mixed => $parser instanceof PDFParser ? $parser->toArray() : $parser,
+                $this->parsers,
+            ),
             'skipTlsVerification' => $this->skipTlsVerification,
             'removeBase64Images' => $this->removeBase64Images,
             'blockAds' => $this->blockAds,
+            'checkPromptInjection' => $this->checkPromptInjection,
             'proxy' => $this->proxy,
             'integration' => $this->integration,
             'redactPII' => $this->redactPII,
+            'auditMetadata' => $this->auditMetadata?->toArray(),
         ];
 
         foreach ($fields as $key => $value) {
@@ -204,7 +220,7 @@ final class ParseOptions
         return $this->timeout;
     }
 
-    /** @return list<mixed>|null */
+    /** @return list<string|PDFParser|array<string, mixed>>|null */
     public function getParsers(): ?array
     {
         return $this->parsers;
@@ -225,6 +241,11 @@ final class ParseOptions
         return $this->blockAds;
     }
 
+    public function getCheckPromptInjection(): ?bool
+    {
+        return $this->checkPromptInjection;
+    }
+
     public function getProxy(): ?string
     {
         return $this->proxy;
@@ -233,5 +254,10 @@ final class ParseOptions
     public function getIntegration(): ?string
     {
         return $this->integration;
+    }
+
+    public function getAuditMetadata(): ?AuditMetadata
+    {
+        return $this->auditMetadata;
     }
 }

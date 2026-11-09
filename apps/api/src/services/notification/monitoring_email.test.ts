@@ -359,6 +359,22 @@ describe("sendMonitoringEmailSummary", () => {
       const result = await sendMonitoringEmailSummary(args);
       expect(result.attempted).toBe(true);
     });
+
+    it("fails open when counters report new/error pages beyond the truncated list", async () => {
+      const args = buildArgs({
+        goal: "track price changes",
+        emailEnabled: true,
+        pages: [
+          { status: "changed", meaningful: false },
+          { status: "changed", meaningful: false },
+        ],
+      });
+      // The visible page list is all noise, but the check aggregates report new
+      // pages that fell outside the 100-page window — the email must still fire.
+      (args.check as any).new_count = 5;
+      const result = await sendMonitoringEmailSummary(args);
+      expect(result.attempted).toBe(true);
+    });
   });
 
   describe("opt-in gating", () => {

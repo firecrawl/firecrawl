@@ -17,6 +17,7 @@ export interface LogoCandidate {
   };
   href?: string;
   source: string;
+  colors?: Array<{ color: string; share: number }>;
 }
 
 interface LogoSelectionResult {

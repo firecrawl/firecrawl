@@ -16,8 +16,10 @@ public class SearchOptions {
     private Integer limit;
     private String tbs;
     private String location;
+    private String country;
     private Boolean ignoreInvalidURLs;
     private Integer timeout;
+    private Boolean highlights;
     private ScrapeOptions scrapeOptions;
     private String integration;
 
@@ -30,8 +32,10 @@ public class SearchOptions {
     public Integer getLimit() { return limit; }
     public String getTbs() { return tbs; }
     public String getLocation() { return location; }
+    public String getCountry() { return country; }
     public Boolean getIgnoreInvalidURLs() { return ignoreInvalidURLs; }
     public Integer getTimeout() { return timeout; }
+    public Boolean getHighlights() { return highlights; }
     public ScrapeOptions getScrapeOptions() { return scrapeOptions; }
     public String getIntegration() { return integration; }
 
@@ -45,8 +49,10 @@ public class SearchOptions {
         private Integer limit;
         private String tbs;
         private String location;
+        private String country;
         private Boolean ignoreInvalidURLs;
         private Integer timeout;
+        private Boolean highlights;
         private ScrapeOptions scrapeOptions;
         private String integration;
 
@@ -54,7 +60,7 @@ public class SearchOptions {
 
         /** Source types: "web", "news", "images" as strings or {type: "web"} maps. */
         public Builder sources(List<Object> sources) { this.sources = sources; return this; }
-        /** Categories: "github", "research", "pdf". */
+        /** Categories: "research", "pdf", "developer", "gov". The "github" category was removed; use "developer" instead. */
         public Builder categories(List<Object> categories) { this.categories = categories; return this; }
         /** Domains to include in search results. */
         public Builder includeDomains(List<String> includeDomains) { this.includeDomains = includeDomains; return this; }
@@ -66,10 +72,14 @@ public class SearchOptions {
         public Builder tbs(String tbs) { this.tbs = tbs; return this; }
         /** Location for search results (e.g., "US"). */
         public Builder location(String location) { this.location = location; return this; }
+        /** Country code to geo-target search results (e.g., "us"). */
+        public Builder country(String country) { this.country = country; return this; }
         /** Ignore invalid URLs in results. */
         public Builder ignoreInvalidURLs(Boolean ignoreInvalidURLs) { this.ignoreInvalidURLs = ignoreInvalidURLs; return this; }
         /** Timeout in milliseconds. */
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
+        /** Generate query-relevant highlights for search results. Defaults to true. */
+        public Builder highlights(Boolean highlights) { this.highlights = highlights; return this; }
         /** Scrape options applied to search result pages. */
         public Builder scrapeOptions(ScrapeOptions scrapeOptions) { this.scrapeOptions = scrapeOptions; return this; }
         /** Integration identifier. */
@@ -84,8 +94,10 @@ public class SearchOptions {
             o.limit = this.limit;
             o.tbs = this.tbs;
             o.location = this.location;
+            o.country = this.country;
             o.ignoreInvalidURLs = this.ignoreInvalidURLs;
             o.timeout = this.timeout;
+            o.highlights = this.highlights;
             o.scrapeOptions = this.scrapeOptions;
             o.integration = this.integration;
             return o;

@@ -10,9 +10,7 @@ import {
   scrapeTimeout,
   searchRawFull,
 } from "./lib";
-import { and, eq } from "drizzle-orm";
-import { db } from "../../../db/connection";
-import * as schema from "../../../db/schema";
+import { writeFeedbackJob } from "../../../lib/feedback-job-store";
 
 let identity: Identity;
 let secondaryIdentity: Identity;
@@ -123,42 +121,32 @@ describeIf(TEST_PRODUCTION)("Generic endpoint feedback tests", () => {
         .toString(16)
         .padStart(12, "0");
 
-    await db.insert(schema.searches).values({
-      id: searchId,
-      request_id: searchId,
-      query: "failed generic feedback search",
-      team_id: identity.teamId,
-      options: { query: "failed generic feedback search" },
-      time_taken: 0,
-      credits_cost: 2,
-      is_successful: false,
-      error: "Synthetic failed search for generic feedback policy coverage.",
-      num_results: 0,
-    });
+    // The feedback policy reads the job's outcome from the feedback job
+    // store, so a failed search is a failed feedback job row.
+    expect(
+      await writeFeedbackJob({
+        endpoint: "search",
+        jobId: searchId,
+        requestId: searchId,
+        teamId: identity.teamId,
+        succeeded: false,
+        creditsBilled: 2,
+        zeroDataRetention: false,
+      }),
+    ).toBe(true);
 
-    try {
-      const failed = await endpointFeedbackRaw(
-        {
-          endpoint: "search",
-          jobId: searchId,
-          rating: "bad",
-          missingContent: [{ topic: "Results" }],
-        },
-        identity,
-      );
+    const failed = await endpointFeedbackRaw(
+      {
+        endpoint: "search",
+        jobId: searchId,
+        rating: "bad",
+        missingContent: [{ topic: "Results" }],
+      },
+      identity,
+    );
 
-      expect(failed.statusCode).toBe(409);
-      expect(failed.body.success).toBe(false);
-      expect(failed.body.feedbackErrorCode).toBe("SEARCH_FAILED");
-    } finally {
-      await db
-        .delete(schema.searches)
-        .where(
-          and(
-            eq(schema.searches.id, searchId),
-            eq(schema.searches.team_id, identity.teamId),
-          ),
-        );
-    }
+    expect(failed.statusCode).toBe(409);
+    expect(failed.body.success).toBe(false);
+    expect(failed.body.feedbackErrorCode).toBe("SEARCH_FAILED");
   }, 30000);
 });

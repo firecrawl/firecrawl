@@ -20,6 +20,8 @@ pub struct PaperResult {
     pub score: Option<f64>,
     pub year: Option<i32>,
     pub authors: Option<Vec<String>>,
+    pub created_date: Option<String>,
+    pub update_date: Option<String>,
     pub venue: Option<String>,
     pub url: Option<String>,
     pub signals: Option<HashMap<String, Value>>,
@@ -112,6 +114,10 @@ pub struct SearchPapersOptions {
     pub categories: Option<Vec<String>>,
     pub from: Option<String>,
     pub to: Option<String>,
+    /// `relevance` (default) or `date_desc`, which returns the newest of the most
+    /// relevant matches, newest first by created date. It does not list every
+    /// paper in a date range; add `from` (and `to`) for that.
+    pub sort: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -151,6 +157,94 @@ fn path_escape(value: &str) -> String {
     out
 }
 
+/// Options for [`Client::developer_search`].
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchOptions {
+    /// Total ranked results, 1 to 100 (default 10).
+    pub k: Option<u32>,
+    /// Passages per result, 1 to 5 (default 1).
+    pub passages: Option<u32>,
+    /// Result kinds: `doc`, `issue`, `pull_request`, `readme` (default all).
+    pub types: Option<Vec<String>>,
+    /// GitHub `owner/name` filters, at most 20.
+    pub repos: Option<Vec<String>>,
+    /// Developer documentation source IDs, at most 20.
+    pub sources: Option<Vec<String>>,
+    /// One case-insensitive GitHub Linguist primary language.
+    pub language: Option<String>,
+    /// Repository topics that must all match, at most 8.
+    pub topic: Option<Vec<String>>,
+    /// One case-insensitive SPDX repository license identifier.
+    pub license: Option<String>,
+    pub min_stars: Option<u64>,
+    pub max_stars: Option<u64>,
+    pub archived: Option<bool>,
+    pub fork: Option<bool>,
+    /// `only` returns packaged agent-skill evidence only.
+    pub skills: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+struct DeveloperSearchRequest {
+    query: String,
+    origin: String,
+    #[serde(flatten)]
+    options: DeveloperSearchOptions,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchPassage {
+    pub text: String,
+    pub citation_url: Option<String>,
+}
+
+/// One ranked developer search result. `license` is an SPDX string or a
+/// disclosure object, so it stays a raw JSON value.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchResult {
+    pub id: String,
+    pub url: String,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub passages: Vec<DeveloperSearchPassage>,
+    pub license: Option<Value>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DeveloperSearchRepoTypes {
+    pub issue: bool,
+    pub pull_request: bool,
+    pub readme: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchRepoStatus {
+    pub repo: String,
+    pub indexed: bool,
+    pub types: DeveloperSearchRepoTypes,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchSourceStatus {
+    pub source: String,
+    pub indexed: bool,
+}
+
+/// Response from [`Client::developer_search`]. `repos` and `sources` are
+/// present only when those filters were requested.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DeveloperSearchResponse {
+    pub success: bool,
+    pub results: Vec<DeveloperSearchResult>,
+    pub repos: Option<Vec<DeveloperSearchRepoStatus>>,
+    pub sources: Option<Vec<DeveloperSearchSourceStatus>>,
+}
+
 impl Client {
     pub async fn search_papers(
         &self,
@@ -179,6 +273,9 @@ impl Client {
             }
             if let Some(to) = options.to {
                 push_query(&mut query, "to", to);
+            }
+            if let Some(sort) = options.sort {
+                push_query(&mut query, "sort", sort);
             }
         }
 
@@ -289,6 +386,43 @@ impl Client {
         self.handle_response(response, "related papers").await
     }
 
+    /// Search the developer index: public repositories, GitHub issues, merged
+    /// pull requests, READMEs and code documentation.
+    pub async fn developer_search(
+        &self,
+        query_text: impl AsRef<str>,
+        options: impl Into<Option<DeveloperSearchOptions>>,
+    ) -> Result<DeveloperSearchResponse, FirecrawlError> {
+        let query = query_text.as_ref();
+        if query.trim().is_empty() {
+            return Err(FirecrawlError::Misuse("query cannot be empty".into()));
+        }
+        let body = DeveloperSearchRequest {
+            query: query.to_string(),
+            origin: format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+            options: options.into().unwrap_or_default(),
+        };
+
+        let response = self
+            .client
+            .post(self.url("/search/developer"))
+            .headers(self.prepare_headers(None))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("search developer sources".to_string(), e))?;
+
+        self.handle_response(response, "search developer sources")
+            .await
+    }
+
+    /// Search the research index GitHub slice.
+    ///
+    /// The research index GitHub search endpoint was removed after 2026-11-03.
+    /// Use [`Client::developer_search`] instead.
+    #[deprecated(
+        note = "The research index GitHub search endpoint was removed after 2026-11-03. Use Client::developer_search instead."
+    )]
     pub async fn search_github(
         &self,
         query_text: impl AsRef<str>,
@@ -317,5 +451,79 @@ impl Client {
             .map_err(|e| FirecrawlError::HttpError("search github".to_string(), e))?;
 
         self.handle_response(response, "search github").await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_developer_search_posts_query_and_options() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/search/developer")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "query": "retry backoff",
+                "k": 5,
+                "types": ["issue"],
+                "repos": ["rust-lang/rust"],
+                "min_stars": 100,
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "results": [{
+                        "id": "r1",
+                        "url": "https://github.com/rust-lang/rust/issues/1",
+                        "title": "retry",
+                        "passages": [{"text": "use backoff", "citation_url": "https://github.com/rust-lang/rust/issues/1#c1"}],
+                        "license": {"state": "licensed", "spdx_id": "MIT"}
+                    }],
+                    "repos": [{"repo": "rust-lang/rust", "indexed": true, "types": {"issue": true, "pullRequest": true, "readme": false}}]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .developer_search(
+                "retry backoff",
+                DeveloperSearchOptions {
+                    k: Some(5),
+                    types: Some(vec!["issue".to_string()]),
+                    repos: Some(vec!["rust-lang/rust".to_string()]),
+                    min_stars: Some(100),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(
+            response.results[0].passages[0].citation_url.as_deref(),
+            Some("https://github.com/rust-lang/rust/issues/1#c1")
+        );
+        assert_eq!(
+            response.results[0].license.as_ref().unwrap()["spdx_id"],
+            "MIT"
+        );
+        assert!(response.repos.unwrap()[0].types.pull_request);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_developer_search_rejects_empty_query() {
+        let client = Client::new_selfhosted("http://127.0.0.1:1", Some("test_key")).unwrap();
+        let result = client.developer_search("   ", None).await;
+        assert!(matches!(result, Err(FirecrawlError::Misuse(_))));
     }
 }

@@ -2,12 +2,80 @@ import { logger } from "../../lib/logger";
 import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
+import { getValue, setValue } from "../redis";
 import { autumnClient } from "./client";
+import {
+  CREDITS_FEATURE_ID,
+  SEARCH_CREDITS_FEATURE_ID,
+} from "./autumn.service";
 
-const CREDITS_FEATURE_ID = "CREDITS";
-const TOKENS_PER_CREDIT = 15;
+export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HISTORICAL_WINDOW_MS = 90 * DAY_MS;
+
+// The historical/analytics aggregations below are bucketed by day (and
+// optionally grouped by API key or endpoint), so Autumn has to walk raw events
+// and their cost scales with the team's event volume. That routinely takes
+// several seconds. The Autumn client's global 2s timeout is sized for the
+// latency-sensitive balance checks on the request hot path, and it is far too
+// tight here, so these calls override it per call.
+const HISTORICAL_AGGREGATE_TIMEOUT_MS = 15000;
+
+// Grouping over the whole 90-day window does not finish inside that timeout
+// for teams with tens of millions of events in it, so the grouped breakdowns
+// (byApiKey, byEndpoint) ask Autumn for fixed 7-day slices instead. A slice
+// that ended over a day ago no longer changes and is cached for as long as it
+// can still fall inside the window, so a warm request only asks Autumn for the
+// slice holding today (and, for a day after a slice boundary, the one before
+// it).
+const GROUPED_SLICE_MS = 7 * DAY_MS;
+const GROUPED_SLICE_SETTLE_MS = DAY_MS;
+const GROUPED_SLICE_CACHE_TTL_SECONDS = HISTORICAL_WINDOW_MS / 1000;
+const GROUPED_SLICE_CONCURRENCY = 2;
+
+// Autumn's maximum. Its default of 9 folds every further group into one
+// "Other" group per day, which the response could not label.
+const GROUPED_MAX_GROUPS = 250;
+
+// Autumn limits event aggregates per customer per second, and a cold grouped
+// request makes one call per slice. A rate-limited slice waits and retries;
+// every other status fails the request as before.
+const GROUPED_RATE_LIMIT_RETRY = {
+  retries: {
+    strategy: "backoff" as const,
+    backoff: {
+      initialInterval: 250,
+      maxInterval: 1000,
+      exponent: 2,
+      maxElapsedTime: 3000,
+    },
+    retryConnectionErrors: false,
+  },
+  retryCodes: ["429"],
+};
+
+/** How a grouped breakdown asks Autumn for its days and caches them. */
+interface UsageGrouping {
+  groupBy: string;
+  featureId: string | string[];
+  cachePrefix: string;
+}
+
+const API_KEY_GROUPING: UsageGrouping = {
+  groupBy: "properties.apiKeyId",
+  featureId: CREDITS_FEATURE_ID,
+  cachePrefix: "historical-usage-by-api-key:v1",
+};
+
+// Search usage is recorded against SEARCH_CREDITS, so the endpoint breakdown
+// reads both features; without it search would be missing as an endpoint.
+const ENDPOINT_GROUPING: UsageGrouping = {
+  groupBy: "properties.endpoint",
+  featureId: [CREDITS_FEATURE_ID, SEARCH_CREDITS_FEATURE_ID],
+  cachePrefix: "historical-usage-by-endpoint:v1",
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,7 +83,6 @@ const HISTORICAL_BIN_SIZE = "day";
 
 interface TeamBalance {
   remaining: number;
-  granted: number;
   planCredits: number;
   usage: number;
   unlimited: boolean;
@@ -76,111 +143,179 @@ async function lookupApiKeyNames(
   return nameMap;
 }
 
-function toMonthStartIso(period: unknown): string | null {
+/** Width of a historical usage period. */
+export type HistoricalBin = "month" | "day";
+
+function toBinStartIso(period: unknown, bin: HistoricalBin): string | null {
   if (period == null) return null;
 
   const date = new Date(period as string | number);
   if (isNaN(date.getTime())) return null;
 
   return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1),
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      bin === "day" ? date.getUTCDate() : 1,
+    ),
   ).toISOString();
 }
 
-function nextMonthIso(monthStartIso: string): string {
-  const date = new Date(monthStartIso);
+function nextBinIso(binStartIso: string, bin: HistoricalBin): string {
+  const date = new Date(binStartIso);
   return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth() + (bin === "month" ? 1 : 0),
+      date.getUTCDate() + (bin === "day" ? 1 : 0),
+    ),
   ).toISOString();
 }
 
-function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
-  const monthTotals = new Map<string, number>();
+function aggregateHistoricalPeriods(
+  list: any[],
+  bin: HistoricalBin,
+): HistoricalPeriod[] {
+  const binTotals = new Map<string, number>();
 
   for (const entry of list) {
-    const monthStart = toMonthStartIso(entry.period);
-    if (!monthStart) continue;
+    const binStart = toBinStartIso(entry.period, bin);
+    if (!binStart) continue;
 
-    monthTotals.set(
-      monthStart,
-      (monthTotals.get(monthStart) ?? 0) +
+    binTotals.set(
+      binStart,
+      (binTotals.get(binStart) ?? 0) +
         (entry.values?.[CREDITS_FEATURE_ID] ?? 0),
     );
   }
 
-  const monthStarts = [...monthTotals.keys()].sort();
+  const binStarts = [...binTotals.keys()].sort();
 
-  return monthStarts.map((startDate, i) => ({
+  return binStarts.map((startDate, i) => ({
     startDate,
-    endDate: i < monthStarts.length - 1 ? nextMonthIso(startDate) : null,
-    creditsUsed: monthTotals.get(startDate) ?? 0,
+    endDate: i < binStarts.length - 1 ? nextBinIso(startDate, bin) : null,
+    creditsUsed: binTotals.get(startDate) ?? 0,
   }));
 }
 
-function getGroupedCredits(entry: any): Record<string, number> | undefined {
-  return (
-    entry.groupedValues?.[CREDITS_FEATURE_ID] ??
-    entry.grouped_values?.[CREDITS_FEATURE_ID]
-  );
+/** Sums each group's credits across the grouping's features. */
+function getGroupedCredits(
+  entry: any,
+  grouping: UsageGrouping,
+): Record<string, number> | undefined {
+  let credits: Record<string, number> | undefined;
+  for (const featureId of [grouping.featureId].flat()) {
+    const values: Record<string, number> | undefined =
+      entry.groupedValues?.[featureId] ?? entry.grouped_values?.[featureId];
+    if (!values) continue;
+
+    credits ??= {};
+    for (const [group, value] of Object.entries(values)) {
+      credits[group] = (credits[group] ?? 0) + value;
+    }
+  }
+  return credits;
 }
 
-async function aggregateHistoricalPeriodsByApiKeyMonth(
-  list: any[],
-): Promise<HistoricalPeriodByApiKey[]> {
-  const monthApiKeyTotals = new Map<string, Map<string, number>>();
-  const allApiKeyIds = new Set<string>();
+/** One day of credits used, keyed by the property Autumn grouped on. */
+interface GroupedUsageDay {
+  period: number;
+  credits: Record<string, number>;
+}
 
-  for (const entry of list) {
-    const monthStart = toMonthStartIso(entry.period);
-    if (!monthStart) continue;
+/**
+ * Rolls daily grouped usage into bins. Groups whose labels match (e.g.
+ * several unresolved API key ids all labelled "Unknown") are merged, so the
+ * result has one row per label per bin, sorted by label.
+ */
+function aggregateGroupedPeriods(
+  days: GroupedUsageDay[],
+  bin: HistoricalBin,
+  label: (group: string) => string,
+): {
+  startDate: string;
+  endDate: string | null;
+  label: string;
+  creditsUsed: number;
+}[] {
+  const binGroupTotals = new Map<string, Map<string, number>>();
 
-    const grouped = getGroupedCredits(entry);
-    if (!grouped) continue;
+  for (const day of days) {
+    const binStart = toBinStartIso(day.period, bin);
+    if (!binStart) continue;
 
-    const monthTotals =
-      monthApiKeyTotals.get(monthStart) ?? new Map<string, number>();
+    const binTotals = binGroupTotals.get(binStart) ?? new Map<string, number>();
 
-    for (const [apiKeyId, creditsUsed] of Object.entries(grouped)) {
-      allApiKeyIds.add(apiKeyId);
-      monthTotals.set(apiKeyId, (monthTotals.get(apiKeyId) ?? 0) + creditsUsed);
+    for (const [group, creditsUsed] of Object.entries(day.credits)) {
+      binTotals.set(group, (binTotals.get(group) ?? 0) + creditsUsed);
     }
 
-    monthApiKeyTotals.set(monthStart, monthTotals);
+    binGroupTotals.set(binStart, binTotals);
   }
 
-  const nameMap = await lookupApiKeyNames([...allApiKeyIds]);
-  const monthStarts = [...monthApiKeyTotals.keys()].sort();
-  const results: HistoricalPeriodByApiKey[] = [];
+  const binStarts = [...binGroupTotals.keys()].sort();
+  const results: {
+    startDate: string;
+    endDate: string | null;
+    label: string;
+    creditsUsed: number;
+  }[] = [];
 
-  for (let i = 0; i < monthStarts.length; i++) {
-    const startDate = monthStarts[i];
-    const endDate = i < monthStarts.length - 1 ? nextMonthIso(startDate) : null;
-    const monthTotals = monthApiKeyTotals.get(startDate);
+  for (let i = 0; i < binStarts.length; i++) {
+    const startDate = binStarts[i];
+    const endDate =
+      i < binStarts.length - 1 ? nextBinIso(startDate, bin) : null;
+    const binTotals = binGroupTotals.get(startDate);
 
-    if (!monthTotals) continue;
+    if (!binTotals) continue;
 
-    // Collapse rows whose IDs resolve to the same display name (e.g. multiple
-    // unresolved IDs all show as "Unknown") so the response has one row per
-    // name per month.
-    const byName = new Map<string, number>();
-    for (const [apiKeyId, creditsUsed] of monthTotals) {
-      const name = nameMap[apiKeyId];
-      byName.set(name, (byName.get(name) ?? 0) + creditsUsed);
+    const byLabel = new Map<string, number>();
+    for (const [group, creditsUsed] of binTotals) {
+      const name = label(group);
+      byLabel.set(name, (byLabel.get(name) ?? 0) + creditsUsed);
     }
 
-    for (const [apiKey, creditsUsed] of [...byName.entries()].sort(([a], [b]) =>
+    for (const [name, creditsUsed] of [...byLabel.entries()].sort(([a], [b]) =>
       a.localeCompare(b),
     )) {
-      results.push({
-        startDate,
-        endDate,
-        apiKey,
-        creditsUsed,
-      });
+      results.push({ startDate, endDate, label: name, creditsUsed });
     }
   }
 
   return results;
+}
+
+async function aggregateHistoricalPeriodsByApiKey(
+  days: GroupedUsageDay[],
+  bin: HistoricalBin,
+): Promise<HistoricalPeriodByApiKey[]> {
+  const apiKeyIds = new Set(days.flatMap(day => Object.keys(day.credits)));
+  const nameMap = await lookupApiKeyNames([...apiKeyIds]);
+
+  return aggregateGroupedPeriods(days, bin, apiKeyId => nameMap[apiKeyId]).map(
+    ({ startDate, endDate, label, creditsUsed }) => ({
+      startDate,
+      endDate,
+      apiKey: label,
+      creditsUsed,
+    }),
+  );
+}
+
+function aggregateHistoricalPeriodsByEndpoint(
+  days: GroupedUsageDay[],
+  bin: HistoricalBin,
+): HistoricalPeriodByEndpoint[] {
+  return aggregateGroupedPeriods(
+    days,
+    bin,
+    endpoint => endpoint || "unknown",
+  ).map(({ startDate, endDate, label, creditsUsed }) => ({
+    startDate,
+    endDate,
+    endpoint: label,
+    creditsUsed,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +454,6 @@ export async function getTeamBalance(
 
   return {
     remaining: signedRemaining(creditBalance),
-    granted: creditBalance?.granted ?? 0,
     planCredits,
     usage: creditBalance?.usage ?? 0,
     unlimited: creditBalance?.unlimited ?? false,
@@ -364,17 +498,26 @@ interface HistoricalPeriodByApiKey {
   creditsUsed: number;
 }
 
+interface HistoricalPeriodByEndpoint {
+  startDate: string | null;
+  endDate: string | null;
+  endpoint: string;
+  creditsUsed: number;
+}
+
 /**
  * Fetches a team's historical credit usage across billing periods from Autumn.
  *
  * Scopes the aggregate to the team's Autumn entity so the response reflects
  * only that team's usage, not the whole org. Uses `events.aggregate` with the
  * last 90 days of daily usage and rolls those daily totals into calendar-month
- * buckets in API code. A team with no entity (never provisioned) has no
- * team-scoped usage, so we return an empty history rather than the org total.
+ * (or, with `bin` "day", daily) buckets in API code. A team with no entity
+ * (never provisioned) has no team-scoped usage, so we return an empty history
+ * rather than the org total.
  */
 export async function getTeamHistoricalUsage(
   teamId: string,
+  bin: HistoricalBin = "month",
 ): Promise<HistoricalPeriod[]> {
   if (!autumnClient) {
     throw new Error(
@@ -386,13 +529,16 @@ export async function getTeamHistoricalUsage(
 
   let response: any;
   try {
-    response = await autumnClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-    });
+    response = await autumnClient.events.aggregate(
+      {
+        customerId: orgId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        range: HISTORICAL_RANGE,
+        binSize: HISTORICAL_BIN_SIZE,
+      },
+      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
+    );
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;
@@ -400,19 +546,176 @@ export async function getTeamHistoricalUsage(
     return [];
   }
 
-  return aggregateHistoricalPeriodsByMonth(response.list ?? []);
+  return aggregateHistoricalPeriods(response.list ?? [], bin);
+}
+
+interface UsageSlice {
+  start: number;
+  end: number;
 }
 
 /**
- * Fetches a team's historical credit usage grouped by API key from Autumn.
- *
- * Uses the last 90 days of daily usage plus `groupBy: "properties.apiKeyId"`
- * and rolls those daily totals into calendar-month buckets in API code.
+ * The fixed 7-day slices covering `[windowStart, now]`, oldest first. They
+ * are aligned to the Unix epoch rather than to the window, so a slice keeps
+ * the same bounds (and cache key) while the window slides over it.
  */
-export async function getTeamHistoricalUsageByApiKey(
+function groupedSlices(windowStart: number, now: number): UsageSlice[] {
+  const slices: UsageSlice[] = [];
+  let start = Math.floor(windowStart / GROUPED_SLICE_MS) * GROUPED_SLICE_MS;
+  for (; start <= now; start += GROUPED_SLICE_MS) {
+    slices.push({ start, end: start + GROUPED_SLICE_MS });
+  }
+  return slices;
+}
+
+function sliceCacheKey(
+  grouping: UsageGrouping,
   teamId: string,
-): Promise<HistoricalPeriodByApiKey[]> {
-  if (!autumnClient) {
+  slice: UsageSlice,
+): string {
+  return `${grouping.cachePrefix}:${teamId}:${slice.start}`;
+}
+
+function isGroupedUsageDays(value: unknown): value is GroupedUsageDay[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      day =>
+        typeof day?.period === "number" &&
+        typeof day.credits === "object" &&
+        day.credits !== null &&
+        !Array.isArray(day.credits) &&
+        Object.values(day.credits).every(v => typeof v === "number"),
+    )
+  );
+}
+
+async function readCachedSlice(
+  grouping: UsageGrouping,
+  teamId: string,
+  slice: UsageSlice,
+): Promise<GroupedUsageDay[] | null> {
+  try {
+    const cached = await getValue(sliceCacheKey(grouping, teamId, slice));
+    if (cached === null) return null;
+    const parsed = JSON.parse(cached);
+    if (isGroupedUsageDays(parsed)) return parsed;
+    logger.warn("Ignoring malformed historical usage cache entry", {
+      teamId,
+      sliceStart: slice.start,
+    });
+  } catch (error) {
+    logger.warn("Failed to read historical usage cache", {
+      teamId,
+      sliceStart: slice.start,
+      error,
+    });
+  }
+  return null;
+}
+
+async function writeCachedSlice(
+  grouping: UsageGrouping,
+  teamId: string,
+  slice: UsageSlice,
+  days: GroupedUsageDay[],
+): Promise<void> {
+  try {
+    await setValue(
+      sliceCacheKey(grouping, teamId, slice),
+      JSON.stringify(days),
+      GROUPED_SLICE_CACHE_TTL_SECONDS,
+    );
+  } catch (error) {
+    logger.warn("Failed to cache historical usage slice", {
+      teamId,
+      sliceStart: slice.start,
+      error,
+    });
+  }
+}
+
+async function fetchGroupedUsageSlice(
+  client: NonNullable<typeof autumnClient>,
+  grouping: UsageGrouping,
+  orgId: string,
+  teamId: string,
+  slice: UsageSlice,
+  now: number,
+): Promise<GroupedUsageDay[]> {
+  const response: any = await client.events.aggregate(
+    {
+      customerId: orgId,
+      entityId: teamId,
+      featureId: grouping.featureId,
+      customRange: { start: slice.start, end: Math.min(slice.end, now) },
+      binSize: HISTORICAL_BIN_SIZE,
+      groupBy: grouping.groupBy,
+      maxGroups: GROUPED_MAX_GROUPS,
+    },
+    {
+      timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS,
+      ...GROUPED_RATE_LIMIT_RETRY,
+    },
+  );
+
+  const days: GroupedUsageDay[] = [];
+  for (const entry of response?.list ?? []) {
+    const period = new Date(entry.period).getTime();
+    // A bin outside the slice belongs to its neighbour, which counts it.
+    if (!(period >= slice.start && period < slice.end)) continue;
+
+    const credits = getGroupedCredits(entry, grouping);
+    if (credits) days.push({ period, credits });
+  }
+  return days;
+}
+
+/**
+ * Runs `fn` over `items` with at most `limit` calls in flight, keeping the
+ * results in input order. After the first failure no further item is started,
+ * and that failure is what rejects.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  let failed = false;
+
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await fn(items[index]);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
+}
+
+/**
+ * Fetches a team's daily usage over the 90 days up to now, from the start of
+ * that UTC day, grouped by the grouping's event property. The days come from
+ * 7-day slices (see `GROUPED_SLICE_MS`): the slice holding today is always
+ * asked for live and first, so a team with no entity answers 404 there and
+ * gets no days; settled slices come from the cache when they can.
+ */
+async function getTeamGroupedUsageDays(
+  teamId: string,
+  grouping: UsageGrouping,
+): Promise<GroupedUsageDay[]> {
+  const client = autumnClient;
+  if (!client) {
     throw new Error(
       "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
     );
@@ -420,16 +723,23 @@ export async function getTeamHistoricalUsageByApiKey(
 
   const orgId = await lookupOrgId(teamId);
 
-  let response: any;
+  const now = Date.now();
+  const windowStart =
+    Math.floor((now - HISTORICAL_WINDOW_MS) / DAY_MS) * DAY_MS;
+  const slices = groupedSlices(windowStart, now);
+  const currentSlice = slices[slices.length - 1];
+  const earlierSlices = slices.slice(0, -1);
+
+  let currentDays: GroupedUsageDay[];
   try {
-    response = await autumnClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-      groupBy: "properties.apiKeyId",
-    });
+    currentDays = await fetchGroupedUsageSlice(
+      client,
+      grouping,
+      orgId,
+      teamId,
+      currentSlice,
+      now,
+    );
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;
@@ -437,7 +747,62 @@ export async function getTeamHistoricalUsageByApiKey(
     return [];
   }
 
-  return aggregateHistoricalPeriodsByApiKeyMonth(response.list ?? []);
+  const earlierDays = await mapWithConcurrency(
+    earlierSlices,
+    GROUPED_SLICE_CONCURRENCY,
+    async slice => {
+      const settled = slice.end <= now - GROUPED_SLICE_SETTLE_MS;
+      if (settled) {
+        const cached = await readCachedSlice(grouping, teamId, slice);
+        if (cached !== null) return cached;
+      }
+
+      const days = await fetchGroupedUsageSlice(
+        client,
+        grouping,
+        orgId,
+        teamId,
+        slice,
+        now,
+      );
+      if (settled) await writeCachedSlice(grouping, teamId, slice, days);
+      return days;
+    },
+  );
+
+  return [...earlierDays.flat(), ...currentDays].filter(
+    day => day.period >= windowStart,
+  );
+}
+
+/**
+ * Fetches a team's historical credit usage grouped by API key from Autumn,
+ * rolled into calendar-month (or, with `bin` "day", daily) buckets.
+ */
+export async function getTeamHistoricalUsageByApiKey(
+  teamId: string,
+  bin: HistoricalBin = "month",
+): Promise<HistoricalPeriodByApiKey[]> {
+  return aggregateHistoricalPeriodsByApiKey(
+    await getTeamGroupedUsageDays(teamId, API_KEY_GROUPING),
+    bin,
+  );
+}
+
+/**
+ * Fetches a team's historical credit usage grouped by the endpoint that
+ * billed it (scrape, search, crawl, ...) from Autumn, rolled into
+ * calendar-month (or, with `bin` "day", daily) buckets. Unlike the totals
+ * and the byApiKey breakdown, it includes search usage.
+ */
+export async function getTeamHistoricalUsageByEndpoint(
+  teamId: string,
+  bin: HistoricalBin = "month",
+): Promise<HistoricalPeriodByEndpoint[]> {
+  return aggregateHistoricalPeriodsByEndpoint(
+    await getTeamGroupedUsageDays(teamId, ENDPOINT_GROUPING),
+    bin,
+  );
 }
 
 /**

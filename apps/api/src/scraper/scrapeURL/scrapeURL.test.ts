@@ -8,9 +8,10 @@ import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
+import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
-vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
+vi.mock("../../lib/html-to-markdown", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../../lib/html-to-markdown")>();
   return {
@@ -34,13 +35,99 @@ const testEnginesScreenshot: (Engine | undefined)[] = [
 ];
 
 describe("Standalone scrapeURL tests", () => {
+  it.each([
+    ["https://example.com/raw", "text/html; charset=utf-8"],
+    ["https://example.com/raw.pdf", "application/pdf"],
+    [
+      "https://example.com/raw.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
+  ])(
+    "returns rawBase64 through fire-engine Chrome for %s",
+    async (url, contentType) => {
+      const out = await scrapeURL(
+        "test:raw-base64",
+        url,
+        scrapeOptions.parse({
+          formats: ["rawBase64"],
+          useMock: "raw-base64",
+          fastMode: true,
+          blockAds: false,
+          proxy: "stealth",
+        }),
+        { forceEngine: "fetch", teamId: "test", orgId: null },
+        new CostTracking(),
+      );
+
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
+        expect(out.document).not.toHaveProperty("markdown");
+        expect(out.document).not.toHaveProperty("html");
+        expect(out.document).not.toHaveProperty("rawHtml");
+        expect(out.document.metadata.contentType).toBe(contentType);
+      }
+    },
+  );
+
+  it("rejects a rawBase64 engine response without file content", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-missing",
+      "https://example.com/raw-error",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+  });
+
+  it("returns the canonical agent-index-only error for rawBase64", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-agent-index-only",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { teamId: "test", orgId: null, agentIndexOnly: true },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(AgentIndexOnlyError);
+    }
+  });
+
+  it("rejects rawBase64 when minAge is set", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-min-age",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        minAge: 0,
+      }),
+      { teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(NoCachedDataError);
+    }
+  });
+
   describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
     it("Basic scrape", async () => {
       const out = await scrapeURL(
         "test:scrape-basic",
         "https://firecrawl-test-site.vercel.app",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -79,7 +166,7 @@ describe("Standalone scrapeURL tests", () => {
         scrapeOptions.parse({
           formats: ["markdown", "html"],
         }),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -104,7 +191,7 @@ describe("Standalone scrapeURL tests", () => {
         scrapeOptions.parse({
           onlyMainContent: false,
         }),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -128,7 +215,7 @@ describe("Standalone scrapeURL tests", () => {
           onlyMainContent: false,
           excludeTags: [".nav", "#footer", "strong"],
         }),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -149,7 +236,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-400",
         "https://httpstat.us/400",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -168,7 +255,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-401",
         "https://httpstat.us/401",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -187,7 +274,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-403",
         "https://httpstat.us/403",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -206,7 +293,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-404",
         "https://httpstat.us/404",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -225,7 +312,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-405",
         "https://httpstat.us/405",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -244,7 +331,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-500",
         "https://httpstat.us/500",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -263,7 +350,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-redirect",
         "https://scrapethissite.com/",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { forceEngine, teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -296,7 +383,7 @@ describe("Standalone scrapeURL tests", () => {
           scrapeOptions.parse({
             formats: ["screenshot"],
           }),
-          { forceEngine, teamId: "test" },
+          { forceEngine, teamId: "test", orgId: null },
           new CostTracking(),
         );
 
@@ -325,7 +412,7 @@ describe("Standalone scrapeURL tests", () => {
           scrapeOptions.parse({
             formats: ["screenshot@fullPage"],
           }),
-          { forceEngine, teamId: "test" },
+          { forceEngine, teamId: "test", orgId: null },
           new CostTracking(),
         );
 
@@ -354,7 +441,7 @@ describe("Standalone scrapeURL tests", () => {
       "test:scrape-pdf",
       "https://arxiv.org/pdf/astro-ph/9301001.pdf",
       scrapeOptions.parse({}),
-      { teamId: "test" },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
@@ -374,7 +461,7 @@ describe("Standalone scrapeURL tests", () => {
       "test:scrape-docx",
       "https://nvca.org/wp-content/uploads/2019/06/NVCA-Model-Document-Stock-Purchase-Agreement.docx",
       scrapeOptions.parse({}),
-      { teamId: "test" },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
@@ -396,7 +483,7 @@ describe("Standalone scrapeURL tests", () => {
       "test:scrape-xlsx",
       "https://download.microsoft.com/download/1/4/E/14EDED28-6C58-4055-A65C-23B4DA81C4DE/Financial%20Sample.xlsx",
       scrapeOptions.parse({}),
-      { teamId: "test" },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
@@ -437,7 +524,7 @@ describe("Standalone scrapeURL tests", () => {
           },
         },
       }),
-      { teamId: "test" },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
@@ -474,7 +561,7 @@ describe("Standalone scrapeURL tests", () => {
           },
         },
       }),
-      { teamId: "test" },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
@@ -501,7 +588,7 @@ describe("Standalone scrapeURL tests", () => {
         id,
         url,
         scrapeOptions.parse({}),
-        { teamId: "test" },
+        { teamId: "test", orgId: null },
         new CostTracking(),
       );
 
@@ -545,7 +632,7 @@ describe("Standalone scrapeURL tests", () => {
       scrapeOptions.parse({
         formats: ["rawHtml"],
       }),
-      { teamId: "sitemap" },
+      { teamId: "sitemap", orgId: null },
       new CostTracking(),
     );
 

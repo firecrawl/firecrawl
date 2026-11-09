@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
+import { shutdownTracing } from "../otel";
 import Express from "express";
 import { logger as _logger } from "../lib/logger";
 import {
@@ -16,9 +15,32 @@ const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-(async () => {
-  setSentryServiceTag("cclog-worker");
+async function sleepUntilNextMinute() {
+  const now = new Date();
+  const nextMinute = now.getTime() + getMsUntilNextMinute(now);
+  while (Date.now() < nextMinute) {
+    await sleep(nextMinute - Date.now());
+  }
+}
 
+async function sendHeartbeat() {
+  if (config.CCLOG_WORKER_HEARTBEAT_URL) {
+    try {
+      const response = await fetch(config.CCLOG_WORKER_HEARTBEAT_URL, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        _logger.warn("cclog heartbeat got non-OK response", {
+          status: response.status,
+        });
+      }
+    } catch (error) {
+      _logger.warn("Failed to send cclog heartbeat", { error });
+    }
+  }
+}
+
+(async () => {
   let isShuttingDown = false;
   let tickInFlight = false;
 
@@ -51,7 +73,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       await sleep(1000);
     }
 
-    server.close(() => {
+    server.close(async () => {
+      await shutdownTracing();
       _logger.info("cclog worker shut down");
       process.exit(0);
     });
@@ -65,7 +88,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   _logger.info("Waiting for next exact minute to start cclog worker", {
     waitMs: getMsUntilNextMinute(),
   });
-  await sleep(getMsUntilNextMinute());
+  await sleepUntilNextMinute();
 
   const redis = getRedisConnection();
 
@@ -88,6 +111,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
           at: at.toISOString(),
           ...summary,
         });
+        await sendHeartbeat();
       } else {
         _logger.info("Skipping cclog tick because another worker holds lock", {
           at: at.toISOString(),
@@ -100,7 +124,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     }
 
     if (!isShuttingDown) {
-      await sleep(getMsUntilNextMinute());
+      await sleepUntilNextMinute();
     }
   }
 })();

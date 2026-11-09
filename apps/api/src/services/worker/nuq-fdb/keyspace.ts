@@ -25,11 +25,13 @@ export const F_LISTENABLE = 4;
 export const F_ZDR = 8;
 export const F_COUNTABLE = 16; // mode === "single_urls": counted in group numeric stats
 export const F_GACC = 32; // participates in group remaining-count accounting
+export const F_KEY_GATED = 64; // holds an API-key slot while team-pending/queued/active
 
 // Where a pending job's queue entry lives, stored on its status record so
 // sweepers and removers can clear the exact key without scanning.
 export type PendingLoc =
   | { k: "tq"; s: number; p: number; c: number } // team-pending: shard, priority, createdAtMs
+  | { k: "kq"; p: number; c: number } // key-pending: priority, createdAtMs
   | { k: "gq"; p: number; c: number } // crawl-pending: priority, createdAtMs
   | { k: "dl"; at: number }; // delay index: notBeforeMs
 
@@ -38,6 +40,7 @@ export type JobMeta = {
   p: number; // priority
   o: string; // ownerId (normalized uuid)
   g?: string; // groupId
+  k?: string; // API key id (set only when key-gated)
   f: number; // flags
   to?: number; // backlog timesOutAt ms
   dc: number; // data chunk count
@@ -57,6 +60,7 @@ export type QueueEntry = {
   i: string; // jobId
   o: string; // ownerId
   g?: string; // groupId
+  k?: string; // API key id (set only when key-gated)
   p: number; // priority
   f: number; // flags
   c: number; // createdAt ms
@@ -202,6 +206,28 @@ export class NuqFdbKeyspace {
     return this.packRange(["t", tid, "q", shard]);
   }
 
+  // === API-key gate (sits between the crawl gate and the team gate)
+  keyLimit(kid: string): Buffer {
+    return this.pack(["k", kid, "limit"]);
+  }
+  keyActive(kid: string): Buffer {
+    return this.pack(["k", kid, "active"]);
+  }
+  keyPendingCount(kid: string): Buffer {
+    return this.pack(["k", kid, "qn"]);
+  }
+  keyPendingKey(
+    kid: string,
+    priority: number,
+    createdAtMs: number,
+    id: string,
+  ): Buffer {
+    return this.pack(["k", kid, "q", priority, createdAtMs, id]);
+  }
+  keyPendingRange(kid: string) {
+    return this.packRange(["k", kid, "q"]);
+  }
+
   // === Group (crawl) records
   groupMeta(gid: string): Buffer {
     return this.pack(["g", gid, "meta"]);
@@ -339,6 +365,12 @@ export class NuqFdbKeyspace {
   }
   taskTeamRaiseRange() {
     return this.packRange(["task", "traise"]);
+  }
+  taskKeyRaise(kid: string): Buffer {
+    return this.pack(["task", "kraise", kid]);
+  }
+  taskKeyRaiseRange() {
+    return this.packRange(["task", "kraise"]);
   }
   sweeperLock(): Buffer {
     return this.pack(["sweep", "lock"]);

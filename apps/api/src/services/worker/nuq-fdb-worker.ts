@@ -1,6 +1,5 @@
 import "dotenv/config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
+import "../../otel";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { getCrawl } from "../../lib/crawl-redis";
@@ -133,8 +132,6 @@ function startCrawlFinishedLoop() {
 }
 
 (async () => {
-  setSentryServiceTag("nuq-fdb-worker");
-
   let crawlFinishedLoop: ReturnType<typeof startCrawlFinishedLoop> | null =
     null;
 

@@ -4,11 +4,13 @@ import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.models.*;
 import okhttp3.OkHttpClient;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -150,6 +152,18 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testScrapeOptionsSerializesCheckPromptInjection() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ScrapeOptions options = ScrapeOptions.builder()
+                .checkPromptInjection(true)
+                .build();
+
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertTrue(options.toBuilder().build().getCheckPromptInjection());
+        assertFalse(mapper.convertValue(ScrapeOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
+    }
+
+    @Test
     void testBrowserExecuteRequiresSessionId() {
         FirecrawlClient client = FirecrawlClient.builder()
                 .apiKey("fc-test-key")
@@ -262,6 +276,79 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testPdfParserSerializesPageMarkers() throws Exception {
+        PdfParser parser = PdfParser.builder()
+                .mode("auto")
+                .pages(true)
+                .blocks(true)
+                .pageMarkers(true)
+                .build();
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(parser);
+
+        assertTrue(json.contains("\"type\":\"pdf\""));
+        assertTrue(json.contains("\"mode\":\"auto\""));
+        assertTrue(json.contains("\"pages\":true"));
+        assertTrue(json.contains("\"blocks\":true"));
+        assertTrue(json.contains("\"pageMarkers\":true"));
+    }
+
+    @Test
+    void testDocumentDeserializesPages() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"pages\":["
+                + "{\"pageNumber\":1,\"markdown\":\"# Cover\"},"
+                + "{\"pageNumber\":2,\"markdown\":\"## Intro\"}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getPages());
+        assertEquals(2, doc.getPages().size());
+        assertEquals(1, doc.getPages().get(0).getPageNumber());
+        assertEquals("# Cover", doc.getPages().get(0).getMarkdown());
+        assertEquals(2, doc.getPages().get(1).getPageNumber());
+        assertEquals("## Intro", doc.getPages().get(1).getMarkdown());
+    }
+
+    @Test
+    void testDocumentDeserializesBlocks() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"blocks\":[{"
+                + "\"pageNumber\":1,\"width\":1700,\"height\":2200,\"status\":\"ok\","
+                + "\"items\":[{\"id\":\"p1.b0\",\"type\":\"title\",\"label\":\"doc_title\","
+                + "\"bbox\":[0.118,0.054,0.882,0.092],\"content\":\"# Annual Report 2025\","
+                + "\"markdownSpan\":[0,21],\"readingOrder\":0,\"source\":\"native_text\","
+                + "\"confidence\":{\"layout\":0.97,\"ocr\":null}}]}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getBlocks());
+        assertEquals(1, doc.getBlocks().size());
+
+        PdfPageBlocks page = doc.getBlocks().get(0);
+        assertEquals(1, page.getPageNumber());
+        assertEquals(1700.0, page.getWidth());
+        assertEquals(2200.0, page.getHeight());
+        assertEquals("ok", page.getStatus());
+        assertEquals(1, page.getItems().size());
+
+        PdfBlockItem item = page.getItems().get(0);
+        assertEquals("p1.b0", item.getId());
+        assertEquals("title", item.getType());
+        assertEquals("doc_title", item.getLabel());
+        assertEquals(List.of(0.118, 0.054, 0.882, 0.092), item.getBbox());
+        assertEquals("# Annual Report 2025", item.getContent());
+        assertEquals(List.of(0, 21), item.getMarkdownSpan());
+        assertEquals(0, item.getReadingOrder());
+        assertEquals("native_text", item.getSource());
+        assertEquals(0.97, item.getConfidence().getLayout());
+        assertNull(item.getConfidence().getOcr());
+    }
+
+    @Test
     void testDocumentDeserializesMenu() throws Exception {
         String json = "{\"menu\":{"
                 + "\"isMenu\":true,"
@@ -318,6 +405,19 @@ class FirecrawlClientTest {
                 .build();
 
         assertTrue(options.getRedactPII());
+    }
+
+    @Test
+    void testParseOptionsSerializesCheckPromptInjection() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ParseOptions options = ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .checkPromptInjection(true)
+                .build();
+
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertTrue(options.toBuilder().build().getCheckPromptInjection());
+        assertFalse(mapper.convertValue(ParseOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
     }
 
     // ================================================================
@@ -416,5 +516,22 @@ class FirecrawlClientTest {
         assertNotNull(doc.getMarkdown());
         assertFalse(doc.getMarkdown().isEmpty());
         assertTrue(doc.getMarkdown().contains("Java SDK Parse E2E"));
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
+    void testGetParseFormatsE2E() {
+        FirecrawlClient client = FirecrawlClient.fromEnv();
+        List<ParseFormat> formats;
+        try {
+            formats = client.getParseFormats();
+        } catch (FirecrawlException e) {
+            Assumptions.assumeTrue(e.getStatusCode() != 404, "GET /v2/parse/formats is not deployed yet");
+            throw e;
+        }
+
+        assertFalse(formats.isEmpty());
+        assertTrue(formats.stream().anyMatch(f ->
+                "pdf".equals(f.getFormat()) && f.getKindType() == ParseFormat.Kind.DOCUMENT));
     }
 }

@@ -4,7 +4,12 @@ import {
   getComputedStyleCached,
   recordError,
 } from "./helpers";
+import { getLogoColors, LogoColor } from "./logo-colors";
 import { resolveSvgStyles } from "./svg-utils";
+import {
+  findDeclaredJsonLdLogo,
+  findLargestAppleTouchIcon,
+} from "./declared-marks";
 
 interface LogoCandidate {
   src: string;
@@ -25,7 +30,11 @@ interface LogoCandidate {
   href?: string;
   source: string;
   logoSvgScore: number;
+  /** The colors the logo is drawn in, most used first, when readable. */
+  colors?: LogoColor[];
 }
+
+const LOGO_COLOR_CANDIDATES = 10;
 
 interface ImageData {
   type: string;
@@ -40,32 +49,54 @@ export interface FindImagesResult {
 export const findImages = (): FindImagesResult => {
   const imgs: ImageData[] = [];
   const logoCandidates: LogoCandidate[] = [];
+  const candidateElements = new Map<LogoCandidate, Element>();
 
   const push = (src: string | undefined | null, type: string): void => {
     if (src) imgs.push({ type, src });
   };
 
-  const querySelectorAllIncludingShadowRoots = (
-    selector: string,
-  ): Element[] => {
-    const results: Element[] = [];
+  // Discover shadow roots once — walking every element per selector query is
+  // O(selectors × DOM) and stalls the renderer on large pages.
+  const allQueryRoots: Array<Document | ShadowRoot> = (() => {
+    const roots: Array<Document | ShadowRoot> = [];
     const seenRoots = new Set<Document | ShadowRoot>();
-    function walk(root: Document | ShadowRoot): void {
-      if (!root || seenRoots.has(root)) return;
+    const pending: Array<Document | ShadowRoot> = [document];
+    while (pending.length > 0) {
+      const root = pending.pop()!;
+      if (!root || seenRoots.has(root)) continue;
       seenRoots.add(root);
+      roots.push(root);
       try {
-        const list = root.querySelectorAll(selector);
-        list.forEach(el => results.push(el));
+        // Push discovered roots in reverse so pop() visits siblings in
+        // document order — preserving the previous recursive (pre-order DFS)
+        // traversal, which candidate dedup depends on for first-seen ties.
+        const discovered: ShadowRoot[] = [];
         root.querySelectorAll("*").forEach(el => {
-          if ((el as Element & { shadowRoot?: ShadowRoot }).shadowRoot) {
-            walk((el as Element & { shadowRoot: ShadowRoot }).shadowRoot);
-          }
+          const shadow = (el as Element & { shadowRoot?: ShadowRoot })
+            .shadowRoot;
+          if (shadow) discovered.push(shadow);
         });
+        for (let i = discovered.length - 1; i >= 0; i--) {
+          pending.push(discovered[i]);
+        }
       } catch (_) {
         // Ignore errors
       }
     }
-    walk(document);
+    return roots;
+  })();
+
+  const querySelectorAllIncludingShadowRoots = (
+    selector: string,
+  ): Element[] => {
+    const results: Element[] = [];
+    for (const root of allQueryRoots) {
+      try {
+        root.querySelectorAll(selector).forEach(el => results.push(el));
+      } catch (_) {
+        // Ignore errors
+      }
+    }
     return results;
   };
 
@@ -90,6 +121,24 @@ export const findImages = (): FindImagesResult => {
     )?.content,
     "twitter",
   );
+
+  // Declared brand marks — used server-side as a fallback when no logo is
+  // selected from the DOM. Sites explicitly declare these, so they're the
+  // most trustworthy signal available when heuristics/LLM come up empty.
+
+  // Largest apple-touch icon (square brand mark by convention).
+  try {
+    push(findLargestAppleTouchIcon(document), "apple-touch-icon");
+  } catch (_) {
+    // Ignore errors
+  }
+
+  // JSON-LD "logo" (Organization/WebSite/LocalBusiness structured data).
+  try {
+    push(findDeclaredJsonLdLogo(document), "logo-jsonld");
+  } catch (_) {
+    // Ignore errors
+  }
 
   const ensureSvgEncoded = (
     url: string | null | undefined,
@@ -885,6 +934,7 @@ export const findImages = (): FindImagesResult => {
       };
 
       logoCandidates.push(logoCandidate);
+      candidateElements.set(logoCandidate, el);
     }
   };
 
@@ -1031,12 +1081,9 @@ export const findImages = (): FindImagesResult => {
   const allElementsWithBg = Array.from(document.querySelectorAll("div, span"));
 
   const allDivsWithBgImage = allElementsWithBg.filter(el => {
-    const style = getComputedStyleCached(el);
-    const bgImage = style.getPropertyValue("background-image");
-    const bgImageUrl = extractBackgroundImageUrl(bgImage);
-
-    if (!bgImageUrl) return false;
-
+    // Cheap attribute/DOM checks first — reading computed style on every
+    // div/span forces style recalc across the page and stalls the renderer
+    // on style-heavy pages (e.g. lots of backdrop-filter).
     const className = el.className || "";
     const parentLink = el.closest("a");
 
@@ -1054,13 +1101,20 @@ export const findImages = (): FindImagesResult => {
     const inHeaderNavCheck =
       el.closest('header, nav, [role="banner"]') !== null;
 
-    return (
+    const hasLogoIndicators =
       hasLogoDataAttr ||
       hasLogoClass ||
       (hasLogoAriaLabel && hasHomeHrefCheck) ||
       (hasLogoAriaLabel && inHeaderNavCheck) ||
-      (hasHomeHrefCheck && inHeaderNavCheck)
-    );
+      (hasHomeHrefCheck && inHeaderNavCheck);
+
+    if (!hasLogoIndicators) return false;
+
+    const style = getComputedStyleCached(el);
+    const bgImage = style.getPropertyValue("background-image");
+    const bgImageUrl = extractBackgroundImageUrl(bgImage);
+
+    return !!bgImageUrl;
   });
 
   allDivsWithBgImage.forEach(el => {
@@ -1349,6 +1403,28 @@ export const findImages = (): FindImagesResult => {
       }
     }
   }
+
+  // Only the likeliest candidates (roughly the server's ranking in
+  // logo-selector): reading colors means painting each one.
+  const likelihood = (c: LogoCandidate): number =>
+    (c.indicators.hrefMatch ? 40 : 0) +
+    (c.indicators.inHeader ? 30 : 0) +
+    (c.location === "header" ? 20 : 0) +
+    (c.isVisible ? 15 : 0) +
+    (c.indicators.classMatch ? 10 : 0) +
+    (c.indicators.srcMatch ? 10 : 0) +
+    (c.indicators.altMatch ? 5 : 0) +
+    (c.source === "document.images" ? 15 : 0);
+  [...uniqueCandidates]
+    .sort((a, b) => likelihood(b) - likelihood(a))
+    .slice(0, LOGO_COLOR_CANDIDATES)
+    .forEach(candidate => {
+      const el = candidateElements.get(candidate);
+      const colors = el
+        ? getLogoColors(el, later => (candidate.colors = later))
+        : [];
+      if (colors.length > 0) candidate.colors = colors;
+    });
 
   return { images: imgs, logoCandidates: uniqueCandidates };
 };

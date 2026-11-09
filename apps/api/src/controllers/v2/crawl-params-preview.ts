@@ -5,12 +5,19 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
 const crawlParamsPreviewRequestSchema = z.object({
   url: z.url(),
   prompt: z.string().max(10000),
+  // Only keeps the preview's own LLM call out of traces, so unlike a crawl it
+  // needs no ZDR permission check.
+  zeroDataRetention: z.boolean().optional(),
 });
 
 type CrawlParamsPreviewRequest = z.infer<
@@ -46,10 +53,17 @@ export async function crawlParamsPreviewController(
   >,
   res: Response<CrawlParamsPreviewResponse>,
 ) {
+  // Same rule as a crawl: forced ZDR, the request's own flag, or Safe Mode
+  // lockdown. Read before parsing so a rejected body is still covered.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true ||
+    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     module: "api/v2",
     method: "crawlParamsPreviewController",
     teamId: req.auth.team_id,
+    zeroDataRetention,
   });
 
   try {
@@ -61,28 +75,38 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
-    // Build enhanced prompt with website structure
-    const { prompt: enhancedPrompt, websiteUrls } =
-      await buildPromptWithWebsiteStructure({
-        basePrompt: parsedBody.prompt,
-        url: parsedBody.url,
-        teamId: req.auth.team_id,
-        flags: req.acuc?.flags ?? null,
-        logger,
-        limit: 50,
-        includeSubdomains: true,
-        allowExternalLinks: false,
-        useIndex: true,
-        maxFireEngineResults: 500,
-      });
+    // The prompt and the discovered URLs end up in LLM telemetry, so keep
+    // this whole step out of traces for zero data retention teams.
+    const { extract, websiteUrls } = await withZeroDataRetention(
+      zeroDataRetention,
+      async () => {
+        // Build enhanced prompt with website structure
+        const { prompt: enhancedPrompt, websiteUrls } =
+          await buildPromptWithWebsiteStructure({
+            basePrompt: parsedBody.prompt,
+            url: parsedBody.url,
+            teamId: req.auth.team_id,
+            orgId: req.acuc?.org_id ?? null,
+            flags: req.acuc?.flags ?? null,
+            logger,
+            limit: 50,
+            includeSubdomains: true,
+            allowExternalLinks: false,
+            useIndex: true,
+            maxFireEngineResults: 500,
+          });
 
-    // Generate crawler options from enhanced prompt
-    const costTracking = new CostTracking();
-    const { extract } = await generateCrawlerOptionsFromPrompt(
-      enhancedPrompt,
-      logger,
-      costTracking,
-      { teamId: req.auth.team_id },
+        // Generate crawler options from enhanced prompt
+        const { extract } = await generateCrawlerOptionsFromPrompt(
+          enhancedPrompt,
+          logger,
+          new CostTracking(),
+          { teamId: req.auth.team_id },
+          zeroDataRetention,
+          req.acuc?.flags,
+        );
+        return { extract, websiteUrls };
+      },
     );
 
     const generatedOptions = extract || {};
@@ -125,6 +149,14 @@ export async function crawlParamsPreviewController(
       error: error.message,
       prompt: req.body.prompt,
     });
+
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
 
     return res.status(400).json({
       success: false,

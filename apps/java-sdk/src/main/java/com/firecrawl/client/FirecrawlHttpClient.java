@@ -174,15 +174,39 @@ class FirecrawlHttpClient {
     }
 
     /**
-     * Sends a GET request with full URL (for following next-page cursors).
+     * Sends a GET request to a next-page cursor URL, pinned to the API origin.
      */
-    <T> T getAbsolute(String absoluteUrl, Class<T> responseType) {
+    <T> T getAbsolute(String nextUrl, Class<T> responseType) {
         Request.Builder builder = new Request.Builder()
-                .url(absoluteUrl)
+                .url(pinToApiOrigin(baseUrl + "/", nextUrl))
                 .get();
         applyAuth(builder);
         Request request = builder.build();
         return executeWithRetry(request, responseType);
+    }
+
+    /**
+     * Resolves url against apiUrl and rewrites it onto apiUrl's scheme, host and port so
+     * credentials never leave the configured API origin. Path and query are kept; the
+     * fragment is dropped.
+     *
+     * @throws IllegalArgumentException if apiUrl is not an absolute http(s) URL
+     * @throws FirecrawlException if url cannot be resolved against apiUrl
+     */
+    static HttpUrl pinToApiOrigin(String apiUrl, String url) {
+        HttpUrl base = HttpUrl.get(apiUrl);
+        HttpUrl resolved = base.resolve(url);
+        if (resolved == null) {
+            throw new FirecrawlException("Invalid next page URL: " + url);
+        }
+        return resolved.newBuilder()
+                .scheme(base.scheme())
+                .encodedUsername(base.encodedUsername())
+                .encodedPassword(base.encodedPassword())
+                .host(base.host())
+                .port(base.port())
+                .fragment(null)
+                .build();
     }
 
     /**

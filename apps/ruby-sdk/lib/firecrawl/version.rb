@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 module Firecrawl
-  VERSION = "1.9.2"
+  VERSION = "1.17.8"
 end

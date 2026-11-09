@@ -4,6 +4,9 @@ export const CONSTANTS = {
   BUTTON_MIN_PADDING_VERTICAL: 3,
   BUTTON_MIN_PADDING_HORIZONTAL: 6,
   MAX_PARENT_TRAVERSAL: 5,
+  // Elements checked for buttons, and how many of them are kept (nearest the top first).
+  BUTTON_SCAN_LIMIT: 1500,
+  BUTTON_SAMPLE_LIMIT: 150,
   MAX_BACKGROUND_SAMPLES: 100,
   MIN_SIGNIFICANT_AREA: 1000,
   MIN_LARGE_CONTAINER_AREA: 10000,

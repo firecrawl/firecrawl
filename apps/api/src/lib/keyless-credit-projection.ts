@@ -27,6 +27,10 @@ export function projectScrapeCredits(
     credits = 10;
   }
 
+  if (options.checkPromptInjection) {
+    credits += 4;
+  }
+
   if (
     hasFormatOfType(options.formats, "question") ||
     hasFormatOfType(options.formats, "query")
@@ -54,14 +58,6 @@ export function projectScrapeCredits(
     credits += 4;
   }
 
-  if (
-    options.proxy === "stealth" ||
-    options.proxy === "enhanced" ||
-    options.proxy === "auto"
-  ) {
-    credits += 4;
-  }
-
   return credits;
 }
 
@@ -78,11 +74,14 @@ export function projectSearchTotalCredits(
     limit: number;
     enterprise?: ("default" | "anon" | "zdr")[];
     scrapeOptions?: ScrapeOptions;
+    freeSearch?: boolean;
   },
   flags: TeamFlags,
   zeroDataRetention: boolean,
 ): number {
-  const searchCredits = projectSearchCredits(params.limit, params.enterprise);
+  const searchCredits = params.freeSearch
+    ? 0
+    : projectSearchCredits(params.limit, params.enterprise);
   const shouldScrape =
     params.scrapeOptions?.formats && params.scrapeOptions.formats.length > 0;
   if (!shouldScrape || !params.scrapeOptions) return searchCredits;
