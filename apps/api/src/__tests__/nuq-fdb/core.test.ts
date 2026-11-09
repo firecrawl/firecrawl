@@ -159,7 +159,10 @@ describeIf("NuQ FDB core", () => {
     const doTn = vi.spyOn(getNuqFdbDatabase(), "doTn");
     try {
       await sweeper.sweepOnce();
-      expect(doTn.mock.calls.length).toBeLessThan(TIME_BUCKETS);
+      // one read per pass for a single idle queue, whatever
+      // NUQ_FDB_TIME_BUCKETS is: 4 time-bucketed scans (lease, backlog
+      // timeout, delayed, job expiry) + 5 task/expiry scans
+      expect(doTn).toHaveBeenCalledTimes(9);
     } finally {
       doTn.mockRestore();
     }
