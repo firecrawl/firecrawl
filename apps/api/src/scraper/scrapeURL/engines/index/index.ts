@@ -3,6 +3,7 @@ import { config } from "../../../../config";
 import { Document } from "../../../../controllers/v1/types";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
+import { postprocessors } from "../../postprocessors";
 import {
   getIndexFromGCS,
   hashURL,
@@ -642,7 +643,12 @@ export async function scrapeURLWithIndex(
       created_at: new Date(selectedRow.created_at),
     },
 
-    postprocessorsUsed: doc.postprocessorsUsed,
+    // The index holds the engine's HTML, not postprocessor output, so
+    // postprocessors must run again on a hit.
+    postprocessorsUsed: doc.postprocessorsUsed?.filter(
+      name =>
+        !postprocessors.some(postprocessor => postprocessor.name === name),
+    ),
 
     proxyUsed:
       doc.proxyUsed ??
