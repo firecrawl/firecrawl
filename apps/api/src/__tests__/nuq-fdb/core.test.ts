@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { vi } from "vitest";
 import { config } from "../../config";
 import {
   NuQFdbQueue,
@@ -120,6 +121,30 @@ describeIf("NuQ FDB core", () => {
     expect(await queue.jobFinish(id, job.lock!, { ok: 1 })).toBe(true);
     expect(await queue.jobFinish(id, job.lock!, { ok: 1 })).toBe(true);
     expect(await queue.jobFail(id, job.lock!, "nope")).toBe(false);
+  });
+
+  test("polling an idle queue costs one transaction once it has come back empty", async () => {
+    const { queue } = await makeCtx("idle-poll");
+    expect(await queue.getJobToProcess()).toBeNull();
+
+    const doTn = vi.spyOn(getNuqFdbDatabase(), "doTn");
+    try {
+      expect(await queue.getJobToProcess()).toBeNull();
+      expect(doTn).toHaveBeenCalledTimes(1);
+    } finally {
+      doTn.mockRestore();
+    }
+  });
+
+  test("a job enqueued after empty polls is taken on the next poll", async () => {
+    const { queue } = await makeCtx("idle-then-job");
+    expect(await queue.getJobToProcess()).toBeNull();
+    expect(await queue.getJobToProcess()).toBeNull();
+
+    const id = randomUUID();
+    await queue.addJob(id, scrapeData(), { ownerId: freshOwner() }, UNLIMITED);
+    const job = await queue.getJobToProcess();
+    expect(job?.id).toBe(id);
   });
 
   test("team concurrency gate: limit 2 admits 2, backlogs the rest, promotes on finish", async () => {
