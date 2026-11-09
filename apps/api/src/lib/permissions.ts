@@ -55,6 +55,20 @@ interface PermissionOptions {
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
+/** The refusal for static-IP egress ("us-whitelist") without the entitlement. */
+export function ipWhitelistRefusal(
+  flags: TeamFlags | null | undefined,
+  ...countries: unknown[]
+): string | undefined {
+  const needsWhitelist = countries.some(
+    value =>
+      typeof value === "string" && value.toLowerCase() === "us-whitelist",
+  );
+  return needsWhitelist && !flags?.ipWhitelist
+    ? `Static IP addresses are not enabled for your team. Contact ${SUPPORT_EMAIL} to get a dedicated set of IP addresses you can whitelist.`
+    : undefined;
+}
+
 export function checkPermissions(
   request: APIRequest,
   flags?: TeamFlags,
@@ -185,15 +199,13 @@ export function checkPermissions(
     return { error: usOnlyLocationError, code: "US_ONLY_UNAVAILABLE" };
   }
 
-  // ip whitelist perms
-  const needsWhitelist =
-    request.location?.country === "us-whitelist" ||
-    request.scrapeOptions?.location?.country === "us-whitelist";
-
-  if (needsWhitelist && !flags?.ipWhitelist) {
-    return {
-      error: `Static IP addresses are not enabled for your team. Contact ${SUPPORT_EMAIL} to get a dedicated set of IP addresses you can whitelist.`,
-    };
+  const ipWhitelistError = ipWhitelistRefusal(
+    flags,
+    request.location?.country,
+    request.scrapeOptions?.location?.country,
+  );
+  if (ipWhitelistError) {
+    return { error: ipWhitelistError };
   }
 
   return {};

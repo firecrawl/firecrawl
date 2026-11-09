@@ -47,7 +47,7 @@ import {
   isLockdownZeroDataRetention,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -331,6 +331,20 @@ async function searchControllerInner(
         success: false,
         code: "US_ONLY_UNAVAILABLE",
         error: usOnlyLocationError,
+      });
+    }
+
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
       });
     }
 
