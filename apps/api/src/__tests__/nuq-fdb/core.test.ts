@@ -4,13 +4,18 @@ import { config } from "../../config";
 import {
   NuQFdbQueue,
   NuQFdbJobGroup,
+  NuqFdbExternalSlots,
   NuqFdbSweeper,
 } from "../../services/worker/nuq-fdb";
 import {
   getNuqFdbDatabase,
   getFdb,
 } from "../../services/worker/nuq-fdb/client";
-import { encodeI64, encodeJson } from "../../services/worker/nuq-fdb/keyspace";
+import {
+  TIME_BUCKETS,
+  encodeI64,
+  encodeJson,
+} from "../../services/worker/nuq-fdb/keyspace";
 
 // These tests exercise the FDB queue core directly against a real FoundationDB
 // cluster (no API server needed). They are skipped when FDB is not configured.
@@ -145,6 +150,43 @@ describeIf("NuQ FDB core", () => {
     await queue.addJob(id, scrapeData(), { ownerId: freshOwner() }, UNLIMITED);
     const job = await queue.getJobToProcess();
     expect(job?.id).toBe(id);
+  });
+
+  test("an idle sweep does not open a transaction per time bucket", async () => {
+    const { queue } = await makeCtx("idle-sweep");
+    const sweeper = new NuqFdbSweeper([queue]);
+
+    const doTn = vi.spyOn(getNuqFdbDatabase(), "doTn");
+    try {
+      await sweeper.sweepOnce();
+      expect(doTn.mock.calls.length).toBeLessThan(TIME_BUCKETS);
+    } finally {
+      doTn.mockRestore();
+    }
+  });
+
+  test("an idle external-slot sweep reads every time bucket in one transaction", async () => {
+    const { queue } = await makeCtx("idle-slot-sweep");
+    const slots = new NuqFdbExternalSlots(queue.ks);
+
+    const doTn = vi.spyOn(getNuqFdbDatabase(), "doTn");
+    try {
+      await slots.sweepExpired(Date.now(), TIME_BUCKETS);
+      expect(doTn).toHaveBeenCalledTimes(1);
+    } finally {
+      doTn.mockRestore();
+    }
+  });
+
+  test("the slot sweep releases a slot whose holder stopped renewing", async () => {
+    const { queue } = await makeCtx("slot-expiry");
+    const slots = new NuqFdbExternalSlots(queue.ks);
+    const owner = freshOwner();
+    expect(await slots.acquire(owner, randomUUID(), 1_000)).toBe(true);
+    expect(await queue.getTeamActiveCount(owner)).toBe(1);
+
+    await slots.sweepExpired(Date.now() + 5_000, TIME_BUCKETS);
+    expect(await queue.getTeamActiveCount(owner)).toBe(0);
   });
 
   test("team concurrency gate: limit 2 admits 2, backlogs the rest, promotes on finish", async () => {
