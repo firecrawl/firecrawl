@@ -7,8 +7,8 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 /**
  * Default lifetime of a job's access row, used by writes that do not pass
  * their own `expiresAt` and as the fallback expiry where no row exists. It is
- * not every row's actual expiry: deep research writes a shorter TTL, and
- * crawl and batch scrape write a per-key `crawlTtlHours`.
+ * not every row's actual expiry: crawl and batch scrape write a per-key
+ * `crawlTtlHours`.
  */
 export const JOB_ACCESS_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -18,6 +18,8 @@ export function normalizeJobAccessTeamId(teamId: string): string {
   return persistedTeamId(teamId);
 }
 
+// llmstxt and deep_research have no writer; listing them keeps their remaining
+// rows readable, so a lookup by another kind answers not found, not an error.
 export const API_JOB_KINDS = [
   "scrape",
   "crawl",

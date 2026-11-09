@@ -17,10 +17,6 @@ import { extractStatusController } from "../controllers/v1/extract-status";
 import { creditUsageController } from "../controllers/v1/credit-usage";
 import { searchController } from "../controllers/v1/search";
 import { crawlErrorsController } from "../controllers/v1/crawl-errors";
-import { generateLLMsTextController } from "../controllers/v1/generate-llmstxt";
-import { generateLLMsTextStatusController } from "../controllers/v1/generate-llmstxt-status";
-import { deepResearchController } from "../controllers/v1/deep-research";
-import { deepResearchStatusController } from "../controllers/v1/deep-research-status";
 import { tokenUsageController } from "../controllers/v1/token-usage";
 import { ongoingCrawlsController } from "../controllers/v1/crawl-ongoing";
 import { fireclawController } from "../controllers/v1/fireclaw";
@@ -40,7 +36,10 @@ import { queueStatusController } from "../controllers/v1/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 
 import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 
 export const v1Router = express.Router();
 expressWs(express()).applyTo(v1Router);
@@ -169,36 +168,12 @@ v1Router.get(
   wrap(extractStatusController),
 );
 
-v1Router.post(
-  "/llmstxt",
-  authMiddleware(RateLimiterMode.Scrape),
-  deprecationMiddleware("v1_llmstxt"),
-  restrictedOptionsCountryCheck,
-  blocklistMiddleware,
-  wrap(generateLLMsTextController),
-);
-
-v1Router.get(
-  "/llmstxt/:jobId",
-  authMiddleware(RateLimiterMode.CrawlStatus),
-  deprecationMiddleware("v1_llmstxt_status"),
-  wrap(generateLLMsTextStatusController),
-);
-
-v1Router.post(
-  "/deep-research",
-  authMiddleware(RateLimiterMode.Crawl),
-  deprecationMiddleware("v1_deep_research"),
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
-  wrap(deepResearchController),
-);
-
+v1Router.post("/llmstxt", removedEndpointHandler("v1_llmstxt"));
+v1Router.get("/llmstxt/:jobId", removedEndpointHandler("v1_llmstxt_status"));
+v1Router.post("/deep-research", removedEndpointHandler("v1_deep_research"));
 v1Router.get(
   "/deep-research/:jobId",
-  authMiddleware(RateLimiterMode.CrawlStatus),
-  deprecationMiddleware("v1_deep_research_status"),
-  wrap(deepResearchStatusController),
+  removedEndpointHandler("v1_deep_research_status"),
 );
 
 // v1Router.post("/crawlWebsitePreview", crawlPreviewController);

@@ -6,9 +6,7 @@ import { logger as _logger } from "../../lib/logger";
 import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
 import { configDotenv } from "dotenv";
 import {
-  saveDeepResearchToGCS,
   saveExtractToGCS,
-  saveLlmsTxtToGCS,
   saveMapToGCS,
   saveScrapeToGCS,
   saveSearchToGCS,
@@ -416,8 +414,6 @@ type LoggedRequest = {
     | "batch_scrape"
     | "search"
     | "extract"
-    | "llmstxt"
-    | "deep_research"
     | "map"
     | "parse"
     | "agent"
@@ -1345,119 +1341,6 @@ async function logMapInternal(map: LoggedMap) {
 
   if (map.results && !map.zeroDataRetention) {
     await saveMapToGCS(map, logger);
-  }
-}
-
-export type LoggedLlmsTxt = {
-  id: string;
-  request_id: string;
-  url: string;
-  team_id: string;
-  options: any;
-  num_urls: number;
-  cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
-  credits_cost: number;
-  result: { llmstxt: string; llmsfulltxt: string };
-};
-
-export async function logLlmsTxt(llmsTxt: LoggedLlmsTxt) {
-  return withLogSpan(
-    {
-      operation: "llmstxt",
-      table: "llmstxts",
-      id: llmsTxt.id,
-      requestId: llmsTxt.request_id,
-    },
-    () => logLlmsTxtInternal(llmsTxt),
-  );
-}
-
-async function logLlmsTxtInternal(llmsTxt: LoggedLlmsTxt) {
-  const logger = _logger.child({
-    module: "log_job",
-    method: "logLlmsTxt",
-    llmsTxtId: llmsTxt.id,
-    requestId: llmsTxt.request_id,
-    teamId: llmsTxt.team_id,
-  });
-
-  await robustInsert(
-    "llmstxts",
-    {
-      id: llmsTxt.id,
-      request_id: llmsTxt.request_id,
-      url: llmsTxt.url,
-      team_id:
-        llmsTxt.team_id === "preview" || llmsTxt.team_id?.startsWith("preview_")
-          ? previewTeamId
-          : llmsTxt.team_id,
-      options: llmsTxt.options,
-      num_urls: llmsTxt.num_urls,
-      credits_cost: llmsTxt.credits_cost,
-      cost_tracking: llmsTxt.cost_tracking ?? null,
-    },
-    logger,
-  );
-
-  if (llmsTxt.result) {
-    await saveLlmsTxtToGCS(llmsTxt, logger);
-  }
-}
-
-export type LoggedDeepResearch = {
-  id: string;
-  request_id: string;
-  query: string;
-  team_id: string;
-  options: any;
-  time_taken: number;
-  credits_cost: number;
-  result: { finalAnalysis: string; sources: any; json: any };
-  cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
-};
-
-export async function logDeepResearch(deepResearch: LoggedDeepResearch) {
-  return withLogSpan(
-    {
-      operation: "deep_research",
-      table: "deep_researches",
-      id: deepResearch.id,
-      requestId: deepResearch.request_id,
-    },
-    () => logDeepResearchInternal(deepResearch),
-  );
-}
-
-async function logDeepResearchInternal(deepResearch: LoggedDeepResearch) {
-  const logger = _logger.child({
-    module: "log_job",
-    method: "logDeepResearch",
-    deepResearchId: deepResearch.id,
-    requestId: deepResearch.request_id,
-    teamId: deepResearch.team_id,
-  });
-
-  await robustInsert(
-    "deep_researches",
-    {
-      id: deepResearch.id,
-      request_id: deepResearch.request_id,
-      query: deepResearch.query,
-      team_id:
-        deepResearch.team_id === "preview" ||
-        deepResearch.team_id?.startsWith("preview_")
-          ? previewTeamId
-          : deepResearch.team_id,
-      options: deepResearch.options,
-      time_taken: deepResearch.time_taken,
-      credits_cost: deepResearch.credits_cost,
-      cost_tracking: deepResearch.cost_tracking ?? null,
-    },
-    logger,
-  );
-
-  if (deepResearch.result) {
-    await saveDeepResearchToGCS(deepResearch, logger);
   }
 }
 
