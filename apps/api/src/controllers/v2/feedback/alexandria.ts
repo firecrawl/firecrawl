@@ -7,7 +7,10 @@ import {
   getRecentAlexandriaCalls,
   hasRecentAlexandriaActivity,
 } from "../../../lib/alexandria-activity";
-import { verifyFeedbackToken } from "../../../lib/alexandria-feedback-token";
+import {
+  checkFeedbackToken,
+  type FeedbackTokenRejection,
+} from "../../../lib/alexandria-feedback-token";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
 import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
@@ -88,12 +91,16 @@ export async function recordAlexandriaFeedback(
   ];
   const calls = new Map<string, FeedbackCall>();
   let rejectedTokens = 0;
+  const rejectionReasons: Partial<Record<FeedbackTokenRejection, number>> = {};
   for (const token of submittedTokens) {
-    const claims = verifyFeedbackToken(token, teamId, now);
-    if (!claims) {
+    const checked = checkFeedbackToken(token, teamId, now);
+    if (!checked.claims) {
       rejectedTokens++;
+      rejectionReasons[checked.reason] =
+        (rejectionReasons[checked.reason] ?? 0) + 1;
       continue;
     }
+    const { claims } = checked;
     const key = JSON.stringify([
       claims.requestId,
       claims.provider,
@@ -108,6 +115,15 @@ export async function recordAlexandriaFeedback(
     });
   }
   const attribution = calls.size > 0 ? "token" : "window";
+  if (rejectedTokens > 0) {
+    logger.warn("Alexandria feedback tokens rejected", {
+      teamId,
+      submittedTokens: submittedTokens.length,
+      rejectedTokens,
+      reasons: rejectionReasons,
+      attribution,
+    });
+  }
 
   if (attribution === "window") {
     let withinWindow: boolean;
