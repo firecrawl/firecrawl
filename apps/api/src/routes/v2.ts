@@ -5,10 +5,7 @@ import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import {
-  researchCategoryNoticeMiddleware,
-  searchController,
-} from "../controllers/v2/search";
+import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -209,7 +206,6 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
-  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, {
     allowKeyless: true,
     allowAgentManagedKey: true,
