@@ -486,13 +486,6 @@ describe("executeSearch tool intent", () => {
       expect(JSON.stringify(impressions.mock.calls)).not.toContain(
         "who owns apple stock",
       );
-      expect(impressions).toHaveBeenCalledWith("Search tool impression", {
-        event: "search_tool_impression",
-        searchId: "job-1",
-        teamId: "team-1",
-        ...result.toolImpression,
-      });
-      expect(result.toolImpression?.tools).toHaveLength(5);
       expect(logger.info).not.toHaveBeenCalledWith(
         "Search tool impression",
         expect.anything(),

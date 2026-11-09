@@ -108,15 +108,6 @@ interface SearchContext {
   safeModeBypassed?: boolean;
 }
 
-interface SearchToolImpression {
-  auto: boolean;
-  fusion: { enabled: boolean; ran: boolean };
-  rewrite: "off" | "arrived" | "late" | "empty";
-  tools: { id: string; rank: number; source: "raw" | "rewrite" | "both" }[];
-  fitRejected: { semantic: number; domain: number };
-  exchangeRequestIds: { raw: string[]; rewrite: string[] };
-}
-
 interface SearchExecuteResult {
   /** Parts of the search a US-only team could not be served. */
   usOnlyWarning?: string;
@@ -126,8 +117,6 @@ interface SearchExecuteResult {
   toolsUnavailable?: boolean;
   /** Raw-query and rewrite tools were ranked together. */
   toolFusion: boolean;
-  /** Shape of the served tool list, set only when tools were served. */
-  toolImpression?: SearchToolImpression;
   /** Skill-card lookup returned the Exchange envelope, including an empty one. */
   skillsDiscovered?: boolean;
   response: SearchV2Response;
@@ -620,7 +609,6 @@ export async function executeSearch(
 
   const rewriteFound = (extra?.found.length ?? 0) > 0;
   const toolFusionRan = fuseTools && baseDiscovery !== null && rewriteFound;
-  let toolImpression: SearchToolImpression | undefined;
   if (searchResponse.tools?.length) {
     const rawKeys = new Set(rawTools?.items.map(toolKey));
     const fitKeys = new Set(extra?.items.map(toolKey));
@@ -630,7 +618,11 @@ export async function executeSearch(
     const semanticKeys = new Set(
       extra?.found.slice(0, extra.semanticMatches).map(toolKey),
     );
-    toolImpression = {
+    // Root logger: the request logger carries the query, and this line records shape only.
+    rootLogger.info("Search tool impression", {
+      event: "search_tool_impression",
+      searchId: context.jobId,
+      teamId,
       auto: toolsAuto,
       fusion: { enabled: fuseTools, ran: toolFusionRan },
       rewrite: !extraDiscovery
@@ -660,13 +652,6 @@ export async function executeSearch(
         raw: [...toolRequestIds.raw.sent],
         rewrite: [...toolRequestIds.rewrite.sent],
       },
-    };
-    // Root logger: the request logger carries the query, and this line records shape only.
-    rootLogger.info("Search tool impression", {
-      event: "search_tool_impression",
-      searchId: context.jobId,
-      teamId,
-      ...toolImpression,
     });
   }
 
@@ -841,7 +826,6 @@ export async function executeSearch(
     toolsUnavailable,
     toolsAuto,
     toolFusion: toolFusionRan,
-    toolImpression,
     skillsDiscovered,
     totalResultsCount,
     // Counted from the final response — after scraping and highlights — so it
