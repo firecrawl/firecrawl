@@ -236,6 +236,101 @@ describe("WebCrawler", () => {
       expect(res.links).toContain("https://external.com/page");
     });
 
+    it("should reject an external front page when allowExternalContentLinks is true", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: true,
+        allowSubdomains: false,
+      });
+
+      const links = [
+        "https://example.com/page",
+        "https://external.com",
+        "https://external.com/deep/page",
+      ];
+
+      const res = await crawler["filterLinks"](links, 10, 10);
+      expect(res.links).toEqual([
+        "https://example.com/page",
+        "https://external.com/deep/page",
+      ]);
+      expect(res.denialReasons.has("https://external.com")).toBe(true);
+    });
+
+    it("should reject an external front page spelled with only slashes", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: true,
+        allowSubdomains: false,
+      });
+
+      const res = await crawler["filterLinks"](
+        ["https://external.com//"],
+        10,
+        10,
+      );
+      expect(res.links).toEqual([]);
+      expect(res.denialReasons.has("https://external.com//")).toBe(true);
+    });
+
+    it("should reject a subdomain front page when only external links are allowed", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: true,
+        allowSubdomains: false,
+      });
+
+      const res = await crawler["filterLinks"](
+        ["https://sub.example.com", "https://sub.example.com/page"],
+        10,
+        10,
+      );
+      expect(res.links).toEqual(["https://sub.example.com/page"]);
+      expect(res.denialReasons.has("https://sub.example.com")).toBe(true);
+    });
+
+    it("should reject an external link when the base left the initial host", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: true,
+        allowSubdomains: false,
+      });
+      // A redirect moved the crawl base to another host. The native filter
+      // only admits an external link while the starting URL still sits in
+      // that base scope, so the external branch has to close here too.
+      crawler.setBaseUrl("https://elsewhere.com/landing");
+
+      const res = await crawler["filterLinks"](
+        ["https://external.com/deep/page"],
+        10,
+        10,
+      );
+      expect(res.links).toEqual([]);
+      expect(res.denialReasons.has("https://external.com/deep/page")).toBe(
+        true,
+      );
+    });
+
+    it("should allow a subdomain front page when allowSubdomains is true", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: false,
+        allowSubdomains: true,
+      });
+
+      const res = await crawler["filterLinks"](
+        ["https://sub.example.com"],
+        10,
+        10,
+      );
+      expect(res.links).toEqual(["https://sub.example.com"]);
+    });
+
     it("should allow subdomain links when allowSubdomains is true", async () => {
       crawler = new WebCrawler({
         jobId: "TEST",
@@ -269,7 +364,9 @@ describe("WebCrawler", () => {
       );
 
       expect(res.links).toEqual([]);
-      const reason = res.denialReasons.get("https://example.com/image.png#top")!;
+      const reason = res.denialReasons.get(
+        "https://example.com/image.png#top",
+      )!;
       expect(reason).toContain('".png"');
       expect(reason).not.toContain("#top");
     });

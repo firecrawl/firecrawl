@@ -275,7 +275,12 @@ export class WebCrawler {
             );
             break;
           case "FILE_TYPE":
-            const extension = key.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
+            const extension = key
+              .split("?")[0]
+              .split("#")[0]
+              .split(".")
+              .pop()
+              ?.toLowerCase();
             fancyDenialReasons.set(
               key,
               `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
@@ -421,16 +426,35 @@ export class WebCrawler {
         const isSubdomain = linkHostname.endsWith(`.${initialHostname}`);
 
         if (!isSameHost) {
-          if (!this.allowExternalContentLinks) {
-            if (this.allowSubdomains && isSubdomain) {
-              // Subdomain allowed when allowSubdomains is true
-            } else {
-              if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-                this.logger.debug(`${link} HOST SCOPE FAIL`);
-              }
-              denialReasons.set(link, DenialReason.EXTERNAL_LINK);
-              return false;
+          // Mirror the native filter, which admits a cross-host link from one
+          // of two places. allowExternalContentLinks only covers an external
+          // page below the root, and only while the crawl's starting URL is
+          // still inside the base scope; a redirect that moved the base
+          // elsewhere closes that door again. A subdomain is instead gated on
+          // allowSubdomains alone, with no front page restriction.
+          const isExternalMainPage =
+            normalizedLink.pathname.split("/").filter(segment => segment !== "")
+              .length === 0;
+          let initialInBaseScope = true;
+          try {
+            initialInBaseScope =
+              new URL(this.baseUrl).hostname.replace(/^www\./, "") ===
+              initialHostname;
+          } catch (_) {
+            // An unparsable base leaves the external check to the flag alone.
+          }
+          const allowedAsExternal =
+            initialInBaseScope &&
+            this.allowExternalContentLinks &&
+            !isExternalMainPage;
+          const allowedAsSubdomain = this.allowSubdomains && isSubdomain;
+
+          if (!allowedAsExternal && !allowedAsSubdomain) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+              this.logger.debug(`${link} HOST SCOPE FAIL`);
             }
+            denialReasons.set(link, DenialReason.EXTERNAL_LINK);
+            return false;
           }
         }
 
@@ -466,7 +490,12 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} FILE FAIL`);
           }
-          const extension = link.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
+          const extension = link
+            .split("?")[0]
+            .split("#")[0]
+            .split(".")
+            .pop()
+            ?.toLowerCase();
           denialReasons.set(
             link,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
