@@ -12,7 +12,7 @@ from ..types import (
     WebhookConfig, CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
 )
 from ..utils import FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
-from ..utils.error_handler import CrawlJobTimeoutError
+from ..utils.error_handler import CrawlJobFailedError, CrawlJobTimeoutError
 from ..utils.normalize import normalize_document_input
 
 
@@ -438,9 +438,7 @@ def wait_for_crawl_completion(
             return crawl_job
         if crawl_job.status in ["failed", "cancelled"]:
             if raise_on_failure:
-                raise FirecrawlError(
-                    f"Crawl job {job_id} ended with status '{crawl_job.status}'"
-                )
+                raise CrawlJobFailedError(crawl_job)
             return crawl_job
         
         # Check timeout

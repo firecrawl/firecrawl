@@ -313,7 +313,8 @@ def wait_for_batch_completion(
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
         raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
-            Defaults to False to preserve the historical return behavior.
+            Defaults to False; when disabled, the terminal job (including partial data)
+            is returned for both successful and unsuccessful terminal states.
         
     Returns:
         BatchScrapeJob with the terminal status and available data
@@ -373,7 +374,8 @@ def batch_scrape(
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
         raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
-            Defaults to False for backward compatibility.
+            Defaults to False for backward compatibility. When disabled, failed and
+            cancelled jobs are returned with their available partial data.
         
     Returns:
         BatchScrapeJob with the terminal status and available data

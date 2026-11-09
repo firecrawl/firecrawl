@@ -21,6 +21,7 @@ from .v2.types import (
     ExchangeSearchResult,
 )
 from .v2.utils.error_handler import (
+    CrawlJobFailedError,
     CrawlJobTimeoutError,
     FirecrawlError,
     BadRequestError,
@@ -113,6 +114,7 @@ __all__ = [
     'AlexandriaScrapeData',
     'AlexandriaScrapeResult',
     'ExchangeSearchResult',
+    'CrawlJobFailedError',
     'CrawlJobTimeoutError',
     'FirecrawlError',
     'BadRequestError',
