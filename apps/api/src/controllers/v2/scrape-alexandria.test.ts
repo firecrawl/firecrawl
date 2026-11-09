@@ -373,6 +373,23 @@ it("executes with supplied arguments but stores only tool identifiers in activit
   });
 });
 
+it("logs each call's provenance and keeps it out of the response", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      { ...call, provenance: "workflows_programs", creditsCost: 0, data: {} },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call] });
+  expect(response.status).toBe(200);
+  expect(response.body.data.alexandria[0]).not.toHaveProperty("provenance");
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  expect(mocks.scrapeLog.mock.calls[0][0].options.alexandria[0]).toEqual(
+    expect.objectContaining({ provenance: "workflows_programs" }),
+  );
+});
+
 it("logs each call's own outcome code and credits in request order", async () => {
   const other = { provider: "sec", capability: "filings/search", options: {} };
   const answer = result([
