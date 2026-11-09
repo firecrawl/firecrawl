@@ -78,6 +78,25 @@ class RequestTimeoutError(FirecrawlError):
     pass
 
 
+class CrawlJobFailedError(FirecrawlError):
+    """Raised when a crawl job ends in a failed or cancelled state.
+
+    The original job is retained so callers can inspect its ID, terminal status,
+    and any partial results returned by the API.
+    """
+
+    def __init__(self, job: Any):
+        job_id = getattr(job, "id", None)
+        status = getattr(job, "status", None)
+        super().__init__(f"Crawl job {job_id} ended with status '{status}'")
+        self.job = job
+        self.job_id = job_id
+        self.status = status
+
+    def __reduce__(self):
+        return (type(self), (self.job,))
+
+
 class CrawlJobTimeoutError(TimeoutError):
     """Raised when a crawl job does not finish within the wait timeout.
 

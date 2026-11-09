@@ -716,11 +716,14 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
+        raise_on_failure: bool = False,
     ) -> CrawlJob:
         """
         Start a crawl job and wait for it to complete.
 
         Args:
+            raise_on_failure: Raise FirecrawlError if the crawl ends as failed or
+                cancelled. Defaults to False for backward compatibility.
             url: Target URL to start crawling from
             prompt: Optional prompt to guide the crawl
             exclude_paths: Patterns of URLs to exclude
@@ -773,7 +776,8 @@ class FirecrawlClient:
 
         Raises:
             ValueError: If request is invalid
-            Exception: If the crawl fails to start or complete
+            CrawlJobFailedError: If raise_on_failure is True and the job ends as failed
+                or cancelled; the exception retains the terminal job and partial data.
             TimeoutError: If timeout is reached
         """
         if scrape_options is None:
@@ -828,6 +832,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             request_timeout=request_timeout,
+            raise_on_failure=raise_on_failure,
         )
     
     def start_crawl(
@@ -991,6 +996,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         *,
         request_timeout: Optional[float] = None,
+        raise_on_failure: bool = False,
     ) -> CrawlJob:
         """
         Poll a crawl job until it reaches a terminal state.
@@ -1000,11 +1006,15 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait for the whole job (None waits indefinitely)
             request_timeout: Optional timeout (in seconds) for each status request
+            raise_on_failure: Raise CrawlJobFailedError for failed or cancelled jobs.
+                Defaults to False, which returns the terminal job as before.
 
         Returns:
             CrawlJob in a terminal state ("completed", "failed", or "cancelled")
 
         Raises:
+            CrawlJobFailedError: If raise_on_failure is True and the job fails or is cancelled.
+                The exception exposes job_id, status, and the original job (including partial data).
             CrawlJobTimeoutError: If the job does not finish within timeout (a
                 ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``)
         """
@@ -1014,6 +1024,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             request_timeout=request_timeout,
+            raise_on_failure=raise_on_failure,
         )
 
     def get_crawl_status(
@@ -1980,9 +1991,14 @@ class FirecrawlClient:
         idempotency_key: Optional[str] = None,
         poll_interval: int = 2,
         wait_timeout: Optional[int] = None,
+        raise_on_failure: bool = False,
     ):
         """
         Start a batch scrape job and wait until completion.
+
+        Args:
+            raise_on_failure: Raise FirecrawlError if the job ends as failed or
+                cancelled. Defaults to False for backward compatibility.
         """
         options = ScrapeOptions(
             **{k: v for k, v in dict(
@@ -2025,5 +2041,6 @@ class FirecrawlClient:
             idempotency_key=idempotency_key,
             poll_interval=poll_interval,
             timeout=wait_timeout,
+            raise_on_failure=raise_on_failure,
         )
     

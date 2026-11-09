@@ -28,6 +28,7 @@ from .v2.types import (
     ExchangeSearchResult,
 )
 from .v2.utils.error_handler import (
+    CrawlJobFailedError,
     CrawlJobTimeoutError,
     FirecrawlError,
     BadRequestError,
@@ -127,6 +128,7 @@ __all__ = [
     'collect_feedback_tokens',
     'AlexandriaScrapeResult',
     'ExchangeSearchResult',
+    'CrawlJobFailedError',
     'CrawlJobTimeoutError',
     'FirecrawlError',
     'BadRequestError',
