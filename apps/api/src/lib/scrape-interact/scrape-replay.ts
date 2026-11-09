@@ -201,12 +201,16 @@ export function estimateReplayTimeoutSeconds(
 // Generate the Playwright replay script
 // ---------------------------------------------------------------------------
 
+const REPLAY_FAILURE_MARKER = "[firecrawl-replay-failure]";
+
 /** The failed replay step and its first error line, read from the replay's stderr. */
 export function replayFailureReason(stderr: string | undefined) {
-  return stderr
-    ?.match(
-      /(?:Failed to load scrape URL|Replay action #\d+ \([^)]*\)): [^\n]*/,
-    )?.[0]
+  const start = stderr?.indexOf(REPLAY_FAILURE_MARKER) ?? -1;
+  if (start < 0) return undefined;
+  return stderr!
+    .slice(start + REPLAY_FAILURE_MARKER.length)
+    .split("\n")[0]
+    .trim()
     .slice(0, 300);
 }
 
@@ -217,7 +221,7 @@ const replay = ${payload};
 
 const failReplay = (step, error) => {
   const reason = error instanceof Error ? error.message : String(error ?? "unknown error");
-  throw new Error(\`\${step}: \${reason}\`);
+  throw new Error(\`${REPLAY_FAILURE_MARKER} \${step}: \${reason}\`);
 };
 
 const listReplayPages = () => page.context().pages().filter(candidate => !candidate.isClosed());
