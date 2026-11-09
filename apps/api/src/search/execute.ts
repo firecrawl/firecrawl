@@ -233,6 +233,10 @@ export async function executeSearch(
       ? inferToolIntent(query, logger)
       : null;
   const fuseTools = wantsTools && options.toolFusion === true;
+  const toolRequestIds = {
+    raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
+    rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
+  };
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -253,7 +257,7 @@ export async function executeSearch(
                   ? []
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
-              requestId: `${context.jobId}:tools:rewrite`,
+              exchangeRequestIds: toolRequestIds.rewrite,
             },
             logger,
           );
@@ -281,7 +285,6 @@ export async function executeSearch(
             found: found.items,
             semanticMatches: found.semanticMatches,
             usOnlyExcluded: found.usOnlyExcluded ?? 0,
-            requestIds: found.requestIds ?? [],
           };
         })
         .catch(() => null)
@@ -304,7 +307,7 @@ export async function executeSearch(
                     resolveToolUrls = resolve;
                   }),
             timeoutMs: options.timeout,
-            requestId: `${context.jobId}:tools:raw`,
+            exchangeRequestIds: toolRequestIds.raw,
           },
           logger,
         )
@@ -604,7 +607,8 @@ export async function executeSearch(
     }
   }
 
-  const toolFusionRan = fuseTools && baseDiscovery !== null && extra !== null;
+  const rewriteFound = (extra?.found.length ?? 0) > 0;
+  const toolFusionRan = fuseTools && baseDiscovery !== null && rewriteFound;
   if (searchResponse.tools?.length) {
     const rawKeys = new Set(rawTools?.items.map(toolKey));
     const fitKeys = new Set(extra?.items.map(toolKey));
@@ -614,8 +618,8 @@ export async function executeSearch(
     const semanticKeys = new Set(
       extra?.found.slice(0, extra.semanticMatches).map(toolKey),
     );
-    // Shape only, never the query: joins Exchange's find_tools_impression by request id.
-    logger.info("Search tool impression", {
+    // Root logger: the request logger carries the query, and this line records shape only.
+    rootLogger.info("Search tool impression", {
       event: "search_tool_impression",
       searchId: context.jobId,
       teamId,
@@ -623,7 +627,7 @@ export async function executeSearch(
       fusion: { enabled: fuseTools, ran: toolFusionRan },
       rewrite: !extraDiscovery
         ? "off"
-        : extra
+        : rewriteFound
           ? "arrived"
           : rewriteLate
             ? "late"
@@ -645,8 +649,8 @@ export async function executeSearch(
           .length,
       },
       exchangeRequestIds: {
-        raw: rawTools?.requestIds ?? [],
-        rewrite: extra?.requestIds ?? [],
+        raw: [...toolRequestIds.raw.sent],
+        rewrite: [...toolRequestIds.rewrite.sent],
       },
     });
   }

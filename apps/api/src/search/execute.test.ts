@@ -76,6 +76,11 @@ vi.mock("./safe-search", () => ({
 
 import { executeSearch } from "./execute";
 import { searchRequestSchema } from "../controllers/v2/types";
+import { logger as rootLogger } from "../lib/logger";
+
+const impressions = vi
+  .spyOn(rootLogger, "info")
+  .mockImplementation(() => rootLogger);
 
 const logger = {
   info: vi.fn(),
@@ -416,8 +421,14 @@ describe("executeSearch tool intent", () => {
     it("logs the served tools with their rank, source and fit rejections", async () => {
       mocks.inferToolIntent.mockResolvedValue(intent);
       mocks.discoverTools.mockImplementation(
-        async (input: { queries?: string[]; requestId?: string }) => ({
-          ...(input.queries?.[0] === "who owns apple stock"
+        async (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          return input.queries?.[0] === "who owns apple stock"
             ? {
                 items: [tool("a"), tool("b"), tool("c"), tool("domain")],
                 semanticMatches: 3,
@@ -425,9 +436,8 @@ describe("executeSearch tool intent", () => {
             : {
                 items: [tool("x"), tool("c"), tool("y"), tool("site")],
                 semanticMatches: 3,
-              }),
-          requestIds: [`${input.requestId}:1`],
-        }),
+              };
+        },
       );
       mocks.verifyTools.mockImplementation(async (_query, items) =>
         items.filter(
@@ -438,14 +448,22 @@ describe("executeSearch tool intent", () => {
       const result = await fused("who owns apple stock");
       expect(result.toolFusion).toBe(true);
       expect(mocks.discoverTools).toHaveBeenCalledWith(
-        expect.objectContaining({ requestId: "job-1:tools:raw" }),
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:raw",
+          }),
+        }),
         logger,
       );
       expect(mocks.discoverTools).toHaveBeenCalledWith(
-        expect.objectContaining({ requestId: "job-1:tools:rewrite" }),
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:rewrite",
+          }),
+        }),
         logger,
       );
-      expect(logger.info).toHaveBeenCalledWith("Search tool impression", {
+      expect(impressions).toHaveBeenCalledWith("Search tool impression", {
         event: "search_tool_impression",
         searchId: "job-1",
         teamId: "team-1",
@@ -465,10 +483,32 @@ describe("executeSearch tool intent", () => {
           rewrite: ["job-1:tools:rewrite:1"],
         },
       });
-      const impression = logger.info.mock.calls.find(
-        ([message]: [string]) => message === "Search tool impression",
+      expect(JSON.stringify(impressions.mock.calls)).not.toContain(
+        "who owns apple stock",
       );
-      expect(JSON.stringify(impression)).not.toContain("who owns apple stock");
+      expect(logger.info).not.toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.anything(),
+      );
+    });
+
+    it("reports no fusion when the rewrite found no tools", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a")], semanticMatches: 1 }
+            : { items: [], semanticMatches: 0 },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.toolFusion).toBe(false);
+      expect(impressions).toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.objectContaining({
+          fusion: { enabled: true, ran: false },
+          rewrite: "empty",
+        }),
+      );
     });
 
     it("drops rewrite-only tools the fit check rejects", async () => {
@@ -508,10 +548,18 @@ describe("executeSearch tool intent", () => {
 
     it("waits up to the configured cap past the raw lookup for rewrite tools", async () => {
       mocks.inferToolIntent.mockResolvedValue(intent);
-      mocks.discoverTools.mockImplementation((input: { queries?: string[] }) =>
-        input.queries?.[0] === "who owns apple stock"
-          ? Promise.resolve({ items: [tool("a")], semanticMatches: 1 })
-          : new Promise(() => {}),
+      mocks.discoverTools.mockImplementation(
+        (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          if (input.queries?.[0] === "who owns apple stock")
+            return Promise.resolve({ items: [tool("a")], semanticMatches: 1 });
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          return new Promise(() => {});
+        },
       );
       vi.useFakeTimers();
       try {
@@ -525,12 +573,16 @@ describe("executeSearch tool intent", () => {
         const result = await pending;
         expect(result.response.tools).toEqual([tool("a")]);
         expect(result.toolFusion).toBe(false);
-        expect(logger.info).toHaveBeenCalledWith(
+        expect(impressions).toHaveBeenCalledWith(
           "Search tool impression",
           expect.objectContaining({
             fusion: { enabled: true, ran: false },
             rewrite: "late",
             tools: [{ id: "a/data/get", rank: 1, source: "raw" }],
+            exchangeRequestIds: {
+              raw: [],
+              rewrite: ["job-1:tools:rewrite:1"],
+            },
           }),
         );
       } finally {
@@ -548,7 +600,7 @@ describe("executeSearch tool intent", () => {
     );
     expect(mocks.inferToolIntent).not.toHaveBeenCalled();
     expect(mocks.discoverTools).not.toHaveBeenCalled();
-    expect(logger.info).not.toHaveBeenCalledWith(
+    expect(impressions).not.toHaveBeenCalledWith(
       "Search tool impression",
       expect.anything(),
     );

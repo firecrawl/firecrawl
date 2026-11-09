@@ -289,15 +289,19 @@ it("numbers each lookup's Exchange request id from the caller's prefix", async (
     status: 200,
     body: { success: true, creditsCost: 0, data: { items: [tool] } },
   });
-  const result = await discoverTools(
-    { ...input, queries: ["first", "second"], requestId: "search-1:tools:raw" },
+  const exchangeRequestIds = {
+    prefix: "search-1:tools:raw",
+    sent: [] as string[],
+  };
+  await discoverTools(
+    { ...input, queries: ["first", "second"], exchangeRequestIds },
     logger,
   );
   expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([
     "search-1:tools:raw:1",
     "search-1:tools:raw:2",
   ]);
-  expect(result.requestIds?.sort()).toEqual([
+  expect(exchangeRequestIds.sent.sort()).toEqual([
     "search-1:tools:raw:1",
     "search-1:tools:raw:2",
   ]);
@@ -308,7 +312,6 @@ it("sends no request id when the caller passes none", async () => {
     status: 200,
     body: { success: true, creditsCost: 0, data: { items: [tool] } },
   });
-  const result = await discoverTools(input, logger);
+  await discoverTools(input, logger);
   expect(request.mock.calls[0][0].requestId).toBeUndefined();
-  expect(result).not.toHaveProperty("requestIds");
 });
