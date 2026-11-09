@@ -7,6 +7,7 @@ module Firecrawl
       FIELDS = %i[
         sources categories include_domains exclude_domains limit tbs location country
         ignore_invalid_urls timeout highlights scrape_options integration enterprise
+        domain_tools tool_detail
       ].freeze
 
       attr_reader(*FIELDS)
@@ -18,6 +19,8 @@ module Firecrawl
       def to_h
         {
           "sources" => sources,
+          "domainTools" => domain_tools,
+          "toolDetail" => tool_detail,
           "categories" => categories,
           "includeDomains" => include_domains,
           "excludeDomains" => exclude_domains,
