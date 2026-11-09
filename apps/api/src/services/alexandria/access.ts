@@ -11,6 +11,7 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { getACUCTeam } from "../../controllers/auth";
+import { logger } from "../../lib/logger";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -43,6 +44,7 @@ export async function authorizeProviders(
   billingCountry?: string,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
+  let failure: unknown;
   const response = await exchangeRequest({
     teamId,
     path: "/v1/provider-terms/requirements",
@@ -50,7 +52,10 @@ export async function authorizeProviders(
     timeoutMs: 10000,
     clientIp,
     billingCountry,
-  }).catch(() => undefined);
+  }).catch(error => {
+    failure = error;
+    return undefined;
+  });
   if (response?.status === 404)
     return refusal(404, "Unknown provider. No provider was executed.", {
       code: "unknown_provider",
@@ -66,11 +71,38 @@ export async function authorizeProviders(
     !parsed?.success ||
     answered.size !== providers.length ||
     providers.some(provider => !answered.has(provider))
-  )
+  ) {
+    logger.warn("Exchange provider requirements unavailable", {
+      providers,
+      ...(response === undefined
+        ? {
+            error:
+              failure instanceof Error
+                ? `${failure.name}: ${failure.message}`
+                : String(failure),
+          }
+        : response.status !== 200
+          ? { status: response.status }
+          : parsed?.success === false
+            ? {
+                issues: parsed.error.issues.map(
+                  issue => `${issue.path.join(".")}: ${issue.code}`,
+                ),
+              }
+            : {
+                missingProviders: providers.filter(
+                  provider => !answered.has(provider),
+                ),
+                unexpectedProviders: [...answered].filter(
+                  provider => !providers.includes(provider),
+                ),
+              }),
+    });
     return refusal(
       503,
       "Provider agreements are unavailable. No provider was executed.",
     );
+  }
   if (config.USE_DB_AUTHENTICATION !== true) return undefined;
 
   let ledger: Map<string, LedgerAcceptance> | undefined;
