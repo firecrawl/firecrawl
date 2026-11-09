@@ -23,6 +23,7 @@ import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
 } from "./exchange";
+import { logger } from "./logger";
 
 vi.mock("undici", () => ({
   fetch: vi.fn(),
@@ -1062,10 +1063,23 @@ describe("Exchange tool feedback forward", () => {
   });
 
   it("posts the rating and its calls with the internal secret and team header", async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 202 } as Awaited<
-      ReturnType<typeof fetch>
-    >);
+    const info = vi.spyOn(logger, "info");
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () => JSON.stringify({ success: true, outcome: "counted" }),
+    } as unknown as Awaited<ReturnType<typeof fetch>>);
     await forwardExchangeToolFeedback(feedback);
+    expect(info).toHaveBeenCalledWith(
+      "Exchange tool feedback recorded",
+      expect.objectContaining({
+        feedbackId: feedback.feedbackId,
+        outcome: "counted",
+        attribution: "token",
+        calls: 1,
+      }),
+    );
+    info.mockRestore();
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
       "https://exchange.example/v1/tool-feedback",
       expect.objectContaining({
