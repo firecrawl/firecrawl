@@ -201,6 +201,15 @@ export function estimateReplayTimeoutSeconds(
 // Generate the Playwright replay script
 // ---------------------------------------------------------------------------
 
+/** The failed replay step and its first error line, read from the replay's stderr. */
+export function replayFailureReason(stderr: string | undefined) {
+  return stderr
+    ?.match(
+      /(?:Failed to load scrape URL|Replay action #\d+ \([^)]*\)): [^\n]*/,
+    )?.[0]
+    .slice(0, 300);
+}
+
 export function buildReplayScript(context: ScrapeReplayContext): string {
   const payload = JSON.stringify(context);
   return `
