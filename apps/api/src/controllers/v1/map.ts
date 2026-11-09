@@ -424,6 +424,7 @@ export async function mapController(
         limit: req.body.limit,
         ignoreSitemap: req.body.ignoreSitemap,
         includeSubdomains: req.body.includeSubdomains,
+        allowExternalLinks: req.body.allowExternalLinks,
         crawlerOptions: req.body,
         origin: req.body.origin,
         teamId: req.auth.team_id,
