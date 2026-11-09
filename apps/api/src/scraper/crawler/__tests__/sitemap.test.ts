@@ -50,6 +50,16 @@ describe("parseSitemapUrl", () => {
     );
   });
 
+  it("should not resolve a malformed scheme-like entry against the base URL", () => {
+    // `ht^tps://evil.example/x` is not a URL the parser accepts, but it looks
+    // like an absolute one. Resolving it as a path keeps a bogus host in the
+    // crawl: it would come back as https://example.com/ht^tps://evil.example/x
+    // and pass the host check because the host really is the base host.
+    expect(parseSitemapUrl("ht^tps://evil.example/x", "https://example.com/")).toBeNull();
+    expect(parseSitemapUrl("example.com:80/page", "https://example.com/")).not.toBeNull();
+    expect(parseSitemapUrl("only-a-path/page", "https://example.com/")).not.toBeNull();
+  });
+
   it("should safely process mixed list without throwing when some entries are malformed", () => {
     const rawUrls = [
       "https://example.com/valid-1",

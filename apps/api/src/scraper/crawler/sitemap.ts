@@ -138,6 +138,19 @@ export function parseSitemapUrl(
   try {
     return new URL(trimmed);
   } catch (_) {
+    // An entry that looks like an absolute URL but does not parse is broken,
+    // not a path. Resolving it against the base keeps its bogus host in the
+    // crawl as a path on the base host — `ht^tps://evil.example/x` becomes
+    // https://example.com/ht%5Etps://evil.example/x — and it then passes the
+    // host check.
+    if (looksLikeAbsoluteUrl(trimmed)) {
+      logger?.warn("Skipping malformed sitemap URL", {
+        url: urlStr,
+        baseUrl,
+      });
+      return null;
+    }
+
     if (baseUrl) {
       try {
         return new URL(trimmed, baseUrl);
@@ -151,6 +164,17 @@ export function parseSitemapUrl(
     });
     return null;
   }
+}
+
+// An absolute URL names a scheme before any path separator. A scheme can only
+// contain letters, digits, `+`, `-` and `.`, so `a:b` and `a/b:c` differ; the
+// loose form here is deliberately wider than the grammar, because the point is
+// to catch entries that were meant to be absolute and are broken, not to
+// validate a scheme.
+function looksLikeAbsoluteUrl(value: string): boolean {
+  const separator = value.indexOf("/");
+  const head = separator === -1 ? value : value.slice(0, separator);
+  return head.includes(":");
 }
 
 export async function scrapeSitemap(
