@@ -12,7 +12,7 @@ const {
   mockResendSend: vi.fn(),
 }));
 
-vi.mock("../monitoring/email_recipients", async (importOriginal) => {
+vi.mock("../monitoring/email_recipients", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../monitoring/email_recipients")>();
   return {
@@ -237,7 +237,10 @@ describe("sendMonitoringEmailSummary", () => {
     pages: Array<{
       status: string;
       meaningful?: boolean | null;
+      url?: string;
+      reason?: string;
     }>;
+    judgeEnabled?: boolean;
   }) {
     return {
       monitor: {
@@ -245,7 +248,10 @@ describe("sendMonitoringEmailSummary", () => {
         team_id: "team-1",
         name: "Test",
         goal: opts.goal ?? null,
-        judge_enabled: Boolean(opts.goal),
+        judge_enabled:
+          opts.judgeEnabled !== undefined
+            ? opts.judgeEnabled
+            : Boolean(opts.goal),
         notification: opts.emailEnabled
           ? {
               email: {
@@ -263,7 +269,7 @@ describe("sendMonitoringEmailSummary", () => {
         error_count: opts.pages.filter(p => p.status === "error").length,
       } as any,
       pages: opts.pages.map((p, i) => ({
-        url: `https://example.com/${i}`,
+        url: p.url ?? `https://example.com/${i}`,
         status: p.status,
         judgment:
           p.meaningful === null || p.meaningful === undefined
@@ -271,7 +277,7 @@ describe("sendMonitoringEmailSummary", () => {
             : {
                 meaningful: p.meaningful,
                 confidence: "high" as const,
-                reason: "test",
+                reason: p.reason ?? "test",
                 fields: [],
               },
       })),
@@ -347,17 +353,204 @@ describe("sendMonitoringEmailSummary", () => {
     });
 
     it("fails open when changed-page list is truncated (would otherwise suppress)", async () => {
+      // Only noise is visible. Delivery depends on the truncated changed_count:
+      // a complete all-noise list would be suppressed.
       const args = buildArgs({
         goal: "track price changes",
         emailEnabled: true,
         pages: [
-          { status: "changed", meaningful: false },
-          { status: "changed", meaningful: false },
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/clock",
+            reason: "Only the timestamp moved",
+          },
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/ads",
+            reason: "A recommended link rotated",
+          },
         ],
       });
       (args.check as any).changed_count = 50;
       const result = await sendMonitoringEmailSummary(args);
       expect(result.attempted).toBe(true);
+      expect(mockResendSend).toHaveBeenCalled();
+    });
+
+    it("hides window noise without quoting it as the full changed total", async () => {
+      const args = buildArgs({
+        goal: "track price changes",
+        emailEnabled: true,
+        pages: [
+          {
+            status: "changed",
+            meaningful: true,
+            url: "https://example.com/price",
+            reason: "Pro price changed",
+          },
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/clock",
+            reason: "Only the timestamp moved",
+          },
+        ],
+      });
+      (args.check as any).changed_count = 50;
+      const result = await sendMonitoringEmailSummary(args);
+      expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).toContain("https://example.com/price");
+      expect(html).not.toContain("https://example.com/clock");
+      expect(html).toContain("Changed: 50 (1 meaningful)");
+      expect(html).not.toContain("noise omitted");
+      expect(html).not.toContain("0 noise");
+    });
+
+    function sentHtml(): string {
+      expect(mockResendSend).toHaveBeenCalled();
+      return mockResendSend.mock.calls[0][0].html as string;
+    }
+
+    it("omits noise-judged changed pages from a mixed alert and keeps the tally honest", async () => {
+      const result = await sendMonitoringEmailSummary(
+        buildArgs({
+          goal: "track price changes",
+          emailEnabled: true,
+          pages: [
+            {
+              status: "changed",
+              meaningful: true,
+              url: "https://example.com/price",
+              reason: "Pro price changed",
+            },
+            {
+              status: "changed",
+              meaningful: false,
+              url: "https://example.com/clock",
+              reason: "Only the timestamp moved",
+            },
+            {
+              status: "changed",
+              meaningful: null,
+              url: "https://example.com/unjudged",
+            },
+            {
+              status: "new",
+              meaningful: false,
+              url: "https://example.com/new-page",
+              reason: "A new page stays even when judged noise",
+            },
+            {
+              status: "removed",
+              meaningful: false,
+              url: "https://example.com/removed-page",
+              reason: "A removed page stays even when judged noise",
+            },
+            {
+              status: "error",
+              meaningful: false,
+              url: "https://example.com/error-page",
+              reason: "An error page stays even when judged noise",
+            },
+          ],
+        }),
+      );
+      expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).toContain("https://example.com/price");
+      expect(html).toContain("Pro price changed");
+      expect(html).toContain("https://example.com/unjudged");
+      expect(html).toContain("https://example.com/new-page");
+      expect(html).toContain("A new page stays even when judged noise");
+      expect(html).toContain("https://example.com/removed-page");
+      expect(html).toContain("A removed page stays even when judged noise");
+      expect(html).toContain("https://example.com/error-page");
+      expect(html).toContain("An error page stays even when judged noise");
+      expect(html).not.toContain("https://example.com/clock");
+      expect(html).not.toContain("Only the timestamp moved");
+      expect(html).toContain("[noise]");
+      expect(html).toContain(
+        "Changed: 3 (1 meaningful, 3 noise, 1 noise omitted)",
+      );
+      expect(html).toContain("New: 1");
+      expect(html).toContain("Removed: 1");
+      expect(html).toContain("Errors: 1");
+      expect(html).toContain("Top pages:");
+    });
+
+    it("does not list noise pages or an empty page heading when only unseen activity remains", async () => {
+      const args = buildArgs({
+        goal: "track price changes",
+        emailEnabled: true,
+        pages: [
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/clock",
+            reason: "Only the timestamp moved",
+          },
+        ],
+      });
+      // The page window is entirely noise, but the check counters report new
+      // pages outside that window, so the email still sends.
+      (args.check as { new_count: number }).new_count = 2;
+      const result = await sendMonitoringEmailSummary(args);
+      expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).not.toContain("https://example.com/clock");
+      expect(html).not.toContain("Top pages:");
+      expect(html).toContain("Changed: 1 (0 meaningful, 1 noise omitted)");
+      expect(html).toContain("New: 2");
+    });
+
+    it("still lists noise pages when judging is disabled", async () => {
+      const result = await sendMonitoringEmailSummary(
+        buildArgs({
+          goal: "track price changes",
+          judgeEnabled: false,
+          emailEnabled: true,
+          pages: [
+            {
+              status: "changed",
+              meaningful: false,
+              url: "https://example.com/clock",
+              reason: "Only the timestamp moved",
+            },
+          ],
+        }),
+      );
+      expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).toContain("https://example.com/clock");
+      expect(html).toContain("Only the timestamp moved");
+      expect(html).toContain("[noise]");
+      expect(html).toContain("Changed: 1 (0 meaningful, 1 noise)");
+      expect(html).not.toContain("noise omitted");
+    });
+
+    it("still lists noise pages when the goal is empty", async () => {
+      const result = await sendMonitoringEmailSummary(
+        buildArgs({
+          goal: "",
+          judgeEnabled: true,
+          emailEnabled: true,
+          pages: [
+            {
+              status: "changed",
+              meaningful: false,
+              url: "https://example.com/clock",
+              reason: "Only the timestamp moved",
+            },
+          ],
+        }),
+      );
+      expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).toContain("https://example.com/clock");
+      expect(html).not.toContain("noise omitted");
     });
 
     it("fails open when counters report new/error pages beyond the truncated list", async () => {
