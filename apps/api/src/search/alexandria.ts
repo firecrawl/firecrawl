@@ -20,6 +20,8 @@ type ToolDiscovery = {
   unavailable?: true;
   /** How many leading items the semantic lookup found; the rest matched by domain only. */
   semanticMatches: number;
+  /** Exchange request ids of the find-tools lookups, set when the caller passed a requestId. */
+  requestIds?: string[];
 };
 
 type SourceLike = string | { type: string };
@@ -87,6 +89,8 @@ export async function discoverTools(
     connectors?: boolean;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    /** Prefix for each find-tools lookup's Exchange request id, so its impression joins this discovery. */
+    requestId?: string;
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -97,15 +101,22 @@ export async function discoverTools(
   let answered = 0;
   // Lookups can hide the same tools, so the largest count is reported.
   let usOnlyExcluded = 0;
+  const requestIds: string[] = [];
   const remaining = (deadline: number) => {
     if (Date.now() >= deadline) throw new Error("Tool discovery timed out");
     return deadline - Date.now();
   };
   const lookup = async (options: Record<string, unknown>, deadline: number) => {
+    const timeoutMs = remaining(deadline);
+    const requestId = input.requestId
+      ? `${input.requestId}:${requestIds.length + 1}`
+      : undefined;
+    if (requestId) requestIds.push(requestId);
     const result = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
-      timeoutMs: remaining(deadline),
+      requestId,
+      timeoutMs,
       maximumCredits: 0,
       connectors: input.connectors === true,
       usOnly: input.usOnly === true,
@@ -326,6 +337,7 @@ export async function discoverTools(
         : tool,
     ),
     semanticMatches,
+    ...(requestIds.length ? { requestIds } : {}),
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),

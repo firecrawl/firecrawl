@@ -283,3 +283,32 @@ it("reports no hidden tools when the Exchange hid nothing", async () => {
   expect(result.items).toHaveLength(1);
   expect(result).not.toHaveProperty("usOnlyExcluded");
 });
+
+it("numbers each lookup's Exchange request id from the caller's prefix", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools(
+    { ...input, queries: ["first", "second"], requestId: "search-1:tools:raw" },
+    logger,
+  );
+  expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+  expect(result.requestIds?.sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+});
+
+it("sends no request id when the caller passes none", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools(input, logger);
+  expect(request.mock.calls[0][0].requestId).toBeUndefined();
+  expect(result).not.toHaveProperty("requestIds");
+});

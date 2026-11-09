@@ -716,6 +716,7 @@ async function searchControllerInner(
       markAlexandriaActivity(req.auth.team_id);
     }
     if (result.response.tools) {
+      setSpanAttributes(span, { "search.tool_fusion": result.toolFusion });
       recordDiscoveredTools(
         req.auth.team_id,
         result.toolsAuto ? "auto_search" : "search",
