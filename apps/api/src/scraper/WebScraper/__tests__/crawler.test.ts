@@ -254,6 +254,26 @@ describe("WebCrawler", () => {
       expect(res.links).toContain("https://sub.example.com/page");
     });
 
+    it("should name the file extension without the fragment in the denial reason", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        allowExternalContentLinks: false,
+        allowSubdomains: false,
+      });
+
+      const res = await crawler["filterLinks"](
+        ["https://example.com/image.png#top"],
+        10,
+        10,
+      );
+
+      expect(res.links).toEqual([]);
+      const reason = res.denialReasons.get("https://example.com/image.png#top")!;
+      expect(reason).toContain('".png"');
+      expect(reason).not.toContain("#top");
+    });
+
     it("should identify files with fragment hashes in isFile", () => {
       crawler = new WebCrawler({
         jobId: "TEST",

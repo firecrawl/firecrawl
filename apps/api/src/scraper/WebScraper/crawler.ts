@@ -275,7 +275,7 @@ export class WebCrawler {
             );
             break;
           case "FILE_TYPE":
-            const extension = key.split("?")[0].split(".").pop()?.toLowerCase();
+            const extension = key.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
             fancyDenialReasons.set(
               key,
               `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
@@ -466,7 +466,7 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} FILE FAIL`);
           }
-          const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
+          const extension = link.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
           denialReasons.set(
             link,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
