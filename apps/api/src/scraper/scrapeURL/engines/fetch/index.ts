@@ -9,6 +9,7 @@ import {
   InsecureConnectionError,
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
+import { buildHeadersWithUserAgent } from "../../lib/user-agent";
 import { TextDecoder } from "util";
 
 function decodeHtmlBuffer(
@@ -157,7 +158,7 @@ export async function scrapeURLWithFetch(
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
         dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
-        headers: meta.options.headers,
+        headers: buildHeadersWithUserAgent(meta.options.headers),
         signal: meta.abort.asSignal(),
       });
 
