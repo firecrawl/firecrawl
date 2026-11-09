@@ -205,7 +205,7 @@ const REPLAY_FAILURE_MARKER = "[firecrawl-replay-failure]";
 
 /** The failed replay step and its first error line, read from the replay's stderr. */
 export function replayFailureReason(stderr: string | undefined) {
-  const start = stderr?.indexOf(REPLAY_FAILURE_MARKER) ?? -1;
+  const start = stderr?.lastIndexOf(REPLAY_FAILURE_MARKER) ?? -1;
   if (start < 0) return undefined;
   return stderr!
     .slice(start + REPLAY_FAILURE_MARKER.length)
