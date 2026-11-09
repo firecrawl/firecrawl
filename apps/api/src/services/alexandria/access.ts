@@ -75,6 +75,7 @@ export async function authorizeProviders(
     return refusal(
       503,
       "Provider agreements are unavailable. No provider was executed.",
+      { code: "precheck_unavailable", retryable: true },
     );
   if (config.USE_DB_AUTHENTICATION !== true) return undefined;
 

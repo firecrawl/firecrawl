@@ -85,6 +85,9 @@ const hash = (value: unknown) =>
 export const exchangeRequestId = (teamId: string, requestId: string) =>
   hash([teamId, requestId]);
 
+const isCatalogueRead = (call: ProviderCall) =>
+  call.provider === "firecrawl" && call.capability === "find-tools";
+
 const unresolved = (chargeId: string) =>
   refusal(
     503,
@@ -194,6 +197,66 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
+  // A catalogue read is free and idempotent, so it skips the replay claim, the agreement and
+  // quote lookups and the credit hold, and goes to Exchange with a zero budget. Exchange quotes
+  // against that budget itself and refuses with credit_budget_exceeded should the read ever carry
+  // a price, in which case the full path below runs.
+  const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
+  if (
+    input.calls.every(isCatalogueRead) &&
+    (!firecrawlAccess || firecrawlAccess.status === "enabled")
+  ) {
+    const read = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve",
+      body: { requests: input.calls },
+      timeoutMs: input.timeoutMs,
+      requestId: id,
+      clientIp: input.clientIp,
+      billingCountry: input.billingCountry,
+      connectors: input.flags?.exchangeRetrieve === true,
+      ...(input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
+      maximumCredits: 0,
+      retryConnection: true,
+    }).catch(error => {
+      logger.warn("Catalogue read unavailable", { error, chargeId: id });
+      return undefined;
+    });
+    if (!read || read.status >= 500 || read.status < 200)
+      return notExecuted(
+        refusal(
+          503,
+          "Provider request is unavailable. No provider was executed.",
+          { code: "provider_unavailable", retryable: true },
+        ),
+      );
+    const code = (read.body as { code?: unknown } | null)?.code;
+    if (read.status === 200) {
+      const parsed = answerSchema.safeParse(read.body);
+      if (parsed.success && parsed.data.creditsCost === 0)
+        return {
+          status: 200,
+          body: parsed.data,
+          executed: true,
+          scrapeId: input.scrapeId,
+        };
+      logger.error("Catalogue read answered with a cost or a malformed body", {
+        chargeId: id,
+      });
+      return notExecuted(
+        refusal(
+          502,
+          "Provider answer was malformed. No provider was executed.",
+        ),
+      );
+    }
+    if (code !== "credit_budget_exceeded")
+      return { ...relay(read), executed: true, scrapeId: input.scrapeId };
+  }
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
@@ -318,14 +381,33 @@ export async function retrieveProviders(input: {
   };
 
   try {
-    const denied = await authorizeProviders(
-      input.teamId,
-      input.calls,
-      input.flags,
-      input.orgId,
-      input.clientIp,
-      input.billingCountry,
-    );
+    // The agreement lookup and the quote are independent reads of Exchange, so they run
+    // together; a refusal still applies in the same order as before.
+    const [denied, quote] = await Promise.all([
+      authorizeProviders(
+        input.teamId,
+        input.calls,
+        input.flags,
+        input.orgId,
+        input.clientIp,
+        input.billingCountry,
+      ),
+      exchangeRequest({
+        teamId: input.teamId,
+        path: "/v1/retrieve/quote",
+        body: { requests: input.calls },
+        timeoutMs: Math.min(10000, remaining()),
+        retryConnection: true,
+        clientIp: input.clientIp,
+        billingCountry: input.billingCountry,
+        connectors: input.flags?.exchangeRetrieve === true,
+        ...(zeroDataRetention ? { zeroDataRetention } : {}),
+        ...(usOnly ? { usOnly } : {}),
+      }).catch(error => {
+        logger.warn("Provider quote unavailable", { error, chargeId: id });
+        return undefined;
+      }),
+    ]);
     if (denied) return refuse(denied);
 
     for (const [index, provider] of INDEX_PROVIDERS) {
@@ -369,26 +451,12 @@ export async function retrieveProviders(input: {
       indexReleases.push(indexBudget.release);
     }
 
-    const quote = await exchangeRequest({
-      teamId: input.teamId,
-      path: "/v1/retrieve/quote",
-      body: { requests: input.calls },
-      timeoutMs: Math.min(10000, remaining()),
-      retryConnection: true,
-      clientIp: input.clientIp,
-      billingCountry: input.billingCountry,
-      connectors: input.flags?.exchangeRetrieve === true,
-      ...(zeroDataRetention ? { zeroDataRetention } : {}),
-      ...(usOnly ? { usOnly } : {}),
-    }).catch(error => {
-      logger.warn("Provider quote unavailable", { error, chargeId: id });
-      return undefined;
-    });
     if (!quote || quote.status >= 500 || quote.status < 200)
       return refuse(
         refusal(
           503,
           "Provider quote is unavailable. No provider was executed.",
+          { code: "precheck_unavailable", retryable: true },
         ),
       );
     if (quote.status !== 200) return refuse(relay(quote));
@@ -445,7 +513,7 @@ export async function retrieveProviders(input: {
             ? refusal(
                 503,
                 "Credit reservation is unavailable. No provider was executed.",
-                { code: "billing_unavailable" },
+                { code: "billing_unavailable", retryable: true },
               )
             : refusal(
                 402,
