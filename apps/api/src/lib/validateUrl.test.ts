@@ -184,6 +184,15 @@ describe("removeWwwFromUrl", () => {
     );
   });
 
+  it("should treat a backslash as the end of the authority for http URLs", () => {
+    // URL parsing treats a backslash like a slash for http(s), so the host is
+    // www.example.com here. Reading only slashes as the authority boundary
+    // walked past it and took the @ in the path for userinfo, leaving the www.
+    expect(removeWwwFromUrl("http://www.example.com\\@other.com/a")).toBe(
+      "http://example.com\\@other.com/a",
+    );
+  });
+
   it("should strip leading www. from http URLs with custom ports", () => {
     expect(removeWwwFromUrl("http://www.example.com:8080/path")).toBe(
       "http://example.com:8080/path",

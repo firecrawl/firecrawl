@@ -202,9 +202,17 @@ export function removeWwwFromUrl(url: string): string {
       let hostStartIndex = 0;
       if (hasProtocol) {
         const schemeEnd = url.indexOf("://") + 3;
+        // URL parsing treats a backslash like a slash for http(s), so the
+        // authority ends at either one. Reading only slashes walked past the
+        // host and took an `@` in the path for userinfo.
         let authEnd = url.length;
         for (let i = schemeEnd; i < url.length; i++) {
-          if (url[i] === "/" || url[i] === "?" || url[i] === "#") {
+          if (
+            url[i] === "/" ||
+            url[i] === "\\" ||
+            url[i] === "?" ||
+            url[i] === "#"
+          ) {
             authEnd = i;
             break;
           }
