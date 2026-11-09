@@ -17,6 +17,8 @@ const READY_ROUTING_KEY = "ready";
 const DLQ_ROUTING_KEY = "dead";
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+// 5 attempts back off 1+2+4+8 = 15s, well inside the API pod's shutdown grace.
+const PUBLISH_MAX_ATTEMPTS = 5;
 
 const logger = _logger.child({ module: "zdr-queue" });
 
@@ -37,6 +39,7 @@ let subscribed = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
 let closed = false;
+const inFlightEnqueues = new Set<Promise<void>>();
 const pendingPublishes = new WeakMap<
   amqp.ConfirmChannel,
   Map<string, { returned: boolean }>
@@ -260,12 +263,26 @@ function publishConfirmed(
 }
 
 export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
+  const enqueue = publishWithRetries(requestId);
+  inFlightEnqueues.add(enqueue);
+  try {
+    await enqueue;
+  } finally {
+    inFlightEnqueues.delete(enqueue);
+  }
+}
+
+export async function drainZdrEnqueues(): Promise<void> {
+  await Promise.allSettled([...inFlightEnqueues]);
+}
+
+async function publishWithRetries(requestId: string): Promise<void> {
   if (!config.NUQ_RABBITMQ_URL) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
   let delayMs = RECONNECT_BASE_DELAY_MS;
-  while (!closed) {
+  for (let attempt = 1; !closed; attempt++) {
     try {
       await withSpan("zdr.rabbitmq.publish", async span => {
         setSpanAttributes(span, {
@@ -283,6 +300,16 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
       });
       return;
     } catch (error) {
+      if (attempt >= PUBLISH_MAX_ATTEMPTS) {
+        logger.error("Failed to enqueue ZDR cleanup job; giving up", {
+          error,
+          requestId,
+          attempts: attempt,
+        });
+        throw new Error(
+          `ZDR cleanup job not confirmed after ${attempt} attempts`,
+        );
+      }
       logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
         error,
         requestId,
@@ -296,9 +323,6 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
     }
   }
 
-  logger.error("Gave up enqueueing ZDR cleanup job; queue closed", {
-    requestId,
-  });
   throw new Error("ZDR queue closed before the cleanup job was confirmed");
 }
 
