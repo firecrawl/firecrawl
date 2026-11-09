@@ -269,9 +269,18 @@ function parseJudgeText(
     };
   }
 
+  // A stored boolean does not narrow `parsed.meaningful` under strictNullChecks,
+  // so resolve the three cases explicitly. Missing or non-boolean stays the
+  // existing fail-open true and is not a validation retry.
+  const parsedMeaningful = parsed.meaningful;
   const meaningfulExplicit =
-    parsed.meaningful === true || parsed.meaningful === false;
-  const meaningful = meaningfulExplicit ? parsed.meaningful : true;
+    parsedMeaningful === true || parsedMeaningful === false;
+  const meaningful: boolean =
+    parsedMeaningful === true
+      ? true
+      : parsedMeaningful === false
+        ? false
+        : true;
   const meaningfulChanges = sanitizeMeaningfulChanges(
     parsed.meaningfulChanges,
     meaningful,
