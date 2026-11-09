@@ -17,14 +17,14 @@ export function transformArrayToObject(
   const transformedResult: any = {};
 
   // Function to find the array key in a nested schema
-  function findArrayKey(schema: any): string | null {
+  function findArrayKey(schema: any): string[] | null {
     for (const key in schema.properties) {
       if (schema.properties[key].type === "array") {
-        return key;
+        return [key];
       } else if (schema.properties[key].type === "object") {
         const nestedKey = findArrayKey(schema.properties[key]);
         if (nestedKey) {
-          return `${key}.${nestedKey}`;
+          return [key, ...nestedKey];
         }
       }
     }
@@ -48,7 +48,7 @@ export function transformArrayToObject(
     }, {});
   }
 
-  const arrayKeyParts = arrayKeyPath.split(".");
+  const arrayKeyParts = [...arrayKeyPath];
   const arrayKey = arrayKeyParts.pop();
   if (!arrayKey) {
     throw new Error("Array key not found in schema");
