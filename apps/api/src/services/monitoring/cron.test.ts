@@ -219,15 +219,35 @@ describe("parseMonitorScheduleText", () => {
   });
 
   it("handles non-UTC time zones and daily/hourly phrases correctly", () => {
-    const cron = parseMonitorScheduleText("every 15 minutes starting at :37");
-    const from = new Date("2026-10-15T10:37:00Z");
-    const next = getNextMonitorRunAt(cron, from, "America/New_York");
-    // :52 is 15 minutes after :37
-    expect(next.getUTCMinutes()).toBe(52);
+    // Kolkata is UTC+5:30, so a schedule anchored at local :07 lands on UTC :37.
+    // Picking an offset that is a whole number of hours (New York) would leave
+    // the same minute sequence in both zones and the assertion could not tell
+    // whether the time zone was consulted at all.
+    const localMinute = (d: Date) =>
+      Number(
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata",
+          minute: "2-digit",
+          hour12: false,
+        }).format(d),
+      );
 
-    const second = getNextMonitorRunAt(cron, next, "America/New_York");
-    // :07 is 15 minutes after :52, crossing hour boundary
-    expect(second.getUTCMinutes()).toBe(7);
+    // A daily anchor makes the zone decisive: 09:00 in Kolkata is 03:30 UTC,
+    // so an implementation that matched the expression against UTC would fire
+    // at a different instant and the assertion below would fail.
+    const daily = parseMonitorScheduleText("daily at 9:00");
+    expect(getNextMonitorRunAt(daily, new Date("2026-10-15T10:37:00Z"), "Asia/Kolkata").toISOString()).toBe(
+      "2026-10-16T03:30:00.000Z",
+    );
+    expect(getNextMonitorRunAt(daily, new Date("2026-10-15T10:37:00Z"), "UTC").toISOString()).toBe(
+      "2026-10-16T09:00:00.000Z",
+    );
+
+    const cron = parseMonitorScheduleText("every 15 minutes starting at :07");
+    const from = new Date("2026-10-15T10:37:00Z");
+    const next = getNextMonitorRunAt(cron, from, "Asia/Kolkata");
+    expect(next.toISOString()).toBe("2026-10-15T10:52:00.000Z");
+    expect(localMinute(next)).toBe(22);
 
     // Default hourly and daily parsing unchanged
     expect(parseMonitorScheduleText("hourly")).toBe("0 * * * *");
