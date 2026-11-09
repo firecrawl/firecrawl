@@ -21,6 +21,7 @@ type MonitorSlackPayload = {
   pages: MonitorSlackPage[];
   creditsUsed: number | null;
   // Changed pages left out of `pages` because judging called them noise.
+  // Only set when this list includes every changed page on the check.
   noiseOmitted?: number;
 };
 

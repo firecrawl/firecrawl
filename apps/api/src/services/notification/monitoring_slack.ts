@@ -10,7 +10,7 @@ import {
 import { buildMonitoringCheckDashboardUrl } from "./monitoring_email";
 import {
   humanFacingAlertPages,
-  omittedNoiseCount,
+  noiseOmittedFromAlertPages,
 } from "./monitoring_alert_pages";
 
 const logger = _logger.child({ module: "monitoring-slack" });
@@ -140,7 +140,11 @@ export async function sendMonitoringSlackSummary(params: {
     },
     pages: slackPages,
     creditsUsed: params.check.actual_credits,
-    noiseOmitted: omittedNoiseCount(params.monitor, params.pages),
+    noiseOmitted: noiseOmittedFromAlertPages(
+      params.monitor,
+      params.check,
+      params.pages,
+    ).noiseOmitted,
   });
 
   let res = await postSlackMessage({ token, channel: channelId, text, blocks });

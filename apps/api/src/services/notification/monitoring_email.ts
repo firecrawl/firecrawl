@@ -16,7 +16,7 @@ import {
 } from "../monitoring/email_recipients";
 import {
   humanFacingAlertPages,
-  omittedNoiseCount,
+  noiseOmittedFromAlertPages,
 } from "./monitoring_alert_pages";
 
 const logger = _logger.child({ module: "monitoring-email" });
@@ -90,8 +90,12 @@ export type MonitoringEmailPayload = {
   pages: MonitoringEmailPage[];
   creditsUsed: number | null;
   // Changed pages removed from `pages` because judging called them noise.
-  // The changed total stays the check counter; this only labels that gap.
+  // Set only when every changed page is in this list, so the number is the
+  // whole check rather than the 100-page notification window.
   noiseOmitted?: number;
+  // Noise rows were hidden, but changed pages exist outside this list. The
+  // summary then must not state a noise total.
+  hidePartialNoiseCount?: boolean;
   // When omitted, the footer drops the unsubscribe row.
   unsubscribeUrl?: string;
 };
@@ -176,8 +180,14 @@ function formatChangedLine(params: {
   listedNoiseCount: number;
   noiseOmitted: number;
   hasJudgment: boolean;
+  hidePartialNoiseCount: boolean;
 }): string {
   const { changed, meaningfulCount, listedNoiseCount, noiseOmitted } = params;
+  if (params.hidePartialNoiseCount) {
+    return meaningfulCount > 0
+      ? `Changed: ${changed} (${meaningfulCount} meaningful)`
+      : `Changed: ${changed}`;
+  }
   if (!params.hasJudgment) return `Changed: ${changed}`;
   if (noiseOmitted > 0 && listedNoiseCount === 0) {
     return `Changed: ${changed} (${meaningfulCount} meaningful, ${noiseOmitted} noise omitted)`;
@@ -237,15 +247,16 @@ export function buildHtml(payload: MonitoringEmailPayload): string {
   ).length;
   const listedNoiseCount = judgedPages.length - meaningfulCount;
   const noiseOmitted = payload.noiseOmitted ?? 0;
-  // Counts come from the pages still rendered, plus noise rows removed above.
-  // A filtered list must not report "0 noise" while the changed total still
-  // includes those pages, and an empty list must not leave a heading.
+  // Counts come from the pages still rendered, plus noise rows removed above
+  // when that removal count covers every changed page. An empty list must not
+  // leave a heading, and a truncated window must not report "0 noise".
   const changedLine = formatChangedLine({
     changed: payload.summary.changed,
     meaningfulCount,
     listedNoiseCount,
     noiseOmitted,
     hasJudgment: judgedPages.length > 0 || noiseOmitted > 0,
+    hidePartialNoiseCount: payload.hidePartialNoiseCount === true,
   });
 
   return `Hey there,<br/>
@@ -603,7 +614,11 @@ export async function sendMonitoringEmailSummary(params: {
   // Suppression already ran on the full page list. The rendered list drops
   // changed pages the judge called noise; new/removed/error/unjudged stay.
   const alertPages = humanFacingAlertPages(params.monitor, params.pages);
-  const noiseOmitted = omittedNoiseCount(params.monitor, params.pages);
+  const noiseSummary = noiseOmittedFromAlertPages(
+    params.monitor,
+    params.check,
+    params.pages,
+  );
 
   // One email per recipient: unique unsubscribe links + no recipient leakage.
   const sendResults = await Promise.all(
@@ -621,7 +636,8 @@ export async function sendMonitoringEmailSummary(params: {
           totalPages: params.check.total_pages,
         },
         pages: alertPages,
-        noiseOmitted,
+        noiseOmitted: noiseSummary.noiseOmitted,
+        hidePartialNoiseCount: noiseSummary.hidePartialNoiseCount,
         creditsUsed: params.check.actual_credits,
         unsubscribeUrl: buildRecipientUnsubscribeUrl(recipient.token),
       };

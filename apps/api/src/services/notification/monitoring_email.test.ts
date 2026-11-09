@@ -357,13 +357,29 @@ describe("sendMonitoringEmailSummary", () => {
         goal: "track price changes",
         emailEnabled: true,
         pages: [
-          { status: "changed", meaningful: false },
-          { status: "changed", meaningful: false },
+          {
+            status: "changed",
+            meaningful: true,
+            url: "https://example.com/price",
+            reason: "Pro price changed",
+          },
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/clock",
+            reason: "Only the timestamp moved",
+          },
         ],
       });
       (args.check as any).changed_count = 50;
       const result = await sendMonitoringEmailSummary(args);
       expect(result.attempted).toBe(true);
+      const html = sentHtml();
+      expect(html).toContain("https://example.com/price");
+      expect(html).not.toContain("https://example.com/clock");
+      expect(html).toContain("Changed: 50 (1 meaningful)");
+      expect(html).not.toContain("noise omitted");
+      expect(html).not.toContain("0 noise");
     });
 
     function sentHtml(): string {
@@ -394,9 +410,24 @@ describe("sendMonitoringEmailSummary", () => {
               meaningful: null,
               url: "https://example.com/unjudged",
             },
-            { status: "new", url: "https://example.com/new-page" },
-            { status: "removed", url: "https://example.com/removed-page" },
-            { status: "error", url: "https://example.com/error-page" },
+            {
+              status: "new",
+              meaningful: false,
+              url: "https://example.com/new-page",
+              reason: "A new page stays even when judged noise",
+            },
+            {
+              status: "removed",
+              meaningful: false,
+              url: "https://example.com/removed-page",
+              reason: "A removed page stays even when judged noise",
+            },
+            {
+              status: "error",
+              meaningful: false,
+              url: "https://example.com/error-page",
+              reason: "An error page stays even when judged noise",
+            },
           ],
         }),
       );
@@ -406,12 +437,17 @@ describe("sendMonitoringEmailSummary", () => {
       expect(html).toContain("Pro price changed");
       expect(html).toContain("https://example.com/unjudged");
       expect(html).toContain("https://example.com/new-page");
+      expect(html).toContain("A new page stays even when judged noise");
       expect(html).toContain("https://example.com/removed-page");
+      expect(html).toContain("A removed page stays even when judged noise");
       expect(html).toContain("https://example.com/error-page");
+      expect(html).toContain("An error page stays even when judged noise");
       expect(html).not.toContain("https://example.com/clock");
       expect(html).not.toContain("Only the timestamp moved");
-      expect(html).not.toContain("[noise]");
-      expect(html).toContain("Changed: 3 (1 meaningful, 1 noise omitted)");
+      expect(html).toContain("[noise]");
+      expect(html).toContain(
+        "Changed: 3 (1 meaningful, 3 noise, 1 noise omitted)",
+      );
       expect(html).toContain("New: 1");
       expect(html).toContain("Removed: 1");
       expect(html).toContain("Errors: 1");

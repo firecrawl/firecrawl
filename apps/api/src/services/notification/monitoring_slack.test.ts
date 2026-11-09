@@ -204,9 +204,24 @@ describe("sendMonitoringSlackSummary page list", () => {
           "Only the timestamp moved",
         ),
         page("https://example.com/unjudged", "changed", null),
-        page("https://example.com/new-page", "new", null),
-        page("https://example.com/removed-page", "removed", null),
-        page("https://example.com/error-page", "error", null),
+        page(
+          "https://example.com/new-page",
+          "new",
+          false,
+          "A new page stays even when judged noise",
+        ),
+        page(
+          "https://example.com/removed-page",
+          "removed",
+          false,
+          "A removed page stays even when judged noise",
+        ),
+        page(
+          "https://example.com/error-page",
+          "error",
+          false,
+          "An error page stays even when judged noise",
+        ),
       ],
     });
 
@@ -216,8 +231,11 @@ describe("sendMonitoringSlackSummary page list", () => {
     expect(body).toContain("Pro price changed");
     expect(body).toContain("https://example.com/unjudged");
     expect(body).toContain("https://example.com/new-page");
+    expect(body).toContain("A new page stays even when judged noise");
     expect(body).toContain("https://example.com/removed-page");
+    expect(body).toContain("A removed page stays even when judged noise");
     expect(body).toContain("https://example.com/error-page");
+    expect(body).toContain("An error page stays even when judged noise");
     expect(body).not.toContain("https://example.com/clock");
     expect(body).not.toContain("Only the timestamp moved");
     expect(body).toContain("3 changed (1 meaningful, 1 noise omitted)");
@@ -309,5 +327,31 @@ describe("sendMonitoringSlackSummary page list", () => {
     expect(body).not.toContain("Only the timestamp moved");
     expect(body).toContain("1 changed (1 noise omitted)");
     expect(body).toContain("2 new");
+  });
+
+  it("does not quote a window noise count against the full changed total", async () => {
+    const result = await sendMonitoringSlackSummary({
+      monitor: slackMonitor(),
+      check: slackCheck({ changed_count: 50, new_count: 1 }),
+      pages: [
+        page("https://example.com/price", "changed", true, "Pro price changed"),
+        page(
+          "https://example.com/clock",
+          "changed",
+          false,
+          "Only the timestamp moved",
+        ),
+        page("https://example.com/new-page", "new", false, "Still listed"),
+      ],
+    });
+
+    expect(result.attempted).toBe(true);
+    const body = postedText();
+    expect(body).toContain("https://example.com/price");
+    expect(body).toContain("https://example.com/new-page");
+    expect(body).not.toContain("https://example.com/clock");
+    expect(body).toContain("50 changed (1 meaningful)");
+    expect(body).not.toContain("noise omitted");
+    expect(body).not.toContain("0 noise");
   });
 });

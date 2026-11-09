@@ -33,10 +33,22 @@ export function humanFacingAlertPages<T extends AlertPageLike>(
   return pages.filter(page => !isExplicitChangedNoise(page));
 }
 
-export function omittedNoiseCount(
+// Notifications load the first 100 check pages, ordered by creation time, while
+// `changed_count` covers the whole check. A noise total from that window is the
+// check total only when every changed page is in the window.
+export function noiseOmittedFromAlertPages(
   monitor: { judge_enabled?: boolean | null; goal?: string | null },
+  check: { changed_count?: number | null },
   pages: AlertPageLike[],
-): number {
-  if (!judgingFiltersAlertNoise(monitor)) return 0;
-  return pages.filter(isExplicitChangedNoise).length;
+): { noiseOmitted: number; hidePartialNoiseCount: boolean } {
+  if (!judgingFiltersAlertNoise(monitor)) {
+    return { noiseOmitted: 0, hidePartialNoiseCount: false };
+  }
+  const removed = pages.filter(isExplicitChangedNoise).length;
+  const changedSeen = pages.filter(page => page.status === "changed").length;
+  const listComplete = changedSeen >= (check.changed_count ?? 0);
+  if (!listComplete) {
+    return { noiseOmitted: 0, hidePartialNoiseCount: removed > 0 };
+  }
+  return { noiseOmitted: removed, hidePartialNoiseCount: false };
 }
