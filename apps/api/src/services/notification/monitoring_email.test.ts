@@ -353,6 +353,33 @@ describe("sendMonitoringEmailSummary", () => {
     });
 
     it("fails open when changed-page list is truncated (would otherwise suppress)", async () => {
+      // Only noise is visible. Delivery depends on the truncated changed_count:
+      // a complete all-noise list would be suppressed.
+      const args = buildArgs({
+        goal: "track price changes",
+        emailEnabled: true,
+        pages: [
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/clock",
+            reason: "Only the timestamp moved",
+          },
+          {
+            status: "changed",
+            meaningful: false,
+            url: "https://example.com/ads",
+            reason: "A recommended link rotated",
+          },
+        ],
+      });
+      (args.check as any).changed_count = 50;
+      const result = await sendMonitoringEmailSummary(args);
+      expect(result.attempted).toBe(true);
+      expect(mockResendSend).toHaveBeenCalled();
+    });
+
+    it("hides window noise without quoting it as the full changed total", async () => {
       const args = buildArgs({
         goal: "track price changes",
         emailEnabled: true,
