@@ -87,6 +87,8 @@ export async function discoverTools(
     connectors?: boolean;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
+    exchangeRequestIds?: { prefix: string; sent: string[] };
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -102,10 +104,15 @@ export async function discoverTools(
     return deadline - Date.now();
   };
   const lookup = async (options: Record<string, unknown>, deadline: number) => {
+    const timeoutMs = remaining(deadline);
+    const ids = input.exchangeRequestIds;
+    const requestId = ids ? `${ids.prefix}:${ids.sent.length + 1}` : undefined;
+    if (requestId) ids?.sent.push(requestId);
     const result = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
-      timeoutMs: remaining(deadline),
+      requestId,
+      timeoutMs,
       maximumCredits: 0,
       connectors: input.connectors === true,
       usOnly: input.usOnly === true,

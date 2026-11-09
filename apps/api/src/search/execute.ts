@@ -115,6 +115,8 @@ interface SearchExecuteResult {
   /** The tools were added automatically, not requested. */
   toolsAuto?: boolean;
   toolsUnavailable?: boolean;
+  /** Raw-query and rewrite tools were ranked together. */
+  toolFusion: boolean;
   /** Skill-card lookup returned the Exchange envelope, including an empty one. */
   skillsDiscovered?: boolean;
   response: SearchV2Response;
@@ -231,6 +233,10 @@ export async function executeSearch(
       ? inferToolIntent(query, logger)
       : null;
   const fuseTools = wantsTools && options.toolFusion === true;
+  const toolRequestIds = {
+    raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
+    rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
+  };
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -251,6 +257,7 @@ export async function executeSearch(
                   ? []
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
+              exchangeRequestIds: toolRequestIds.rewrite,
             },
             logger,
           );
@@ -300,6 +307,7 @@ export async function executeSearch(
                     resolveToolUrls = resolve;
                   }),
             timeoutMs: options.timeout,
+            exchangeRequestIds: toolRequestIds.raw,
           },
           logger,
         )
@@ -504,6 +512,9 @@ export async function executeSearch(
   let toolsWarning: string | undefined;
   let toolsUnavailable = false;
   let toolsAuto = false;
+  let rewriteLate = false;
+  let rawTools: Awaited<typeof baseDiscovery> = null;
+  let extra: Awaited<typeof extraDiscovery> = null;
 
   const waitForExtra = async (alongside?: Promise<unknown>) => {
     if (!extraDiscovery) return null;
@@ -521,8 +532,15 @@ export async function executeSearch(
           delay(config.ALEXANDRIA_TOOL_FUSION_WAIT_MS),
         )
       : Promise.all([delay(AUTO_TOOLS_WAIT_MS), alongside]);
+    const late = Symbol("late");
     try {
-      return await Promise.race([extraDiscovery, deadline.then(() => null)]);
+      const found = await Promise.race([
+        extraDiscovery,
+        deadline.then((): typeof late => late),
+      ]);
+      if (found !== late) return found;
+      rewriteLate = true;
+      return null;
     } finally {
       settled = true;
       clearTimeout(timer);
@@ -537,10 +555,12 @@ export async function executeSearch(
         ...indexResults,
       ].flatMap(item => (item.url ? [item.url] : [])),
     );
-    const [discovery, extra] = await Promise.all([
+    const [discovery, fetched] = await Promise.all([
       baseDiscovery,
       waitForExtra(baseDiscovery),
     ]);
+    rawTools = discovery;
+    extra = fetched;
     const merged = new Map<string, DiscoveredTool>();
     if (fuseTools && extra) {
       // Semantic matches are fused; domain-only matches follow, as they do unfused.
@@ -577,7 +597,7 @@ export async function executeSearch(
         .join(" ") || undefined;
     toolsUnavailable = discovery.unavailable === true && !extra?.items.length;
   } else if (extraDiscovery) {
-    const extra = await waitForExtra();
+    extra = await waitForExtra();
     if (extra?.items.length) {
       searchResponse.tools = extra.items;
       toolsAuto = true;
@@ -585,6 +605,55 @@ export async function executeSearch(
     if (extra?.usOnlyExcluded) {
       toolsWarning = usOnlyToolsWarning(extra.usOnlyExcluded);
     }
+  }
+
+  const rewriteFound = (extra?.found.length ?? 0) > 0;
+  const toolFusionRan = fuseTools && baseDiscovery !== null && rewriteFound;
+  if (searchResponse.tools?.length) {
+    const rawKeys = new Set(rawTools?.items.map(toolKey));
+    const fitKeys = new Set(extra?.items.map(toolKey));
+    const rejected = (extra?.found ?? []).filter(
+      tool => !fitKeys.has(toolKey(tool)) && !rawKeys.has(toolKey(tool)),
+    );
+    const semanticKeys = new Set(
+      extra?.found.slice(0, extra.semanticMatches).map(toolKey),
+    );
+    // Root logger: the request logger carries the query, and this line records shape only.
+    rootLogger.info("Search tool impression", {
+      event: "search_tool_impression",
+      searchId: context.jobId,
+      teamId,
+      servedAt: new Date().toISOString(),
+      auto: toolsAuto,
+      fusion: { enabled: fuseTools, ran: toolFusionRan },
+      rewrite: !extraDiscovery
+        ? "off"
+        : rewriteFound
+          ? "arrived"
+          : rewriteLate
+            ? "late"
+            : "empty",
+      tools: searchResponse.tools.map((tool, index) => {
+        const key = toolKey(tool);
+        const raw = rawKeys.has(key);
+        const rewrite = fitKeys.has(key);
+        return {
+          id: key,
+          rank: index + 1,
+          source: raw && rewrite ? "both" : raw ? "raw" : "rewrite",
+        };
+      }),
+      fitRejected: {
+        semantic: rejected.filter(tool => semanticKeys.has(toolKey(tool)))
+          .length,
+        domain: rejected.filter(tool => !semanticKeys.has(toolKey(tool)))
+          .length,
+      },
+      exchangeRequestIds: {
+        raw: [...toolRequestIds.raw.sent],
+        rewrite: [...toolRequestIds.rewrite.sent],
+      },
+    });
   }
 
   const isZDR = options.enterprise?.includes("zdr");
@@ -757,6 +826,7 @@ export async function executeSearch(
     toolsWarning,
     toolsUnavailable,
     toolsAuto,
+    toolFusion: toolFusionRan,
     skillsDiscovered,
     totalResultsCount,
     // Counted from the final response — after scraping and highlights — so it
