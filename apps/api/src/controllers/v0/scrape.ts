@@ -40,6 +40,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { ipWhitelistRefusal } from "../../lib/permissions";
 
 async function scrapeHelper(
   jobId: string,
@@ -99,6 +100,18 @@ async function scrapeHelper(
       success: false,
       error: usOnlyLocationError,
       code: "US_ONLY_UNAVAILABLE",
+      returnCode: 403,
+    };
+  }
+
+  const ipWhitelistError = ipWhitelistRefusal(
+    acuc?.flags,
+    pageOptions?.geolocation?.country,
+  );
+  if (ipWhitelistError) {
+    return {
+      success: false,
+      error: ipWhitelistError,
       returnCode: 403,
     };
   }
