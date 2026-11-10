@@ -1,0 +1,25 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/brandingScript.ts
+  s_3002048a2ce37a::t_acbb9ef5e45f60 41
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/images.ts
+  s_3002048a2ce37a::t_acbb9ef5e45f60 1423-1425
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/index.ts
+  s_3002048a2ce37a::t_acbb9ef5e45f60 5-18
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/logo-colors.ts
+  s_3002048a2ce37a::t_acbb9ef5e45f60 21-51,54-58,122-150,170-174,191-203,214-215,241-254,257-261,270-272,279-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0dfb4d9411f8a31b17cc2e07eccbd350b4a68ce",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

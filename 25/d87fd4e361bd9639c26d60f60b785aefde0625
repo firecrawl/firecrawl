@@ -1,0 +1,29 @@
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_4abdb510b7d7c4 189-201,203-206
+apps/api/src/__tests__/lib/branding/color-roles.test.ts
+  s_3002048a2ce37a::t_f2acb354fd2447 310-334,412-503
+  s_3002048a2ce37a::t_839e0a9b9eff01 504
+apps/api/src/lib/branding/merge.ts
+  s_3002048a2ce37a::t_e2de0848120ed9 310-314,373,464-468,472-476,480-483,486-516,521-524,526-532
+  s_3002048a2ce37a::t_04d388f705527d 477,517-520
+  s_3002048a2ce37a::t_b3ff91621db972 5-6,469-471
+  s_3002048a2ce37a::t_963df9628852ef 346,364,367-372,478-479,484-485,525
+apps/api/src/__tests__/lib/branding/processor-text-color.test.ts
+  s_3002048a2ce37a::t_f2acb354fd2447 55-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25d87fd4e361bd9639c26d60f60b785aefde0625",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

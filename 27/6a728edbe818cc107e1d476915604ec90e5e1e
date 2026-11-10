@@ -1,0 +1,63 @@
+apps/api/src/lib/branding/declared-logo.ts
+  s_3002048a2ce37a::t_1a9dcfb4d9a4ad 25-29,33,36-42,45,47-50
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_1a9dcfb4d9a4ad 412-417,421,428,430,436,438,440,745-747,751-757,759-760,765-767,844
+  s_3002048a2ce37a::t_894e32197f47fa 890,902
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 418-420,426-427,429,431-435,437
+  s_3002048a2ce37a::t_e96b8d79c0b53f 15-19,75-88,1253-1255,1262-1264,1270,1289-1290,1298,1304-1325,1387
+  s_3002048a2ce37a::t_dfe6e40a12e166 14
+apps/api/src/__tests__/lib/branding/declared-logo.test.ts
+  s_3002048a2ce37a::t_39298d2d85b1d0 73,95,117,139,161-211
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_361e3f02f50dc9 1445-1462,1468-1475,1480-1512
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 1463-1467,1476-1479
+  s_3002048a2ce37a::t_588e9c474193f0 4-8,589-680
+apps/api/src/__tests__/lib/branding/merge-colors.test.ts
+  s_3002048a2ce37a::t_3e580411d684c1 1-6,19-73,96
+  s_3002048a2ce37a::t_2596790d7d87fd 74-77,79-83,95
+  s_3002048a2ce37a::t_284ce89f7cba0d 7-18,78,84-94
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_894e32197f47fa 4,114-139,274-280,288-294,299,322
+  s_3002048a2ce37a::t_bcd6848356e7b8 269-273,281-283,285-287
+  s_3002048a2ce37a::t_f674dcc6befcc1 8,259-260,265,284
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 141-151,153-154,384,389,442,447,481,484,520,523,550,553,593,718,721,759
+  s_3002048a2ce37a::t_1cee1f4e3300b1 152,612-616,654
+  s_3002048a2ce37a::t_284ce89f7cba0d 385,644
+  s_3002048a2ce37a::t_23dcbe6bf3d000 295-298,325,643
+apps/api/src/lib/branding/merge.ts
+  s_3002048a2ce37a::t_894e32197f47fa 4,9,302-307,313-316,325-329
+  s_3002048a2ce37a::t_2596790d7d87fd 26-27,30,337,394,509,559
+  s_3002048a2ce37a::t_284ce89f7cba0d 28-29,31
+apps/api/src/__tests__/lib/branding/processor-background.test.ts
+  s_3002048a2ce37a::t_3e580411d684c1 1-127,129-144,146-147,149-153,157-161,215-216
+  s_3002048a2ce37a::t_bcd6848356e7b8 148,154-156,162-163,204-214
+  s_3002048a2ce37a::t_f674dcc6befcc1 164-183
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 184-203
+  s_3002048a2ce37a::t_284ce89f7cba0d 128,145
+apps/api/src/lib/branding/color-roles.ts
+  s_3002048a2ce37a::t_ab8f8a4687f505 100
+  s_3002048a2ce37a::t_fdd6b831d789b8 74-78,94-96,97
+  s_3002048a2ce37a::t_894e32197f47fa 65-73,79-81,93,98-99
+  s_3002048a2ce37a::t_7db91317b08277 82
+  s_3002048a2ce37a::t_f674dcc6befcc1 83-92
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_e2d017e4bfe4a9 76-78,477-480
+apps/api/src/lib/branding/metrics.ts
+  s_3002048a2ce37a::t_e96b8d79c0b53f 70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "276a728edbe818cc107e1d476915604ec90e5e1e",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

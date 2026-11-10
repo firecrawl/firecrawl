@@ -1,0 +1,282 @@
+.github/workflows/test-server.yml
+  h_b58237c6fffd77 298-307
+apps/api/openapi.json
+  h_b58237c6fffd77 3187,3211-3234,3275
+apps/api/pnpm-lock.yaml
+  h_b58237c6fffd77 10,44,379,613-614,619-620,1719-1720,1913-1914,1919-1920,1925-1926,1931-1932,1937-1938,1943-1944,1950-1951,1957-1958,1964-1965,1971-1972,1978-1979,1985-1986,1991-1992,1996-1997,2002-2003,2278,3069-3070,4148-4149,4539-4540,4545,4598,4995,4997,5007,5625,5627-5628,5937,6061,6064,6067,6070,6073,6076,6079,6082,6085,6088,6091,6094,6097,6099-6101,6104,6107,6340,6346,6470,7043,8213,8215,8218-8232,8637,8642,8652,8655,8672
+apps/api/pnpm-workspace.yaml
+  h_b58237c6fffd77 16-17,66-68
+apps/api/src/__tests__/lib/branding/color-roles.test.ts
+  h_b58237c6fffd77 310-362,440-532
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  h_b58237c6fffd77 924-936
+apps/api/src/__tests__/lib/branding/merge-buttons.test.ts
+  h_b58237c6fffd77 1-71
+apps/api/src/__tests__/lib/branding/processor-text-color.test.ts
+  h_b58237c6fffd77 55-78
+apps/api/src/__tests__/routes/check-credits-middleware.test.ts
+  h_b58237c6fffd77 255-269
+apps/api/src/__tests__/routes/country-check.routes.test.ts
+  h_b58237c6fffd77 1-176
+apps/api/src/__tests__/routes/exchange-connectors.routes.test.ts
+  h_b58237c6fffd77 187-217
+apps/api/src/__tests__/routes/research-credit-gate.routes.test.ts
+  h_b58237c6fffd77 1-121
+apps/api/src/__tests__/snips/v1/types-validation.test.ts
+  h_b58237c6fffd77 194-235
+apps/api/src/__tests__/snips/v2/integration-header.test.ts
+  h_b58237c6fffd77 82-118
+apps/api/src/__tests__/snips/v2/search-feedback.test.ts
+  h_b58237c6fffd77 487-645
+apps/api/src/__tests__/snips/v2/types-validation.test.ts
+  h_b58237c6fffd77 837-851
+apps/api/src/controllers/auth.ts
+  h_b58237c6fffd77 55,630
+apps/api/src/controllers/v1/map.ts
+  h_b58237c6fffd77 27,223
+apps/api/src/controllers/v1/types.ts
+  h_b58237c6fffd77 21,748
+apps/api/src/controllers/v2/__tests__/agent-credit-gate.test.ts
+  h_b58237c6fffd77 1-169
+apps/api/src/controllers/v2/__tests__/agent-credits.test.ts
+  h_b58237c6fffd77 1-176
+apps/api/src/controllers/v2/__tests__/agent-location.test.ts
+  h_b58237c6fffd77 1-125
+apps/api/src/controllers/v2/__tests__/agent-rollout.test.ts
+  h_b58237c6fffd77 26-28
+apps/api/src/controllers/v2/__tests__/developer-access.test.ts
+  h_b58237c6fffd77 59,66
+apps/api/src/controllers/v2/__tests__/research-proxy-zdr.test.ts
+  h_b58237c6fffd77 46,131-137,151-157
+apps/api/src/controllers/v2/__tests__/research-timeouts.test.ts
+  h_b58237c6fffd77 48
+apps/api/src/controllers/v2/agent-credit-gate.ts
+  h_b58237c6fffd77 1-83
+apps/api/src/controllers/v2/agent.ts
+  h_b58237c6fffd77 25-28,186-187,189-190,204-225,257-258,267
+apps/api/src/controllers/v2/browser.ts
+  h_b58237c6fffd77 14,54
+apps/api/src/controllers/v2/feedback/feedback-store-bounds.test.ts
+  h_b58237c6fffd77 1-146
+apps/api/src/controllers/v2/feedback/feedback-store.ts
+  h_b58237c6fffd77 11,16,26-208,211,219-232,275-278,303-306,321-324,327
+apps/api/src/controllers/v2/feedback/internal-types.ts
+  h_b58237c6fffd77 2,13-19,26,45-57
+apps/api/src/controllers/v2/feedback/record-options.test.ts
+  h_b58237c6fffd77 100-142,160-189
+apps/api/src/controllers/v2/feedback/request-input.ts
+  h_b58237c6fffd77 10
+apps/api/src/controllers/v2/research-proxy.ts
+  h_b58237c6fffd77 26-27,29,33-39,296,304,337,365,397,586,627,629-630,632-633
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  h_b58237c6fffd77 139
+apps/api/src/controllers/v2/search.ts
+  h_b58237c6fffd77 542-543
+apps/api/src/controllers/v2/types.ts
+  h_b58237c6fffd77 724-733,1051,1213,2858-2873,2877,2882,2889,2891,2911,2919,3000,3016,3025-3032,3039
+apps/api/src/lib/__tests__/search-result-categories.test.ts
+  h_b58237c6fffd77 1-115
+apps/api/src/lib/branding/jev.ts
+  h_b58237c6fffd77 290-293
+apps/api/src/lib/branding/merge.ts
+  h_b58237c6fffd77 5-6,241-245,310-314,346,364,367-373,464-538
+apps/api/src/lib/branding/processor.ts
+  h_b58237c6fffd77 189-201,203-206
+apps/api/src/lib/entities.ts
+  h_b58237c6fffd77 173-239
+apps/api/src/lib/feedback-job-store.ts
+  h_b58237c6fffd77 42-58,152-153,209-221
+apps/api/src/lib/keyless-signup-link.test.ts
+  h_b58237c6fffd77 230-239
+apps/api/src/lib/keyless-signup-link.ts
+  h_b58237c6fffd77 5,341
+apps/api/src/lib/map-utils.ts
+  h_b58237c6fffd77 54
+apps/api/src/routes/exchange.ts
+  h_b58237c6fffd77 92,257,261,266,271,276
+apps/api/src/routes/shared.ts
+  h_b58237c6fffd77 27,46,153-154,156,249,334-335,343,347-349,510-511,518-546
+apps/api/src/routes/v1.ts
+  h_b58237c6fffd77 32,55,65,76,87,160,176,192
+apps/api/src/routes/v2.ts
+  h_b58237c6fffd77 48,200,210,217,230,244,258,274,276,291,310,398,563,592,607,670
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/images.ts
+  h_b58237c6fffd77 1423-1425
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/index.ts
+  h_b58237c6fffd77 5-18
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/logo-colors.ts
+  h_b58237c6fffd77 21-51,54-58,122-154,174-178,195-207,218-219,245-258,261-266,275-284,291-324
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/print-script.js
+  h_b58237c6fffd77 24
+apps/api/src/scraper/scrapeURL/engines/fire-engine/brandingScript.ts
+  h_b58237c6fffd77 41
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  h_b58237c6fffd77 392-393,460,790,898,1108-1110
+apps/api/src/search/developer.test.ts
+  h_b58237c6fffd77 47-53,64-86,109-115,154-160,180-186,198-204
+apps/api/src/search/developer.ts
+  h_b58237c6fffd77 13-19,27-30
+apps/api/src/search/execute.test.ts
+  h_b58237c6fffd77 222-224,269-273,276-338,380-386
+apps/api/src/search/execute.ts
+  h_b58237c6fffd77 4-11,87-88,144-154,475-481
+apps/api/src/services/alexandria/access.ts
+  h_b58237c6fffd77 42,50
+apps/api/src/services/alexandria/client.test.ts
+  h_b58237c6fffd77 44-63
+apps/api/src/services/alexandria/client.ts
+  h_b58237c6fffd77 20-21,49
+apps/api/src/services/alexandria/retrieve.ts
+  h_b58237c6fffd77 97,247,271,398
+apps/api/src/services/autumn/__tests__/autumn.service.test.ts
+  h_b58237c6fffd77 826-871
+apps/api/src/services/autumn/autumn.service.ts
+  h_b58237c6fffd77 568-594
+apps/api/src/services/logging/log_job.ts
+  h_b58237c6fffd77 19-22,990-991,1037-1048,1069-1080
+apps/api/src/utils/integration.test.ts
+  h_b58237c6fffd77 1-43
+apps/api/src/utils/integration.ts
+  h_b58237c6fffd77 49-60
+apps/dot-net-sdk/Firecrawl.Tests/AgentTests.cs
+  h_b58237c6fffd77 1-212
+apps/dot-net-sdk/Firecrawl.Tests/DeveloperSearchTests.cs
+  h_b58237c6fffd77 1-89
+apps/dot-net-sdk/Firecrawl/Firecrawl.csproj
+  h_b58237c6fffd77 11
+apps/dot-net-sdk/Firecrawl/FirecrawlClient.cs
+  h_b58237c6fffd77 629,647-665,692-755,828-849,924
+apps/dot-net-sdk/Firecrawl/Models/AgentModels.cs
+  h_b58237c6fffd77 1-200
+apps/dot-net-sdk/Firecrawl/Models/ResearchModels.cs
+  h_b58237c6fffd77 1,117-170,197-235
+apps/dot-net-sdk/README.md
+  h_b58237c6fffd77 197-233,308-326
+apps/elixir-sdk/README.md
+  h_b58237c6fffd77 82-94
+apps/elixir-sdk/lib/firecrawl.ex
+  h_b58237c6fffd77 380-382,384,394-395,397,404-490
+apps/elixir-sdk/lib/firecrawl/developer_search.ex
+  h_b58237c6fffd77 1-115
+apps/elixir-sdk/mix.exs
+  h_b58237c6fffd77 4
+apps/elixir-sdk/test/firecrawl_test.exs
+  h_b58237c6fffd77 1054-1201,1239-1245
+apps/go-sdk/README.md
+  h_b58237c6fffd77 266-283
+apps/go-sdk/developer_search_test.go
+  h_b58237c6fffd77 1-67
+apps/go-sdk/firecrawl.go
+  h_b58237c6fffd77 702-703,725-744
+apps/go-sdk/models.go
+  h_b58237c6fffd77 311-378
+apps/go-sdk/version.go
+  h_b58237c6fffd77 12
+apps/java-sdk/README.md
+  h_b58237c6fffd77 85,91,100,353-372,481,488
+apps/java-sdk/build.gradle.kts
+  h_b58237c6fffd77 7
+apps/java-sdk/src/main/java/com/firecrawl/client/FirecrawlClient.java
+  h_b58237c6fffd77 40,453-464,651-653,661-663,675-705,1173-1175,1182-1185
+apps/java-sdk/src/main/java/com/firecrawl/models/ResearchModels.java
+  h_b58237c6fffd77 3,120-189
+apps/java-sdk/src/test/java/com/firecrawl/BatchScrapeErrorsMockTest.java
+  h_b58237c6fffd77 1-70
+apps/java-sdk/src/test/java/com/firecrawl/DeveloperSearchMockTest.java
+  h_b58237c6fffd77 1-113
+apps/js-sdk/firecrawl/pnpm-lock.yaml
+  h_b58237c6fffd77 14,722-723,1576,1730
+apps/js-sdk/firecrawl/pnpm-workspace.yaml
+  h_b58237c6fffd77 17-19
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/agent-location.unit.test.ts
+  h_b58237c6fffd77 1-34
+apps/js-sdk/firecrawl/src/v2/methods/agent.ts
+  h_b58237c6fffd77 24-28,50
+apps/js-sdk/firecrawl/src/v2/types.ts
+  h_b58237c6fffd77 303-308,355-360,408-412,533-536,1034-1037,1288-1290,1413-1417,1808-1811,1824,1866-1870,1887-1888,1893-1894,2067-2069
+apps/js-sdk/pnpm-lock.yaml
+  h_b58237c6fffd77 10,310-311,559,646
+apps/js-sdk/pnpm-workspace.yaml
+  h_b58237c6fffd77 11-13
+apps/php-sdk/CHANGELOG.md
+  h_b58237c6fffd77 8-25
+apps/php-sdk/README.md
+  h_b58237c6fffd77 244-261
+apps/php-sdk/src/Client/FirecrawlClient.php
+  h_b58237c6fffd77 28-29,187-189,201-223
+apps/php-sdk/src/Models/DeveloperSearchOptions.php
+  h_b58237c6fffd77 1-85
+apps/php-sdk/src/Models/DeveloperSearchPassage.php
+  h_b58237c6fffd77 1-33
+apps/php-sdk/src/Models/DeveloperSearchRepoStatus.php
+  h_b58237c6fffd77 1-48
+apps/php-sdk/src/Models/DeveloperSearchResponse.php
+  h_b58237c6fffd77 1-77
+apps/php-sdk/src/Models/DeveloperSearchResult.php
+  h_b58237c6fffd77 1-70
+apps/php-sdk/src/Models/DeveloperSearchSourceStatus.php
+  h_b58237c6fffd77 1-33
+apps/php-sdk/src/Version.php
+  h_b58237c6fffd77 9
+apps/php-sdk/tests/Unit/DeveloperSearchTest.php
+  h_b58237c6fffd77 1-136
+apps/python-sdk/firecrawl/__init__.py
+  h_b58237c6fffd77 45
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_agent_location.py
+  h_b58237c6fffd77 1-55
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_search_response.py
+  h_b58237c6fffd77 64-85
+apps/python-sdk/firecrawl/v2/client.py
+  h_b58237c6fffd77 1555,1574-1577,1597,1619,1640-1643,1665
+apps/python-sdk/firecrawl/v2/client_async.py
+  h_b58237c6fffd77 879,899,922,940
+apps/python-sdk/firecrawl/v2/methods/agent.py
+  h_b58237c6fffd77 36,82-83,113,130,210,228
+apps/python-sdk/firecrawl/v2/methods/aio/agent.py
+  h_b58237c6fffd77 36,82-83,113,130,210,228
+apps/python-sdk/firecrawl/v2/methods/aio/search.py
+  h_b58237c6fffd77 56-58
+apps/python-sdk/firecrawl/v2/methods/search.py
+  h_b58237c6fffd77 50-52
+apps/python-sdk/firecrawl/v2/types.py
+  h_b58237c6fffd77 1922-1927
+apps/ruby-sdk/README.md
+  h_b58237c6fffd77 196-214
+apps/ruby-sdk/lib/firecrawl.rb
+  h_b58237c6fffd77 23-24
+apps/ruby-sdk/lib/firecrawl/client.rb
+  h_b58237c6fffd77 136-138,146-161
+apps/ruby-sdk/lib/firecrawl/models/developer_search_options.rb
+  h_b58237c6fffd77 1-37
+apps/ruby-sdk/lib/firecrawl/models/developer_search_response.rb
+  h_b58237c6fffd77 1-76
+apps/ruby-sdk/lib/firecrawl/version.rb
+  h_b58237c6fffd77 4
+apps/ruby-sdk/test/firecrawl/client_test.rb
+  h_b58237c6fffd77 657-732
+apps/rust-sdk/CHANGELOG.md
+  h_b58237c6fffd77 3-23
+apps/rust-sdk/Cargo.lock
+  h_b58237c6fffd77 261
+apps/rust-sdk/Cargo.toml
+  h_b58237c6fffd77 3
+apps/rust-sdk/README.md
+  h_b58237c6fffd77 237-260
+apps/rust-sdk/src/research.rs
+  h_b58237c6fffd77 154-241,380-409,412-413,444-517
+apps/test-site/pnpm-lock.yaml
+  h_b58237c6fffd77 9,1805-1806,1851,2395,2570-2571,4031,4043,4045
+apps/test-site/pnpm-workspace.yaml
+  h_b58237c6fffd77 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4d8fe56a867f2a6b52d55042320f09fc0f84a7b",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

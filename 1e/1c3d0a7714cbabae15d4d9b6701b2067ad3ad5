@@ -1,0 +1,32 @@
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_19227731b336bc 389-391,393,421,430,457
+  s_3002048a2ce37a::t_b6a0549675e52d 693
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/buttons.ts
+  s_3002048a2ce37a::t_19227731b336bc 9-36,39,212-230,295-297
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_3002048a2ce37a::t_19227731b336bc 47-51
+apps/api/src/__tests__/lib/branding/processor-consent.test.ts
+  s_3002048a2ce37a::t_19227731b336bc 48-80
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_19227731b336bc 461-462,464,466
+apps/api/src/__tests__/lib/branding/branding-script-buttons.test.ts
+  s_3002048a2ce37a::t_19227731b336bc 215-227,237,241
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_19227731b336bc 399,402-405,408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e1c3d0a7714cbabae15d4d9b6701b2067ad3ad5",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

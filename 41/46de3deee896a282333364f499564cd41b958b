@@ -1,0 +1,22 @@
+apps/api/src/scraper/WebScraper/utils/blocklist.test.ts
+  s_8fcc4c507e6624::t_928ce2afc2a6f6 153-161
+  s_8fcc4c507e6624::t_fb9204a4c99b3b 85-101
+apps/api/src/scraper/WebScraper/utils/blocklist.ts
+  s_8fcc4c507e6624::t_56f357635a6259 226-246,259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4146de3deee896a282333364f499564cd41b958b",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

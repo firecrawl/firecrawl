@@ -1,0 +1,26 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_3002048a2ce37a::t_d1a36ba94a17f2 115-151,181
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/buttons.ts
+  s_3002048a2ce37a::t_971251cd126056 86-89,94-99,108
+  s_3002048a2ce37a::t_d1a36ba94a17f2 18-73,76-80,85,92-93,100-105
+apps/api/src/__tests__/lib/branding/branding-script-buttons.test.ts
+  s_3002048a2ce37a::t_a7795150dd5508 8,10,50,96-127,130,132-160
+  s_3002048a2ce37a::t_971251cd126056 128-129,131
+  s_3002048a2ce37a::t_aab85dbbccc51e 161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a894713f7ade15c5e81503729aa88ae3a5f4e6f2",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

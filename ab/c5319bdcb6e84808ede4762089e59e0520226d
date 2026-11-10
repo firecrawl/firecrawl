@@ -1,0 +1,28 @@
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_dc21e1eb64f1cc 1347-1352
+apps/api/src/__tests__/lib/branding/processor-fonts.test.ts
+  s_3002048a2ce37a::t_dc21e1eb64f1cc 90-91,115-122
+  s_3002048a2ce37a::t_0b708808fe2a31 72-74
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_dc21e1eb64f1cc 33,311-312,314-315,320,335-336
+apps/api/src/lib/branding/font-names.ts
+  s_3002048a2ce37a::t_dc21e1eb64f1cc 57-60,64-69,84-86,98-107,109-117,123-138
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_dc21e1eb64f1cc 12,365-366,398-401,425,428-429,431-437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abc5319bdcb6e84808ede4762089e59e0520226d",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

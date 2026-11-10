@@ -1,0 +1,27 @@
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_1a9dcfb4d9a4ad 76
+apps/api/src/lib/branding/declared-logo.ts
+  s_3002048a2ce37a::t_1a9dcfb4d9a4ad 25-29,33,36-42,45,47-50
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_1a9dcfb4d9a4ad 393-401,406-414,416,721-723,727-733,735-736,741-743,820
+apps/api/src/__tests__/lib/branding/declared-logo.test.ts
+  s_3002048a2ce37a::t_39298d2d85b1d0 73,95,117,139,161-211
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_361e3f02f50dc9 1349-1407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3712afdd61ddef0ee615531b2c1ee9d6b3ef9518",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

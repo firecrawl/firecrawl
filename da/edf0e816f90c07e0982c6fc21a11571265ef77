@@ -1,0 +1,32 @@
+apps/playwright-service-ts/package.json
+  s_f2a8809e137976::t_966d09d8685607 9-10
+apps/playwright-service-ts/helpers/ssrf.test.ts
+  s_f2a8809e137976::t_63ae0507baba2e 176-179
+  s_f2a8809e137976::t_966d09d8685607 1-19,23-33,35-55,115-173,175,186
+  s_f2a8809e137976::t_f09dc84c5d73da 20-22,34,174,180-185
+  s_f2a8809e137976::t_4211733a668e2b 65-92,106,108
+  s_f2a8809e137976::t_32511ee4b51cbc 56-64,93-105,107,109-114
+apps/playwright-service-ts/helpers/ssrf.ts
+  s_f2a8809e137976::t_bf512fab25e39d 1,3-50,60-75,77-102
+  s_f2a8809e137976::t_adb7e55747c291 2,51-59,76
+apps/playwright-service-ts/api.ts
+  s_f2a8809e137976::t_bf512fab25e39d 13-14,82-85
+.github/workflows/test-server.yml
+  s_f2a8809e137976::t_966d09d8685607 183-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "daedf0e816f90c07e0982c6fc21a11571265ef77",
+  "prompts": {},
+  "sessions": {
+    "s_f2a8809e137976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15f2a-2275-7c61-b071-74abb96f2cfb",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

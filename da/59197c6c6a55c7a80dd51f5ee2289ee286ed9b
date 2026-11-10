@@ -1,0 +1,21 @@
+apps/test-site/pnpm-workspace.yaml
+  s_d4b6ff4e22a894::t_b0a134aa53146d 14-15
+apps/test-site/pnpm-lock.yaml
+  s_d4b6ff4e22a894::t_45c8ff52a143ba 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da59197c6c6a55c7a80dd51f5ee2289ee286ed9b",
+  "prompts": {},
+  "sessions": {
+    "s_d4b6ff4e22a894": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25a4051b-4d77-4520-aa2f-54608aa55967",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

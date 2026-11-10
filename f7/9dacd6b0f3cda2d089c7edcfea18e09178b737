@@ -1,0 +1,19 @@
+apps/playwright-service-ts/helpers/ssrf.spec.ts
+  s_f2a8809e137976::t_15828eb2cfbf02 68,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f79dacd6b0f3cda2d089c7edcfea18e09178b737",
+  "prompts": {},
+  "sessions": {
+    "s_f2a8809e137976": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15f2a-2275-7c61-b071-74abb96f2cfb",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

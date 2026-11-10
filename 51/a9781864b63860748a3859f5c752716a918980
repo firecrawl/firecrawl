@@ -1,0 +1,44 @@
+apps/api/pnpm-lock.yaml
+  h_b58237c6fffd77 10,379,613-614,619-620,1719-1720,1913-1914,1919-1920,1925-1926,1931-1932,1937-1938,1943-1944,1950-1951,1957-1958,1964-1965,1971-1972,1978-1979,1985-1986,1991-1992,1996-1997,2002-2003,2278,4148-4149,4539-4540,4545,4598,4995,4997,5007,5625,5627-5628,5937,6061,6064,6067,6070,6073,6076,6079,6082,6085,6088,6091,6094,6097,6099-6101,6104,6107,6340,6346,8213,8215,8218-8232,8637,8642,8652,8655,8672
+apps/api/pnpm-workspace.yaml
+  h_b58237c6fffd77 16-17
+apps/api/src/controllers/v2/__tests__/research-proxy-zdr.test.ts
+  h_b58237c6fffd77 131-137,151-157
+apps/api/src/controllers/v2/research-proxy.ts
+  h_b58237c6fffd77 296,304,337,397
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  h_b58237c6fffd77 139
+apps/api/src/routes/exchange.ts
+  h_b58237c6fffd77 92
+apps/api/src/search/developer.test.ts
+  h_b58237c6fffd77 47-53,64-86,109-115,154-160,180-186,198-204
+apps/api/src/search/developer.ts
+  h_b58237c6fffd77 13-19,27-30
+apps/api/src/search/execute.test.ts
+  h_b58237c6fffd77 312-338,380-386
+apps/api/src/search/execute.ts
+  h_b58237c6fffd77 144-154
+apps/api/src/services/alexandria/access.ts
+  h_b58237c6fffd77 42,50
+apps/api/src/services/alexandria/client.test.ts
+  h_b58237c6fffd77 44-63
+apps/api/src/services/alexandria/client.ts
+  h_b58237c6fffd77 20-21,49
+apps/api/src/services/alexandria/retrieve.ts
+  h_b58237c6fffd77 97,247,271,398
+apps/test-site/pnpm-lock.yaml
+  h_b58237c6fffd77 9,1805-1806,1851,2395,2570-2571,4031,4043,4045
+apps/test-site/pnpm-workspace.yaml
+  h_b58237c6fffd77 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51a9781864b63860748a3859f5c752716a918980",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

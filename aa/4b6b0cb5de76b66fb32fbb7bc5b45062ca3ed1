@@ -1,0 +1,24 @@
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_f674dcc6befcc1 8,255-256,261,280
+apps/api/src/__tests__/lib/branding/processor-background.test.ts
+  s_3002048a2ce37a::t_f674dcc6befcc1 162-181
+apps/api/src/lib/branding/color-roles.ts
+  s_3002048a2ce37a::t_7db91317b08277 82
+  s_3002048a2ce37a::t_f674dcc6befcc1 83-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa4b6b0cb5de76b66fb32fbb7bc5b45062ca3ed1",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}

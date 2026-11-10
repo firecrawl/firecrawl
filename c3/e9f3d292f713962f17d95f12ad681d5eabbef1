@@ -1,0 +1,33 @@
+apps/api/src/__tests__/lib/branding/merge-colors.test.ts
+  s_3002048a2ce37a::t_3e580411d684c1 1-72
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_894e32197f47fa 4,8,114-139,146,148,259,268-274,282-292,315,382
+  s_3002048a2ce37a::t_bcd6848356e7b8 149-156,263-267,275-281
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_894e32197f47fa 866,878
+apps/api/src/lib/branding/merge.ts
+  s_3002048a2ce37a::t_894e32197f47fa 4,9,296-301,307-310,319-323,549-551,553
+apps/api/src/__tests__/lib/branding/processor-background.test.ts
+  s_3002048a2ce37a::t_3e580411d684c1 1-145,147-151,155-159,173-174
+  s_3002048a2ce37a::t_bcd6848356e7b8 146,152-154,160-172
+apps/api/src/lib/branding/color-roles.ts
+  s_3002048a2ce37a::t_ab8f8a4687f505 92
+  s_3002048a2ce37a::t_fdd6b831d789b8 74-78,83-89
+  s_3002048a2ce37a::t_894e32197f47fa 58,65-73,79-82,90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3e9f3d292f713962f17d95f12ad681d5eabbef1",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}

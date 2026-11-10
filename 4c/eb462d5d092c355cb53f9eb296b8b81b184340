@@ -1,0 +1,67 @@
+.github/workflows/deploy-go-service.yaml
+  s_4dcda369eeae6b::t_53b20a1fe1a060 23,26,29,36
+.github/workflows/deploy-image-staging.yml
+  s_4dcda369eeae6b::t_dac79b61ac4719 24,56
+.github/workflows/deploy-image.yml
+  s_4dcda369eeae6b::t_20e131fee0dc28 44,81,134
+.github/workflows/deploy-playwright.yml
+  s_4dcda369eeae6b::t_0109a0fc98858f 27
+.github/workflows/deploy-redis.yml
+  s_4dcda369eeae6b::t_26b0da0e121b9f 22
+.github/workflows/eval-prod.yml
+  s_4dcda369eeae6b::t_e7c299f9addca1 23
+.github/workflows/npm-audit-claude-remediation.yml
+  s_4dcda369eeae6b::t_a168a531669c1b 31,36
+.github/workflows/npm-audit.yml
+  s_4dcda369eeae6b::t_1876076928e829 15,17
+.github/workflows/publish-dotnet-sdk.yml
+  s_4dcda369eeae6b::t_85586861657cbb 17,20,35
+.github/workflows/publish-elixir-sdk.yml
+  s_4dcda369eeae6b::t_ff5369a8315e8d 28,150
+.github/workflows/publish-go-sdk.yml
+  s_4dcda369eeae6b::t_f689dac52e2164 27,32
+.github/workflows/publish-java-sdk.yml
+  s_4dcda369eeae6b::t_77e2bd0ff70c88 17,20,35,42
+.github/workflows/publish-js-sdk.yml
+  s_4dcda369eeae6b::t_728b66164eb6ec 23,29
+.github/workflows/publish-php-sdk.yml
+  s_4dcda369eeae6b::t_84cd5c48ea8c1e 18,23,38,55
+.github/workflows/publish-python-sdk.yml
+  s_4dcda369eeae6b::t_29afb2071bc9a0 20,23
+.github/workflows/publish-ruby-sdk.yml
+  s_4dcda369eeae6b::t_425a5d607540a3 17,20,35
+.github/workflows/publish-rust-sdk.yml
+  s_4dcda369eeae6b::t_05ed2ad1439666 17,20,39
+.github/workflows/scrape-evals.yml
+  s_4dcda369eeae6b::t_ed7ab891e10cff 24,40,86,102
+.github/workflows/sync-skills-catalog.yml
+  s_4dcda369eeae6b::t_d72cfd60511f72 26,31
+.github/workflows/test-ci-scripts.yml
+  s_4dcda369eeae6b::t_3a4cb1eb833cad 26,29
+.github/workflows/test-dotnet-sdk.yml
+  s_4dcda369eeae6b::t_bfcaedb87bfbcc 26,29
+.github/workflows/test-go-html-to-md-service.yml
+  s_4dcda369eeae6b::t_b8588b9eafa3cf 26,29
+.github/workflows/test-php-sdk.yml
+  s_4dcda369eeae6b::t_6d027a690c759c 28,31,43
+.github/workflows/test-ruby-sdk.yml
+  s_4dcda369eeae6b::t_5e1284ec046b74 26,29
+.github/workflows/test-server.yml
+  s_4dcda369eeae6b::t_1b76640d7791df 76,88,107,123,131,150,163,171,195,527,711,717
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ceb462d5d092c355cb53f9eb296b8b81b184340",
+  "prompts": {},
+  "sessions": {
+    "s_4dcda369eeae6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-bd7c-7872-bc4e-8950c6f6b786",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

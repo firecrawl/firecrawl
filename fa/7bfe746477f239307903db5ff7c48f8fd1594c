@@ -1,0 +1,25 @@
+apps/api/src/lib/branding/types.ts
+  s_3002048a2ce37a::t_6f43f7ecbceced 23-25
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_9d52999e8c88bd 743-744,758-765,769,1108-1111
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_6f43f7ecbceced 522-528
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_6f43f7ecbceced 276-281,283-286,455,457,467-468,472-478,482-483
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa7bfe746477f239307903db5ff7c48f8fd1594c",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

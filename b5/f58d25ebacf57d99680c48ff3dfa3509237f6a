@@ -1,0 +1,110 @@
+apps/api/openapi.json
+  h_b58237c6fffd77 4371,4756,6266,6295-6359,6387,6406,6433-6472,6495
+apps/api/package.json
+  h_b58237c6fffd77 105
+apps/api/pnpm-lock.yaml
+  h_b58237c6fffd77 9-10,57,160-161,2457-2458,2461-2462,2605-2608,3341-3342,4052-4055,6515,6532,6535,6540,6696-6697,6962,7176,7436,8111-8115
+apps/api/pnpm-workspace.yaml
+  h_b58237c6fffd77 6-9,19-21,96
+apps/api/src/__tests__/routes/exchange-recommendations.routes.test.ts
+  h_b58237c6fffd77 1-393
+apps/api/src/__tests__/routes/research-github-deprecation.routes.test.ts
+  h_b58237c6fffd77 55-61
+apps/api/src/__tests__/snips/v2/express5.test.ts
+  h_b58237c6fffd77 2-3,40-97
+apps/api/src/config.ts
+  h_b58237c6fffd77 399-404
+apps/api/src/controllers/v2/__tests__/gov-search.test.ts
+  h_b58237c6fffd77 29-35
+apps/api/src/controllers/v2/__tests__/research-proxy-zdr.test.ts
+  h_b58237c6fffd77 26-32
+apps/api/src/controllers/v2/__tests__/research-timeouts.test.ts
+  h_b58237c6fffd77 27-33
+apps/api/src/controllers/v2/research-proxy.ts
+  h_b58237c6fffd77 12-14,51-59,170-196,283-286,400-413,420,423,440,486-494,706-710
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  h_b58237c6fffd77 182
+apps/api/src/controllers/v2/search.ts
+  h_b58237c6fffd77 56-57,64-67,160-161,426-431,441,465-470,624
+apps/api/src/controllers/v2/types.ts
+  h_b58237c6fffd77 2128
+apps/api/src/lib/alexandria-discovery.ts
+  h_b58237c6fffd77 5
+apps/api/src/lib/index-daily-limit.ts
+  h_b58237c6fffd77 2,5-13,21,24-43,59-66,68,71-74,85-87,127-128,144,147-148,166-194
+apps/api/src/lib/keyless.ts
+  h_b58237c6fffd77 128-131
+apps/api/src/lib/research-upstream.ts
+  h_b58237c6fffd77 54-58,68-76
+apps/api/src/lib/world-id.ts
+  h_b58237c6fffd77 71,75,307
+apps/api/src/routes/exchange.ts
+  h_b58237c6fffd77 10-11,14,65-101,172,194,196,201-241,291-298
+apps/api/src/search/alexandria.test.ts
+  h_b58237c6fffd77 33-38,213-259
+apps/api/src/search/alexandria.ts
+  h_b58237c6fffd77 47-48,147,149-163
+apps/api/src/search/execute.test.ts
+  h_b58237c6fffd77 8-15,114,157-334
+apps/api/src/search/execute.ts
+  h_b58237c6fffd77 3-7,63-66,93-94,130,132-167,174,352-369,371,379-413,415-421,583
+apps/api/src/search/tool-intent.test.ts
+  h_b58237c6fffd77 1-160
+apps/api/src/search/tool-intent.ts
+  h_b58237c6fffd77 1-321
+apps/api/src/services/alexandria/recommendation-signals.ts
+  h_b58237c6fffd77 1-133
+apps/api/src/services/alexandria/retrieve.test.ts
+  h_b58237c6fffd77 72
+apps/api/src/services/alexandria/retrieve.ts
+  h_b58237c6fffd77 7-9,38-44,117-118,267-270,272,280-305,317-329,331,334,337-338,420-425,427-428
+apps/elixir-sdk/lib/firecrawl.ex
+  h_b58237c6fffd77 1678-1683,1686,1699-1703,1729-1733,1738
+apps/elixir-sdk/mix.exs
+  h_b58237c6fffd77 4
+apps/elixir-sdk/openapi.json
+  h_b58237c6fffd77 6621-6682,6759-6795
+apps/js-sdk/firecrawl/README.md
+  h_b58237c6fffd77 267-272,275-283
+apps/js-sdk/firecrawl/package.json
+  h_b58237c6fffd77 3
+apps/js-sdk/firecrawl/src/v2/methods/gov.ts
+  h_b58237c6fffd77 22-30
+apps/js-sdk/firecrawl/src/v2/types.ts
+  h_b58237c6fffd77 834-846,850-859
+apps/playwright-service-ts/pnpm-lock.yaml
+  h_b58237c6fffd77 8,12,256-257,284-287,403-406,410-411,499-502,743,746,749,751,775-776,843,938-941,944,1010-1014,1105
+apps/playwright-service-ts/pnpm-workspace.yaml
+  h_b58237c6fffd77 3-6,8,12
+apps/python-sdk/README.md
+  h_b58237c6fffd77 288-294,297-305
+apps/python-sdk/firecrawl/__init__.py
+  h_b58237c6fffd77 45
+apps/python-sdk/firecrawl/types.py
+  h_b58237c6fffd77 72,176
+apps/python-sdk/firecrawl/v2/client.py
+  h_b58237c6fffd77 20,603-608,610-634,636-643
+apps/python-sdk/firecrawl/v2/client_async.py
+  h_b58237c6fffd77 23,372-377,379-403,405-412
+apps/python-sdk/firecrawl/v2/methods/aio/gov.py
+  h_b58237c6fffd77 5,18-22,28-37
+apps/python-sdk/firecrawl/v2/methods/gov.py
+  h_b58237c6fffd77 5,17-21,27-36
+apps/python-sdk/firecrawl/v2/types.py
+  h_b58237c6fffd77 2432-2446,2450-2451,2454-2458
+apps/test-site/package.json
+  h_b58237c6fffd77 19
+apps/test-site/pnpm-lock.yaml
+  h_b58237c6fffd77 33,41-42,56-63,68-69,74-75,81-82,88-89,95-96,102-103,107-108,113-114,119-120,123-124,166-167,170-171,174-175,179-180,232-233,236-237,240-241,247-249,259-261,580-581,586-587,704-707,712-715,720-723,728-731,736-739,744-747,752-755,840-841,1061-1062,1251-1252,1254-1255,1433-1434,1458-1460,1465-1466,1474-1475,1478-1479,1486-1487,1512-1513,1516-1517,1653-1656,1706-1707,1710-1711,1730-1731,1841-1844,1929-1930,1937-1940,1943,1946,1949,1952,1955,1958,1960,1966,1969,1972,1974-1983,1988,1990,2010,2013,2015,2048,2054,2089,2091,2093,2095,2097,2099,2101-2102,2126,2135,2139,2144,2146,2157-2162,2178-2182,2367,2399,2406,2408,2459,2478-2485,2492-2497,2503-2507,2512-2515,2522-2527,2532-2535,2541-2545,2610,2622,2624,2628-2629,2643,2652-2653,2656-2659,2661-2662,2665-2666,2668,2671,2676,2931,2933,2935,3180,3182,3184,3186-3187,3635,3653,3661,3671,3675,3682,3715,3717,3719,3969-3979,4030,4032,4036-4037,4048,4069,4129-4130,4149-4150,4176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5f58d25ebacf57d99680c48ff3dfa3509237f6a",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

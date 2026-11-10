@@ -1,0 +1,47 @@
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_caa68653d493b1 15,444-445,456-519,532,631-634,647-650,657-658,668-671,775,1019,1025,1035,1040-1043,1061
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/brandingScreenshot.test.ts
+  s_3002048a2ce37a::t_eec4dcc29df0df 1-9,16-103,105,109-125,129-152
+  s_3002048a2ce37a::t_e0af07f6d105b8 10-15,106-108,126-128
+  s_3002048a2ce37a::t_08e5555428894d 104
+apps/api/src/config.ts
+  s_3002048a2ce37a::t_334d2d1b956d19 580-581
+  s_3002048a2ce37a::t_caa68653d493b1 582
+apps/api/package.json
+  s_3002048a2ce37a::t_f041fed2b413bf 97
+apps/api/src/lib/branding/types.ts
+  s_3002048a2ce37a::t_334d2d1b956d19 86-88
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3002048a2ce37a::t_08e5555428894d 388-390,454
+  s_3002048a2ce37a::t_cbeeb6a412ce2e 59,387,391-398,446-451,550-557,641
+  s_3002048a2ce37a::t_fdd662196a8080 452-453
+  s_3002048a2ce37a::t_a616688067c593 455-458
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_3002048a2ce37a::t_81fd8aca5aabe3 176-178
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3002048a2ce37a::t_81fd8aca5aabe3 220-222,1222
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_81fd8aca5aabe3 234
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_75de0988e7f759 415-480
+apps/api/.env.example
+  s_3002048a2ce37a::t_cdf18a0e5899d8 81-82
+apps/api/pnpm-lock.yaml
+  s_3002048a2ce37a::t_496498372a2844 133-134,2141-2143,6270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d956db35dee97923e7d8528c5d02c083578e7f2d",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

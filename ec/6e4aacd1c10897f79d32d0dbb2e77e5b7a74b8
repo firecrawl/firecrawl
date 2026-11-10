@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/transformers/sendToSearchIndex.ts
+  s_8fcc4c507e6624::t_0d60e53d0a8742 25
+apps/api/src/scraper/scrapeURL/transformers/sendToSearchIndex.test.ts
+  s_8fcc4c507e6624::t_0d60e53d0a8742 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec6e4aacd1c10897f79d32d0dbb2e77e5b7a74b8",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

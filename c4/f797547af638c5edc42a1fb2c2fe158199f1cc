@@ -1,0 +1,21 @@
+apps/api/src/services/logging/redact.test.ts
+  s_8fcc4c507e6624::t_b4fb7b0b2b9c8c 62-68,76-81
+apps/api/src/services/logging/redact.ts
+  s_8fcc4c507e6624::t_b4fb7b0b2b9c8c 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4f797547af638c5edc42a1fb2c2fe158199f1cc",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

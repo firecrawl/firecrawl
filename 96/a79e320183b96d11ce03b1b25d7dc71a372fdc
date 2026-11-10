@@ -1,0 +1,19 @@
+.github/workflows/test-redis-image.yml
+  s_a2433fdf44735f::t_b8a81f10a16444 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96a79e320183b96d11ce03b1b25d7dc71a372fdc",
+  "prompts": {},
+  "sessions": {
+    "s_a2433fdf44735f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-4374-7871-8c71-c0f1ee4b7fec",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

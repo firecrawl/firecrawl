@@ -1,0 +1,23 @@
+apps/api/src/scraper/scrapeURL/lib/fetch.ts
+  s_2fd7beed0c8fd1::t_963e78ccffca8b 44-85,157
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_2fd7beed0c8fd1::t_963e78ccffca8b 52,517,677
+apps/api/src/scraper/scrapeURL/lib/__tests__/fetch.test.ts
+  s_2fd7beed0c8fd1::t_23f4cfc47fd956 1-5,75-140,193-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de7bc3d0259452c498e9cc034a4009227bb460dd",
+  "prompts": {},
+  "sessions": {
+    "s_2fd7beed0c8fd1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "163a553a-1106-41bf-80f7-32096cfbcdee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

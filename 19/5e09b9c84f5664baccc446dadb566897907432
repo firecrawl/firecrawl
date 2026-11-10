@@ -1,0 +1,28 @@
+apps/api/src/lib/extraction-provider.ts
+  s_55eb374d574d1c::t_3f95132c068ff8 17-22,57-58,74-80,85-107
+  s_55eb374d574d1c::t_6c7a4247d0a238 108
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_55eb374d574d1c::t_3f95132c068ff8 36,38,1110,1149-1156
+apps/api/src/config.ts
+  s_55eb374d574d1c::t_3f95132c068ff8 716-727,867-881
+apps/api/src/lib/extraction-provider.test.ts
+  s_55eb374d574d1c::t_f072b1f28fa68e 5,202-278
+apps/api/.env.example
+  s_55eb374d574d1c::t_e7881214f1bb79 87-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "195e09b9c84f5664baccc446dadb566897907432",
+  "prompts": {},
+  "sessions": {
+    "s_55eb374d574d1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23d62988-955b-47cc-bd5a-28edb2957b32",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

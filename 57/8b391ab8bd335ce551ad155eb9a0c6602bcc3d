@@ -1,0 +1,25 @@
+apps/python-sdk/setup.py
+  s_d3b3905e55a4e8::t_e3772564f86178 31
+apps/python-sdk/firecrawl/__init__.py
+  s_d3b3905e55a4e8::t_e3772564f86178 45
+apps/python-sdk/requirements.txt
+  s_d3b3905e55a4e8::t_e3772564f86178 3
+apps/python-sdk/pyproject.toml
+  s_d3b3905e55a4e8::t_e3772564f86178 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "578b391ab8bd335ce551ad155eb9a0c6602bcc3d",
+  "prompts": {},
+  "sessions": {
+    "s_d3b3905e55a4e8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-d5e6-7382-a51e-71effc0510da",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

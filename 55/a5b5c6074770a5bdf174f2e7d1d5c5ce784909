@@ -1,0 +1,51 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/brandingScreenshot.test.ts
+  s_3002048a2ce37a::t_e0af07f6d105b8 10-15,106-108,126-128
+  s_3002048a2ce37a::t_eec4dcc29df0df 1-9,16-74,76-81,83-87,89-103,105,109-125,129-134,136-138,145-157
+  s_3002048a2ce37a::t_d5d10989de533e 75,82,88,135,139-144
+  s_3002048a2ce37a::t_08e5555428894d 104
+apps/api/pnpm-lock.yaml
+  s_3002048a2ce37a::t_496498372a2844 134-135,2139-2141,6263
+apps/api/package.json
+  s_3002048a2ce37a::t_f041fed2b413bf 97
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_81fd8aca5aabe3 234
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_3002048a2ce37a::t_81fd8aca5aabe3 176-178
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3002048a2ce37a::t_cbeeb6a412ce2e 59,387,391-393,395,443-448,547-554,638
+  s_3002048a2ce37a::t_08e5555428894d 388-390,451
+  s_3002048a2ce37a::t_a616688067c593 452-455
+  s_3002048a2ce37a::t_fdd662196a8080 449-450
+  s_3002048a2ce37a::t_d5d10989de533e 394
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3002048a2ce37a::t_d5d10989de533e 165-167
+  s_3002048a2ce37a::t_81fd8aca5aabe3 1228
+apps/api/src/lib/branding/types.ts
+  s_3002048a2ce37a::t_334d2d1b956d19 89-91
+apps/api/src/config.ts
+  s_3002048a2ce37a::t_2474fe1d7cafe8 582-584
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_2474fe1d7cafe8 723
+  s_3002048a2ce37a::t_caa68653d493b1 14,521-522,533-538,540-543,547-593,606,707-710,724-726,733-734,744-747,851,1098,1104,1114,1119-1122,1140
+  s_3002048a2ce37a::t_d5d10989de533e 539,544-546
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_75de0988e7f759 404-469
+apps/api/.env.example
+  s_3002048a2ce37a::t_e55cde7dc1b7d5 78-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55a5b5c6074770a5bdf174f2e7d1d5c5ce784909",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

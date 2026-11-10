@@ -1,0 +1,40 @@
+apps/api/src/lib/branding/metrics.ts
+  s_3002048a2ce37a::t_ee634116f3af10 24-25,30-63,92-103
+apps/api/src/config.ts
+  s_3002048a2ce37a::t_ee634116f3af10 582-585
+apps/api/src/lib/branding/types.ts
+  s_3002048a2ce37a::t_ee634116f3af10 91
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_4d36d74f4e93e9 19-21,23,25,543-545,549,555-556,562-569,598-600,605-628,633-636,638,648,651-652,655,657,660,1176,1178-1189,1232-1238,1248-1251,1263,1270-1273,1304
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_3002048a2ce37a::t_ee634116f3af10 177
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3002048a2ce37a::t_166291b2a4cf0e 60,395-398,568-575
+  s_3002048a2ce37a::t_8a4ee57f542b8d 576-577
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3002048a2ce37a::t_ee634116f3af10 167
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_848bb39480109e 32,419-432,457,478,522-549,653
+  s_3002048a2ce37a::t_ace635ff4ed44a 503,517,521
+  s_3002048a2ce37a::t_a00531669fd914 218,252,409-417,652
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/brandingScreenshot.test.ts
+  s_3002048a2ce37a::t_79c410b6c694ae 20,91,98,104,165-185,189,201
+apps/api/.env.example
+  s_3002048a2ce37a::t_52d71da5fbd0b8 78-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a9694642e42b7d182add9af0319d623856dcc38",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+apps/api/pnpm-workspace.yaml
+  s_91186b19000b7a::t_9641435a629dc5 32
+apps/api/package.json
+  s_91186b19000b7a::t_9641435a629dc5 151
+apps/api/pnpm-lock.yaml
+  s_a2433fdf44735f::t_54121f643e4e2e 25,207,296-297,3278,4509-4510,4881,4889,7340,7345,7499,8622
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5f578b5721a6ebe237fcbb82acff460b43d8251",
+  "prompts": {},
+  "sessions": {
+    "s_91186b19000b7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-5e3c-7921-b626-05823a6fc4b1",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    },
+    "s_a2433fdf44735f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-4374-7871-8c71-c0f1ee4b7fec",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+apps/playwright-service-ts/package.json
+  s_9616342f961f73::t_2820303145f82d 21
+apps/playwright-service-ts/pnpm-lock.yaml
+  s_9616342f961f73::t_d525f4d8c64544 29-30,469-471,474-476,968,970,972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "634269b8d4f3483ed8bb244f6b36c20a9731addb",
+  "prompts": {},
+  "sessions": {
+    "s_9616342f961f73": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a160e1-79db-7660-8e96-1b74f9b466e7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

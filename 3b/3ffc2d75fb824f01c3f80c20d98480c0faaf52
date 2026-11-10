@@ -1,0 +1,69 @@
+apps/api/src/lib/queue-full-error.ts
+  s_6a7201d5c4fd9c::t_40dc97e66a7c70 1-2,7
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_5d0d8c59f9e98c 113-114
+  s_6a7201d5c4fd9c::t_c37cab7dd20cdc 31-34
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_b90bfed134290a 5,8,67,89,416,785,794,803,812
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_184c152b3f437b 1
+  s_6a7201d5c4fd9c::t_29a1596cb17f44 74-76
+  s_6a7201d5c4fd9c::t_ce6da979666a1f 449-450
+  s_6a7201d5c4fd9c::t_d92ea37a1a09d3 272-274
+apps/api/src/lib/otel-tracer.ts
+  s_6a7201d5c4fd9c::t_e25cdba4883de1 288-290
+  s_6a7201d5c4fd9c::t_db11835b21415b 372-374
+  s_6a7201d5c4fd9c::t_9b504fc9d0a158 292-323
+  s_6a7201d5c4fd9c::t_785952f5123af5 403-407
+  s_6a7201d5c4fd9c::t_36aee34867bfc9 392-397,408-410
+  s_6a7201d5c4fd9c::t_86d61ca85fa727 34
+  s_6a7201d5c4fd9c::t_7dd97b589f5ebc 367-368,380-391,398-402,411-425
+  s_6a7201d5c4fd9c::t_e6c292267f07a0 291
+apps/api/src/scraper/scrapeURL/lib/abortManager.ts
+  s_6a7201d5c4fd9c::t_179b27b5a8d313 130-131
+  s_6a7201d5c4fd9c::t_b0d9d7ce17b32a 1-2
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_b3311a139affd1 11
+  s_6a7201d5c4fd9c::t_7791bf2ddfb815 8
+  s_6a7201d5c4fd9c::t_3b833a20c832ac 1-7,9-10,12-62,89-94
+  s_6a7201d5c4fd9c::t_128fea5e710e50 63-74,80-81,85-88
+  s_6a7201d5c4fd9c::t_e47f7b06f77d07 75-79,82-84
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_c463766f998b76 104-105
+  s_6a7201d5c4fd9c::t_fda1a53c71ec4f 1914-1920,1922-1925
+  s_6a7201d5c4fd9c::t_064732906a84e8 1921
+apps/api/src/lib/unhandled-error-handler.test.ts
+  s_6a7201d5c4fd9c::t_0a443a68c23c64 1-7,9-18,20-96,99-106,108-110,113-116,118-120,131-144
+  s_6a7201d5c4fd9c::t_f1650121787d3b 97-98
+  s_6a7201d5c4fd9c::t_785952f5123af5 107
+  s_6a7201d5c4fd9c::t_64eb168887da9c 19
+  s_6a7201d5c4fd9c::t_51c1517cd6ea2e 111-112
+  s_6a7201d5c4fd9c::t_69a6cad5487a0a 117,121-130
+  s_6a7201d5c4fd9c::t_eaab39c69b7c17 8
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_d852234ca917c5 27
+  s_6a7201d5c4fd9c::t_e89275d33ce546 323
+  s_6a7201d5c4fd9c::t_5901841b51f859 36
+apps/api/src/lib/otel-tracer.test.ts
+  s_6a7201d5c4fd9c::t_785952f5123af5 149,167
+  s_6a7201d5c4fd9c::t_c14a8249551093 11,14-16,18
+  s_6a7201d5c4fd9c::t_088f3ae0604af9 113-148,150-166,168-174
+apps/api/src/lib/error.test.ts
+  s_6a7201d5c4fd9c::t_442421a9e5aaa7 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b3ffc2d75fb824f01c3f80c20d98480c0faaf52",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

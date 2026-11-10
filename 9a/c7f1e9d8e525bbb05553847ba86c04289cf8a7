@@ -1,0 +1,32 @@
+apps/api/src/lib/branding/font-names.ts
+  s_3002048a2ce37a::t_582c3a0fd4339a 79
+  s_3002048a2ce37a::t_6e03072d9cec4f 1-49,56,67-77,80-110
+  s_3002048a2ce37a::t_35e06ea6393942 50-55,57-66,78
+apps/api/src/lib/branding/processor.ts
+  s_3002048a2ce37a::t_6e03072d9cec4f 356-359,365-366,423-425
+  s_3002048a2ce37a::t_35e06ea6393942 12,395-398,401-402,404-405,419-422,426-429
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_4bf605f3bc44cb 1327-1352,1355-1356,1358-1359
+  s_3002048a2ce37a::t_b3f4f574f658c4 1353-1354,1357
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_6e03072d9cec4f 31-35,303-306,310-318,356-357
+apps/api/src/__tests__/lib/branding/processor-fonts.test.ts
+  s_3002048a2ce37a::t_4bf605f3bc44cb 1-95,97,99-100,106,117-118
+  s_3002048a2ce37a::t_35e06ea6393942 96,98,101-105,107-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ac7f1e9d8e525bbb05553847ba86c04289cf8a7",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

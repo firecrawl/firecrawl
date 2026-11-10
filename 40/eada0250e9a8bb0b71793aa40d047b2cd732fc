@@ -1,0 +1,20 @@
+apps/api/native/src/xml.rs
+  s_8fcc4c507e6624::t_161193dd48c035 60-63,78-86,100-108,158-170
+  s_8fcc4c507e6624::t_71fab6f0f02ee9 171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40eada0250e9a8bb0b71793aa40d047b2cd732fc",
+  "prompts": {},
+  "sessions": {
+    "s_8fcc4c507e6624": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "59a7ac86-3c0a-4744-a42e-862c93c47f60",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
