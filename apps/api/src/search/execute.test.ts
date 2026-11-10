@@ -2,6 +2,7 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchDeveloperCategory: vi.fn(),
   searchGovCategory: vi.fn(),
+  searchGovIfRouted: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
   discoverSkills: vi.fn(),
@@ -48,6 +49,8 @@ vi.mock("./gov", () => ({
         : category.type === "gov",
     ),
   searchGovCategory: mocks.searchGovCategory,
+  searchGovIfRouted: mocks.searchGovIfRouted,
+  MAX_ROUTED_LIMIT: 10,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -121,6 +124,7 @@ function options(categories: Array<{ type: string }>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.searchDeveloperCategory.mockResolvedValue([developerResult]);
+  mocks.searchGovIfRouted.mockResolvedValue(null);
   mocks.discoverTools.mockResolvedValue({
     status: "available",
     items: [{ id: "fred/series/observations" }],
@@ -890,6 +894,116 @@ describe("executeSearch gov category", () => {
     expect(result.response).toEqual({ web: [govResult] });
     expect(result.indexResultsCount).toBe(1);
     expect(result.searchCredits).toBe(0);
+  });
+});
+
+describe("executeSearch gov routing", () => {
+  const govResult = {
+    url: "https://www.dol.gov/agencies/whd/fmla",
+    title: "FMLA",
+    description: "Family and Medical Leave Act",
+    position: 1,
+  };
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "",
+  };
+
+  it("serves a routed plain web search from the Government Index, skips the regular web search, and bills it as a web search", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.searchGovIfRouted.mockResolvedValue([govResult]);
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(mocks.searchGovIfRouted).toHaveBeenCalledWith(
+      {
+        query: "retries",
+        limit: 10,
+        teamId: "team-1",
+        timeout: 1_000,
+        zeroDataRetention: false,
+      },
+      "job-1",
+      logger,
+    );
+    expect(mocks.searchGovCategory).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).toEqual({ web: [govResult] });
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("starts the regular web search only after the routing decision and serves it when the search is not routed", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    let webSearchCallsWhenRouting = -1;
+    mocks.searchGovIfRouted.mockImplementation(async () => {
+      webSearchCallsWhenRouting = mocks.search.mock.calls.length;
+      return null;
+    });
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(webSearchCallsWhenRouting).toBe(0);
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(result.response.web?.map(item => item.url)).toEqual([
+      "https://example.com/",
+    ]);
+  });
+
+  it.each([
+    ["a category", { categories: [{ type: "pdf" }] }],
+    ["another source", { sources: [{ type: "web" }, { type: "news" }] }],
+    ["included domains", { includeDomains: ["example.com"] }],
+    ["excluded domains", { excludeDomains: ["example.com"] }],
+    ["a time range", { tbs: "qdr:d" }],
+    ["a result filter", { filter: "0" }],
+    ["a country other than the US", { country: "gb" }],
+    ["a site: operator", { query: "leave site:dol.gov" }],
+    [
+      "an operator the parser leaves in the text",
+      { query: "fmla filetype:pdf" },
+    ],
+    ["an OR between terms", { query: "fmla OR overtime" }],
+    ["a quoted phrase", { query: '"family leave" eligibility' }],
+    ["a language other than English", { lang: "es" }],
+    ["a location", { location: "Toronto, Ontario" }],
+    ["a page larger than 10 results", { limit: 11 }],
+    ["a blank query", { query: "   " }],
+  ])("never routes a search with %s", async (_case, overrides) => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch({ ...options([]), ...overrides }, context, logger);
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a zero data retention team", {}, { zeroDataRetention: true }],
+    ["an enterprise zdr search", { enterprise: ["zdr"] }, {}],
+    ["an enterprise anon search", { enterprise: ["anon"] }, {}],
+  ])("never routes %s", async (_case, optionOverrides, contextOverrides) => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch(
+      { ...options([]), ...optionOverrides },
+      { ...context, ...contextOverrides } as any,
+      logger,
+    );
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("never routes a US-only team", async () => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch(
+      options([]),
+      { ...context, flags: { usOnly: true } } as any,
+      logger,
+    );
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
   });
 });
 
