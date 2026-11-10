@@ -16,6 +16,7 @@ import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
+import { queueAdminRouter } from "./lib/admin-auth";
 import {
   adminInternalRouter,
   adminRouter,
@@ -127,9 +128,13 @@ if (!config.BULL_AUTH_KEY) {
 } else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
   serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
   app.use(
-    `/admin/${config.BULL_AUTH_KEY}/queues`,
-    countAdminPathRoute("queues"),
-    serverAdapter.getRouter(),
+    "/admin",
+    queueAdminRouter(serverAdapter.getRouter(), (req, res, next) => {
+      if (config.BULL_AUTH_KEY) {
+        serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+      }
+      countAdminPathRoute("queues")(req, res, next);
+    }),
   );
 }
 
