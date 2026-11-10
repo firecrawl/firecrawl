@@ -82,6 +82,7 @@ _Pst. Hey, you, join our stargazers :)_
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
 | [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
+| [**Alexandria**](#alexandria) | Give your agent 400+ data providers and specialized indexes (hosted only) |
 
 ---
 
@@ -310,6 +311,16 @@ curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 ```
 
 See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all available commands. For MCP, see [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server).
+
+---
+
+## Alexandria
+
+[Alexandria](https://alexandria.firecrawl.dev) gives your agents 400+ data providers and specialized indexes through one API, MCP, or CLI. Agents discover a tool alongside their web results, inspect its inputs and pricing, then run it to get structured data. Discovery is free; execution uses the credits listed on the tool.
+
+Install it in your agent from [alexandria.firecrawl.dev](https://alexandria.firecrawl.dev), or see the [Alexandria documentation](https://docs.firecrawl.dev/features/alexandria) for CLI, MCP, SDK, and API usage.
+
+> **Note:** Alexandria is only available on hosted Firecrawl ([firecrawl.dev](https://firecrawl.dev)); it is not part of the self-hosted / open-source deployment.
 
 ---
 
