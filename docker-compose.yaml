@@ -55,6 +55,9 @@ x-common-env: &common-env
   SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
   SEARXNG_ENGINES: ${SEARXNG_ENGINES}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+  # Convert HTML to Markdown with the Go converter built into the API image.
+  # Set USE_GO_MARKDOWN_PARSER=false to fall back to Turndown.
+  USE_GO_MARKDOWN_PARSER: ${USE_GO_MARKDOWN_PARSER:-true}
   # Set NUQ_BACKEND=fdb to run the queue on FoundationDB instead of Postgres
   NUQ_BACKEND: ${NUQ_BACKEND}
   FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
