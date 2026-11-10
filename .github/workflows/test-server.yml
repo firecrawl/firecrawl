@@ -64,6 +64,7 @@ jobs:
       FDB_VERSION: 7.3.63
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      HOSTED_BASH_ENABLED: true
       FIRECRAWL_LOG_TO_FILE: true
       # Exercise the parse upload-ref path in self-hosted CI. The snips run
       # against a separately started API server, so these must be server envs,
