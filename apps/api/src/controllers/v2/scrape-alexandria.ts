@@ -396,27 +396,3 @@ export async function providerScrapeController(
     data: { alexandria: answer.results, creditsCost: answer.creditsCost },
   });
 }
-
-const CALL_KEYS = ["provider", "capability", "version", "options"] as const;
-
-/**
- * POST /v2/alexandria: the provider call is the body. Accepts one call
- * (`{ provider, capability, options, version?, timeout?, ... }`) or an array
- * of 1-10 calls, and answers exactly as `/v2/scrape` with `alexandria` does.
- */
-export async function alexandriaController(
-  req: RequestWithAuth<any, any, any>,
-  res: Response,
-) {
-  const body = req.body;
-  if (Array.isArray(body)) req.body = { alexandria: body };
-  else if (body && typeof body === "object" && "provider" in body) {
-    const call: Record<string, unknown> = {};
-    const rest: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(body))
-      ((CALL_KEYS as readonly string[]).includes(key) ? call : rest)[key] =
-        value;
-    req.body = { ...rest, alexandria: [call] };
-  }
-  return providerScrapeController(req, res);
-}

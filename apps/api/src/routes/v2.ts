@@ -9,7 +9,7 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
-import { alexandriaController } from "../controllers/v2/scrape-alexandria";
+import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   keylessWorldIdDeviceController,
@@ -278,16 +278,11 @@ v2Router.post(
   wrap(scrapeController),
 );
 
-// Provider calls bill through the Exchange, so no credit precheck here,
-// matching /v2/scrape with an alexandria body.
+// The provider call as the body: { provider, capability, options }.
 v2Router.post(
   "/alexandria",
-  authMiddleware(RateLimiterMode.Scrape, {
-    allowKeyless: true,
-    allowAgentManagedKey: true,
-  }),
-  inferIntegrationMiddleware,
-  wrap(alexandriaController),
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
 );
 
 v2Router.get(

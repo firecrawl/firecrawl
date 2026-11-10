@@ -44,10 +44,7 @@ vi.mock("../../config", () => ({
     USE_DB_AUTHENTICATION: true,
   },
 }));
-import {
-  alexandriaController,
-  providerScrapeController,
-} from "./scrape-alexandria";
+import { providerScrapeController } from "./scrape-alexandria";
 import { config } from "../../config";
 import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 
@@ -71,7 +68,6 @@ app.use((req, _res, next) => {
   next();
 });
 app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
-app.post("/v2/alexandria", (req, res) => alexandriaController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
@@ -784,48 +780,5 @@ describe("feedback tokens", () => {
       .post("/v2/scrape")
       .send({ alexandria: call });
     expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
-  });
-});
-
-describe("/v2/alexandria", () => {
-  it("takes the call as the body and answers like /v2/scrape", async () => {
-    const response = await request(app)
-      .post("/v2/alexandria")
-      .send({ ...call, timeout: 30_000, origin: "sdk" });
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      success: true,
-      scrape_id: "scrape-1",
-      data: { alexandria: [expect.any(Object)], creditsCost: 0 },
-    });
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({ calls: [call], timeoutMs: 30_000 }),
-    );
-  });
-
-  it("accepts an array of calls", async () => {
-    const second = { ...call, capability: "series/observations" };
-    mocks.retrieve.mockResolvedValue(
-      result([
-        { ...call, creditsCost: 0, data: {} },
-        { ...second, creditsCost: 0, data: {} },
-      ]),
-    );
-    const response = await request(app)
-      .post("/v2/alexandria")
-      .send([call, second]);
-    expect(response.status).toBe(200);
-    expect(response.body.data.alexandria).toHaveLength(2);
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({ calls: [call, second] }),
-    );
-  });
-
-  it("rejects keys outside the call and its request options", async () => {
-    const response = await request(app)
-      .post("/v2/alexandria")
-      .send({ ...call, url: "https://example.com" });
-    expect(response.status).not.toBe(200);
-    expect(mocks.retrieve).not.toHaveBeenCalled();
   });
 });
