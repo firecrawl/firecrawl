@@ -255,11 +255,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
     expect(mocks.upstreamFetch).toHaveBeenCalledTimes(2);
   });
 
-  it.each([
-    { scrapeZDR: "forced" },
-    { searchZDR: "forced-zdr" },
-    { searchZDR: "forced-anon" },
-  ])(
+  it.each([{ searchZDR: "forced-zdr" }, { searchZDR: "forced-anon" }])(
     "refuses discover before any upstream call for a team with %o",
     async flags => {
       keyResolvesAs(flags);
@@ -271,6 +267,13 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
       expect(mocks.upstreamFetch).not.toHaveBeenCalled();
     },
   );
+
+  it("proxies discover for a team that forces scrape ZDR only", async () => {
+    keyResolvesAs({ scrapeZDR: "forced" });
+    const response = await send("get", "/exchange/discover?q=gdp", "header");
+    expect(response.status).not.toBe(403);
+    expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     [200, true],

@@ -2,7 +2,7 @@ import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { billingCountryForTeam } from "../lib/billing-country";
 import { orgIdFromAcuc } from "../lib/team-org";
-import { getScrapeZDR, getSearchForcedKind } from "../lib/zdr-helpers";
+import { getSearchForcedKind } from "../lib/zdr-helpers";
 import {
   acceptProviderTerms,
   acceptTermsSchema,
@@ -148,8 +148,7 @@ function exchangeProxy(
 
     if (
       options.refusesZeroDataRetention &&
-      (getScrapeZDR(authedReq.acuc?.flags) === "forced" ||
-        getSearchForcedKind(authedReq.acuc?.flags) !== null)
+      getSearchForcedKind(authedReq.acuc?.flags) !== null
     ) {
       return exchangeError(
         res,
@@ -290,7 +289,7 @@ export const exchangeRouter = express.Router();
 // the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
 // Dashboard and publisher routes below stay on the flat Labs limit.
 // It sends the caller's query to services that do not honour zero data
-// retention, so teams that require it are refused.
+// retention, so teams whose search requires it are refused.
 exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.ExchangeDiscover, {

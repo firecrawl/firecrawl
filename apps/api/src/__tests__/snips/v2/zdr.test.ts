@@ -236,30 +236,23 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
     expect(response.body.success).toBe(true);
   }, 60000);
 
-  it.each([
-    ["scrapeZDR", { scrapeZDR: "forced" }],
-    ["searchZDR", { searchZDR: "forced-zdr" }],
-  ] as const)(
-    "should refuse data source discovery when %s is forced",
-    async (flag, flags) => {
-      const identity = await idmux({
-        name: `zdr/discover-${flag}`,
-        credits: 100,
-        flags,
-      });
+  it("should refuse data source discovery when searchZDR is forced", async () => {
+    const identity = await idmux({
+      name: "zdr/discover-searchZDR",
+      credits: 100,
+      flags: { searchZDR: "forced-zdr" },
+    });
 
-      const response = await request(TEST_API_URL)
-        .get("/exchange/discover")
-        .query({ q: "company funding rounds" })
-        .set("Authorization", `Bearer ${identity.apiKey}`);
+    const response = await request(TEST_API_URL)
+      .get("/exchange/discover")
+      .query({ q: "company funding rounds" })
+      .set("Authorization", `Bearer ${identity.apiKey}`);
 
-      expect(response.statusCode).toBe(403);
-      expect(response.body.error).toBe(
-        "Provider discovery does not support zero data retention.",
-      );
-    },
-    60000,
-  );
+    expect(response.statusCode).toBe(403);
+    expect(response.body.error).toBe(
+      "Provider discovery does not support zero data retention.",
+    );
+  }, 60000);
 
   describe.each(scopes)("%s audio, video and product formats", scope => {
     let identity: Identity;
