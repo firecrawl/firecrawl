@@ -3,6 +3,7 @@ export type BillingEndpoint =
   | "batch_scrape"
   | "browser"
   | "crawl"
+  | "datasets"
   | "deep_research"
   | "extract"
   | "fireclaw"
