@@ -45,6 +45,7 @@ export async function authorizeProviders(
   timeoutMs = 10000,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
+  const deadline = Date.now() + timeoutMs;
   const response = await exchangeRequest({
     teamId,
     path: "/v1/provider-terms/requirements",
@@ -94,10 +95,15 @@ export async function authorizeProviders(
         item.terms &&
         orgId !== null
       ) {
-        ledger ??= await acceptedProviders(teamId, orgId, undefined, {
-          clientIp,
-          billingCountry,
-        });
+        ledger ??= await acceptedProviders(
+          teamId,
+          orgId,
+          Math.max(1, deadline - Date.now()),
+          {
+            clientIp,
+            billingCountry,
+          },
+        );
         const accepted = ledger.get(item.provider);
         if (
           matchesAcceptance(accepted, item.terms) &&
@@ -121,10 +127,15 @@ export async function authorizeProviders(
     )
       continue;
     if (orgId !== null) {
-      ledger ??= await acceptedProviders(teamId, orgId, undefined, {
-        clientIp,
-        billingCountry,
-      });
+      ledger ??= await acceptedProviders(
+        teamId,
+        orgId,
+        Math.max(1, deadline - Date.now()),
+        {
+          clientIp,
+          billingCountry,
+        },
+      );
       const accepted = ledger.get(item.provider);
       if (matchesAcceptance(accepted, item.terms)) continue;
     }
