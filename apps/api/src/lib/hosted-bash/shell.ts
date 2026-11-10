@@ -12,7 +12,7 @@ export const MAX_OUTPUT_BYTES = 256_000;
 export const MAX_FIRECRAWL_CALLS = 25;
 const MAX_FILESYSTEM_BYTES = 32 * 1024 * 1024;
 
-// Text tools only: no archives, databases or interpreters to keep bounded.
+// Text tools only: no archives, databases, Python or JavaScript to keep bounded.
 const COMMANDS: CommandName[] = [
   "echo",
   "cat",

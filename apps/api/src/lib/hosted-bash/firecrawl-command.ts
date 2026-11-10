@@ -172,9 +172,13 @@ function parseArgs(args: string[], spec: FlagSpec) {
   const flags: Flags = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === "--") {
+      positional.push(...args.slice(i + 1));
+      break;
+    }
     const match = /^(?:--([\w-]+)|-([A-Za-z]))(?:=(.*))?$/s.exec(arg);
-    if (!match || arg === "--") {
-      if (arg !== "--") positional.push(arg);
+    if (!match) {
+      positional.push(arg);
       continue;
     }
     const raw = match[1] ?? match[2];
@@ -427,6 +431,7 @@ async function scrape(c: Context, args: string[]): Promise<string> {
           const body = scrapeBody(url, formats, flags);
           const data = (await c.client.post("scrape", body, c.signal)).data;
           const path = `.firecrawl/${urlToFilename(url)}`;
+          // As the CLI does: markdown, or the whole response, whatever the format.
           await output(c, data?.markdown || JSON.stringify(data ?? {}), path);
           c.stderr.push(`[${++done}/${urls.length}] Saved: ${path}`);
         } catch (error) {
@@ -473,8 +478,11 @@ export function firecrawlCommand(client: FirecrawlClient) {
       stderr: stderr.length ? `${stderr.join("\n")}\n` : "",
       exitCode,
     });
-    const help = ["help", "--help", "-h"];
-    if (!name || help.includes(name) || rest.some(arg => help.includes(arg))) {
+    // A bare `help` is only the help command up front: `search help desk` is a query.
+    const end = rest.indexOf("--");
+    const options = end === -1 ? rest : rest.slice(0, end);
+    const asksHelp = options.some(arg => arg === "--help" || arg === "-h");
+    if (!name || ["help", "--help", "-h"].includes(name) || asksHelp) {
       return result(FIRECRAWL_HELP, 0);
     }
     const hint = `Install the Firecrawl CLI for the rest: ${INSTALL} (see /docs/sdks/cli.md)`;

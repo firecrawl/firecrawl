@@ -7,15 +7,15 @@ import {
 } from "../lib";
 import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
 
-let identity: Identity;
-
-beforeAll(async () => {
-  identity = await idmux({ name: "bash", concurrency: 10, credits: 1000 });
-}, 10000);
-
 // The harness passes the shell env to the server, so the flag read here is the
 // one the server runs with.
 describeIf(config.HOSTED_BASH_ENABLED)("Hosted bash", () => {
+  let identity: Identity;
+
+  beforeAll(async () => {
+    identity = await idmux({ name: "bash", concurrency: 10, credits: 1000 });
+  }, 10000);
+
   const run = (command: string) =>
     request(TEST_API_URL)
       .post("/v2/bash")

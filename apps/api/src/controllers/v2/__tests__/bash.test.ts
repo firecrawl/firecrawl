@@ -256,6 +256,22 @@ describe("hosted bash route", () => {
     expect(json.text).toBe("search-1\n2\nhttps://first.test\n");
   });
 
+  it("treats words and anything after -- as the query, not as options", async () => {
+    await run("firecrawl search help desk; firecrawl search -- --limit -h");
+    expect(calls.map(call => call.body.query)).toEqual([
+      "help desk",
+      "--limit -h",
+    ]);
+  });
+
+  it("rejects a JSON body without a command", async () => {
+    for (const body of ['{"cmd": "echo hi"}', "{not json"]) {
+      const res = await request(base).post("/v2/bash").type("json").send(body);
+      expect(res.status).toBe(400);
+      expect(res.text).toContain('{"command": "..."}');
+    }
+  });
+
   it("shows the API's own error, such as a keyless limit, and exits 1", async () => {
     respond = () => ({
       status: 429,

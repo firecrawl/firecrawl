@@ -21,7 +21,8 @@ import { logger } from "../../lib/logger";
 import { capturePostHog } from "../../services/posthog-capture";
 
 const ROUTE = "/v2/bash";
-const EVENT = "bash_command_run";
+const RUN_EVENT = "bash_command_run";
+const USAGE_EVENT = "bash_usage_viewed";
 const MAX_COMMAND_BYTES = 64 * 1024;
 const COMMANDS_PER_MINUTE = 60;
 // CLI commands worth counting by name; any other word after `firecrawl` is "other".
@@ -66,7 +67,7 @@ Pipes, grep, jq, sed, awk and loops work, for example:
 
 Response:
   Plain text (stdout, then stderr) by default. Add ?format=json or Accept: application/json
-  for stdout, stderr, exitCode, durationMs and truncated. X-Exit-Code is always set.
+  for stdout, stderr, exitCode, durationMs and truncated. X-Exit-Code is set on every run.
 
 Without an API key, firecrawl runs on the free keyless tier, limited per IP per day.
 A limit message includes a link to a free API key; send one as Authorization: Bearer fc-...
@@ -108,7 +109,8 @@ function createRateLimit(): RequestHandler {
   };
 }
 
-function readCommand(req: Request): string | undefined {
+/** The command sent, undefined when none was, or null for a JSON body without one. */
+function readCommand(req: Request): string | null | undefined {
   const fromQuery =
     typeof req.query.command === "string" ? req.query.command : undefined;
   if (typeof req.body !== "string" || !req.body.trim()) return fromQuery;
@@ -116,9 +118,9 @@ function readCommand(req: Request): string | undefined {
   if (!req.is("application/json")) return req.body;
   try {
     const command = JSON.parse(req.body)?.command;
-    return typeof command === "string" ? command : undefined;
+    return typeof command === "string" ? command : null;
   } catch {
-    return undefined;
+    return null;
   }
 }
 
@@ -135,41 +137,40 @@ function ownBaseUrl(req: Request): string {
   return `http://${host}:${localPort}`;
 }
 
-/** Records the shape of a run (client, subcommands, outcome), never the command text. */
+/** Records a usage view, or the shape of a run (subcommands, outcome), never the command text. */
 function track(
   req: Request,
-  command: string | undefined,
   ownKey: boolean,
-  result?: ShellResult,
+  run?: { command: string; result: ShellResult },
 ) {
   const ip = (req.ip ?? "").replace(/^::ffff:/i, "");
   // The id keyless_prompt_shown uses, so runs join to prompts and signups.
   const keylessTeam = isIPv4(ip) ? keylessTeamUuid(keylessTeamId(ip)) : null;
-  const subcommands = [
-    ...(command ?? "").matchAll(/\bfirecrawl\s+([a-z][\w-]*)/g),
-  ].map(match => (CLI_COMMANDS.has(match[1]) ? match[1] : "other"));
+  const event = run ? RUN_EVENT : USAGE_EVENT;
   const properties = {
     keyless_team_id: keylessTeam,
     user_agent: req.get("user-agent")?.slice(0, 300) ?? null,
     method: req.method,
-    has_command: Boolean(command),
     own_key: ownKey,
-    subcommands,
-    ...(result
+    ...(run
       ? {
-          exit_code: result.exitCode,
-          duration_ms: result.durationMs,
-          endpoints: result.endpoints,
-          failed_endpoints: result.failedEndpoints,
-          truncated: result.truncated,
+          subcommands: [
+            ...run.command.matchAll(/\bfirecrawl\s+([a-z][\w-]*)/g),
+          ].map(match => (CLI_COMMANDS.has(match[1]) ? match[1] : "other")),
+          exit_code: run.result.exitCode,
+          duration_ms: run.result.durationMs,
+          endpoints: run.result.endpoints,
+          failed_endpoints: run.result.failedEndpoints,
+          truncated: run.result.truncated,
         }
       : {}),
   };
-  logger.info("Hosted bash command", {
+  logger.info("Hosted bash request", {
     module: "hosted-bash",
+    event,
     ...properties,
   });
-  void capturePostHog(EVENT, keylessTeam ?? "hosted-bash-anonymous", {
+  void capturePostHog(event, keylessTeam ?? "hosted-bash-anonymous", {
     ...properties,
     // Callers are anonymous IPs: do not create a person for each one.
     $process_person_profile: false,
@@ -178,12 +179,20 @@ function track(
 
 async function bashController(req: Request, res: Response) {
   res.setHeader("Cache-Control", "no-store");
-  const command = readCommand(req)?.trim();
+  const sent = readCommand(req);
   const apiKey =
     /^Bearer\s+(\S+)$/i.exec(req.get("authorization") ?? "")?.[1] ?? null;
 
+  if (sent === null) {
+    res
+      .status(400)
+      .type("text/plain")
+      .send('Send JSON as {"command": "..."}, or the command as the body.\n');
+    return;
+  }
+  const command = sent?.trim();
   if (!command) {
-    track(req, command, Boolean(apiKey));
+    track(req, Boolean(apiKey));
     res
       .type("text/plain")
       .send(usage(`${req.protocol}://${req.get("host")}${ROUTE}`));
@@ -202,7 +211,7 @@ async function bashController(req: Request, res: Response) {
     ip: req.ip ?? null,
     apiKey,
   });
-  track(req, command, Boolean(apiKey), result);
+  track(req, Boolean(apiKey), { command, result });
 
   res.setHeader("X-Exit-Code", String(result.exitCode));
   res.setHeader("X-Duration-Ms", String(result.durationMs));

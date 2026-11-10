@@ -1,8 +1,10 @@
 import type { InitialFiles } from "just-bash";
+import { logger } from "../logger";
 
 const DOCS_ORIGIN = "https://docs.firecrawl.dev";
 const INDEX_URL = `${DOCS_ORIGIN}/llms.txt`;
 const TTL_MS = 60 * 60 * 1000;
+const RETRY_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 const LINK = /\]\((https:\/\/docs\.firecrawl\.dev\/[^)\s]+)\)/g;
 
@@ -26,14 +28,31 @@ function fetchText(url: string): Promise<string> {
   return text;
 }
 
-/** Every English page path, found by walking llms.txt and its English sub-indexes. */
-async function listPages(): Promise<string[]> {
+/**
+ * Every English page path, found by walking llms.txt and its English
+ * sub-indexes. An index that fails to load is skipped and reported, so the
+ * pages found elsewhere are kept.
+ */
+async function walkIndexes(): Promise<{ pages: string[]; complete: boolean }> {
   const seen = new Set<string>();
   const pages = new Set<string>();
+  let complete = true;
   const walk = async (url: string): Promise<void> => {
     if (seen.has(url)) return;
     seen.add(url);
-    const links = [...(await fetchText(url)).matchAll(LINK)].map(m => m[1]);
+    let index: string;
+    try {
+      index = await fetchText(url);
+    } catch (error) {
+      complete = false;
+      logger.warn("Hosted bash could not load a docs index", {
+        module: "hosted-bash",
+        url,
+        error,
+      });
+      return;
+    }
+    const links = [...index.matchAll(LINK)].map(m => m[1]);
     for (const link of links) {
       if (link.endsWith(".md")) pages.add(new URL(link).pathname);
     }
@@ -48,13 +67,37 @@ async function listPages(): Promise<string[]> {
     );
   };
   await walk(INDEX_URL);
-  return [...pages].sort();
+  return { pages: [...pages].sort(), complete };
+}
+
+let known: string[] | null = null;
+let refreshAt = 0;
+let refresh: Promise<string[]> | null = null;
+
+/**
+ * The page list, refreshed hourly in the background. A command only waits for
+ * it on a server that has never listed the docs; after that a slow or failing
+ * docs site leaves the last list in place and is retried a minute later.
+ */
+function listPages(): Promise<string[]> {
+  if (!refresh && Date.now() >= refreshAt) {
+    refresh = walkIndexes()
+      .then(({ pages, complete }) => {
+        refreshAt = Date.now() + (complete ? TTL_MS : RETRY_MS);
+        // A partial walk never replaces a fuller list.
+        if (complete || pages.length >= (known?.length ?? 0)) known = pages;
+        return known ?? pages;
+      })
+      .finally(() => {
+        refresh = null;
+      });
+  }
+  return known ? Promise.resolve(known) : (refresh as Promise<string[]>);
 }
 
 /**
  * The live docs.firecrawl.dev pages as files under /docs. Only the page list is
- * loaded up front; a page is fetched when a command first reads it. If the docs
- * site is down the shell still starts, with an empty /docs.
+ * needed to start a shell; a page is fetched when a command first reads it.
  */
 export async function docsFiles(): Promise<InitialFiles> {
   const files: InitialFiles = { "/docs/llms.txt": () => fetchText(INDEX_URL) };
