@@ -1186,6 +1186,7 @@ export interface BatchScrapeJob {
 export interface MapData {
   agent_hints?: string[];
   id?: string;
+  warning?: string;
   links: SearchResultWeb[];
 }
 
