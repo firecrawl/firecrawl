@@ -188,3 +188,44 @@ def test_async_batch_scrape_returns_when_job_finishes_inside_timeout():
     assert [float(s) for s in clock.sleeps] == [float(POLL_INTERVAL)]
     assert clock.now == POLL_INTERVAL
     assert all(t < 5 for t in transport.get_times)
+
+
+class _SteppingClock(_Clock):
+    """Clock that crosses the deadline between the post-status check and the
+    remaining-time read, like a slow scheduler would. Sleeping a negative
+    delay raises ValueError, matching time.sleep()."""
+
+    def __init__(self, reads):
+        super().__init__()
+        self.reads = list(reads)
+
+    def monotonic(self):
+        if self.reads:
+            self.now = self.reads.pop(0)
+        return self.now
+
+    def sleep(self, seconds):
+        if seconds < 0:
+            raise ValueError("sleep length must be non-negative")
+        super().sleep(seconds)
+
+
+def test_sync_batch_scrape_never_sleeps_negative_when_deadline_passes_mid_check():
+    # start, pre-status check, post-status check (still inside budget),
+    # remaining-time read (just past the deadline).
+    clock = _SteppingClock([0.0, 0.0, WAIT_TIMEOUT - 0.001, WAIT_TIMEOUT + 0.001])
+    transport = _Transport(clock, ["scraping"])
+    client = Firecrawl(api_key="fake-local-only")
+    client._v2_client.http_client = transport
+
+    with patch("firecrawl.v2.methods.batch.time.monotonic", clock.monotonic), \
+            patch("firecrawl.v2.methods.batch.time.sleep", clock.sleep):
+        with pytest.raises(TimeoutError):
+            client.batch_scrape(
+                ["https://example.test"],
+                wait_timeout=WAIT_TIMEOUT,
+                poll_interval=POLL_INTERVAL,
+            )
+
+    assert transport.get_count == 1
+    assert [float(s) for s in clock.sleeps] == [0.0]

@@ -338,8 +338,10 @@ def wait_for_batch_completion(
         # Clamp the poll sleep to the time still left. A full poll_interval
         # would run past a shorter wait budget.
         if timeout:
+            # The deadline can pass between the check above and this read;
+            # time.sleep() rejects a negative delay, so floor it at zero.
             remaining = timeout - (time.monotonic() - start_time)
-            time.sleep(min(poll_interval, remaining))
+            time.sleep(max(0.0, min(poll_interval, remaining)))
         else:
             time.sleep(poll_interval)
 
