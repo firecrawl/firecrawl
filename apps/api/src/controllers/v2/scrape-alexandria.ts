@@ -30,12 +30,6 @@ import {
   exchangeRequestId,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
-import {
-  AlexandriaQueryError,
-  convertAlexandriaOptions,
-  parseAlexandriaQuery,
-} from "../../lib/alexandria-query";
-import { capabilityOptionTypes } from "../../services/alexandria/option-types";
 import type { RequestWithAuth } from "./types";
 
 const FIND_TOOLS_LOGGED_OPTIONS = [
@@ -424,72 +418,5 @@ export async function alexandriaController(
         value;
     req.body = { ...rest, alexandria: [call] };
   }
-  return providerScrapeController(req, res);
-}
-
-/**
- * GET /v2/alexandria/:provider/*capability: one call from the query string
- * (see lib/alexandria-query), answered exactly as POST /v2/alexandria.
- */
-export async function alexandriaGetController(
-  req: RequestWithAuth<any, any, any>,
-  res: Response,
-) {
-  res.setHeader("Cache-Control", "no-store");
-  const provider = String(req.params.provider);
-  const capability = ([] as string[]).concat(req.params.capability).join("/");
-  let parsed: ReturnType<typeof parseAlexandriaQuery>;
-  try {
-    parsed = parseAlexandriaQuery(req.query as Record<string, unknown>);
-  } catch (error) {
-    if (error instanceof AlexandriaQueryError)
-      return res.status(400).json({ success: false, error: error.message });
-    throw error;
-  }
-  if (req.acuc && getScrapeZDR(req.acuc.flags) === "forced")
-    return res.status(400).json({
-      success: false,
-      error: "This team uses zero data retention. Use POST /v2/alexandria.",
-    });
-
-  let options: Record<string, unknown> = parsed.options;
-  // Keyless and unenabled teams are refused by the provider controller.
-  if (req.acuc && !req.auth.team_id.startsWith("preview_keyless_")) {
-    try {
-      options = convertAlexandriaOptions(
-        parsed.options,
-        await capabilityOptionTypes({
-          teamId: req.auth.team_id,
-          provider,
-          capability,
-          connectors: req.acuc.flags?.exchangeRetrieve === true,
-          timeoutMs: 5_000,
-        }),
-      );
-    } catch (error) {
-      if (error instanceof AlexandriaQueryError)
-        return res.status(400).json({ success: false, error: error.message });
-      logger.warn("Alexandria contract lookup failed", { error });
-      return res.status(503).json({
-        success: false,
-        error:
-          "Provider contract lookup unavailable. No provider was executed. Retry, or use POST /v2/alexandria.",
-      });
-    }
-  }
-
-  req.body = {
-    alexandria: [
-      {
-        provider,
-        capability,
-        ...(parsed.version ? { version: parsed.version } : {}),
-        options,
-      },
-    ],
-    ...(parsed.timeout === undefined
-      ? {}
-      : { timeout: Number(parsed.timeout) }),
-  };
   return providerScrapeController(req, res);
 }

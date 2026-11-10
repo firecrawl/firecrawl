@@ -11,10 +11,6 @@ const mocks = vi.hoisted(() => ({
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
   markCalls: vi.fn(),
-  optionTypes: vi.fn(),
-}));
-vi.mock("../../services/alexandria/option-types", () => ({
-  capabilityOptionTypes: mocks.optionTypes,
 }));
 vi.mock("../../lib/alexandria-activity", () => ({
   markAlexandriaActivity: vi.fn(),
@@ -50,7 +46,6 @@ vi.mock("../../config", () => ({
 }));
 import {
   alexandriaController,
-  alexandriaGetController,
   providerScrapeController,
 } from "./scrape-alexandria";
 import { config } from "../../config";
@@ -77,9 +72,6 @@ app.use((req, _res, next) => {
 });
 app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/v2/alexandria", (req, res) => alexandriaController(req as any, res));
-app.get("/v2/alexandria/:provider/*capability", (req, res) =>
-  alexandriaGetController(req as any, res),
-);
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
@@ -95,7 +87,6 @@ beforeEach(() => {
   flags = { exchangeRetrieve: true };
   mocks.log.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
-  mocks.optionTypes.mockResolvedValue(new Map());
   mocks.discovery.mockImplementation(async (_teamId, calls: unknown[]) =>
     calls.map(() => ({})),
   );
@@ -835,81 +826,6 @@ describe("/v2/alexandria", () => {
       .post("/v2/alexandria")
       .send({ ...call, url: "https://example.com" });
     expect(response.status).not.toBe(200);
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-  });
-});
-
-describe("GET /v2/alexandria", () => {
-  it("builds the call from the path and query, typed by the contract", async () => {
-    mocks.optionTypes.mockResolvedValue(
-      new Map([
-        ["limit", "number"],
-        ["zip", "string"],
-        ["tags", "string[]"],
-      ]),
-    );
-    const response = await request(app).get(
-      "/v2/alexandria/fred/categories/category?limit=10&zip=02139&tags=a&tags=b&filters.country=US&timeout=30000&version=1.2.0",
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers["cache-control"]).toBe("no-store");
-    expect(response.body.data.alexandria).toHaveLength(1);
-    expect(mocks.optionTypes).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: "fred",
-        capability: "categories/category",
-      }),
-    );
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        timeoutMs: 30_000,
-        calls: [
-          {
-            provider: "fred",
-            capability: "categories/category",
-            version: "1.2.0",
-            options: {
-              limit: 10,
-              zip: "02139",
-              tags: ["a", "b"],
-              filters: { country: "US" },
-            },
-          },
-        ],
-      }),
-    );
-  });
-
-  it("refuses a key in the URL and malformed queries before any lookup", async () => {
-    for (const query of [
-      "api_key=fc-1",
-      "zeroDataRetention=true",
-      "filters=x&filters.country=US",
-    ]) {
-      const response = await request(app).get(
-        `/v2/alexandria/fred/categories/category?${query}`,
-      );
-      expect(response.status).toBe(400);
-    }
-    expect(mocks.optionTypes).not.toHaveBeenCalled();
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-  });
-
-  it("refuses teams with forced zero data retention", async () => {
-    flags = { exchangeRetrieve: true, forceZDR: true };
-    const response = await request(app).get(
-      "/v2/alexandria/fred/categories/category",
-    );
-    expect(response.status).toBe(400);
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-  });
-
-  it("executes nothing when the contract lookup fails", async () => {
-    mocks.optionTypes.mockRejectedValue(new Error("down"));
-    const response = await request(app).get(
-      "/v2/alexandria/fred/categories/category?limit=10",
-    );
-    expect(response.status).toBe(503);
     expect(mocks.retrieve).not.toHaveBeenCalled();
   });
 });
