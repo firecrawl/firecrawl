@@ -982,34 +982,48 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
   res.map_err(to_napi_err)
 }
 
+/// Escape newlines inside link text so a link that spans several lines stays a link.
+///
+/// A newline that already follows an odd run of backslashes is a hard line break
+/// (the Go converter emits these for link text), so it is left as is.
+fn process_multi_line_links(markdown: &str) -> String {
+  let mut link_open_count = 0usize;
+  let mut preceding_backslashes = 0usize;
+  let mut out = String::with_capacity(markdown.len());
+
+  for ch in markdown.chars() {
+    match ch {
+      '[' => {
+        link_open_count += 1;
+      }
+      ']' => {
+        link_open_count = link_open_count.saturating_sub(1);
+      }
+      _ => {}
+    }
+
+    let inside_link_content = link_open_count > 0;
+    let already_escaped = preceding_backslashes % 2 == 1;
+    if inside_link_content && ch == '\n' && !already_escaped {
+      out.push('\\');
+    }
+    out.push(ch);
+
+    if ch == '\\' {
+      preceding_backslashes += 1;
+    } else {
+      preceding_backslashes = 0;
+    }
+  }
+
+  out
+}
+
 /// Process multi-line links in markdown.
 #[napi]
 pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
   let res = task::spawn_blocking(move || {
-    let mut link_open_count = 0usize;
-    let mut out = String::with_capacity(markdown.len());
-
-    for ch in markdown.chars() {
-      match ch {
-        '[' => {
-          link_open_count += 1;
-        }
-        ']' => {
-          link_open_count = link_open_count.saturating_sub(1);
-        }
-        _ => {}
-      }
-
-      let inside_link_content = link_open_count > 0;
-      if inside_link_content && ch == '\n' {
-        out.push('\\');
-        out.push('\n');
-      } else {
-        out.push(ch);
-      }
-    }
-
-    remove_skip_to_content_links(&out)
+    remove_skip_to_content_links(&process_multi_line_links(&markdown))
   })
   .await
   .map_err(|e| {
@@ -1063,4 +1077,45 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn escapes_raw_newline_inside_link_text() {
+    assert_eq!(
+      process_multi_line_links("[Secret\nNumber](https://e.com/a)"),
+      "[Secret\\\nNumber](https://e.com/a)"
+    );
+  }
+
+  #[test]
+  fn keeps_newline_already_escaped_as_hard_break() {
+    // The Go converter's EscapeMultiLine already emits `\` + newline in link text.
+    let go_output = "see the [Secret\\\nNumber](https://e.com/a) section";
+    assert_eq!(process_multi_line_links(go_output), go_output);
+  }
+
+  #[test]
+  fn escapes_newline_after_escaped_backslash() {
+    // `\\` is a literal backslash, so the newline after it is still unescaped.
+    assert_eq!(
+      process_multi_line_links("[C:\\\\\nUsers](https://e.com/a)"),
+      "[C:\\\\\\\nUsers](https://e.com/a)"
+    );
+  }
+
+  #[test]
+  fn leaves_newlines_outside_links_alone() {
+    let markdown = "line one\nline two\n\n[link](https://e.com/a)\nafter";
+    assert_eq!(process_multi_line_links(markdown), markdown);
+  }
+
+  #[test]
+  fn is_idempotent() {
+    let once = process_multi_line_links("[a\nb\\\nc\\\\\nd](https://e.com/a)");
+    assert_eq!(process_multi_line_links(&once), once);
+  }
 }
