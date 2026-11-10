@@ -21,6 +21,13 @@ const EXCHANGE_TIMEOUT_MS = 10_000;
  */
 const CAPTURE_MARKER_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * A capture is not started this close to the hold's expiry, or after it: the
+ * charge could arrive once the hold is gone. The order is left to expire, and
+ * its hold to be released.
+ */
+const CAPTURE_MARGIN_MS = 2 * 60 * 1000;
+
 const SETTLEMENT_DUE_STATUSES = new Set([
   "built",
   "failed",
@@ -237,7 +244,8 @@ export async function createDatasetOrder(input: {
  * Does what the Exchange says is due on an order's hold, and nothing else: a
  * capture of the built order's credits, or a release. Answers the order as it
  * stands afterwards. A settle the billing service did not accept leaves the
- * order as it is, for the next call to retry.
+ * order as it is, for the next call to retry; so does a capture that would
+ * start too close to the hold's expiry.
  *
  * Charged means delivered: once a capture was accepted the order is reported
  * as captured on every later call, whatever is due by then, and never released.
@@ -294,6 +302,13 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
 
   if (credits === null || credits < 1 || credits > order.holdCredits)
     throw unusable();
+  if (!(Date.now() < Date.parse(order.holdExpiresAt) - CAPTURE_MARGIN_MS)) {
+    logger.warn("Dataset order was not captured: its hold is running out", {
+      orderId: order.id,
+      holdExpiresAt: order.holdExpiresAt,
+    });
+    return order;
+  }
   const charged = await autumnService.finalizeCreditsLock({
     lockId,
     action: "confirm",
