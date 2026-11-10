@@ -319,20 +319,29 @@ def wait_for_batch_completion(
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
-    
+
     while True:
+        # Stop before another status request once the deadline has been reached.
+        if timeout and (time.monotonic() - start_time) >= timeout:
+            raise TimeoutError(f"Batch scrape job {job_id} did not complete within {timeout} seconds")
+
         status_job = get_batch_scrape_status(client, job_id)
-        
+
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
             return status_job
-        
-        # Check timeout
-        if timeout and (time.monotonic() - start_time) > timeout:
+
+        # A status call that itself used up the budget must not sleep further.
+        if timeout and (time.monotonic() - start_time) >= timeout:
             raise TimeoutError(f"Batch scrape job {job_id} did not complete within {timeout} seconds")
-        
-        # Wait before next poll
-        time.sleep(poll_interval)
+
+        # Clamp the poll sleep to the time still left. A full poll_interval
+        # would run past a shorter wait budget.
+        if timeout:
+            remaining = timeout - (time.monotonic() - start_time)
+            time.sleep(min(poll_interval, remaining))
+        else:
+            time.sleep(poll_interval)
 
 
 def batch_scrape(
