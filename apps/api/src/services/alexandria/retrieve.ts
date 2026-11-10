@@ -339,11 +339,19 @@ export async function retrieveProviders(input: {
         status: billable ? "confirmed" : "void",
         billingReference: `alexandria:${id}`,
       });
+      // The answer is delivered even when it cannot be recorded; the id is released instead,
+      // so a repeat runs the read again rather than finding it stranded.
       await write(
         zeroDataRetention
           ? { ...record, phase: "done", responseWithheld: true }
           : { ...record, phase: "done", response: done },
-      );
+      ).catch(async error => {
+        logger.warn("Catalogue read answer was not recorded", {
+          error,
+          chargeId: id,
+        });
+        await redisRateLimitClient.del(key).catch(() => {});
+      });
       return { ...done, executed: true, scrapeId: input.scrapeId };
     }
     const code = (read.body as { code?: unknown } | null)?.code;
