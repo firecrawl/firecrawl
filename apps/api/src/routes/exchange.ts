@@ -1,6 +1,7 @@
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { billingCountryForTeam } from "../lib/billing-country";
+import { alexandriaClientIp } from "../lib/alexandria-client-ip";
 import { orgIdFromAcuc } from "../lib/team-org";
 import {
   acceptProviderTerms,
@@ -166,6 +167,7 @@ function exchangeProxy(
 
     const hasBody = req.method !== "GET";
     const billingCountry = await billingCountryForTeam(authedReq.auth.team_id);
+    const clientIp = alexandriaClientIp(authedReq);
 
     try {
       const upstream = await fetch(base + path, {
@@ -174,7 +176,7 @@ function exchangeProxy(
           ...forwardedRequestHeaders(req),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
-          ...(req.ip ? { "x-exchange-client-ip": req.ip } : {}),
+          ...(clientIp ? { "x-exchange-client-ip": clientIp } : {}),
           ...(billingCountry
             ? { "x-exchange-billing-country": billingCountry }
             : {}),
@@ -274,7 +276,7 @@ async function providerTermsAcceptController(req: Request, res: Response) {
         ? null
         : String(authedReq.acuc.api_key_id)),
     body: body.data,
-    clientIp: authedReq.ip,
+    clientIp: alexandriaClientIp(authedReq),
     billingCountry: await billingCountryForTeam(authedReq.auth.team_id),
   });
   return res.status(response.status).json(response.body);

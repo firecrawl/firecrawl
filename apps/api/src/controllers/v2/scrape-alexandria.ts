@@ -8,6 +8,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { billingCountryForTeam } from "../../lib/billing-country";
+import { alexandriaClientIp } from "../../lib/alexandria-client-ip";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
 import { issueFeedbackToken } from "../../lib/alexandria-feedback-token";
@@ -184,7 +185,7 @@ export async function providerScrapeController(
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
       zeroDataRetention,
-      clientIp: req.ip,
+      clientIp: alexandriaClientIp(req),
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
     });
