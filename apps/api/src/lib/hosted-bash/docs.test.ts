@@ -13,7 +13,7 @@ describe("hosted bash docs mount", () => {
   // A fresh module per test: the page list is cached at module level.
   async function load() {
     vi.resetModules();
-    return (await import("./docs")).docsFiles;
+    return (await import("./docs.js")).docsFiles;
   }
 
   beforeEach(() => {
