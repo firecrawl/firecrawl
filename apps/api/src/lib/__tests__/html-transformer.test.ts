@@ -1,5 +1,7 @@
 import {
+  extractBaseHref,
   extractLinks,
+  extractLinksWithBaseHref,
   extractMetadata,
   transformHtml,
   TransformHtmlOptions,
@@ -187,6 +189,146 @@ describe("HTML Transformer", () => {
       `;
       const links = await extractLinks(html);
       expect(links).toContain("page.php");
+    });
+  });
+
+  describe("extractLinksWithBaseHref", () => {
+    const url = "https://example.org/foo/bar";
+
+    it("should extract links and an absolute base href", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="https://cdn.example.com/" />
+          </head>
+          <body>
+            <a href="assets/style.css">CSS</a>
+            <a href="/absolute">Absolute</a>
+            <a href="https://external.com">External</a>
+            <a>No href</a>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.links).toEqual([
+        "assets/style.css",
+        "/absolute",
+        "https://external.com",
+      ]);
+      expect(result.baseHref).toBe("https://cdn.example.com/");
+    });
+
+    it("should resolve a relative base href against the URL", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="../" />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.links).toEqual(["page.php"]);
+      expect(result.baseHref).toBe("https://example.org/");
+    });
+
+    it("should return the URL itself when there is no base href", async () => {
+      const html = `
+        <html>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.links).toEqual(["page.php"]);
+      expect(result.baseHref).toBe(url);
+    });
+
+    it("should use first base href when multiple exist", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="/first/" />
+            <base href="/second/" />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.baseHref).toBe("https://example.org/first/");
+    });
+
+    it("should repair http:/ and https:/ hrefs with a single slash", async () => {
+      const html = `
+        <html>
+          <body>
+            <a href="http:/example.com/one">One</a>
+            <a href="https:/example.com/two">Two</a>
+            <a href="http://example.com/three">Three</a>
+            <a href="https://example.com/four">Four</a>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.links).toEqual([
+        "http://example.com/one",
+        "https://example.com/two",
+        "http://example.com/three",
+        "https://example.com/four",
+      ]);
+    });
+
+    it("should return empty links for empty HTML", async () => {
+      const result = await extractLinksWithBaseHref("", url);
+      expect(result).toEqual({ links: [], baseHref: url });
+    });
+
+    it("should match extractLinks and extractBaseHref called separately", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="/docs/" />
+          </head>
+          <body>
+            <div>
+              <a href="page.php">Relative</a>
+              <a href="../up">Parent Path</a>
+              <a href="?param=value">Query Param</a>
+              <a href="#section">Hash Link</a>
+              <a href="https:/single-slash.com/path">Single Slash</a>
+              <a href="mailto:test@example.com">Email link</a>
+              <a href="">Empty href</a>
+              <a>No href</a>
+              <a href="page.php">Duplicate</a>
+            </div>
+          </body>
+        </html>
+      `;
+      const result = await extractLinksWithBaseHref(html, url);
+      expect(result.links).toEqual(await extractLinks(html));
+      expect(result.baseHref).toBe(await extractBaseHref(html, url));
+    });
+
+    it("should reject an invalid URL the same way extractBaseHref does", async () => {
+      const html = `
+        <html>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const error = await extractLinksWithBaseHref(html, "not a url").catch(
+        e => e,
+      );
+      const expected = await extractBaseHref(html, "not a url").catch(e => e);
+      expect(expected).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe(expected.message);
     });
   });
 
