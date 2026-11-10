@@ -339,6 +339,12 @@ export function sunsetInstant(key: string, sunset: string | undefined): number {
   return at;
 }
 
+/** When the entry's route starts answering 410, Infinity without a sunset. */
+export function sunsetOf(key: DeprecationKey): number {
+  const dep: Deprecation = DEPRECATIONS[key];
+  return sunsetInstant(key, dep.sunset);
+}
+
 const EXTENSION_UNTIL = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/;
 
 /**
@@ -367,7 +373,7 @@ export function hasSunsetExtension(
  */
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
-  const sunsetAt = sunsetInstant(key, dep.sunset);
+  const sunsetAt = sunsetOf(key);
 
   const annotate = (res: Response) => {
     setDeprecationHeaders(res, dep);
