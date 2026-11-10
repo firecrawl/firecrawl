@@ -34,7 +34,9 @@ describe("Deprecation warnings on legacy endpoints", () => {
       true,
     );
     expect(res.body.replacement).toBeUndefined();
-    expect(res.headers["link"]).toBeUndefined();
+    expect(res.headers["link"]).toBe(
+      '<https://docs.firecrawl.dev/migrating-from-llmstxt>; rel="deprecation"',
+    );
   }, 30000);
 
   it("GET /v1/llmstxt/:jobId still emits warnings on 404", async () => {
@@ -66,14 +68,14 @@ describe("Deprecation warnings on legacy endpoints", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["deprecation"]).toBe("@1778025600");
     expect(res.headers["warning"]).toMatch(/deep-research/i);
-    expect(res.headers["link"]).toContain(
-      '</v2/search>; rel="successor-version"',
+    expect(res.headers["link"]).toBe(
+      '<https://docs.firecrawl.dev/migrating-from-deep-research>; rel="deprecation", </v2/agent>; rel="successor-version"',
     );
     expect(Array.isArray(res.body.warnings)).toBe(true);
     expect(
       res.body.warnings.some((w: string) => /deep-research/i.test(w)),
     ).toBe(true);
-    expect(res.body.replacement).toBe("/v2/search");
+    expect(res.body.replacement).toBe("/v2/agent");
   }, 30000);
 
   it("POST /v1/scrape points at /v2/scrape and the migration guide", async () => {
