@@ -72,10 +72,6 @@ class V2Proxy:
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
 
-            self.extract = client_instance.extract
-            self.start_extract = client_instance.start_extract
-            self.get_extract_status = client_instance.get_extract_status
-
             self.agent = client_instance.agent
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
@@ -147,10 +143,6 @@ class AsyncV2Proxy:
             self.get_crawl_errors = client_instance.get_crawl_errors
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
-
-            self.extract = client_instance.extract
-            self.start_extract = client_instance.start_extract
-            self.get_extract_status = client_instance.get_extract_status
 
             self.agent = client_instance.agent
             self.start_agent = client_instance.start_agent
@@ -278,10 +270,6 @@ class Firecrawl:
         self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
         self.batch_scrape = self._v2_client.batch_scrape
         self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
-
-        self.start_extract = self._v2_client.start_extract
-        self.get_extract_status = self._v2_client.get_extract_status
-        self.extract = self._v2_client.extract
 
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
@@ -428,10 +416,6 @@ class AsyncFirecrawl:
         self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
         self.batch_scrape = self._v2_client.batch_scrape
         self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
-
-        self.start_extract = self._v2_client.start_extract
-        self.get_extract_status = self._v2_client.get_extract_status
-        self.extract = self._v2_client.extract
 
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status

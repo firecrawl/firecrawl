@@ -97,7 +97,6 @@ export const COMPOSITE_METHODS: ReadonlySet<string> = new Set([
   "crawlUrl",
   "batchScrape",
   "batchScrapeUrls",
-  "extract",
   "agent",
 ]);
 

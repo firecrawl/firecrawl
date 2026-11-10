@@ -51,7 +51,6 @@ from .types import (
     PDFAction,
     Location,
     PaginationConfig,
-    AgentOptions,
     AuditMetadata,
     ThreatProtectionOptions,
     Monitor,
@@ -76,7 +75,6 @@ from .methods import gov as gov_module
 from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
-from .methods import extract as extract_module
 from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .methods import monitor as monitor_module
@@ -1270,124 +1268,6 @@ class FirecrawlClient:
         """
         return crawl_module.cancel_crawl(self.http_client, crawl_id)
 
-    def start_extract(
-        self,
-        urls: Optional[List[str]] = None,
-        *,
-        prompt: Optional[str] = None,
-        schema: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        allow_external_links: Optional[bool] = None,
-        enable_web_search: Optional[bool] = None,
-        show_sources: Optional[bool] = None,
-        scrape_options: Optional['ScrapeOptions'] = None,
-        ignore_invalid_urls: Optional[bool] = None,
-        integration: Optional[str] = None,
-        agent: Optional[AgentOptions] = None,
-        threat_protection: Optional[ThreatProtectionOptions] = None,
-    ):
-        """Start an extract job (non-blocking).
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-
-        Args:
-            urls: URLs to extract from (optional)
-            prompt: Natural-language instruction for extraction
-            schema: Target JSON schema for the output
-            system_prompt: Optional system instruction
-            allow_external_links: Allow hyperlinks in output
-            enable_web_search: Whether to augment with web search
-            show_sources: Include per-field/source mapping when available
-            scrape_options: Scrape options applied prior to extraction
-            ignore_invalid_urls: Skip invalid URLs instead of failing
-            integration: Integration tag/name
-            agent: Agent configuration
-            threat_protection: Enterprise per-request override of the team's
-                threat protection policy
-        Returns:
-            Response payload with job id/status (poll with get_extract_status)
-        """
-        return extract_module.start_extract(
-            self.http_client,
-            urls,
-            prompt=prompt,
-            schema=schema,
-            system_prompt=system_prompt,
-            allow_external_links=allow_external_links,
-            enable_web_search=enable_web_search,
-            show_sources=show_sources,
-            scrape_options=scrape_options,
-            ignore_invalid_urls=ignore_invalid_urls,
-            integration=integration,
-            agent=agent,
-            threat_protection=threat_protection,
-        )
-
-    def extract(
-        self,
-        urls: Optional[List[str]] = None,
-        *,
-        prompt: Optional[str] = None,
-        schema: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        allow_external_links: Optional[bool] = None,
-        enable_web_search: Optional[bool] = None,
-        show_sources: Optional[bool] = None,
-        scrape_options: Optional['ScrapeOptions'] = None,
-        ignore_invalid_urls: Optional[bool] = None,
-        poll_interval: int = 2,
-        timeout: Optional[int] = None,
-        integration: Optional[str] = None,
-        agent: Optional[AgentOptions] = None,
-        threat_protection: Optional[ThreatProtectionOptions] = None,
-    ):
-        """Extract structured data and wait until completion.
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-
-        Args:
-            urls: URLs to extract from (optional)
-            prompt: Natural-language instruction for extraction
-            schema: Target JSON schema for the output
-            system_prompt: Optional system instruction
-            allow_external_links: Allow hyperlinks in output
-            enable_web_search: Whether to augment with web search
-            show_sources: Include per-field/source mapping when available
-            scrape_options: Scrape options applied prior to extraction
-            ignore_invalid_urls: Skip invalid URLs instead of failing
-            poll_interval: Seconds between status checks
-            timeout: Maximum seconds to wait (None for no timeout)
-            integration: Integration tag/name
-            agent: Agent configuration
-            threat_protection: Enterprise per-request override of the team's
-                threat protection policy
-        Returns:
-            Final extract response when completed
-        """
-        return extract_module.extract(
-            self.http_client,
-            urls,
-            prompt=prompt,
-            schema=schema,
-            system_prompt=system_prompt,
-            allow_external_links=allow_external_links,
-            enable_web_search=enable_web_search,
-            show_sources=show_sources,
-            scrape_options=scrape_options,
-            ignore_invalid_urls=ignore_invalid_urls,
-            poll_interval=poll_interval,
-            timeout=timeout,
-            integration=integration,
-            agent=agent,
-            threat_protection=threat_protection,
-        )
-
     def start_batch_scrape(
         self,
         urls: List[str],
@@ -1564,22 +1444,6 @@ class FirecrawlClient:
             Errors and robots-blocked URLs for the job
         """
         return batch_methods.get_batch_scrape_errors(self.http_client, job_id)
-
-    def get_extract_status(self, job_id: str):
-        """Get the current status (and data if completed) of an extract job.
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-
-        Args:
-            job_id: Extract job ID
-
-        Returns:
-            Extract response payload with status and optional data
-        """
-        return extract_module.get_extract_status(self.http_client, job_id)
 
     def start_agent(
         self,

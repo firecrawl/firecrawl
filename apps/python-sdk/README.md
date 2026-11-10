@@ -373,12 +373,6 @@ print(run.stdout)
 firecrawl.stop_interaction(scrape_job_id)
 ```
 
-{/* ### Extracting Structured Data from Websites
-
-  To extract structured data from websites, use the `extract` method. It takes the URLs to extract data from, a prompt, and a schema as arguments. The schema is a Pydantic model that defines the structure of the extracted data.
-
-  <ExtractPythonShort /> */}
-
 ### Crawling a Website with WebSockets
 
 To follow a crawl in real time, start it with `start_crawl` and pass the job ID to `watcher`. The watcher runs in a background thread and calls your handlers as documents arrive and when the job finishes.

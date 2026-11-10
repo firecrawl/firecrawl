@@ -8,7 +8,6 @@ from firecrawl.v2.types import (
 from firecrawl.v2.methods.aio.agent import _prepare_agent_request
 from firecrawl.v2.methods.aio.batch import _prepare as _prepare_batch_request
 from firecrawl.v2.methods.aio.crawl import _prepare_crawl_request
-from firecrawl.v2.methods.aio.extract import _prepare_extract_request
 from firecrawl.v2.methods.aio.map import _prepare_map_request
 from firecrawl.v2.methods.aio.search import _prepare_search_request
 
@@ -69,14 +68,6 @@ class TestAioThreatProtectionRequestPreparation:
         data = _prepare_map_request("https://example.com", options)
         assert data["threatProtection"] == EXPECTED_WIRE_PAYLOAD
         assert "threat_protection" not in data
-
-    def test_extract_top_level(self):
-        data = _prepare_extract_request(
-            ["https://example.com"],
-            prompt="extract",
-            threat_protection=_threat_protection(),
-        )
-        assert data["threatProtection"] == EXPECTED_WIRE_PAYLOAD
 
     def test_agent_top_level(self):
         data = _prepare_agent_request(

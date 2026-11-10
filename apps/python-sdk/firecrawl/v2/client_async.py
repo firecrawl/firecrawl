@@ -71,7 +71,6 @@ from .methods.aio import developer as async_developer  # type: ignore[attr-defin
 from .methods.aio import gov as async_gov  # type: ignore[attr-defined]
 from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
-from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
@@ -815,95 +814,6 @@ class AsyncFirecrawlClient:
     async def get_batch_scrape_errors(self, job_id: str) -> CrawlErrorsResponse:
         # Returns v2 errors structure; typed as CrawlErrorsResponse for parity
         return await async_batch.get_batch_scrape_errors(self.async_http_client, job_id)  # type: ignore[return-value]
-
-    # Extract (proxy to v1 async) — deprecated
-    async def extract(
-        self,
-        urls: Optional[List[str]] = None,
-        *,
-        prompt: Optional[str] = None,
-        schema: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        allow_external_links: Optional[bool] = None,
-        enable_web_search: Optional[bool] = None,
-        show_sources: Optional[bool] = None,
-        scrape_options: Optional['ScrapeOptions'] = None,
-        ignore_invalid_urls: Optional[bool] = None,
-        poll_interval: int = 2,
-        timeout: Optional[int] = None,
-        integration: Optional[str] = None,
-        threat_protection: Optional[ThreatProtectionOptions] = None,
-    ):
-        """Extract structured data and wait until completion (async).
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-        """
-        return await async_extract.extract(
-            self.async_http_client,
-            urls,
-            prompt=prompt,
-            schema=schema,
-            system_prompt=system_prompt,
-            allow_external_links=allow_external_links,
-            enable_web_search=enable_web_search,
-            show_sources=show_sources,
-            scrape_options=scrape_options,
-            ignore_invalid_urls=ignore_invalid_urls,
-            poll_interval=poll_interval,
-            timeout=timeout,
-            integration=integration,
-            threat_protection=threat_protection,
-        )
-
-    async def get_extract_status(self, job_id: str):
-        """Get the current status (and data if completed) of an extract job (async).
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-        """
-        return await async_extract.get_extract_status(self.async_http_client, job_id)
-
-    async def start_extract(
-        self,
-        urls: Optional[List[str]] = None,
-        *,
-        prompt: Optional[str] = None,
-        schema: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        allow_external_links: Optional[bool] = None,
-        enable_web_search: Optional[bool] = None,
-        show_sources: Optional[bool] = None,
-        scrape_options: Optional['ScrapeOptions'] = None,
-        ignore_invalid_urls: Optional[bool] = None,
-        integration: Optional[str] = None,
-        threat_protection: Optional[ThreatProtectionOptions] = None,
-    ):
-        """Start an extract job (non-blocking, async).
-
-        .. deprecated::
-            The extract endpoint is in maintenance mode and its use is discouraged.
-            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-            to find a replacement.
-        """
-        return await async_extract.start_extract(
-            self.async_http_client,
-            urls,
-            prompt=prompt,
-            schema=schema,
-            system_prompt=system_prompt,
-            allow_external_links=allow_external_links,
-            enable_web_search=enable_web_search,
-            show_sources=show_sources,
-            scrape_options=scrape_options,
-            ignore_invalid_urls=ignore_invalid_urls,
-            integration=integration,
-            threat_protection=threat_protection,
-        )
 
     # Agent
     async def agent(

@@ -152,7 +152,7 @@ const status = await app.getCrawlStatus(start.id);
 
 ### Extracting structured data from URLs
 
-Use `extract` with a prompt and schema. Zod schemas are supported directly.
+Use `scrape` with a `json` format and a prompt, a schema, or both. Zod schemas are supported directly. To extract from many URLs, use `batchScrape` and pass the same format under `options`, for example `app.batchScrape(urls, { options: { formats: [{ type: 'json', prompt, schema }] } })`. For multi-page or open-ended research, use `agent`.
 
 ```js
 import { Firecrawl } from 'firecrawl';
@@ -164,14 +164,11 @@ const schema = z.object({
   title: z.string(),
 });
 
-const result = await app.extract({
-  urls: ['https://firecrawl.dev'],
-  prompt: 'Extract the page title',
-  schema,
-  showSources: true,
+const doc = await app.scrape('https://firecrawl.dev', {
+  formats: [{ type: 'json', prompt: 'Extract the page title', schema }],
 });
 
-console.log(result.data);
+console.log(doc.json);
 ```
 
 ### Map a Website
