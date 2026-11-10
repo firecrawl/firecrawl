@@ -129,6 +129,15 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
+  // When true, a plain web search that the search platform classifies as
+  // government is served through the Government Index. It needs
+  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
+  // The longest a plain web search waits for the routing decision before the
+  // regular web search starts; a decision that takes longer routes nothing.
+  GOV_ROUTING_DECISION_TIMEOUT_MS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(100),
+  ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
@@ -896,6 +905,14 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
         message: `${key} + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100`,
       });
     }
+  }
+  if (value.GOV_ROUTING_ENABLED && !value.SEARCH_PLATFORM_URL) {
+    context.addIssue({
+      code: "custom",
+      path: ["GOV_ROUTING_ENABLED"],
+      message:
+        "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
+    });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
     context.addIssue({
