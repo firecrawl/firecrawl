@@ -9,7 +9,10 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
-import { alexandriaController } from "../controllers/v2/scrape-alexandria";
+import {
+  alexandriaController,
+  alexandriaGetController,
+} from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   keylessWorldIdDeviceController,
@@ -288,6 +291,17 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   wrap(alexandriaController),
+);
+
+// One call from the query string. The API key is only read from the
+// Authorization header; a key in the URL is refused by the controller.
+v2Router.get(
+  "/alexandria/:provider/*capability",
+  authMiddleware(RateLimiterMode.Scrape, {
+    allowKeyless: true,
+    allowAgentManagedKey: true,
+  }),
+  wrap(alexandriaGetController),
 );
 
 v2Router.get(
