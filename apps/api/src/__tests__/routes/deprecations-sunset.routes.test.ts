@@ -13,7 +13,7 @@ import {
   sunsetInstant,
 } from "../../lib/deprecations";
 
-// The only entry with a sunset today: Tue, 03 Nov 2026 23:59:59 GMT.
+// An entry whose sunset has passed: Tue, 03 Nov 2026 23:59:59 GMT.
 const SUNSET_KEY = "v2_research_github_search";
 const BEFORE_SUNSET = new Date("2026-11-01T00:00:00Z");
 const AFTER_SUNSET = new Date("2026-11-10T00:00:00Z");
