@@ -800,7 +800,12 @@ async function scrapeURLLoopIter(
           engine +
           " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
         {
-          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+          factors: {
+            isLongEnough,
+            isGoodStatusCode,
+            hasNoPageError,
+            isSoftError,
+          },
           statusCode: engineResult.statusCode,
           length: engineResult.html?.trim().length ?? 0,
         },
