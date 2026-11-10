@@ -1,9 +1,11 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { processPdf } from "@mendable/firecrawl-rs";
+import { detectPdf, processPdf } from "@mendable/firecrawl-rs";
 import { config } from "../../../../../config";
 import { UsOnlyUnavailableError } from "../../../error";
+import { AbortManager } from "../../../lib/abortManager";
+import { firePdfUsOnlyRefusal } from "../fire-pdf/data-region";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { scrapePDFWithParsePDF } from "../pdfParse";
 import { scrapePDFWithRunPodMU } from "../runpodMU";
@@ -33,6 +35,7 @@ vi.mock("../markdownToHtml", () => ({
 }));
 
 const mockedProcessPdf = vi.mocked(processPdf);
+const mockedDetectPdf = vi.mocked(detectPdf);
 const mockedFirePdf = vi.mocked(scrapePDFWithFirePDF);
 const mockedPdfParse = vi.mocked(scrapePDFWithParsePDF);
 const mockedRunPodMU = vi.mocked(scrapePDFWithRunPodMU);
@@ -88,6 +91,11 @@ async function makeMeta(usOnly: boolean) {
       throwIfAborted: vi.fn(),
       asSignal: vi.fn(() => new AbortController().signal),
       scrapeTimeout: vi.fn(() => 60_000),
+      isAborted: vi.fn(() => false),
+      dispose: vi.fn(),
+      child() {
+        return this;
+      },
     },
     internalOptions: {
       teamId: "team-test",
@@ -172,7 +180,8 @@ describe("PDF routing for US-only teams", () => {
     expect(mockedFirePdf).toHaveBeenCalledTimes(1);
   });
 
-  it("fails a US-only scrape the PDF service refuses, with no fallback", async () => {
+  it("fails a US-only scrape the PDF service refuses, with no fallback, when a page needs OCR", async () => {
+    mockedProcessPdf.mockResolvedValue(nativeResult("Mixed", "some text"));
     mockedFirePdf.mockRejectedValueOnce(
       new UsOnlyUnavailableError("no US capacity"),
     );
@@ -214,4 +223,142 @@ describe("PDF routing for US-only teams", () => {
       expect(mockedRunPodMU).not.toHaveBeenCalled();
     },
   );
+
+  describe("text-layer fallback when the PDF service has no US capacity", () => {
+    const refusal = async (
+      reason: "region_unavailable" | "region_unconfirmed",
+    ) => firePdfUsOnlyRefusal(await makeMeta(true), reason);
+
+    it("serves a text PDF's text layer in-process instead of the refusal", async () => {
+      mockedFirePdf.mockRejectedValueOnce(await refusal("region_unavailable"));
+
+      const result = await scrapePDF(await makeMeta(true));
+
+      expect(result.markdown).toBe("text layer");
+      expect(mockedRunPodMU).not.toHaveBeenCalled();
+      expect(mockedPdfParse).not.toHaveBeenCalled();
+    });
+
+    it("falls through to pdf-parse when the native extractor finds no text", async () => {
+      mockedFirePdf.mockRejectedValueOnce(await refusal("region_unavailable"));
+      mockedProcessPdf
+        .mockResolvedValueOnce(nativeResult("TextBased", "text layer"))
+        .mockResolvedValueOnce(nativeResult("TextBased", "  "));
+
+      const result = await scrapePDF(await makeMeta(true));
+
+      expect(result.markdown).toBe("pdf-parse");
+      expect(mockedRunPodMU).not.toHaveBeenCalled();
+    });
+
+    it("keeps refusing when the PDF service did not confirm US processing", async () => {
+      mockedFirePdf.mockRejectedValueOnce(await refusal("region_unconfirmed"));
+
+      const error = await scrapePDF(await makeMeta(true)).catch(e => e);
+
+      expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+      expect(mockedPdfParse).not.toHaveBeenCalled();
+    });
+
+    it("keeps refusing in OCR mode", async () => {
+      mockedDetectPdf.mockResolvedValue({
+        pdfType: "TextBased",
+        pageCount: 1,
+        title: null,
+        logs: [],
+      } as any);
+      mockedFirePdf.mockRejectedValueOnce(await refusal("region_unavailable"));
+      const meta = await makeMeta(true);
+      meta.options.parsers = [{ type: "pdf", mode: "ocr" }];
+
+      const error = await scrapePDF(meta).catch(e => e);
+
+      expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+      expect(mockedPdfParse).not.toHaveBeenCalled();
+    });
+
+    it("never applies to a team without the US-only flag", async () => {
+      mockedFirePdf.mockRejectedValueOnce(
+        new UsOnlyUnavailableError("no US capacity"),
+      );
+
+      const error = await scrapePDF(await makeMeta(false)).catch(e => e);
+
+      expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+    });
+
+    describe("a /v2/parse request the PDF service holds to its deadline", () => {
+      beforeEach(() => {
+        // Timers only: the engine's file I/O and Date stay real.
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        setConfig({ PARSE_PDF_ALWAYS_FIRE_PDF: true });
+        mockedDetectPdf.mockResolvedValue({
+          pdfType: "TextBased",
+          pageCount: 1,
+          title: null,
+          logs: [],
+        } as any);
+        // The service never answers: it rejects only when its signal aborts.
+        mockedFirePdf.mockImplementation(
+          (firePdfMeta: any) =>
+            new Promise((_, reject) => {
+              const signal = firePdfMeta.abort.asSignal();
+              signal.addEventListener("abort", () => reject(signal.reason));
+            }),
+        );
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      async function parseMeta(timeoutMs: number) {
+        const meta = await makeMeta(true);
+        meta.internalOptions.isParse = true;
+        const scrape = new AbortController();
+        setTimeout(() => scrape.abort(), timeoutMs);
+        meta.abort = new AbortManager({
+          signal: scrape.signal,
+          timesOutAt: new Date(Date.now() + timeoutMs),
+          tier: "scrape",
+          throwable: () => new Error("scrape timeout"),
+        });
+        return meta;
+      }
+
+      async function untilFirePdfCalled() {
+        while (mockedFirePdf.mock.calls.length === 0) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      }
+
+      it("tells the service a shorter budget and serves the text layer before the caller's deadline", async () => {
+        const meta = await parseMeta(60_000);
+        const pending = scrapePDF(meta);
+        await untilFirePdfCalled();
+        // 20 % of 60 s (12 s) is kept back from the service.
+        const firePdfMeta = mockedFirePdf.mock.calls[0]![0] as any;
+        expect(firePdfMeta.abort.scrapeTimeout()).toBeGreaterThan(47_000);
+        expect(firePdfMeta.abort.scrapeTimeout()).toBeLessThanOrEqual(48_000);
+        await vi.advanceTimersByTimeAsync(48_100);
+        const result = await pending;
+
+        expect(result.markdown).toBe("text layer");
+        expect(meta.abort.isAborted()).toBe(false);
+        expect(mockedPdfParse).not.toHaveBeenCalled();
+      });
+
+      it("still fails as a timeout when the caller's own deadline is what ran out", async () => {
+        // Under 10 s there is no reserve to split off: the service gets it all.
+        const meta = await parseMeta(9_000);
+        const pending = scrapePDF(meta).catch(e => e);
+        await untilFirePdfCalled();
+        await vi.advanceTimersByTimeAsync(9_100);
+        const error = await pending;
+
+        expect(error?.name).toBe("AbortManagerThrownError");
+        expect(mockedPdfParse).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
