@@ -4,6 +4,7 @@ import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
+import type { ZdrCleanupJob } from "./zdr-queue";
 
 export async function sendZdrHeartbeat() {
   if (config.ZDRCLEANER_HEARTBEAT_URL) {
@@ -86,4 +87,14 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
     }
     setSpanAttributes(span, { "zdr.cleanup.outcome": "completed" });
   });
+}
+
+/**
+ * Deletes the result a job was queued for. Request jobs are the ones queued
+ * before cleanup was scheduled per result.
+ */
+export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
+  if ("requestId" in job) return cleanZdrRequest(job.requestId);
+  const errors = await removeBlobs([job.jobId]);
+  if (errors.length > 0) throw errors[0];
 }

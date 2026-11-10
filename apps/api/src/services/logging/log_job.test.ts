@@ -17,7 +17,6 @@ const {
   withSpan,
   setSpanAttributes,
   spans,
-  enqueueZdrCleanupJob,
   saveExtractResult,
 } = vi.hoisted(() => {
   const logger: any = {
@@ -62,7 +61,6 @@ const {
     withSpan,
     setSpanAttributes: vi.fn(),
     spans,
-    enqueueZdrCleanupJob: vi.fn(async () => {}),
     saveExtractResult: vi.fn(async () => {}),
   };
 });
@@ -122,10 +120,6 @@ vi.mock("../../lib/gcs-jobs", () => ({
   saveMapToGCS: vi.fn(),
   saveScrapeToGCS: vi.fn(),
   saveSearchToGCS: vi.fn(),
-}));
-
-vi.mock("../../lib/zdr-queue", () => ({
-  enqueueZdrCleanupJob,
 }));
 
 vi.mock("../../lib/extract/extract-redis", () => ({
@@ -661,33 +655,16 @@ describe("logRequest", () => {
     );
   });
 
-  it("durably queues ZDR cleanup before publishing the request", async () => {
+  it("publishes a ZDR request without a cleanup schedule", async () => {
     await logRequest({
       ...makeRequest("op_integration_42"),
       zeroDataRetention: true,
     });
 
-    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith(
-      "019e6f45-7778-727d-adf0-0abe9d5062b6",
-    );
-    expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
-      publishMessage.mock.invocationCallOrder[0],
-    );
     const published = JSON.parse(
       publishMessage.mock.calls[0][0].data.toString(),
     );
     expect(published).not.toHaveProperty("dr_clean_by");
-  });
-
-  it("does not publish a ZDR request unless its cleanup job was confirmed", async () => {
-    enqueueZdrCleanupJob.mockRejectedValueOnce(
-      new Error("RabbitMQ unavailable"),
-    );
-
-    await expect(
-      logRequest({ ...makeRequest(null), zeroDataRetention: true }),
-    ).rejects.toThrow("RabbitMQ unavailable");
-    expect(publishMessage).not.toHaveBeenCalled();
   });
 
   it("fails the log call when Pub/Sub fails", async () => {

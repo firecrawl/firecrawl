@@ -43,7 +43,7 @@ vi.mock("./logger", () => {
 });
 vi.mock("./otel-tracer", () => ({ withSpan, setSpanAttributes }));
 
-import { cleanZdrRequest } from "./zdrcleaner";
+import { cleanZdrJob, cleanZdrRequest } from "./zdrcleaner";
 import { logger } from "./logger";
 
 function mockChildren(ids: string[]) {
@@ -131,6 +131,34 @@ describe("ZDR cleaner", () => {
       "ClickHouse is not configured",
     );
     expect(removeJobFromGCS).not.toHaveBeenCalled();
+  });
+
+  it("removes the one result a result job was queued for", async () => {
+    await cleanZdrJob({ jobId: "scrape-blob" });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(removeJobFromGCS.mock.calls.map(([id]) => id)).toEqual([
+      "scrape-blob",
+    ]);
+  });
+
+  it("fails a result job if its blob could not be removed", async () => {
+    removeJobFromGCS.mockRejectedValueOnce(new Error("GCS unavailable"));
+
+    await expect(cleanZdrJob({ jobId: "scrape-blob" })).rejects.toThrow(
+      "GCS unavailable",
+    );
+  });
+
+  it("cleans every indexed blob for a request job", async () => {
+    mockChildren(["blob-a", "blob-b"]);
+
+    await cleanZdrJob({ requestId: "request-5" });
+
+    expect(removeJobFromGCS.mock.calls.map(([id]) => id)).toEqual([
+      "blob-a",
+      "blob-b",
+    ]);
   });
 
   it("propagates ClickHouse read failures so the job is retried", async () => {

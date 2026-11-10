@@ -24,9 +24,7 @@ const PUBLISH_ATTEMPT_TIMEOUT_MS = 5_000;
 
 const logger = _logger.child({ module: "zdr-queue" });
 
-type ZdrCleanupJob = {
-  requestId: string;
-};
+export type ZdrCleanupJob = { jobId: string } | { requestId: string };
 
 type CleanupHandler = (job: ZdrCleanupJob) => Promise<void>;
 
@@ -231,7 +229,7 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
 
 function publishConfirmed(
   ch: amqp.ConfirmChannel,
-  job: ZdrCleanupJob,
+  jobId: string,
 ): Promise<void> {
   const correlationId = randomUUID();
   const publish = { returned: false };
@@ -241,11 +239,11 @@ function publishConfirmed(
   return new Promise((resolve, reject) => {
     ch.sendToQueue(
       DELAY_QUEUE,
-      Buffer.from(JSON.stringify(job)),
+      Buffer.from(JSON.stringify({ jobId })),
       {
         persistent: true,
         contentType: "application/json",
-        messageId: job.requestId,
+        messageId: jobId,
         correlationId,
         timestamp: Math.floor(Date.now() / 1000),
         mandatory: true,
@@ -263,7 +261,7 @@ function publishConfirmed(
   });
 }
 
-export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
+export async function enqueueZdrCleanupJob(jobId: string): Promise<void> {
   if (!config.NUQ_RABBITMQ_URL) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
@@ -277,11 +275,11 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
           "messaging.system": "rabbitmq",
           "messaging.destination.name": DELAY_QUEUE,
           "messaging.operation.name": "publish",
-          "messaging.message.id": requestId,
+          "messaging.message.id": jobId,
           "zdr.rabbitmq.retry_delay_ms": delayMs,
         });
         await Promise.race([
-          getPublishChannel().then(ch => publishConfirmed(ch, { requestId })),
+          getPublishChannel().then(ch => publishConfirmed(ch, jobId)),
           new Promise<never>((_, reject) => {
             attemptTimer = setTimeout(
               () => reject(new Error("ZDR publish attempt timed out")),
@@ -298,7 +296,7 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
       if (attempt >= PUBLISH_MAX_ATTEMPTS) {
         logger.error("Failed to enqueue ZDR cleanup job; giving up", {
           error,
-          requestId,
+          jobId,
           attempts: attempt,
         });
         throw new Error(
@@ -307,7 +305,7 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
       }
       logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
         error,
-        requestId,
+        jobId,
         delayMs,
       });
       await publishChannel?.close().catch(() => {});
@@ -324,12 +322,13 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
 }
 
 function isZdrCleanupJob(value: unknown): value is ZdrCleanupJob {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Partial<ZdrCleanupJob>).requestId === "string" &&
-    (value as ZdrCleanupJob).requestId.length > 0
-  );
+  if (typeof value !== "object" || value === null) return false;
+  const { jobId, requestId } = value as {
+    jobId?: unknown;
+    requestId?: unknown;
+  };
+  const id = jobId ?? requestId;
+  return typeof id === "string" && id.length > 0;
 }
 
 async function subscribe(
@@ -381,9 +380,12 @@ async function subscribe(
             return;
           }
 
-          setSpanAttributes(span, {
-            "zdr.request_id": job.requestId,
-          });
+          setSpanAttributes(
+            span,
+            "jobId" in job
+              ? { "zdr.job_id": job.jobId }
+              : { "zdr.request_id": job.requestId },
+          );
           await handler(job);
           ch.ack(msg);
           setSpanAttributes(span, {

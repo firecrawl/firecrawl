@@ -128,7 +128,7 @@ describe("ZDR cleanup queue", () => {
     );
     expect(publishChannel.sendToQueue).toHaveBeenCalledWith(
       "zdr.cleanup.delayed.24h",
-      Buffer.from(JSON.stringify({ requestId: "request-1" })),
+      Buffer.from(JSON.stringify({ jobId: "request-1" })),
       expect.objectContaining({
         persistent: true,
         messageId: "request-1",
@@ -240,6 +240,11 @@ describe("ZDR cleanup queue", () => {
         "zdr.rabbitmq.outcome": "acknowledged",
       }),
     });
+
+    const resultJob = message({ jobId: "job-1" });
+    await consume(resultJob);
+    expect(handler).toHaveBeenCalledWith({ jobId: "job-1" });
+    expect(consumeChannel.ack).toHaveBeenCalledWith(resultJob);
 
     handler.mockRejectedValueOnce(new Error("GCS unavailable"));
     const failed = message({ requestId: "request-4" });

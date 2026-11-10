@@ -1,6 +1,5 @@
 import { changeTrackingInsertScrape } from "../../lib/change-tracking-store";
 import { config } from "../../config";
-import { enqueueZdrCleanupJob } from "../../lib/zdr-queue";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
@@ -567,10 +566,6 @@ async function logRequestInternal(request: LoggedRequest) {
         shards: request.creditsShards,
       });
     }
-  }
-
-  if (request.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
-    await enqueueZdrCleanupJob(request.id);
   }
 
   await robustInsert(

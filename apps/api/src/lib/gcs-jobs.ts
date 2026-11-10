@@ -11,6 +11,7 @@ import type {
   LoggedSearch,
 } from "../services/logging/log_job";
 import { config } from "../config";
+import { enqueueZdrCleanupJob } from "./zdr-queue";
 import crypto from "crypto";
 import { Logger } from "winston";
 
@@ -106,6 +107,11 @@ async function saveJobToGCS(params: {
       if (!config.GCS_BUCKET_NAME) {
         setSpanAttributes(span, { "gcs.bucket_configured": false });
         return;
+      }
+
+      // A ZDR result is only written once its deletion 24 hours out is queued.
+      if (params.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
+        await enqueueZdrCleanupJob(params.id);
       }
 
       const bucket = storageManualRetries.bucket(config.GCS_BUCKET_NAME);
