@@ -105,6 +105,22 @@ const relay = (response: ExchangeResponse): ExchangeResponse => {
   );
 };
 
+/** Whether an Exchange answer accounts for every call of the request within its budget. */
+const receiptMatches = (
+  answer: z.infer<typeof answerSchema>,
+  calls: ProviderCall[],
+  maximumCredits: number,
+) =>
+  answer.results.length === calls.length &&
+  answer.creditsCost <= maximumCredits &&
+  answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
+    answer.creditsCost &&
+  answer.results.every(
+    (item, i) =>
+      (item.provider ?? calls[i].provider) === calls[i].provider &&
+      (item.capability ?? calls[i].capability) === calls[i].capability,
+  );
+
 export async function retrieveProviders(input: {
   teamId: string;
   /** The team's org — the Autumn customer this bills against. Null when none
@@ -197,10 +213,11 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
+  const deadline = Date.now() + input.timeoutMs;
   // A catalogue read is free and idempotent, so it skips the replay claim, the agreement and
   // quote lookups and the credit hold, and goes to Exchange with a zero budget. Exchange quotes
   // against that budget itself and refuses with credit_budget_exceeded should the read ever carry
-  // a price, in which case the full path below runs.
+  // a price, in which case the full path below runs against the same deadline.
   const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
   if (
     input.calls.every(isCatalogueRead) &&
@@ -226,7 +243,7 @@ export async function retrieveProviders(input: {
       logger.warn("Catalogue read unavailable", { error, chargeId: id });
       return undefined;
     });
-    if (!read || read.status >= 500 || read.status < 200)
+    if (!read || read.status >= 500)
       return notExecuted(
         refusal(
           503,
@@ -234,19 +251,26 @@ export async function retrieveProviders(input: {
           { code: "provider_unavailable", retryable: true },
         ),
       );
+    const parsed =
+      read.status === 200 ? answerSchema.safeParse(read.body) : undefined;
+    if (parsed?.success && receiptMatches(parsed.data, input.calls, 0))
+      return {
+        status: 200,
+        body: parsed.data,
+        executed: true,
+        scrapeId: input.scrapeId,
+      };
     const code = (read.body as { code?: unknown } | null)?.code;
-    if (read.status === 200) {
-      const parsed = answerSchema.safeParse(read.body);
-      if (parsed.success && parsed.data.creditsCost === 0)
-        return {
-          status: 200,
-          body: parsed.data,
-          executed: true,
-          scrapeId: input.scrapeId,
-        };
-      logger.error("Catalogue read answered with a cost or a malformed body", {
-        chargeId: id,
-      });
+    if (read.status >= 400 && code !== "credit_budget_exceeded")
+      return { ...relay(read), executed: true, scrapeId: input.scrapeId };
+    if (read.status < 400) {
+      logger.error(
+        "Catalogue read answered with an unexpected status or body",
+        {
+          chargeId: id,
+          status: read.status,
+        },
+      );
       return notExecuted(
         refusal(
           502,
@@ -254,8 +278,6 @@ export async function retrieveProviders(input: {
         ),
       );
     }
-    if (code !== "credit_budget_exceeded")
-      return { ...relay(read), executed: true, scrapeId: input.scrapeId };
   }
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -268,7 +290,7 @@ export async function retrieveProviders(input: {
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
-    deadline: Date.now() + input.timeoutMs,
+    deadline,
     scrapeId: input.scrapeId,
   };
   const write = (next: Retrieval) =>
@@ -381,33 +403,14 @@ export async function retrieveProviders(input: {
   };
 
   try {
-    // The agreement lookup and the quote are independent reads of Exchange, so they run
-    // together; a refusal still applies in the same order as before.
-    const [denied, quote] = await Promise.all([
-      authorizeProviders(
-        input.teamId,
-        input.calls,
-        input.flags,
-        input.orgId,
-        input.clientIp,
-        input.billingCountry,
-      ),
-      exchangeRequest({
-        teamId: input.teamId,
-        path: "/v1/retrieve/quote",
-        body: { requests: input.calls },
-        timeoutMs: Math.min(10000, remaining()),
-        retryConnection: true,
-        clientIp: input.clientIp,
-        billingCountry: input.billingCountry,
-        connectors: input.flags?.exchangeRetrieve === true,
-        ...(zeroDataRetention ? { zeroDataRetention } : {}),
-        ...(usOnly ? { usOnly } : {}),
-      }).catch(error => {
-        logger.warn("Provider quote unavailable", { error, chargeId: id });
-        return undefined;
-      }),
-    ]);
+    const denied = await authorizeProviders(
+      input.teamId,
+      input.calls,
+      input.flags,
+      input.orgId,
+      input.clientIp,
+      input.billingCountry,
+    );
     if (denied) return refuse(denied);
 
     for (const [index, provider] of INDEX_PROVIDERS) {
@@ -451,6 +454,21 @@ export async function retrieveProviders(input: {
       indexReleases.push(indexBudget.release);
     }
 
+    const quote = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve/quote",
+      body: { requests: input.calls },
+      timeoutMs: Math.min(10000, remaining()),
+      retryConnection: true,
+      clientIp: input.clientIp,
+      billingCountry: input.billingCountry,
+      connectors: input.flags?.exchangeRetrieve === true,
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
+    }).catch(error => {
+      logger.warn("Provider quote unavailable", { error, chargeId: id });
+      return undefined;
+    });
     if (!quote || quote.status >= 500 || quote.status < 200)
       return refuse(
         refusal(
@@ -595,19 +613,7 @@ export async function retrieveProviders(input: {
     const parsed = answerSchema.safeParse(response.body);
     if (!parsed.success) return fail("Alexandria answer was malformed");
     const answer = parsed.data;
-    const receiptMatches =
-      answer.results.length === input.calls.length &&
-      answer.creditsCost <= maximumCredits &&
-      answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
-        answer.creditsCost &&
-      answer.results.every(
-        (item, i) =>
-          (item.provider ?? input.calls[i].provider) ===
-            input.calls[i].provider &&
-          (item.capability ?? input.calls[i].capability) ===
-            input.calls[i].capability,
-      );
-    if (!receiptMatches)
+    if (!receiptMatches(answer, input.calls, maximumCredits))
       return fail("Alexandria receipt did not match the request");
 
     const credits = answer.creditsCost;
