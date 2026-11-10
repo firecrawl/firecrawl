@@ -476,8 +476,10 @@ function boundedExternalRequestId(
   return null;
 }
 
+const inFlightZdrRequestLogs = new Set<Promise<void>>();
+
 export async function logRequest(request: LoggedRequest) {
-  return withLogSpan(
+  const log = withLogSpan(
     {
       operation: "request",
       table: "requests",
@@ -486,6 +488,18 @@ export async function logRequest(request: LoggedRequest) {
     },
     () => logRequestInternal(request),
   );
+  if (!request.zeroDataRetention) return log;
+  inFlightZdrRequestLogs.add(log);
+  try {
+    return await log;
+  } finally {
+    inFlightZdrRequestLogs.delete(log);
+  }
+}
+
+/** Waits for in-flight ZDR request logs, which enqueue their cleanup job. */
+export async function drainZdrRequestLogs(): Promise<void> {
+  await Promise.allSettled([...inFlightZdrRequestLogs]);
 }
 
 async function logRequestInternal(request: LoggedRequest) {

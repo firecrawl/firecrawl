@@ -921,7 +921,17 @@ export type ExchangeToolFeedback = {
   }[];
 };
 
-/** Forwards an Alexandria feedback rating to the Exchange. Never throws; failures are logged. */
+const toolFeedbackResponseSchema = z.object({
+  outcome: z.enum([
+    "duplicate",
+    "counted",
+    "window",
+    "unattributed",
+    "publisher",
+  ]),
+});
+
+/** Forwards an Alexandria feedback rating to the Exchange and logs its outcome. Never throws. */
 export async function forwardExchangeToolFeedback(
   input: ExchangeToolFeedback,
 ): Promise<void> {
@@ -946,7 +956,20 @@ export async function forwardExchangeToolFeedback(
         ...context,
         statusCode: response.status,
       });
+      return;
     }
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const outcome = toolFeedbackResponseSchema.safeParse(parsed);
+    rootLogger.info("Exchange tool feedback recorded", {
+      ...context,
+      attribution: input.attribution,
+      calls: input.calls.length,
+      outcome: outcome.success ? outcome.data.outcome : "unknown",
+    });
   } catch (error) {
     rootLogger.warn("Exchange tool feedback errored", { ...context, error });
   }

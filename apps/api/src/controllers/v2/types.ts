@@ -2138,6 +2138,7 @@ export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
+  alexandriaToolFusion?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2191,6 +2192,9 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
+  // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
+  deprecationExtensions?: Record<string, string>;
   organizationDataSourceAccess?: Record<
     string,
     {

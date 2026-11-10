@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from "express";
+import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
@@ -47,7 +47,7 @@ import {
   isLockdownZeroDataRetention,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -63,12 +63,12 @@ import {
 } from "../../lib/index-daily-limit";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { applyNotice, type Notice } from "../../lib/deprecations";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
+  toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
@@ -77,26 +77,8 @@ import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
 
-const RESEARCH_CATEGORY_NOTICE: Notice = {
-  message:
-    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
-  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
-};
-
 const GITHUB_CATEGORY_REMOVED =
   "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
-
-// Ahead of auth and validation so rejected requests carry the notice too.
-export function researchCategoryNoticeMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  if (hasCategory(req.body?.categories, "research")) {
-    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
-  }
-  next();
-}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -352,6 +334,20 @@ async function searchControllerInner(
       });
     }
 
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
+      });
+    }
+
     // Search only scrapes (and only honors scrapeOptions) when formats are
     // requested, so the scrape-option checks apply only then.
     if (
@@ -556,6 +552,7 @@ async function searchControllerInner(
         domainTools: req.body.domainTools,
         toolDetail: req.body.toolDetail,
         inferToolQuery: queryInferenceEnabled(),
+        toolFusion: toolFusionEnabled(req.acuc?.flags),
         autoTools:
           (sourcesOmitted || req.body.domainTools === true) &&
           !req.auth.team_id.startsWith("preview_keyless_") &&
@@ -714,6 +711,7 @@ async function searchControllerInner(
       markAlexandriaActivity(req.auth.team_id);
     }
     if (result.response.tools) {
+      setSpanAttributes(span, { "search.tool_fusion": result.toolFusion });
       recordDiscoveredTools(
         req.auth.team_id,
         result.toolsAuto ? "auto_search" : "search",

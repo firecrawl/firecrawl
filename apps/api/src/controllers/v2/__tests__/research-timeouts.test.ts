@@ -119,9 +119,9 @@ describe("research upstream timeouts", () => {
     {
       name: "similar papers",
       router: () => createResearchRouter(),
-      path: "/papers/:id/similar",
+      path: "/papers/*id/similar",
       query: { intent: "related work" },
-      params: { id: "paper-1" },
+      params: { id: ["paper-1"] },
       timeoutMs: 10_000,
     },
     {
@@ -149,8 +149,8 @@ describe("research upstream timeouts", () => {
     { name: "inspect", query: {}, timeoutMs: 5_000 },
     { name: "read", query: { query: "summarize methods" }, timeoutMs: 120_000 },
   ])("uses the paper $name timeout", async ({ query, timeoutMs }) => {
-    await callRoute(createResearchRouter(), "/papers/:id", query, {
-      id: "paper-1",
+    await callRoute(createResearchRouter(), "/papers/*id", query, {
+      id: ["paper-1"],
     });
 
     expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(

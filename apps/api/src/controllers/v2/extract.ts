@@ -24,6 +24,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { checkExtractAvailable } from "../../lib/extract/fire-0/extraction-service-f0";
 
@@ -57,6 +58,17 @@ export async function extractController(
       success: false,
       code: error.code,
       error: error.message,
+    });
+  }
+
+  const ipWhitelistError = ipWhitelistRefusal(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.location?.country,
+  );
+  if (ipWhitelistError) {
+    return res.status(403).json({
+      success: false,
+      error: ipWhitelistError,
     });
   }
 
