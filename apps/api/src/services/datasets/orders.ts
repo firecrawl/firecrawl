@@ -330,28 +330,34 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
     "NX",
   );
   if (first === "OK")
-    await getBillingQueue()
-      .add(
-        "bill_team",
-        {
-          team_id: teamId,
-          org_id: orgId,
-          credits,
-          billing: { endpoint: "datasets", jobId: order.id },
-          is_extract: false,
-          timestamp: new Date().toISOString(),
-          originating_job_id: order.id,
-          api_key_id: typeof apiKeyId === "number" ? apiKeyId : null,
-          autumnTrackInRequest: true,
-        },
-        { jobId: capture.billingReference, priority: 10 },
-      )
-      .catch(error =>
-        logger.error(
-          "Dataset order ledger job was not enqueued; the charge stands",
-          { orderId: order.id, teamId, credits, error },
-        ),
-      );
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await getBillingQueue().add(
+          "bill_team",
+          {
+            team_id: teamId,
+            org_id: orgId,
+            credits,
+            billing: { endpoint: "datasets", jobId: order.id },
+            is_extract: false,
+            timestamp: new Date().toISOString(),
+            originating_job_id: order.id,
+            api_key_id: typeof apiKeyId === "number" ? apiKeyId : null,
+            autumnTrackInRequest: true,
+          },
+          { jobId: capture.billingReference, priority: 10 },
+        );
+        break;
+      } catch (error) {
+        if (attempt < 3)
+          await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+        else
+          logger.error(
+            "Dataset order ledger job was not enqueued; the charge stands",
+            { orderId: order.id, teamId, credits, error },
+          );
+      }
+    }
 
   return report({ outcome: "captured", ...capture });
 }
