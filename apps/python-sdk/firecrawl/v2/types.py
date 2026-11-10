@@ -557,6 +557,23 @@ class Document(BaseModel):
         return {}
 
 
+class SearchDocument(Document):
+    """A scraped document returned as a search result, preserving search metadata fields."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    position: Optional[int] = None
+    category: Optional[str] = None
+    snippet: Optional[str] = None
+    date: Optional[str] = None
+    image_url: Optional[str] = None
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+
+
 # Webhook types
 class WebhookConfig(BaseModel):
     """Configuration for webhooks."""
