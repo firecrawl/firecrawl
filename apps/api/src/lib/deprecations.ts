@@ -78,34 +78,47 @@ const DEPRECATIONS = {
     deprecatedAt: "@1778025600",
   },
   v0_scrape: {
-    message: "/v0/scrape is deprecated. Use /v2/scrape instead.",
+    message:
+      "/v0/scrape is deprecated. Use /v2/scrape instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/scrape",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl: {
-    message: "/v0/crawl is deprecated. Use /v2/crawl instead.",
+    message:
+      "/v0/crawl is deprecated. Use /v2/crawl instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl_status: {
     message:
-      "/v0/crawl/status/:jobId is deprecated. Use /v2/crawl/:jobId instead.",
+      "/v0/crawl/status/:jobId is deprecated. Use /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl_cancel: {
     message:
-      "/v0/crawl/cancel/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead.",
+      "/v0/crawl/cancel/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_search: {
-    message: "/v0/search is deprecated. Use /v2/search instead.",
+    message:
+      "/v0/search is deprecated. Use /v2/search instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/search",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
