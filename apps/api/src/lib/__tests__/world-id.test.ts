@@ -22,7 +22,7 @@ import {
 
 const ISSUER = "https://issuer.test";
 const CLIENT_ID = "app_test";
-const ORB_ACR = "https://world.org/oidc/acr/orb-v3";
+const ORB_ACR = "https://world.org/oidc/acr/orb";
 
 let privateKey: CryptoKey;
 let publicJwk: JWK;
@@ -228,6 +228,21 @@ describe("device flow", () => {
     expect(verifyWorldIdCredential(result.credential)).toBe(
       worldIdSubjectHash(ISSUER, "human-1"),
     );
+  });
+
+  it("mints a credential for an Orb face-authenticated ID token", async () => {
+    stubIssuer({
+      status: 200,
+      body: {
+        id_token: await idToken({
+          auth_time: 1,
+          acr: "https://world.org/oidc/acr/orb-face",
+        }),
+      },
+    });
+    const result = await pollWorldIdDeviceFlow(sealDeviceCode("device-secret"));
+
+    expect(result.outcome).toBe("approved");
   });
 
   it("refuses an ID token without the Orb authentication class", async () => {
