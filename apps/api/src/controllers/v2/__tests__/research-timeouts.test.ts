@@ -119,18 +119,10 @@ describe("research upstream timeouts", () => {
     {
       name: "similar papers",
       router: () => createResearchRouter(),
-      path: "/papers/:id/similar",
+      path: "/papers/*id/similar",
       query: { intent: "related work" },
-      params: { id: "paper-1" },
+      params: { id: ["paper-1"] },
       timeoutMs: 10_000,
-    },
-    {
-      name: "GitHub search",
-      router: () => createResearchRouter(),
-      path: "/github",
-      query: { query: "retry logic" },
-      params: {},
-      timeoutMs: 12_000,
     },
     {
       name: "developer search",
@@ -157,8 +149,8 @@ describe("research upstream timeouts", () => {
     { name: "inspect", query: {}, timeoutMs: 5_000 },
     { name: "read", query: { query: "summarize methods" }, timeoutMs: 120_000 },
   ])("uses the paper $name timeout", async ({ query, timeoutMs }) => {
-    await callRoute(createResearchRouter(), "/papers/:id", query, {
-      id: "paper-1",
+    await callRoute(createResearchRouter(), "/papers/*id", query, {
+      id: ["paper-1"],
     });
 
     expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
@@ -185,12 +177,12 @@ describe("research upstream timeouts", () => {
   ])("maps a $name timeout to 504", async ({ error }) => {
     mocks.fetchResearchUpstream.mockRejectedValue(error);
 
-    const res = await callRoute(createResearchRouter(), "/github", {
-      query: "retry logic",
+    const res = await callRoute(createDeveloperRouter(), "/search", {
+      query: "http client",
     });
 
     expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
-      expect.objectContaining({ timeoutMs: 12_000 }),
+      expect.objectContaining({ timeoutMs: 15_000 }),
     );
     expect(res.status).toHaveBeenCalledWith(504);
     expect(res.end).toHaveBeenCalled();

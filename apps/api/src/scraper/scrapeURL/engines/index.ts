@@ -189,6 +189,7 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  warning?: string;
   audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
@@ -498,9 +499,8 @@ const engineOptions: {
   },
   // The file engines (pdf, document, image) pass skipTlsVerification through
   // to their direct downloads, and a browser handoff already applied it
-  // upstream, so they declare it supported: otherwise every cache-miss file
-  // scrape carries a misleading "may be partial" warning, since v2 defaults
-  // the option to true.
+  // upstream, so they declare it supported: otherwise every file scrape that
+  // sets it carries a misleading "may be partial" warning.
   pdf: {
     features: {
       actions: false,
@@ -705,6 +705,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
       blocked,
+      origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
       headers: meta.options.headers,
@@ -989,6 +990,11 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
+    // Zero data retention scrapes, forced engines included, never use the
+    // Wikipedia engine: they stay on the engines that fetch the page directly.
+    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
+      continue;
+
     // A profile must never fall back to fetching anonymous content. File parsers
     // may consume bytes already fetched by the authenticated browser.
     if (

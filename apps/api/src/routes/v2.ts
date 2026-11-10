@@ -5,10 +5,7 @@ import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import {
-  researchCategoryNoticeMiddleware,
-  searchController,
-} from "../controllers/v2/search";
+import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -44,7 +41,7 @@ import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
 import { extractController } from "../controllers/v2/extract";
 import { extractStatusController } from "../controllers/v2/extract-status";
 import {
-  authMiddleware,
+  authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
   scrapeBlocklistMiddleware,
@@ -60,7 +57,10 @@ import {
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
@@ -124,6 +124,12 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+
+// Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
+// in controllers/auth.ts); /v1 routes do not.
+const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
+  sharedAuthMiddleware(mode, { ...options, hostedMcpRateLimit: true });
+
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -200,14 +206,15 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
-  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, {
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
+    mcpCredits: true,
+  }),
   blocklistMiddleware,
   wrap(searchController),
 );
@@ -251,7 +258,7 @@ v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   parsePayloadMiddleware,
   inferIntegrationMiddleware,
   wrap(parseController),
@@ -265,7 +272,7 @@ v2Router.post(
   }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
@@ -298,7 +305,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(batchScrapeController),
 );
@@ -307,7 +314,7 @@ v2Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
   inferIntegrationMiddleware,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   blocklistMiddleware,
   wrap(mapController),
 );
@@ -317,7 +324,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Crawl),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
@@ -663,7 +670,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Browser, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   countryCheck,
-  checkCreditsMiddleware(2),
+  checkCreditsMiddleware(2, undefined, { mcpCredits: true }),
   wrap(browserCreateController),
 );
 
@@ -722,6 +729,12 @@ v2Router.post(
   "/support/docs-search",
   authMiddleware(RateLimiterMode.SupportDocsSearch),
   wrap(supportProxyController),
+);
+
+// Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.
+v2Router.get(
+  ["/search/research/github", "/research/github"],
+  removedEndpointHandler("v2_research_github_search"),
 );
 
 if (config.RESEARCH_PROXY_URL) {

@@ -301,6 +301,7 @@ export const resultResponseSchema = z.object({
   // Raw on purpose: parsed separately by parseProvenance so a stamp this
   // build does not understand never fails the scrape.
   provenance: z.unknown().optional(),
+  data_region_applied: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

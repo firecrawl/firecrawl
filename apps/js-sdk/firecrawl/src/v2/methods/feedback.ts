@@ -1,9 +1,12 @@
 import {
+  type AlexandriaFeedbackRequest,
+  type AlexandriaFeedbackResponse,
   type EndpointFeedbackRequest,
   type FeedbackResponse,
   type SearchFeedbackRequest,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { ALEXANDRIA_FEEDBACK_MAX_TOKENS } from "../utils/feedbackTokens";
 import {
   normalizeAxiosError,
   throwForBadResponse,
@@ -54,6 +57,74 @@ export async function searchFeedback(
     return res.data;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "searchFeedback");
+    throw err;
+  }
+}
+
+const ALEXANDRIA_FEEDBACK_MAX_TOKEN_LENGTH = 1024;
+
+function validateToken(token: unknown, label: string): void {
+  if (
+    typeof token !== "string" ||
+    token.length === 0 ||
+    token.length > ALEXANDRIA_FEEDBACK_MAX_TOKEN_LENGTH
+  ) {
+    throw new Error(
+      `${label} must be a string of 1 to ${ALEXANDRIA_FEEDBACK_MAX_TOKEN_LENGTH} characters`,
+    );
+  }
+}
+
+export async function alexandriaFeedback(
+  http: HttpClient,
+  request: AlexandriaFeedbackRequest,
+): Promise<AlexandriaFeedbackResponse> {
+  validateRating(request.rating);
+  const { tokens, callRatings } = request;
+  if (tokens != null) {
+    if (!Array.isArray(tokens)) throw new Error("tokens must be an array");
+    if (tokens.length > ALEXANDRIA_FEEDBACK_MAX_TOKENS) {
+      throw new Error(
+        `tokens accepts at most ${ALEXANDRIA_FEEDBACK_MAX_TOKENS} entries`,
+      );
+    }
+    tokens.forEach((token, index) => validateToken(token, `tokens[${index}]`));
+  }
+  request.capabilityFeedback?.forEach((entry, index) => {
+    if (
+      entry?.issue === "new_capability_request" &&
+      !entry.requestedFunctionality?.trim()
+    ) {
+      throw new Error(
+        `capabilityFeedback[${index}].requestedFunctionality is required for new_capability_request`,
+      );
+    }
+  });
+  if (callRatings != null) {
+    if (!Array.isArray(callRatings))
+      throw new Error("callRatings must be an array");
+    if (callRatings.length > ALEXANDRIA_FEEDBACK_MAX_TOKENS) {
+      throw new Error(
+        `callRatings accepts at most ${ALEXANDRIA_FEEDBACK_MAX_TOKENS} entries`,
+      );
+    }
+    callRatings.forEach((entry, index) => {
+      validateToken(entry?.token, `callRatings[${index}].token`);
+      validateRating(entry.rating);
+    });
+  }
+
+  try {
+    const res = await http.post<AlexandriaFeedbackResponse>("/v2/feedback", {
+      ...request,
+      endpoint: "alexandria",
+    });
+    if (res.status !== 200 || !res.data?.success) {
+      throwForBadResponse(res, "alexandriaFeedback");
+    }
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "alexandriaFeedback");
     throw err;
   }
 }

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   searchGovCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
+  discoverSkills: vi.fn(),
   removeExplicitResults: vi.fn(),
   inferToolIntent: vi.fn(),
   verifyTools: vi.fn(),
@@ -11,14 +12,22 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./tool-intent", () => ({
   AUTO_TOOLS_WAIT_MS: 300,
+  FUSED_FIT_THRESHOLD: 0.2,
   inferToolIntent: mocks.inferToolIntent,
   verifyTools: mocks.verifyTools,
 }));
 
 vi.mock("./alexandria", () => ({
   discoverTools: mocks.discoverTools,
+  usOnlyToolsWarning: (excluded: number) => `${excluded} tools hidden`,
   isAlexandriaSource: (source: { type: string }) =>
     source.type === "alexandria",
+}));
+
+vi.mock("./skill-cards", () => ({
+  discoverSkills: mocks.discoverSkills,
+  isSkillsSource: (source: { type: string }) => source.type === "skills",
+  SKILLS_DISCOVERY_TIMEOUT_MS: 3000,
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -67,6 +76,11 @@ vi.mock("./safe-search", () => ({
 
 import { executeSearch } from "./execute";
 import { searchRequestSchema } from "../controllers/v2/types";
+import { logger as rootLogger } from "../lib/logger";
+
+const impressions = vi
+  .spyOn(rootLogger, "info")
+  .mockImplementation(() => rootLogger);
 
 const logger = {
   info: vi.fn(),
@@ -111,6 +125,7 @@ beforeEach(() => {
     status: "available",
     items: [{ id: "fred/series/observations" }],
   });
+  mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: false });
   mocks.verifyTools.mockImplementation(async (_query, items) => items);
 });
 
@@ -247,6 +262,32 @@ describe("executeSearch tool intent", () => {
     expect(result.searchCredits).toBe(2);
   });
 
+  it("warns a US-only team about tools hidden from automatic discovery", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["US unemployment rate statistics"],
+      domains: [],
+      needsTools: true,
+    });
+    mocks.discoverTools.mockResolvedValue({
+      items: [{ id: "fred/series/observations" }],
+      usOnlyExcluded: 2,
+    });
+    const result = await executeSearch(
+      { ...options([]), autoTools: true },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+    );
+    expect(mocks.discoverTools).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
+    );
+    expect(result.toolsWarning).toBe("2 tools hidden");
+  });
+
   it("leaves a default search alone when the query does not need tools", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     mocks.inferToolIntent.mockResolvedValue({
@@ -320,6 +361,237 @@ describe("executeSearch tool intent", () => {
     }
   });
 
+  describe("with tool fusion", () => {
+    const tool = (provider: string) => ({ provider, capability: "data/get" });
+    const intent = {
+      toolQueries: ["institutional holders of a public company"],
+      domains: [],
+      needsTools: true,
+    };
+    const fused = (query: string) =>
+      executeSearch(
+        {
+          ...options([]),
+          query,
+          sources: [{ type: "alexandria" }],
+          inferToolQuery: true,
+          toolFusion: true,
+        },
+        context,
+        logger,
+      );
+
+    it("ranks rewrite tools among raw-query tools by reciprocal rank", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? {
+                items: [tool("a"), tool("b"), tool("c"), tool("domain")],
+                semanticMatches: 3,
+              }
+            : {
+                items: [tool("x"), tool("c"), tool("y"), tool("site")],
+                semanticMatches: 3,
+              },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "c",
+        "a",
+        "x",
+        "b",
+        "y",
+        "domain",
+        "site",
+      ]);
+      expect(mocks.verifyTools).toHaveBeenCalledWith(
+        "who owns apple stock",
+        [tool("x"), tool("c"), tool("y")],
+        logger,
+        0.2,
+      );
+      expect(mocks.verifyTools).toHaveBeenCalledWith(
+        "who owns apple stock",
+        [tool("site")],
+        logger,
+      );
+    });
+
+    it("logs the served tools with their rank, source and fit rejections", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          return input.queries?.[0] === "who owns apple stock"
+            ? {
+                items: [tool("a"), tool("b"), tool("c"), tool("domain")],
+                semanticMatches: 3,
+              }
+            : {
+                items: [tool("x"), tool("c"), tool("y"), tool("site")],
+                semanticMatches: 3,
+              };
+        },
+      );
+      mocks.verifyTools.mockImplementation(async (_query, items) =>
+        items.filter(
+          (item: { provider: string }) =>
+            item.provider !== "y" && item.provider !== "site",
+        ),
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.toolFusion).toBe(true);
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:raw",
+          }),
+        }),
+        logger,
+      );
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:rewrite",
+          }),
+        }),
+        logger,
+      );
+      expect(impressions).toHaveBeenCalledWith("Search tool impression", {
+        event: "search_tool_impression",
+        searchId: "job-1",
+        teamId: "team-1",
+        servedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        auto: false,
+        fusion: { enabled: true, ran: true },
+        rewrite: "arrived",
+        tools: [
+          { id: "c/data/get", rank: 1, source: "both" },
+          { id: "a/data/get", rank: 2, source: "raw" },
+          { id: "x/data/get", rank: 3, source: "rewrite" },
+          { id: "b/data/get", rank: 4, source: "raw" },
+          { id: "domain/data/get", rank: 5, source: "raw" },
+        ],
+        fitRejected: { semantic: 1, domain: 1 },
+        exchangeRequestIds: {
+          raw: ["job-1:tools:raw:1"],
+          rewrite: ["job-1:tools:rewrite:1"],
+        },
+      });
+      expect(JSON.stringify(impressions.mock.calls)).not.toContain(
+        "who owns apple stock",
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.anything(),
+      );
+    });
+
+    it("reports no fusion when the rewrite found no tools", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a")], semanticMatches: 1 }
+            : { items: [], semanticMatches: 0 },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.toolFusion).toBe(false);
+      expect(impressions).toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.objectContaining({
+          fusion: { enabled: true, ran: false },
+          rewrite: "empty",
+        }),
+      );
+    });
+
+    it("drops rewrite-only tools the fit check rejects", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a"), tool("b")], semanticMatches: 2 }
+            : { items: [tool("x"), tool("b")], semanticMatches: 2 },
+      );
+      mocks.verifyTools.mockResolvedValue([]);
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "b",
+        "a",
+      ]);
+    });
+
+    it("scores rewrite tools by their original rank when earlier ones are rejected", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a"), tool("b")], semanticMatches: 2 }
+            : { items: [tool("x"), tool("y")], semanticMatches: 2 },
+      );
+      mocks.verifyTools.mockImplementation(async (_query, items) =>
+        items.filter((item: { provider: string }) => item.provider !== "x"),
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "a",
+        "b",
+        "y",
+      ]);
+    });
+
+    it("waits up to the configured cap past the raw lookup for rewrite tools", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          if (input.queries?.[0] === "who owns apple stock")
+            return Promise.resolve({ items: [tool("a")], semanticMatches: 1 });
+          return new Promise(() => {});
+        },
+      );
+      vi.useFakeTimers();
+      try {
+        let done = false;
+        const pending = fused("who owns apple stock").finally(() => {
+          done = true;
+        });
+        await vi.advanceTimersByTimeAsync(999);
+        expect(done).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await pending;
+        expect(result.response.tools).toEqual([tool("a")]);
+        expect(result.toolFusion).toBe(false);
+        expect(impressions).toHaveBeenCalledWith(
+          "Search tool impression",
+          expect.objectContaining({
+            fusion: { enabled: true, ran: false },
+            rewrite: "late",
+            tools: [{ id: "a/data/get", rank: 1, source: "raw" }],
+            exchangeRequestIds: {
+              raw: ["job-1:tools:raw:1"],
+              rewrite: ["job-1:tools:rewrite:1"],
+            },
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("never adds tools under zero data retention", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     await executeSearch(
@@ -329,6 +601,10 @@ describe("executeSearch tool intent", () => {
     );
     expect(mocks.inferToolIntent).not.toHaveBeenCalled();
     expect(mocks.discoverTools).not.toHaveBeenCalled();
+    expect(impressions).not.toHaveBeenCalledWith(
+      "Search tool impression",
+      expect.anything(),
+    );
   });
 });
 
@@ -564,7 +840,7 @@ describe("executeSearch developer category", () => {
   it("rejects developer combined with other categories at the schema", () => {
     const mixed = searchRequestSchema.safeParse({
       query: "retries",
-      categories: ["developer", "github"],
+      categories: ["developer", "pdf"],
     });
     expect(mixed.success).toBe(false);
     if (!mixed.success) {
@@ -824,6 +1100,168 @@ describe("executeSearch query operators", () => {
 
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({ tbs, type: ["web"] }),
+    );
+  });
+});
+
+describe("executeSearch skill cards", () => {
+  const card = {
+    id: "official/search",
+    name: "Search",
+    description: "Find records",
+    source: "official" as const,
+    similarity: 0.5,
+  };
+
+  it("leaves skills off when the source was not requested", async () => {
+    mocks.search.mockResolvedValue({ web: [developerResult] });
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(mocks.discoverSkills).not.toHaveBeenCalled();
+    expect(result.response).not.toHaveProperty("skills");
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("starts skill discovery before the web search and maps the cards", async () => {
+    const order: string[] = [];
+    let releaseSkills: (found: {
+      skills: unknown[];
+      succeeded: boolean;
+    }) => void = () => {};
+    mocks.discoverSkills.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          order.push("skills");
+          releaseSkills = resolve;
+        }),
+    );
+    mocks.search.mockImplementation(async () => {
+      order.push("web");
+      releaseSkills({ skills: [card], succeeded: true });
+      return { web: [developerResult] };
+    });
+
+    const result = await executeSearch(
+      {
+        ...options([]),
+        sources: [{ type: "web" }, { type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(order).toEqual(["skills", "web"]);
+    expect(mocks.discoverSkills).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: "team-1",
+        query: "retries",
+        timeoutMs: 1000,
+        usOnly: false,
+      }),
+      logger,
+    );
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ type: ["web"] }),
+    );
+    expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
+    expect(result.response.web).toHaveLength(1);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("keeps web results and returns no cards when skill discovery fails", async () => {
+    mocks.search.mockResolvedValue({ web: [developerResult] });
+    mocks.discoverSkills.mockRejectedValue(new Error("timed out"));
+
+    const result = await executeSearch(
+      {
+        ...options([]),
+        sources: [{ type: "web" }, { type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(result.response.web).toHaveLength(1);
+    expect(result.response.skills).toEqual([]);
+    expect(result.skillsDiscovered).toBe(false);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("does not run or bill web search for a skills-only request", async () => {
+    mocks.discoverSkills.mockResolvedValue({
+      skills: [card],
+      succeeded: true,
+    });
+
+    const result = await executeSearch(
+      { ...options([]), sources: [{ type: "skills" }] },
+      context,
+      logger,
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response.skills).toEqual([card]);
+    expect(result.skillsDiscovered).toBe(true);
+    expect(result.searchCredits).toBe(0);
+    expect(result.totalCredits).toBe(0);
+  });
+
+  it.each([
+    ["zero data retention", { zeroDataRetention: true }, {}],
+    ["zdr enterprise mode", {}, { enterprise: ["zdr"] }],
+    ["anon enterprise mode", {}, { enterprise: ["anon"] }],
+  ])(
+    "skips skill discovery under %s",
+    async (_label, contextOverrides, optionOverrides) => {
+      mocks.search.mockResolvedValue({ web: [developerResult] });
+
+      const result = await executeSearch(
+        {
+          ...options([]),
+          sources: [{ type: "web" }, { type: "skills" }],
+          ...optionOverrides,
+        },
+        { ...context, ...contextOverrides },
+        logger,
+      );
+
+      expect(mocks.discoverSkills).not.toHaveBeenCalled();
+      expect(result.response).not.toHaveProperty("skills");
+      expect(result.skillsDiscovered).toBe(false);
+    },
+  );
+
+  it("skips skill discovery when the query is empty", async () => {
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "   ",
+        sources: [{ type: "skills" }],
+      },
+      context,
+      logger,
+    );
+
+    expect(mocks.discoverSkills).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).not.toHaveProperty("skills");
+    expect(result.skillsDiscovered).toBe(false);
+  });
+
+  it("forwards a US-only team to skill discovery", async () => {
+    mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: true });
+
+    await executeSearch(
+      { ...options([]), sources: [{ type: "skills" }] },
+      { ...context, flags: { usOnly: true } },
+      logger,
+    );
+
+    expect(mocks.discoverSkills).toHaveBeenCalledWith(
+      expect.objectContaining({ usOnly: true }),
+      logger,
     );
   });
 });

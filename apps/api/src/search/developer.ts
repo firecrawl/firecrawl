@@ -1,6 +1,11 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
-import { fetchResearchUpstream } from "../lib/research-upstream";
+import {
+  fetchResearchUpstream,
+  usOnlySkippedWarning,
+  usOnlyUpstreamRefusal,
+  UsOnlyUpstreamRefusalError,
+} from "../lib/research-upstream";
 import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 const DEVELOPER_QUERY_KEYS = ["query", "k"];
@@ -16,6 +21,9 @@ export async function searchDeveloperCategory(
     teamId: string;
     timeout: number;
     zeroDataRetention: boolean;
+    usOnly?: boolean;
+    /** Receives the warnings for parts the upstream skipped for a US-only request. */
+    warnings?: string[];
   },
   logger: Logger,
 ): Promise<WebSearchResult[]> {
@@ -27,11 +35,18 @@ export async function searchDeveloperCategory(
       headers: {
         "firecrawl-team-id": options.teamId,
         "firecrawl-zero-data-retention": String(options.zeroDataRetention),
+        ...(options.usOnly ? { "firecrawl-us-only": "true" } : {}),
       },
       timeoutMs: options.timeout,
     });
     if (upstream === null) {
       return [];
+    }
+    if (options.usOnly && upstream.status >= 400 && upstream.status < 500) {
+      throw await usOnlyUpstreamRefusal(
+        upstream,
+        "Developer search refused the request.",
+      );
     }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
@@ -40,6 +55,11 @@ export async function searchDeveloperCategory(
       });
       return [];
     }
+
+    const skipped = options.usOnly
+      ? usOnlySkippedWarning(upstream.headers)
+      : undefined;
+    if (skipped) options.warnings?.push(skipped);
 
     const body: any = await upstream.json();
     const results: any[] = Array.isArray(body?.results) ? body.results : [];
@@ -65,6 +85,7 @@ export async function searchDeveloperCategory(
       }))
       .filter(result => result.url.length > 0);
   } catch (error) {
+    if (error instanceof UsOnlyUpstreamRefusalError) throw error;
     logger.warn("Developer category upstream error", { error });
     return [];
   }

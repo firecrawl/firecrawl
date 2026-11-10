@@ -94,7 +94,7 @@ In another terminal, check reachability and one scrape:
 
 ```bash
 curl --fail --silent --show-error \
-  http://localhost:3002/v0/health/readiness
+  http://localhost:3002/health/readiness
 ```
 
 ```bash

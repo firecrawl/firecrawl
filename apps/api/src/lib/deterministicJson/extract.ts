@@ -22,6 +22,8 @@ interface ExtractArgs {
   costTracking: CostTracking;
   maxAskLlmCalls?: number;
   forceRegenerate?: boolean;
+  /** Keeps extractors generated from a non-public page view out of the shared cache. */
+  cacheScope?: string;
 }
 
 export async function extractDeterministicJson(
@@ -35,11 +37,19 @@ export async function extractDeterministicJson(
     sandbox,
     jsonSchema,
     costTracking,
+    cacheScope,
   } = args;
 
   const schemaJson = JSON.stringify(jsonSchema);
   const key = sha(
-    [CACHE_VERSION, CODEGEN_MODEL, url, schemaJson, prompt].join("\0"),
+    [
+      CACHE_VERSION,
+      CODEGEN_MODEL,
+      url,
+      schemaJson,
+      prompt,
+      ...(cacheScope ? [cacheScope] : []),
+    ].join("\0"),
   );
   const meta = { url, model: CODEGEN_MODEL, cacheVersion: CACHE_VERSION };
 

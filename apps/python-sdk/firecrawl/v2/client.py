@@ -23,6 +23,8 @@ from .types import (
     CategoryOption,
     FindToolsData,
     AlexandriaCall,
+    AlexandriaFeedbackRequest,
+    AlexandriaFeedbackResponse,
     AlexandriaScrapeData,
     CrawlRequest,
     CrawlResponse,
@@ -81,6 +83,7 @@ from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .methods import monitor as monitor_module
 from .methods import research as research_module
+from .methods import feedback as feedback_module
 from .methods.research_docs import (
     CLIENT_INSPECT_PAPER_DOC,
     CLIENT_READ_PAPER_DOC,
@@ -294,6 +297,20 @@ class FirecrawlClient:
             self.http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
+    def alexandria_feedback(
+        self, request: Union[AlexandriaFeedbackRequest, Dict[str, Any]]
+    ) -> AlexandriaFeedbackResponse:
+        """
+        Rate Alexandria calls.
+
+        Pass the ``feedback_token`` of each call result in ``tokens`` (session rating,
+        at most 20, newest last) or ``call_ratings`` (per-call ratings, at most 20).
+
+        Returns:
+            AlexandriaFeedbackResponse, including rejected_tokens when some tokens failed verification
+        """
+        return feedback_module.alexandria_feedback(self.http_client, request)
+
     def find_tools(self, **options) -> FindToolsData:
         """Explore providers and contracts without executing discovered tools.
 
@@ -312,12 +329,18 @@ class FirecrawlClient:
                 code=item.error.code,
                 charge_id=item.error.charge_id,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**item.data, feedback_token=item.feedback_token)
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return research_module.search_papers(self.http_client, query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return research_module.search_papers(self.http_client, query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):

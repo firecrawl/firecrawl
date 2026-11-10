@@ -10,6 +10,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
+import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 import {
@@ -65,12 +66,21 @@ export async function extractStatusController(
         });
       }
 
+      const expiry = agentJobExpiry(access, agent);
+      if (expiry.zeroDataRetentionExpired) {
+        return res.status(410).json({
+          success: false,
+          code: "zdr_expired",
+          error: ZDR_EXPIRED_ERROR,
+        });
+      }
+
       return res.status(200).json({
         success: true,
         status: agent.status === "success" ? "completed" : agent.status,
         error: agent.error,
         data: agent.data,
-        expiresAt: new Date(access.expiresAtMs).toISOString(),
+        expiresAt: new Date(expiry.expiresAtMs).toISOString(),
         creditsUsed: agent.creditsUsed,
       });
     }

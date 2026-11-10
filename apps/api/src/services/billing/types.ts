@@ -21,7 +21,7 @@ export type BillingMetadata = {
    * Unique-per-CHARGE identity, set by the call site that knows what "one
    * charge" is. billTeam derives the firebill idempotency key from it
    * (`fc:track:{endpoint}:{chargeId}`), so a retried call — or a re-run job —
-   * dedupes instead of double-billing on the firebill route.
+   * dedupes instead of double-billing.
    *
    * Rules: it must never be shared by two charges that should BOTH bill
    * (collision = silent underbilling). A jobId shared with another charge on
@@ -39,6 +39,13 @@ export type BillingMetadata = {
    * Unset when the caller sent no header or the charge has no request.
    */
   externalRequestId?: string | null;
+  /**
+   * The hosted MCP made the request, as verified at authentication (see
+   * `AuthObject.hostedMcp`). Its charges are made on MCP credits (see
+   * AutumnService.hostedMcpFeatureId). Rides the job payload like the rest of
+   * this metadata, so a crawl's pages carry it too.
+   */
+  hostedMcp?: boolean;
 };
 
 export function resolveBillingMetadata({

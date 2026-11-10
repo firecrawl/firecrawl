@@ -1,6 +1,7 @@
 from typing import Dict, Any, Union, List, TypeVar, Type
 from ...types import (
     DiscoveredTool,
+    SkillCard,
     SearchRequest,
     SearchData,
     Document,
@@ -51,6 +52,8 @@ async def search(
             out.images = _transform_array(data["images"], SearchResultImages)
         if "tools" in data:
             out.tools = [DiscoveredTool(**item) for item in data["tools"]]
+        if "skills" in data:
+            out.skills = [SkillCard(**item) for item in data["skills"]]
         return out
     except Exception as err:
         response = getattr(err, "response", None)
@@ -114,7 +117,13 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
             raise ValueError("Timeout cannot exceed 300000ms (5 minutes)")
 
     if request.sources is not None:
-        valid_sources = {"web", "news", "images", "alexandria"}
+        valid_sources = {
+            "web",
+            "news",
+            "images",
+            "alexandria",
+            "skills",
+        }
         for source in request.sources:
             if isinstance(source, str):
                 if source not in valid_sources:

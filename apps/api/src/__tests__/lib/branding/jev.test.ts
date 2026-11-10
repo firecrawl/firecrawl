@@ -1,7 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import { generateObject } from "ai";
-import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APITimeoutError,
+  InternalServerError,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 
 const mocks = vi.hoisted(() => ({ systemOne: vi.fn() }));
 
@@ -581,6 +585,131 @@ describe("branding with Jev", () => {
       expect(
         result.buttonClassification.primaryButtonIndex,
       ).toBeGreaterThanOrEqual(0);
+    });
+
+    const callCount = async (outcome: string) =>
+      (await brandingJevCallsTotal.get()).values.find(
+        v => v.labels.outcome === outcome,
+      )?.value ?? 0;
+    const refused = (status: number, message: string) =>
+      new InternalServerError(status, {}, new Headers(), message);
+    const withScreen = () => {
+      const input = baseInput(new CostTracking());
+      input.firstScreen = `data:image/png;base64,${PNG}`;
+      return input;
+    };
+
+    it("asks again from the text alone when TypeSafe refuses the image, instead of paying for the LLM", async () => {
+      for (const refusal of [
+        refused(503, "503 Image processing is unavailable."),
+        refused(
+          529,
+          "529 We are currently experiencing high traffic and cannot process your request.",
+        ),
+      ]) {
+        mocks.systemOne.mockReset();
+        mocks.systemOne
+          .mockRejectedValueOnce(refusal)
+          .mockResolvedValueOnce(jevResponse());
+        const before = {
+          rejected: await callCount("image_rejected"),
+          ok: await callCount("ok"),
+        };
+
+        const result = await enhanceBrandingWithLLM(withScreen());
+
+        expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+        const [first, firstOptions] = mocks.systemOne.mock.calls[0];
+        const [second, secondOptions] = mocks.systemOne.mock.calls[1];
+        expect(first.assets).toBeDefined();
+        expect(firstOptions.headers).toEqual({
+          "TypeSafe-Danger-Zone-Images": "true",
+        });
+        expect(second.assets).toBeUndefined();
+        expect(second.state.page.first_screen).toBeUndefined();
+        expect(second.questions.primary_button.instructions).not.toContain(
+          "<screenshot>",
+        );
+        expect(secondOptions.headers).toBeUndefined();
+        expect(generateObject).not.toHaveBeenCalled();
+        expect(
+          result.buttonClassification.primaryButtonIndex,
+        ).toBeGreaterThanOrEqual(0);
+        expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+        expect(await callCount("ok")).toBe(before.ok + 1);
+      }
+    });
+
+    it("does not count a refused image toward the breaker", async () => {
+      // Five failures in a row would open it; five refused images must not.
+      mocks.systemOne.mockReset();
+      for (let i = 0; i < 5; i++) {
+        mocks.systemOne
+          .mockRejectedValueOnce(
+            refused(503, "503 Image processing is unavailable."),
+          )
+          .mockResolvedValueOnce(jevResponse());
+      }
+      for (let i = 0; i < 5; i++) await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(10);
+      expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(11);
+      expect(generateObject).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the LLM when the text-only retry fails too, and that failure counts toward the breaker", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne
+        .mockRejectedValueOnce(
+          refused(503, "503 Image processing is unavailable."),
+        )
+        .mockRejectedValueOnce(refused(500, "500 Internal server error"));
+      const before = {
+        rejected: await callCount("image_rejected"),
+        error: await callCount("error"),
+      };
+
+      await enhanceBrandingWithLLM(withScreen());
+
+      expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+      expect(await callCount("error")).toBe(before.error + 1);
+
+      // That failure was the first of five: four more plain failures open
+      // the breaker, which a refused image alone would not have done.
+      mocks.systemOne.mockRejectedValue(
+        refused(500, "500 Internal server error"),
+      );
+      for (let i = 0; i < 4; i++) {
+        await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      }
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      expect(generateObject).toHaveBeenCalledTimes(6);
+    });
+
+    it("still falls back to the LLM on a server error that is not about the image, or a refusal without one", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(500, "500 Internal server error"),
+      );
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+
+      // A 529 on a text-only call is TypeSafe asking us to back off: no retry.
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(529, "529 We are currently experiencing high traffic"),
+      );
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1193,6 +1322,46 @@ describe("Jev request building", () => {
     expect(describeColor("#0A2540")).toBe("very dark blue");
     expect(describeColor("#F6F9FC")).toBe("near-white");
     expect(describeColor("#1A73E8")).toBe("vivid blue");
+  });
+
+  it("names the family a stack renders, not its alias or its system fallbacks", () => {
+    // Wix serves a licensed face under a per-site alias and keeps the real
+    // name further down the stack.
+    expect(
+      cleanFontFamily(
+        "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
+      ),
+    ).toBe("Libre Baskerville");
+    expect(cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd")).toBeUndefined();
+    // Monotype spellings on Wix.
+    expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
+    expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
+    expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
+    expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe("DIN Neuzeit Grotesk");
+    // Self-hosted builds and a weight glued onto a lowercase alias.
+    expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
+    expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
+    expect(cleanFontFamily("orig_graphikextralight")).toBe("Graphik");
+    expect(cleanFontFamily("Cooper Black")).toBe("Cooper Black");
+    // A weight alone is still no family, and a known family is matched
+    // once its glued weight is gone.
+    expect(cleanFontFamily("semibold")).toBeUndefined();
+    expect(cleanFontFamily("proximanovabold")).toBe("Proxima Nova");
+    // Non-Latin faces are families too, and title case works past ASCII.
+    expect(cleanFontFamily("思源黑体, sans-serif")).toBe("思源黑体");
+    expect(cleanFontFamily("über grotesk")).toBe("Über Grotesk");
+    // A system stack asks for the visitor's font: Segoe UI and Roboto are
+    // its spellings per platform, not the brand's choice.
+    expect(
+      cleanFontFamily("-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"),
+    ).toBeUndefined();
+    expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
+    // A real face ahead of the system stack is still that face (hyphenated
+    // self-hosted names keep their spelling).
+    expect(
+      cleanFontFamily("Salesforce-Sans, system-ui, -apple-system, Segoe UI"),
+    ).toBe("Salesforce-Sans");
   });
 
   it("cleans font names in code", () => {

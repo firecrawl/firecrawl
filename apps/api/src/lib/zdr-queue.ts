@@ -17,6 +17,10 @@ const READY_ROUTING_KEY = "ready";
 const DLQ_ROUTING_KEY = "dead";
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+// 5 attempts of at most 5s each, with 1+2+4+8s between them: at most 40s,
+// well inside the API pod's shutdown grace.
+const PUBLISH_MAX_ATTEMPTS = 5;
+const PUBLISH_ATTEMPT_TIMEOUT_MS = 5_000;
 
 const logger = _logger.child({ module: "zdr-queue" });
 
@@ -265,7 +269,8 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
   }
 
   let delayMs = RECONNECT_BASE_DELAY_MS;
-  while (!closed) {
+  for (let attempt = 1; !closed; attempt++) {
+    let attemptTimer: NodeJS.Timeout | undefined;
     try {
       await withSpan("zdr.rabbitmq.publish", async span => {
         setSpanAttributes(span, {
@@ -275,14 +280,31 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
           "messaging.message.id": requestId,
           "zdr.rabbitmq.retry_delay_ms": delayMs,
         });
-        const ch = await getPublishChannel();
-        await publishConfirmed(ch, { requestId });
+        await Promise.race([
+          getPublishChannel().then(ch => publishConfirmed(ch, { requestId })),
+          new Promise<never>((_, reject) => {
+            attemptTimer = setTimeout(
+              () => reject(new Error("ZDR publish attempt timed out")),
+              PUBLISH_ATTEMPT_TIMEOUT_MS,
+            );
+          }),
+        ]);
         setSpanAttributes(span, {
           "zdr.rabbitmq.outcome": "confirmed",
         });
       });
       return;
     } catch (error) {
+      if (attempt >= PUBLISH_MAX_ATTEMPTS) {
+        logger.error("Failed to enqueue ZDR cleanup job; giving up", {
+          error,
+          requestId,
+          attempts: attempt,
+        });
+        throw new Error(
+          `ZDR cleanup job not confirmed after ${attempt} attempts`,
+        );
+      }
       logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
         error,
         requestId,
@@ -293,6 +315,8 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
       publishChannelPromise = null;
       await new Promise(resolve => setTimeout(resolve, delayMs));
       delayMs = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+    } finally {
+      clearTimeout(attemptTimer);
     }
   }
 

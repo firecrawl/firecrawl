@@ -1,4 +1,8 @@
-import { MapDocument, URLTrace } from "../../../controllers/v1/types";
+import {
+  MapDocument,
+  TeamFlags,
+  URLTrace,
+} from "../../../controllers/v1/types";
 import { logger } from "../../logger";
 import { generateCompletions } from "../../../scraper/scrapeURL/transformers/llmExtract";
 import {
@@ -22,13 +26,14 @@ type RerankerOptions = {
     extractId?: string;
     scrapeId?: string;
   };
+  teamFlags?: TeamFlags | null;
 };
 
 export async function rerankLinksWithLLM_F0(
   options: RerankerOptions,
   costTracking: CostTracking,
 ): Promise<RerankerResult> {
-  const { links, searchQuery, urlTraces, metadata } = options;
+  const { links, searchQuery, urlTraces, metadata, teamFlags } = options;
   const chunkSize = 100;
   const chunks: MapDocument[][] = [];
   const TIMEOUT_MS = 20000;
@@ -110,6 +115,7 @@ export async function rerankLinksWithLLM_F0(
                 ? metadata.functionId + "/rerankLinksWithLLM_F0"
                 : "rerankLinksWithLLM_F0",
             },
+            teamFlags,
           });
 
           const completion = await Promise.race([

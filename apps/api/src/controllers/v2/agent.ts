@@ -12,7 +12,12 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
-import { getScrapeZDR, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+  getAgentZdrRetentionMinutes,
+  getScrapeZDR,
+  getSearchZDR,
+} from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -22,6 +27,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
+import { isUsOnly } from "../../lib/us-only";
 import {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,
@@ -79,6 +85,22 @@ export async function agentController(
     });
   }
 
+  // Read once, here: the agent service keeps the run's retention from start.
+  const zeroDataRetentionMinutes = zeroDataRetention
+    ? getAgentZdrRetentionMinutes(req.acuc?.flags)
+    : null;
+  if (zeroDataRetentionMinutes === "invalid") {
+    logger.error("Invalid agentZdrRetentionMinutes team flag", {
+      agentZdrRetentionMinutes: req.acuc?.flags?.agentZdrRetentionMinutes,
+    });
+    return res.status(500).json({
+      success: false,
+      code: "zdr_retention_misconfigured",
+      error:
+        "Zero Data Retention is misconfigured for your team. Contact support@firecrawl.com.",
+    });
+  }
+
   logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
@@ -121,7 +143,12 @@ export async function agentController(
           req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          { endpoint: "agent", jobId: agentId, chargeId: `${agentId}:threat` },
+          {
+            endpoint: "agent",
+            jobId: agentId,
+            chargeId: `${agentId}:threat`,
+            hostedMcp: req.auth.hostedMcp,
+          },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
@@ -233,6 +260,7 @@ export async function agentController(
       orgId: req.auth.org_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
       requestedMaxCredits: req.body.maxCredits,
+      hostedMcp: req.auth.hostedMcp,
     });
     if (!gate.allowed) {
       logger.warn("Insufficient credits to start agent run", {
@@ -245,6 +273,7 @@ export async function agentController(
     }
     maxCredits = gate.maxCredits;
     stopOnInsufficientCredits = gate.stopOnInsufficientCredits;
+    if (gate.onTeamCredits) req.auth.hostedMcp = false;
   }
 
   await logRequest({
@@ -259,6 +288,12 @@ export async function agentController(
     zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
     creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+    ...(zeroDataRetention
+      ? {
+          jobAccessZeroDataRetentionMinutes:
+            zeroDataRetentionMinutes ?? AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+        }
+      : {}),
   });
 
   const passthrough = await fetch(
@@ -289,7 +324,13 @@ export async function agentController(
         mode: req.body.mode,
         exchange: req.body.exchange,
         location: req.body.location,
+        safe: req.body.safe,
+        ...(req.auth.hostedMcp ? { hostedMcp: true } : {}),
         ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
+        ...(zeroDataRetentionMinutes !== null
+          ? { zeroDataRetentionMinutes }
+          : {}),
+        ...(isUsOnly(req.acuc?.flags) ? { usOnly: true } : {}),
       }),
     },
   );

@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from "express";
+import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
@@ -38,13 +38,16 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { isToolsOnlySearch } from "../../search/alexandria";
+import {
+  isFreeCatalogueSearch,
+  isToolsOnlySearch,
+} from "../../search/alexandria";
 import {
   resolveSafeMode,
   isLockdownZeroDataRetention,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -54,36 +57,28 @@ import {
 import { wantsDeveloperCategory } from "../../search/developer";
 import { wantsGovCategory } from "../../search/gov";
 import {
+  consumeIndexRateLimit,
   indexDailyLimitRefusal,
   reserveIndexCalls,
 } from "../../lib/index-daily-limit";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { applyNotice, type Notice } from "../../lib/deprecations";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
+  toolFusionEnabled,
 } from "../../search/tool-intent";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
-const RESEARCH_CATEGORY_NOTICE: Notice = {
-  message:
-    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
-  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
-};
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
 
-// Ahead of auth and validation so rejected requests carry the notice too.
-export function researchCategoryNoticeMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  if (hasCategory(req.body?.categories, "research")) {
-    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
-  }
-  next();
-}
+const GITHUB_CATEGORY_REMOVED =
+  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -159,6 +154,20 @@ async function searchControllerInner(
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
+    if (hasCategory(req.body?.categories, "github")) {
+      logger.warn("Removed search category requested", {
+        module: "deprecations",
+        category: "github",
+        origin: requestOrigin({ origin: rawOrigin }, req),
+      });
+      return res.status(400).json({
+        success: false,
+        code: "CATEGORY_REMOVED",
+        error: GITHUB_CATEGORY_REMOVED,
+        replacement: "developer",
+        documentation_url: "https://docs.firecrawl.dev/features/developer",
+      });
+    }
     const sourcesOmitted =
       (req.body as Record<string, unknown>)?.sources === undefined;
     req.body = searchRequestSchema.parse(req.body);
@@ -166,8 +175,11 @@ async function searchControllerInner(
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",
     );
+    const wantsSkills = req.body.sources.some(
+      source => source.type === "skills",
+    );
     if (
-      (wantsTools || req.body.domainTools) &&
+      (wantsTools || wantsSkills || req.body.domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
     ) {
       return res.status(403).json({
@@ -175,13 +187,15 @@ async function searchControllerInner(
         error: "An API key is required for provider tools.",
       });
     }
-    if (wantsTools && !req.body.query.trim())
+    if ((wantsTools || wantsSkills) && !req.body.query.trim())
       return res.status(400).json({
         success: false,
-        error: "A query is required for tool search.",
+        error: wantsTools
+          ? "A query is required for tool search."
+          : "A query is required for skill search.",
       });
     if (
-      (wantsTools || req.body.domainTools) &&
+      (wantsTools || wantsSkills || req.body.domainTools) &&
       (teamForcedKind ||
         req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
     )
@@ -251,6 +265,27 @@ async function searchControllerInner(
       });
     }
 
+    // Image search has no US-only route: it is dropped with a warning, or
+    // refused when nothing else was asked for.
+    let usOnlyImagesWarning: string | undefined;
+    const sources = req.body.sources as Array<{ type: string }>;
+    if (
+      isUsOnly(req.acuc?.flags) &&
+      sources.some(source => source.type === "images")
+    ) {
+      req.body.sources = sources.filter(
+        source => source.type !== "images",
+      ) as SearchRequest["sources"];
+      if (req.body.sources.length === 0 && !indexCategory) {
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+        });
+      }
+      usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+    }
+
     // Safe Mode: validate the per-request param up front and reject scrape
     // options it forbids (the worker backstop would otherwise strip them
     // silently). Domain controls force threat protection over the results.
@@ -281,6 +316,35 @@ async function searchControllerInner(
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
+      });
+    }
+
+    const usOnlyLocationError =
+      requestedFormats.length > 0
+        ? usOnlyLocationRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
+      });
+    }
+
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
       });
     }
 
@@ -315,6 +379,7 @@ async function searchControllerInner(
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
       externalRequestId: externalRequestId(req),
+      hostedMcp: req.auth.hostedMcp,
     };
 
     logger = logger.child({
@@ -382,11 +447,15 @@ async function searchControllerInner(
     }
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      req.body.sources,
+      req.body.categories,
+    );
     const govSearch = wantsGovCategory(categories);
     const projectedKeylessCredits =
       !isSearchPreview &&
       shouldBill &&
-      !toolsOnly &&
+      !freeCatalogue &&
       (!govSearch || requestedFormats.length > 0)
         ? projectSearchTotalCredits(
             {
@@ -409,6 +478,24 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
+
+    if (govSearch) {
+      const perMinute = await consumeIndexRateLimit(
+        "gov",
+        req.auth.team_id,
+        req.acuc?.rate_limit_multiplier ?? 1,
+        req.acuc?.flags,
+        1,
+      );
+      if (!perMinute.ok) {
+        res.setHeader("Retry-After", String(perMinute.retryAfterSeconds));
+        return res.status(429).json({
+          success: false,
+          error: perMinute.error,
+          retry_after_seconds: perMinute.retryAfterSeconds,
+        });
+      }
+    }
 
     if (projectedKeylessCredits > 0) {
       const reservation = await reserveKeylessCredits(
@@ -465,6 +552,7 @@ async function searchControllerInner(
         domainTools: req.body.domainTools,
         toolDetail: req.body.toolDetail,
         inferToolQuery: queryInferenceEnabled(),
+        toolFusion: toolFusionEnabled(req.acuc?.flags),
         autoTools:
           (sourcesOmitted || req.body.domainTools === true) &&
           !req.auth.team_id.startsWith("preview_keyless_") &&
@@ -619,8 +707,11 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
-    if (result.response.tools) {
+    if (result.response.tools || result.skillsDiscovered) {
       markAlexandriaActivity(req.auth.team_id);
+    }
+    if (result.response.tools) {
+      setSpanAttributes(span, { "search.tool_fusion": result.toolFusion });
       recordDiscoveredTools(
         req.auth.team_id,
         result.toolsAuto ? "auto_search" : "search",
@@ -628,12 +719,19 @@ async function searchControllerInner(
         result.response.tools,
       );
     }
+    const warning = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ]
+      .filter(Boolean)
+      .join(" ");
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
-      ...(result.toolsWarning ? { warning: result.toolsWarning } : {}),
+      ...(warning ? { warning } : {}),
     });
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
@@ -656,6 +754,26 @@ async function searchControllerInner(
       return res.status(408).json({
         success: false,
         code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUnavailableError) {
+      setSpanAttributes(span, { "search.status_code": 403 });
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUpstreamRefusalError) {
+      setSpanAttributes(span, { "search.status_code": error.status });
+      return res.status(error.status).json({
+        success: false,
+        ...(error.status === 403
+          ? { code: "US_ONLY_UNAVAILABLE" as const }
+          : {}),
         error: error.message,
       });
     }

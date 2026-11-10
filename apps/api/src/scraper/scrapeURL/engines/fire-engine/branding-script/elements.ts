@@ -112,6 +112,67 @@ interface InputMetadata {
   label: string;
 }
 
+/**
+ * The color of the element's own text as rendered: site builders (Wix,
+ * Elementor, Framer) put a button's label in an inner span with its own
+ * color, while the button or link itself keeps the page's inherited color.
+ * The first rendered descendant that directly holds text decides; copies
+ * for screen readers or other breakpoints (display none, visibility hidden,
+ * clipped to a pixel) are passed over. The element's own color when it
+ * holds the text itself or has none.
+ */
+export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
+  try {
+    const hasOwnText = (node: Element): boolean => {
+      for (let i = 0; i < node.childNodes.length; i++) {
+        const child = node.childNodes[i];
+        if (child.nodeType === 3 && (child.textContent || "").trim()) {
+          return true;
+        }
+      }
+      return false;
+    };
+    const rendered = (node: Element, style: CSSStyleDeclaration): boolean => {
+      if (style.display === "none") return false;
+      // visibility inherits: a label inside a button that is itself hidden
+      // (waiting on an entrance animation) is still its label. Only a
+      // descendant that hides itself is passed over.
+      if (style.visibility === "hidden") {
+        const parent = node.parentElement;
+        if (
+          !parent ||
+          getComputedStyleCached(parent).visibility !== "hidden"
+        ) {
+          return false;
+        }
+      }
+      if (parseFloat(style.opacity) < 0.05) return false;
+      if (style.position === "absolute") {
+        // The visually-hidden pattern: positioned away and clipped to 1px.
+        const r = node.getBoundingClientRect();
+        if (r.width <= 1 || r.height <= 1) return false;
+      }
+      return true;
+    };
+    if (hasOwnText(el)) return cs.getPropertyValue("color");
+    const queue: Array<{ node: Element; depth: number }> = [{ node: el, depth: 0 }];
+    for (let i = 0; i < queue.length && i < 60; i++) {
+      const { node, depth } = queue[i];
+      if (depth >= 6) continue;
+      for (let c = 0; c < node.children.length; c++) {
+        const child = node.children[c];
+        const childStyle = getComputedStyleCached(child);
+        if (!rendered(child, childStyle)) continue;
+        if (hasOwnText(child)) return childStyle.getPropertyValue("color");
+        queue.push({ node: child, depth: depth + 1 });
+      }
+    }
+  } catch (e) {
+    recordError("getLabelColor", e);
+  }
+  return cs.getPropertyValue("color");
+};
+
 export const getStyleSnapshot = (el: Element): StyleSnapshot => {
   const cs = getComputedStyleCached(el);
   const rect = el.getBoundingClientRect();
@@ -141,7 +202,7 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
   }
 
   let bgColor = cs.getPropertyValue("background-color");
-  const textColor = cs.getPropertyValue("color");
+  const textColor = getLabelColor(el, cs);
 
   const isTransparent =
     bgColor === "transparent" || bgColor === "rgba(0, 0, 0, 0)";

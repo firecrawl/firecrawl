@@ -34,6 +34,7 @@ import {
   reserveBrowserPromptCredits,
 } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
+import { autumnService } from "../../../services/autumn/autumn.service";
 import { getModel } from "../../../lib/generic-ai";
 import { generateText } from "ai";
 import * as langsmith from "../../../lib/scrape-interact/langsmith";
@@ -106,6 +107,7 @@ vi.mock("../../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
   updateKeylessBrowserCredits: vi.fn(async () => true),
   adjustKeylessCredits: vi.fn(async () => {}),
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "Keyless limit reached.",
 }));
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
@@ -153,6 +155,7 @@ vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
   selectBrowserAgentTab: vi.fn(async () => {}),
   executePromptViaBrowserAgent: vi.fn(),
   executeCodeViaBrowserSession: vi.fn(),
+  getBrowserAgentModel: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-session-activity", () => ({
@@ -169,8 +172,10 @@ vi.mock("../../../services/logging/log_job", () => ({
 
 vi.mock("../../../services/autumn/autumn.service", () => ({
   DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
+  CREDITS_FEATURE_ID: "CREDITS",
   autumnService: {
     checkCredits: vi.fn(async () => ({ allowed: true })),
+    hostedMcpFeatureId: vi.fn(async () => "MCP_CREDITS"),
   },
 }));
 
@@ -274,6 +279,58 @@ describe("scrapeInteractController", () => {
         );
       },
     );
+
+    it.each(["allowed", "forced"] as const)(
+      "restricts the Hangar proxy to ZDR exits when the team policy is %s",
+      async mode => {
+        const req = buildRequest();
+        req.acuc.flags.scrapeZDR = mode;
+        if (mode === "forced") req.body = {};
+        await browserCreateController(req, buildRes());
+        expect(createHangarBrowser).toHaveBeenCalledWith(
+          expect.any(String),
+          "team-123",
+          expect.objectContaining({ zeroDataRetention: true }),
+        );
+      },
+    );
+
+    it("keeps the default Hangar proxy pool without ZDR", async () => {
+      const req = buildRequest();
+      req.body = {};
+      await browserCreateController(req, buildRes());
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ zeroDataRetention: false }),
+      );
+    });
+
+    it("restricts the Hangar proxy to ZDR exits when interacting with a ZDR scrape", async () => {
+      vi.mocked(getBrowserSession).mockResolvedValue(null);
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        zeroDataRetention: true,
+      } as any);
+      vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(output);
+      await scrapeInteractController(
+        {
+          ...buildRequest(),
+          acuc: {},
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('ok')", url: "https://example.com" },
+        },
+        buildRes(),
+      );
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ zeroDataRetention: true }),
+      );
+    });
 
     it("stores and returns access URLs for active ZDR sessions", async () => {
       const res = buildRes();
@@ -455,6 +512,8 @@ describe("scrapeInteractController", () => {
       await runPrompt();
       expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
         ignoreModelOverride: true,
+        teamFlags: undefined,
+        feature: "Interact",
       });
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -612,6 +671,39 @@ describe("scrapeInteractController", () => {
     );
   });
 
+  it("returns the hosted MCP refusal code when the session can't be created", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+      status: "completed",
+      requestId: "scrape-123",
+      completedAtMs: Date.now(),
+      creditsBilled: 1,
+      replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+    } as any);
+    vi.mocked(autumnService.checkCredits).mockResolvedValue({
+      allowed: false,
+    } as any);
+    const res = buildRes();
+    await scrapeInteractController(
+      {
+        params: { jobId: "scrape-123" },
+        body: { prompt: "click the button" },
+        headers: {},
+        auth: { team_id: "team-123", hostedMcp: true },
+        acuc: { org_id: "org-123" },
+      } as any,
+      res,
+    );
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: "mcp_credits_exhausted",
+      }),
+    );
+    expect(createHangarBrowser).not.toHaveBeenCalled();
+  });
+
   it.each([
     browserExecuteController,
     browserDeleteController,
@@ -716,6 +808,84 @@ describe("scrapeInteractController", () => {
     );
     expect(res.status).toHaveBeenCalledWith(status);
     expect(getHangarRecording).not.toHaveBeenCalled();
+  });
+
+  describe("US-only teams", () => {
+    const usOnlyRequest = (body: Record<string, unknown>) =>
+      ({
+        body,
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: { flags: { usOnly: true } },
+      }) as any;
+
+    beforeEach(() => {
+      vi.mocked(createHangarBrowser).mockResolvedValue({
+        id: "br_us",
+        max_expires_at: 700,
+        cdp_url: "wss://hangar.example/cdp",
+      } as any);
+      vi.mocked(insertBrowserSession).mockImplementation(
+        async row => row as any,
+      );
+    });
+
+    it("refuses a browser session located outside the US", async () => {
+      const res = buildRes();
+      await browserCreateController(
+        usOnlyRequest({ location: { country: "NL" } }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: expect.stringContaining('location.country "NL"'),
+      });
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
+
+    it("asks Hangar for a US-only exit", async () => {
+      const res = buildRes();
+      await browserCreateController(
+        usOnlyRequest({ location: { country: "us" } }),
+        res,
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ usOnly: true }),
+      );
+    });
+
+    it("refuses to interact from a scrape located outside the US", async () => {
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+        browser: { blockAds: true, location: { country: "nl" } },
+      } as any);
+      const res = buildRes();
+      await scrapeInteractController(
+        {
+          ...usOnlyRequest({ code: "console.log('ok')" }),
+          params: { jobId: "scrape-123" },
+        },
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: expect.stringContaining('location.country "NL"'),
+      });
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
   });
 });
 

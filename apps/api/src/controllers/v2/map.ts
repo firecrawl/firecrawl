@@ -10,7 +10,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { logger as _logger } from "../../lib/logger";
-import { MapTimeoutError, MapFailedError } from "../../lib/error";
+import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import {
   resolveSafeMode,
@@ -20,7 +20,7 @@ import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { resolveViaAvgrab } from "../../lib/avgrab-resolve";
+import { AvgrabResolveError, resolveViaAvgrab } from "../../lib/avgrab-resolve";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -149,6 +149,7 @@ export async function mapController(
           // map charge below, even if both ever billed the same mapId.
           chargeId: `${mapId}:avgrab`,
           externalRequestId: externalRequestId(req),
+          hostedMcp: req.auth.hostedMcp,
         },
       ).catch(error => {
         logger.error(
@@ -186,9 +187,14 @@ export async function mapController(
       });
     }
   } catch (error) {
-    if (error instanceof MapFailedError) {
-      return res.status(500).json({
+    if (error instanceof AvgrabResolveError) {
+      const status = [403, 404, 503].includes(error.upstreamStatus)
+        ? error.upstreamStatus
+        : 502;
+      return res.status(status).json({
         success: false,
+        id: mapId,
+        code: error.code,
         error: error.message,
       });
     }
@@ -292,6 +298,7 @@ export async function mapController(
       externalRequestId: externalRequestId(req),
       jobId: mapId,
       chargeId: mapId,
+      hostedMcp: req.auth.hostedMcp,
     },
   ).catch(error => {
     logger.error("Failed to bill team for map credits", {

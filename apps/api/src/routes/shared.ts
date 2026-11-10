@@ -31,13 +31,19 @@ import {
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
 import {
+  checkHostedMcpCredits,
+  hostedMcpCreditsRefusal,
+} from "../services/autumn/hosted-mcp-gate";
+import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
+import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
 } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
-import { isToolsOnlySearch } from "../search/alexandria";
-import { getScrapeZDR } from "../lib/zdr-helpers";
-import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import { isFreeCatalogueSearch } from "../search/alexandria";
+import { wantsGovCategory } from "../search/gov";
+import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
+import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
   isAgentInteropSecretValid,
@@ -48,6 +54,8 @@ import { resolveIntegration } from "../utils/integration";
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId: string = CREDITS_FEATURE_ID,
+  // Set on routes that bill a hosted MCP call to MCP credits.
+  { mcpCredits = false }: { mcpCredits?: boolean } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     let minimum = _minimum;
@@ -127,15 +135,25 @@ export function checkCreditsMiddleware(
         // If verified, fall through to normal credit check (key is now on real account)
       }
 
-      // Tool discovery is free; provider execution reserves its own credits.
+      // Catalogue discovery and Government Index results are free; provider
+      // execution reserves its own credits. A gov search still pays to scrape
+      // its results, and for threat scans where threat protection or Safe Mode
+      // can turn them on.
       const sources = (req.body as any)?.sources;
       const categories = (req.body as any)?.categories;
-      const toolsOnly =
-        req.path === "/search" && isToolsOnlySearch(sources, categories);
+      const formats = (req.body as any)?.scrapeOptions?.formats;
+      const freeGovSearch =
+        wantsGovCategory(categories) &&
+        !(Array.isArray(formats) && formats.length > 0) &&
+        getThreatProtection(req.acuc?.flags) === "disabled" &&
+        !getSafeMode(req.acuc?.flags);
+      const freeSearch =
+        req.path === "/search" &&
+        (isFreeCatalogueSearch(sources, categories) || freeGovSearch);
       if (
         (req.path === "/scrape" &&
           (req.body as any)?.alexandria !== undefined) ||
-        toolsOnly
+        freeSearch
       ) {
         req.account = { remainingCredits: Infinity };
         return next();
@@ -168,7 +186,7 @@ export function checkCreditsMiddleware(
         return next();
       }
 
-      const autumnResult = await autumnService.checkCredits({
+      const check = {
         teamId: req.auth.team_id,
         // The ACUC already carries the org, so the credit check does not have
         // to read `teams.org_id` for it.
@@ -180,7 +198,19 @@ export function checkCreditsMiddleware(
           apiKeyId: req.acuc?.api_key_id ?? null,
         },
         featureId,
-      });
+      };
+      // Gated on the balance its charge will be tracked on.
+      const gate: Awaited<ReturnType<typeof checkHostedMcpCredits>> =
+        mcpCredits && req.auth.hostedMcp
+          ? await checkHostedMcpCredits(check)
+          : {
+              result: await autumnService.checkCredits(check),
+              featureId,
+              onTeamCredits: false,
+            };
+      if (gate.onTeamCredits) req.auth.hostedMcp = false;
+      const autumnResult = gate.result;
+      const gateFeatureId = gate.featureId;
 
       // Autumn is the source of truth for credits. If it's unavailable
       // (returns null), fail open — matches the behavior in browser.ts /
@@ -192,45 +222,66 @@ export function checkCreditsMiddleware(
       }
 
       const success = autumnResult.allowed;
+      const onGateFeature = {
+        remaining: autumnResult.remaining,
+        featureId: gateFeatureId,
+        onTeam: false,
+      };
+      // A hosted call both balances refuse tries the team clamp first when the
+      // team covers more, then MCP credits.
+      const clamps =
+        gate.teamRefusal && gate.teamRefusal.remaining > autumnResult.remaining
+          ? [
+              {
+                remaining: gate.teamRefusal.remaining,
+                featureId,
+                onTeam: true,
+              },
+              onGateFeature,
+            ]
+          : [onGateFeature];
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
-      const remainingCredits = success ? Infinity : autumnResult.remaining;
+      const remainingCredits = success ? Infinity : clamps[0].remaining;
       req.account = { remainingCredits };
       if (!success) {
         const requestedLimit = Number((req.body as any)?.limit);
-        const clampedLimit = Math.min(requestedLimit, remainingCredits);
-        if (
-          !_minimum &&
-          req.body &&
-          (req.body as any).limit !== undefined &&
-          Number.isFinite(clampedLimit) &&
-          clampedLimit > 0
-        ) {
-          // `remaining` is the team's credit balance, and a per-API-key spend
-          // limit never lowers it, so a key over its own cap still reports a
-          // healthy balance here. Re-check the clamped limit so only a genuinely
-          // low team balance gets shrunk to fit; a per-key denial falls through
-          // to the 402 below. A null re-check keeps the fail-open behavior.
-          const clampedResult = await autumnService.checkCredits({
-            teamId: req.auth.team_id,
-            orgId,
-            value: clampedLimit,
-            properties: {
-              source: "checkCreditsMiddleware:clamp",
-              path: req.path,
-              apiKeyId: req.acuc?.api_key_id ?? null,
-            },
-            featureId,
-          });
-
-          if (clampedResult === null || clampedResult.allowed) {
-            logger.warn("Adjusting limit to remaining credits", {
+        for (const clampOn of clamps) {
+          const clampedLimit = Math.min(requestedLimit, clampOn.remaining);
+          if (
+            !_minimum &&
+            req.body &&
+            (req.body as any).limit !== undefined &&
+            Number.isFinite(clampedLimit) &&
+            clampedLimit > 0
+          ) {
+            // `remaining` is the team's credit balance, and a per-API-key spend
+            // limit never lowers it, so a key over its own cap still reports a
+            // healthy balance here. Re-check the clamped limit so only a genuinely
+            // low team balance gets shrunk to fit; a per-key denial falls through
+            // to the 402 below. A null re-check keeps the fail-open behavior.
+            const clampedResult = await autumnService.checkCredits({
               teamId: req.auth.team_id,
-              remainingCredits,
-              clampedLimit,
+              orgId,
+              value: clampedLimit,
+              properties: {
+                source: "checkCreditsMiddleware:clamp",
+                path: req.path,
+                apiKeyId: req.acuc?.api_key_id ?? null,
+              },
+              featureId: clampOn.featureId,
             });
-            (req.body as any).limit = clampedLimit;
-            return next();
+
+            if (clampedResult === null || clampedResult.allowed) {
+              if (clampOn.onTeam) req.auth.hostedMcp = false;
+              logger.warn("Adjusting limit to remaining credits", {
+                teamId: req.auth.team_id,
+                remainingCredits: clampOn.remaining,
+                clampedLimit,
+              });
+              (req.body as any).limit = clampedLimit;
+              return next();
+            }
           }
         }
 
@@ -244,22 +295,80 @@ export function checkCreditsMiddleware(
             path: req.path,
           },
         );
+        // A Gateway account's credits come from the platform that created
+        // it, so its user has no plan of their own to upgrade.
         if (
           !res.headersSent &&
-          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
+          autumnResult.gatewayProvisioned === true
+        ) {
+          return res.status(402).json({
+            success: false,
+            code: "platform_managed_credits",
+            error: `Insufficient ${currencyName} to perform this request. This account's ${currencyName} are managed by the platform that created it, so contact that platform for more ${currencyName}.`,
+          });
+        }
+        if (
+          !res.headersSent &&
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
+          currencyName === "tokens"
         ) {
           return res.status(402).json({
             success: false,
             error:
-              "Insufficient " +
-              currencyName +
-              " to perform this request. For more " +
-              currencyName +
-              ", you can upgrade your plan at " +
-              (currencyName === "credits"
-                ? "https://firecrawl.dev/pricing or try changing the request limit to a lower value"
-                : "https://www.firecrawl.dev/extract#pricing") +
-              ".",
+              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://www.firecrawl.dev/extract#pricing.",
+          });
+        }
+        if (
+          !res.headersSent &&
+          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID
+        ) {
+          // Name the limit that refused the request: the balance alone can't
+          // explain a refusal that leaves credits on the dashboard.
+          const resetsAt = autumnResult.resetsAt
+            ? new Date(autumnResult.resetsAt).toISOString()
+            : undefined;
+          if (gateFeatureId !== featureId) {
+            return res.status(402).json({
+              success: false,
+              code: "mcp_credits_exhausted",
+              requested_credits: requestedCredits,
+              ...(resetsAt ? { resets_at: resetsAt } : {}),
+              error: hostedMcpCreditsRefusal(autumnResult.resetsAt),
+            });
+          }
+
+          const apiKeyId = req.acuc?.api_key_id;
+          const keyLimit =
+            apiKeyId && autumnResult.remaining >= requestedCredits
+              ? await getApiKeySpendLimit(apiKeyId)
+              : null;
+          if (keyLimit) {
+            return res.status(402).json({
+              success: false,
+              code: "api_key_spend_limit",
+              requested_credits: requestedCredits,
+              remaining_credits: autumnResult.remaining,
+              limit: {
+                type: "api_key",
+                credits: keyLimit.credits,
+                interval: keyLimit.interval,
+              },
+              error:
+                `This API key has reached its spend limit of ${keyLimit.credits} credits per ${keyLimit.interval}, while your team still has ${autumnResult.remaining} credits. ` +
+                (requestedCredits > keyLimit.credits
+                  ? `This request can use up to ${requestedCredits} credits, more than the key's whole limit, so lower the request's limit or raise the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys.`
+                  : `Raise or remove the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys, use another key, or wait for the limit to reset next ${keyLimit.interval}.`),
+            });
+          }
+
+          return res.status(402).json({
+            success: false,
+            code: "insufficient_credits",
+            requested_credits: requestedCredits,
+            remaining_credits: autumnResult.remaining,
+            ...(resetsAt ? { resets_at: resetsAt } : {}),
+            error: `Insufficient credits to perform this request: it can use up to ${requestedCredits} credits and your team has ${autumnResult.remaining} left${resetsAt ? `, with plan credits resetting at ${resetsAt}` : ""}. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing or try changing the request limit to a lower value.`,
           });
         }
       }
@@ -273,6 +382,7 @@ export function authMiddleware(
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
     allowAgentManagedKey?: boolean;
+    hostedMcpRateLimit?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -322,8 +432,21 @@ export function authMiddleware(
       }
 
       const { team_id, org_id, chunk } = auth;
+      const agentInterop = agentInteropStatus(req);
+      // An agent run started by a hosted MCP call makes its own calls under
+      // the interop secret, and says so in the interop block. Only a trusted
+      // block may say it: the run itself was verified when it started.
+      const hostedMcp =
+        auth.hostedMcp ||
+        (agentInterop === "trusted" &&
+          (req.body as any)?.__agentInterop?.hostedMcp === true);
 
-      req.auth = { team_id, org_id, agentInterop: agentInteropStatus(req) };
+      req.auth = {
+        team_id,
+        org_id,
+        agentInterop,
+        ...(hostedMcp ? { hostedMcp: true } : {}),
+      };
       req.acuc = chunk ?? undefined;
       next();
     })().catch(err => next(err));

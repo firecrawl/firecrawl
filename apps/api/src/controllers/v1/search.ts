@@ -28,7 +28,7 @@ import {
   resolveSafeMode,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   DocumentWithCostTracking,
   scrapeSearchResults,
@@ -46,6 +46,8 @@ import {
 } from "../../lib/keyless";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -67,6 +69,7 @@ export async function searchAndScrapeSearchResult(
       query,
       logger,
       num_results: 5,
+      usOnly: isUsOnly(flags),
     });
 
     const { scrapeOptions } = fromV1ScrapeOptions(
@@ -194,6 +197,37 @@ export async function searchController(
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
+      });
+    }
+
+    const usOnlyLocationError =
+      requestedFormats.length > 0
+        ? usOnlyLocationRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+            req.body.scrapeOptions?.geolocation?.country,
+          )
+        : undefined;
+    if (usOnlyLocationError) {
+      return res.status(403).json({
+        success: false,
+        code: "US_ONLY_UNAVAILABLE",
+        error: usOnlyLocationError,
+      });
+    }
+
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+            req.body.scrapeOptions?.geolocation?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
       });
     }
 
@@ -422,6 +456,14 @@ export async function searchController(
 
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({
         success: false,
         code: error.code,
         error: error.message,

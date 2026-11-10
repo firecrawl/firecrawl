@@ -50,7 +50,7 @@ function originToSurface(
  *
  * Only called on rare, deduplicated events, so the extra read is cheap.
  */
-export async function resolveDistinctId(
+async function resolveDistinctId(
   teamId: string,
   apiKeyId?: string | number | null,
 ): Promise<string> {

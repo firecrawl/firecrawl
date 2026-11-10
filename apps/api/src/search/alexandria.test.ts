@@ -257,3 +257,61 @@ it("keeps the results of queries that answered", async () => {
   expect(result.items).toHaveLength(1);
   expect(result.warning).toBeUndefined();
 });
+
+it("reports the tools the Exchange hid from a US-only team", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: { items: [tool], usOnlyExcluded: 3 },
+    },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
+  expect(result.items).toHaveLength(1);
+  expect(result.usOnlyExcluded).toBe(3);
+  expect(result).not.toHaveProperty("warning");
+});
+
+it("reports no hidden tools when the Exchange hid nothing", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(result.items).toHaveLength(1);
+  expect(result).not.toHaveProperty("usOnlyExcluded");
+});
+
+it("numbers each lookup's Exchange request id from the caller's prefix", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const exchangeRequestIds = {
+    prefix: "search-1:tools:raw",
+    sent: [] as string[],
+  };
+  await discoverTools(
+    { ...input, queries: ["first", "second"], exchangeRequestIds },
+    logger,
+  );
+  expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+  expect(exchangeRequestIds.sent.sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+});
+
+it("sends no request id when the caller passes none", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  await discoverTools(input, logger);
+  expect(request.mock.calls[0][0].requestId).toBeUndefined();
+});
