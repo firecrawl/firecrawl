@@ -48,8 +48,10 @@ function normalizeSite(value: string): string {
 function hasUnsupportedOr(query: string): boolean {
   const unquoted = query.replace(/"[^"]*"/g, " ");
   const ors = unquoted.match(/(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/g)?.length ?? 0;
+  // Only positive site: filters on both sides are representable as a union
+  // of structured includeDomains. A negated filter changes OR semantics.
   const siteOrs =
-    unquoted.match(/site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=\(*site:)/gi)?.length ??
+    unquoted.match(/(?:^|[\s(])site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=site:)/gi)?.length ??
     0;
   return ors > siteOrs;
 }
@@ -77,6 +79,40 @@ export function parseQueryOperators(query: string): QueryOperators {
     }
   }
   return operators;
+}
+
+
+/**
+ * Removes site operators from a query when the provider accepts equivalent
+ * structured includeDomains/excludeDomains fields.
+ */
+export function stripSiteOperators(query: string): string {
+  if (hasUnsupportedOr(query)) return query;
+
+  const siteFilter = "\u0000SITE_FILTER\u0000";
+  return query
+    .replace(
+      OPERATOR_TOKEN,
+      (token, phrase, lead, _negated, name, quoted, bare, closing) => {
+        if (phrase !== undefined || name.toLowerCase() !== "site") return token;
+
+        // Structured domain filters cannot represent a path restriction.
+        // Keep path-scoped operators in the provider query.
+        const value = quoted ?? bare ?? "";
+        if (value.includes("/")) return token;
+
+        return lead + siteFilter + closing;
+      },
+    )
+    // Only remove OR connectors between site filters. Never rewrite ordinary
+    // user text such as "rock OR roll" or "cats or dogs".
+    .replace(/\u0000SITE_FILTER\u0000(?:\s+(?:OR|\|)\s+\u0000SITE_FILTER\u0000)+/gi, siteFilter)
+    .replace(/\u0000SITE_FILTER\u0000/g, "")
+    // Remove groups emptied by stripping site-only filters after connectors
+    // have been collapsed.
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
