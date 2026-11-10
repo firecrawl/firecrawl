@@ -6900,7 +6900,7 @@
     "/datasets/orders": {
       "post": {
         "summary": "Order a slice of a dataset",
-        "description": "Places an order for a slice of a published dataset: a filter over its rows, a choice of columns, a row cap and a file format. The credits the order can cost are held when it is placed. Once the files are built, the credits for the rows delivered are charged and the rest of the hold is released. If the files cannot be built, the whole hold is released. An order the team already has for the same spec is returned instead of placing another.",
+        "description": "Places an order for a slice of a published dataset: a filter over its rows, a choice of columns, a row cap and a file format. The credits the order can cost are held when it is placed. Once the files are built, the credits for the rows delivered are charged and the rest of the hold is released. If the files cannot be built, the whole hold is released. An order for a whole snapshot needs no build: it is normally charged and delivered in the same request. An order the team already has for the same spec is returned instead of placing another.",
         "operationId": "createDatasetOrder",
         "tags": ["Datasets"],
         "security": [
@@ -6990,7 +6990,7 @@
             }
           },
           "404": {
-            "description": "The dataset or snapshot is not one that can be ordered",
+            "description": "The dataset or snapshot is not one that can be ordered (`unknown_dataset`, `unknown_snapshot`). A snapshot published only for testing is never sold.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12915,7 +12915,7 @@
           "cancelled",
           "expired"
         ],
-        "description": "`pending_hold` until the credits are held, then `queued`, `building` and `built` while the files are prepared, and `delivered` once they are charged and served. `refused` when the credits could not be held; `failed`, `cancelled` and `expired` end an order without a charge."
+        "description": "`pending_hold` until the credits are held, then `queued`, `building` and `built` while the files are prepared, and `delivered` once they are charged and served. An order for a whole snapshot goes straight from `pending_hold` to `built`. `refused` when the credits could not be held; `failed`, `cancelled` and `expired` end an order without a charge."
       },
       "DatasetOrderHoldState": {
         "type": "string",
@@ -13013,7 +13013,20 @@
           "accessExpiresAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Until when the delivered files are served",
+            "description": "Until when the delivered files are served. `null` for an order for a whole snapshot, whose files are kept as long as the snapshot is.",
+            "nullable": true
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the order's files are stored, once they exist. Each file's `path` is relative to `prefix`.",
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string"
+              }
+            },
             "nullable": true
           }
         }
@@ -13023,7 +13036,7 @@
         "properties": {
           "path": {
             "type": "string",
-            "description": "The file's path within the order",
+            "description": "The file's path, relative to the order's `location.prefix`",
             "example": "data/part-00000.parquet"
           },
           "bytes": {
