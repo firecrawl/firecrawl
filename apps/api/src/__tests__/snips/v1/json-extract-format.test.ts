@@ -1,11 +1,10 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
-  describeIf,
   HAS_AI,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
+import { describeV1, scrape, scrapeTimeout, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -17,7 +16,7 @@ beforeAll(async () => {
   });
 }, 10000 + scrapeTimeout);
 
-describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+describeV1(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
   "V1 JSON/Extract Format Backward Compatibility",
   () => {
     describe("extract format", () => {
