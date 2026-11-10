@@ -27,6 +27,7 @@ import {
   shouldUseIndex,
 } from "./engines";
 import { applyHandoffFeatureFlags } from "./lib/handoffFeatureFlags";
+import { isSoftErrorPage } from "./lib/softErrorPage";
 import { parseMarkdown } from "../../lib/html-to-markdown";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
@@ -782,9 +783,9 @@ async function scrapeURLLoopIter(
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
       : isParsedImage || isLongEnough || !isGoodStatusCode;
-    const isLikelyProxyError = [401, 403, 429].includes(
-      engineResult.statusCode,
-    );
+    const isLikelyProxyError =
+      [401, 403, 429].includes(engineResult.statusCode) ||
+      isSoftErrorPage(meta.rewrittenUrl ?? meta.url, engineResult.html);
 
     if (
       isLikelyProxyError &&
