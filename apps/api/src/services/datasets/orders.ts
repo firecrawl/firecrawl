@@ -168,6 +168,10 @@ async function answerOf<T>(
  * Places an order and holds its credits. An order is queued only once its
  * credits are really held: a hold that is denied, or that cannot be taken at
  * all, refuses the order.
+ *
+ * An order that needs no build is already built once its hold is recorded, so
+ * it is settled in the same call and answered delivered. When that settle does
+ * not go through, the built order is answered and its next read settles it.
  */
 export async function createDatasetOrder(input: {
   teamId: string;
@@ -213,7 +217,16 @@ export async function createDatasetOrder(input: {
         lockId: lock.lockId,
       }),
     );
-    return { order: held.order, existing };
+    if (held.order.status !== "built") return { order: held.order, existing };
+    try {
+      return { order: await settleDatasetOrder(held.order.id), existing };
+    } catch (error) {
+      logger.warn("Dataset order was not settled when it was placed", {
+        orderId: held.order.id,
+        error,
+      });
+      return { order: held.order, existing };
+    }
   }
 
   const outcome = lock.status === "denied" ? "denied" : "unavailable";
