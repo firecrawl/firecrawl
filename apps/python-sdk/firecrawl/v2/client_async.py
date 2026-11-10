@@ -933,7 +933,9 @@ class AsyncFirecrawlClient:
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
         location: Optional[Dict[str, str]] = None,
         zero_data_retention: Optional[bool] = None,
+        safe: Optional[bool] = None,
     ):
+        """Run an agent. None omits safe; follow-ups may retain the thread's prior setting."""
         return await async_agent.agent(
             self.async_http_client,
             urls,
@@ -954,6 +956,7 @@ class AsyncFirecrawlClient:
             exchange=exchange,
             location=location,
             zero_data_retention=zero_data_retention,
+            safe=safe,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -978,7 +981,9 @@ class AsyncFirecrawlClient:
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
         location: Optional[Dict[str, str]] = None,
         zero_data_retention: Optional[bool] = None,
+        safe: Optional[bool] = None,
     ):
+        """Start an agent. None omits safe; follow-ups may retain the thread's prior setting."""
         return await async_agent.start_agent(
             self.async_http_client,
             urls,
@@ -997,6 +1002,7 @@ class AsyncFirecrawlClient:
             exchange=exchange,
             location=location,
             zero_data_retention=zero_data_retention,
+            safe=safe,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:

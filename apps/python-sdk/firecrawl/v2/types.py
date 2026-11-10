@@ -1882,6 +1882,7 @@ class AgentResponse(BaseModel):
     model: Optional[str] = None
     # Reasoning effort the job ran with; only set for runs that specified it.
     effort: Optional[Literal["low", "medium", "high"]] = None
+    safe: Optional[bool] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
     # Thread this run belongs to; pass it back to continue the conversation.
@@ -1920,6 +1921,7 @@ class AgentListItemOptions(BaseModel):
     # SDK release (see AgentResponse.model).
     model: Optional[str] = None
     effort: Optional[Literal["low", "medium", "high"]] = None
+    safe: Optional[bool] = None
 
 
 class AgentListItem(BaseModel):
