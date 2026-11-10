@@ -214,71 +214,6 @@ export async function retrieveProviders(input: {
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
   const deadline = Date.now() + input.timeoutMs;
-  // A catalogue read is free and idempotent, so it skips the replay claim, the agreement and
-  // quote lookups and the credit hold, and goes to Exchange with a zero budget. Exchange quotes
-  // against that budget itself and refuses with credit_budget_exceeded should the read ever carry
-  // a price, in which case the full path below runs against the same deadline.
-  const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
-  if (
-    input.calls.every(isCatalogueRead) &&
-    (!firecrawlAccess || firecrawlAccess.status === "enabled")
-  ) {
-    const read = await exchangeRequest({
-      teamId: input.teamId,
-      path: "/v1/retrieve",
-      body: { requests: input.calls },
-      timeoutMs: input.timeoutMs,
-      requestId: id,
-      clientIp: input.clientIp,
-      billingCountry: input.billingCountry,
-      connectors: input.flags?.exchangeRetrieve === true,
-      ...(input.resultAuthorization
-        ? { resultAuthorization: input.resultAuthorization }
-        : {}),
-      ...(zeroDataRetention ? { zeroDataRetention } : {}),
-      ...(usOnly ? { usOnly } : {}),
-      maximumCredits: 0,
-      retryConnection: true,
-    }).catch(error => {
-      logger.warn("Catalogue read unavailable", { error, chargeId: id });
-      return undefined;
-    });
-    if (!read || read.status >= 500)
-      return notExecuted(
-        refusal(
-          503,
-          "Provider request is unavailable. No provider was executed.",
-          { code: "provider_unavailable", retryable: true },
-        ),
-      );
-    const parsed =
-      read.status === 200 ? answerSchema.safeParse(read.body) : undefined;
-    if (parsed?.success && receiptMatches(parsed.data, input.calls, 0))
-      return {
-        status: 200,
-        body: parsed.data,
-        executed: true,
-        scrapeId: input.scrapeId,
-      };
-    const code = (read.body as { code?: unknown } | null)?.code;
-    if (read.status >= 400 && code !== "credit_budget_exceeded")
-      return { ...relay(read), executed: true, scrapeId: input.scrapeId };
-    if (read.status < 400) {
-      logger.error(
-        "Catalogue read answered with an unexpected status or body",
-        {
-          chargeId: id,
-          status: read.status,
-        },
-      );
-      return notExecuted(
-        refusal(
-          502,
-          "Provider answer was malformed. No provider was executed.",
-        ),
-      );
-    }
-  }
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
@@ -352,6 +287,85 @@ export async function retrieveProviders(input: {
     return notExecuted(unresolved(id));
   }
 
+  // A catalogue read is free and idempotent, so once its request id is claimed it skips the
+  // agreement and quote lookups and the credit hold and goes to Exchange with a zero budget.
+  // Exchange quotes against that budget itself and refuses with credit_budget_exceeded should
+  // the read ever carry a price, in which case the full path below runs under the same claim
+  // and deadline. The answer is recorded like any other, so a repeat of the id replays it.
+  const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
+  if (
+    input.calls.every(isCatalogueRead) &&
+    (!firecrawlAccess || firecrawlAccess.status === "enabled")
+  ) {
+    const read = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve",
+      body: { requests: input.calls },
+      timeoutMs: input.timeoutMs,
+      requestId: id,
+      clientIp: input.clientIp,
+      billingCountry: input.billingCountry,
+      connectors: input.flags?.exchangeRetrieve === true,
+      ...(input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
+      maximumCredits: 0,
+      retryConnection: true,
+    }).catch(error => {
+      logger.warn("Catalogue read unavailable", { error, chargeId: id });
+      return undefined;
+    });
+    // A read that did not complete releases the id, so the same request can be sent again.
+    const release = async (response: ExchangeResponse) => {
+      await redisRateLimitClient.del(key);
+      return { ...response, executed: true, scrapeId: input.scrapeId };
+    };
+    if (!read || read.status >= 500)
+      return release(
+        refusal(
+          503,
+          "The catalogue read did not complete. Nothing was charged; resend it with the same x-request-id.",
+          { code: "provider_unavailable", retryable: true },
+        ),
+      );
+    const parsed =
+      read.status === 200 ? answerSchema.safeParse(read.body) : undefined;
+    if (parsed?.success && receiptMatches(parsed.data, input.calls, 0)) {
+      const done: ExchangeResponse = { status: 200, body: parsed.data };
+      void reportExchangeUsageBilling({
+        requestId: id,
+        status: billable ? "confirmed" : "void",
+        billingReference: `alexandria:${id}`,
+      });
+      await write(
+        zeroDataRetention
+          ? { ...record, phase: "done", responseWithheld: true }
+          : { ...record, phase: "done", response: done },
+      );
+      return { ...done, executed: true, scrapeId: input.scrapeId };
+    }
+    const code = (read.body as { code?: unknown } | null)?.code;
+    if (read.status >= 400 && code !== "credit_budget_exceeded")
+      return release(relay(read));
+    if (read.status < 400) {
+      logger.error(
+        "Catalogue read answered with an unexpected status or body",
+        {
+          chargeId: id,
+          status: read.status,
+        },
+      );
+      return release(
+        refusal(
+          502,
+          "The catalogue read returned a malformed answer. Nothing was charged; resend it with the same x-request-id.",
+        ),
+      );
+    }
+  }
+
   const teamFeatureId = featureIdForBillingEndpoint("scrape");
   let featureId = input.hostedMcp
     ? await autumnService.hostedMcpFeatureId(input.teamId, teamFeatureId)
@@ -410,6 +424,7 @@ export async function retrieveProviders(input: {
       input.orgId,
       input.clientIp,
       input.billingCountry,
+      Math.min(10000, remaining()),
     );
     if (denied) return refuse(denied);
 
@@ -544,6 +559,9 @@ export async function retrieveProviders(input: {
           refusal(
             503,
             "Credit reservation is unavailable. No provider was executed.",
+            hold.reason === "unavailable"
+              ? { code: "billing_unavailable", retryable: true }
+              : {},
           ),
         );
       lockId = hold.lockId;

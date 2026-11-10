@@ -42,13 +42,14 @@ export async function authorizeProviders(
   orgId: string | null = null,
   clientIp?: string,
   billingCountry?: string,
+  timeoutMs = 10000,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   const response = await exchangeRequest({
     teamId,
     path: "/v1/provider-terms/requirements",
     body: { providers },
-    timeoutMs: 10000,
+    timeoutMs,
     clientIp,
     billingCountry,
     retryConnection: true,
