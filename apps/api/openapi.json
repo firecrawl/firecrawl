@@ -6979,6 +6979,16 @@
               }
             }
           },
+          "403": {
+            "description": "The team is not enabled for dataset orders (`orders_not_enabled`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
           "404": {
             "description": "The dataset or snapshot is not one that can be ordered",
             "content": {
