@@ -14,7 +14,7 @@ export function isSoftErrorPage(
   if (!html) return false;
   let hostname: string;
   try {
-    hostname = new URL(url).hostname.toLowerCase();
+    hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return false;
   }

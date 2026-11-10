@@ -544,8 +544,14 @@ export async function scrapeURLWithIndex(
     throw new EngineError("Document not found in GCS");
   }
 
-  if (isSoftErrorPage(doc.url ?? meta.url, doc.html)) {
+  if (isSoftErrorPage(meta.rewrittenUrl ?? meta.url, doc.html)) {
     logLookup("debug", "hit", { softErrorPage: true });
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
     throw new IndexMissError();
   }
 
