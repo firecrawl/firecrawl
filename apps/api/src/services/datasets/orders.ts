@@ -245,7 +245,8 @@ export async function createDatasetOrder(input: {
  * capture of the built order's credits, or a release. Answers the order as it
  * stands afterwards. A settle the billing service did not accept leaves the
  * order as it is, for the next call to retry; so does a capture that would
- * start too close to the hold's expiry.
+ * start too close to the hold's expiry. A hold that has already run out is
+ * gone by itself, so its release is only reported.
  *
  * Charged means delivered: once a capture was accepted the order is reported
  * as captured on every later call, whatever is due by then, and never released.
@@ -291,12 +292,14 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
   const team = orgId !== null ? { teamId, orgId } : undefined;
 
   if (due === "release") {
-    const released = await autumnService.finalizeCreditsLock({
-      lockId,
-      action: "release",
-      properties,
-      team,
-    });
+    const released =
+      Date.now() > Date.parse(order.holdExpiresAt) ||
+      (await autumnService.finalizeCreditsLock({
+        lockId,
+        action: "release",
+        properties,
+        team,
+      }));
     return released ? report({ outcome: "released" }) : order;
   }
 
