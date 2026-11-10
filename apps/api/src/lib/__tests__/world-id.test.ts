@@ -243,6 +243,10 @@ describe("device flow", () => {
     const result = await pollWorldIdDeviceFlow(sealDeviceCode("device-secret"));
 
     expect(result.outcome).toBe("approved");
+    if (result.outcome !== "approved") throw new Error("expected approval");
+    expect(verifyWorldIdCredential(result.credential)).toBe(
+      worldIdSubjectHash(ISSUER, "human-1"),
+    );
   });
 
   it("refuses an ID token without the Orb authentication class", async () => {
