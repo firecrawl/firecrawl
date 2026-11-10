@@ -487,7 +487,11 @@ export async function scrapeURLWithFireEngineChromeCDP(
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
-      team_id: meta.internalOptions.teamId,
+      team_id:
+        meta.internalOptions.teamId === "sitemap" ||
+        meta.internalOptions.teamId === "robots-txt"
+          ? undefined
+          : meta.internalOptions.teamId,
       engine: "chrome-cdp",
       ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,
