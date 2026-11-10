@@ -244,6 +244,37 @@ class TestSearchScrapedContentPreservation:
         assert result.images[0].image_url == "https://example.com/pic.jpg"
         assert result.images[0].image_width == 800
 
+    @pytest.mark.asyncio
+    async def test_plain_search_across_groups_retains_specific_types_async(self):
+        from firecrawl.v2.types import SearchResultWeb, SearchResultNews, SearchResultImages, Document
+
+        plain_web = {"url": "https://example.com/w", "title": "Web Title", "position": 1}
+        plain_news = {"url": "https://example.com/n", "title": "News Title", "imageUrl": "https://example.com/thumb.jpg"}
+        plain_img = {"url": "https://example.com/i", "title": "Img Title", "imageUrl": "https://example.com/pic.jpg", "imageWidth": 800, "imageHeight": 600}
+
+        client = Mock()
+        client.post = AsyncMock(return_value=_response({
+            "web": [plain_web],
+            "news": [plain_news],
+            "images": [plain_img],
+        }))
+
+        result = await search_async(client, SearchRequest(query="plain"))
+
+        assert isinstance(result.web[0], SearchResultWeb)
+        assert not isinstance(result.web[0], Document)
+        assert result.web[0].title == "Web Title"
+
+        assert isinstance(result.news[0], SearchResultNews)
+        assert not isinstance(result.news[0], Document)
+        assert result.news[0].image_url == "https://example.com/thumb.jpg"
+
+        assert isinstance(result.images[0], SearchResultImages)
+        assert not isinstance(result.images[0], Document)
+        assert result.images[0].image_url == "https://example.com/pic.jpg"
+        assert result.images[0].image_width == 800
+        assert result.images[0].image_height == 600
+
     def test_search_document_serialization_round_trip(self):
         from firecrawl.v2.types import SearchDocument
 
