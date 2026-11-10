@@ -138,6 +138,11 @@ const configSchema = z.object({
   GOV_ROUTING_DECISION_TIMEOUT_MS: emptyStringAsDefault(
     z.coerce.number().int().positive().default(100),
   ),
+  // Share of plain web searches (0-100, stable per query) that take the routing
+  // decision while GOV_ROUTING_ENABLED is true.
+  GOV_ROUTING_ROLLOUT_PERCENT: emptyStringAsDefault(
+    z.coerce.number().min(0).max(100).default(100),
+  ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.

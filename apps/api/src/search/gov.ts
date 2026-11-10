@@ -10,6 +10,7 @@ import {
   UsOnlyUpstreamRefusalError,
 } from "../lib/research-upstream";
 import { logger as rootLogger } from "../lib/logger";
+import { sampled } from "../lib/rollout";
 import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 /**
@@ -54,6 +55,7 @@ type GovSearchOptions = Parameters<typeof searchGovCategory>[0];
 /** What happened to one plain web search's routing; logged once per search. */
 type RoutingOutcome =
   | "paused"
+  | "outside_rollout"
   | "decision_failed"
   | "not_routed"
   | "routed_failed"
@@ -121,14 +123,15 @@ export async function searchGovCategory(
 /**
  * The search platform's results for a plain web search that it classifies as
  * government, or null when the search stays on the regular web search: routing
- * is off or paused, the decision failed or did not route the query, or the
- * routed search failed or found nothing. An answer with fewer results than
- * asked is served as it is, as a short page of regular web results is.
+ * is off or paused, the search is outside the rollout percentage, the decision
+ * failed or did not route the query, or the routed search failed or found
+ * nothing. An answer with fewer results than asked is served as it is, as a
+ * short page of regular web results is.
  *
  * Routing spends the request's own `timeout`, and leaves at least half of it to
  * the regular web search when the route fails.
  *
- * Every search that reaches the routing decision logs one `search_gov_routing`
+ * While routing is on, every plain web search logs one `search_gov_routing`
  * line with its outcome.
  */
 export async function searchGovIfRouted(
@@ -152,6 +155,16 @@ export async function searchGovIfRouted(
       limit: options.limit,
       ...measured,
     });
+
+  if (
+    !sampled(
+      `gov-routing:${options.query.trim()}`,
+      config.GOV_ROUTING_ROLLOUT_PERCENT,
+    )
+  ) {
+    record("outside_rollout", {});
+    return null;
+  }
 
   if (Date.now() < pausedUntil) {
     record("paused", {});

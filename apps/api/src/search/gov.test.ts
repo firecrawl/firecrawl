@@ -5,6 +5,7 @@ const shared = vi.hoisted(() => ({
     SEARCH_PLATFORM_URL: "https://platform.test/",
     GOV_ROUTING_ENABLED: true,
     GOV_ROUTING_DECISION_TIMEOUT_MS: 100,
+    GOV_ROUTING_ROLLOUT_PERCENT: 100,
   },
   rootLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -230,6 +231,7 @@ describe("searchGovIfRouted", () => {
 
   afterEach(() => {
     config.GOV_ROUTING_ENABLED = true;
+    config.GOV_ROUTING_ROLLOUT_PERCENT = 100;
     vi.useRealTimers();
     fetchMock.mockReset();
   });
@@ -323,6 +325,35 @@ describe("searchGovIfRouted", () => {
     await expect(searchGovIfRouted(search, "s1", logger)).resolves.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(outcomes()).toEqual(["decision_failed"]);
+  });
+
+  /**
+   * A query takes the same path on every request, whichever team sends it, so
+   * results never flip between requests during a ramp. A query outside the
+   * rollout asks the platform nothing.
+   */
+  it("routes a stable share of queries by the trimmed query alone", async () => {
+    config.GOV_ROUTING_ROLLOUT_PERCENT = 50;
+    fetchMock.mockResolvedValue(vertical({ search_category_routed: [] }));
+    const inRollout = "osha recordkeeping rules";
+
+    for (const teamId of ["t1", "t2"]) {
+      await searchGovIfRouted({ ...search, teamId }, "s1", logger);
+    }
+    await searchGovIfRouted({ ...search, query: inRollout }, "s1", logger);
+    await searchGovIfRouted(
+      { ...search, query: `  ${inRollout}\t`, teamId: "t2" },
+      "s1",
+      logger,
+    );
+
+    expect(outcomes()).toEqual([
+      "outside_rollout",
+      "outside_rollout",
+      "not_routed",
+      "not_routed",
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("asks nothing and logs nothing when routing is off", async () => {
