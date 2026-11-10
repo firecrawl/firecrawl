@@ -28,6 +28,7 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -43,7 +44,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -512,6 +517,21 @@ export async function getACUCTeam(
   }
 }
 
+/**
+ * The flags of the team behind a request's plain API key, read without rate
+ * limiting or the other auth checks. Null without a known API key.
+ */
+export async function getApiKeyTeamFlags(req: {
+  headers: { authorization?: string };
+}): Promise<TeamFlags | null> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const normalizedApi = parseApi(token);
+  if (!normalizedApiIsUuid(normalizedApi)) return null;
+  const chunk = await getACUC(normalizedApi);
+  return chunk?.flags ?? null;
+}
+
 export async function clearACUC(api_key: string): Promise<void> {
   // Clear both purpose-qualified keys and the legacy unqualified keys during
   // rollout so credential-purpose isolation cannot leave stale auth entries.
@@ -779,6 +799,31 @@ async function handleKeylessAuth(
       keylessReason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
     };
+  }
+
+  if (modeLabel === "gov" || modeLabel === "research") {
+    const perMinute = await consumeIndexRateLimit(
+      modeLabel,
+      teamId,
+      1,
+      undefined,
+      1,
+    );
+    if (!perMinute.ok) {
+      keylessAuthTotal.inc({ mode, outcome: "index_rate_limit" });
+      logger.warn("Keyless request blocked", {
+        ...baseLog,
+        blocked: true,
+        reason: "index_rate_limit",
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      });
+      return {
+        success: false,
+        error: perMinute.error,
+        status: 429,
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      };
+    }
   }
 
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });

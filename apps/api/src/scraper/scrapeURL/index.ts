@@ -131,6 +131,7 @@ import {
   SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { loadFirstScreen } from "../../lib/branding/jev";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
@@ -1367,6 +1368,17 @@ export async function scrapeURL(
         options.skipTlsVerification = false;
       }
 
+      const usOnlyLocationError = usOnlyLocationRefusal(
+        internalOptions.teamFlags ?? undefined,
+        options.location?.country,
+      );
+      if (usOnlyLocationError) {
+        return {
+          success: false,
+          error: new UsOnlyUnavailableError(usOnlyLocationError),
+        };
+      }
+
       const meta = await buildMetaObject(
         id,
         url,
@@ -1467,6 +1479,7 @@ export async function scrapeURL(
                       url: urlToCheck,
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
+                      usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
                       location: options.location,
                       skipTlsVerification: options.skipTlsVerification,
                     },
