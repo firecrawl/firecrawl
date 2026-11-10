@@ -327,7 +327,7 @@ function isZdrCleanupJob(value: unknown): value is ZdrCleanupJob {
     jobId?: unknown;
     requestId?: unknown;
   };
-  const id = jobId ?? requestId;
+  const id = jobId === undefined ? requestId : jobId;
   return typeof id === "string" && id.length > 0;
 }
 

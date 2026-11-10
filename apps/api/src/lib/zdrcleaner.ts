@@ -94,7 +94,7 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
  * before cleanup was scheduled per result.
  */
 export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
-  if ("requestId" in job) return cleanZdrRequest(job.requestId);
+  if (!("jobId" in job)) return cleanZdrRequest(job.requestId);
   const errors = await removeBlobs([job.jobId]);
   if (errors.length > 0) throw errors[0];
 }

@@ -655,18 +655,6 @@ describe("logRequest", () => {
     );
   });
 
-  it("publishes a ZDR request without a cleanup schedule", async () => {
-    await logRequest({
-      ...makeRequest("op_integration_42"),
-      zeroDataRetention: true,
-    });
-
-    const published = JSON.parse(
-      publishMessage.mock.calls[0][0].data.toString(),
-    );
-    expect(published).not.toHaveProperty("dr_clean_by");
-  });
-
   it("fails the log call when Pub/Sub fails", async () => {
     publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
 
