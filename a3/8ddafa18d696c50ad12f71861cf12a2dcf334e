@@ -1,0 +1,21 @@
+apps/api/src/lib/alexandria-query.ts
+  s_0d1c9cb5d0e076::t_52f48bec9c96ca 1-120,122-170
+apps/api/src/services/alexandria/option-types.ts
+  s_0d1c9cb5d0e076::t_ff31b13e3cdb37 1-20,23,25-69,73-76,81,86-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a38ddafa18d696c50ad12f71861cf12a2dcf334e",
+  "prompts": {},
+  "sessions": {
+    "s_0d1c9cb5d0e076": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4d45374-a8f2-4343-991a-6b9220a78ec9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
