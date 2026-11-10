@@ -1,15 +1,7 @@
-import { config } from "../../../config";
-import {
-  ALLOW_TEST_SUITE_WEBSITE,
-  describeIf,
-  itIf,
-  TEST_SUITE_WEBSITE,
-} from "../lib";
+import { ALLOW_TEST_SUITE_WEBSITE, itIf, TEST_SUITE_WEBSITE } from "../lib";
 import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
 
-// The harness passes the shell env to the server, so the flag read here is the
-// one the server runs with.
-describeIf(config.HOSTED_BASH_ENABLED)("Hosted bash", () => {
+describe("Hosted bash", () => {
   let identity: Identity;
 
   beforeAll(async () => {

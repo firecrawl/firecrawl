@@ -130,9 +130,6 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
-  // Hosted bash at /v2/bash: runs anonymous shell commands in a sandbox inside
-  // the API process. Off, the route answers 404.
-  HOSTED_BASH_ENABLED: z.stringbool().default(false),
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,

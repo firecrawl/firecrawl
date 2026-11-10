@@ -2,7 +2,6 @@ import express from "express";
 import type { Server } from "http";
 import type { AddressInfo } from "net";
 import request from "supertest";
-import { config } from "../../../config";
 import { registerHostedBashRoute } from "../bash";
 
 const DOCS_INDEX = `# Firecrawl Docs
@@ -23,7 +22,6 @@ interface InnerCall {
  */
 describe("hosted bash route", () => {
   const realFetch = globalThis.fetch;
-  const wasEnabled = config.HOSTED_BASH_ENABLED;
   const calls: InnerCall[] = [];
   let respond: (call: InnerCall) => { status: number; json: unknown };
   let server: Server;
@@ -63,12 +61,10 @@ describe("hosted bash route", () => {
 
   afterAll(async () => {
     vi.restoreAllMocks();
-    config.HOSTED_BASH_ENABLED = wasEnabled;
     await new Promise(resolve => server.close(resolve));
   });
 
   beforeEach(() => {
-    config.HOSTED_BASH_ENABLED = true;
     calls.length = 0;
     respond = call =>
       call.path === "/v2/scrape"
@@ -110,12 +106,6 @@ describe("hosted bash route", () => {
       .set("X-Forwarded-For", ip)
       .type("form")
       .send(command);
-
-  it("answers 404 while the flag is off", async () => {
-    config.HOSTED_BASH_ENABLED = false;
-    expect((await request(base).get("/v2/bash")).status).toBe(404);
-    expect((await run("echo hi")).status).toBe(404);
-  });
 
   it("serves usage that points at its own URL", async () => {
     const res = await request(base).get("/v2/bash");

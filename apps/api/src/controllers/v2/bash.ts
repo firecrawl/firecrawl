@@ -1,14 +1,12 @@
 import cors from "cors";
 import express, {
   type Application,
-  type NextFunction,
   type Request,
   type RequestHandler,
   type Response,
 } from "express";
 import { isIPv4 } from "net";
 import { RateLimiterMemory, RateLimiterRes } from "rate-limiter-flexible";
-import { config } from "../../config";
 import {
   MAX_FIRECRAWL_CALLS,
   MAX_OUTPUT_BYTES,
@@ -77,11 +75,6 @@ npx -y firecrawl-cli@latest init
 Limits: ${MAX_COMMAND_BYTES} byte commands, ${MAX_OUTPUT_BYTES} bytes of stdout and stderr each,
 ${TIMEOUT_MS / 1000} seconds and ${MAX_FIRECRAWL_CALLS} Firecrawl calls per command. Nothing persists between requests.
 `;
-}
-
-function requireEnabled(_req: Request, _res: Response, next: NextFunction) {
-  // Off, the path falls through to the API's regular 404.
-  next(config.HOSTED_BASH_ENABLED ? undefined : "route");
 }
 
 /**
@@ -240,11 +233,10 @@ export function registerHostedBashRoute(
     exposedHeaders: ["X-Exit-Code", "X-Duration-Ms"],
   });
   const rateLimit = createRateLimit();
-  app.options(ROUTE, requireEnabled, allowCors);
-  app.get(ROUTE, requireEnabled, allowCors, rateLimit, bashController);
+  app.options(ROUTE, allowCors);
+  app.get(ROUTE, allowCors, rateLimit, bashController);
   app.post(
     ROUTE,
-    requireEnabled,
     allowCors,
     rateLimit,
     express.text({ type: () => true, limit: MAX_COMMAND_BYTES }),
