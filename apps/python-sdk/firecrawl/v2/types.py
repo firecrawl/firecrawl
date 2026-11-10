@@ -569,9 +569,9 @@ class SearchDocument(Document):
     category: Optional[str] = None
     snippet: Optional[str] = None
     date: Optional[str] = None
-    image_url: Optional[str] = None
-    image_width: Optional[int] = None
-    image_height: Optional[int] = None
+    image_url: Optional[str] = Field(default=None, alias="imageUrl")
+    image_width: Optional[int] = Field(default=None, alias="imageWidth")
+    image_height: Optional[int] = Field(default=None, alias="imageHeight")
 
 
 # Webhook types

@@ -32,6 +32,8 @@ SCRAPE_DOCUMENT_KEYS = {
     "actions",
     "pages",
     "warning",
+    "highlights",
+    "blocks",
 }
 
 def search(
