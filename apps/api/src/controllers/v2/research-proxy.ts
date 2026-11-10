@@ -18,6 +18,7 @@ import {
 } from "../../lib/index-daily-limit";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   logRequest,
   logResearchEndpoint,
@@ -291,6 +292,14 @@ function creditsFor(
   return Math.ceil(resultCount(body) / 10) * perTen;
 }
 
+// A team forced into ZDR on either scrape or search is handled as ZDR here.
+function isTeamForcedZdr(req: RequestWithAuth<any, any, any>): boolean {
+  return (
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getEffectiveSearchForcedKind(req.acuc?.flags, undefined) !== null
+  );
+}
+
 function researchError(
   res: Response,
   status: number,
@@ -351,8 +360,7 @@ function createResearchController(
 ): ResearchController {
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
-    const zeroDataRetention =
-      getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
+    const zeroDataRetention = isTeamForcedZdr(authedReq);
 
     const started = Date.now();
     const jobId = uuidv7();
@@ -584,9 +592,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
         method: req.method,
         path: req.originalUrl,
         requestId: req.headers["x-request-id"],
-        zeroDataRetention:
-          getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !==
-          null,
+        zeroDataRetention: isTeamForcedZdr(authedReq),
       });
       next();
     });

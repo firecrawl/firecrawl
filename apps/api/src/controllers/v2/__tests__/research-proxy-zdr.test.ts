@@ -127,6 +127,7 @@ describe.each([
     { searchZDR: "forced-zdr" },
     { searchZDR: "forced-anon" },
     { forceZDR: true },
+    { scrapeZDR: "forced" },
   ])("marks forced team payloads for redaction and cleanup", async flags => {
     await callRoute(testCase.router(), testCase.path, testCase.query, flags);
 
@@ -206,6 +207,7 @@ describe("legacy research mount notice", () => {
     { searchZDR: "forced-zdr" },
     { searchZDR: "forced-anon" },
     { forceZDR: true },
+    { scrapeZDR: "forced" },
   ])("marks the notice so the log filter drops it", flags => {
     expect(logNotice(flags)).toEqual(
       expect.objectContaining({ zeroDataRetention: true }),
