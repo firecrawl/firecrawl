@@ -27,10 +27,14 @@ import {
   idmux,
 } from "../lib";
 import { SearchV2Response } from "../../../lib/entities";
+import { sunsetOf } from "../../../lib/deprecations";
 
 // Re-export shared utilities for backwards compatibility
 export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
 export default request;
+
+// From the extract sunset /v2/extract answers 410 instead of extracting.
+export const EXTRACT_LIVE = Date.now() < sunsetOf("v2_extract");
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
