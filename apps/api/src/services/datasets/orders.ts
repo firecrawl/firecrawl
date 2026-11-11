@@ -5,6 +5,7 @@ import { logger } from "../../lib/logger";
 import { exchangeRequest } from "../alexandria/client";
 import type { ExchangeResponse } from "../alexandria/contracts";
 import { autumnService } from "../autumn/autumn.service";
+import { firebillConfigured } from "../autumn/firebill";
 import type { LockCreditsResult } from "../autumn/types";
 import { getBillingQueue, getRedisConnection } from "../queue-service";
 
@@ -258,8 +259,9 @@ export async function createDatasetOrder(input: {
  * capture of the built order's credits, or a release. Answers the order as it
  * stands afterwards. A settle the billing service did not accept leaves the
  * order as it is, for the next call to retry; so does a capture that would
- * start too close to the hold's expiry. A hold that has already run out is
- * gone by itself, so its release is only reported.
+ * start too close to the hold's expiry, and so does an instance where billing
+ * is not configured. A hold that has already run out is gone by itself, so its
+ * release is only reported.
  *
  * Charged means delivered: once a capture was accepted the order is reported
  * as captured on every later call, whatever is due by then, and never released.
@@ -300,6 +302,17 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
     return unavailable();
   };
   if (lockId === null) throw unusable();
+
+  // finalizeCreditsLock answers true where billing is not configured, because
+  // no hold can have been taken there. This hold was taken elsewhere, so here
+  // nothing would be captured or released, and nothing may be reported.
+  if (!firebillConfigured()) {
+    logger.error("Dataset order was not settled: billing is not configured", {
+      orderId: order.id,
+      due,
+    });
+    return order;
+  }
 
   const properties = billingProperties(order.id);
   const team = orgId !== null ? { teamId, orgId } : undefined;
