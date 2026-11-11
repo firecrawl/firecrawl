@@ -61,8 +61,9 @@ Three things use Firecrawl cloud, because they need an index or data the machine
 ## Safety defaults
 
 - `serve` listens on `127.0.0.1`. Binding any other address requires `--token`, and requests are checked against an allowed `Host` list.
-- API callers cannot reach localhost, private networks or cloud metadata addresses unless `--allow-private` is set. Link-local and metadata addresses are refused in every mode, including after redirects and DNS resolution.
-- The same rule covers the browser. Chrome runs behind a loopback proxy inside the engine that checks every connection it opens, including redirects, subresources, scripts' own requests and WebSockets, so a public page cannot make the browser call a private address.
+- `serve` callers cannot reach localhost or private networks unless `--allow-private` is set. The command line and the MCP server run for the person at the keyboard, so they allow local and private targets by default; pass `--public-only` to refuse them there too.
+- Link-local and cloud metadata addresses are refused in every mode, including after redirects and DNS resolution.
+- The same rules cover the browser. Chrome runs behind a loopback proxy inside the engine that checks every connection it opens, including redirects, subresources, scripts' own requests and WebSockets. With private targets off, a public page cannot make the browser call a private address. With them on, as in the command line's default, a page the browser loads can reach the local network the way it could in your own browser.
 - The local browser runs headless and sandboxed with a throwaway profile.
 - The engine identifies itself in its User-Agent and reads `robots.txt` when crawling.
 
