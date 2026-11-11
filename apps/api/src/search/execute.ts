@@ -39,12 +39,18 @@ import {
   calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
-import { searchGovCategory, wantsGovCategory } from "./gov";
+import {
+  MAX_ROUTED_LIMIT,
+  searchGovCategory,
+  searchGovIfRouted,
+  wantsGovCategory,
+} from "./gov";
 import { removeExplicitResults } from "./safe-search";
 import {
   matchesQueryOperators,
   planOperatorQuery,
   siteHostnames,
+  usesSearchSyntax,
 } from "./operators";
 import {
   highlightsEnvReady,
@@ -340,29 +346,51 @@ export async function executeSearch(
     : wantsGovCategory(categories)
       ? searchGovCategory
       : null;
-  const indexResultsPromise = indexCategorySearch
-    ? indexCategorySearch(
-        {
-          query,
-          limit,
-          teamId,
-          timeout: options.timeout,
-          zeroDataRetention:
-            zeroDataRetention === true ||
-            options.enterprise?.some(
-              mode => mode === "zdr" || mode === "anon",
-            ) === true,
-          ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
-        },
-        logger,
-      )
+  const indexSearchOptions = {
+    query,
+    limit,
+    teamId,
+    timeout: options.timeout,
+    zeroDataRetention:
+      zeroDataRetention === true ||
+      options.enterprise?.some(mode => mode === "zdr" || mode === "anon") ===
+        true,
+    ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
+  };
+  // A plain US web search that the search platform classifies as government
+  // is served through the Government Index. Zero data retention and
+  // anonymous searches are never routed, as they skip every other auxiliary
+  // service here, and neither is a page larger than MAX_ROUTED_LIMIT.
+  const plainWebSearch =
+    indexCategorySearch === null &&
+    !indexSearchOptions.zeroDataRetention &&
+    !categories?.length &&
+    searchTypes.length === 1 &&
+    searchTypes[0] === "web" &&
+    !options.includeDomains?.length &&
+    !options.excludeDomains?.length &&
+    !options.tbs &&
+    !options.filter &&
+    (options.country ?? "us").toLowerCase() === "us" &&
+    !options.location &&
+    (options.lang ?? "en").toLowerCase() === "en" &&
+    !usOnly &&
+    query.trim().length > 0 &&
+    limit <= MAX_ROUTED_LIMIT &&
+    !usesSearchSyntax(query);
+  // A plain web search takes the routing decision before the regular web
+  // search, so a routed search never starts it. An unrouted one, or a routed
+  // one whose platform search fails, starts the regular web search after the
+  // decision.
+  const routedResults = plainWebSearch
+    ? await searchGovIfRouted(indexSearchOptions, context.jobId, logger)
     : null;
-
-  const searchResponse =
-    ((wantsTools || wantsSkills) && !searchTypes.length) ||
-    indexResultsPromise !== null
-      ? ({} as SearchV2Response)
-      : ((await search({
+  const webSearchPromise =
+    routedResults !== null ||
+    indexCategorySearch !== null ||
+    ((wantsTools || wantsSkills) && !searchTypes.length)
+      ? null
+      : search({
           query: searchQuery,
           logger,
           requestId: context.requestId,
@@ -386,7 +414,19 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
-        })) as SearchV2Response);
+        });
+  const indexResultsPromise = indexCategorySearch
+    ? indexCategorySearch(indexSearchOptions, logger)
+    : null;
+
+  // Routed results take the regular web search's place as the web results, so
+  // threat protection, safe search, categories, highlights, scraping and
+  // billing treat them as a web search's.
+  const searchResponse: SearchV2Response = routedResults
+    ? { web: routedResults }
+    : webSearchPromise === null || indexResultsPromise !== null
+      ? ({} as SearchV2Response)
+      : ((await webSearchPromise) as SearchV2Response);
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
   >(

@@ -1,8 +1,9 @@
-import { describeIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
+import { TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
 import {
   batchScrape,
   crawl,
   creditUsage,
+  describeV1,
   extract,
   idmux,
   map,
@@ -17,7 +18,7 @@ const sleepForBatchBilling = () => sleep(40000);
 // TODO: can be combined with v2...?
 // TODO: fix up idmux
 // TODO: needs testing
-describeIf(TEST_PRODUCTION)("Billing tests", () => {
+describeV1(TEST_PRODUCTION)("Billing tests", () => {
   const base = TEST_SUITE_WEBSITE;
 
   it.concurrent(

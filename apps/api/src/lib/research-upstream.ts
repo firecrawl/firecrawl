@@ -82,6 +82,39 @@ export function usOnlySkippedWarning(headers: {
     : undefined;
 }
 
+/** POSTs a JSON body to the search platform, or returns null when none is configured. */
+async function postSearchPlatform(
+  path: string,
+  body: unknown,
+  headers: Record<string, string>,
+  timeoutMs: number,
+) {
+  const base = config.SEARCH_PLATFORM_URL;
+  if (!base) return null;
+
+  return fetch(base.replace(/\/+$/, "") + path, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+    dispatcher,
+  });
+}
+
+/** The search platform's routing decision for one query. */
+export async function fetchQueryFeatures(options: {
+  query: string;
+  headers: Record<string, string>;
+  timeoutMs: number;
+}) {
+  return postSearchPlatform(
+    "/api/v1/query-features",
+    { queries: [options.query], features: ["vertical"] },
+    options.headers,
+    options.timeoutMs,
+  );
+}
+
 export async function fetchGovUpstream(options: {
   query: string;
   k?: number;
@@ -93,13 +126,9 @@ export async function fetchGovUpstream(options: {
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
-  const base = config.SEARCH_PLATFORM_URL;
-  if (!base) return null;
-
-  return fetch(base.replace(/\/+$/, "") + "/api/v1/gov-search", {
-    method: "POST",
-    headers: { ...options.headers, "content-type": "application/json" },
-    body: JSON.stringify({
+  return postSearchPlatform(
+    "/api/v1/gov-search",
+    {
       query: options.query,
       top_k: options.k,
       jurisdiction: options.jurisdiction,
@@ -107,8 +136,23 @@ export async function fetchGovUpstream(options: {
       court_type: options.courtType,
       cites: options.cites,
       domain: options.domain,
-    }),
-    signal: AbortSignal.timeout(options.timeoutMs),
-    dispatcher,
-  });
+    },
+    options.headers,
+    options.timeoutMs,
+  );
+}
+
+/** The search platform's answer to a plain web search routed to it. */
+export async function fetchWebSearchUpstream(options: {
+  query: string;
+  k: number;
+  headers: Record<string, string>;
+  timeoutMs: number;
+}) {
+  return postSearchPlatform(
+    "/api/v1/web-search",
+    { query: options.query, top_k: options.k },
+    options.headers,
+    options.timeoutMs,
+  );
 }
