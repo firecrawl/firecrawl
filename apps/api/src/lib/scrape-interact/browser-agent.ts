@@ -270,6 +270,12 @@ export async function executePromptViaBrowserAgent(
   logger: typeof _logger,
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
+  // The request timeout bounds the whole prompt execution, not each browser
+  // command: the endpoint documents it as "Execution timeout in seconds"
+  // and the SDKs abort around it, while stepTimeout × MAX_STEPS could
+  // otherwise stretch a single call far past the documented budget.
+  const deadlineMs = Date.now() + stepTimeout * 1000;
+
   const zeroDataRetention = trace?.zeroDataRetention === true;
   const untraced = isUntraced(trace);
   const model = getBrowserAgentModel(trace);
@@ -317,8 +323,19 @@ export async function executePromptViaBrowserAgent(
         return { error: msg };
       }
 
+      const remainingMs = deadlineMs - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error(
+          `Prompt execution timed out after ${stepTimeout}s.`,
+        );
+      }
+
       try {
-        const result = await execInBrowser(browserId, code, stepTimeout);
+        const result = await execInBrowser(
+          browserId,
+          code,
+          Math.min(stepTimeout, Math.max(1, Math.ceil(remainingMs / 1000))),
+        );
         const output = (result.stdout || result.result || "").trim();
 
         await selectBrowserAgentTab(browserId);
@@ -392,6 +409,7 @@ export async function executePromptViaBrowserAgent(
     const result = await generate({
       model,
       experimental_telemetry: { isEnabled: false },
+      abortSignal: AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())),
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -459,7 +477,15 @@ export async function executePromptViaBrowserAgent(
       killed: false,
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    // AbortSignal.timeout rejects with a "TimeoutError" DOMException.
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" || err.name === "TimeoutError");
+    const msg = isTimeout
+      ? `Prompt execution timed out after ${stepTimeout}s.`
+      : err instanceof Error
+        ? err.message
+        : String(err);
     logger.error("Agent failed", { error: err });
     debugLog.add(`\n=== END: error — ${msg} ===\n`);
     await debugLog.flush();
