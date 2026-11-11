@@ -301,9 +301,20 @@ Connect any MCP-compatible client to the web in seconds.
 }
 ```
 
+### Local engine
+
+Run scrape, crawl and map on your own machine with one binary and no Docker. It adds itself to the AI coding tools it finds as an MCP server.
+
+```bash
+cd apps/engine && cargo build --release
+./target/release/firecrawl-engine init
+```
+
+Search and Alexandria data providers still run on Firecrawl cloud. See [apps/engine](./apps/engine/README.md) for every command.
+
 ### Agent Onboarding
 
-Are you an AI agent? Fetch this skill to sign up your user, get an API key, and start building with Firecrawl.
+Are you an AI agent? Start with [AGENTS.md](./AGENTS.md), which tells you which setup fits what your user asked for. To sign your user up for hosted Firecrawl and get an API key, fetch this skill.
 
 ```bash
 curl -s https://firecrawl.dev/agent-onboarding/SKILL.md

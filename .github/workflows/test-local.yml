@@ -8,6 +8,12 @@ on:
       - apps/local/**
       - apps/api/native/src/**
       - .github/workflows/test-local.yml
+      - AGENTS.md
+      - CLAUDE.md
+      - GEMINI.md
+      - .clinerules
+      - .github/copilot-instructions.md
+      - .github/scripts/check-agent-routing.sh
 
 permissions:
   contents: read
@@ -20,6 +26,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+
+      - name: Check the agent instruction files match
+        run: .github/scripts/check-agent-routing.sh
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
