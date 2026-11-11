@@ -5,7 +5,7 @@ import pytest
 from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.methods import batch, crawl
 from firecrawl.v2.types import BatchScrapeJob, CrawlJob, Document
-from firecrawl.v2.utils import CrawlJobFailedError, FirecrawlError
+from firecrawl.v2.utils import BatchScrapeJobFailedError, CrawlJobFailedError, FirecrawlError
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
@@ -16,11 +16,11 @@ def test_wait_for_batch_completion_can_raise_on_non_success_terminal_status(monk
     # Backward-compatible default: return the terminal job.
     assert batch.wait_for_batch_completion(None, "job-id") is job
 
-    with pytest.raises(
-        FirecrawlError,
-        match=f"Batch scrape job job-id ended with status '{status}'",
-    ):
+    with pytest.raises(BatchScrapeJobFailedError) as exc_info:
         batch.wait_for_batch_completion(None, "job-id", raise_on_failure=True)
+
+    assert exc_info.value.job is job
+    assert exc_info.value.status == status
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
@@ -118,8 +118,10 @@ def test_public_batch_scrape_handles_terminal_statuses(monkeypatch, status, rais
     monkeypatch.setattr(batch, "get_batch_scrape_status", lambda *args, **kwargs: terminal_job)
 
     if status in ["failed", "cancelled"] and raise_on_failure:
-        with pytest.raises(FirecrawlError):
+        with pytest.raises(BatchScrapeJobFailedError) as exc_info:
             client.batch_scrape(["https://example.com"], raise_on_failure=True)
+        assert exc_info.value.job is terminal_job
+        assert exc_info.value.job.data == terminal_job.data
     else:
         assert client.batch_scrape(
             ["https://example.com"],
