@@ -140,7 +140,7 @@ const configSchema = z.object({
   ),
   // Share of plain web searches (0-100, stable per query) that take the routing
   // decision while GOV_ROUTING_ENABLED is true.
-  GOV_ROUTING_ROLLOUT_PERCENT: emptyStringAsDefault(
+  GOV_ROUTING_ROLLOUT_PERCENT: blankStringAsUnset(
     z.coerce.number().min(0).max(100).default(100),
   ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
