@@ -34,8 +34,11 @@ impl GuardProxy {
     let addr = listener.local_addr()?;
     let task = tokio::spawn(async move {
       loop {
+        // A failed accept (too many open files, say) is not a reason to
+        // stop: Chrome would lose its only way out for the rest of the run.
         let Ok((client, _)) = listener.accept().await else {
-          break;
+          tokio::time::sleep(Duration::from_millis(50)).await;
+          continue;
         };
         tokio::spawn(async move {
           let _ = serve(client, policy).await;
@@ -76,33 +79,61 @@ async fn reply(client: &mut TcpStream, code: u8) -> std::io::Result<()> {
   client.write_all(&[5, code, 0, 1, 0, 0, 0, 0, 0, 0]).await
 }
 
-/// The addresses a SOCKS request may connect to, or the reply code to refuse
-/// it with.
+/// Why a target is refused: the SOCKS reply code and, when the network
+/// policy is the cause, the guard's own explanation.
+struct Refused {
+  code: u8,
+  reason: Option<String>,
+}
+
+impl Refused {
+  fn policy(reason: String) -> Self {
+    Self {
+      code: REPLY_NOT_ALLOWED,
+      reason: Some(reason),
+    }
+  }
+}
+
+/// The addresses a SOCKS request may connect to, or why it is refused.
 async fn allowed_targets(
   host: Target,
   port: u16,
   policy: NetworkPolicy,
-) -> Result<Vec<SocketAddr>, u8> {
+) -> Result<Vec<SocketAddr>, Refused> {
   match host {
     Target::Ip(ip) => {
-      guard::check_ip(ip, policy).map_err(|_| REPLY_NOT_ALLOWED)?;
+      guard::check_ip(ip, policy).map_err(|e| Refused::policy(e.0))?;
       Ok(vec![SocketAddr::new(ip, port)])
     }
     Target::Name(name) => {
       // Names the guard treats as local ("localhost", "*.internal") are
       // refused before any lookup, the same as for a URL.
-      let as_url = Url::parse(&format!("http://{name}:{port}/")).map_err(|_| REPLY_NOT_ALLOWED)?;
-      guard::check_url(&as_url, policy).map_err(|_| REPLY_NOT_ALLOWED)?;
+      let as_url = Url::parse(&format!("http://{name}:{port}/"))
+        .map_err(|_| Refused::policy(format!("'{name}' is not a host this engine may reach")))?;
+      guard::check_url(&as_url, policy).map_err(|e| Refused::policy(e.0))?;
       let resolved: Vec<SocketAddr> = tokio::net::lookup_host((name.as_str(), port))
         .await
-        .map_err(|_| REPLY_HOST_UNREACHABLE)?
+        .map_err(|_| Refused {
+          code: REPLY_HOST_UNREACHABLE,
+          reason: None,
+        })?
         .collect();
-      let allowed: Vec<SocketAddr> = resolved
-        .into_iter()
-        .filter(|a| guard::check_ip(a.ip(), policy).is_ok())
-        .collect();
+      let mut first_refusal = None;
+      let mut allowed = Vec::new();
+      for addr in resolved {
+        match guard::check_ip(addr.ip(), policy) {
+          Ok(()) => allowed.push(addr),
+          Err(e) => {
+            first_refusal.get_or_insert(e.0);
+          }
+        }
+      }
       if allowed.is_empty() {
-        return Err(REPLY_NOT_ALLOWED);
+        return Err(Refused::policy(match first_refusal {
+          Some(why) => format!("'{name}' resolves to an address this engine may not reach: {why}"),
+          None => format!("'{name}' does not resolve to any address"),
+        }));
       }
       Ok(allowed)
     }
@@ -114,9 +145,10 @@ enum Target {
   Name(String),
 }
 
-/// Why the proxy would refuse a URL's host, if it would. Chrome reports a
-/// refusal only as a failed proxy connection, so the browser asks here to
-/// tell "this target is off limits" from an ordinary connection failure.
+/// Why the proxy would refuse a URL's host, if the network policy is the
+/// cause. Chrome reports a refusal only as a failed proxy connection, so the
+/// browser asks here to tell "this target is off limits" from an ordinary
+/// connection failure.
 pub async fn refusal_reason(url: &Url, policy: NetworkPolicy) -> Option<String> {
   let host = url.host_str()?;
   let bare = host.trim_start_matches('[').trim_end_matches(']');
@@ -124,12 +156,10 @@ pub async fn refusal_reason(url: &Url, policy: NetworkPolicy) -> Option<String> 
     Ok(ip) => Target::Ip(ip),
     Err(_) => Target::Name(bare.to_string()),
   };
-  match allowed_targets(target, url.port_or_known_default().unwrap_or(80), policy).await {
-    Err(REPLY_NOT_ALLOWED) => Some(format!(
-      "{host} is, or resolves to, a private or local address; private targets are off for this engine"
-    )),
-    _ => None,
-  }
+  allowed_targets(target, url.port_or_known_default().unwrap_or(80), policy)
+    .await
+    .err()
+    .and_then(|refused| refused.reason)
 }
 
 async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<()> {
@@ -185,7 +215,7 @@ async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<
 
   let targets = match allowed_targets(host, port, policy).await {
     Ok(t) => t,
-    Err(code) => return reply(&mut client, code).await,
+    Err(refused) => return reply(&mut client, refused.code).await,
   };
   let mut upstream = None;
   for target in targets {
@@ -293,6 +323,16 @@ mod tests {
     assert!(refusal_reason(&local, NetworkPolicy::AllowPrivate)
       .await
       .is_none());
+    // With private targets on, the reason is the metadata rule, not
+    // "private targets are off".
+    let metadata = Url::parse("http://169.254.169.254/latest/").unwrap();
+    let why = refusal_reason(&metadata, NetworkPolicy::AllowPrivate)
+      .await
+      .unwrap();
+    assert!(
+      why.contains("never reachable") && !why.contains("are off"),
+      "{why}"
+    );
   }
 
   #[tokio::test]

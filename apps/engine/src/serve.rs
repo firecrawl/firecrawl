@@ -179,24 +179,39 @@ fn new_job(state: &AppState, total: usize) -> (String, Arc<Mutex<Job>>) {
     created: Instant::now(),
     task: None,
   }));
-  let mut jobs = state.jobs.lock().unwrap();
+  let mut jobs = locked(&state.jobs);
   drop_expired(&mut jobs);
   jobs.insert(id.clone(), job.clone());
   (id, job)
 }
 
-/// Remove jobs older than `JOB_TTL`. Runs whenever a job is created or
-/// looked up, so an expired job is never served.
+/// Lock a mutex, taking the data even if another thread panicked while
+/// holding it. A job map with one half-updated job is still usable, and a
+/// panic here would take every other request down with it.
+fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+  mutex
+    .lock()
+    .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Remove jobs older than `JOB_TTL`, stopping any that are still running.
+/// Runs whenever a job is created or looked up, so an expired job is never
+/// served and never keeps working unobserved.
 fn drop_expired(jobs: &mut HashMap<String, Arc<Mutex<Job>>>) {
-  jobs.retain(|_, j| {
-    j.lock()
-      .map(|j| j.created.elapsed() < JOB_TTL)
-      .unwrap_or(false)
+  jobs.retain(|_, job| {
+    let mut job = locked(job);
+    let live = job.created.elapsed() < JOB_TTL;
+    if !live {
+      if let Some(task) = job.task.take() {
+        task.abort();
+      }
+    }
+    live
   });
 }
 
 fn find_job(state: &AppState, id: &str) -> Option<Arc<Mutex<Job>>> {
-  let mut jobs = state.jobs.lock().unwrap();
+  let mut jobs = locked(&state.jobs);
   drop_expired(&mut jobs);
   jobs.get(id).cloned()
 }
@@ -304,7 +319,7 @@ async fn crawl_handler(
       }
     }
   });
-  job.lock().unwrap().task = Some(handle.abort_handle());
+  locked(&job).task = Some(handle.abort_handle());
   let base = req_uri.path().trim_end_matches('/').to_string();
   Json(json!({ "success": true, "id": id, "url": job_url(&headers, &base, &id) })).into_response()
 }
@@ -378,7 +393,7 @@ async fn batch_handler(
       j.status = "completed";
     }
   });
-  job.lock().unwrap().task = Some(handle.abort_handle());
+  locked(&job).task = Some(handle.abort_handle());
   let base = req_uri.path().trim_end_matches('/').to_string();
   Json(json!({ "success": true, "id": id, "url": job_url(&headers, &base, &id) })).into_response()
 }
@@ -388,7 +403,7 @@ async fn job_status(State(state): State<Arc<AppState>>, Path(id): Path<String>) 
   let Some(job) = job else {
     return error_response(StatusCode::NOT_FOUND, "JOB_NOT_FOUND", "Job not found.");
   };
-  let j = job.lock().unwrap();
+  let j = locked(&job);
   let expires = (JOB_TTL.saturating_sub(j.created.elapsed())).as_secs();
   Json(json!({
     "success": true,
@@ -408,7 +423,7 @@ async fn job_cancel(State(state): State<Arc<AppState>>, Path(id): Path<String>) 
   let Some(job) = job else {
     return error_response(StatusCode::NOT_FOUND, "JOB_NOT_FOUND", "Job not found.");
   };
-  let mut j = job.lock().unwrap();
+  let mut j = locked(&job);
   if j.status == "scraping" {
     if let Some(task) = j.task.take() {
       task.abort();

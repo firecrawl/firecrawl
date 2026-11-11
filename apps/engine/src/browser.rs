@@ -13,7 +13,7 @@ use std::{
 use chromiumoxide::{
   browser::{Browser, BrowserConfig},
   cdp::browser_protocol::network::{
-    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent,
+    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, ResourceType,
   },
   page::ScreenshotParams,
 };
@@ -98,6 +98,9 @@ const FLATTEN_SHADOW_DOM: &str = r#"(() => {
 struct NetWatch {
   in_flight: Arc<StdMutex<std::collections::HashMap<String, (Instant, String)>>>,
   last_event: Arc<StdMutex<Instant>>,
+  /// The address of the latest document request, which after a redirect is
+  /// not the address the page was asked for.
+  last_document: Arc<StdMutex<Option<String>>>,
   tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -105,11 +108,18 @@ impl NetWatch {
   async fn start(page: &chromiumoxide::Page) -> Self {
     let in_flight = Arc::new(StdMutex::new(std::collections::HashMap::new()));
     let last_event = Arc::new(StdMutex::new(Instant::now()));
+    let last_document = Arc::new(StdMutex::new(None));
     let mut tasks = Vec::new();
     if let Ok(mut events) = page.event_listener::<EventRequestWillBeSent>().await {
       let (set, last) = (in_flight.clone(), last_event.clone());
+      let document = last_document.clone();
       tasks.push(tokio::spawn(async move {
         while let Some(e) = events.next().await {
+          if e.r#type == Some(ResourceType::Document) {
+            if let Ok(mut d) = document.lock() {
+              *d = Some(e.request.url.clone());
+            }
+          }
           if let Ok(mut s) = set.lock() {
             s.insert(
               e.request_id.inner().clone(),
@@ -151,6 +161,7 @@ impl NetWatch {
     Self {
       in_flight,
       last_event,
+      last_document,
       tasks,
     }
   }
@@ -160,6 +171,10 @@ impl NetWatch {
   /// for more than 1.5 seconds is a long-lived connection or one that will
   /// never report back (a beacon, a blocked script), not "still loading";
   /// slow data calls are still caught by the in-page fetch and XHR counter.
+  fn last_document(&self) -> Option<String> {
+    self.last_document.lock().ok().and_then(|d| d.clone())
+  }
+
   fn idle(&self) -> bool {
     let quiet = self
       .last_event
@@ -377,12 +392,14 @@ impl BrowserPool {
     watch: &NetWatch,
   ) -> Result<Rendered, String> {
     if let Err(e) = page.goto(url.as_str()).await {
-      return Err(
-        match crate::netguard::refusal_reason(url, self.policy).await {
-          Some(reason) => reason,
-          None => format!("navigation failed: {e}"),
-        },
-      );
+      // The guard may have refused this address or one it redirected to.
+      let mut reason = crate::netguard::refusal_reason(url, self.policy).await;
+      if reason.is_none() {
+        if let Some(redirected) = watch.last_document().and_then(|u| Url::parse(&u).ok()) {
+          reason = crate::netguard::refusal_reason(&redirected, self.policy).await;
+        }
+      }
+      return Err(reason.unwrap_or_else(|| format!("navigation failed: {e}")));
     }
     let response = page.wait_for_navigation_response().await.ok().flatten();
 

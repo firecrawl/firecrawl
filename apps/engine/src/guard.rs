@@ -32,8 +32,9 @@ impl std::fmt::Display for Blocked {
 impl std::error::Error for Blocked {}
 
 fn v4_is_metadata_or_link_local(ip: Ipv4Addr) -> bool {
-  // 169.254.0.0/16 covers link-local and the cloud metadata endpoints.
-  ip.is_link_local()
+  // 169.254.0.0/16 covers link-local and most cloud metadata endpoints.
+  // Alibaba Cloud serves its metadata from 100.100.100.200 instead.
+  ip.is_link_local() || ip == Ipv4Addr::new(100, 100, 100, 200)
 }
 
 fn v4_is_private(ip: Ipv4Addr) -> bool {
@@ -176,6 +177,16 @@ pub fn check_url(url: &Url, policy: NetworkPolicy) -> Result<(), Blocked> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn alibaba_metadata_is_blocked_in_every_mode() {
+    let ip: IpAddr = "100.100.100.200".parse().unwrap();
+    assert!(check_ip(ip, NetworkPolicy::AllowPrivate).is_err());
+    assert!(check_ip(ip, NetworkPolicy::PublicOnly).is_err());
+    // The rest of the carrier-grade NAT range is only private.
+    let neighbour: IpAddr = "100.100.100.201".parse().unwrap();
+    assert!(check_ip(neighbour, NetworkPolicy::AllowPrivate).is_ok());
+  }
 
   fn u(s: &str) -> Url {
     Url::parse(s).unwrap()
