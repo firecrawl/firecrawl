@@ -122,7 +122,7 @@ pub fn check_ip(ip: IpAddr, policy: NetworkPolicy) -> Result<(), Blocked> {
   }
   if policy == NetworkPolicy::PublicOnly && ip_is_private(ip) {
     return Err(Blocked(format!(
-      "{ip} is a private address; private targets are off for this engine"
+      "{ip} is a private address; private targets are off"
     )));
   }
   Ok(())
@@ -161,7 +161,7 @@ pub fn check_url(url: &Url, policy: NetworkPolicy) -> Result<(), Blocked> {
     Some(Host::Domain(name)) => {
       if policy == NetworkPolicy::PublicOnly && hostname_is_local(name) {
         return Err(Blocked(format!(
-          "'{name}' is a local hostname; private targets are off for this engine"
+          "'{name}' is a local hostname; private targets are off"
         )));
       }
       if name.eq_ignore_ascii_case("metadata.google.internal") {

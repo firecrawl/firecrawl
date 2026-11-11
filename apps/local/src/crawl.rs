@@ -532,6 +532,23 @@ fn file_name_for(url: &str, index: usize) -> String {
   format!("{:04}-{slug}.md", index + 1)
 }
 
+/// A value on one line: control characters, tabs and line breaks included,
+/// become spaces, so it cannot break a line-based or tab-separated record.
+fn one_line(value: &str) -> String {
+  value
+    .chars()
+    .map(|c| if c.is_control() { ' ' } else { c })
+    .collect::<String>()
+    .trim()
+    .to_string()
+}
+
+/// A value as a double-quoted YAML scalar. A JSON string is one, and quoting
+/// keeps a title such as "Docs: Setup" from being read as a mapping.
+fn yaml_string(value: &str) -> String {
+  serde_json::to_string(&one_line(value)).unwrap_or_else(|_| "\"\"".to_string())
+}
+
 /// Write one markdown file per page and return an index of "file  url  title".
 pub async fn write_pages(dir: &std::path::Path, pages: &[Value]) -> Result<Vec<String>, String> {
   tokio::fs::create_dir_all(dir)
@@ -550,13 +567,14 @@ pub async fn write_pages(dir: &std::path::Path, pages: &[Value]) -> Result<Vec<S
     let md = page.get("markdown").and_then(Value::as_str).unwrap_or("");
     let name = file_name_for(url, i);
     let body = format!(
-      "---\nurl: {url}\ntitle: {}\n---\n\n{md}\n",
-      title.replace('\n', " ")
+      "---\nurl: {}\ntitle: {}\n---\n\n{md}\n",
+      yaml_string(url),
+      yaml_string(title)
     );
     tokio::fs::write(dir.join(&name), body)
       .await
       .map_err(|e| format!("{name}: {e}"))?;
-    index.push(format!("{name}\t{url}\t{title}"));
+    index.push(format!("{name}\t{}\t{}", one_line(url), one_line(title)));
   }
   Ok(index)
 }
@@ -571,6 +589,32 @@ mod tests {
 
   fn u(s: &str) -> Url {
     Url::parse(s).unwrap()
+  }
+
+  #[tokio::test]
+  async fn a_page_title_cannot_break_the_front_matter_or_the_index() {
+    let dir = std::env::temp_dir().join(format!("fc-local-pages-{}", uuid::Uuid::new_v4()));
+    let pages = vec![serde_json::json!({
+      "markdown": "body",
+      "metadata": {
+        "url": "https://example.com/a",
+        "title": "Docs: Setup\ninjected: yes\tand \"quotes\" # not a comment"
+      }
+    })];
+    let index = write_pages(&dir, &pages).await.unwrap();
+    assert_eq!(index.len(), 1);
+    assert_eq!(index[0].split('\t').count(), 3, "{}", index[0]);
+    assert!(!index[0].contains('\n'));
+    let name = index[0].split('\t').next().unwrap();
+    let written = tokio::fs::read_to_string(dir.join(name)).await.unwrap();
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    let front: Vec<&str> = written.split("---\n").nth(1).unwrap().lines().collect();
+    assert_eq!(front.len(), 2, "{written}");
+    assert_eq!(front[0], "url: \"https://example.com/a\"");
+    assert_eq!(
+      front[1],
+      "title: \"Docs: Setup injected: yes and \\\"quotes\\\" # not a comment\""
+    );
   }
 
   #[test]

@@ -18,7 +18,7 @@ use std::{
 use axum::{
   body::Bytes,
   extract::{Path, Request, State},
-  http::{header, HeaderMap, Method, StatusCode, Uri},
+  http::{header, HeaderMap, Method, StatusCode},
   middleware::{self, Next},
   response::{IntoResponse, Response},
   routing::{delete, get, post},
@@ -35,6 +35,10 @@ use crate::{
 };
 
 const JOB_TTL: Duration = Duration::from_secs(60 * 60);
+
+/// The largest body passed on to Firecrawl cloud. Local routes keep axum's
+/// 2 MB default; uploads to cloud routes such as /v2/parse need more.
+const FORWARD_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 /// A crawl or batch scrape. Jobs live in memory and expire after an hour.
 struct Job {
@@ -108,7 +112,7 @@ async fn gate(State(state): State<Arc<AppState>>, req: Request, next: Next) -> R
     return error_response(
       StatusCode::FORBIDDEN,
       "HOST_NOT_ALLOWED",
-      "This engine only answers requests addressed to this machine. Start it with --allowed-host to accept another name.",
+      "Firecrawl Local only answers requests addressed to this machine. Start it with --allowed-host to accept another name.",
     );
   }
   if let Some(expected) = &state.token {
@@ -146,8 +150,82 @@ fn client_origin(headers: &HeaderMap, body_origin: Option<&str>) -> Option<Strin
     })
 }
 
+fn is_json(headers: &HeaderMap) -> bool {
+  headers
+    .get(header::CONTENT_TYPE)
+    .and_then(|v| v.to_str().ok())
+    .map(|v| v.to_ascii_lowercase().starts_with("application/json"))
+    .unwrap_or(false)
+}
+
+/// Whether a browser sent this request on behalf of a web page. Browsers
+/// put `Origin` on every cross-origin request that can change something and
+/// `Sec-Fetch-Site` on all of them; command-line tools and SDKs send neither.
+fn from_a_web_page(headers: &HeaderMap) -> bool {
+  let value = |name: &str| {
+    headers
+      .get(name)
+      .and_then(|v| v.to_str().ok())
+      .map(|v| v.trim().to_ascii_lowercase())
+      .filter(|v| !v.is_empty())
+  };
+  if let Some(site) = value("sec-fetch-site") {
+    if site != "same-origin" && site != "none" {
+      return true;
+    }
+  }
+  value("origin").is_some()
+}
+
+/// Why a request may not be passed on to Firecrawl cloud, if it may not.
+///
+/// A page open in the user's browser can send "simple" requests (a form
+/// post, an upload, a GET) to a loopback port without asking first, and a
+/// forwarded request spends the user's Firecrawl key. So a forwarded request
+/// must either be `application/json`, which a page cannot send across
+/// origins without a preflight this server never grants, or carry none of
+/// the headers a browser adds.
+fn forward_refusal(
+  state: &AppState,
+  method: &Method,
+  path: &str,
+  headers: &HeaderMap,
+) -> Option<Response> {
+  if cloud::has_dot_segment(path) {
+    return Some(error_response(
+      StatusCode::BAD_REQUEST,
+      "BAD_REQUEST",
+      "The path may not contain '.' or '..' segments.",
+    ));
+  }
+  if !state.cloud.allows(path) {
+    return Some(
+      (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+          "success": false,
+          "code": "CLOUD_ONLY",
+          "error": format!(
+            "{path} runs on Firecrawl cloud, and the cloud is off here. Set FIRECRAWL_API_KEY or FIRECRAWL_CLOUD=auto to pass these requests on."
+          ),
+          "cloud": { "url": "https://www.firecrawl.dev", "docs": "https://docs.firecrawl.dev" }
+        })),
+      )
+        .into_response(),
+    );
+  }
+  if *method == Method::OPTIONS || (!is_json(headers) && from_a_web_page(headers)) {
+    return Some(error_response(
+      StatusCode::FORBIDDEN,
+      "CROSS_SITE_REQUEST",
+      "Firecrawl Local does not pass requests from web pages on to Firecrawl cloud. Call it from a script, an SDK or a command-line tool.",
+    ));
+  }
+  None
+}
+
 /// Pass a request on to Firecrawl cloud and hand its answer back, or say
-/// plainly that the cloud is off for this engine.
+/// plainly why not.
 async fn pass_on(
   state: &AppState,
   method: Method,
@@ -156,19 +234,8 @@ async fn pass_on(
   body: Bytes,
 ) -> Response {
   let path = path_and_query.split('?').next().unwrap_or(path_and_query);
-  if !state.cloud.allows(path) {
-    return (
-      StatusCode::NOT_IMPLEMENTED,
-      Json(json!({
-        "success": false,
-        "code": "CLOUD_ONLY",
-        "error": format!(
-          "{path} runs on Firecrawl cloud, and the cloud is off for this engine. Set FIRECRAWL_API_KEY or FIRECRAWL_CLOUD=auto to pass these requests on."
-        ),
-        "cloud": { "url": "https://www.firecrawl.dev", "docs": "https://docs.firecrawl.dev" }
-      })),
-    )
-      .into_response();
+  if let Some(refusal) = forward_refusal(state, &method, path, headers) {
+    return refusal;
   }
   // With a token set, the caller's bearer is this engine's token and must
   // not travel on. Without one it is the caller's own Firecrawl key.
@@ -219,20 +286,33 @@ async fn pass_on(
 /// Everything this engine does not serve itself. Routes under /v2 go to
 /// Firecrawl cloud: search, data providers, the agent and the rest of the
 /// API. Anything else is not an API route.
-async fn forward_handler(
-  State(state): State<Arc<AppState>>,
-  method: Method,
-  uri: Uri,
-  headers: HeaderMap,
-  body: Bytes,
-) -> Response {
+async fn forward_handler(State(state): State<Arc<AppState>>, req: Request) -> Response {
+  let (parts, body) = req.into_parts();
+  let (method, uri, headers) = (parts.method, parts.uri, parts.headers);
   if !uri.path().starts_with("/v2/") {
     return error_response(
       StatusCode::NOT_FOUND,
       "NOT_FOUND",
-      "This engine serves the Firecrawl v2 API. Use /v2/scrape, /v2/map, /v2/crawl or /v2/batch/scrape.",
+      "Firecrawl Local serves the Firecrawl v2 API. Use /v2/scrape, /v2/map, /v2/crawl or /v2/batch/scrape.",
     );
   }
+  // Decide before reading the body, so a refused upload is not buffered.
+  if let Some(refusal) = forward_refusal(&state, &method, uri.path(), &headers) {
+    return refusal;
+  }
+  let body = match axum::body::to_bytes(body, FORWARD_BODY_LIMIT).await {
+    Ok(body) => body,
+    Err(_) => {
+      return error_response(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "PAYLOAD_TOO_LARGE",
+        format!(
+          "The request body could not be read, or is larger than the {} MB Firecrawl Local passes on to Firecrawl cloud.",
+          FORWARD_BODY_LIMIT / (1024 * 1024)
+        ),
+      )
+    }
+  };
   let path_and_query = uri
     .path_and_query()
     .map(|pq| pq.as_str())
@@ -248,12 +328,7 @@ fn scrape_error(e: ScrapeError) -> Response {
 /// Parse a JSON body. Anything that is not `application/json` is refused, so
 /// a web page cannot post here without a preflight.
 fn json_body(headers: &HeaderMap, body: &Bytes) -> Result<Value, Response> {
-  let is_json = headers
-    .get(header::CONTENT_TYPE)
-    .and_then(|v| v.to_str().ok())
-    .map(|v| v.to_ascii_lowercase().starts_with("application/json"))
-    .unwrap_or(false);
-  if !is_json {
+  if !is_json(headers) {
     return Err(error_response(
       StatusCode::UNSUPPORTED_MEDIA_TYPE,
       "BAD_REQUEST",
@@ -613,7 +688,7 @@ async fn shutdown_signal() {
 pub async fn serve(engine: Arc<Engine>, cfg: ServeConfig) -> Result<(), String> {
   if !cfg.addr.ip().is_loopback() && cfg.token.is_none() {
     return Err(format!(
-      "Refusing to listen on {} without a token. Anyone who can reach that address could use this engine. \
+      "Refusing to listen on {} without a token. Anyone who can reach that address could use it. \
        Pass --token <secret> (or FIRECRAWL_LOCAL_TOKEN), or bind to 127.0.0.1.",
       cfg.addr
     ));
@@ -678,6 +753,168 @@ mod tests {
     assert!(!host_allowed("evil.example:3002", &[]));
     assert!(!host_allowed("", &[]));
     assert!(host_allowed("engine:3002", &["engine".to_string()]));
+  }
+
+  fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+    let mut map = HeaderMap::new();
+    for (name, value) in pairs {
+      map.insert(
+        axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+        value.parse().unwrap(),
+      );
+    }
+    map
+  }
+
+  #[test]
+  fn browser_requests_are_told_apart_from_tools() {
+    assert!(!from_a_web_page(&headers(&[])));
+    assert!(!from_a_web_page(&headers(&[("user-agent", "curl/8")])));
+    assert!(from_a_web_page(&headers(&[(
+      "origin",
+      "https://evil.example"
+    )])));
+    assert!(from_a_web_page(&headers(&[("origin", "null")])));
+    assert!(from_a_web_page(&headers(&[(
+      "sec-fetch-site",
+      "cross-site"
+    )])));
+    assert!(from_a_web_page(&headers(&[(
+      "sec-fetch-site",
+      "same-site"
+    )])));
+    assert!(!from_a_web_page(&headers(&[("sec-fetch-site", "none")])));
+  }
+
+  /// Start the server against a stand-in cloud and return its address.
+  async fn start(mode: cloud::CloudMode) -> String {
+    let engine = Arc::new(
+      Engine::new(crate::scrape::EngineConfig {
+        policy: crate::guard::NetworkPolicy::PublicOnly,
+        user_agent: None,
+        browser: crate::scrape::BrowserMode::Never,
+      })
+      .unwrap(),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let cfg = ServeConfig {
+      addr,
+      token: None,
+      allowed_hosts: Vec::new(),
+      cloud: Cloud::new(cloud::echo_cloud().await, Some("fc-own".into()), mode)
+        .with_install_id("test-install"),
+    };
+    tokio::spawn(serve_on(listener, engine, cfg, std::future::pending()));
+    format!("http://{addr}")
+  }
+
+  #[tokio::test]
+  async fn a_web_page_cannot_spend_the_key_through_a_forwarded_route() {
+    let base = start(cloud::CloudMode::Fallback).await;
+    let http = reqwest::Client::new();
+
+    // A form post or an upload from a page: no preflight, so it must be refused here.
+    for content_type in [
+      "text/plain",
+      "multipart/form-data; boundary=x",
+      "application/x-www-form-urlencoded",
+    ] {
+      let answer = http
+        .post(format!("{base}/v2/search"))
+        .header("origin", "https://evil.example")
+        .header("content-type", content_type)
+        .body("{\"query\":\"q\"}")
+        .send()
+        .await
+        .unwrap();
+      assert_eq!(answer.status().as_u16(), 403, "{content_type}");
+    }
+    let image_tag = http
+      .get(format!("{base}/v2/team/credit-usage"))
+      .header("sec-fetch-site", "cross-site")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(image_tag.status().as_u16(), 403);
+    let preflight = http
+      .request(reqwest::Method::OPTIONS, format!("{base}/v2/search"))
+      .header("origin", "https://evil.example")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(preflight.status().as_u16(), 403);
+
+    // The same upload from a tool goes through, and so does JSON.
+    let upload = http
+      .post(format!("{base}/v2/parse"))
+      .header("content-type", "multipart/form-data; boundary=x")
+      .body("--x--")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(upload.status().as_u16(), 207);
+    let json = http
+      .post(format!("{base}/v2/search"))
+      .header("content-type", "application/json")
+      .body("{\"query\":\"q\"}")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(json.status().as_u16(), 207);
+    assert!(json.text().await.unwrap().contains("Bearer fc-own"));
+  }
+
+  #[tokio::test]
+  async fn search_only_mode_cannot_be_walked_out_of() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let base = start(cloud::CloudMode::SearchOnly).await;
+    // Sent raw: an HTTP client would tidy the path before it left.
+    for path in ["/v2/search/../agent", "/v2/search/%2e%2e/agent"] {
+      let mut socket = tokio::net::TcpStream::connect(base.trim_start_matches("http://"))
+        .await
+        .unwrap();
+      let request = format!(
+        "POST {path} HTTP/1.1\r\nhost: {}\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}",
+        base.trim_start_matches("http://")
+      );
+      socket.write_all(request.as_bytes()).await.unwrap();
+      let mut answer = String::new();
+      socket.read_to_string(&mut answer).await.unwrap();
+      assert!(answer.starts_with("HTTP/1.1 400"), "{path}: {answer}");
+    }
+    let http = reqwest::Client::new();
+    let agent = http
+      .post(format!("{base}/v2/agent"))
+      .header("content-type", "application/json")
+      .body("{}")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(agent.status().as_u16(), 501);
+    let search = http
+      .post(format!("{base}/v2/search"))
+      .header("content-type", "application/json")
+      .body("{}")
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(search.status().as_u16(), 207);
+  }
+
+  #[tokio::test]
+  async fn a_forwarded_upload_may_be_larger_than_two_megabytes() {
+    let base = start(cloud::CloudMode::Fallback).await;
+    let answer = reqwest::Client::new()
+      .post(format!("{base}/v2/parse"))
+      .header("content-type", "application/octet-stream")
+      .body(vec![b'a'; 3 * 1024 * 1024])
+      .send()
+      .await
+      .unwrap();
+    assert_eq!(answer.status().as_u16(), 207);
   }
 
   #[test]

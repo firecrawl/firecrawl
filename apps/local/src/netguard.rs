@@ -109,8 +109,9 @@ async fn allowed_targets(
     Target::Name(name) => {
       // Names the guard treats as local ("localhost", "*.internal") are
       // refused before any lookup, the same as for a URL.
-      let as_url = Url::parse(&format!("http://{name}:{port}/"))
-        .map_err(|_| Refused::policy(format!("'{name}' is not a host this engine may reach")))?;
+      let as_url = Url::parse(&format!("http://{name}:{port}/")).map_err(|_| {
+        Refused::policy(format!("'{name}' is not a host Firecrawl Local may reach"))
+      })?;
       guard::check_url(&as_url, policy).map_err(|e| Refused::policy(e.0))?;
       let resolved: Vec<SocketAddr> = tokio::net::lookup_host((name.as_str(), port))
         .await
@@ -146,7 +147,7 @@ fn name_refusal(name: &str, resolved_any: bool, never_reachable: bool) -> String
   } else if never_reachable {
     format!("'{name}' resolves to a link-local or metadata address, which is never reachable")
   } else {
-    format!("'{name}' resolves to a private address; private targets are off for this engine")
+    format!("'{name}' resolves to a private address; private targets are off")
   }
 }
 

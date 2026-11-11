@@ -24,13 +24,43 @@ pub enum CloudMode {
 
 impl CloudMode {
   pub fn parse(s: &str) -> Option<CloudMode> {
-    match s.to_ascii_lowercase().as_str() {
-      "off" | "false" | "0" | "none" => Some(CloudMode::Off),
+    match s.trim().to_ascii_lowercase().as_str() {
+      "off" | "false" | "0" | "none" | "no" | "disabled" | "disable" => Some(CloudMode::Off),
       "search" | "search-only" => Some(CloudMode::SearchOnly),
-      "on" | "auto" | "fallback" | "true" | "1" => Some(CloudMode::Fallback),
+      "on" | "auto" | "fallback" | "true" | "1" | "yes" | "enabled" | "enable" => {
+        Some(CloudMode::Fallback)
+      }
       _ => None,
     }
   }
+
+  /// The mode a `FIRECRAWL_CLOUD` value asks for. Unset or empty asks for
+  /// nothing. A value that is not understood asks for off: someone who set
+  /// it was restricting the cloud, and a typo must not open it up.
+  pub fn requested(raw: Option<&str>) -> Option<CloudMode> {
+    let raw = raw.map(str::trim).filter(|r| !r.is_empty())?;
+    Some(CloudMode::parse(raw).unwrap_or(CloudMode::Off))
+  }
+}
+
+/// Whether a path has a `.` or `..` segment, plain or percent-encoded. The
+/// HTTP client resolves those before sending, so `/v2/search/../agent` would
+/// arrive as `/v2/agent`. Such paths are never passed on.
+pub fn has_dot_segment(path: &str) -> bool {
+  path.split(['/', '\\']).any(|segment| {
+    let segment = segment.to_ascii_lowercase().replace("%2e", ".");
+    segment == "." || segment == ".."
+  })
+}
+
+/// Say once that `FIRECRAWL_CLOUD` holds a value this build does not know.
+fn warn_unknown_mode(raw: &str) {
+  static ONCE: std::sync::Once = std::sync::Once::new();
+  ONCE.call_once(|| {
+    eprintln!(
+      "FIRECRAWL_CLOUD={raw} is not a setting Firecrawl Local knows (off, search or auto). The cloud stays off."
+    );
+  });
 }
 
 #[derive(Clone)]
@@ -200,10 +230,13 @@ impl Cloud {
       .filter(|u| !u.trim().is_empty())
       .or(saved_url)
       .unwrap_or_else(|| DEFAULT_API_URL.to_string());
-    let mode = std::env::var("FIRECRAWL_CLOUD")
-      .ok()
-      .and_then(|m| CloudMode::parse(&m))
-      .unwrap_or(CloudMode::Fallback);
+    let setting = std::env::var("FIRECRAWL_CLOUD").ok();
+    if let Some(raw) = setting.as_deref().map(str::trim) {
+      if !raw.is_empty() && CloudMode::parse(raw).is_none() {
+        warn_unknown_mode(raw);
+      }
+    }
+    let mode = CloudMode::requested(setting.as_deref()).unwrap_or(CloudMode::Fallback);
     Self::new(base, api_key, mode)
   }
 
@@ -212,10 +245,19 @@ impl Cloud {
   /// calling the API did not install this engine themselves.
   pub fn from_env_opt_in() -> Self {
     let mut cloud = Self::from_env().with_surface(Surface::Serve, None);
-    if std::env::var("FIRECRAWL_CLOUD").is_err() && !cloud.has_key() {
+    let setting = std::env::var("FIRECRAWL_CLOUD").ok();
+    if CloudMode::requested(setting.as_deref()).is_none() && !cloud.has_key() {
       cloud.mode = CloudMode::Off;
     }
     cloud
+  }
+
+  /// Give the cloud a fixed install ID, so a test never writes one to the
+  /// developer's config folder.
+  #[cfg(test)]
+  pub(crate) fn with_install_id(mut self, id: &str) -> Self {
+    self.install_id = Some(id.to_string());
+    self
   }
 
   /// Use a key obtained mid-session (after a one-step sign-in).
@@ -283,6 +325,9 @@ impl Cloud {
 
   /// Whether a request for `path` may be passed on to Firecrawl cloud.
   pub fn allows(&self, path: &str) -> bool {
+    if has_dot_segment(path) {
+      return false;
+    }
     match self.mode {
       CloudMode::Off => false,
       CloudMode::SearchOnly => path == "/v2/search" || path.starts_with("/v2/search/"),
@@ -302,6 +347,13 @@ impl Cloud {
     client_auth: Option<&str>,
     client_origin: Option<&str>,
   ) -> Result<Forwarded, CloudError> {
+    let path = path_and_query.split('?').next().unwrap_or(path_and_query);
+    if !self.allows(path) {
+      return Err(CloudError {
+        status: 400,
+        message: format!("{path} is not a path Firecrawl Local passes on to Firecrawl cloud."),
+      });
+    }
     let origin = match client_origin {
       Some(o) => self.clone().with_origin(o).origin,
       None => self.origin.clone(),
@@ -582,6 +634,61 @@ pub fn looks_like_bot_check(markdown: &str) -> bool {
   .any(|needle| lower.contains(needle))
 }
 
+/// A stand-in for Firecrawl cloud that returns what it was sent.
+#[cfg(test)]
+pub(crate) async fn echo_cloud() -> String {
+  use tokio::io::{AsyncReadExt, AsyncWriteExt};
+  let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+    .await
+    .unwrap();
+  let base = format!("http://{}", listener.local_addr().unwrap());
+  tokio::spawn(async move {
+    while let Ok((mut socket, _)) = listener.accept().await {
+      tokio::spawn(async move {
+        // Read the whole request, keeping only its first 8 KB to echo.
+        let mut seen: Vec<u8> = Vec::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut wanted: Option<usize> = None;
+        let mut total = 0usize;
+        loop {
+          let n = socket.read(&mut buf).await.unwrap_or(0);
+          if n == 0 {
+            break;
+          }
+          total += n;
+          if seen.len() < 8192 {
+            let room = 8192 - seen.len();
+            seen.extend_from_slice(&buf[..n.min(room)]);
+          }
+          if wanted.is_none() {
+            let text = String::from_utf8_lossy(&seen).to_lowercase();
+            if let Some(head_end) = text.find("\r\n\r\n") {
+              let length = text[..head_end]
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+              wanted = Some(head_end + 4 + length);
+            }
+          }
+          if wanted.is_some_and(|w| total >= w) {
+            break;
+          }
+        }
+        let request = String::from_utf8_lossy(&seen).to_string();
+        let body = serde_json::json!({ "request": request }).to_string();
+        let answer = format!(
+          "HTTP/1.1 207 Multi-Status\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+          body.len(),
+          body
+        );
+        let _ = socket.write_all(answer.as_bytes()).await;
+      });
+    }
+  });
+  base
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -626,36 +733,11 @@ mod tests {
     assert!(origin_for(Surface::Mcp, Some("cursor/1.0 (x)")).starts_with("mcp-cursor-1-0-x@"));
   }
 
-  /// A one-request HTTP server that returns what it was sent.
-  async fn echo_cloud() -> String {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-      .await
-      .unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move {
-      while let Ok((mut socket, _)) = listener.accept().await {
-        tokio::spawn(async move {
-          let mut buf = vec![0u8; 8192];
-          let n = socket.read(&mut buf).await.unwrap_or(0);
-          let request = String::from_utf8_lossy(&buf[..n]).to_string();
-          let body = serde_json::json!({ "request": request }).to_string();
-          let answer = format!(
-            "HTTP/1.1 207 Multi-Status\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-          );
-          let _ = socket.write_all(answer.as_bytes()).await;
-        });
-      }
-    });
-    base
-  }
-
   #[tokio::test]
   async fn forward_passes_the_request_and_the_answer_through() {
     let base = echo_cloud().await;
-    let keyless = Cloud::new(base.clone(), None, CloudMode::Fallback);
+    let keyless =
+      Cloud::new(base.clone(), None, CloudMode::Fallback).with_install_id("test-install");
     let answer = keyless
       .forward(
         reqwest::Method::POST,
@@ -691,7 +773,8 @@ mod tests {
       .await
       .unwrap();
     assert!(String::from_utf8_lossy(&with_client_key.body).contains("Bearer fc-client"));
-    let own = Cloud::new(base, Some("fc-engine".into()), CloudMode::Fallback);
+    let own = Cloud::new(base, Some("fc-engine".into()), CloudMode::Fallback)
+      .with_install_id("test-install");
     let with_own_key = own
       .forward(
         reqwest::Method::GET,
@@ -722,6 +805,42 @@ mod tests {
   }
 
   #[test]
+  fn dot_segments_are_never_passed_on() {
+    let cloud = |mode| Cloud::new("https://api.example.test".into(), None, mode);
+    for path in [
+      "/v2/search/../agent",
+      "/v2/search/%2e%2e/agent",
+      "/v2/search/%2E./agent",
+      "/v2/search/./x",
+      "/v2/search\\..\\agent",
+      "/v2/search/..",
+    ] {
+      assert!(has_dot_segment(path), "{path}");
+      assert!(!cloud(CloudMode::SearchOnly).allows(path), "{path}");
+      assert!(!cloud(CloudMode::Fallback).allows(path), "{path}");
+    }
+    assert!(!has_dot_segment("/v2/search/v1.2/..hidden"));
+    assert!(!has_dot_segment("/v2/search/a.b"));
+  }
+
+  #[tokio::test]
+  async fn forward_refuses_a_path_it_would_not_send_as_written() {
+    let cloud =
+      Cloud::new(echo_cloud().await, None, CloudMode::SearchOnly).with_install_id("test-install");
+    let refused = cloud
+      .forward(
+        reqwest::Method::POST,
+        "/v2/search/../agent?x=1",
+        Some("application/json"),
+        bytes::Bytes::from_static(b"{}"),
+        None,
+        None,
+      )
+      .await;
+    assert_eq!(refused.err().map(|e| e.status), Some(400));
+  }
+
+  #[test]
   fn a_client_origin_replaces_the_engine_origin() {
     let cloud = Cloud::new("https://api.example.test".into(), None, CloudMode::Fallback);
     assert_eq!(
@@ -738,6 +857,25 @@ mod tests {
     assert_eq!(CloudMode::parse("search"), Some(CloudMode::SearchOnly));
     assert_eq!(CloudMode::parse("auto"), Some(CloudMode::Fallback));
     assert_eq!(CloudMode::parse("nonsense"), None);
+    assert_eq!(CloudMode::parse(" Disabled "), Some(CloudMode::Off));
+    assert_eq!(CloudMode::parse("no"), Some(CloudMode::Off));
+    assert_eq!(CloudMode::parse("yes"), Some(CloudMode::Fallback));
+  }
+
+  #[test]
+  fn a_setting_that_is_not_understood_turns_the_cloud_off() {
+    assert_eq!(CloudMode::requested(None), None);
+    assert_eq!(CloudMode::requested(Some("  ")), None);
+    assert_eq!(
+      CloudMode::requested(Some("search")),
+      Some(CloudMode::SearchOnly)
+    );
+    assert_eq!(
+      CloudMode::requested(Some("auto")),
+      Some(CloudMode::Fallback)
+    );
+    assert_eq!(CloudMode::requested(Some("offf")), Some(CloudMode::Off));
+    assert_eq!(CloudMode::requested(Some("nope")), Some(CloudMode::Off));
   }
 
   #[test]

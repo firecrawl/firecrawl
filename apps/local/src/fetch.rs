@@ -139,7 +139,7 @@ impl Resolve for GuardedResolver {
         .collect();
       if allowed.is_empty() {
         let err: Box<dyn std::error::Error + Send + Sync> = Box::new(Blocked(format!(
-          "{host} does not resolve to an address this engine may reach"
+          "{host} does not resolve to an address Firecrawl Local may reach"
         )));
         return Err(err);
       }

@@ -181,7 +181,7 @@ enum Command {
 async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
   let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
     .await
-    .map_err(|e| format!("could not open a local port for the engine: {e}"))?;
+    .map_err(|e| format!("could not open a local port for Firecrawl Local: {e}"))?;
   let addr = listener
     .local_addr()
     .map_err(|e| format!("could not read the local port: {e}"))?;
