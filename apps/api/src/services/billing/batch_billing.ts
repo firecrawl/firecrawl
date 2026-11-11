@@ -1,6 +1,5 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
   featureIdForBillingEndpoint,
@@ -99,9 +98,9 @@ interface BillingOperation {
   timestamp: string;
   api_key_id: number | null;
   autumnTrackInRequest: boolean;
-  // Exchange access backing this operation, if any: its ledger event is
-  // confirmed once the debit commits. Failed or ambiguous commits leave
-  // the event pending for reconciliation rather than voiding it.
+  // Exchange access backing this operation, if any. Confirmed once the
+  // group finalizes. A finalization that throws leaves the event pending
+  // for reconciliation rather than voiding it.
   exchange_access_event_id?: string;
   billing_reference?: string;
 }
@@ -204,10 +203,8 @@ async function refundRequestTrackedCredits(
 
 /**
  * Dequeues pending billing operations from Redis and finalizes each group.
- * The Autumn charge already happened at request time. This used to record the
- * group by calling `bill_team_7`, whose only write is an insert into
- * `credit_usage`; that call is skipped. A failed finalization still refunds
- * the request-time charge, and a committed group still confirms its Exchange
+ * The Autumn charge already happened at request time. A finalization that
+ * throws refunds that charge, and a finalized group confirms its Exchange
  * accesses.
  */
 export async function processBillingBatch() {
@@ -218,8 +215,8 @@ export async function processBillingBatch() {
     return;
   }
 
-  // Exchange operations whose debit committed this run; their ledger
-  // confirmations are delivered after the lock is released.
+  // Exchange operations finalized this run; their confirmations are
+  // delivered after the lock is released.
   const committedExchangeOps: BillingOperation[] = [];
 
   try {
@@ -348,44 +345,13 @@ export async function processBillingBatch() {
       }
 
       try {
-        // Finalize the group. Charging already happened; this no longer
-        // writes a credit_usage row.
-        const billingResult = await withAuth(supaBillTeam, {
-          success: true,
-          message: "No DB, bypassed.",
-        })(
-          group.team_id,
-          group.total_credits,
-          group.api_key_id,
-          logger,
-          group.is_extract,
-        );
-
-        if (!billingResult.success) {
-          await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
-          // Deliberately no Exchange outcome here: supaBillTeam maps thrown
-          // errors to success: false, and a transport error can occur after
-          // the debit committed, so voiding could erase a real debit. The
-          // events stay pending on the Exchange, which flags unresolved
-          // events for reconciliation.
-          logger.warn(
-            `⚠️ Billing returned success: false for team ${group.team_id}`,
-            {
-              billingResult,
-              team_id: group.team_id,
-              credits: group.total_credits,
-            },
-          );
-          continue;
-        }
-
         logger.info(
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
         // Usage is tracked to Autumn at request time, not here.
 
-        // The debit is committed: confirm the Exchange accesses it covered
+        // The group is finalized: confirm the Exchange accesses it covered
         // once the batch lock is released.
         committedExchangeOps.push(
           ...group.operations.filter(
@@ -394,8 +360,7 @@ export async function processBillingBatch() {
         );
       } catch (error) {
         await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
-        // No Exchange outcome here either — same ambiguity as the
-        // success: false branch above; the events stay pending.
+        // No Exchange outcome: the events stay pending for reconciliation.
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
           error,
           group,
@@ -438,8 +403,6 @@ export function startBillingBatchProcessing() {
 
 /**
  * Enqueues a billing operation for async batch processing.
- *
- * Internal billing operations are batched and committed to Supabase.
  */
 export async function queueBillingOperation(
   team_id: string,
@@ -515,35 +478,6 @@ export async function queueBillingOperation(
     logger.error("Error queueing billing operation", { error, team_id });
     return { success: false, error };
   }
-}
-
-// Modified version of the billing function for batch operations
-async function supaBillTeam(
-  team_id: string,
-  credits: number,
-  _api_key_id: number | null,
-  __logger?: any,
-  _is_extract: boolean = false,
-) {
-  const _logger = (__logger ?? logger).child({
-    module: "credit_billing",
-    method: "supaBillTeam",
-    teamId: team_id,
-    credits,
-  });
-
-  if (team_id === "preview" || team_id.startsWith("preview_")) {
-    return { success: true, message: "Preview team, no credits used" };
-  }
-
-  _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
-
-  // `bill_team_7` inserted one `credit_usage` row and returned the team's API
-  // keys, which this batch does not read. It does not deduct credits. The
-  // charge is the request-time Autumn track, so the group is finalized
-  // without that insert. Success leaves the charge in place and lets the
-  // caller confirm Exchange accesses.
-  return { success: true };
 }
 
 // Cleanup on exit
