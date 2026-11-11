@@ -2,6 +2,20 @@ import { errors } from "./helpers";
 import { collectCSSData } from "./css-data";
 import { sampleElements, getStyleSnapshot } from "./elements";
 import { findImages } from "./images";
+import { readCrossOriginLogoColors } from "./logo-colors";
+
+// Cross-origin logo images are read again with CORS after the scan; waits
+// at most this long, only on pages that have them.
+const CROSS_ORIGIN_LOGO_WAIT_MS = 1000;
+
+/** The scan's result, or a promise of it when logo images are still loading. */
+export const extractBrandDesignWithLogoColors = ():
+  | BrandingResult
+  | Promise<BrandingResult> => {
+  const result = extractBrandDesign();
+  const pending = readCrossOriginLogoColors(CROSS_ORIGIN_LOGO_WAIT_MS);
+  return pending ? pending.then(() => result) : result;
+};
 import {
   getTypography,
   detectFrameworkHints,

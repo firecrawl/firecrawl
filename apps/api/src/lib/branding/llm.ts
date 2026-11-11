@@ -6,7 +6,6 @@ import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { enhanceBrandingWithJev, isJevBrandingEnabled } from "./jev";
 import { brandingRoutedTotal } from "./metrics";
-import { shadowJev, shouldShadowJev } from "./jev-shadow";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
@@ -109,30 +108,19 @@ export async function enhanceBrandingWithLLM(
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
 
-  const triedJev = isJevBrandingEnabled(input);
-  if (!triedJev) {
-    brandingRoutedTotal.inc({ model: "llm", reason: "not_in_rollout" });
-  } else {
-    const jev = await enhanceBrandingWithJev(input);
-    const escalateBelow = config.BRANDING_JEV_ESCALATE_BELOW;
-    const unsureOfLogo =
-      escalateBelow !== undefined &&
-      jev?.logoConfidence !== undefined &&
-      jev.logoConfidence < escalateBelow;
-    if (jev && !unsureOfLogo) {
-      brandingRoutedTotal.inc({ model: "jev", reason: "rollout" });
-      return jev.enhancement;
-    }
+  if (!isJevBrandingEnabled()) {
     brandingRoutedTotal.inc({
       model: "llm",
-      reason: jev ? "logo_escalation" : "jev_unavailable",
+      // No key (self-hosted without TypeSafe) is not the switch turned off.
+      reason: config.TYPESAFE_API_KEY ? "jev_off" : "jev_no_key",
     });
+  } else {
+    const jev = await enhanceBrandingWithJev(input);
     if (jev) {
-      logger.info("Jev unsure of the logo, escalating branding to the LLM", {
-        logoConfidence: jev.logoConfidence,
-        escalateBelow,
-      });
+      brandingRoutedTotal.inc({ model: "jev", reason: "jev" });
+      return jev.enhancement;
     }
+    brandingRoutedTotal.inc({ model: "llm", reason: "jev_unavailable" });
   }
 
   const prompt = buildBrandingPrompt(input);
@@ -155,7 +143,10 @@ export async function enhanceBrandingWithLLM(
     promptLength > 8000;
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
-  const model = getModel(modelName);
+  const model = getModel(modelName, undefined, {
+    teamFlags: input.teamFlags,
+    feature: "Branding format",
+  });
   // getModel honors a MODEL_NAME override; record the model that actually ran.
   const modelId =
     (typeof model === "string" ? model : model.modelId) || modelName;
@@ -300,10 +291,6 @@ export async function enhanceBrandingWithLLM(
     if (!hasLogoCandidates && answer?.logoSelection != null) {
       const { logoSelection: _, ...rest } = answer;
       answer = rest as BrandingEnhancement;
-    }
-    // Requests that already went to Jev have nothing to compare against.
-    if (!triedJev && answer && shouldShadowJev(input)) {
-      void shadowJev(input, answer, modelId);
     }
     return answer;
   } catch (error) {

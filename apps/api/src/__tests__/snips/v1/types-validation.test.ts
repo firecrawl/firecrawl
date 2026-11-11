@@ -191,6 +191,48 @@ describe("V1 Types Validation", () => {
       expect(result.timeout).toBe(60000); // Should be transformed from 30000
     });
 
+    it("should accept a jsonOptions schema that uses standard string formats", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: ["json"],
+        jsonOptions: {
+          schema: {
+            type: "object",
+            properties: {
+              emails: {
+                type: "array",
+                items: { type: "string", format: "email" },
+              },
+              homepage: { type: "string", format: "uri" },
+            },
+            required: ["emails"],
+          },
+        },
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.jsonOptions).toBeDefined();
+    });
+
+    it("should reject a jsonOptions schema with an unknown format", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: ["json"],
+        jsonOptions: {
+          schema: {
+            type: "object",
+            properties: {
+              email: { type: "string", format: "not-a-real-format" },
+            },
+          },
+        },
+      };
+
+      expect(() => scrapeRequestSchema.parse(input)).toThrow(
+        "Invalid JSON schema",
+      );
+    });
+
     it("should reject extract options without extract format", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

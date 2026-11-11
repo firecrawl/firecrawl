@@ -17,14 +17,21 @@ import {
 import request from "supertest";
 import {
   TEST_API_URL,
+  describeIf,
   scrapeTimeout,
   indexCooldown,
   Identity,
   idmux,
 } from "../lib";
+import { sunsetOf } from "../../../lib/deprecations";
 
 // Re-export shared utilities for backwards compatibility
 export { scrapeTimeout, indexCooldown, Identity, idmux };
+
+// From the v1 sunset every v1 route answers 410, so suites that expect its
+// old behavior stop running.
+export const V1_LIVE = Date.now() < sunsetOf("v1_scrape");
+export const describeV1 = (cond = true) => describeIf(V1_LIVE && cond);
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 

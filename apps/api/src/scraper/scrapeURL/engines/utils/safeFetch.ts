@@ -6,6 +6,31 @@ import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
 import IPAddr from "ipaddr.js";
+
+// Node's certificate verification errors, which rejectUnauthorized: false
+// suppresses. CRL and OpenSSL hostname codes are omitted: Node never checks those.
+export const TLS_CERT_ERROR_CODES = new Set([
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "CERT_SIGNATURE_FAILURE",
+  "CERT_NOT_YET_VALID",
+  "CERT_HAS_EXPIRED",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "CERT_CHAIN_TOO_LONG",
+  "INVALID_CA",
+  "PATH_LENGTH_EXCEEDED",
+  "INVALID_PURPOSE",
+  "CERT_UNTRUSTED",
+  "CERT_REJECTED",
+  "UNSPECIFIED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
 export class InsecureConnectionError extends Error {
   constructor() {
     super("Connection violated security rules.");

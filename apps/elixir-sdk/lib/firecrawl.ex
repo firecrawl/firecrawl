@@ -257,13 +257,18 @@ defmodule Firecrawl do
     from: [type: :string],
     k: [type: :integer],
     query: [type: :string, required: true],
+    sort: [type: {:in, [:relevance, :date_desc, "relevance", "date_desc"]}],
     to: [type: :string]
   ])
 
-  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", sort: "sort", to: "to"}
 
   @doc """
   Search research papers.
+
+  `sort` accepts `relevance` (default) or `date_desc`, which returns the newest
+  of the most relevant matches, newest first by created date. It does not list
+  every paper in a date range; add `from` (and `to`) for that.
 
   `GET /search/research/papers`
   """
@@ -377,7 +382,11 @@ defmodule Firecrawl do
   Search GitHub research content.
 
   `GET /search/research/github`
+
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer/2` instead.
   """
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer/2 instead."
   @spec search_github(keyword(), keyword()) :: response()
   def search_github(params \\ [], opts \\ []) do
     with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
@@ -387,11 +396,103 @@ defmodule Firecrawl do
 
   @doc """
   Bang variant of `search_github`. Raises on error.
+
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer!/2` instead.
   """
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer!/2 instead."
   @spec search_github!(keyword(), keyword()) :: Req.Response.t()
   def search_github!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @research_search_github_schema)
     Req.get!(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
+  end
+
+  @search_developer_schema NimbleOptions.new!([
+    query: [type: :string, required: true, doc: "Natural-language question or search phrase. Must not be blank."],
+    k: [type: :integer, doc: "Total ranked results, 1 to 100 (default 10)."],
+    passages: [type: :integer, doc: "Passages per result, 1 to 5 (default 1)."],
+    types: [type: {:list, :string}, doc: "Result kinds: `doc`, `issue`, `pull_request`, `readme` (default all)."],
+    repos: [type: {:list, :string}, doc: "GitHub `owner/name` filters, at most 20."],
+    sources: [type: {:list, :string}, doc: "Developer documentation source ids, at most 20."],
+    language: [type: :string, doc: "One case-insensitive GitHub Linguist primary language."],
+    topic: [type: {:or, [:string, {:list, :string}]}, doc: "Repository topic, or topics that must all match."],
+    license: [type: :string, doc: "One case-insensitive SPDX repository license identifier."],
+    min_stars: [type: :integer, doc: "Lower bound on repository stars."],
+    max_stars: [type: :integer, doc: "Upper bound on repository stars."],
+    archived: [type: :boolean, doc: "Include or exclude archived repositories."],
+    fork: [type: :boolean, doc: "Include or exclude forks."],
+    skills: [type: {:or, [{:in, [:only]}, :string]}, doc: "Set to `only` to return packaged agent-skill evidence only."]
+  ])
+
+  @search_developer_key_mapping %{query: "query", k: "k", passages: "passages", types: "types", repos: "repos", sources: "sources", language: "language", topic: "topic", license: "license", min_stars: "min_stars", max_stars: "max_stars", archived: "archived", fork: "fork", skills: "skills"}
+
+  @doc """
+  Search the developer index: public repositories, GitHub issues, merged pull
+  requests, READMEs and code documentation. Replaces `search_github/2`, whose
+  endpoint was removed after 2026-11-03.
+
+  `POST /search/developer`
+
+  Tag: Developer
+
+  ## Parameters
+
+  Validated by `NimbleOptions`. A blank `query` is rejected before any request is sent.
+
+  #{NimbleOptions.docs(@search_developer_schema)}
+
+  ## Returns
+
+    * `{:ok, %Firecrawl.DeveloperSearch{}}` on success
+    * `{:error, exception}` on a blank query, validation failure, HTTP failure or an unexpected response shape
+
+  ## Example
+
+      {:ok, %Firecrawl.DeveloperSearch{results: results}} =
+        Firecrawl.search_developer(query: "retry an http request", repos: ["square/okhttp"], k: 5)
+  """
+  @spec search_developer(keyword(), keyword()) ::
+          {:ok, Firecrawl.DeveloperSearch.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
+  def search_developer(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @search_developer_schema),
+         :ok <- validate_query(params[:query]),
+         {:ok, response} <-
+           Req.post(client(opts), url: "/search/developer", json: to_body(params, @search_developer_key_mapping)) do
+      decode_developer_search(response)
+    end
+  end
+
+  @doc """
+  Bang variant of `search_developer`. Raises on error.
+  """
+  @spec search_developer!(keyword(), keyword()) :: Firecrawl.DeveloperSearch.t()
+  def search_developer!(params \\ [], opts \\ []) do
+    case search_developer(params, opts) do
+      {:ok, result} -> result
+      {:error, exception} -> raise exception
+    end
+  end
+
+  defp validate_query(query) do
+    if String.trim(query) == "" do
+      {:error, %ArgumentError{message: "query cannot be empty"}}
+    else
+      :ok
+    end
+  end
+
+  defp decode_developer_search(%Req.Response{body: %{"results" => results} = body})
+       when is_list(results) do
+    {:ok, Firecrawl.DeveloperSearch.from_map(body)}
+  rescue
+    exception -> {:error, exception}
+  end
+
+  defp decode_developer_search(%Req.Response{status: status, body: body}) do
+    {:error,
+     RuntimeError.exception(
+       "unexpected POST /search/developer response (HTTP #{status}): #{inspect(body)}"
+     )}
   end
 
   @monitor_key_mapping %{
@@ -928,7 +1029,7 @@ defmodule Firecrawl do
   @create_browser_session_schema NimbleOptions.new!([
     activity_ttl: [type: :integer, doc: "Time in seconds before the session is destroyed due to inactivity"],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking, as in scrape. Sessions started from a scrape with interact use the scrape's blockAds."],
-    location: [type: :keyword_list, keys: [country: [type: :string, required: true]], doc: "Country the session browses from (default US). Sessions started from a scrape with interact use the scrape's location."],
+    location: [type: :keyword_list, keys: [country: [type: :string, required: true]], doc: "Country the session browses from. Defaults to the US. Sessions started from a scrape with interact use the scrape's location."],
     profile: [type: :keyword_list, doc: "Enable persistent storage across interact sessions. Data saved in one session can be loaded in a later session using the same name."],
     stream_web_view: [type: :boolean, doc: "Whether to stream a live view of the browser"],
     ttl: [type: :integer, doc: "Total time-to-live in seconds for the interact session"]
@@ -1581,10 +1682,15 @@ defmodule Firecrawl do
 
   @gov_search_query_schema NimbleOptions.new!([
     query: [type: :string, required: true, doc: "Natural-language question or search phrase."],
-    k: [type: :integer, doc: "Number of results to return."]
+    k: [type: :integer, doc: "Number of results to return."],
+    jurisdiction: [type: :string, doc: "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`."],
+    court: [type: :string, doc: "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."],
+    court_type: [type: {:or, [{:in, [:"federal-supreme", :"federal-appellate", :"federal-district", :"federal-bankruptcy", :"federal-special", :military, :"state-supreme", :"state-appellate", :"state-trial", :"state-special", :"state-attorney-general"]}, :string]}, doc: "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."],
+    cites: [type: :string, doc: "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."],
+    domain: [type: :string, doc: "Keep only pages from one site, such as `irs.gov`."]
   ])
 
-  @gov_search_query_key_mapping %{query: "query", k: "k"}
+  @gov_search_query_key_mapping %{query: "query", k: "k", jurisdiction: "jurisdiction", court: "court", court_type: "courtType", cites: "cites", domain: "domain"}
 
   @doc """
   Search the Government Index
@@ -1597,6 +1703,11 @@ defmodule Firecrawl do
 
     * `query` — query parameter `query`
     * `k` — query parameter `k`
+    * `jurisdiction` — query parameter `jurisdiction`
+    * `court` — query parameter `court`
+    * `court_type` — query parameter `courtType`
+    * `cites` — query parameter `cites`
+    * `domain` — query parameter `domain`
 
   ## Returns
 
@@ -1622,11 +1733,16 @@ defmodule Firecrawl do
 
 
   @gov_search_post_schema NimbleOptions.new!([
+    cites: [type: :string, doc: "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."],
+    court: [type: :string, doc: "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."],
+    court_type: [type: {:or, [{:in, [:"federal-supreme", :"federal-appellate", :"federal-district", :"federal-bankruptcy", :"federal-special", :military, :"state-supreme", :"state-appellate", :"state-trial", :"state-special", :"state-attorney-general"]}, :string]}, doc: "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."],
+    domain: [type: :string, doc: "Keep only pages from one site, such as `irs.gov`."],
+    jurisdiction: [type: :string, doc: "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`."],
     k: [type: :integer, doc: "Number of results to return."],
     query: [type: :string, required: true, doc: "Natural-language question or search phrase."]
   ])
 
-  @gov_search_post_key_mapping %{k: "k", query: "query"}
+  @gov_search_post_key_mapping %{cites: "cites", court: "court", court_type: "courtType", domain: "domain", jurisdiction: "jurisdiction", k: "k", query: "query"}
 
   @doc """
   Search the Government Index
@@ -1961,7 +2077,7 @@ defmodule Firecrawl do
     mobile: [type: :boolean, doc: "Set to true if you want to emulate scraping from a mobile device. Useful for testing responsive pages and taking mobile screenshots."],
     only_clean_content: [type: :boolean, doc: "Beta. Run an additional LLM-based pass over the generated markdown to remove residual boilerplate that `onlyMainContent` can miss (cookie banners, ad blocks, social share widgets, breadcrumbs, newsletter signups, comment sections, related-article lists). Headings, lists, tables, code blocks, image references, and inline links are preserved. Can be combined with `onlyMainContent` (the most common setup) or used on its own. Skipped with a warning when the markdown exceeds the cleaning model's output token limit (the original markdown is preserved). Not supported on zero-data-retention requests."],
     only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc. This is a deterministic HTML-level filter applied before markdown is generated; no LLM is involved."],
-    parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. When \"pdf\" is included (default), the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
+    parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. Each item is a parser name (`\"pdf\"` or `\"image\"`) or a parser object. Both parsers are on by default.\n\n - **pdf**: PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page).\n - **image**: Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd as one-page documents and converted to markdown. SVG and HEIC are not supported.\n\nIf you pass a list, parsers that are not in the list are off. For example, `[\"pdf\"]` turns off image OCR, so image URLs fail as unsupported files. When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
     profile: [type: :keyword_list, doc: "Enable persistent browser storage across scrape and interact sessions. Pass a profile when scraping to preserve cookies, localStorage, and session data. Sessions with the same profile name share browser state."],
     proxy: [type: {:or, [{:in, [:basic, :enhanced, :auto]}, :string]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed."],
     redact_pii: [type: :any, doc: "Redact personally identifiable information from returned markdown. Pass `true` to use defaults, or an object to tune mode, entities, and replacement style."],
@@ -1973,10 +2089,11 @@ defmodule Firecrawl do
     wait_for: [type: :integer, doc: "Specify a delay in milliseconds before fetching the content, allowing the page sufficient time to load. This waiting time is in addition to Firecrawl's smart wait feature."],
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this scrape. To enable this feature, please contact help@firecrawl.dev"],
     alexandria: [type: :any, doc: "Execute one or more catalogued provider tools instead of scraping a URL. Cannot be combined with `url`, `formats`, or other scrape options (400); the only allowed sibling keys are `timeout`, `origin`, and `integration`. Use the `x-request-id` request header as a client-chosen idempotency key (1 to 128 characters of letters, digits, `.`, `_`, `:`, `-`) — it is echoed back, and a completed request with the same key replays its original response and `scrape_id` instead of re-executing. To browse the catalogue and read tool contracts for free, call Find Tools: set `provider` to `firecrawl`, `capability` to `find-tools`, and `options` to a `FindToolsOptions` object. The result `data` is a `FindToolsData` page."],
-    domain_tools: [type: :boolean, doc: "When true on an ordinary URL scrape, `data.tools` lists tool contracts matched to the scraped page's domain (same `DiscoveredTool` shape as search). Requires the team's Alexandria access to be enabled and no zero data retention (403 otherwise). Free."]
+    domain_tools: [type: :boolean, doc: "When true on an ordinary URL scrape, `data.tools` lists tool contracts matched to the scraped page's domain (same `DiscoveredTool` shape as search). Requires the team's Alexandria access to be enabled and no zero data retention (403 otherwise). Free."],
+    tool_detail: [type: {:or, [{:in, [:compact, :summary, :full]}, :string]}, doc: "How much of each tool contract to return in `data.tools` when `domainTools` is true. `compact` returns only `provider`, `capability`, and `description`. `summary` returns the full tool entry without `options` and `response`. `full` also returns `options`, `response`, and `examples`. If you omit it, tools are returned as with `summary`."]
   ])
 
-  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", check_prompt_injection: "checkPromptInjection", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools"}
+  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", check_prompt_injection: "checkPromptInjection", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools", tool_detail: "toolDetail"}
 
   @doc """
   Scrape a single URL and optionally extract information using an LLM
@@ -2033,7 +2150,7 @@ defmodule Firecrawl do
     mobile: [type: :boolean, doc: "Set to true if you want to emulate scraping from a mobile device. Useful for testing responsive pages and taking mobile screenshots."],
     only_clean_content: [type: :boolean, doc: "Beta. Run an additional LLM-based pass over the generated markdown to remove residual boilerplate that `onlyMainContent` can miss (cookie banners, ad blocks, social share widgets, breadcrumbs, newsletter signups, comment sections, related-article lists). Headings, lists, tables, code blocks, image references, and inline links are preserved. Can be combined with `onlyMainContent` (the most common setup) or used on its own. Skipped with a warning when the markdown exceeds the cleaning model's output token limit (the original markdown is preserved). Not supported on zero-data-retention requests."],
     only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc. This is a deterministic HTML-level filter applied before markdown is generated; no LLM is involved."],
-    parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. When \"pdf\" is included (default), the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
+    parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. Each item is a parser name (`\"pdf\"` or `\"image\"`) or a parser object. Both parsers are on by default.\n\n - **pdf**: PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page).\n - **image**: Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd as one-page documents and converted to markdown. SVG and HEIC are not supported.\n\nIf you pass a list, parsers that are not in the list are off. For example, `[\"pdf\"]` turns off image OCR, so image URLs fail as unsupported files. When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
     profile: [type: :keyword_list, doc: "Enable persistent browser storage across scrape and interact sessions. Pass a profile when scraping to preserve cookies, localStorage, and session data. Sessions with the same profile name share browser state."],
     proxy: [type: {:or, [{:in, [:basic, :enhanced, :auto]}, :string]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed."],
     redact_pii: [type: :any, doc: "Redact personally identifiable information from returned markdown. Pass `true` to use defaults, or an object to tune mode, entities, and replacement style."],

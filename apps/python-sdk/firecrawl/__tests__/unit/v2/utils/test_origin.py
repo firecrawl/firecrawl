@@ -1,5 +1,8 @@
 """Unit tests for configurable request origin attribution."""
 
+import importlib
+import sys
+
 from firecrawl.v2.utils.http_client import HttpClient
 from firecrawl.v2.utils.http_client_async import AsyncHttpClient
 from firecrawl.v2.utils.get_version import get_version
@@ -144,3 +147,69 @@ def test_research_get_query_carries_client_origin():
     client = FakeClient()
     research.search_papers(client, "transformers")
     assert "origin=arcade-mcp" in client.path
+
+
+def _install_fake_package(tmp_path, monkeypatch, install_dir="site-packages"):
+    from firecrawl.v2.utils import caller_origin
+
+    package = tmp_path / install_dir / "wrapper_pkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(
+        "from firecrawl.v2.utils.http_client import HttpClient\n"
+        "def make(**kwargs):\n"
+        "    return HttpClient(api_key='fc-test', api_url='https://api.firecrawl.dev', **kwargs)\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path / install_dir))
+    monkeypatch.setattr(caller_origin, "_distributions", lambda: {"wrapper_pkg": ["Wrapper_Pkg.Extras"]})
+    monkeypatch.delenv("FIRECRAWL_DISABLE_CALLER_ORIGIN", raising=False)
+    monkeypatch.delitem(sys.modules, "wrapper_pkg", raising=False)
+    return importlib.import_module("wrapper_pkg")
+
+
+def test_default_origin_names_installed_wrapper_package(tmp_path, monkeypatch):
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+    assert wrapper.make().origin == f"python-sdk.wrapper-pkg-extras@{get_version()}"
+
+
+def test_default_origin_reads_dist_packages(tmp_path, monkeypatch):
+    wrapper = _install_fake_package(tmp_path, monkeypatch, install_dir="dist-packages")
+    assert wrapper.make().origin == f"python-sdk.wrapper-pkg-extras@{get_version()}"
+
+
+def test_explicit_origin_wins_over_wrapper_default(tmp_path, monkeypatch):
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+    assert wrapper.make(origin="custom").origin == "custom"
+
+
+def test_wrapper_origin_can_be_disabled(tmp_path, monkeypatch):
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+    monkeypatch.setenv("FIRECRAWL_DISABLE_CALLER_ORIGIN", "1")
+    assert wrapper.make().origin == f"python-sdk@{get_version()}"
+
+
+def test_unmapped_package_keeps_plain_origin(tmp_path, monkeypatch):
+    from firecrawl.v2.utils import caller_origin
+
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+    monkeypatch.setattr(caller_origin, "_distributions", lambda: {})
+    assert wrapper.make().origin == f"python-sdk@{get_version()}"
+
+
+def test_detection_failure_keeps_plain_origin(tmp_path, monkeypatch):
+    from firecrawl.v2.utils import caller_origin
+
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+
+    def boom():
+        raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(caller_origin, "_distributions", boom)
+    assert wrapper.make().origin == f"python-sdk@{get_version()}"
+
+
+def test_playground_named_package_keeps_plain_origin(tmp_path, monkeypatch):
+    from firecrawl.v2.utils import caller_origin
+
+    wrapper = _install_fake_package(tmp_path, monkeypatch)
+    monkeypatch.setattr(caller_origin, "_distributions", lambda: {"wrapper_pkg": ["my-playground-kit"]})
+    assert wrapper.make().origin == f"python-sdk@{get_version()}"

@@ -144,7 +144,7 @@ const monitorNotificationInner = z
     email: z
       .strictObject({
         enabled: z.boolean().optional().default(false),
-        recipients: z.array(z.email()).max(25).optional().default([]),
+        recipients: z.array(z.email().max(320)).max(25).optional().default([]),
         includeDiffs: z.boolean().optional().default(false),
       })
       .optional(),
@@ -197,7 +197,7 @@ const createMonitorBaseSchema = z.strictObject({
   retentionDays: z.number().int().positive().max(365).optional().default(30),
   goal: z.string().max(2000).nullish(),
   judgeEnabled: z.boolean().optional(),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
 });
 
 function requireGoalForSearchTargets(

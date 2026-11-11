@@ -1,8 +1,8 @@
 # Firecrawl
 
-Auto-generated Elixir client for the [Firecrawl API v2](https://docs.firecrawl.dev/api-reference).
+Elixir client for the [Firecrawl API v2](https://docs.firecrawl.dev/api-reference), the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs from Elixir.
 
-Built with [`Req`](https://hexdocs.pm/req) — minimal, idiomatic, auto-generated from the OpenAPI spec with [`NimbleOptions`](https://hexdocs.pm/nimble_options) validation.
+Built with [`Req`](https://hexdocs.pm/req): minimal, idiomatic, and auto-generated from the OpenAPI spec with [`NimbleOptions`](https://hexdocs.pm/nimble_options) validation.
 
 ## Installation
 
@@ -78,6 +78,20 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
 
 # Search
 {:ok, response} = Firecrawl.search_and_scrape(query: "firecrawl web scraping")
+
+# Search the developer index: public repositories, GitHub issues, merged pull
+# requests, READMEs and code documentation. It replaces the research index GitHub
+# search, which was removed after 2026-11-03.
+{:ok, %Firecrawl.DeveloperSearch{results: results}} = Firecrawl.search_developer(
+  query: "retry an http request with exponential backoff",
+  repos: ["square/okhttp"],
+  types: ["issue", "pull_request"],
+  k: 5
+)
+
+for %Firecrawl.DeveloperSearch.Result{title: title, url: url} <- results do
+  IO.puts("#{title} #{url}")
+end
 
 # Check crawl status
 {:ok, response} = Firecrawl.get_crawl_status("job-uuid")

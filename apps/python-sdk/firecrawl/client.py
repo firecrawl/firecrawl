@@ -19,7 +19,7 @@ Check example.py for other usage examples.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Union, BinaryIO
+from typing import Any, Dict, Optional, List, Union, BinaryIO, Literal
 import logging
 
 
@@ -40,6 +40,8 @@ from .v2.methods.research_docs import (
     doc,
 )
 from .v2.types import Document, ParseOptions, ScrapeOptions
+from .v2.utils.caller_origin import default_origin
+from .v2.utils.get_version import get_version
 
 logger = logging.getLogger("firecrawl")
 
@@ -73,6 +75,7 @@ class V2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -167,6 +170,7 @@ class AsyncV2Proxy:
             self.scrape = client_instance.scrape
             self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -247,7 +251,7 @@ class Firecrawl:
     def __init__(
         self,
         api_key: str = None,
-        api_url: str = "https://api.firecrawl.dev",
+        api_url: Optional[str] = "https://api.firecrawl.dev",
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
@@ -257,18 +261,25 @@ class Firecrawl:
 
         Args:
             api_key: Firecrawl API key (or set ``FIRECRAWL_API_KEY``)
-            api_url: Base API URL (defaults to production)
+            api_url: Base API URL (defaults to production, also when None)
             timeout: Default request timeout in seconds for all HTTP requests
             max_retries: Maximum number of retries for failed requests (default: 3)
             backoff_factor: Exponential backoff factor for retries (default: 0.5)
             origin: Attribution string stamped into API request payloads
-                (defaults to ``python-sdk@<version>``)
+                (defaults to ``python-sdk@<version>``, or
+                ``python-sdk.<package>@<version>`` when an installed package
+                creates the client; set FIRECRAWL_DISABLE_CALLER_ORIGIN=1 to
+                keep the plain default)
         """
+        if api_url is None:
+            api_url = "https://api.firecrawl.dev"
         self.api_key = api_key
         self.api_url = api_url
 
-        # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
+        # Resolved here: caller detection reads the stack of whoever constructs the client.
+        self._origin = origin or default_origin(get_version())
+        self._v1: Optional[V1Proxy] = None
+
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -278,13 +289,12 @@ class Firecrawl:
             origin=origin,
         ) if V2FirecrawlClient else None
         
-        # Create version-specific proxies
-        self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -359,6 +369,13 @@ class Firecrawl:
         self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
         self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
 
+    @property
+    def v1(self) -> V1Proxy:
+        """Feature-frozen v1 client, created on first use because it requires an API key on the cloud API."""
+        if self._v1 is None:
+            self._v1 = V1Proxy(V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+        return self._v1
+
     def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],
@@ -377,8 +394,14 @@ class Firecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return self._v2_client.search_papers(query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):
@@ -403,17 +426,20 @@ class AsyncFirecrawl:
     def __init__(
         self,
         api_key: str = None,
-        api_url: str = "https://api.firecrawl.dev",
+        api_url: Optional[str] = "https://api.firecrawl.dev",
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
         origin: str = None,
     ):
+        if api_url is None:
+            api_url = "https://api.firecrawl.dev"
         self.api_key = api_key
         self.api_url = api_url
 
-        # Initialize version-specific clients
-        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
+        self._origin = origin or default_origin(get_version())
+        self._v1: Optional[AsyncV1Proxy] = None
+
         self._v2_client = AsyncFirecrawlClient(
             api_key=api_key,
             api_url=api_url,
@@ -423,8 +449,6 @@ class AsyncFirecrawl:
             origin=origin,
         ) if AsyncFirecrawlClient else None
         
-        # Create version-specific proxies
-        self.v1 = AsyncV1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = AsyncV2Proxy(self._v2_client)
 
         # Expose v2 async surface directly on the top-level client for ergonomic access
@@ -432,6 +456,7 @@ class AsyncFirecrawl:
         self.scrape = self._v2_client.scrape
         self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -505,6 +530,13 @@ class AsyncFirecrawl:
         self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
         self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
 
+    @property
+    def v1(self) -> AsyncV1Proxy:
+        """Feature-frozen async v1 client, created on first use because it requires an API key on the cloud API."""
+        if self._v1 is None:
+            self._v1 = AsyncV1Proxy(AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+        return self._v1
+
     async def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],
@@ -523,8 +555,14 @@ class AsyncFirecrawl:
 
     # Research paper index (/v2/search/research) — delegates to the v2 client.
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await self._v2_client.search_papers(query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await self._v2_client.search_papers(query, sort=sort, **kwargs)
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):

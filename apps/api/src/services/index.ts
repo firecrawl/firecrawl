@@ -4,7 +4,6 @@ import * as schema from "../db/schema";
 import {
   insertOmceJobIfNeeded,
   queryIndexAtSplitLevel as rpcQueryIndexAtSplitLevel,
-  queryIndexAtDomainSplitLevel as rpcQueryIndexAtDomainSplitLevel,
   queryOmceSignatures as rpcQueryOmceSignatures,
   queryEngpickerVerdict as rpcQueryEngpickerVerdict,
   queryIndexAtSplitLevelWithMeta as rpcQueryIndexAtSplitLevelWithMeta,
@@ -125,6 +124,7 @@ export async function saveIndexToGCS(
     contentType?: string;
     postprocessorsUsed?: string[];
     proxyUsed?: "basic" | "stealth";
+    firePdfCacheKey?: string;
   },
 ): Promise<void> {
   return await withSpan("firecrawl-index-save-to-gcs", async span => {
@@ -465,39 +465,6 @@ export async function queryIndexAtSplitLevel(
     return [...links].slice(0, limit);
   } catch (error) {
     _logger.warn("Error querying index", { error, url, limit });
-    return [];
-  }
-}
-
-export async function queryIndexAtDomainSplitLevel(
-  hostname: string,
-  limit: number,
-  maxAge = 2 * 24 * 60 * 60 * 1000,
-): Promise<string[]> {
-  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
-    return [];
-  }
-
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
-
-  const level = domainSplitsHash.length - 1;
-  if (domainSplitsHash.length === 0) {
-    return [];
-  }
-
-  // Raw SQL returns the full result set (no PostgREST 1000-row cap), so the
-  // previous .range() pagination loop is no longer needed.
-  try {
-    const data = await rpcQueryIndexAtDomainSplitLevel(
-      level,
-      domainSplitsHash[level],
-      new Date(Date.now() - maxAge).toISOString(),
-    );
-    const links = new Set<string>();
-    data.forEach(x => links.add(x.resolved_url));
-    return [...links].slice(0, limit);
-  } catch (error) {
-    _logger.warn("Error querying index", { error, hostname, limit });
     return [];
   }
 }

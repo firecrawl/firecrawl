@@ -64,6 +64,7 @@ import {
   getTeamBalance,
   getTeamHistoricalUsage,
   getTeamHistoricalUsageByApiKey,
+  getTeamHistoricalUsageByEndpoint,
 } from "../usage";
 
 beforeEach(() => {
@@ -860,6 +861,43 @@ describe("getTeamHistoricalUsage", () => {
       },
     ]);
   });
+
+  it("buckets daily usage by UTC day when asked for day bins", async () => {
+    mockAggregate.mockResolvedValue({
+      list: [
+        {
+          period: Date.parse("2026-03-30T00:00:00.000Z"),
+          values: { CREDITS: 20 },
+        },
+        {
+          period: Date.parse("2026-04-01T00:00:00.000Z"),
+          values: { CREDITS: 1 },
+        },
+      ],
+    });
+
+    await expect(getTeamHistoricalUsage("team-1", "day")).resolves.toEqual([
+      {
+        startDate: "2026-03-30T00:00:00.000Z",
+        endDate: "2026-03-31T00:00:00.000Z",
+        creditsUsed: 20,
+      },
+      {
+        startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        creditsUsed: 1,
+      },
+    ]);
+
+    expect(mockAggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureId: "CREDITS",
+        range: "90d",
+        binSize: "day",
+      }),
+      expect.anything(),
+    );
+  });
 });
 
 // The byApiKey breakdown asks Autumn for fixed 7-day slices. At this instant
@@ -929,6 +967,41 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       },
       {
         startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        apiKey: "postman",
+        creditsUsed: 5,
+      },
+    ]);
+  });
+
+  it("buckets grouped usage by UTC day when asked for day bins", async () => {
+    apiKeysData = [
+      { id: 101, name: "Default" },
+      { id: 202, name: "postman" },
+    ];
+
+    autumnServesDays([
+      { day: "2026-03-31T00:00:00.000Z", credits: { "101": 26, "202": 3 } },
+      { day: "2026-04-02T00:00:00.000Z", credits: { "202": 5 } },
+    ]);
+
+    await expect(
+      getTeamHistoricalUsageByApiKey("team-1", "day"),
+    ).resolves.toEqual([
+      {
+        startDate: "2026-03-31T00:00:00.000Z",
+        endDate: "2026-04-01T00:00:00.000Z",
+        apiKey: "Default",
+        creditsUsed: 26,
+      },
+      {
+        startDate: "2026-03-31T00:00:00.000Z",
+        endDate: "2026-04-01T00:00:00.000Z",
+        apiKey: "postman",
+        creditsUsed: 3,
+      },
+      {
+        startDate: "2026-04-02T00:00:00.000Z",
         endDate: null,
         apiKey: "postman",
         creditsUsed: 5,
@@ -1195,6 +1268,206 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       }),
       expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
+  });
+});
+
+/**
+ * Like `autumnServesDays`, but each day carries grouped values per feature,
+ * the shape Autumn answers with when several features are asked for at once.
+ */
+function autumnServesGroupedDays(
+  days: Array<{ day: string; grouped: Record<string, Record<string, number>> }>,
+) {
+  mockAggregate.mockImplementation(async (args: any) => ({
+    list: days
+      .map(d => ({ period: Date.parse(d.day), groupedValues: d.grouped }))
+      .filter(
+        entry =>
+          entry.period >= args.customRange.start &&
+          entry.period <= args.customRange.end,
+      ),
+  }));
+}
+
+describe("getTeamHistoricalUsageByEndpoint", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(BY_API_KEY_NOW));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks Autumn for credit and search usage grouped by endpoint, in 7-day slices", async () => {
+    autumnServesGroupedDays([]);
+
+    await getTeamHistoricalUsageByEndpoint("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(BY_API_KEY_SLICE_COUNT);
+    expect(mockAggregate.mock.calls[0][0].customRange).toEqual({
+      start: CURRENT_SLICE_START,
+      end: Date.parse(BY_API_KEY_NOW),
+    });
+    for (const [args, options] of mockAggregate.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          customerId: "org-1",
+          entityId: "team-1",
+          featureId: ["CREDITS", "SEARCH_CREDITS"],
+          binSize: "day",
+          groupBy: "properties.endpoint",
+          maxGroups: 250,
+        }),
+      );
+      expect(options).toEqual(
+        expect.objectContaining({
+          timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS,
+          retryCodes: ["429"],
+        }),
+      );
+    }
+  });
+
+  it("sums each endpoint across features into calendar-month buckets", async () => {
+    autumnServesGroupedDays([
+      {
+        day: "2026-03-30T00:00:00.000Z",
+        grouped: {
+          CREDITS: { scrape: 10, crawl: 40 },
+          SEARCH_CREDITS: { search: 6 },
+        },
+      },
+      {
+        day: "2026-03-31T00:00:00.000Z",
+        grouped: { CREDITS: { scrape: 5 }, SEARCH_CREDITS: { search: 2 } },
+      },
+      {
+        day: "2026-04-02T00:00:00.000Z",
+        grouped: { CREDITS: { scrape: 1 } },
+      },
+    ]);
+
+    await expect(getTeamHistoricalUsageByEndpoint("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: "2026-04-01T00:00:00.000Z",
+        endpoint: "crawl",
+        creditsUsed: 40,
+      },
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: "2026-04-01T00:00:00.000Z",
+        endpoint: "scrape",
+        creditsUsed: 15,
+      },
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: "2026-04-01T00:00:00.000Z",
+        endpoint: "search",
+        creditsUsed: 8,
+      },
+      {
+        startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        endpoint: "scrape",
+        creditsUsed: 1,
+      },
+    ]);
+  });
+
+  it("buckets endpoint usage by UTC day when asked for day bins", async () => {
+    autumnServesGroupedDays([
+      {
+        day: "2026-04-17T00:00:00.000Z",
+        grouped: { CREDITS: { scrape: 3 }, SEARCH_CREDITS: { search: 2 } },
+      },
+      {
+        day: "2026-04-19T00:00:00.000Z",
+        grouped: { CREDITS: { map: 1 } },
+      },
+    ]);
+
+    await expect(
+      getTeamHistoricalUsageByEndpoint("team-1", "day"),
+    ).resolves.toEqual([
+      {
+        startDate: "2026-04-17T00:00:00.000Z",
+        endDate: "2026-04-18T00:00:00.000Z",
+        endpoint: "scrape",
+        creditsUsed: 3,
+      },
+      {
+        startDate: "2026-04-17T00:00:00.000Z",
+        endDate: "2026-04-18T00:00:00.000Z",
+        endpoint: "search",
+        creditsUsed: 2,
+      },
+      {
+        startDate: "2026-04-19T00:00:00.000Z",
+        endDate: null,
+        endpoint: "map",
+        creditsUsed: 1,
+      },
+    ]);
+  });
+
+  it("labels usage without an endpoint as 'unknown'", async () => {
+    autumnServesGroupedDays([
+      {
+        day: "2026-04-17T00:00:00.000Z",
+        grouped: { CREDITS: { "": 4, scrape: 1 } },
+      },
+    ]);
+
+    await expect(getTeamHistoricalUsageByEndpoint("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        endpoint: "scrape",
+        creditsUsed: 1,
+      },
+      {
+        startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        endpoint: "unknown",
+        creditsUsed: 4,
+      },
+    ]);
+  });
+
+  it("caches settled slices under its own key, apart from the byApiKey breakdown", async () => {
+    autumnServesGroupedDays([
+      {
+        day: "2026-02-10T00:00:00.000Z",
+        grouped: { CREDITS: { scrape: 7 } },
+      },
+    ]);
+
+    await getTeamHistoricalUsageByEndpoint("team-1");
+
+    expect(mockSetValue).toHaveBeenCalledTimes(BY_API_KEY_SLICE_COUNT - 1);
+    for (const [key] of mockSetValue.mock.calls) {
+      expect(key).toMatch(/^historical-usage-by-endpoint:v1:team-1:\d+$/);
+    }
+
+    mockAggregate.mockClear();
+    autumnServesDays([]);
+    await getTeamHistoricalUsageByApiKey("team-1");
+
+    // Nothing cached for the endpoint breakdown answers the byApiKey one.
+    expect(mockAggregate).toHaveBeenCalledTimes(BY_API_KEY_SLICE_COUNT);
+  });
+
+  it("returns an empty history (no org fallback) when the entity is missing", async () => {
+    mockAggregate.mockRejectedValueOnce(
+      Object.assign(new Error("not found"), { statusCode: 404 }),
+    );
+
+    await expect(getTeamHistoricalUsageByEndpoint("team-1")).resolves.toEqual(
+      [],
+    );
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -5,8 +5,8 @@ const PLAINTEXT_PREFIX = "plain:";
 const GCM_PREFIX = "gcm:";
 
 // Accepts a 32-byte key as hex (64 chars) or base64. Returns null ONLY when the
-// key is unset (self-hosted plaintext fallback). A key that is set but malformed
-// throws, so a misconfiguration never silently downgrades to plaintext storage.
+// key is unset. A key that is set but malformed throws, so a misconfiguration
+// never silently downgrades to plaintext storage.
 function getKey(): Buffer | null {
   const raw = config.SLACK_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw) return null;
@@ -33,11 +33,16 @@ function getKey(): Buffer | null {
   return key;
 }
 
-// Encrypts a Slack bot token for storage. When no encryption key is configured
-// the token is stored with a `plain:` marker (self-hosted only).
+// Encrypts a Slack bot token for storage. Without a key, production refuses to
+// store the token; other environments store it with a `plain:` marker.
 export function encryptSlackToken(token: string): string {
   const key = getKey();
   if (!key) {
+    if (config.ENV === "production") {
+      throw new Error(
+        "SLACK_TOKEN_ENCRYPTION_KEY is not set; refusing to store a plaintext Slack token in production",
+      );
+    }
     return `${PLAINTEXT_PREFIX}${token}`;
   }
   const iv = crypto.randomBytes(12);

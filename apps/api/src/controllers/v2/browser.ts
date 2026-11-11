@@ -11,9 +11,8 @@ import {
 } from "../../lib/keyless";
 import { z } from "zod";
 import { config } from "../../config";
-import { RequestWithAuth } from "./types";
+import { countryLocationSchema, RequestWithAuth } from "./types";
 import { integrationSchema } from "../../utils/integration";
-import { countries } from "../../lib/validate-country";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import {
   getBrowserSession,
@@ -37,6 +36,7 @@ import {
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -52,22 +52,13 @@ export const browserCreateRequestSchema = z.object({
       saveChanges: z.boolean().default(true),
     })
     .optional(),
-  location: z
-    .strictObject({
-      country: z
-        .string()
-        .refine(
-          value => Object.keys(countries).includes(value.toUpperCase()),
-          "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
-        )
-        .transform(value => value.toLowerCase()),
-    })
-    .optional(),
+  location: countryLocationSchema.optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
       requestId: z.string().uuid(),
       shouldBill: z.boolean(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -104,10 +95,20 @@ export function browserError(
       signup_url: prompt.signup_url,
     });
   }
+  if (error instanceof UsOnlyUnavailableError) {
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+    });
+  }
   const knownError =
     error instanceof BrowserSessionError || error instanceof HangarError;
   return res.status(knownError ? error.status : 502).json({
     success: false,
+    ...(error instanceof BrowserSessionError && error.code
+      ? { code: error.code }
+      : {}),
     error: knownError ? error.message : "Browser operation failed.",
   });
 }

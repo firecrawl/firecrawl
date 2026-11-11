@@ -1420,7 +1420,9 @@ export const findImages = (): FindImagesResult => {
     .slice(0, LOGO_COLOR_CANDIDATES)
     .forEach(candidate => {
       const el = candidateElements.get(candidate);
-      const colors = el ? getLogoColors(el) : [];
+      const colors = el
+        ? getLogoColors(el, later => (candidate.colors = later))
+        : [];
       if (colors.length > 0) candidate.colors = colors;
     });
 

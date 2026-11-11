@@ -8,7 +8,12 @@ import {
 } from "../../../../lib/xai-x-search";
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { EngineError, XTwitterConfigurationError } from "../../error";
+import {
+  EngineError,
+  UsOnlyUnavailableError,
+  XTwitterConfigurationError,
+} from "../../error";
+import { isUsOnly } from "../../../../lib/us-only";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import { calculateCost } from "../../transformers/llmExtract";
 import {
@@ -246,6 +251,12 @@ export async function scrapeURLWithXTwitter(
   if (!xUrl) {
     throw new EngineError(
       `URL is not a supported X/Twitter URL: ${urlToScrape}`,
+    );
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    throw new UsOnlyUnavailableError(
+      "X/Twitter scraping is not available for teams restricted to US-only processing.",
     );
   }
 

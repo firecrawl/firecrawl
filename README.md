@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Supercharge your AI agents with data from the web and beyond. Building the library for superintelligence. 🔥** Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**The API to search, scrape, and interact with the web at scale. Firecrawl is the context API for AI agents. 🔥** Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -56,7 +56,7 @@ _Pst. Hey, you, join our stargazers :)_
 - **LLM-ready output**: Clean markdown, structured JSON, screenshots, and more — spend fewer tokens, build better AI apps
 - **We handle the hard stuff**: Rotating proxies, orchestration, rate limits, JS-blocked content, and more — zero configuration
 - **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
-- **Media parsing**: Parse and extract content from web-hosted PDFs, DOCX, and more
+- **Document parsing**: Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON
 - **Actions**: Click, scroll, write, wait, and press before extracting content
 - **Open source**: Developed transparently and collaboratively — [join our community](https://discord.gg/firecrawl)
 
@@ -76,10 +76,12 @@ _Pst. Hey, you, join our stargazers :)_
 
 | Feature | Description |
 |---------|-------------|
+| [**Parse**](https://docs.firecrawl.dev/features/parse) | Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON |
 | [**Agent**](#agent) | Automated data gathering, just describe what you need |
 | [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
+| [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
 
 ---
 
@@ -146,7 +148,7 @@ Output:
 
 ### Scrape
 
-Get LLM-ready data from any website — markdown, JSON, screenshots, and more.
+Get LLM-ready context from any website — markdown, JSON, screenshots, and more.
 
 ```python
 from firecrawl import Firecrawl
@@ -472,7 +474,7 @@ Response:
 {
   "success": true,
   "links": [
-    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Turn websites into LLM-ready data"},
+    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "The context API for AI agents"},
     {"url": "https://firecrawl.dev/pricing", "title": "Pricing", "description": "Firecrawl pricing plans"},
     {"url": "https://firecrawl.dev/blog", "title": "Blog", "description": "Firecrawl blog"}
   ]
@@ -519,7 +521,7 @@ Our SDKs provide a convenient way to use all Firecrawl features and automaticall
 
 Install the SDK:
 ```bash
-pip install firecrawl-py
+pip install firecrawl
 ```
 ```python
 from firecrawl import Firecrawl
@@ -859,7 +861,7 @@ print_r($results);
 **Agents & AI Tools**
 - [Firecrawl Skills Catalog](https://github.com/firecrawl/skills) — install with `npx skills add firecrawl/skills`
 - [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli)
-- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+- [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)
 
 The build skills (integrating Firecrawl into product code) are authored in this repo under [`skills/`](./skills) and mirrored into the catalog by CI. Contributing skills? CLI skills (including the research/developer index skills) → PR [`firecrawl/cli`](https://github.com/firecrawl/cli). Build/SDK skills → PR this repo (`skills/`). Workflow skills → PR [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog ([`firecrawl/skills`](https://github.com/firecrawl/skills)) is read-only — never PR it directly.
 
@@ -870,7 +872,7 @@ The build skills (integrating Firecrawl into product code) are authored in this 
 
 [View all integrations →](https://www.firecrawl.dev/integrations)
 
-**Missing your favorite tool?** [Open an issue](https://github.com/mendableai/firecrawl/issues) and let us know!
+**Missing your favorite tool?** [Open an issue](https://github.com/firecrawl/firecrawl/issues) and let us know!
 
 ---
 

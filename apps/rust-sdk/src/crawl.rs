@@ -491,6 +491,28 @@ mod tests {
         mock.assert();
     }
 
+    #[test]
+    fn test_crawl_scrape_options_send_json_options_as_json_format() {
+        let options = CrawlOptions {
+            scrape_options: Some(ScrapeOptions {
+                formats: Some(vec![crate::Format::Json]),
+                json_options: Some(crate::JsonOptions {
+                    prompt: Some("Extract the title".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["scrapeOptions"]["formats"],
+            json!([{ "type": "json", "prompt": "Extract the title" }])
+        );
+        assert!(payload["scrapeOptions"].get("jsonOptions").is_none());
+    }
+
     #[tokio::test]
     async fn test_get_crawl_status_with_mock() {
         let mut server = mockito::Server::new_async().await;

@@ -72,26 +72,29 @@ export const detectFrameworkHints = (): string[] => {
 };
 
 export const detectColorScheme = (): "dark" | "light" => {
-  const body = document.body;
-  const html = document.documentElement;
+  // Either root may be null when the script runs mid-navigation, before the
+  // document (or its <body>) has been parsed. Fall back to whichever exists,
+  // then to prefers-color-scheme.
+  const html: Element | null = document.documentElement;
+  const body: Element | null = document.body;
+  const roots = [html, body].filter((el): el is Element => el != null);
+
+  const hasClass = (name: string): boolean =>
+    roots.some(el => el.classList.contains(name));
+  const hasAttr = (attr: string, value: string): boolean =>
+    roots.some(el => el.getAttribute(attr) === value);
 
   const hasDarkIndicator =
-    html.classList.contains("dark") ||
-    body.classList.contains("dark") ||
-    html.classList.contains("dark-mode") ||
-    body.classList.contains("dark-mode") ||
-    html.getAttribute("data-theme") === "dark" ||
-    body.getAttribute("data-theme") === "dark" ||
-    html.getAttribute("data-bs-theme") === "dark";
+    hasClass("dark") ||
+    hasClass("dark-mode") ||
+    hasAttr("data-theme", "dark") ||
+    html?.getAttribute("data-bs-theme") === "dark";
 
   const hasLightIndicator =
-    html.classList.contains("light") ||
-    body.classList.contains("light") ||
-    html.classList.contains("light-mode") ||
-    body.classList.contains("light-mode") ||
-    html.getAttribute("data-theme") === "light" ||
-    body.getAttribute("data-theme") === "light" ||
-    html.getAttribute("data-bs-theme") === "light";
+    hasClass("light") ||
+    hasClass("light-mode") ||
+    hasAttr("data-theme", "light") ||
+    html?.getAttribute("data-bs-theme") === "light";
 
   let prefersDark = false;
   try {
@@ -129,8 +132,8 @@ export const detectColorScheme = (): "dark" | "light" => {
     return null;
   };
 
-  const bodyBg = getEffectiveBackground(body);
-  const htmlBg = getEffectiveBackground(html);
+  const bodyBg = body ? getEffectiveBackground(body) : null;
+  const htmlBg = html ? getEffectiveBackground(html) : null;
   const effectiveBg = bodyBg || htmlBg;
 
   if (effectiveBg) {
@@ -287,10 +290,12 @@ export const getBackgroundCandidates = (): BackgroundCandidate[] => {
     }
   });
 
-  const bodyBg = getComputedStyleCached(document.body).backgroundColor;
-  const htmlBg = getComputedStyleCached(
-    document.documentElement,
-  ).backgroundColor;
+  // body/html may be null mid-navigation; a missing root contributes no
+  // candidate rather than silently aliasing the other root's background.
+  const bodyEl: Element | null = document.body;
+  const htmlEl: Element | null = document.documentElement;
+  const bodyBg = bodyEl ? getComputedStyleCached(bodyEl).backgroundColor : "";
+  const htmlBg = htmlEl ? getComputedStyleCached(htmlEl).backgroundColor : "";
 
   if (isValidBackgroundColor(bodyBg)) {
     const normalized = normalizeColor(bodyBg);
@@ -332,7 +337,9 @@ export const getBackgroundCandidates = (): BackgroundCandidate[] => {
   }
 
   try {
-    const rootStyle = getComputedStyleCached(document.documentElement);
+    const rootStyle = getComputedStyleCached(
+      document.documentElement as Element,
+    );
 
     const cssVars = [
       "--background",

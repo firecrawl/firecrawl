@@ -11,6 +11,8 @@ import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstx
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { llmsTxtModels } from "../../lib/generate-llmstxt/generate-llmstxt-service";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 type GenerateLLMsTextResponse =
   | ErrorResponse
@@ -34,6 +36,17 @@ export async function generateLLMsTextController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on llmstxt. Please contact support@firecrawl.com to unblock this feature.",
+    });
+  }
+
+  try {
+    llmsTxtModels(req.acuc?.flags);
+  } catch (error) {
+    if (!(error instanceof UsOnlyUnavailableError)) throw error;
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
     });
   }
 

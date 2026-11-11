@@ -1,18 +1,6 @@
 import { Counter } from "prom-client";
 
 /**
- * Which path a usage event took. The ratio of `firebill` to `direct` is the
- * live read on the rollout percentage — during a ramp it is the first thing to
- * look at, because a routing bug shows up here long before it shows up in a
- * balance.
- */
-export const billingRouteTotal = new Counter({
-  name: "firecrawl_billing_route_total",
-  help: "Usage events by the path they took to Autumn",
-  labelNames: ["route"] as const, // firebill | direct
-});
-
-/**
  * What firebill said. `refused` is an explicit `success: false` — firebill does
  * not own the event and nobody else does, so usage is being dropped.
  * `ambiguous` is a transport failure: firebill may have accepted it before the
@@ -59,6 +47,37 @@ export const firebillFailureCauseTotal = new Counter({
   labelNames: ["operation", "cause"] as const,
 });
 
+/**
+ * The durable retry behind a track or refund that firebill never confirmed.
+ * Counted where each step happens: the `enqueue*` outcomes by the
+ * caller that gave up, `retried`, `settled` and `exhausted` by the
+ * retry worker.
+ *
+ * - `enqueued` — handed to the retry queue instead of being dropped.
+ * - `enqueue_failed` — the queue rejected the hand-off; the event is
+ *   unbilled unless someone replays it from the log line.
+ * - `enqueue_timeout` — the hand-off did not confirm in time and may still
+ *   land; check the queue for the key before treating it as lost.
+ * - `retried` — one re-send under the same idempotency key.
+ * - `settled` — firebill accepted a re-send.
+ * - `exhausted` — every attempt failed; see the exhausted value counter
+ *   and the "firebill durable retry exhausted" log for the key and amount.
+ */
+export const firebillTrackRetryTotal = new Counter({
+  name: "firecrawl_firebill_track_retry_total",
+  help: "Durable retries of usage events firebill did not confirm",
+  // operation: track|refund
+  // outcome: enqueued|enqueue_failed|enqueue_timeout|retried|settled|exhausted
+  labelNames: ["operation", "outcome"] as const,
+});
+
+/** The amount, made positive, behind each exhausted durable retry. */
+export const firebillTrackRetryExhaustedValueTotal = new Counter({
+  name: "firecrawl_firebill_track_retry_exhausted_value_total",
+  help: "Usage value whose durable firebill retry was exhausted",
+  labelNames: ["operation", "feature"] as const,
+});
+
 /** Retries of a firebill call that answered `false` or threw. */
 export const firebillRetryTotal = new Counter({
   name: "firecrawl_firebill_retry_total",
@@ -80,28 +99,4 @@ export const firebillCheckTotal = new Counter({
   name: "firecrawl_firebill_check_total",
   help: "Outcomes of credit checks sent to firebill",
   labelNames: ["outcome"] as const, // allowed | denied | unavailable
-});
-
-/**
- * Entities the request path had to create for itself, by the method that did
- * it. Provisioning is meant to happen at team creation, so anything counted
- * here is the back-fill still being needed, and is what the per-request
- * provisioning prefix is buying. A 409 is not counted: the entity was already
- * there.
- */
-export const autumnEntityCreatedInlineTotal = new Counter({
-  name: "firecrawl_autumn_entity_created_inline_total",
-  help: "Autumn entities created inline on a billing path",
-  labelNames: ["path"] as const, // the method that created it
-});
-
-/**
- * Calls to `customers.get_or_create` attempted against Autumn, counted before
- * the response so a failure counts too. Deliberately not "created": the
- * endpoint answers 200 either way and autumn-js parses only the customer body,
- * so nothing in the response tells a creation from a get.
- */
-export const autumnCustomerGetOrCreateTotal = new Counter({
-  name: "firecrawl_autumn_customer_get_or_create_total",
-  help: "Autumn customers.get_or_create calls attempted from a billing path",
 });

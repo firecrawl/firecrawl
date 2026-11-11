@@ -26,6 +26,66 @@ type RobustFetchParams<Schema extends z.Schema<any>> = {
   useCacheableLookup?: boolean;
 };
 
+// Logs only, so err on the side of redacting: any header whose name looks like
+// it could carry a credential (Authorization, X-Auth-*, Cookie, X-Password,
+// X-Session-Id, X-Api-Key, X-Signature, ...).
+const SENSITIVE_HEADER =
+  /auth|cookie|api[-_]?key|token|secret|passw|credential|session|signature|jwt/i;
+
+export function redactHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (headers === undefined) return undefined;
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      SENSITIVE_HEADER.test(name) ? "[REDACTED]" : value,
+    ]),
+  );
+}
+
+// Action fields that carry user-typed text or script bodies. `write` text can
+// be a password; `executeJavascript` scripts can embed tokens (and the branding
+// script is large), so neither belongs in logs.
+const SENSITIVE_ACTION_FIELDS = ["text", "script"] as const;
+
+/**
+ * A copy of a scrape request body that is safe to log: credential headers and
+ * secret-carrying action payloads are replaced with "[REDACTED]".
+ */
+export function redactRequestBodyForLog<T>(body: T): T {
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    body instanceof FormData
+  ) {
+    return body;
+  }
+  const { headers, actions } = body as {
+    headers?: unknown;
+    actions?: unknown;
+  };
+  return {
+    ...body,
+    ...(headers !== null && typeof headers === "object"
+      ? { headers: redactHeaders(headers as Record<string, string>) }
+      : {}),
+    ...(Array.isArray(actions)
+      ? {
+          actions: actions.map(action => {
+            if (action === null || typeof action !== "object") return action;
+            const redacted: Record<string, unknown> = { ...action };
+            for (const field of SENSITIVE_ACTION_FIELDS) {
+              if (field in redacted) redacted[field] = "[REDACTED]";
+            }
+            return redacted;
+          }),
+        }
+      : {}),
+  };
+}
+
 const robustAgent = new Agent({
   headersTimeout: 0,
   bodyTimeout: 0,
@@ -79,23 +139,25 @@ export async function robustFetch<
     abort,
   };
 
-  // omit pdf file content from logs
-  const logParams = {
-    ...params,
-    body: body?.input
+  // omit pdf file content and credentials from logs
+  const logBody = body?.input
+    ? {
+        ...body,
+        input: {
+          ...body.input,
+          file_content: undefined,
+        },
+      }
+    : body?.pdf
       ? {
           ...body,
-          input: {
-            ...body.input,
-            file_content: undefined,
-          },
+          pdf: undefined,
         }
-      : body?.pdf
-        ? {
-            ...body,
-            pdf: undefined,
-          }
-        : body,
+      : body;
+  const logParams = {
+    ...params,
+    headers: redactHeaders(headers),
+    body: redactRequestBodyForLog(logBody),
     logger: undefined,
   };
 

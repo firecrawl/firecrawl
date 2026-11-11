@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from ...types import GovSearchRequest, GovSearchResponse
+from ...types import GovSearchCourtType, GovSearchRequest, GovSearchResponse
 from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 
@@ -15,13 +15,26 @@ async def gov_search(
     query: str,
     *,
     k: Optional[int] = None,
+    jurisdiction: Optional[str] = None,
+    court: Optional[str] = None,
+    court_type: Optional[GovSearchCourtType] = None,
+    cites: Optional[str] = None,
+    domain: Optional[str] = None,
 ) -> GovSearchResponse:
     """Search the Government Index asynchronously."""
     if not query or not query.strip():
         raise ValueError("query cannot be empty")
 
-    request = GovSearchRequest(query=query, k=k)
-    response = await client.post(ENDPOINT, request.model_dump(exclude_none=True))
+    request = GovSearchRequest(
+        query=query,
+        k=k,
+        jurisdiction=jurisdiction,
+        court=court,
+        court_type=court_type,
+        cites=cites,
+        domain=domain,
+    )
+    response = await client.post(ENDPOINT, request.model_dump(exclude_none=True, by_alias=True))
     if response.status_code != 200:
         handle_response_error(response, "search the Government Index")
     response_data = response.json()

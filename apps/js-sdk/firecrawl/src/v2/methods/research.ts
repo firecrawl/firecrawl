@@ -12,7 +12,6 @@ import type {
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { throwForBadResponse } from "../utils/errorHandler";
-import { getVersion } from "../utils/getVersion";
 
 const BASE = "/v2/search/research";
 
@@ -32,10 +31,14 @@ function appendParam(
   }
 }
 
-function withQuery(path: string, params: URLSearchParams): string {
+function withQuery(
+  origin: string,
+  path: string,
+  params: URLSearchParams,
+): string {
   // Research endpoints are GETs, so the POST-body origin injection in
   // HttpClient never applies — attach it as a query param instead.
-  params.append("origin", `js-sdk@${getVersion()}`);
+  params.append("origin", origin);
   const qs = params.toString();
   return qs ? `${path}?${qs}` : path;
 }
@@ -50,7 +53,7 @@ function normalizeResearchError(err: any, action: string): never {
     const body: any = err.response?.data;
     if (body && (body.detail || body.title)) {
       const message = body.detail || body.title;
-      throw new SdkError(message, status, body.type, body);
+      throw new SdkError(message, status, body.code ?? body.type, body);
     }
     throw new SdkError(
       err.message || `Request failed while trying to ${action}`,
@@ -64,7 +67,7 @@ function normalizeResearchError(err: any, action: string): never {
 
 /**
  * Client for the v2 research endpoints — Firecrawl's **research paper index**
- * (~43M paper abstracts) plus GitHub history/readmes.
+ * (~43M paper abstracts).
  *
  * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
  * bioRxiv and medRxiv — with arXiv covering physics, mathematics and computer
@@ -90,7 +93,7 @@ export class ResearchClient {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * Search the research paper index by abstract relevance.
+   * Search the research paper index.
    *
    * Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of the
    * corpus — biomedical and life sciences) plus arXiv (physics, mathematics,
@@ -101,7 +104,10 @@ export class ResearchClient {
    *
    * @param query Natural-language search query, e.g. `"CRISPR base editing
    *   off-target effects in primary human T cells"`.
-   * @param options Optional filters (k, authors, categories, from, to). Note
+   * @param options Optional filters (k, authors, categories, from, to) and sort
+   *   (`relevance` by default or `date_desc`). Date sorting returns the newest
+   *   of the most relevant matches, newest first by created date. It does not
+   *   list every paper in a date range; add `from` (and `to`) for that.
    *   `categories` here filters *paper* subject categories (e.g. `"q-bio.GN"`)
    *   and is unrelated to the `categories` option of `search()`.
    */
@@ -119,9 +125,10 @@ export class ResearchClient {
     appendParam(params, "categories", options.categories);
     appendParam(params, "from", options.from);
     appendParam(params, "to", options.to);
+    appendParam(params, "sort", options.sort);
     try {
       const res = await this.http.get<SearchPapersResponse>(
-        withQuery(`${BASE}/papers`, params),
+        withQuery(this.http.getOrigin(), `${BASE}/papers`, params),
       );
       if (res.status !== 200) throwForBadResponse(res, "search papers");
       return res.data;
@@ -161,7 +168,13 @@ export class ResearchClient {
     try {
       const res = await this.http.get<
         PaperMetadataResponse | ReadPaperResponse
-      >(withQuery(`${BASE}/papers/${encodeURIComponent(id)}`, params));
+      >(
+        withQuery(
+          this.http.getOrigin(),
+          `${BASE}/papers/${encodeURIComponent(id)}`,
+          params,
+        ),
+      );
       if (res.status !== 200) throwForBadResponse(res, "get paper");
       return res.data;
     } catch (err) {
@@ -191,7 +204,11 @@ export class ResearchClient {
     appendParam(params, "anchor", options.anchor);
     try {
       const res = await this.http.get<SimilarPapersResponse>(
-        withQuery(`${BASE}/papers/${encodeURIComponent(id)}/similar`, params),
+        withQuery(
+          this.http.getOrigin(),
+          `${BASE}/papers/${encodeURIComponent(id)}/similar`,
+          params,
+        ),
       );
       if (res.status !== 200) throwForBadResponse(res, "find similar papers");
       return res.data;
@@ -204,12 +221,8 @@ export class ResearchClient {
    * Search the research index GitHub slice: issue/PR history and repository
    * readmes.
    *
-   * @deprecated Use `developerSearch()` on the client instead. This
-   * endpoint stops responding after 2026-11-03. The developer index searches
-   * GitHub issues, pull requests and readmes plus curated documentation
-   * sources, returns matched passages, and adds filters for repo, language,
-   * license and stars. It does not carry over the `scores` breakdown or the
-   * `resultType: "web"` fallback results. See
+   * @deprecated The research index GitHub search endpoint was removed after
+   * 2026-11-03. Use `developerSearch()` on the client instead. See
    * https://docs.firecrawl.dev/features/developer.
    * @param query Search query.
    * @param options Optional `k`.
@@ -226,7 +239,7 @@ export class ResearchClient {
     appendParam(params, "k", options.k);
     try {
       const res = await this.http.get<GitHubSearchResponse>(
-        withQuery(`${BASE}/github`, params),
+        withQuery(this.http.getOrigin(), `${BASE}/github`, params),
       );
       if (res.status !== 200) throwForBadResponse(res, "search github");
       return res.data;

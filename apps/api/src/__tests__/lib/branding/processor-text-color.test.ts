@@ -52,6 +52,30 @@ const raw = (
   }) as any;
 
 describe("text color heuristic", () => {
+  it("takes the body text color, not the link color, on link-heavy pages", () => {
+    const links = Array.from({ length: 10 }, (_, i) => ({
+      ...snap({
+        tag: "a",
+        text: `Article ${i}`,
+        textColor: "rgb(51, 102, 204)",
+      }),
+      isLink: true,
+    }));
+    const body = [
+      snap({ tag: "h1", text: "Welcome", textColor: "rgb(32, 33, 34)" }),
+      snap({ text: "The free encyclopedia", textColor: "rgb(32, 33, 34)" }),
+    ];
+
+    const profile = processRawBranding(
+      raw([...links, ...body], {
+        background: "rgb(255, 255, 255)",
+        scheme: "light",
+      }),
+    );
+
+    expect(profile.colors?.textPrimary).toBe("#202122");
+  });
+
   it("takes the text color from the page's text, not from button fills", () => {
     const buttons = Array.from({ length: 8 }, (_, i) =>
       snap({

@@ -18,6 +18,7 @@ import {
 import { InternalOptions } from "../../scraper/scrapeURL";
 import { getURLDepth } from "../../scraper/WebScraper/utils/maxDepthUtils";
 import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { ErrorCodes } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
@@ -358,7 +359,7 @@ const actionSchema = z.union([
   }),
   z.object({
     type: z.literal("scroll"),
-    direction: z.enum(["up", "down"]).optional().prefault("down"),
+    direction: z.enum(["up", "down"]).prefault("down"),
     selector: z.string().optional(),
   }),
   z.object({
@@ -460,7 +461,6 @@ const baseScrapeOptions = z.strictObject({
       "menu",
     ])
     .array()
-    .optional()
     .prefault(["markdown"])
     .refine(
       x => !(x.includes("screenshot") && x.includes("screenshot@fullPage")),
@@ -518,7 +518,7 @@ const baseScrapeOptions = z.strictObject({
           message: OPENAI_SCHEMA_ERROR_MESSAGE,
         })
         .superRefine(addStrictSchemaIssue),
-      modes: z.enum(["json", "git-diff"]).array().optional().prefault([]),
+      modes: z.enum(["json", "git-diff"]).array().prefault([]),
       tag: z.string().or(z.null()).prefault(null),
     })
     .optional(),
@@ -744,6 +744,7 @@ export type ScrapeOptions = BaseScrapeOptions & {
 };
 
 const ajv = new Ajv();
+addFormats(ajv);
 
 const extractV1Options = z
   .strictObject({
@@ -783,7 +784,7 @@ const extractV1Options = z
     scrapeOptions: baseScrapeOptions
       .prefault({ onlyMainContent: false })
       .optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     urlTrace: z.boolean().prefault(false),
     timeout: z.int().positive().min(1000).prefault(60000),
@@ -847,7 +848,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions
       .optional(),
     extract: extractOptionsWithAgent.optional(),
     jsonOptions: extractOptionsWithAgent.optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().min(1000).prefault(30000),
     zeroDataRetention: z.boolean().optional(),
@@ -867,7 +868,7 @@ export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
 const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
   urls: url.array().min(1),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   webhook: webhookSchema.optional(),
   appendToId: z.uuid().optional(),
@@ -885,7 +886,7 @@ export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
 
 const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
   urls: z.string().array().min(1),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   webhook: webhookSchema.optional(),
   appendToId: z.uuid().optional(),
@@ -945,7 +946,7 @@ type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url,
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
@@ -1018,7 +1019,7 @@ const mapRequestSchemaBase = crawlerOptions
   .omit({ ignoreQueryParameters: true })
   .extend({
     url,
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     includeSubdomains: z.boolean().prefault(true),
     search: z.string().optional(),
@@ -1317,6 +1318,10 @@ type AuthObject = {
   // Set only by authMiddleware from the raw request; controllers may re-parse
   // the body and drop `__agentInterop`, so read this instead.
   agentInterop?: AgentInteropStatus;
+  // Set only by authMiddleware, from the hosted MCP verification in
+  // supaAuthenticateUser; never from the request body or headers directly.
+  // A credit gate clears it when the call is billed on the team's own credits.
+  hostedMcp?: boolean;
 };
 
 type Account = {
@@ -1380,6 +1385,8 @@ export type TeamFlags = {
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
+  /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
+  agentZdrRetentionMinutes?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
@@ -1404,6 +1411,15 @@ export type TeamFlags = {
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
   dpaRestricted?: boolean;
+  // The org's contract bars training on its data: FirePDF never captures its
+  // documents (buildFirePdfTrainingCapture).
+  trainingRestricted?: boolean;
+  // Every request is processed by US-based vendors only. A route with no US
+  // vendor is refused or skipped with a warning.
+  usOnly?: boolean;
+  // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
+  // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
+  deprecationExtensions?: Record<string, string>;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -1645,16 +1661,16 @@ export function toLegacyDocument(
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
-    limit: z.int().positive().finite().max(100).optional().prefault(5),
+    limit: z.int().positive().finite().max(100).prefault(5),
     tbs: z.string().optional(),
     filter: z.string().optional(),
-    lang: z.string().optional().prefault("en"),
+    lang: z.string().prefault("en"),
     country: z.string().optional(),
     location: z.string().optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().finite().prefault(60000),
-    ignoreInvalidURLs: z.boolean().optional().prefault(false),
+    ignoreInvalidURLs: z.boolean().prefault(false),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

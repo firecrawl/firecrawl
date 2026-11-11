@@ -1,6 +1,10 @@
 import { logger } from "../../../../lib/logger";
 import { buildDocument } from "../../build-document";
-import { Document, TokenUsage } from "../../../../controllers/v1/types";
+import {
+  Document,
+  TeamFlags,
+  TokenUsage,
+} from "../../../../controllers/v1/types";
 import { generateCompletions_F0 } from "../llmExtract-f0";
 import {
   buildShouldExtractSystemPrompt_F0,
@@ -18,6 +22,7 @@ export async function checkShouldExtract_F0(
     extractId?: string;
     scrapeId?: string;
   },
+  teamFlags?: TeamFlags | null,
 ): Promise<{ tokenUsage: TokenUsage; extract: boolean }> {
   const shouldExtractCheck = await generateCompletions_F0({
     logger: logger.child({ method: "extractService/checkShouldExtract" }),
@@ -37,7 +42,10 @@ export async function checkShouldExtract_F0(
     },
     markdown: buildDocument(doc),
     isExtractEndpoint: true,
-    model: getModel("gpt-4o-mini"),
+    model: getModel("gpt-4o-mini", undefined, {
+      teamFlags,
+      feature: "Extract",
+    }),
     metadata: {
       ...metadata,
       functionId: metadata.functionId

@@ -23,6 +23,9 @@ vi.mock("../../../config", () => ({
   },
 }));
 vi.mock("../../../db/rpc", () => ({ agentConsumeFreeRequestIfLeft: vi.fn() }));
+vi.mock("../../../services/autumn/autumn.service", () => ({
+  autumnService: { checkCredits: vi.fn(), hasAutoTopUp: vi.fn() },
+}));
 vi.mock("../../../lib/threat-protection/request", () => ({
   resolveThreatProtection: vi.fn().mockResolvedValue({}),
   checkUrlsAgainstThreatPolicy: vi.fn(),
@@ -80,8 +83,8 @@ describe("Agent Alexandria rollout", () => {
       };
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
       await agentController(req as any, res as any);
-      expect(res.status).toHaveBeenCalledWith(forced ? 400 : 200);
-      expect(fetch).toHaveBeenCalledTimes(forced ? 0 : 1);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(fetch).toHaveBeenCalledTimes(1);
     },
   );
 });

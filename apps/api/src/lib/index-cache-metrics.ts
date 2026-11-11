@@ -12,6 +12,12 @@ export const indexCacheReadDuration = new Histogram({
   buckets: [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.15, 0.25, 0.5],
 });
 
+export const indexPdfSupersedeCounter = new Counter({
+  name: "firecrawl_index_pdf_supersede_total",
+  help: "URL index PDF hits checked against the fire-pdf cache service: superseded (a newer entry exists, index copy skipped), current, or error (check failed, index copy served)",
+  labelNames: ["result"],
+});
+
 export const indexCacheErrorCounter = new Counter({
   name: "firecrawl_index_cache_errors_total",
   help: "Index cache (Dragonfly) operation errors",

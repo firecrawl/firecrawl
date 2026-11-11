@@ -57,34 +57,12 @@ export function authCreditUsageChunkFromTeam(
   );
 }
 
-export function getAgentFreeRequestsLeft(
-  i_team_id: string,
-): Promise<{ free_requests_left: number }[]> {
-  return execRows(
-    db,
-    sql`select * from get_agent_free_requests_left(i_team_id => ${i_team_id})`,
-  );
-}
-
 export function agentConsumeFreeRequestIfLeft(
   i_team_id: string,
 ): Promise<{ consumed: boolean }[]> {
   return execRows(
     db,
     sql`select * from agent_consume_free_request_if_left(i_team_id => ${i_team_id})`,
-  );
-}
-
-export function billTeam7(params: {
-  team_id: string;
-  subscription_id: string | null;
-  credits: number;
-  api_key_id: number | null;
-  is_extract: boolean;
-}): Promise<{ api_key: string }[]> {
-  return execRows(
-    db,
-    sql`select * from bill_team_7(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
   );
 }
 
@@ -131,17 +109,6 @@ export function queryIndexAtSplitLevel(
   return execRows(
     dbIndex,
     sql`select * from query_index_at_split_level(i_level => ${i_level}, i_url_hash => ${i_url_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
-  );
-}
-
-export function queryIndexAtDomainSplitLevel(
-  i_level: number,
-  i_domain_hash: Buffer,
-  i_newer_than: string,
-): Promise<{ resolved_url: string }[]> {
-  return execRows(
-    dbIndex,
-    sql`select * from query_index_at_domain_split_level(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 

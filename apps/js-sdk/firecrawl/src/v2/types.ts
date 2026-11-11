@@ -300,7 +300,12 @@ export interface ScrapeOptions {
 }
 
 export type RedactPIIEntity =
-  "PERSON" | "EMAIL" | "PHONE" | "LOCATION" | "FINANCIAL" | "SECRET";
+  | "PERSON"
+  | "EMAIL"
+  | "PHONE"
+  | "LOCATION"
+  | "FINANCIAL"
+  | "SECRET";
 
 export interface RedactPIIOptions {
   /**
@@ -347,7 +352,12 @@ export interface ThreatProtectionOptions {
 }
 
 export type ParseFileData =
-  Blob | File | Buffer | Uint8Array | ArrayBuffer | string;
+  | Blob
+  | File
+  | Buffer
+  | Uint8Array
+  | ArrayBuffer
+  | string;
 
 export interface ParseFile {
   data: ParseFileData;
@@ -395,7 +405,11 @@ export interface WebhookConfig {
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
 export type AgentWebhookEvent =
-  "started" | "action" | "completed" | "failed" | "cancelled";
+  | "started"
+  | "action"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface AgentWebhookConfig {
   url: string;
@@ -516,7 +530,10 @@ export interface BrandingProfile {
     headerHeight?: string;
     footerHeight?: string;
     [key: string]:
-      number | string | Record<string, number | string | undefined> | undefined;
+      | number
+      | string
+      | Record<string, number | string | undefined>
+      | undefined;
   };
   tone?: {
     voice?: string;
@@ -560,6 +577,9 @@ export interface ProductSale {
 export interface ProductVariant {
   id?: string;
   sku?: string;
+  gtin?: string;
+  mpn?: string;
+  condition?: "new" | "used" | "refurbished" | "damaged";
   title?: string;
   values?: Record<string, unknown>;
   price?: ProductPrice;
@@ -814,9 +834,32 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export type GovSearchCourtType =
+  | "federal-supreme"
+  | "federal-appellate"
+  | "federal-district"
+  | "federal-bankruptcy"
+  | "federal-special"
+  | "military"
+  | "state-supreme"
+  | "state-appellate"
+  | "state-trial"
+  | "state-special"
+  | "state-attorney-general";
+
 export interface GovSearchOptions {
   /** Total ranked results, 1–100 (default 10). */
   k?: number;
+  /** Keep only pages of one jurisdiction: "us" for federal, or "us-" plus a two-letter state or territory code, such as "us-ca" or "us-dc". */
+  jurisdiction?: string;
+  /** Keep only pages labeled for one court, by CourtListener court id, such as "scotus", "ca9" or "nysd". */
+  court?: string;
+  /** Keep only pages from one type of court. */
+  courtType?: GovSearchCourtType;
+  /** Keep only pages that cite one law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". */
+  cites?: string;
+  /** Keep only pages from one site, such as "irs.gov". */
+  domain?: string;
 }
 
 export interface GovSearchResponse {
@@ -851,6 +894,15 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface SkillCard {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+}
+
 export interface SearchData {
   agent_hints?: string[];
   warning?: string;
@@ -858,6 +910,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   tools?: DiscoveredTool[];
+  skills?: SkillCard[];
 }
 
 /** A complete tool contract returned by semantic or contextual discovery. */
@@ -915,16 +968,18 @@ export interface FindToolsOptions {
 }
 
 export interface FindToolsData {
-  level: "providers" | "groups" | "tools";
+  level: "categories" | "providers" | "groups" | "tools";
   items: Array<{
     id: string;
-    name: string;
+    name?: string;
     next?: AlexandriaCall;
     execute?: Pick<AlexandriaCall, "provider" | "capability">;
     [key: string]: unknown;
   }>;
   total: number;
   next: AlexandriaCall | null;
+  /** Opaque feedback token of this find-tools call. Absent when the API issues none. */
+  feedbackToken?: string;
 }
 
 export interface AlexandriaScrapeRequest extends AlexandriaOptions {
@@ -954,12 +1009,15 @@ export type AlexandriaScrapeResult =
       records?: number;
       upstreamStatus?: number;
       recordedAt?: string;
+      /** Opaque token to pass to `alexandriaFeedback`. Absent under zero data retention. */
+      feedbackToken?: string;
       error?: undefined;
       [key: string]: unknown;
     }
   | {
       provider?: string;
       capability?: string;
+      feedbackToken?: string;
       error: AlexandriaScrapeError;
       [key: string]: unknown;
     };
@@ -983,7 +1041,8 @@ export interface AlexandriaOptions {
  * Narrows ordinary **web search**. A category does not switch `search()` to a
  * different index.
  *
- * - `github` — restrict web results to github.com (a `site:` filter).
+ * - `github` — removed. Use `developer` for GitHub issues, pull requests and
+ *   READMEs.
  * - `research` — restrict web results to a fixed list of ~14 academic
  *   *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
@@ -1014,8 +1073,12 @@ export interface SearchRequest {
   /** Compact by default; summary adds metadata, full includes contracts. */
   toolDetail?: "compact" | "summary" | "full";
   sources?: Array<
-    "web" | "news" | "images" | "alexandria"
-    | { type: "web" | "news" | "images" | "alexandria" }
+    | "web"
+    | "news"
+    | "images"
+    | "alexandria"
+    | "skills"
+    | { type: "web" | "news" | "images" | "alexandria" | "skills" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1185,6 +1248,60 @@ export interface FeedbackResponse {
   warning?: string;
 }
 
+export interface AlexandriaProviderFeedback {
+  name: string;
+  issue:
+    | "missing_provider"
+    | "insufficient_coverage"
+    | "provider_unavailable"
+    | "other";
+  why: string;
+}
+
+export type AlexandriaCapabilityFeedback = {
+  name: string;
+  provider: string;
+  why: string;
+} & (
+  | { issue: "new_capability_request"; requestedFunctionality: string }
+  | {
+      issue:
+        | "missing_capability"
+        | "insufficient_functionality"
+        | "incorrect_result"
+        | "execution_error"
+        | "other";
+      requestedFunctionality?: string;
+    }
+);
+
+export interface AlexandriaCallRating {
+  /** The `feedbackToken` of an Alexandria call result. */
+  token: string;
+  rating: FeedbackRating;
+}
+
+export interface AlexandriaFeedbackRequest {
+  /** Session-level rating, applied to every call in `tokens`. */
+  rating: FeedbackRating;
+  requestedWebsite: { url: string; requestedFunctionality: string };
+  rationale: string;
+  objective?: string;
+  providerFeedback?: AlexandriaProviderFeedback[];
+  capabilityFeedback?: AlexandriaCapabilityFeedback[];
+  /** Tokens of the calls `rating` covers: at most 20, newest last. */
+  tokens?: string[];
+  /** Per-call ratings: at most 20. A token here need not also be in `tokens`. */
+  callRatings?: AlexandriaCallRating[];
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface AlexandriaFeedbackResponse extends FeedbackResponse {
+  /** Tokens that failed verification (expired, other team, or forged). */
+  rejectedTokens?: number;
+}
+
 /**
  * Schedule for a monitor.
  *
@@ -1265,7 +1382,9 @@ export interface MonitorSearchTarget {
 }
 
 export type MonitorTarget =
-  MonitorScrapeTarget | MonitorCrawlTarget | MonitorSearchTarget;
+  | MonitorScrapeTarget
+  | MonitorCrawlTarget
+  | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;
@@ -1388,7 +1507,11 @@ export interface MonitorCheck {
   reservedCredits?: number | null;
   actualCredits?: number | null;
   billingStatus:
-    "not_applicable" | "reserved" | "confirmed" | "released" | "failed";
+    | "not_applicable"
+    | "reserved"
+    | "confirmed"
+    | "released"
+    | "failed";
   summary: MonitorSummary;
   targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;
@@ -1779,7 +1902,10 @@ export interface AgentListOptions {
 }
 
 export type AgentTraceAgentRole =
-  "orchestrator" | "subagent" | "browser" | "system";
+  | "orchestrator"
+  | "subagent"
+  | "browser"
+  | "system";
 
 export interface AgentTraceAgentIdentity {
   id: string;
@@ -1792,6 +1918,7 @@ export interface AgentTraceError {
   code:
     | "cancelled"
     | "credit_limit_reached"
+    | "insufficient_credits"
     | "parent_finished"
     | "refused"
     | "internal";
@@ -1833,7 +1960,11 @@ export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
 export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
   type: "run.finished";
   outcome:
-    "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
   /** The canonical schema always writes this key (nullable), but older rows may omit it. */
   error?: AgentTraceError | null;
 }
@@ -1850,12 +1981,14 @@ export interface AgentTraceAgentFinishedEvent extends AgentTraceEventBase {
   error?: AgentTraceError | null;
 }
 
-export interface AgentTraceBrowserSessionStartedEvent extends AgentTraceEventBase {
+export interface AgentTraceBrowserSessionStartedEvent
+  extends AgentTraceEventBase {
   type: "browser.session.started";
   sessionId: string;
 }
 
-export interface AgentTraceBrowserSessionFinishedEvent extends AgentTraceEventBase {
+export interface AgentTraceBrowserSessionFinishedEvent
+  extends AgentTraceEventBase {
   type: "browser.session.finished";
   sessionId: string;
   durationMs: number;
@@ -1929,6 +2062,8 @@ export interface AgentTraceResponse {
   creditsUsed?: number;
   /** Present only when the trace was requested with liveView: true. */
   activeBrowserSessions?: AgentTraceActiveBrowserSession[];
+  /** True for a zero data retention run: events are limited to content-free lifecycle events. */
+  zeroDataRetention?: boolean;
   error?: string;
 }
 
@@ -2028,7 +2163,9 @@ export interface RequiresAction {
   url?: string;
 }
 
-export function parseRequiresAction(value: unknown): RequiresAction | undefined {
+export function parseRequiresAction(
+  value: unknown,
+): RequiresAction | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   if (typeof record.type !== "string") return undefined;
@@ -2202,6 +2339,9 @@ export interface PaperResult {
   ids?: IdMap;
   title: string;
   abstract: string;
+  authors?: string[];
+  createdDate?: string;
+  updateDate?: string;
   /** Final ranking score (post-rerank when enabled). Not normalized. */
   score: number;
   /** Present on similarity results. */
@@ -2264,11 +2404,10 @@ export interface SimilarPapersResponse {
 }
 
 /**
- * Component scores; each field is present only when that signal contributed.
+ * Component scores.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. The developer index does not
- * expose a score breakdown. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubScoreBreakdown {
@@ -2280,8 +2419,8 @@ export interface GitHubScoreBreakdown {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchItem {
@@ -2307,8 +2446,8 @@ export interface GitHubSearchItem {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchResponse {
@@ -2332,6 +2471,7 @@ export interface SearchPapersOptions {
   from?: string;
   /** Inclusive upper bound on created/updated date (lexicographic). */
   to?: string;
+  sort?: "relevance" | "date_desc";
 }
 
 /** Options for `research.getPaper`. */
@@ -2359,8 +2499,8 @@ export interface SimilarPapersOptions {
 /**
  * Options for `research.searchGithub`.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface SearchGithubOptions {

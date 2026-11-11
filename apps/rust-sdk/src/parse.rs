@@ -3,12 +3,15 @@
 use std::path::Path;
 
 use reqwest::multipart::{Form, Part};
-use serde::{Deserialize, Serialize};
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 use std::collections::HashMap;
 
 use super::client::Client;
 use super::scrape::ParserConfig;
-use super::types::{AttributeSelector, Document, JsonOptions};
+use super::types::{
+    fold_format_options, unfold_format_options, AttributeSelector, Document, JsonOptions,
+};
 use crate::{AuditMetadata, FirecrawlError};
 
 /// Uploaded file payload for the `/v2/parse` endpoint.
@@ -137,7 +140,7 @@ struct ParseFormatsResponse {
 /// (e.g. actions, waitFor, location, and screenshot/branding/changeTracking options).
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct ParseOptions {
     /// Output formats to include in the response.
     pub formats: Option<Vec<ParseFormat>>,
@@ -185,6 +188,23 @@ pub struct ParseOptions {
     pub json_options: Option<JsonOptions>,
     /// Attribute selectors for extraction.
     pub attribute_selectors: Option<Vec<AttributeSelector>>,
+}
+
+impl Serialize for ParseOptions {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = ParseOptions::serialize(self, serde_json::value::Serializer)
+            .map_err(ser::Error::custom)?;
+        fold_format_options(&mut value);
+        value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ParseOptions {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut value = Value::deserialize(deserializer)?;
+        unfold_format_options(&mut value);
+        ParseOptions::deserialize(value).map_err(de::Error::custom)
+    }
 }
 
 impl Client {
@@ -486,6 +506,57 @@ mod tests {
         );
         mock.assert();
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_options_send_json_options_as_json_format() {
+        let options = ParseOptions {
+            formats: Some(vec![ParseFormat::Json]),
+            json_options: Some(JsonOptions {
+                prompt: Some("Extract the title".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["formats"],
+            json!([{ "type": "json", "prompt": "Extract the title" }])
+        );
+        assert!(payload.get("jsonOptions").is_none());
+
+        let restored: ParseOptions = serde_json::from_value(payload).unwrap();
+        assert!(matches!(
+            restored.formats.as_deref(),
+            Some([ParseFormat::Json])
+        ));
+        assert_eq!(
+            restored.json_options.and_then(|options| options.prompt),
+            Some("Extract the title".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_options_send_attribute_selectors_as_attributes_format() {
+        let options = ParseOptions {
+            formats: Some(vec![ParseFormat::Markdown, ParseFormat::Attributes]),
+            attribute_selectors: Some(vec![AttributeSelector {
+                selector: "a".to_string(),
+                attribute: "href".to_string(),
+            }]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["formats"],
+            json!([
+                "markdown",
+                { "type": "attributes", "selectors": [{ "selector": "a", "attribute": "href" }] }
+            ])
+        );
+        assert!(payload.get("attributeSelectors").is_none());
     }
 
     #[test]

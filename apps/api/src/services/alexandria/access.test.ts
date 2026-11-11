@@ -33,6 +33,44 @@ it("refuses a provider the Exchange does not know before any quote or execution"
   );
 });
 
+it("forwards caller location when the ledger shows the current agreement", async () => {
+  mocks.request.mockImplementation(async ({ path }) =>
+    String(path).includes("requirements")
+      ? requirement(true)
+      : {
+          status: 200,
+          body: {
+            providers: [
+              {
+                provider: "fred",
+                revoked: false,
+                version: "2026-01",
+                textHash: null,
+                acceptedAt: "2026-10-08T12:00:00Z",
+              },
+            ],
+          },
+        },
+  );
+  expect(
+    await authorizeProviders("team", calls, {}, "org", "203.0.113.7", "DE"),
+  ).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/provider-terms/requirements",
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/provider-terms/status?organizationId=org",
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+});
+
 it("requires the organization to hold the current agreement when terms are required", async () => {
   mocks.request.mockResolvedValue(requirement(true));
   const stale = {
@@ -173,15 +211,6 @@ it.each([
     "2026-09-20T12:00:00Z",
     "2026-09-20T12:01:00Z",
     "2026-01",
-    "b".repeat(64),
-    false,
-  ],
-  [
-    "disabled",
-    "revoked_by_organization_admin",
-    "2026-09-20T12:00:00Z",
-    "2026-09-20T12:01:00Z",
-    "2026-01",
     "a".repeat(64),
     true,
   ],
@@ -295,6 +324,46 @@ it.each([
     }
   },
 );
+
+it("keeps an acceptance of the gating version across a non-material digest change", async () => {
+  const terms = requirement(true);
+  Object.assign(terms.body.providers[0].terms, { digest: "a".repeat(64) });
+  mocks.request.mockImplementation(async ({ path }) =>
+    path.includes("requirements")
+      ? terms
+      : {
+          status: 200,
+          body: {
+            providers: [
+              {
+                provider: "fred",
+                revoked: false,
+                version: "2026-01",
+                textHash: "b".repeat(64),
+                acceptedAt: "2026-09-20T12:01:00Z",
+              },
+            ],
+          },
+        },
+  );
+  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+  expect(
+    await authorizeProviders(
+      "team",
+      calls,
+      {
+        organizationDataSourceAccess: {
+          fred: {
+            status: "disabled",
+            disabledReason: "revoked_by_organization_admin",
+            disabledAt: "2026-09-20T12:00:00Z",
+          },
+        },
+      },
+      "org",
+    ),
+  ).toBeUndefined();
+});
 
 it("does not discard other acceptances when a timestamp has an unexpected shape", async () => {
   const terms = requirement(true);

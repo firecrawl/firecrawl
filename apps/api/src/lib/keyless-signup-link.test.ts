@@ -227,6 +227,16 @@ describe("keylessSignupSurface", () => {
     // v1 schemas prefault a missing origin to "api"; the header still counts.
     [{ body: { origin: "api" }, headers: { "x-origin": "cli" } }, "cli"],
     [{ body: { origin: "api" }, headers: { "x-origin": "mcp-x@1" } }, "mcp"],
+    // A valid X-Integration header replaces a missing or cli body integration.
+    [{ body: {}, headers: { "x-integration": "cli" } }, "cli"],
+    [
+      { body: { integration: "cli" }, headers: { "x-integration": "hermes" } },
+      "api",
+    ],
+    [
+      { body: { integration: "cli" }, headers: { "x-integration": "a b!" } },
+      "cli",
+    ],
     // An explicit non-default body origin still wins over the header.
     [
       { body: { origin: "js-sdk@4.3.0" }, headers: { "x-origin": "cli" } },

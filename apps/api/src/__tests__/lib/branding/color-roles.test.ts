@@ -307,6 +307,59 @@ describe("monochrome brands", () => {
     expect(merged.colors?.primary).toBe("#635BFF");
   });
 
+  it("drops saturated colors no button uses, but keeps the displaced link color", () => {
+    const merged = mergeBrandingResults(
+      { colorScheme: "light", colors: {} },
+      {
+        ...llmPicking("#0072F5"),
+        colorRoles: {
+          ...llmPicking("#0072F5").colorRoles,
+          secondaryColor: "#FFC96B",
+          accentColor: "#9A050F",
+        },
+      },
+      [button("#171717", "#FFFFFF", 0), button("#FFFFFF", "#171717", 1)],
+    );
+    expect(merged.colors?.primary).toBe("#171717");
+    expect(merged.colors?.accent).toBe("#171717");
+    expect(merged.colors?.secondary).toBeUndefined();
+
+    const linkOnly = mergeBrandingResults(
+      { colorScheme: "light", colors: {} },
+      llmPicking("#0072F5"),
+      [button("#171717", "#FFFFFF", 0)],
+    );
+    expect(linkOnly.colors?.accent).toBe("#0072F5");
+  });
+
+  it("keeps saturated accents when the primary is navy chrome or there is no black call to action", () => {
+    const navy = mergeBrandingResults(
+      { colorScheme: "light", colors: {} },
+      {
+        ...llmPicking("#061B31"),
+        colorRoles: {
+          ...llmPicking("#061B31").colorRoles,
+          accentColor: "#635BFF",
+        },
+      },
+      [button("#061B31", "#FFFFFF", 0)],
+    );
+    expect(navy.colors?.accent).toBe("#635BFF");
+
+    const noButtons = mergeBrandingResults(
+      { colorScheme: "light", colors: {} },
+      {
+        ...llmPicking("#111111"),
+        colorRoles: {
+          ...llmPicking("#111111").colorRoles,
+          accentColor: "#E51503",
+        },
+      },
+      [],
+    );
+    expect(noButtons.colors?.accent).toBe("#E51503");
+  });
+
   it("leaves dark pages alone", () => {
     const merged = mergeBrandingResults(
       { colorScheme: "dark", colors: {} },
@@ -382,5 +435,98 @@ describe("near-white primaries", () => {
         colorScheme: "dark",
       }),
     ).toBe("#E7DBFF");
+  });
+});
+
+describe("logo color and measured text color", () => {
+  const logo = "https://acme.test/logo.svg";
+  const candidate = (colors: Array<{ color: string; share: number }>) =>
+    ({
+      src: logo,
+      alt: "Acme",
+      isSvg: true,
+      isVisible: true,
+      location: "header",
+      position: { top: 10, left: 10, width: 120, height: 32 },
+      indicators: {
+        inHeader: true,
+        altMatch: true,
+        srcMatch: true,
+        classMatch: false,
+        hrefMatch: true,
+      },
+      source: "img",
+      colors,
+    }) as any;
+  const llm = (primaryColor: string, textPrimary = "#111111") => ({
+    cleanedFonts: [],
+    buttonClassification: {
+      primaryButtonIndex: -1,
+      primaryButtonReasoning: "n/a",
+      secondaryButtonIndex: -1,
+      secondaryButtonReasoning: "n/a",
+      confidence: 0,
+    },
+    colorRoles: {
+      primaryColor,
+      accentColor: "",
+      backgroundColor: "#FFFFFF",
+      textPrimary,
+      confidence: 0.8,
+    },
+  });
+
+  it("takes the logo's color as primary when the extracted one is pale or far from it", () => {
+    const pale = mergeBrandingResults(
+      {
+        colorScheme: "light",
+        colors: { primary: "#FFE6AA" },
+        images: { logo },
+      },
+      llm("#FFE6AA"),
+      [],
+      [
+        candidate([
+          { color: "#0071DC", share: 0.6 },
+          { color: "#FFC220", share: 0.3 },
+        ]),
+      ],
+    );
+    expect(pale.colors?.primary).toBe("#0071DC");
+
+    const far = mergeBrandingResults(
+      { colorScheme: "light", colors: {}, images: { logo } },
+      llm("#F6339A"),
+      [],
+      [candidate([{ color: "#00A6F4", share: 0.8 }])],
+    );
+    expect(far.colors?.primary).toBe("#00A6F4");
+  });
+
+  it("keeps a primary that is the logo's color, and ignores a black logo", () => {
+    const close = mergeBrandingResults(
+      { colorScheme: "light", colors: {}, images: { logo } },
+      llm("#0074E0"),
+      [],
+      [candidate([{ color: "#0071DC", share: 0.9 }])],
+    );
+    expect(close.colors?.primary).toBe("#0074E0");
+
+    const black = mergeBrandingResults(
+      { colorScheme: "light", colors: {}, images: { logo } },
+      llm("#E51503"),
+      [],
+      [candidate([{ color: "#000000", share: 1 }])],
+    );
+    expect(black.colors?.primary).toBe("#E51503");
+  });
+
+  it("keeps the measured neutral text color over a saturated pick", () => {
+    const merged = mergeBrandingResults(
+      { colorScheme: "light", colors: { textPrimary: "#202122" } },
+      llm("#3366CC", "#3366CC"),
+      [],
+    );
+    expect(merged.colors?.textPrimary).toBe("#202122");
   });
 });

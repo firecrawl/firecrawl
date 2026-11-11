@@ -3,8 +3,18 @@ packages:
 injectWorkspacePackages: true
 minimumReleaseAge: 720 # 12 hours
 minimumReleaseAgeExclude:
+  # GHSA-27r3-jxmh-p828: allow today's patched releases through the age gate.
+  - "body-parser@1.20.9 || 2.4.0"
+  # GHSA-rxp7-6hxx-x8q5: patched release published today.
+  - "ip-address@10.7.4"
   - fast-xml-parser
   - follow-redirects
+  # GHSA-27r3-jxmh-p828: body-parser 1.20.9 and 2.4.0 were published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - body-parser
+  # GHSA-q7qp-rjg7-q26m / CVE-2026-113872: multer 2.5.0 was published
+  # 2026-10-22, inside the 12-hour release-age gate.
+  - multer
   # TypeScript 7 resolves its native platform binaries (e.g.
   # @typescript/typescript-darwin-arm64) as transitive optional deps, which
   # the age gate would otherwise silently skip, leaving tsc unable to run.
@@ -12,22 +22,34 @@ minimumReleaseAgeExclude:
   - "@typescript/typescript6"
   - "@typescript/typescript-*"
 overrides:
+  # GHSA-mrhx-c7xc-m3w5: fixed in 4.6.6. Bounded <5.0.0; cannot resolve to 5.x.
+  "zod@>=4.0.0 <4.6.6": "4.6.7"
+  # GHSA-27r3-jxmh-p828: Express 5.2.1 also loads body-parser 2.x.
+  "body-parser@<1.20.9": "1.20.9"
+  "body-parser@>=2.0.0 <2.4.0": "2.4.0"
   "@types/express": "^5.0.6"
+  # GHSA-698v-4r3x-3vcv: pin the 8.0 and 8.1 lines to 8.1.6. Cannot resolve to 8.2+.
+  "vite@>=8.0.0 <8.1.6": "8.1.6"
   bigint-buffer: "npm:four-flap-bigint-buffer@1.1.6"
   diff: "^8.0.3"
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
-  fast-xml-parser: "^5.7.0"
-  fast-uri: "3.1.8"
-  "glob@>=10.2.0 <10.5.0": ">=10.5.0"
+  # GHSA-474x-hrwr-fgx4: fixed in >=5.11.3. Bounded <6.0.0; cannot resolve to 6.x.
+  "fast-xml-parser": ">=5.11.3 <6.0.0"
+  fast-uri: "3.1.9"
+  # GHSA-3g3m-2fjr-6pw4: every 9.x to 14.0.1 is affected; fixed in 14.0.2.
+  # Bounded <15.0.0.
+  "glob@>=9.0.0 <14.0.2": ">=14.0.2 <15.0.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
-  "qs@<6.16.0": ">=6.16.0 <7.0.0"
-  "minimatch@<10.2.3": ">=10.2.3"
+  # GHSA-6pq8-jhm2-2vcw: fixed in 6.16.1. Bounded <7.0.0.
+  "qs@<6.16.1": ">=6.16.1 <7.0.0"
+  # GHSA-g3hv-75wg-m249: fixed in 11.0.1. Bounded <12.0.0.
+  "minimatch@<11.0.1": ">=11.0.1 <12.0.0"
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
-  undici: "7.30.0"
+  undici: "7.30.1"
   # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
   # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
   # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
@@ -61,13 +83,21 @@ overrides:
   "form-data@>=3.0.0 <3.0.5": "3.0.5"
   "form-data@>=4.0.0 <4.0.6": "4.0.6"
   "@babel/core@>=7.0.0 <7.29.6": "7.29.7"
-  "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
+  # GHSA-Q3JH-WRC6-JGQ8 / GHSA-8R9P-F939-6H3C: fixed in 1.16.1.
+  # GHSA-mrwp-f3q8-3g9p: fixed in 1.16.2.
+  # Replacement is bounded <2.0.0; cannot resolve to follow-redirects 2.x.
+  "follow-redirects@<1.16.2": ">=1.16.2 <2.0.0"
   "uuid@<11.1.1": "11.1.1"
   "js-cookie@<3.0.7": "3.0.7"
   # GHSA-pqg4-j6r4-53mv: fixed in 1.11.0.
   "shell-quote@<1.11.0": "1.11.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
   "query-string@>=9.0.0 <10.0.0": ">=9.5.0 <10.0.0"
+  # GHSA-QR28-FPJM-WQ7F: decode-uri-component 0.5.0 is vulnerable (DoS via
+  # quadratic replacement of percent-encoded runs); 0.5.1 is the fix.
+  # Selector covers only 0.5.0; replacement stays within 0.x, cannot
+  # resolve to 1.x.
+  "decode-uri-component@>=0.5.0 <0.5.1": "0.5.1"
   # GHSA-866g-f22w-33x8: pin the 4.x line only. Exact 4.0.51 cannot
   # resolve to 5.x.
   "@ai-sdk/provider-utils@>=4.0.0 <4.0.33": "4.0.51"
@@ -82,7 +112,7 @@ overrides:
   # GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
   # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
   # ip-address@^6, but only its updatedb script loads it; lookup() never does.
-  "geoip-country>ip-address": "10.7.3"
+  "geoip-country>ip-address": "10.7.4"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:

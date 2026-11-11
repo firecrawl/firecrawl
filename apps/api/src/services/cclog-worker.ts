@@ -15,6 +15,14 @@ const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+async function sleepUntilNextMinute() {
+  const now = new Date();
+  const nextMinute = now.getTime() + getMsUntilNextMinute(now);
+  while (Date.now() < nextMinute) {
+    await sleep(nextMinute - Date.now());
+  }
+}
+
 async function sendHeartbeat() {
   if (config.CCLOG_WORKER_HEARTBEAT_URL) {
     try {
@@ -80,7 +88,7 @@ async function sendHeartbeat() {
   _logger.info("Waiting for next exact minute to start cclog worker", {
     waitMs: getMsUntilNextMinute(),
   });
-  await sleep(getMsUntilNextMinute());
+  await sleepUntilNextMinute();
 
   const redis = getRedisConnection();
 
@@ -116,7 +124,7 @@ async function sendHeartbeat() {
     }
 
     if (!isShuttingDown) {
-      await sleep(getMsUntilNextMinute());
+      await sleepUntilNextMinute();
     }
   }
 })();

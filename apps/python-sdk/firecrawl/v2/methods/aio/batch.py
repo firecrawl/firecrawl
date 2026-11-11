@@ -98,7 +98,7 @@ async def get_batch_scrape_status(
     
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
-    if auto_paginate and payload["next"]:
+    if auto_paginate and payload["next"] and (docs or payload["status"] == "completed"):
         docs = await _fetch_all_batch_pages_async(
             client, 
             payload["next"], 
@@ -217,7 +217,9 @@ async def _fetch_all_batch_pages_async(
         if (max_results is not None) and (len(documents) >= max_results):
             break
         
-        # Get next URL
+        # A running job repeats its cursor on an empty page until new documents finish.
+        if not page_payload["data"] and page_payload["next"] == current_url:
+            break
         current_url = page_payload["next"]
         page_count += 1
     

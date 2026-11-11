@@ -20,10 +20,13 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
+    GovSearchCourtType,
     GovSearchResponse,
     SourceOption,
     FindToolsData,
     AlexandriaCall,
+    AlexandriaFeedbackRequest,
+    AlexandriaFeedbackResponse,
     AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
@@ -59,6 +62,7 @@ from .types import (
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
 from .utils.error_handler import CrawlJobTimeoutError
+from .utils.v1_compat import acall_v1
 
 from .methods.aio import scrape as async_scrape  # type: ignore[attr-defined]
 from .methods.aio import parse as async_parse  # type: ignore[attr-defined]
@@ -74,6 +78,7 @@ from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 from .methods.aio import research as async_research  # type: ignore[attr-defined]
+from .methods.aio import feedback as async_feedback  # type: ignore[attr-defined]
 from .methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
@@ -98,10 +103,6 @@ def _consume_task_outcome(task: "asyncio.Future[Any]") -> None:
 
 
 class AsyncFirecrawlClient:
-    @staticmethod
-    def _is_cloud_service(url: str) -> bool:
-        return "api.firecrawl.dev" in url.lower()
-
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -113,8 +114,6 @@ class AsyncFirecrawlClient:
     ):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        if self._is_cloud_service(api_url) and not api_key:
-            raise ValueError("API key is required for the cloud API. Set FIRECRAWL_API_KEY or pass api_key.")
         self.http_client = HttpClient(
             api_key,
             api_url,
@@ -167,6 +166,12 @@ class AsyncFirecrawlClient:
             self.async_http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
+    async def alexandria_feedback(
+        self, request: Union[AlexandriaFeedbackRequest, Dict[str, Any]]
+    ) -> AlexandriaFeedbackResponse:
+        """Rate Alexandria calls. See FirecrawlClient.alexandria_feedback."""
+        return await async_feedback.alexandria_feedback(self.async_http_client, request)
+
     async def find_tools(self, **options) -> FindToolsData:
         """Explore providers and contracts without executing discovered tools.
 
@@ -185,12 +190,20 @@ class AsyncFirecrawlClient:
                 code=item.error.code,
                 charge_id=item.error.charge_id,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**item.data, feedback_token=item.feedback_token)
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await async_research.search_papers(self.async_http_client, query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await async_research.search_papers(
+            self.async_http_client, query, sort=sort, **kwargs
+        )
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):
@@ -262,45 +275,45 @@ class AsyncFirecrawlClient:
         """Deprecated alias for stop_interaction()."""
         return await self.stop_interaction(job_id)
 
-    async def scrape_url(self, url: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer scrape()."""
-        return await self.scrape(url, **kwargs)
+    async def scrape_url(self, url: str, params: Optional[Dict[str, Any]] = None, **kwargs):
+        """Deprecated v1 alias for scrape(); also takes v1 params and returns v1-readable results."""
+        return await acall_v1(self.scrape, url, params=params, **kwargs)
 
-    async def crawl_url(self, url: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer crawl()."""
-        return await self.crawl(url=url, **kwargs)
+    async def crawl_url(self, url: str, params: Optional[Dict[str, Any]] = None, idempotency_key: Optional[str] = None, **kwargs):
+        """Deprecated v1 alias for crawl(); also takes v1 params and returns v1-readable results. v2 crawls take no idempotency_key, so it is ignored."""
+        return await acall_v1(self.crawl, url=url, params=params, **kwargs)
 
-    async def map_url(self, url: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer map()."""
-        return await self.map(url, **kwargs)
+    async def map_url(self, url: str, params: Optional[Dict[str, Any]] = None, **kwargs):
+        """Deprecated v1 alias for map(); also takes v1 params and returns v1-readable results."""
+        return await acall_v1(self.map, url, params=params, **kwargs)
 
-    async def async_crawl_url(self, url: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer start_crawl()."""
-        return await self.start_crawl(url, **kwargs)
+    async def async_crawl_url(self, url: str, params: Optional[Dict[str, Any]] = None, idempotency_key: Optional[str] = None, **kwargs):
+        """Deprecated v1 alias for start_crawl(); also takes v1 params and returns v1-readable results. v2 crawls take no idempotency_key, so it is ignored."""
+        return await acall_v1(self.start_crawl, url, params=params, **kwargs)
 
     async def check_crawl_status(self, id: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer get_crawl_status()."""
-        return await self.get_crawl_status(id, **kwargs)
+        """Deprecated v1 alias for get_crawl_status(); returns v1-readable results."""
+        return await acall_v1(self.get_crawl_status, id, **kwargs)
 
     async def check_crawl_errors(self, id: str):
-        """V1 compatibility alias for agent recovery. Prefer get_crawl_errors()."""
-        return await self.get_crawl_errors(id)
+        """Deprecated v1 alias for get_crawl_errors(); returns v1-readable results."""
+        return await acall_v1(self.get_crawl_errors, id)
 
-    async def batch_scrape_urls(self, urls, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer batch_scrape()."""
-        return await self.batch_scrape(urls, **kwargs)
+    async def batch_scrape_urls(self, urls, params: Optional[Dict[str, Any]] = None, **kwargs):
+        """Deprecated v1 alias for batch_scrape(); also takes v1 params and returns v1-readable results."""
+        return await acall_v1(self.batch_scrape, urls, params=params, **kwargs)
 
-    async def async_batch_scrape_urls(self, urls, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer start_batch_scrape()."""
-        return await self.start_batch_scrape(urls, **kwargs)
+    async def async_batch_scrape_urls(self, urls, params: Optional[Dict[str, Any]] = None, **kwargs):
+        """Deprecated v1 alias for start_batch_scrape(); also takes v1 params and returns v1-readable results."""
+        return await acall_v1(self.start_batch_scrape, urls, params=params, **kwargs)
 
     async def check_batch_scrape_status(self, id: str, **kwargs):
-        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_status()."""
-        return await self.get_batch_scrape_status(id, **kwargs)
+        """Deprecated v1 alias for get_batch_scrape_status(); returns v1-readable results."""
+        return await acall_v1(self.get_batch_scrape_status, id, **kwargs)
 
     async def check_batch_scrape_errors(self, id: str):
-        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_errors()."""
-        return await self.get_batch_scrape_errors(id)
+        """Deprecated v1 alias for get_batch_scrape_errors(); returns v1-readable results."""
+        return await acall_v1(self.get_batch_scrape_errors, id)
 
     async def parse(
         self,
@@ -373,10 +386,47 @@ class AsyncFirecrawlClient:
         self,
         query: str,
         k: Optional[int] = None,
+        *,
+        jurisdiction: Optional[str] = None,
+        court: Optional[str] = None,
+        court_type: Optional[GovSearchCourtType] = None,
+        cites: Optional[str] = None,
+        domain: Optional[str] = None,
     ) -> GovSearchResponse:
-        """Search the Government Index of US primary law and regulatory material."""
+        """
+        Search the Government Index of US primary law and regulatory material.
+
+        Filters keep only pages the index has labeled, so a filtered search can
+        leave out relevant pages, and no results does not mean none exist. Court
+        labels are most complete for federal courts and case-law collections.
+
+        Args:
+            query: Search query string
+            k: Number of results to return, 1-100 (default: 10)
+            jurisdiction: Keep only pages of one jurisdiction: "us" for federal,
+                or "us-" plus a two-letter state or territory code, such as
+                "us-ca" or "us-dc"
+            court: Keep only pages labeled for one court, by CourtListener court
+                id, such as "scotus", "ca9" or "nysd"
+            court_type: Keep only pages from one type of court, such as
+                "federal-appellate" or "state-supreme"
+            cites: Keep only pages that cite one law or case, as a printed
+                citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a
+                citation id such as "us:usc:42:1983"
+            domain: Keep only pages from one site, such as "irs.gov"
+
+        Returns:
+            GovSearchResponse with ranked results in data.web
+        """
         return await async_gov.gov_search(
-            self.async_http_client, query, k=k
+            self.async_http_client,
+            query,
+            k=k,
+            jurisdiction=jurisdiction,
+            court=court,
+            court_type=court_type,
+            cites=cites,
+            domain=domain,
         )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
@@ -881,6 +931,8 @@ class AsyncFirecrawlClient:
         thread_id: Optional[str] = None,
         mode: Optional[Literal["extract", "chat"]] = None,
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
+        location: Optional[Dict[str, str]] = None,
+        zero_data_retention: Optional[bool] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -900,6 +952,8 @@ class AsyncFirecrawlClient:
             thread_id=thread_id,
             mode=mode,
             exchange=exchange,
+            location=location,
+            zero_data_retention=zero_data_retention,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -922,6 +976,8 @@ class AsyncFirecrawlClient:
         thread_id: Optional[str] = None,
         mode: Optional[Literal["extract", "chat"]] = None,
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
+        location: Optional[Dict[str, str]] = None,
+        zero_data_retention: Optional[bool] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,
@@ -939,6 +995,8 @@ class AsyncFirecrawlClient:
             thread_id=thread_id,
             mode=mode,
             exchange=exchange,
+            location=location,
+            zero_data_retention=zero_data_retention,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:

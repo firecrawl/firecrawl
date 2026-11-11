@@ -133,17 +133,20 @@ async function saveCclogMinuteSample(
 
   if (sample.concurrencyByTeam.size > 0) {
     let values: Record<string, string> = {};
+    let fields = 0;
 
     for (const [teamId, concurrency] of sample.concurrencyByTeam) {
       values[teamId] = String(concurrency);
+      fields++;
 
-      if (Object.keys(values).length >= CCLOG_HSET_FIELD_CHUNK_SIZE) {
+      if (fields >= CCLOG_HSET_FIELD_CHUNK_SIZE) {
         pipeline.hset(key, values);
         values = {};
+        fields = 0;
       }
     }
 
-    if (Object.keys(values).length > 0) {
+    if (fields > 0) {
       pipeline.hset(key, values);
     }
   } else {

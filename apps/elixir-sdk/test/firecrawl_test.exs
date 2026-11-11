@@ -1051,6 +1051,154 @@ defmodule FirecrawlTest do
     end
   end
 
+  defp developer_search_body do
+    %{
+      "success" => true,
+      "partial" => false,
+      "results" => [
+        %{
+          "id" => "issue:square/okhttp#4963",
+          "url" => "https://github.com/square/okhttp/issues/4963",
+          "title" => "Issues with retry on connection failure",
+          "passages" => [%{"text" => "OkHttp retries when a client reuses a closed connection."}],
+          "license" => "Apache-2.0"
+        },
+        %{
+          "id" => "doc:okhttp/recipes",
+          "url" => "https://square.github.io/okhttp/recipes/",
+          "passages" => [],
+          "license" => %{"state" => "unknown"}
+        }
+      ],
+      "repos" => [
+        %{
+          "repo" => "square/okhttp",
+          "indexed" => true,
+          "types" => %{"issue" => true, "pullRequest" => true, "readme" => false}
+        }
+      ]
+    }
+  end
+
+  test "search_developer posts the query, filters and origin and returns a typed response" do
+    assert {:ok, %Firecrawl.DeveloperSearch{} = response} =
+             Firecrawl.search_developer(
+               [
+                 query: "http client retry",
+                 k: 3,
+                 passages: 2,
+                 types: ["issue"],
+                 repos: ["square/okhttp"],
+                 sources: ["okhttp-docs"],
+                 language: "Java",
+                 topic: ["http"],
+                 license: "apache-2.0",
+                 min_stars: 100,
+                 max_stars: 100_000,
+                 archived: false,
+                 fork: false,
+                 skills: :only
+               ],
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, developer_search_body())
+             )
+
+    assert_receive {:request, request}
+    assert request.method == :post
+    assert URI.to_string(request.url) == "https://api.firecrawl.dev/v2/search/developer"
+    assert request.headers["authorization"] == ["Bearer test-key"]
+
+    assert Jason.decode!(request.body) == %{
+             "query" => "http client retry",
+             "k" => 3,
+             "passages" => 2,
+             "types" => ["issue"],
+             "repos" => ["square/okhttp"],
+             "sources" => ["okhttp-docs"],
+             "language" => "Java",
+             "topic" => ["http"],
+             "license" => "apache-2.0",
+             "min_stars" => 100,
+             "max_stars" => 100_000,
+             "archived" => false,
+             "fork" => false,
+             "skills" => "only",
+             "origin" => "elixir-sdk@" <> Mix.Project.config()[:version]
+           }
+
+    assert %Firecrawl.DeveloperSearch{success: true, partial: false, sources: nil} = response
+
+    assert [
+             %Firecrawl.DeveloperSearch.Result{
+               id: "issue:square/okhttp#4963",
+               title: "Issues with retry on connection failure",
+               passages: ["OkHttp retries when a client reuses a closed connection."],
+               license: "Apache-2.0"
+             },
+             %Firecrawl.DeveloperSearch.Result{title: nil, passages: [], license: %{"state" => "unknown"}}
+           ] = response.results
+
+    assert [
+             %Firecrawl.DeveloperSearch.Repo{
+               repo: "square/okhttp",
+               indexed: true,
+               types: %{issue: true, pull_request: true, readme: false}
+             }
+           ] = response.repos
+  end
+
+  test "search_developer! returns the typed response" do
+    assert %Firecrawl.DeveloperSearch{results: [_, _]} =
+             Firecrawl.search_developer!(
+               [query: "http client retry"],
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, developer_search_body())
+             )
+  end
+
+  test "search_developer rejects a blank query before sending a request" do
+    adapter = parse_formats_adapter(self(), 200, developer_search_body())
+
+    for query <- ["", "   "] do
+      assert {:error, %ArgumentError{message: "query cannot be empty"}} =
+               Firecrawl.search_developer([query: query], api_key: "test-key", adapter: adapter)
+
+      assert_raise ArgumentError, "query cannot be empty", fn ->
+        Firecrawl.search_developer!([query: query], api_key: "test-key", adapter: adapter)
+      end
+    end
+
+    assert {:error, %NimbleOptions.ValidationError{}} =
+             Firecrawl.search_developer([], api_key: "test-key", adapter: adapter)
+
+    refute_received {:request, _}
+  end
+
+  test "search_developer returns {:error, %Firecrawl.Error{}} on API errors" do
+    adapter = parse_formats_adapter(self(), 401, %{"success" => false, "error" => "Unauthorized"})
+
+    assert {:error, %Firecrawl.Error{status: 401}} =
+             Firecrawl.search_developer([query: "retry"], api_key: "bad-key", adapter: adapter, retry: false)
+  end
+
+  test "search_developer returns a non-API error for an unexpected success body" do
+    adapter = parse_formats_adapter(self(), 200, %{"success" => true})
+
+    assert {:error, %RuntimeError{message: msg}} =
+             Firecrawl.search_developer([query: "retry"], api_key: "test-key", adapter: adapter)
+
+    assert msg =~ "unexpected POST /search/developer response (HTTP 200)"
+  end
+
+  test "search_developer returns an error tuple for malformed result entries" do
+    adapter = parse_formats_adapter(self(), 200, %{"success" => true, "results" => ["not a map"]})
+
+    assert {:error, exception} =
+             Firecrawl.search_developer([query: "retry"], api_key: "test-key", adapter: adapter)
+
+    assert is_exception(exception)
+  end
+
   test "all expected API functions are defined with bang variants" do
     functions = Firecrawl.__info__(:functions)
 
@@ -1088,7 +1236,13 @@ defmodule FirecrawlTest do
       {:get_parse_formats, 0},
       {:get_parse_formats, 1},
       {:get_parse_formats!, 0},
-      {:get_parse_formats!, 1}
+      {:get_parse_formats!, 1},
+      {:search_developer, 0},
+      {:search_developer, 1},
+      {:search_developer, 2},
+      {:search_developer!, 0},
+      {:search_developer!, 1},
+      {:search_developer!, 2}
     ]
 
     for {name, arity} <- expected do

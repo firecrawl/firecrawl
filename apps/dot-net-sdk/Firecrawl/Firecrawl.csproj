@@ -8,10 +8,10 @@
 
     <!-- NuGet package metadata -->
     <PackageId>firecrawl-sdk</PackageId>
-    <Version>1.14.2</Version>
+    <Version>1.15.3</Version>
     <Authors>Firecrawl</Authors>
     <Company>Firecrawl</Company>
-    <Description>.NET SDK for the Firecrawl API - web scraping, crawling, and data extraction</Description>
+    <Description>.NET SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, and map the web, and run Monitor jobs.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/firecrawl/firecrawl</PackageProjectUrl>
     <RepositoryUrl>https://github.com/firecrawl/firecrawl</RepositoryUrl>

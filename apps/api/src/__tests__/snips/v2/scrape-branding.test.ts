@@ -57,17 +57,13 @@ const isBrandingCall = (call: CostTrackingCall) =>
   call.metadata?.module === "branding" &&
   call.metadata?.method === "enhanceBrandingWithLLM";
 
-// Whether the server could route a test team's branding to Jev (all teams, a
-// listed team, or a rollout share). The LLM-only assertion below only holds
-// when none of these is configured.
-const JEV_MAY_APPLY =
-  !!process.env.TYPESAFE_API_KEY &&
-  (process.env.BRANDING_JEV === "true" ||
-    !!process.env.BRANDING_JEV_TEAM_IDS?.trim() ||
-    Number(process.env.BRANDING_JEV_ROLLOUT_PERCENT || 0) > 0);
+// Jev answers branding whenever the server has a TypeSafe key, unless
+// BRANDING_JEV=false. The LLM-only assertion below holds only when it doesn't.
+const JEV_ON =
+  !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV !== "false";
 
 describe("Branding cost tracking", () => {
-  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && !JEV_MAY_APPLY)(
+  concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && !JEV_ON)(
     "records the branding LLM call with its model and cost",
     async () => {
       const response = await scrape(
@@ -111,11 +107,7 @@ describe("Branding cost tracking", () => {
   );
 });
 
-// Runs when the API server was started with TYPESAFE_API_KEY and
-// BRANDING_JEV=true, which puts every team (including test identities, whose
-// ids aren't known ahead of time) on Jev.
-const JEV_ON =
-  !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV === "true";
+// Runs when the API server answers branding with Jev (see JEV_ON above).
 
 describe("Branding with Jev", () => {
   concurrentIf(TEST_PRODUCTION && HAS_JOB_LOG && JEV_ON)(
@@ -146,6 +138,27 @@ describe("Branding with Jev", () => {
       expect(calls.filter(isBrandingCall)).toHaveLength(0);
     },
     scrapeTimeout + 15000,
+  );
+
+  // `__experimental_screenshot` shows Jev the page's first screen; that
+  // capture is internal.
+  concurrentIf(TEST_PRODUCTION && JEV_ON)(
+    "keeps the first screen it shows Jev out of the response",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: [{ type: "branding", __experimental_screenshot: true }],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.screenshot).toBeUndefined();
+      expect(response.actions).toBeUndefined();
+    },
+    scrapeTimeout,
   );
 });
 

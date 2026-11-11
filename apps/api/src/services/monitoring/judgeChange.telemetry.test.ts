@@ -215,9 +215,46 @@ describe("judgeChange telemetry", () => {
   });
 });
 
+function contradictoryVerdict(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    meaningful: true,
+    confidence: "high",
+    reason: "There are no meaningful new announcements added.",
+    meaningfulChanges: [],
+    ...overrides,
+  });
+}
+
+function capturingLogger() {
+  const warnings: Array<{ message: string; meta?: unknown }> = [];
+  const logger = {
+    warn: (message: string, meta?: unknown) => {
+      warnings.push({ message, meta });
+    },
+    info: () => {},
+    error: () => {},
+    debug: () => {},
+    child() {
+      return logger;
+    },
+  };
+  return { logger: logger as any, warnings };
+}
+
+function assertLogsOmitEvidence(
+  warnings: Array<{ message: string; meta?: unknown }>,
+) {
+  const serialized = JSON.stringify(warnings);
+  expect(serialized).not.toContain("Pro plan");
+  expect(serialized).not.toContain("Track the Pro plan price");
+  expect(serialized).not.toContain("capture the price table");
+  expect(serialized).not.toContain("no meaningful new announcements");
+}
+
 describe("judgeChange behaviour", () => {
   beforeEach(() => {
     mocks.doGenerate.mockReset();
+    (generateText as Mock).mockClear();
     vi.spyOn(Math, "random").mockReturnValue(0);
   });
 
@@ -241,6 +278,33 @@ describe("judgeChange behaviour", () => {
         },
       ],
     });
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let reason wording override a true verdict that still has a valid change", async () => {
+    mocks.doGenerate.mockResolvedValue(
+      providerResult(
+        JSON.stringify({
+          meaningful: true,
+          confidence: "high",
+          reason: "There are no meaningful new announcements added.",
+          meaningfulChanges: [
+            {
+              type: "changed",
+              before: "Pro plan: $19",
+              after: "Pro plan: $24",
+              reason: "The goal tracks the Pro price.",
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await judge();
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(1);
+    expect(result.meaningful).toBe(true);
+    expect(result.meaningfulChanges).toHaveLength(1);
   });
 
   it("defaults to meaningful when the response is not JSON", async () => {
@@ -267,5 +331,212 @@ describe("judgeChange behaviour", () => {
     await judge({ markdownDiff: undefined });
 
     expect(mocks.doGenerate).not.toHaveBeenCalled();
+  });
+
+  it("retries when every change entry is removed by sanitization", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate
+      .mockResolvedValueOnce(
+        providerResult(
+          contradictoryVerdict({
+            meaningfulChanges: [
+              {
+                type: "added",
+                before: "x",
+                after: "y",
+                reason: "invalid pair",
+              },
+            ],
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(providerResult(PRICE_CHANGED));
+
+    const result = await judge({
+      logger,
+      extractionPrompt: "capture the price table",
+    });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(2);
+    expect(result.meaningful).toBe(true);
+    expect(result.meaningfulChanges).toEqual([
+      {
+        type: "changed",
+        before: "Pro plan: $19",
+        after: "Pro plan: $24",
+        reason: "The goal tracks the Pro price.",
+      },
+    ]);
+    const retryBlob = JSON.stringify(mocks.doGenerate.mock.calls[1][0]);
+    expect(retryBlob).toContain("MONITOR GOAL");
+    expect(retryBlob).toContain("Track the Pro plan price");
+    expect(retryBlob).toContain("Pro plan: $19");
+    expect(retryBlob).toContain("capture the price table");
+    expect(retryBlob).toContain("no valid meaningfulChanges remained");
+    expect(mocks.doGenerate.mock.calls[1][0].providerOptions).toEqual({
+      vertex: {
+        thinkingConfig: { thinkingLevel: "minimal" },
+        labels: { functionId: "judgeChangeValidationRetry", ...LABELS },
+      },
+    });
+    expect(telemetryOfCalls()[1]).toMatchObject({
+      functionId: "monitor/judgeChangeValidationRetry",
+      metadata: expect.objectContaining({
+        jobId: "test-check",
+        feature: "monitor_judge_validation_retry",
+      }),
+    });
+    expect(warnings.map(warning => warning.message)).toEqual([
+      "Judge validation failed; retrying once",
+    ]);
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("accepts a retry that returns meaningful false", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate
+      .mockResolvedValueOnce(providerResult(contradictoryVerdict()))
+      .mockResolvedValueOnce(
+        providerResult(
+          JSON.stringify({
+            meaningful: false,
+            confidence: "medium",
+            reason: "There are no meaningful new announcements added.",
+            meaningfulChanges: [
+              { type: "added", before: "x", after: "y", reason: "invalid" },
+            ],
+          }),
+        ),
+      );
+
+    const result = await judge({ logger });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      meaningful: false,
+      confidence: "medium",
+      meaningfulChanges: [],
+    });
+    expect(warnings).toHaveLength(1);
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("fails open when the validation retry is still contradictory", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate.mockResolvedValue(providerResult(contradictoryVerdict()));
+
+    const result = await judge({ logger });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      meaningful: true,
+      confidence: "high",
+      reason: "There are no meaningful new announcements added.",
+      meaningfulChanges: [],
+    });
+    expect(warnings.map(warning => warning.message)).toEqual([
+      "Judge validation failed; retrying once",
+      "Judge validation retry was still invalid; failing open",
+    ]);
+    expect(warnings[1].meta).toMatchObject({
+      validation: "meaningful_without_changes",
+      outcome: "contradictory",
+    });
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("fails open when the validation retry errors", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate
+      .mockResolvedValueOnce(providerResult(contradictoryVerdict()))
+      .mockRejectedValue(new Error("provider unavailable"));
+
+    const result = await judge({ logger });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(4);
+    expect(result).toMatchObject({ meaningful: true, confidence: "low" });
+    expect(result.reason).toContain("provider unavailable");
+    expect(warnings.map(warning => warning.message)).toEqual([
+      "Judge validation failed; retrying once",
+      "Judge validation retry failed; failing open",
+    ]);
+    expect(warnings[1].meta).toEqual({
+      validation: "meaningful_without_changes",
+      errorName: "Error",
+    });
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("fails open when the validation retry is unparseable", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate
+      .mockResolvedValueOnce(providerResult(contradictoryVerdict()))
+      .mockResolvedValueOnce(
+        providerResult("no idea, the diff was Pro plan: $19"),
+      );
+
+    const result = await judge({ logger });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      meaningful: true,
+      confidence: "low",
+      reason: "Judge response unparseable — defaulting to meaningful.",
+      meaningfulChanges: [],
+    });
+    expect(warnings.map(warning => warning.message)).toEqual([
+      "Judge validation failed; retrying once",
+      "Judge returned unparseable response",
+      "Judge validation retry was still invalid; failing open",
+    ]);
+    expect(warnings[2].meta).toMatchObject({ outcome: "unparseable" });
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("fails open when the validation retry is not valid JSON", async () => {
+    const { logger, warnings } = capturingLogger();
+    mocks.doGenerate
+      .mockResolvedValueOnce(providerResult(contradictoryVerdict()))
+      .mockResolvedValueOnce(
+        providerResult('{ "meaningful": true, "reason": "Pro plan: $19", }'),
+      );
+
+    const result = await judge({ logger });
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      meaningful: true,
+      confidence: "low",
+      reason: "Judge response not valid JSON — defaulting to meaningful.",
+      meaningfulChanges: [],
+    });
+    expect(warnings.map(warning => warning.message)).toEqual([
+      "Judge validation failed; retrying once",
+      "Judge JSON parse failed — defaulting to meaningful",
+      "Judge validation retry was still invalid; failing open",
+    ]);
+    expect(warnings[1].meta).toEqual({});
+    expect(warnings[2].meta).toMatchObject({ outcome: "unparseable" });
+    assertLogsOmitEvidence(warnings);
+  });
+
+  it("does not retry when the meaningful boolean is missing", async () => {
+    mocks.doGenerate.mockResolvedValue(
+      providerResult(
+        JSON.stringify({
+          confidence: "high",
+          reason: "There are no meaningful new announcements added.",
+          meaningfulChanges: [],
+        }),
+      ),
+    );
+
+    const result = await judge();
+
+    expect(mocks.doGenerate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      meaningful: true,
+      meaningfulChanges: [],
+    });
   });
 });

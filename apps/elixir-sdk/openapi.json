@@ -517,6 +517,15 @@
                         "type": "boolean",
                         "default": false,
                         "description": "When true on an ordinary URL scrape, `data.tools` lists tool contracts matched to the scraped page's domain (same `DiscoveredTool` shape as search). Requires the team's Alexandria access to be enabled and no zero data retention (403 otherwise). Free."
+                      },
+                      "toolDetail": {
+                        "type": "string",
+                        "enum": [
+                          "compact",
+                          "summary",
+                          "full"
+                        ],
+                        "description": "How much of each tool contract to return in `data.tools` when `domainTools` is true. `compact` returns only `provider`, `capability`, and `description`. `summary` returns the full tool entry without `options` and `response`. `full` also returns `options`, `response`, and `examples`. If you omit it, tools are returned as with `summary`."
                       }
                     }
                   }
@@ -5132,11 +5141,12 @@
                   },
                   "location": {
                     "type": "object",
-                    "description": "Country the session browses from (default US). Sessions started from a scrape with interact use the scrape's location.",
+                    "description": "Country the session browses from. Defaults to the US. Sessions started from a scrape with interact use the scrape's location.",
                     "properties": {
                       "country": {
                         "type": "string",
-                        "description": "ISO 3166-1 alpha-2 country code, such as GB."
+                        "description": "ISO 3166-1 alpha-2 country code, such as `GB` or `DE`. Case-insensitive.",
+                        "example": "GB"
                       }
                     },
                     "required": [
@@ -6608,6 +6618,68 @@
               "maximum": 100,
               "default": 10
             }
+          },
+          {
+            "name": "jurisdiction",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
+            "schema": {
+              "type": "string",
+              "pattern": "^us(-[a-zA-Z]{2})?$"
+            }
+          },
+          {
+            "name": "court",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "courtType",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "federal-supreme",
+                "federal-appellate",
+                "federal-district",
+                "federal-bankruptcy",
+                "federal-special",
+                "military",
+                "state-supreme",
+                "state-appellate",
+                "state-trial",
+                "state-special",
+                "state-attorney-general"
+              ]
+            }
+          },
+          {
+            "name": "cites",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "description": "Keep only pages from one site, such as `irs.gov`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -6684,6 +6756,43 @@
                     "maximum": 100,
                     "default": 10,
                     "description": "Number of results to return."
+                  },
+                  "jurisdiction": {
+                    "type": "string",
+                    "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
+                    "pattern": "^us(-[a-zA-Z]{2})?$"
+                  },
+                  "court": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages labeled for one court, by CourtListener court id, such as `scotus`, `ca9` or `nysd`."
+                  },
+                  "courtType": {
+                    "type": "string",
+                    "enum": [
+                      "federal-supreme",
+                      "federal-appellate",
+                      "federal-district",
+                      "federal-bankruptcy",
+                      "federal-special",
+                      "military",
+                      "state-supreme",
+                      "state-appellate",
+                      "state-trial",
+                      "state-special",
+                      "state-attorney-general"
+                    ],
+                    "description": "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."
+                  },
+                  "cites": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."
+                  },
+                  "domain": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep only pages from one site, such as `irs.gov`."
                   }
                 }
               },
@@ -8879,6 +8988,45 @@
             },
             {
               "type": "object",
+              "title": "Attributes",
+              "description": "Extract attribute values from the elements that match CSS selectors. Returns the values in the response `attributes` field.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "attributes"
+                  ]
+                },
+                "selectors": {
+                  "type": "array",
+                  "description": "The elements and attributes to extract.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "description": "CSS selector to find elements."
+                      },
+                      "attribute": {
+                        "type": "string",
+                        "description": "Attribute name to extract (for example `data-vehicle-name` or `id`)."
+                      }
+                    },
+                    "required": [
+                      "selector",
+                      "attribute"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "selectors"
+              ]
+            },
+            {
+              "type": "object",
               "title": "Screenshot",
               "properties": {
                 "type": {
@@ -9438,7 +9586,8 @@
           "waitFor": {
             "type": "integer",
             "description": "Specify a delay in milliseconds before fetching the content, allowing the page sufficient time to load. This waiting time is in addition to Firecrawl's smart wait feature.",
-            "default": 0
+            "default": 0,
+            "maximum": 60000
           },
           "mobile": {
             "type": "boolean",
@@ -9459,10 +9608,20 @@
           },
           "parsers": {
             "type": "array",
-            "description": "Controls how files are processed during scraping. When \"pdf\" is included (default), the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF.",
+            "description": "Controls how files are processed during scraping. Each item is a parser name (`\"pdf\"` or `\"image\"`) or a parser object. Both parsers are on by default.\n\n - **pdf**: PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page).\n - **image**: Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd as one-page documents and converted to markdown. SVG and HEIC are not supported.\n\nIf you pass a list, parsers that are not in the list are off. For example, `[\"pdf\"]` turns off image OCR, so image URLs fail as unsupported files. When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF.",
             "items": {
               "oneOf": [
                 {
+                  "title": "Parser name",
+                  "type": "string",
+                  "enum": [
+                    "pdf",
+                    "image"
+                  ],
+                  "description": "Shorthand for a parser object with default options. `\"pdf\"` is the same as `{ \"type\": \"pdf\" }`."
+                },
+                {
+                  "title": "PDF",
                   "type": "object",
                   "properties": {
                     "type": {
@@ -9507,11 +9666,29 @@
                     "type"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "title": "Image",
+                  "type": "object",
+                  "description": "Image OCR parser. It has no options. The PDF options (`mode`, `maxPages`, `pages`, `blocks`, `pageMarkers`) do not apply to images.",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "image"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             },
             "default": [
-              "pdf"
+              "pdf",
+              "image"
             ]
           },
           "actions": {
@@ -10071,6 +10248,27 @@
                 },
                 "description": "List of links on the page if `links` is in `formats`"
               },
+              "attributes": {
+                "type": "array",
+                "description": "Attribute values extracted by the `attributes` format. Only present if an `attributes` format object was included in `formats`.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "selector": {
+                      "type": "string"
+                    },
+                    "attribute": {
+                      "type": "string"
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
               "actions": {
                 "type": "object",
                 "nullable": true,
@@ -10240,6 +10438,43 @@
                   "concurrencyQueueDurationMs": {
                     "type": "number",
                     "description": "Time in milliseconds the request waited in the concurrency queue. Only present when concurrencyLimited is true."
+                  },
+                  "provider": {
+                    "type": "object",
+                    "description": "Set when a third-party data provider served the URL.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "The provider that returned the data."
+                      },
+                      "creditsCost": {
+                        "type": "integer",
+                        "description": "What that access cost, in credits."
+                      },
+                      "steps": {
+                        "type": "array",
+                        "description": "Each provider tried, in order.",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                              "matched",
+                              "not_found",
+                              "error"
+                            ]
+                            },
+                            "creditsCost": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               },
@@ -12577,18 +12812,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`.",
+            "description": "Stable result id, such as `issue:owner/repo#123`. The prefix is the result kind.",
             "example": "issue:firecrawl/firecrawl#1234"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "doc",
-              "issue",
-              "pull_request",
-              "readme"
-            ],
-            "description": "Result kind."
           },
           "url": {
             "type": "string",
@@ -12606,9 +12831,46 @@
               "properties": {
                 "text": {
                   "type": "string"
+                },
+                "citation_url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "URL to cite for this passage."
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "Present and true when `text` omits bytes from the full passage."
+                },
+                "served_span": {
+                  "type": "object",
+                  "description": "Byte offsets of `text` within the full passage when it is one contiguous span. Absent for table context assembled from separate rows.",
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "full_tokens_est": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Approximate token count of the full passage."
                 }
               }
             }
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known.",
+            "example": "MIT"
           }
         }
       },

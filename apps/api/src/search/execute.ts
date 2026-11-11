@@ -1,7 +1,31 @@
 import type { Logger } from "winston";
-import { discoverTools, isAlexandriaSource } from "./alexandria";
+import {
+  discoverTools,
+  isAlexandriaSource,
+  usOnlyToolsWarning,
+} from "./alexandria";
+import {
+  discoverSkills,
+  isSkillsSource,
+  SKILLS_DISCOVERY_TIMEOUT_MS,
+  type SkillDiscovery,
+} from "./skill-cards";
+import {
+  AUTO_TOOLS_WAIT_MS,
+  FUSED_FIT_THRESHOLD,
+  inferToolIntent,
+  verifyTools,
+} from "./tool-intent";
+import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { search } from "./v2";
-import { SearchV2Response, SearchResultType } from "../lib/entities";
+import {
+  SearchV2Response,
+  SearchResultType,
+  SearchResultCountsBySource,
+  SearchResultCategoriesBySource,
+  countSearchResultsBySource,
+  collectSearchResultCategories,
+} from "../lib/entities";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -15,8 +39,19 @@ import {
   calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
-import { searchGovCategory, wantsGovCategory } from "./gov";
+import {
+  MAX_ROUTED_LIMIT,
+  searchGovCategory,
+  searchGovIfRouted,
+  wantsGovCategory,
+} from "./gov";
 import { removeExplicitResults } from "./safe-search";
+import {
+  matchesQueryOperators,
+  planOperatorQuery,
+  siteHostnames,
+  usesSearchSyntax,
+} from "./operators";
 import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
@@ -29,6 +64,7 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { isUsOnly } from "../lib/us-only";
 
 interface SearchOptions {
   query: string;
@@ -48,6 +84,12 @@ interface SearchOptions {
   highlights?: boolean;
   domainTools?: boolean;
   toolDetail?: "compact" | "summary" | "full";
+  /** Rewrite the query before tool discovery. */
+  inferToolQuery?: boolean;
+  /** Add compact tools to a search that did not ask for them, when the query needs them. */
+  autoTools?: boolean;
+  /** Rank rewrite-found tools together with raw-query tools instead of after them. */
+  toolFusion?: boolean;
   timeout: number;
 }
 
@@ -73,14 +115,76 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  /** Parts of the search a US-only team could not be served. */
+  usOnlyWarning?: string;
   toolsWarning?: string;
+  /** The tools were added automatically, not requested. */
+  toolsAuto?: boolean;
+  toolsUnavailable?: boolean;
+  /** Raw-query and rewrite tools were ranked together. */
+  toolFusion: boolean;
+  /** Skill-card lookup returned the Exchange envelope, including an empty one. */
+  skillsDiscovered?: boolean;
   response: SearchV2Response;
   totalResultsCount: number;
+  resultCountsBySource: SearchResultCountsBySource;
+  resultCategories: SearchResultCategoriesBySource;
   indexResultsCount: number;
   searchCredits: number;
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+}
+
+const toolKey = (tool: DiscoveredTool) => `${tool.provider}/${tool.capability}`;
+
+function addTool(tools: Map<string, DiscoveredTool>, tool: DiscoveredTool) {
+  const key = toolKey(tool);
+  const previous = tools.get(key);
+  tools.set(
+    key,
+    previous && "matchedBy" in previous && "matchedBy" in tool
+      ? {
+          ...previous,
+          matchedBy: [
+            ...new Set([
+              ...(previous.matchedBy ?? []),
+              ...(tool.matchedBy ?? []),
+            ]),
+          ],
+          matchedUrls: [
+            ...new Set([
+              ...(previous.matchedUrls ?? []),
+              ...(tool.matchedUrls ?? []),
+            ]),
+          ],
+        }
+      : (previous ?? tool),
+  );
+}
+
+const RRF_K = 60;
+
+/**
+ * Orders tools by reciprocal rank fusion; ties keep the earlier list's order.
+ * Tools `keep` rejects are left out without moving the ranks of the rest.
+ */
+function fuseRankings(
+  lists: DiscoveredTool[][],
+  keep: (tool: DiscoveredTool) => boolean,
+): DiscoveredTool[] {
+  const tools = new Map<string, DiscoveredTool>();
+  const scores = new Map<string, number>();
+  for (const list of lists)
+    list.forEach((tool, index) => {
+      if (!keep(tool)) return;
+      addTool(tools, tool);
+      const key = toolKey(tool);
+      scores.set(key, (scores.get(key) ?? 0) + 1 / (RRF_K + index + 1));
+    });
+  return [...tools.entries()]
+    .sort(([a], [b]) => scores.get(b)! - scores.get(a)!)
+    .map(([, tool]) => tool);
 }
 
 export async function executeSearch(
@@ -102,19 +206,132 @@ export async function executeSearch(
   } = context;
 
   const num_results_buffer = Math.floor(limit * 2);
+  const usOnly = isUsOnly(flags);
+  const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
 
   const wantsTools = sources.some(isAlexandriaSource);
+  const wantsSkills = sources.some(isSkillsSource);
+  const toolsAllowed =
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon");
+  const missedSkills: SkillDiscovery = { skills: [], succeeded: false };
+  const skillsPromise =
+    toolsAllowed && wantsSkills && query.trim()
+      ? discoverSkills(
+          {
+            teamId,
+            query,
+            timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
+            usOnly,
+          },
+          logger,
+        ).catch(error => {
+          logger.warn("Skill discovery failed", { error });
+          return missedSkills;
+        })
+      : null;
+  const toolIntent =
+    toolsAllowed &&
+    (wantsTools ? options.inferToolQuery : options.autoTools) &&
+    query.trim()
+      ? inferToolIntent(query, logger)
+      : null;
+  const fuseTools = wantsTools && options.toolFusion === true;
+  const toolRequestIds = {
+    raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
+    rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
+  };
+  // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
+  const extraDiscovery = toolIntent
+    ? toolIntent
+        .then(async intent => {
+          if (!wantsTools && !intent.needsTools) return null;
+          const found = await discoverTools(
+            {
+              toolDetail: options.toolDetail ?? "compact",
+              teamId,
+              connectors: flags?.exchangeRetrieve === true,
+              usOnly,
+              limit,
+              queries: wantsTools
+                ? intent.toolQueries
+                : [query, ...intent.toolQueries],
+              urls:
+                options.domainTools === false
+                  ? []
+                  : intent.domains.map(domain => `https://${domain}/`),
+              timeoutMs: Math.min(options.timeout, 3000),
+              exchangeRequestIds: toolRequestIds.rewrite,
+            },
+            logger,
+          );
+          return {
+            // Only fused semantic matches get the lower bar; domain matches keep the default.
+            items: fuseTools
+              ? (
+                  await Promise.all([
+                    verifyTools(
+                      query,
+                      found.items.slice(0, found.semanticMatches),
+                      logger,
+                      FUSED_FIT_THRESHOLD,
+                    ),
+                    found.items.length > found.semanticMatches
+                      ? verifyTools(
+                          query,
+                          found.items.slice(found.semanticMatches),
+                          logger,
+                        )
+                      : [],
+                  ])
+                ).flat()
+              : await verifyTools(query, found.items, logger),
+            found: found.items,
+            semanticMatches: found.semanticMatches,
+            usOnlyExcluded: found.usOnlyExcluded ?? 0,
+          };
+        })
+        .catch(() => null)
+    : null;
+  let resolveToolUrls: (urls: string[]) => void = () => {};
+  const baseDiscovery =
+    toolsAllowed && (wantsTools || options.domainTools)
+      ? discoverTools(
+          {
+            toolDetail: options.toolDetail ?? "compact",
+            teamId,
+            connectors: flags?.exchangeRetrieve === true,
+            usOnly,
+            limit,
+            queries: wantsTools ? [query] : undefined,
+            urls:
+              options.domainTools === false
+                ? []
+                : new Promise<string[]>(resolve => {
+                    resolveToolUrls = resolve;
+                  }),
+            timeoutMs: options.timeout,
+            exchangeRequestIds: toolRequestIds.raw,
+          },
+          logger,
+        )
+      : null;
   const searchTypes = [
     ...new Set(
       sources
-        .filter(source => !isAlexandriaSource(source))
+        .filter(
+          source => !isAlexandriaSource(source) && !isSkillsSource(source),
+        )
         .map(source => source.type as SearchResultType),
     ),
   ];
+  const operatorPlan = planOperatorQuery(query);
+  const { operators } = operatorPlan;
+  const nonEmpty = (list: string[]) => (list.length > 0 ? list : undefined);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    query,
+    operatorPlan.query,
     categories,
     {
       includeDomains: options.includeDomains,
@@ -129,22 +346,58 @@ export async function executeSearch(
     : wantsGovCategory(categories)
       ? searchGovCategory
       : null;
-  const indexResultsPromise = indexCategorySearch
-    ? indexCategorySearch(
-        { query, limit, teamId, timeout: options.timeout },
-        logger,
-      )
+  const indexSearchOptions = {
+    query,
+    limit,
+    teamId,
+    timeout: options.timeout,
+    zeroDataRetention:
+      zeroDataRetention === true ||
+      options.enterprise?.some(mode => mode === "zdr" || mode === "anon") ===
+        true,
+    ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
+  };
+  // A plain US web search that the search platform classifies as government
+  // is served through the Government Index. Zero data retention and
+  // anonymous searches are never routed, as they skip every other auxiliary
+  // service here, and neither is a page larger than MAX_ROUTED_LIMIT.
+  const plainWebSearch =
+    indexCategorySearch === null &&
+    !indexSearchOptions.zeroDataRetention &&
+    !categories?.length &&
+    searchTypes.length === 1 &&
+    searchTypes[0] === "web" &&
+    !options.includeDomains?.length &&
+    !options.excludeDomains?.length &&
+    !options.tbs &&
+    !options.filter &&
+    (options.country ?? "us").toLowerCase() === "us" &&
+    !options.location &&
+    (options.lang ?? "en").toLowerCase() === "en" &&
+    !usOnly &&
+    query.trim().length > 0 &&
+    limit <= MAX_ROUTED_LIMIT &&
+    !usesSearchSyntax(query);
+  // A plain web search takes the routing decision before the regular web
+  // search, so a routed search never starts it. An unrouted one, or a routed
+  // one whose platform search fails, starts the regular web search after the
+  // decision.
+  const routedResults = plainWebSearch
+    ? await searchGovIfRouted(indexSearchOptions, context.jobId, logger)
     : null;
-
-  const searchResponse =
-    (wantsTools && !searchTypes.length) || indexResultsPromise !== null
-      ? ({} as SearchV2Response)
-      : ((await search({
+  const webSearchPromise =
+    routedResults !== null ||
+    indexCategorySearch !== null ||
+    ((wantsTools || wantsSkills) && !searchTypes.length)
+      ? null
+      : search({
           query: searchQuery,
           logger,
           requestId: context.requestId,
           advanced: false,
-          num_results: num_results_buffer,
+          num_results: operatorPlan.relaxed
+            ? Math.max(num_results_buffer, Math.min(limit * 5, 100))
+            : num_results_buffer,
           tbs: options.tbs,
           filter: options.filter,
           lang: options.lang,
@@ -153,10 +406,46 @@ export async function executeSearch(
           safe: options.safe,
           type: searchTypes,
           enterprise: options.enterprise,
-          includeDomains: options.includeDomains,
-          excludeDomains: options.excludeDomains,
-        })) as SearchV2Response);
-  let indexResults = indexResultsPromise ? await indexResultsPromise : [];
+          includeDomains: options.includeDomains?.length
+            ? options.includeDomains
+            : nonEmpty(siteHostnames(operators.sites)),
+          excludeDomains: nonEmpty([
+            ...(options.excludeDomains ?? []),
+            ...operators.excludedSites.filter(site => !site.includes("/")),
+          ]),
+          usOnly,
+        });
+  const indexResultsPromise = indexCategorySearch
+    ? indexCategorySearch(indexSearchOptions, logger)
+    : null;
+
+  // Routed results take the regular web search's place as the web results, so
+  // threat protection, safe search, categories, highlights, scraping and
+  // billing treat them as a web search's.
+  const searchResponse: SearchV2Response = routedResults
+    ? { web: routedResults }
+    : webSearchPromise === null || indexResultsPromise !== null
+      ? ({} as SearchV2Response)
+      : ((await webSearchPromise) as SearchV2Response);
+  const keepOperatorMatches = <
+    T extends { url?: string; title?: string; position?: number },
+  >(
+    results: T[] | undefined,
+  ): T[] | undefined => {
+    const kept = results?.filter(result =>
+      matchesQueryOperators(result, operatorPlan),
+    );
+    return kept?.length === results?.length
+      ? results
+      : kept?.map((result, index) => ({ ...result, position: index + 1 }));
+  };
+  searchResponse.web = keepOperatorMatches(searchResponse.web);
+  searchResponse.news = keepOperatorMatches(searchResponse.news);
+  searchResponse.images = keepOperatorMatches(searchResponse.images);
+  let indexResults =
+    keepOperatorMatches(
+      indexResultsPromise ? await indexResultsPromise : undefined,
+    ) ?? [];
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -207,7 +496,16 @@ export async function executeSearch(
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
   ) {
-    await removeExplicitResults(searchResponse, limit, logger, teamId);
+    // Index results skip the SERP and its provider-side safe search, so they
+    // are filtered from a response of their own before they are counted,
+    // scraped or returned.
+    const safeTarget: SearchV2Response = indexCategorySearch
+      ? { web: indexResults }
+      : searchResponse;
+    await removeExplicitResults(safeTarget, limit, logger, teamId);
+    if (safeTarget !== searchResponse) {
+      indexResults = safeTarget.web ?? [];
+    }
   }
 
   if (searchResponse.web && searchResponse.web.length > 0) {
@@ -252,33 +550,150 @@ export async function executeSearch(
   const indexResultsCount = indexResults.length;
   totalResultsCount += indexResultsCount;
   let toolsWarning: string | undefined;
+  let toolsUnavailable = false;
+  let toolsAuto = false;
+  let rewriteLate = false;
+  let rawTools: Awaited<typeof baseDiscovery> = null;
+  let extra: Awaited<typeof extraDiscovery> = null;
 
-  if (
-    !zeroDataRetention &&
-    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
-    (wantsTools || options.domainTools)
-  ) {
-    const discovery = await discoverTools(
-      {
-        toolDetail: options.toolDetail ?? "compact",
-        teamId,
-        connectors: flags?.exchangeRetrieve === true,
-        limit,
-        query: wantsTools ? query : undefined,
-        urls:
-          options.domainTools === false
-            ? []
-            : [
-                ...(searchResponse.web ?? []),
-                ...(searchResponse.news ?? []),
-                ...indexResults,
-              ].flatMap(item => (item.url ? [item.url] : [])),
-        timeoutMs: options.timeout,
-      },
-      logger,
+  const waitForExtra = async (alongside?: Promise<unknown>) => {
+    if (!extraDiscovery) return null;
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+    const delay = (ms: number) =>
+      new Promise<void>(resolve => {
+        if (settled) return resolve();
+        timer = setTimeout(resolve, ms);
+        timer.unref();
+      });
+    // Fused tools are worth waiting for past the raw lookup; appended ones are not.
+    const deadline = fuseTools
+      ? Promise.resolve(alongside).then(() =>
+          delay(config.ALEXANDRIA_TOOL_FUSION_WAIT_MS),
+        )
+      : Promise.all([delay(AUTO_TOOLS_WAIT_MS), alongside]);
+    const late = Symbol("late");
+    try {
+      const found = await Promise.race([
+        extraDiscovery,
+        deadline.then((): typeof late => late),
+      ]);
+      if (found !== late) return found;
+      rewriteLate = true;
+      return null;
+    } finally {
+      settled = true;
+      clearTimeout(timer);
+    }
+  };
+
+  if (baseDiscovery) {
+    resolveToolUrls(
+      [
+        ...(searchResponse.web ?? []),
+        ...(searchResponse.news ?? []),
+        ...indexResults,
+      ].flatMap(item => (item.url ? [item.url] : [])),
     );
-    searchResponse.tools = discovery.items;
-    toolsWarning = discovery.warning;
+    const [discovery, fetched] = await Promise.all([
+      baseDiscovery,
+      waitForExtra(baseDiscovery),
+    ]);
+    rawTools = discovery;
+    extra = fetched;
+    const merged = new Map<string, DiscoveredTool>();
+    if (fuseTools && extra) {
+      // Semantic matches are fused; domain-only matches follow, as they do unfused.
+      const fits = new Set(extra.items.map(toolKey));
+      const baseSemantic = discovery.items.slice(0, discovery.semanticMatches);
+      const baseKeys = new Set(baseSemantic.map(toolKey));
+      for (const tool of [
+        ...fuseRankings(
+          [baseSemantic, extra.found.slice(0, extra.semanticMatches)],
+          tool => baseKeys.has(toolKey(tool)) || fits.has(toolKey(tool)),
+        ),
+        ...discovery.items.slice(baseSemantic.length),
+        ...extra.found
+          .slice(extra.semanticMatches)
+          .filter(tool => fits.has(toolKey(tool))),
+      ])
+        addTool(merged, tool);
+    } else {
+      for (const tool of [...discovery.items, ...(extra?.items ?? [])])
+        addTool(merged, tool);
+    }
+    searchResponse.tools = [...merged.values()];
+    // Both legs can hide the same tools, so the larger count is reported.
+    const usOnlyExcluded = Math.max(
+      discovery.usOnlyExcluded ?? 0,
+      extra?.usOnlyExcluded ?? 0,
+    );
+    toolsWarning =
+      [
+        discovery.warning,
+        usOnlyExcluded > 0 ? usOnlyToolsWarning(usOnlyExcluded) : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined;
+    toolsUnavailable = discovery.unavailable === true && !extra?.items.length;
+  } else if (extraDiscovery) {
+    extra = await waitForExtra();
+    if (extra?.items.length) {
+      searchResponse.tools = extra.items;
+      toolsAuto = true;
+    }
+    if (extra?.usOnlyExcluded) {
+      toolsWarning = usOnlyToolsWarning(extra.usOnlyExcluded);
+    }
+  }
+
+  const rewriteFound = (extra?.found.length ?? 0) > 0;
+  const toolFusionRan = fuseTools && baseDiscovery !== null && rewriteFound;
+  if (searchResponse.tools?.length) {
+    const rawKeys = new Set(rawTools?.items.map(toolKey));
+    const fitKeys = new Set(extra?.items.map(toolKey));
+    const rejected = (extra?.found ?? []).filter(
+      tool => !fitKeys.has(toolKey(tool)) && !rawKeys.has(toolKey(tool)),
+    );
+    const semanticKeys = new Set(
+      extra?.found.slice(0, extra.semanticMatches).map(toolKey),
+    );
+    // Root logger: the request logger carries the query, and this line records shape only.
+    rootLogger.info("Search tool impression", {
+      event: "search_tool_impression",
+      searchId: context.jobId,
+      teamId,
+      servedAt: new Date().toISOString(),
+      auto: toolsAuto,
+      fusion: { enabled: fuseTools, ran: toolFusionRan },
+      rewrite: !extraDiscovery
+        ? "off"
+        : rewriteFound
+          ? "arrived"
+          : rewriteLate
+            ? "late"
+            : "empty",
+      tools: searchResponse.tools.map((tool, index) => {
+        const key = toolKey(tool);
+        const raw = rawKeys.has(key);
+        const rewrite = fitKeys.has(key);
+        return {
+          id: key,
+          rank: index + 1,
+          source: raw && rewrite ? "both" : raw ? "raw" : "rewrite",
+        };
+      }),
+      fitRejected: {
+        semantic: rejected.filter(tool => semanticKeys.has(toolKey(tool)))
+          .length,
+        domain: rejected.filter(tool => !semanticKeys.has(toolKey(tool)))
+          .length,
+      },
+      exchangeRequestIds: {
+        raw: [...toolRequestIds.raw.sent],
+        rewrite: [...toolRequestIds.rewrite.sent],
+      },
+    });
   }
 
   const isZDR = options.enterprise?.includes("zdr");
@@ -301,7 +716,12 @@ export async function executeSearch(
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
   if (shouldScrape && scrapeOptions) {
-    const itemsToScrape = getItemsToScrape(searchResponse, flags, {
+    // Index results only become the web group at the end, so they are
+    // scraped from a response of their own.
+    const scrapeTarget: SearchV2Response = indexCategorySearch
+      ? { web: indexResults }
+      : searchResponse;
+    const itemsToScrape = getItemsToScrape(scrapeTarget, flags, {
       team_id: teamId,
       org_id: orgId ?? null,
       origin,
@@ -332,11 +752,10 @@ export async function executeSearch(
         flags,
       );
 
-      mergeScrapedContent(
-        searchResponse,
-        itemsToScrape,
-        allDocsWithCostTracking,
-      );
+      mergeScrapedContent(scrapeTarget, itemsToScrape, allDocsWithCostTracking);
+      if (scrapeTarget !== searchResponse) {
+        indexResults = scrapeTarget.web ?? [];
+      }
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
     }
   }
@@ -394,6 +813,13 @@ export async function executeSearch(
     }));
   }
 
+  let skillsDiscovered = false;
+  if (skillsPromise) {
+    const found = await skillsPromise;
+    searchResponse.skills = found.skills;
+    skillsDiscovered = found.succeeded;
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -434,8 +860,22 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    ...(usOnlyWarnings.length > 0
+      ? { usOnlyWarning: usOnlyWarnings.join(" ") }
+      : {}),
     toolsWarning,
+    toolsUnavailable,
+    toolsAuto,
+    toolFusion: toolFusionRan,
+    skillsDiscovered,
     totalResultsCount,
+    // Counted from the final response — after scraping and highlights — so it
+    // matches exactly what the client can address by position.
+    resultCountsBySource: countSearchResultsBySource(searchResponse),
+    // Read from the same final response, so a category is keyed by the position
+    // the client sees. Index hits replace the web group above and are
+    // renumbered there, so their positions here are the renumbered ones.
+    resultCategories: collectSearchResultCategories(searchResponse),
     indexResultsCount,
     searchCredits,
     scrapeCredits,

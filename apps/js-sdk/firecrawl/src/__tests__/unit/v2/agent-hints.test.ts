@@ -14,6 +14,7 @@ const hints = [
 ];
 function httpFor(body: object) {
   return {
+    getOrigin: () => "js-sdk@test",
     post: vi.fn<any>().mockResolvedValue({ status: 200, data: body }),
     postMultipart: vi
       .fn<any>()

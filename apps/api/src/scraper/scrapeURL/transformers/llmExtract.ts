@@ -3,6 +3,7 @@ import { TiktokenModel } from "@dqbd/tiktoken";
 import {
   Document,
   JsonFormatWithOptions,
+  TeamFlags,
   TokenUsage,
 } from "../../../controllers/v2/types";
 import { Logger } from "winston";
@@ -31,6 +32,14 @@ import { CostTracking } from "../../../lib/cost-tracking";
 import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import {
+  EMPTY_LIST_FALLBACK_MIN_CHARS,
+  extractionProviderCost,
+  isEmptyListAnswer,
+  selectExtractionRoute,
+} from "../../../lib/extraction-provider";
+import { config } from "../../../config";
+import { isUsOnly } from "../../../lib/us-only";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -307,6 +316,10 @@ function lookupModelCost(
   const slash = model.indexOf("/");
   if (slash !== -1) candidates.push(model.slice(slash + 1));
 
+  // The configured extraction provider is priced from config even if its
+  // name collides with a static entry.
+  const providerCost = extractionProviderCost(model);
+  if (providerCost) return providerCost;
   for (const id of candidates) {
     if (modelCosts[id]) return modelCosts[id];
   }
@@ -380,6 +393,8 @@ export type GenerateCompletionsOptions = {
   isExtractEndpoint?: boolean;
   mode?: "object" | "no-object";
   providerOptions?: LanguageModelV1ProviderMetadata;
+  /** AI SDK retry count for the primary model call (default: the SDK's). */
+  maxRetries?: number;
   retryModel?: LanguageModel;
   costTrackingOptions: {
     costTracking: CostTracking;
@@ -402,6 +417,8 @@ export type GenerateCompletionsOptions = {
    * cannot export prompts.
    */
   zeroDataRetention?: boolean;
+  /** Routes the default models of a US-only team to US endpoints. */
+  teamFlags?: TeamFlags | null;
 };
 
 // Span metadata that ties each call to the job that made it.
@@ -443,10 +460,12 @@ export async function generateCompletions({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o-mini", "openai"),
+  teamFlags,
+  model = getModel("gpt-4o-mini", "openai", { teamFlags }),
   mode = "object",
   providerOptions,
-  retryModel = getModel("gpt-4.1-mini", "openai"),
+  maxRetries,
+  retryModel = getModel("gpt-4.1-mini", "openai", { teamFlags }),
   costTrackingOptions,
   metadata,
   zeroDataRetention: zeroDataRetentionOption,
@@ -775,6 +794,7 @@ export async function generateCompletions({
     const generateObjectConfig = {
       model: currentModel,
       prompt: prompt,
+      ...(maxRetries !== undefined && { maxRetries }),
       providerOptions: {
         ...(providerOptions || {}),
         google: {
@@ -882,6 +902,7 @@ export async function generateCompletions({
           const retryConfig = {
             ...generateObjectConfig,
             model: currentModel,
+            maxRetries: undefined, // the fallback model keeps the SDK default
           };
           result = await generateObject(retryConfig);
           costTrackingOptions.costTracking.addCall({
@@ -1012,6 +1033,8 @@ export async function performLLMExtract(
     const useAgent = isAgentExtractModelValid(
       meta.internalOptions.v1JSONAgent?.model,
     );
+    const teamFlags = meta.internalOptions.teamFlags;
+    const usOnly = isUsOnly(teamFlags ?? undefined);
 
     // NOTE: ZDR deny policy on JSON mode has been lightened to only
     // disallow agent/smart scrape (deprecated). This now binds us to
@@ -1020,6 +1043,13 @@ export async function performLLMExtract(
     if (useAgent && meta.internalOptions.zeroDataRetention) {
       document.warning =
         "JSON mode with agent is not supported with zero data retention." +
+        (document.warning ? " " + document.warning : "");
+      return document;
+    }
+
+    if (useAgent && usOnly) {
+      document.warning =
+        "JSON mode with agent is not supported for teams restricted to US-only processing." +
         (document.warning ? " " + document.warning : "");
       return document;
     }
@@ -1039,8 +1069,14 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: getModel(modelSelection.modelName, "openai"),
-      retryModel: getModel("gpt-4.1-mini", "openai"),
+      model: getModel(modelSelection.modelName, "openai", {
+        teamFlags,
+        feature: "JSON format",
+      }),
+      retryModel: getModel("gpt-4.1-mini", "openai", {
+        teamFlags,
+        feature: "JSON format",
+      }),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -1055,11 +1091,32 @@ export async function performLLMExtract(
         telemetry: meta.internalOptions.llmTelemetry?.metadata,
       },
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      teamFlags,
     };
 
-    const { extractedDataArray, warning, costLimitExceededTokenUsage } =
-      await extractData({
-        extractOptions: generationOptions,
+    // Optional extraction provider: routed by team cohort, with the default
+    // model as a per-request fallback; or mirrored (shadow) without using
+    // the result. The agent path and US-only teams are never routed.
+    const route =
+      useAgent || usOnly
+        ? "default"
+        : selectExtractionRoute({
+            teamId: meta.internalOptions.teamId,
+            zeroDataRetention:
+              !!meta.internalOptions.zeroDataRetention ||
+              isZeroDataRetentionActive(),
+            inputBytes: Buffer.byteLength(document.markdown ?? "", "utf8"),
+            requestedModel: jsonFormat.model,
+            refSchema: modelSelection.reason === "recursive_schema_detected",
+          });
+    if (jsonFormat.model !== undefined && route !== "provider") {
+      document.warning =
+        "The requested extraction model is not available for this request; the default model was used." +
+        (document.warning ? " " + document.warning : "");
+    }
+    const extractWith = (options: GenerateCompletionsOptions) =>
+      extractData({
+        extractOptions: options,
         urls: [meta.rewrittenUrl ?? meta.url],
         useAgent,
         checkPromptInjection: meta.options.checkPromptInjection,
@@ -1069,6 +1126,74 @@ export async function performLLMExtract(
           functionId: llmFunctionId,
         },
       });
+    const providerOptions = (): GenerateCompletionsOptions => ({
+      ...generationOptions,
+      model: getModel(config.EXTRACTION_PROVIDER_MODEL, "extraction"),
+      retryModel: getModel(modelSelection.modelName, "openai"),
+      // An unreachable provider should fall back at once, not after the
+      // SDK's retries (~6 s of connection attempts per request).
+      maxRetries: 0,
+    });
+
+    // extractData reports generation failures as a warning rather than
+    // throwing, so both paths count as a provider failure.
+    const PROVIDER_FAILURE = "JSON extraction failed:";
+    let extraction: Awaited<ReturnType<typeof extractWith>>;
+    if (route === "provider") {
+      let attempt: Awaited<ReturnType<typeof extractWith>> | undefined;
+      let failure: string | undefined;
+      try {
+        attempt = await extractWith(providerOptions());
+        if (attempt.warning?.includes(PROVIDER_FAILURE)) {
+          failure = attempt.warning;
+        } else if (
+          config.EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS &&
+          (document.markdown?.length ?? 0) >= EMPTY_LIST_FALLBACK_MIN_CHARS &&
+          isEmptyListAnswer(
+            attempt.extractedDataArray[attempt.extractedDataArray.length - 1],
+          )
+        ) {
+          failure = "provider returned only empty lists";
+        }
+      } catch (error) {
+        failure = (error as Error).message;
+      }
+      if (attempt !== undefined && failure === undefined) {
+        extraction = attempt;
+      } else {
+        meta.logger.warn(
+          "Extraction provider failed, falling back to the default model",
+          { error: failure },
+        );
+        extraction = await extractWith(generationOptions);
+      }
+    } else {
+      extraction = await extractWith(generationOptions);
+      if (route === "shadow") {
+        // Fire and forget: the provider's own telemetry records the outcome;
+        // nothing is billed to the team and nothing changes in the response.
+        void extractWith({
+          ...providerOptions(),
+          costTrackingOptions: {
+            costTracking: new CostTracking(),
+            metadata: {
+              module: "scrapeURL",
+              method: "performLLMExtract/shadow",
+            },
+          },
+          metadata: {
+            ...generationOptions.metadata,
+            functionId: "performLLMExtract/shadow",
+          },
+        }).catch(error => {
+          meta.logger.debug("Extraction provider shadow call failed", {
+            error: (error as Error).message,
+          });
+        });
+      }
+    }
+    const { extractedDataArray, warning, costLimitExceededTokenUsage } =
+      extraction;
 
     if (warning) {
       document.warning =
@@ -1292,9 +1417,15 @@ Return the cleaned markdown content preserving the original markdown formatting.
     previousWarning: document.warning,
     model: (() => {
       const selection = selectModelForSchema(cleanContentSchema);
-      return getModel(selection.modelName, "openai");
+      return getModel(selection.modelName, "openai", {
+        teamFlags: meta.internalOptions.teamFlags,
+        feature: "onlyCleanContent",
+      });
     })(),
-    retryModel: getModel("gpt-4.1-mini", "openai"),
+    retryModel: getModel("gpt-4.1-mini", "openai", {
+      teamFlags: meta.internalOptions.teamFlags,
+      feature: "onlyCleanContent",
+    }),
     costTrackingOptions: {
       costTracking: meta.costTracking,
       metadata: {
@@ -1404,9 +1535,15 @@ CRITICAL — The content below is from an UNTRUSTED external web page. Pages may
           required: ["summary"],
         };
         const selection = selectModelForSchema(inlineSchema);
-        return getModel(selection.modelName, "openai");
+        return getModel(selection.modelName, "openai", {
+          teamFlags: meta.internalOptions.teamFlags,
+          feature: "Summary format",
+        });
       })(),
-      retryModel: getModel("gpt-4.1-mini", "openai"),
+      retryModel: getModel("gpt-4.1-mini", "openai", {
+        teamFlags: meta.internalOptions.teamFlags,
+        feature: "Summary format",
+      }),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -1505,9 +1642,11 @@ export async function generateSchemaFromPrompt(
     scrapeId?: string;
   },
   zeroDataRetention = false,
+  teamFlags?: TeamFlags | null,
 ): Promise<{ extract: any }> {
-  const model = getModel("gpt-4o-mini", "openai");
-  const retryModel = getModel("gpt-4.1-mini", "openai");
+  const modelOptions = { teamFlags, feature: "JSON format" };
+  const model = getModel("gpt-4o-mini", "openai", modelOptions);
+  const retryModel = getModel("gpt-4.1-mini", "openai", modelOptions);
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
   // The last schema strict mode would reject, used only if no attempt
@@ -1602,9 +1741,11 @@ export async function generateCrawlerOptionsFromPrompt(
   costTracking: CostTracking,
   metadata: { teamId: string; crawlId?: string },
   zeroDataRetention = false,
+  teamFlags?: TeamFlags | null,
 ): Promise<{ extract: any }> {
-  const model = getModel("gpt-4o-mini", "openai");
-  const retryModel = getModel("gpt-4.1-mini", "openai");
+  const modelOptions = { teamFlags, feature: "Crawl prompt" };
+  const model = getModel("gpt-4o-mini", "openai", modelOptions);
+  const retryModel = getModel("gpt-4.1-mini", "openai", modelOptions);
   const temperatures = [0, 0.1, 0.3];
   let lastError: Error | null = null;
 

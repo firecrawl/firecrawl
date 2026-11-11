@@ -112,6 +112,21 @@ final class ScrapeOptions
             );
         }
 
+        if ($this->changeTracking === true) {
+            $formats = $data['formats'] ?? [];
+            $hasFormat = static fn (string $type): bool => array_filter(
+                $formats,
+                static fn (string|array $f): bool => (is_array($f) ? ($f['type'] ?? null) : $f) === $type,
+            ) !== [];
+            if (!$hasFormat('markdown')) {
+                $formats[] = 'markdown';
+            }
+            if (!$hasFormat('changeTracking')) {
+                $formats[] = 'changeTracking';
+            }
+            $data['formats'] = $formats;
+        }
+
         $fields = [
             'headers' => $this->headers,
             'includeTags' => $this->includeTags,
@@ -137,7 +152,6 @@ final class ScrapeOptions
             'checkPromptInjection' => $this->checkPromptInjection,
             'integration' => $this->integration,
             'profile' => $this->profile,
-            'changeTracking' => $this->changeTracking,
             'redactPII' => $this->redactPII,
             'auditMetadata' => $this->auditMetadata?->toArray(),
         ];

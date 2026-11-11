@@ -5,6 +5,42 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.7] - 2026-11-04
+
+### Changed
+- `searchGithub()`: the research index GitHub search endpoint it calls was
+  removed after 2026-11-03. Use `developerSearch()` instead. The method
+  remains in the SDK until the next major release.
+
+## [1.16.6] - 2026-10-20
+
+### Added
+- `developerSearch()` calls `POST /v2/search/developer`, the developer index
+  of public repositories, GitHub issues, merged pull requests, READMEs and code
+  documentation, with every filter the API takes (`DeveloperSearchOptions`)
+  and a typed `DeveloperSearchResponse`. It replaces the deprecated
+  `searchGithub()`, which stops responding after 2026-11-03.
+
+## [1.16.5] - 2026-10-19
+
+### Fixed
+- `changeTracking: true` on `ScrapeOptions` now adds the `changeTracking`
+  format (and `markdown`, which it needs) to `formats` instead of sending a
+  top-level `changeTracking` field.
+- Crawl, batch scrape and map requests now send the SDK origin
+  (`php-sdk@<version>`) like scrape does, unless the caller sets one.
+
+## [1.16.4] - 2026-10-18
+
+### Added
+- `checkPromptInjection` on `ScrapeOptions` and `ParseOptions` scans the
+  content for prompt injection before LLM-backed formats run. A detection fails
+  the request with `SCRAPE_PROMPT_INJECTION_DETECTED`. The option on
+  `JsonFormat` is deprecated in favor of the top-level one.
+- `location` on `browser()` (for example `['country' => 'GB']`) picks the
+  country the browser session runs from. The Laravel facade annotation now
+  lists `profile` and `location`.
+
 ## [1.16.3] - 2026-10-06
 
 ### Fixed

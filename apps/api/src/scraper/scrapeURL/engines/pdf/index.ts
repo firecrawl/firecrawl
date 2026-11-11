@@ -16,6 +16,7 @@ import {
   RemoveFeatureError,
   EngineUnsuccessfulError,
   UnsupportedFileError,
+  UsOnlyUnavailableError,
 } from "../../error";
 import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
@@ -45,6 +46,7 @@ import {
   extractAndEmitNativeLogs,
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
+import { isUsOnly } from "../../../../lib/us-only";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
@@ -62,6 +64,7 @@ import {
 } from "./fire-pdf/routing";
 import { parseAlwaysFirePdf } from "./fire-pdf/request-metadata";
 import { scrapePDFWithParsePDF } from "./pdfParse";
+import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { completeTruncatedHandoff } from "./truncatedHandoff";
@@ -254,6 +257,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // Unlike forceFirePDF this keeps the MinerU / pdf-parse fallbacks.
   const alwaysFirePdf = parseAlwaysFirePdf(meta);
 
+  // US-only teams get GPU parsing only from the PDF service, pinned to US
+  // capacity: no diversion to another engine, no serverless fallback, and no
+  // sampling out of the PDF service.
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+
   // The MinerU diversion is deterministic on the scrape id (see
   // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
   // one inside byReferenceReachableForRequest() — and the same one
@@ -341,6 +349,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowIsComplex: boolean | undefined;
     let shadowIneligibleReason: string | null | undefined;
     let shadowPagesNeedingOcr: number[] | undefined;
+    let detectedPdfType: string | undefined;
 
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -393,6 +402,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         });
 
         totalPageCount = detection.pageCount;
+        detectedPdfType = detection.pdfType;
         effectivePageCount = maxPages
           ? Math.min(detection.pageCount, maxPages)
           : detection.pageCount;
@@ -440,6 +450,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         });
 
         totalPageCount = pdfResult.pageCount;
+        detectedPdfType = pdfResult.pdfType;
         effectivePageCount = maxPages
           ? Math.min(pdfResult.pageCount, maxPages)
           : pdfResult.pageCount;
@@ -641,6 +652,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE));
       const runpodMuUsable =
         !forceFirePDF &&
+        !usOnly &&
         fileSizeBytes < MAX_FILE_SIZE &&
         !!config.RUNPOD_MU_API_KEY &&
         !!config.RUNPOD_MU_POD_ID;
@@ -687,7 +699,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             config.FIRE_PDF_ENABLE &&
             config.FIRE_PDF_BASE_URL &&
             fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
-            (alwaysFirePdf || Math.random() * 100 < config.FIRE_PDF_PERCENT)));
+            (alwaysFirePdf ||
+              usOnly ||
+              Math.random() * 100 < config.FIRE_PDF_PERCENT)));
 
       if (useFirePDF) {
         // Async is a server-controlled cohort within traffic already selected
@@ -752,7 +766,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               if (
                 (!includePageMarkdown && !includeBlocks && !pageMarkers) ||
                 error instanceof RemoveFeatureError ||
-                error instanceof AbortManagerThrownError
+                error instanceof AbortManagerThrownError ||
+                error instanceof UsOnlyUnavailableError
               ) {
                 throw error;
               }
@@ -800,7 +815,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         } catch (error) {
           if (
             error instanceof RemoveFeatureError ||
-            error instanceof AbortManagerThrownError
+            error instanceof AbortManagerThrownError ||
+            error instanceof UsOnlyUnavailableError
           ) {
             throw error;
           }
@@ -837,6 +853,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (
         !result &&
         !forceFirePDF &&
+        !usOnly &&
         fileSizeBytes >= MAX_FILE_SIZE &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
@@ -855,6 +872,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (
         !result &&
         !forceFirePDF &&
+        !usOnly &&
         fileSizeBytes < MAX_FILE_SIZE &&
         base64Content !== undefined &&
         config.RUNPOD_MU_API_KEY &&
@@ -956,7 +974,37 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }),
         },
         tempFilePath,
+        maxPages ?? undefined,
       );
+      // pdf-parse stops at its page cap, so a count from native detection
+      // can only come down to the pages it parsed. A failed detection stays
+      // at 0 and keeps billing the base credit.
+      effectivePageCount = reconcilePageCountWithPdfParse(
+        effectivePageCount,
+        result,
+      );
+      // When native detection could not read the page count, use the count
+      // pdf-parse saw so a truncated result still reports its total.
+      if (totalPageCount === undefined && result.pageCount !== undefined) {
+        totalPageCount = result.pageCount;
+      }
+      // Without GPU OCR a scanned document has no text layer to return.
+      if (
+        usOnly &&
+        !skipOCR &&
+        (detectedPdfType === "Scanned" ||
+          detectedPdfType === "ImageBased" ||
+          !result.markdown?.trim())
+      ) {
+        meta.logger.warn("US-only PDF needs OCR the PDF service did not run", {
+          method: "scrapePDF",
+          scrape_id: meta.id,
+          pdf_type: detectedPdfType,
+        });
+        throw new UsOnlyUnavailableError(
+          "This PDF needs OCR, which is not available for teams restricted to US-only processing right now. Try again later.",
+        );
+      }
     }
 
     return {

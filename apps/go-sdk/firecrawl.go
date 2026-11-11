@@ -1,4 +1,5 @@
-// Package firecrawl provides a Go client for the Firecrawl v2 web scraping API.
+// Package firecrawl provides a Go client for Firecrawl, the context API for AI agents:
+// search, scrape, parse, crawl, map, interact, agent, and monitor on the v2 API.
 //
 // Create a client using [NewClient] with functional options:
 //
@@ -190,6 +191,9 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/crawl", body, nil)
 	if err != nil {
 		return nil, err
@@ -216,6 +220,11 @@ func (c *Client) GetCrawlStatus(ctx context.Context, jobID string) (*CrawlJob, e
 	var job CrawlJob
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
 	}
 	return &job, nil
 }
@@ -306,6 +315,9 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 		}
 	}
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/batch/scrape", body, extraHeaders)
 	if err != nil {
 		return nil, err
@@ -333,21 +345,84 @@ func (c *Client) GetBatchScrapeStatus(ctx context.Context, jobID string) (*Batch
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
+	// The status response does not echo the job ID; carry it over so callers
+	// can reach the per-job endpoints from the returned job.
+	if job.ID == "" {
+		job.ID = jobID
+	}
 	return &job, nil
 }
 
+// GetBatchScrapeErrors gets the URLs of a batch scrape job that failed to
+// scrape, along with the URLs blocked by robots.txt.
+//
+// Pages that responded with an HTTP error such as 404 or 429 are not reported
+// here; they are returned as documents with the original status in
+// Metadata["statusCode"].
+func (c *Client) GetBatchScrapeErrors(ctx context.Context, jobID string) (*BatchScrapeErrorsResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/batch/scrape/"+jobID+"/errors")
+	if err != nil {
+		return nil, err
+	}
+
+	// The API returns the payload at the top level; accept a `data` envelope
+	// as well, like the other SDKs do.
+	var envelope struct {
+		BatchScrapeErrorsResponse
+		Data *BatchScrapeErrorsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	resp := envelope.BatchScrapeErrorsResponse
+	if envelope.Data != nil {
+		resp = *envelope.Data
+	}
+	if resp.Errors == nil {
+		resp.Errors = []BatchScrapeError{}
+	}
+	if resp.RobotsBlocked == nil {
+		resp.RobotsBlocked = []string{}
+	}
+	return &resp, nil
+}
+
 // BatchScrape batch-scrapes URLs and waits for completion with auto-polling.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrape(ctx context.Context, urls []string, opts *BatchScrapeOptions) (*BatchScrapeJob, error) {
 	return c.BatchScrapeWithPolling(ctx, urls, opts, defaultPollInterval, defaultJobTimeout)
 }
 
 // BatchScrapeWithPolling batch-scrapes URLs and waits for completion with custom polling settings.
+//
+// The returned job carries the batch ID, the scraped documents in Data, and
+// the URLs that failed to scrape in Errors (see BatchScrapeJob).
 func (c *Client) BatchScrapeWithPolling(ctx context.Context, urls []string, opts *BatchScrapeOptions, pollIntervalSec, timeoutSec int) (*BatchScrapeJob, error) {
 	start, err := c.StartBatchScrape(ctx, urls, opts)
 	if err != nil {
 		return nil, err
 	}
-	return c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	job, err := c.pollBatchScrape(ctx, start.ID, pollIntervalSec, timeoutSec)
+	if err != nil {
+		return nil, err
+	}
+
+	// The status endpoint only reports successful documents, and its counters
+	// exclude failed URLs, so the errors endpoint is the only place a caller can
+	// learn which URLs were dropped and why.
+	errs, err := c.GetBatchScrapeErrors(ctx, start.ID)
+	if err != nil {
+		return nil, err
+	}
+	job.Errors = errs.Errors
+	job.RobotsBlocked = errs.RobotsBlocked
+	return job, nil
 }
 
 // CancelBatchScrape cancels a running batch scrape job.
@@ -384,6 +459,9 @@ func (c *Client) Map(ctx context.Context, url string, opts *MapOptions) (*MapDat
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/map", body, nil)
 	if err != nil {
 		return nil, err
@@ -597,6 +675,9 @@ func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPap
 		if opts.To != "" {
 			values.Set("to", opts.To)
 		}
+		if opts.Sort != "" {
+			values.Set("sort", opts.Sort)
+		}
 	}
 
 	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())
@@ -689,10 +770,8 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 
 // SearchGitHub searches GitHub research content.
 //
-// Deprecated: stops responding after 2026-11-03. Use the developer index at
-// GET or POST /v2/search/developer. This SDK does not wrap it yet, so call it
-// directly. It does not carry over the score breakdown or the web fallback
-// results.
+// Deprecated: the research index GitHub search endpoint was removed after
+// 2026-11-03. Use DeveloperSearch instead.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}
@@ -708,6 +787,26 @@ func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGit
 		return nil, err
 	}
 	var resp GitHubSearchResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// DeveloperSearch searches the developer index (public repositories, GitHub
+// issues, merged pull requests, READMEs and code documentation).
+func (c *Client) DeveloperSearch(ctx context.Context, query string, opts *DeveloperSearchOptions) (*DeveloperSearchResponse, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	body := map[string]interface{}{"query": query}
+	mergeOptions(body, opts)
+	body["origin"] = "go-sdk@" + Version
+	raw, err := c.http.post(ctx, "/v2/search/developer", body, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp DeveloperSearchResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}

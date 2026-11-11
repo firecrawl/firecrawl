@@ -605,7 +605,7 @@ describe("FLAT deterministic search-monitor billing", () => {
 
     it("a still-running search (no credits stamped yet) sums to 0 — the reconciler must NOT finalize here", () => {
       // Pre-stamp shape the dispatcher writes before the inline search finishes.
-      // The never-zero guarantee relies on isMonitorCheckComplete refusing to
+      // The never-zero guarantee relies on findUnfinishedMonitorTarget refusing to
       // finalize a run whose searchCompleted flag is not yet true (see runner.ts).
       const pending = { targetId: "search-1", type: "search" as const };
       expect((pending as any).searchCompleted).toBeUndefined();

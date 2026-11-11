@@ -30,7 +30,12 @@ const compact = {
   capability: tool.capability,
   description: tool.description,
 };
-const input = { teamId: "team", query: "records", limit: 5, timeoutMs: 10000 };
+const input = {
+  teamId: "team",
+  queries: ["records"],
+  limit: 5,
+  timeoutMs: 10000,
+};
 beforeEach(() => vi.clearAllMocks());
 it.each([undefined, "compact", "summary", "full"] as const)(
   "supports %s discovery detail",
@@ -156,4 +161,157 @@ it("keeps tools when optional navigation is absent, extended or malformed", asyn
   expect(result.items[1]).toHaveProperty("next", { ...next, label: "Inspect" });
   expect(result.items[0]).toMatchObject({ next: undefined });
   expect(result.items[2]).toMatchObject({ next: undefined });
+});
+
+it("retries a failed discovery leg once", async () => {
+  request
+    .mockResolvedValueOnce({ status: 503, body: {} })
+    .mockResolvedValueOnce({
+      status: 200,
+      body: { success: true, creditsCost: 0, data: { items: [tool] } },
+    });
+  const result = await discoverTools(input, logger);
+  expect(logger.warn).toHaveBeenCalledWith(
+    "Semantic tool discovery unavailable",
+    expect.objectContaining({ attempt: 1 }),
+  );
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(result.items).toHaveLength(1);
+  expect(result.warning).toBeUndefined();
+  expect(result.unavailable).toBeUndefined();
+});
+
+it("reports discovery unavailable when every leg fails", async () => {
+  request.mockResolvedValue({ status: 503, body: {} });
+  const result = await discoverTools(
+    { ...input, urls: ["https://example.com/records"] },
+    logger,
+  );
+  expect(request).toHaveBeenCalledTimes(4);
+  expect(result.items).toEqual([]);
+  expect(result.warning).toBeTruthy();
+  expect(result.unavailable).toBe(true);
+});
+
+it("keeps partial results when only one leg fails", async () => {
+  request.mockImplementation(async args =>
+    args.path === "/v1/skills/resolve"
+      ? { status: 503, body: {} }
+      : {
+          status: 200,
+          body: { success: true, creditsCost: 0, data: { items: [tool] } },
+        },
+  );
+  const result = await discoverTools(
+    { ...input, urls: ["https://example.com/records"] },
+    logger,
+  );
+  expect(result.items).toHaveLength(1);
+  expect(result.warning).toBeTruthy();
+  expect(result.unavailable).toBeUndefined();
+});
+
+it("interleaves results of several queries by rank", async () => {
+  const named = (capability: string) => ({ ...tool, capability });
+  request.mockImplementation(async args => {
+    const query = (args.body as { options: { query: string } }).options.query;
+    return {
+      status: 200,
+      body: {
+        success: true,
+        creditsCost: 0,
+        data: {
+          items:
+            query === "first"
+              ? [named("a/one"), named("a/two")]
+              : [named("b/one"), named("a/one")],
+        },
+      },
+    };
+  });
+  const result = await discoverTools(
+    { ...input, toolDetail: "compact", queries: ["first", "second"] },
+    logger,
+  );
+  expect(result.items.map(item => item.capability)).toEqual([
+    "a/one",
+    "b/one",
+    "a/two",
+  ]);
+  expect(result.warning).toBeUndefined();
+});
+
+it("keeps the results of queries that answered", async () => {
+  request.mockImplementation(async args =>
+    (args.body as { options: { query: string } }).options.query === "first"
+      ? { status: 503, body: {} }
+      : {
+          status: 200,
+          body: { success: true, creditsCost: 0, data: { items: [tool] } },
+        },
+  );
+  const result = await discoverTools(
+    { ...input, queries: ["first", "second"] },
+    logger,
+  );
+  expect(result.items).toHaveLength(1);
+  expect(result.warning).toBeUndefined();
+});
+
+it("reports the tools the Exchange hid from a US-only team", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: { items: [tool], usOnlyExcluded: 3 },
+    },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
+  expect(result.items).toHaveLength(1);
+  expect(result.usOnlyExcluded).toBe(3);
+  expect(result).not.toHaveProperty("warning");
+});
+
+it("reports no hidden tools when the Exchange hid nothing", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(result.items).toHaveLength(1);
+  expect(result).not.toHaveProperty("usOnlyExcluded");
+});
+
+it("numbers each lookup's Exchange request id from the caller's prefix", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const exchangeRequestIds = {
+    prefix: "search-1:tools:raw",
+    sent: [] as string[],
+  };
+  await discoverTools(
+    { ...input, queries: ["first", "second"], exchangeRequestIds },
+    logger,
+  );
+  expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+  expect(exchangeRequestIds.sent.sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+});
+
+it("sends no request id when the caller passes none", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  await discoverTools(input, logger);
+  expect(request.mock.calls[0][0].requestId).toBeUndefined();
 });

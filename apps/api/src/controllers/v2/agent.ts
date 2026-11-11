@@ -12,7 +12,12 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+  getAgentZdrRetentionMinutes,
+  getScrapeZDR,
+  getSearchZDR,
+} from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -22,12 +27,44 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
+import { isUsOnly } from "../../lib/us-only";
+import {
+  AGENT_DEFAULT_MAX_CREDITS,
+  gateAgentCredits,
+} from "./agent-credit-gate";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
   res: Response<AgentResponse>,
 ) {
   const agentId = uuidv7();
+
+  const originalRequest = { ...req.body };
+  req.body = agentRequestSchema.parse(req.body);
+
+  // An agent run scrapes and searches under ZDR, so it needs both
+  // entitlements up front instead of failing on its first inner call.
+  const scrapeZDR = getScrapeZDR(req.acuc?.flags);
+  const searchZDR = getSearchZDR(req.acuc?.flags);
+  if (
+    (req.body.zeroDataRetention === true || scrapeZDR === "forced") &&
+    !(
+      (scrapeZDR === "allowed" || scrapeZDR === "forced") &&
+      (searchZDR === "allowed" || searchZDR === "forced-zdr")
+    )
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "zdr_not_enabled",
+      error:
+        "Zero Data Retention (ZDR) for agent runs requires both scrape ZDR and search ZDR to be enabled for your team. Contact support@firecrawl.com to enable it.",
+    });
+  }
+
+  const zeroDataRetention =
+    scrapeZDR === "forced" ||
+    (req.body.zeroDataRetention === true && scrapeZDR === "allowed");
+
   const logger = _logger.child({
     agentId,
     extractId: agentId,
@@ -36,24 +73,37 @@ export async function agentController(
     team_id: req.auth.team_id,
     module: "api/v2",
     method: "agentController",
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
 
-  const originalRequest = { ...req.body };
-  req.body = agentRequestSchema.parse(req.body);
-
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (zeroDataRetention && req.body.threadId) {
     return res.status(400).json({
       success: false,
+      code: "zdr_threads_unsupported",
       error:
-        "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+        "Agent threads are not supported with zero data retention. Remove threadId to start a new run.",
     });
   }
 
-  _logger.info("Agent starting...", {
+  // Read once, here: the agent service keeps the run's retention from start.
+  const zeroDataRetentionMinutes = zeroDataRetention
+    ? getAgentZdrRetentionMinutes(req.acuc?.flags)
+    : null;
+  if (zeroDataRetentionMinutes === "invalid") {
+    logger.error("Invalid agentZdrRetentionMinutes team flag", {
+      agentZdrRetentionMinutes: req.acuc?.flags?.agentZdrRetentionMinutes,
+    });
+    return res.status(500).json({
+      success: false,
+      code: "zdr_retention_misconfigured",
+      error:
+        "Zero Data Retention is misconfigured for your team. Contact support@firecrawl.com.",
+    });
+  }
+
+  logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
   // Threat protection: check the agent's starting URLs before handing off to
@@ -93,7 +143,12 @@ export async function agentController(
           req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          { endpoint: "agent", jobId: agentId, chargeId: `${agentId}:threat` },
+          {
+            endpoint: "agent",
+            jobId: agentId,
+            chargeId: `${agentId}:threat`,
+            hostedMcp: req.auth.hostedMcp,
+          },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
@@ -118,7 +173,7 @@ export async function agentController(
           threatDecisions: [blockedUrl.decision],
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
-          zeroDataRetention: false,
+          zeroDataRetention,
         })),
       );
       return res.status(403).json({
@@ -179,9 +234,11 @@ export async function agentController(
     }
   }
 
-  // If maxCredits > 2500, skip free request consumption — this is always a paid request
+  // A request above the free cap is always paid. Otherwise a free request is
+  // consumed atomically here, and only a consumed one skips the credit gate.
   const highCreditRequest =
-    req.body.maxCredits !== undefined && req.body.maxCredits > 2500;
+    req.body.maxCredits !== undefined &&
+    req.body.maxCredits > AGENT_DEFAULT_MAX_CREDITS;
 
   let freeRequest: any;
 
@@ -195,6 +252,30 @@ export async function agentController(
       ? !!freeRequest?.[0]?.consumed
       : true;
 
+  let maxCredits = req.body.maxCredits;
+  let stopOnInsufficientCredits = false;
+  if (!isFreeRequest) {
+    const gate = await gateAgentCredits({
+      teamId: req.auth.team_id,
+      orgId: req.auth.org_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      requestedMaxCredits: req.body.maxCredits,
+      hostedMcp: req.auth.hostedMcp,
+    });
+    if (!gate.allowed) {
+      logger.warn("Insufficient credits to start agent run", {
+        balance: gate.balance,
+      });
+      return res.status(402).json({
+        success: false,
+        error: `Insufficient credits to start an agent run. Your team's credit balance is ${gate.balance} credits. Add credits at https://firecrawl.dev/pricing to continue.`,
+      });
+    }
+    maxCredits = gate.maxCredits;
+    stopOnInsufficientCredits = gate.stopOnInsufficientCredits;
+    if (gate.onTeamCredits) req.auth.hostedMcp = false;
+  }
+
   await logRequest({
     id: agentId,
     kind: "agent",
@@ -204,9 +285,15 @@ export async function agentController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
-    zeroDataRetention: false, // not supported for agent
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
     creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+    ...(zeroDataRetention
+      ? {
+          jobAccessZeroDataRetentionMinutes:
+            zeroDataRetentionMinutes ?? AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
+        }
+      : {}),
   });
 
   const passthrough = await fetch(
@@ -226,7 +313,8 @@ export async function agentController(
         apiKeyId: req.acuc!.api_key_id ?? undefined,
         teamId: req.auth.team_id,
         isFreeRequest,
-        maxCredits: req.body.maxCredits ?? undefined,
+        maxCredits: maxCredits ?? undefined,
+        stopOnInsufficientCredits: stopOnInsufficientCredits || undefined,
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,
@@ -235,6 +323,14 @@ export async function agentController(
         threadId: req.body.threadId,
         mode: req.body.mode,
         exchange: req.body.exchange,
+        location: req.body.location,
+        safe: req.body.safe,
+        ...(req.auth.hostedMcp ? { hostedMcp: true } : {}),
+        ...(zeroDataRetention ? { zeroDataRetention: true } : {}),
+        ...(zeroDataRetentionMinutes !== null
+          ? { zeroDataRetentionMinutes }
+          : {}),
+        ...(isUsOnly(req.acuc?.flags) ? { usOnly: true } : {}),
       }),
     },
   );

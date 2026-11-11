@@ -8,6 +8,17 @@ const dispatcher = new Agent({
   bodyTimeout: 120_000,
 });
 
+const CONNECTION_ERRORS = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "UND_ERR_SOCKET",
+]);
+
+const connectionFailed = (error: unknown) => {
+  const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof code === "string" && CONNECTION_ERRORS.has(code);
+};
+
 export async function exchangeRequest(input: {
   teamId: string;
   path: string;
@@ -17,20 +28,30 @@ export async function exchangeRequest(input: {
   maximumCredits?: number;
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
+  /** Caller's IP as the API sees it; Exchange resolves what it needs from it. */
+  clientIp?: string;
+  /** Country on the team's billing address, when it has one. */
+  billingCountry?: string;
   /**
    * The team may use its own MCP connectors (Alexandria connectors). Sent for teams with the
    * `exchangeRetrieve` flag, which is the connectors whitelist; Exchange reads it as the grant.
    */
   connectors?: boolean;
+  zeroDataRetention?: boolean;
+  /** The team may only be served by US-based providers. */
+  usOnly?: boolean;
+  /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
+  retryConnection?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
-  const response = await fetch(base + input.path, {
+  const signal = AbortSignal.timeout(Math.max(1, input.timeoutMs));
+  const init = {
     method: input.body === undefined ? "GET" : "POST",
-    redirect: "manual",
+    redirect: "manual" as const,
     dispatcher,
-    signal: AbortSignal.timeout(Math.max(1, input.timeoutMs)),
+    signal,
     headers: {
       "content-type": "application/json",
       ...(input.resultAuthorization
@@ -44,7 +65,15 @@ export async function exchangeRequest(input: {
           }
         : {}),
       "x-exchange-extended-catalog-access": "true",
+      ...(input.clientIp ? { "x-exchange-client-ip": input.clientIp } : {}),
+      ...(input.billingCountry
+        ? { "x-exchange-billing-country": input.billingCountry }
+        : {}),
       ...(input.connectors ? { "x-exchange-connectors": "true" } : {}),
+      ...(input.zeroDataRetention
+        ? { "x-exchange-zero-data-retention": "true" }
+        : {}),
+      ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}
@@ -52,13 +81,20 @@ export async function exchangeRequest(input: {
             "x-exchange-max-credits": String(input.maximumCredits),
             // Leave the Exchange a margin to answer before our own timeout.
             "x-exchange-deadline": String(
-              Date.now() +
-                input.timeoutMs -
-                Math.min(2000, input.timeoutMs / 10),
+              Math.floor(
+                Date.now() +
+                  input.timeoutMs -
+                  Math.min(2000, input.timeoutMs / 10),
+              ),
             ),
           }),
     },
     body: input.body === undefined ? undefined : JSON.stringify(input.body),
+  };
+  const response = await fetch(base + input.path, init).catch(error => {
+    if (!input.retryConnection || signal.aborted || !connectionFailed(error))
+      throw error;
+    return fetch(base + input.path, init);
   });
   // Bound retained provider responses, including bodies without Content-Length.
   const chunks: Uint8Array[] = [];

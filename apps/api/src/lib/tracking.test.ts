@@ -1,7 +1,11 @@
 import { chInsert } from "./clickhouse-client";
+import { keylessTeamId, keylessTeamUuid } from "./keyless-team";
 import {
   buildMonitorTargetInterestRows,
   trackMonitorTargetInterest,
+  trackScrape,
+  trackSearchRequest,
+  trackSearchResults,
 } from "./tracking";
 import type { MonitorTarget } from "../services/monitoring/types";
 
@@ -167,5 +171,73 @@ describe("monitor target interest tracking", () => {
     });
 
     expect(chInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("analytics team ids", () => {
+  const keyless = keylessTeamId("203.0.113.7");
+  const previewTeam = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // The analytics team_id columns are UUIDs, so keyless and preview callers
+  // are stored under their UUIDs rather than their raw team ids.
+  it.each([
+    [keyless, keylessTeamUuid(keyless)],
+    ["preview", previewTeam],
+    [
+      "5f0c2b1e-8d4a-4c3b-9e2f-1a2b3c4d5e6f",
+      "5f0c2b1e-8d4a-4c3b-9e2f-1a2b3c4d5e6f",
+    ],
+  ])("stores team %s as %s", async (teamId, stored) => {
+    await trackScrape({
+      scrapeId: "scrape-1",
+      requestId: "request-1",
+      teamId,
+      url: "https://example.com/",
+      origin: "api",
+      kind: "scrape",
+      isSuccessful: true,
+      creditsCost: 1,
+      timeTaken: 1,
+      zeroDataRetention: false,
+    });
+    await trackSearchRequest({
+      searchId: "search-1",
+      requestId: "request-1",
+      teamId,
+      query: "example",
+      origin: "api",
+      kind: "search",
+      apiVersion: "v2",
+      sources: ["web"],
+      numResults: 1,
+      searchCredits: 1,
+      scrapeCredits: 0,
+      totalCredits: 1,
+      hasScrapeFormats: false,
+      scrapeFormats: [],
+      isSuccessful: true,
+      timeTaken: 1,
+      zeroDataRetention: false,
+    });
+    await trackSearchResults({
+      searchId: "search-1",
+      teamId,
+      response: { web: [{ url: "https://example.com/" }] } as any,
+      zeroDataRetention: false,
+      hasScrapeFormats: false,
+    });
+
+    const tables = vi.mocked(chInsert).mock.calls.map(([table]) => table);
+    expect(tables).toEqual([
+      "scrape_results",
+      "search_requests",
+      "search_results",
+    ]);
+    for (const [, rows] of vi.mocked(chInsert).mock.calls)
+      expect(rows.map(row => row.team_id)).toEqual([stored]);
   });
 });

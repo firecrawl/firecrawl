@@ -3,6 +3,7 @@ import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
+import { isRequestedModelSupported } from "../../lib/extraction-provider";
 import { z } from "zod";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -10,6 +11,7 @@ import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
+import { isDeveloperCategoryAlias } from "../../lib/developer-category";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 import {
   ExtractorOptions,
@@ -310,7 +312,7 @@ const actionSchema = z.union([
   }),
   z.object({
     type: z.literal("scroll"),
-    direction: z.enum(["up", "down"]).optional().prefault("down"),
+    direction: z.enum(["up", "down"]).prefault("down"),
     selector: z.string().optional(),
   }),
   z.object({
@@ -365,6 +367,14 @@ const jsonFormatWithOptions = z.strictObject({
     })
     .superRefine(addStrictSchemaIssue),
   prompt: z.string().max(10000).optional(),
+  // Optional: name a configured extraction model for this request.
+  model: z
+    .string()
+    .max(100)
+    .optional()
+    .refine(val => val === undefined || isRequestedModelSupported(val), {
+      message: "Unsupported extraction model.",
+    }),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });
@@ -404,7 +414,7 @@ const changeTrackingFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     })
     .superRefine(addStrictSchemaIssue),
-  modes: z.enum(["json", "git-diff"]).array().optional().prefault([]),
+  modes: z.enum(["json", "git-diff"]).array().prefault([]),
   tag: z.string().or(z.null()).prefault(null),
 });
 
@@ -467,13 +477,13 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
-// Which engine answers branding decisions: "fast" (Jev), "standard" (the
-// LLM) or "auto" (the LLM for now). Internal for now: honored only for teams
-// listed in BRANDING_JEV_TEAM_IDS and ignored for everyone else
-// (lib/branding/jev.ts).
+// `mode` is accepted for compatibility and ignored: the same engine answers
+// every branding request (lib/branding/jev.ts). `__experimental_screenshot`
+// also shows Jev the page's first screen (an extra screenshot action).
 const brandingFormatWithOptions = z.strictObject({
   type: z.literal("branding"),
   mode: z.enum(["auto", "fast", "standard"]).optional(),
+  __experimental_screenshot: z.boolean().optional(),
 });
 
 export type FormatObject =
@@ -714,6 +724,16 @@ const locationSchema = z
   })
   .optional();
 
+export const countryLocationSchema = z.strictObject({
+  country: z
+    .string()
+    .refine(
+      value => Object.keys(countries).includes(value.toUpperCase()),
+      "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
+    )
+    .transform(value => value.toLowerCase()),
+});
+
 // Unified entity taxonomy exposed to callers. Maps to fire-privacy's
 // internal span kinds (PRIVATE_PERSON / EMAIL_ADDRESS / ACCOUNT_NUMBER /
 // etc.) inside the fire-privacy client. Names chosen to match the public
@@ -795,7 +815,6 @@ const scrapeOptionFields = z.strictObject({
           z.strictObject({ type: z.literal("video") }),
         ])
         .array()
-        .optional()
         .prefault([{ type: "markdown" }]),
     )
     .refine(x => {
@@ -909,12 +928,7 @@ export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
   obj: T,
 ): T & { skipTlsVerification: boolean } => ({
   ...obj,
-  skipTlsVerification:
-    obj.skipTlsVerification ??
-    ((obj.headers && Object.keys(obj.headers).length > 0) ||
-    (obj.actions && obj.actions.length > 0)
-      ? false
-      : true),
+  skipTlsVerification: obj.skipTlsVerification ?? false,
 });
 
 /**
@@ -1031,6 +1045,7 @@ export type UploadedParseFile = {
 };
 
 const ajv = new Ajv();
+addFormats(ajv);
 const agentAjv = new Ajv();
 addFormats(agentAjv);
 
@@ -1069,7 +1084,7 @@ const extractOptions = z
     allowExternalLinks: z.boolean().prefault(false),
     enableWebSearch: z.boolean().prefault(false),
     scrapeOptions: baseScrapeOptions.optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     urlTrace: z.boolean().prefault(false),
     timeout: z.int().positive().min(1000).optional(),
@@ -1174,7 +1189,7 @@ export const agentRequestSchema = z
           });
         }
       }),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     maxCredits: z.number().optional(),
     strictConstrainToURLs: z.boolean().optional(),
@@ -1192,6 +1207,9 @@ export const agentRequestSchema = z
     threadId: z.string().uuid().optional(),
     mode: z.enum(["extract", "chat"]).optional(),
     exchange: agentExchangeSchema.optional(),
+    location: countryLocationSchema.optional(),
+    safe: z.boolean().optional(),
+    zeroDataRetention: z.boolean().optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
   // remain valid input and silently resolve to spark-2, so every request —
@@ -1206,7 +1224,7 @@ export type AgentRequest = z.infer<typeof agentRequestSchema>;
 
 const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   url: URL,
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   domainTools: z.boolean().optional(),
@@ -1217,6 +1235,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
       requestId: z.string(),
       shouldBill: z.boolean(),
       boostConcurrency: z.boolean().optional(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -1265,7 +1284,7 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
 );
 
 const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   __agentInterop: z
@@ -1274,6 +1293,7 @@ const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
       requestId: z.string(),
       shouldBill: z.boolean(),
       boostConcurrency: z.boolean().optional(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
   file: uploadedParseFileSchema,
@@ -1298,7 +1318,7 @@ export type ParseRequestInput = z.input<typeof parseRequestSchemaBase>;
 
 const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   urls: URL.array().min(1),
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   webhook: webhookSchema.optional(),
   appendToId: z.uuid().optional(),
@@ -1310,6 +1330,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
       auth: z.string(),
       requestId: z.string(),
       shouldBill: z.boolean(),
+      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -1323,7 +1344,7 @@ export const batchScrapeRequestSchema = strictWithMessage(
 const batchScrapeRequestSchemaNoURLValidationBase =
   baseScrapeOptions.safeExtend({
     urls: z.string().array().min(1),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.uuid().optional(),
@@ -1335,6 +1356,7 @@ const batchScrapeRequestSchemaNoURLValidationBase =
         auth: z.string(),
         requestId: z.string(),
         shouldBill: z.boolean(),
+        hostedMcp: z.boolean().optional(),
       })
       .optional(),
   });
@@ -1402,7 +1424,7 @@ type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url: URL,
-  origin: z.string().optional().prefault("api"),
+  origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
@@ -1447,7 +1469,7 @@ const mapRequestSchemaBase = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
   .extend({
     url: URL,
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     includeSubdomains: z.boolean().prefault(true),
     ignoreQueryParameters: z.boolean().prefault(true),
@@ -1636,6 +1658,9 @@ export type ErrorResponse = {
   details?: any;
   sponsor_status?: string;
   login_url?: string;
+  replacement?: string;
+  documentation_url?: string;
+  retry_after_seconds?: number;
 };
 
 export type ScrapeResponse =
@@ -1710,8 +1735,10 @@ export type AgentListResponse =
           // type release.
           model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
           effort?: "low" | "medium" | "high";
+          safe?: boolean;
           threadId?: string;
           threadTurn?: number;
+          zeroDataRetention?: boolean;
         };
       }[];
       next?: string;
@@ -1869,6 +1896,7 @@ export type AgentStatusResponse =
       stopReason?: "credit_limit_reached";
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
       effort?: "low" | "medium" | "high";
+      safe?: boolean;
       expiresAt: string;
       creditsUsed?: number;
       threadId?: string;
@@ -1888,6 +1916,7 @@ type AgentThreadRun = {
   urls?: string[];
   schema?: unknown;
   effort?: "low" | "medium" | "high";
+  safe?: boolean;
   status:
     | "processing"
     | "succeeded"
@@ -1931,6 +1960,9 @@ export type AgentTraceResponse =
       id: string;
       events: object[];
       creditsUsed: number;
+      // Set by the agent service on a zero data retention run, whose events
+      // are limited to content-free lifecycle events.
+      zeroDataRetention?: boolean;
       activeBrowserSessions?: Array<{
         id: string;
         liveViewUrl: string;
@@ -2004,7 +2036,7 @@ export interface MapDocument {
 
 // V2 Map Response with dictionary format
 export type MapResponse =
-  | ErrorResponse
+  | (ErrorResponse & { id?: string })
   | {
       success: true;
       id: string;
@@ -2091,6 +2123,10 @@ type AuthObject = {
   // Set only by authMiddleware from the raw request; controllers may re-parse
   // the body and drop `__agentInterop`, so read this instead.
   agentInterop?: AgentInteropStatus;
+  // Set only by authMiddleware, from the hosted MCP verification in
+  // supaAuthenticateUser, or from a trusted agent interop block for an agent
+  // run that verification started; never from an untrusted body or header.
+  hostedMcp?: boolean;
 };
 
 type Account = {
@@ -2101,6 +2137,8 @@ export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
+  alexandriaAutoTools?: boolean;
+  alexandriaToolFusion?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2127,6 +2165,8 @@ export type TeamFlags = {
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
+  /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
+  agentZdrRetentionMinutes?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
@@ -2146,6 +2186,15 @@ export type TeamFlags = {
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
   dpaRestricted?: boolean;
+  // The org's contract bars training on its data: FirePDF never captures its
+  // documents (buildFirePdfTrainingCapture).
+  trainingRestricted?: boolean;
+  // Every request is processed by US-based vendors only. A route with no US
+  // vendor is refused or skipped with a warning.
+  usOnly?: boolean;
+  // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
+  // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
+  deprecationExtensions?: Record<string, string>;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -2478,10 +2527,6 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 // Category source type definitions
-const githubCategoryOptions = z.strictObject({
-  type: z.literal("github"),
-});
-
 const researchCategoryOptions = z.strictObject({
   type: z.literal("research"),
 });
@@ -2497,20 +2542,6 @@ const developerCategoryOptions = z.strictObject({
 const govCategoryOptions = z.strictObject({
   type: z.literal("gov"),
 });
-
-const developerCategoryAliases = new Set([
-  "repo",
-  "code",
-  "developer",
-  "docs",
-  "devdex",
-  "repo_search",
-  "developer_index",
-]);
-
-function isDeveloperCategoryAlias(value: unknown): value is string {
-  return typeof value === "string" && developerCategoryAliases.has(value);
-}
 
 function normalizeDeveloperCategoryAliases(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
@@ -2556,13 +2587,13 @@ const searchDomainSchema = z
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
-    limit: z.int().positive().finite().max(100).optional().prefault(10),
+    limit: z.int().positive().finite().max(100).prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "alexandria"])),
+        z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2572,19 +2603,20 @@ export const searchRequestSchema = z
             z.strictObject({
               type: z.literal("alexandria"),
             }),
+            z.strictObject({
+              type: z.literal("skills"),
+            }),
           ]),
         ),
       ])
-      .optional()
       .prefault(["web"]),
     categories: z
       .preprocess(
         normalizeDeveloperCategoryAliases,
         z.union([
-          z.array(z.enum(["github", "research", "pdf", "developer", "gov"])),
+          z.array(z.enum(["research", "pdf", "developer", "gov"])),
           z.array(
             z.union([
-              githubCategoryOptions,
               researchCategoryOptions,
               pdfCategoryOptions,
               developerCategoryOptions,
@@ -2596,16 +2628,16 @@ export const searchRequestSchema = z
       .optional(),
     includeDomains: z.array(searchDomainSchema).optional(),
     excludeDomains: z.array(searchDomainSchema).optional(),
-    lang: z.string().optional().prefault("en"),
+    lang: z.string().prefault("en"),
     safe: z.boolean().optional(),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
     location: z.string().optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().finite().prefault(60000),
-    ignoreInvalidURLs: z.boolean().optional().prefault(false),
-    asyncScraping: z.boolean().optional().prefault(false),
+    ignoreInvalidURLs: z.boolean().prefault(false),
+    asyncScraping: z.boolean().prefault(false),
     // Replace each result's snippet with query-relevant highlights pulled from
     // our index. When omitted, the caller integration and rollout cohort decide
     // whether generated highlights are returned or only run in shadow mode.
@@ -2644,7 +2676,6 @@ export const searchRequestSchema = z
                 screenshotFormatWithOptions,
               ])
               .array()
-              .optional()
               .prefault([]),
           )
           .refine(x => {
@@ -2657,6 +2688,7 @@ export const searchRequestSchema = z
         auth: z.string(),
         requestId: z.string(),
         shouldBill: z.boolean(),
+        hostedMcp: z.boolean().optional(),
       })
       .optional(),
   })
@@ -2674,8 +2706,24 @@ export const searchRequestSchema = z
   }, "the gov category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
+    // Providers read the country (gl) and the location separately and default
+    // each to the US, so fill in whichever one the caller left out. Georgia is
+    // never inferred because it is also a US state.
+    const locationCountry = x.location?.split(",").at(-1)?.trim().toLowerCase();
     const country =
-      x.country !== undefined ? x.country : x.location ? undefined : "us";
+      x.country ??
+      Object.entries(countries)
+        .find(
+          ([code, c]) =>
+            code !== "GE" && c.name.toLowerCase() === locationCountry,
+        )?.[0]
+        .toLowerCase() ??
+      (x.location ? undefined : "us");
+    const location =
+      x.location ??
+      Object.entries(countries).find(
+        ([code]) => code === x.country?.toUpperCase(),
+      )?.[1].name;
 
     // Transform string array sources to object format
     let sources = x.sources;
@@ -2692,7 +2740,7 @@ export const searchRequestSchema = z
                 filter: x.filter,
                 lang: x.lang,
                 country,
-                location: x.location,
+                location,
               };
             case "images":
               return {
@@ -2705,7 +2753,7 @@ export const searchRequestSchema = z
                 tbs: x.tbs,
                 lang: x.lang,
                 country,
-                location: x.location,
+                location,
               };
             default:
               return { type: s as any };
@@ -2723,10 +2771,6 @@ export const searchRequestSchema = z
         // It's a string array, transform to object array
         categories = (categories as string[]).map(c => {
           switch (c) {
-            case "github":
-              return {
-                type: "github" as const,
-              };
             case "research":
               return {
                 type: "research" as const,
@@ -2754,6 +2798,7 @@ export const searchRequestSchema = z
     return {
       ...x,
       country,
+      location,
       sources,
       categories,
       scrapeOptions: extractTransform(x.scrapeOptions),
@@ -2819,22 +2864,40 @@ const missingContentEntrySchema = z.strictObject({
   description: z.string().trim().max(2000).optional(),
 });
 
+/**
+ * A single valuable search result, addressed by the group it appears in and its
+ * 1-indexed position within that group. Results are returned grouped
+ * (`data.web`, `data.images`, `data.news`), each group sliced independently to
+ * `limit`, so a bare position is ambiguous once more than one source is in play.
+ */
+const valuableResultSchema = z.strictObject({
+  source: z.enum(["web", "images", "news"]),
+  // 100 is the max search `limit`, and each group is capped at `limit`
+  // independently, so positions beyond it can only be hallucinated.
+  position: z.number().int().positive().lte(100),
+  reason: z.string().trim().max(1000).optional(),
+});
+
+const valuableResultsSchema = z.array(valuableResultSchema).max(50);
+
 function hasSubstantiveSearchFeedback(data: {
   rating: "good" | "bad" | "partial";
   valuableSources?: unknown[];
+  valuableResults?: unknown[];
   missingContent?: unknown[];
   querySuggestions?: string;
 }): boolean {
   const hasSources = (data.valuableSources?.length ?? 0) > 0;
+  const hasResults = (data.valuableResults?.length ?? 0) > 0;
   const hasMissing = (data.missingContent?.length ?? 0) > 0;
   const hasSuggestions =
     !!data.querySuggestions && data.querySuggestions.length > 0;
 
   switch (data.rating) {
     case "good":
-      return hasSources;
+      return hasSources || hasResults;
     case "partial":
-      return hasSources || hasMissing;
+      return hasSources || hasResults || hasMissing;
     case "bad":
       return hasMissing || hasSuggestions;
   }
@@ -2854,14 +2917,15 @@ export const searchFeedbackSchema = z
       )
       .max(50)
       .optional(),
+    valuableResults: valuableResultsSchema.optional(),
     missingContent: z.array(missingContentEntrySchema).max(20).optional(),
     querySuggestions: z.string().trim().max(2000).optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
   .refine(data => hasSubstantiveSearchFeedback(data), {
     message:
-      "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+      "Feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
   });
 
 export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
@@ -2942,12 +3006,13 @@ export const endpointFeedbackSchema = z
       )
       .max(50)
       .optional(),
+    valuableResults: valuableResultsSchema.optional(),
     missingContent: z.array(missingContentEntrySchema).max(50).optional(),
     querySuggestions: z.string().trim().max(2000).optional(),
     url: searchFeedbackUrlSchema.optional(),
     pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
     metadata: feedbackMetadataSchema.optional(),
-    origin: z.string().optional().prefault("api"),
+    origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
   .refine(
@@ -2957,6 +3022,7 @@ export const endpointFeedbackSchema = z
         (data.tags?.length ?? 0) > 0 ||
         (data.note?.length ?? 0) > 0 ||
         (data.valuableSources?.length ?? 0) > 0 ||
+        (data.valuableResults?.length ?? 0) > 0 ||
         (data.missingContent?.length ?? 0) > 0 ||
         !!data.querySuggestions ||
         !!data.url ||
@@ -2965,14 +3031,21 @@ export const endpointFeedbackSchema = z
     },
     {
       message:
-        "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
+        "Feedback must include at least one substantive signal: issues, note, sources, valuableResults, missingContent, querySuggestions, url, or pageNumbers.",
+    },
+  )
+  .refine(
+    data =>
+      data.endpoint === "search" || (data.valuableResults?.length ?? 0) === 0,
+    {
+      message: "valuableResults is only supported for search feedback.",
     },
   )
   .refine(
     data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
     {
       message:
-        "Search feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+        "Search feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
     },
   );
 

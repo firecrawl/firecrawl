@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.firecrawl"
-version = "1.18.4"
+version = "1.18.9"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -45,7 +45,7 @@ mavenPublishing {
 
     pom {
         name.set("Firecrawl Java SDK")
-        description.set("Java SDK for the Firecrawl API")
+        description.set("Java SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs")
         url.set("https://github.com/firecrawl/firecrawl")
 
         licenses {

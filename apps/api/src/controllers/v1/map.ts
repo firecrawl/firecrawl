@@ -18,17 +18,14 @@ import {
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
+import { isUsOnly } from "../../lib/us-only";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
-import {
-  generateURLSplits,
-  queryIndexAtDomainSplitLevel,
-  queryIndexAtSplitLevel,
-} from "../../services/index";
+import { queryIndex } from "../../lib/map-utils";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
@@ -52,39 +49,6 @@ interface MapResult {
   job_id: string;
   time_taken: number;
   mapResults: MapDocument[];
-}
-
-async function queryIndex(
-  url: string,
-  limit: number,
-  useIndex: boolean,
-  includeSubdomains: boolean,
-): Promise<string[]> {
-  if (!useIndex) {
-    return [];
-  }
-
-  const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
-    const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains
-        ? queryIndexAtDomainSplitLevel(
-            hostname,
-            limit,
-            14 * 24 * 60 * 60 * 1000,
-          )
-        : [],
-      queryIndexAtSplitLevel(url, limit, 14 * 24 * 60 * 60 * 1000),
-    ]);
-
-    return Array.from(new Set([...domainLinks, ...splitLinks]));
-  } else {
-    return await queryIndexAtSplitLevel(url, limit);
-  }
 }
 
 export async function getMapResults({
@@ -212,7 +176,8 @@ export async function getMapResults({
       Math.min(MAX_FIRE_ENGINE_RESULTS, limit) / resultsPerPage,
     );
 
-    const cacheKey = `fireEngineMap:${mapUrl}`;
+    const usOnly = isUsOnly(flags);
+    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache ? null : await redis.get(cacheKey);
 
     let allResults: any[] = [];
@@ -230,6 +195,8 @@ export async function getMapResults({
           {
             numResults: resultsPerPage,
             page: page,
+            usOnly,
+            zeroDataRetention,
           },
           abort,
         );
@@ -257,7 +224,7 @@ export async function getMapResults({
     ]);
 
     if (indexResults.length > 0) {
-      links.push(...indexResults);
+      links.push(...indexResults.map(x => x.url));
     }
 
     // If sitemap is not ignored, fetch sitemap

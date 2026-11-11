@@ -5,9 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  zod@<4.6.6: 4.6.7
   axios@>=1.0.0 <1.20.0: 1.20.0
   diff@>=4.0.0 <4.0.4: '>=4.0.4 <5.0.0'
-  follow-redirects@<1.16.0: '>=1.16.0 <2.0.0'
+  follow-redirects@<1.16.2: '>=1.16.2 <2.0.0'
   form-data@>=4.0.0 <4.0.6: 4.0.6
   esbuild@>=0.17.0 <0.28.1: 0.28.1
 
@@ -25,8 +26,8 @@ importers:
         specifier: ^14.0.0
         version: 14.0.0
       zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^24.3.0
@@ -307,8 +308,8 @@ packages:
     resolution: {integrity: sha512-Pix/drp4bvHgAtNljAgUlIUovWb14XCRNemnCeBcAYh1BQPQ3UymVKMq8/hKVJI3QLPW90As0AEM6UXrcLhNnQ==}
     engines: {node: '>=22.0.0'}
 
-  follow-redirects@1.16.0:
-    resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
+  follow-redirects@1.16.2:
+    resolution: {integrity: sha512-/kVP2U8z596Ia0gwFrwyIeo74ta5aVmSeU1FfAUMAmcEP5EP7zydmag3SLiN64NaRKef3lxsq7i/g7ltJQDGow==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -428,10 +429,10 @@ packages:
   zod-to-json-schema@3.24.6:
     resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
     peerDependencies:
-      zod: ^3.24.1
+      zod: 4.6.7
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -556,7 +557,7 @@ snapshots:
 
   axios@1.20.0:
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.2
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -637,13 +638,13 @@ snapshots:
     dependencies:
       axios: 1.20.0
       typescript-event-target: 1.1.1
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
+      zod: 4.6.7
+      zod-to-json-schema: 3.24.6(zod@4.6.7)
     transitivePeerDependencies:
       - debug
       - supports-color
 
-  follow-redirects@1.16.0: {}
+  follow-redirects@1.16.2: {}
 
   form-data@4.0.6:
     dependencies:
@@ -752,8 +753,8 @@ snapshots:
 
   yn@3.1.1: {}
 
-  zod-to-json-schema@3.24.6(zod@3.25.76):
+  zod-to-json-schema@3.24.6(zod@4.6.7):
     dependencies:
-      zod: 3.25.76
+      zod: 4.6.7
 
-  zod@3.25.76: {}
+  zod@4.6.7: {}

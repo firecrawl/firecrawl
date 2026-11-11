@@ -107,6 +107,26 @@ describe("JS SDK v2 pagination", () => {
     }
   });
 
+  test("crawl: stops when a running job's cursor does not advance", async () => {
+    const next = "https://api/v2/crawl/jobR?skip=2";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
+    const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
+    const http = makeHttp((url) => (url === next ? stalled : first));
+    const res = await getCrawlStatus(http, "jobR");
+    expect(res.data.length).toBe(2);
+    expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
+  test("batch: stops when a running job's cursor does not advance", async () => {
+    const next = "https://api/v2/batch/scrape/jobR?skip=2";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
+    const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
+    const http = makeHttp((url) => (url === next ? stalled : first));
+    const res = await getBatchScrapeStatus(http, "jobR");
+    expect(res.data.length).toBe(2);
+    expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
   test("batch: maxWaitTime stops pagination after first page", async () => {
     const first = { status: 200, data: { success: true, status: "completed", completed: 1, total: 5, next: "https://api/b1", data: [{ markdown: "a" }] } };
     const p1 = { status: 200, data: { success: true, next: "https://api/b2", data: [{ markdown: "b" }] } };
