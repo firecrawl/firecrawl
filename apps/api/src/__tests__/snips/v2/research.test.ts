@@ -260,21 +260,6 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     expect(res.body.success).toBe(false);
   });
 
-  it("does not serve the protein lookup from the legacy research mount", async () => {
-    const identity = await idmux({
-      name: "research/legacy mount has no protein lookup",
-      credits: 100,
-    });
-
-    const res = await researchRaw(
-      "/v2/research/proteins",
-      { protein: "RPUSD3" },
-      identity,
-    );
-
-    expect(res.statusCode).toBe(404);
-  });
-
   it("logs research origin from X-Origin and integration from query", async () => {
     if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 

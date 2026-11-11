@@ -1,5 +1,3 @@
-import { readFileSync } from "fs";
-import path from "path";
 import express from "express";
 import request from "supertest";
 import { createResearchRouter } from "../../controllers/v2/research-proxy";
@@ -34,11 +32,51 @@ vi.mock("../../services/billing/credit_billing", () => ({
   billTeam: mocks.billTeam,
 }));
 
-const RPUSD3 = JSON.parse(
-  readFileSync(path.join(__dirname, "../../../openapi.json"), "utf8"),
-).paths["/search/research/proteins"].get.responses["200"].content[
-  "application/json"
-].example;
+const RPUSD3 = {
+  success: true,
+  release: "2026_04",
+  match: "found",
+  protein: {
+    accession: "Q6P087",
+    entryName: "RUSD3_HUMAN",
+    gene: "RPUSD3",
+    synonyms: [],
+    name: "Mitochondrial mRNA pseudouridine synthase RPUSD3",
+    organism: {
+      taxonId: 9606,
+      scientificName: "Homo sapiens",
+      commonName: "Human",
+    },
+    matchedBy: "gene",
+    url: "https://www.uniprot.org/uniprotkb/Q6P087/entry",
+    subcellularLocation: [
+      {
+        text: "Mitochondrion matrix",
+        note: false,
+        evidence: [
+          {
+            kind: "experimental",
+            eco: "ECO:0000269",
+            paperId: "pmid:27974379",
+          },
+        ],
+      },
+    ],
+    function: [],
+    goCellularComponent: [
+      {
+        id: "GO:0005759",
+        term: "mitochondrial matrix",
+        code: "IDA",
+        assignedBy: "FlyBase",
+        paperIds: ["pmid:27974379"],
+      },
+    ],
+    paperIds: ["pmid:27974379"],
+  },
+  notice:
+    "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted.",
+};
 
 function upstream(status: number, body: unknown) {
   return {
@@ -83,15 +121,14 @@ describe("GET /v2/search/research/proteins", () => {
         path: "/v2/research/proteins",
         params: { protein: "RPUSD3", organism: "9606" },
         queryKeys: ["protein", "organism"],
-        timeoutMs: 5_000,
       }),
     );
   });
 
-  it("is free and takes one call from the daily Research Index limit", async () => {
+  it("is free, takes one daily Research Index call, and logs the row as a protein lookup", async () => {
     const res = await request(app)
       .get("/v2/search/research/proteins")
-      .query({ protein: "RPUSD3", organism: "9606" });
+      .query({ protein: "RPUSD3" });
 
     expect(res.statusCode).toBe(200);
     expect(mocks.billTeam).not.toHaveBeenCalled();
@@ -103,14 +140,15 @@ describe("GET /v2/search/research/proteins", () => {
     );
     expect(mocks.logRequest).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        kind: "research_protein_lookup",
-        target_hint: "RPUSD3 (9606)",
+        kind: "research_paper_inspect",
+        target_hint: "protein:RPUSD3",
       }),
     );
     expect(mocks.logResearchEndpoint).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        table: "research_protein_lookups",
-        target: "RPUSD3 (9606)",
+        table: "research_paper_inspects",
+        target: "protein:RPUSD3",
+        options: { protein: "RPUSD3" },
         credits_cost: 0,
         is_successful: true,
       }),
@@ -150,6 +188,8 @@ describe("GET /v2/search/research/proteins", () => {
     expect(res.body).toEqual(refusal);
     expect(mocks.logResearchEndpoint).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
+        target: "protein:RPUSD3 organism:unicorn",
+        options: { protein: "RPUSD3", organism: "unicorn" },
         is_successful: false,
         error: refusal.error,
       }),

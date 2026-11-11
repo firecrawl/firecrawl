@@ -62,7 +62,6 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
       "inspect",
       "read",
       "similar",
-      "protein",
     ]);
     expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
       true,
@@ -80,7 +79,6 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
       "inspect",
       "read",
       "similar",
-      "protein",
     ]);
   });
 
@@ -104,7 +102,6 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
         "inspect",
         "read",
         "similar",
-        "protein",
       ]);
     }
   });
@@ -145,17 +142,14 @@ describe("Research Index paper operation gate", () => {
     ).toBe(false);
   });
 
-  it("gates the protein lookup on its own flag entry", async () => {
+  it("gates the protein lookup with the inspect entry", async () => {
     const proteins = fakeRequest("/proteins", { protein: "RPUSD3" });
 
-    const narrowed = await loadWithFlag("protein");
-    expect(narrowed.isResearchKeylessDisabled(proteins)).toBe(true);
-    expect(
-      narrowed.isResearchKeylessDisabled(fakeRequest("/papers/proteins")),
-    ).toBe(false);
+    const inspectOff = await loadWithFlag("inspect");
+    expect(inspectOff.isResearchKeylessDisabled(proteins)).toBe(true);
 
-    const papersOnly = await loadWithFlag("search,inspect,read,similar");
-    expect(papersOnly.isResearchKeylessDisabled(proteins)).toBe(false);
+    const inspectOn = await loadWithFlag("search,read,similar");
+    expect(inspectOn.isResearchKeylessDisabled(proteins)).toBe(false);
   });
 
   it("blocks only the named operation when the scope is narrowed", async () => {

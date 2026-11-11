@@ -41,15 +41,15 @@ const blankStringAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
     schema,
   );
 
-const RESEARCH_OPERATIONS = [
+const RESEARCH_PAPER_OPERATIONS = [
   "search",
   "inspect",
   "read",
   "similar",
-  "protein",
 ] as const;
 
-export type ResearchKeylessOperation = (typeof RESEARCH_OPERATIONS)[number];
+export type ResearchKeylessOperation =
+  (typeof RESEARCH_PAPER_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -58,14 +58,16 @@ const researchKeylessDisabled = z.preprocess(
     if (raw === "") return undefined;
     if (["false", "0", "off", "no", "none"].includes(raw)) return [];
     if (["true", "1", "on", "yes", "all"].includes(raw)) {
-      return [...RESEARCH_OPERATIONS];
+      return [...RESEARCH_PAPER_OPERATIONS];
     }
     return raw
       .split(",")
       .map(operation => operation.trim())
       .filter(Boolean);
   },
-  z.array(z.enum(RESEARCH_OPERATIONS)).default([...RESEARCH_OPERATIONS]),
+  z
+    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
+    .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
 const teamDailyLimits = z.preprocess(

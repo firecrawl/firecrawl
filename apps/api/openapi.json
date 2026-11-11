@@ -12313,12 +12313,12 @@
           },
           "topology": {
             "type": "string",
-            "description": "Location statements only.",
+            "description": "How the protein sits in the membrane. Only location statements have it.",
             "example": "Single-pass type I membrane protein"
           },
           "orientation": {
             "type": "string",
-            "description": "Location statements only.",
+            "description": "Side of the membrane the protein faces. Only location statements have it.",
             "example": "Cytoplasmic side"
           },
           "evidence": {
@@ -12431,7 +12431,7 @@
           },
           "paperIds": {
             "type": "array",
-            "description": "Every paper cited above, without duplicates.",
+            "description": "Every paper that a statement or GO term of this entry cites, without duplicates.",
             "items": {
               "type": "string"
             }
@@ -12484,7 +12484,7 @@
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and licence of the data."
+            "description": "Source, copyright and license of the data."
           }
         }
       },
@@ -12526,7 +12526,7 @@
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and licence of the data."
+            "description": "Source, copyright and license of the data."
           }
         }
       },
@@ -12549,7 +12549,7 @@
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and licence of the data."
+            "description": "Source, copyright and license of the data."
           }
         }
       },
