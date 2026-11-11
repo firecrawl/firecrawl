@@ -165,16 +165,31 @@ export const extractBrandName = (): string => {
     // location not available
   }
 
-  let titleBrand = "";
-  if (title) {
-    titleBrand = title
-      .replace(/\s*[-|–|—]\s*.*$/, "")
-      .replace(/\s*:\s*.*$/, "")
-      .replace(/\s*\|.*$/, "")
-      .trim();
-  }
+  return (
+    ogSiteName || brandFromTitle(title, domainName) || h1 || domainName || ""
+  );
+};
 
-  return ogSiteName || titleBrand || h1 || domainName || "";
+/**
+ * The brand part of a title such as "Brand | Tagline" or "Tagline - Brand":
+ * the first part naming the site's domain, else the first part. A hyphen only
+ * separates parts when spaced, so "Coca-Cola" stays whole.
+ */
+export const brandFromTitle = (
+  title: string | null | undefined,
+  domainName: string,
+): string => {
+  const parts = (title ?? "")
+    .split(/\s*[|–—·•]\s*|\s+-\s+|:\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const domain = squash(domainName);
+  return (
+    (domain && parts.find(part => squash(part).includes(domain))) ||
+    parts[0] ||
+    ""
+  );
 };
 
 export const normalizeColor = (
