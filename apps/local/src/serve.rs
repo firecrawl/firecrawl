@@ -63,12 +63,19 @@ pub struct ServeConfig {
   /// the command line and the MCP launcher; `FIRECRAWL_CLOUD=off` keeps
   /// every request on the machine.
   pub cloud: Cloud,
+  /// Whether a caller's own Firecrawl key is used for calls passed on to
+  /// Firecrawl cloud when this server has none. True for `serve`, where a
+  /// caller may bring a key. False for the MCP launcher: its one caller is
+  /// the MCP server it started, whose key is a copy of this process's own
+  /// and would otherwise outlive a sign-out.
+  pub use_client_key: bool,
 }
 
 struct AppState {
   engine: Arc<Engine>,
   cloud: Cloud,
   token: Option<String>,
+  use_client_key: bool,
   allowed_hosts: Vec<String>,
   jobs: Jobs,
 }
@@ -238,9 +245,10 @@ async fn pass_on(
   if let Some(refusal) = forward_refusal(state, &method, path, headers) {
     return refusal;
   }
-  // With a token set, the caller's bearer is this engine's token and must
-  // not travel on. Without one it is the caller's own Firecrawl key.
-  let client_auth = if state.token.is_none() {
+  // With a token set, the caller's bearer is this server's token and must
+  // not travel on. Without one it is the caller's own Firecrawl key, unless
+  // this server was told not to use callers' keys.
+  let client_auth = if state.token.is_none() && state.use_client_key {
     headers
       .get(header::AUTHORIZATION)
       .and_then(|v| v.to_str().ok())
@@ -728,6 +736,7 @@ pub async fn serve_on(
     engine,
     cloud: cfg.cloud,
     token: cfg.token,
+    use_client_key: cfg.use_client_key,
     allowed_hosts,
     jobs: Mutex::new(HashMap::new()),
   });
@@ -799,6 +808,14 @@ mod tests {
 
   /// Start the server against a stand-in cloud and return its address.
   async fn start(mode: cloud::CloudMode) -> String {
+    start_with(mode, Some("fc-own"), true).await
+  }
+
+  async fn start_with(
+    mode: cloud::CloudMode,
+    own_key: Option<&str>,
+    use_client_key: bool,
+  ) -> String {
     let engine = Arc::new(
       Engine::new(crate::scrape::EngineConfig {
         policy: crate::guard::NetworkPolicy::PublicOnly,
@@ -815,11 +832,43 @@ mod tests {
       addr,
       token: None,
       allowed_hosts: Vec::new(),
-      cloud: Cloud::new(cloud::echo_cloud().await, Some("fc-own".into()), mode)
+      cloud: Cloud::new(cloud::echo_cloud().await, own_key.map(str::to_string), mode)
         .with_install_id("test-install"),
+      use_client_key,
     };
     tokio::spawn(serve_on(listener, engine, cfg, std::future::pending()));
     format!("http://{addr}")
+  }
+
+  #[tokio::test]
+  async fn a_callers_key_is_used_only_where_callers_bring_their_own() {
+    let http = reqwest::Client::new();
+    let search = |base: String| {
+      http
+        .post(format!("{base}/v2/search"))
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer fc-callers-key")
+        .body("{}")
+        .send()
+    };
+    // `serve` with no key of its own passes the caller's key on.
+    let open = start_with(cloud::CloudMode::Fallback, None, true).await;
+    let seen = search(open).await.unwrap().text().await.unwrap();
+    assert!(seen.contains("Bearer fc-callers-key"), "{seen}");
+    // The MCP launcher's server does not: once this process is signed out,
+    // the copy of the key its MCP server still holds must stop working.
+    let launcher = start_with(cloud::CloudMode::Fallback, None, false).await;
+    let seen = search(launcher)
+      .await
+      .unwrap()
+      .text()
+      .await
+      .unwrap()
+      .to_lowercase();
+    assert!(
+      !seen.contains("fc-callers-key") && !seen.contains("authorization:"),
+      "{seen}"
+    );
   }
 
   #[tokio::test]

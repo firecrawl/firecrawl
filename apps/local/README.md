@@ -18,7 +18,14 @@ Once a release is on crates.io, `cargo install firecrawl-local` installs the sam
 
 Pages that need JavaScript are rendered in the Chrome or Chromium already installed on the machine. Without one it still handles static pages, and a page that needed a browser comes back with a `warning` saying so. Set `FIRECRAWL_CHROME_PATH` to point it at a specific browser.
 
-Chrome keeps its sandbox on. Inside a Docker container that needs user namespaces, which Docker blocks by default, so run the container with `--security-opt seccomp=unconfined` if you want JavaScript pages there.
+Chrome keeps its sandbox on. Inside a Docker container that needs user namespaces, which Docker's default seccomp profile blocks. To render JavaScript pages there, run the container with a profile that keeps Docker's defaults and also allows `clone`, `setns` and `unshare`. Playwright [publishes one](https://playwright.dev/docs/docker) for sandboxed Chromium.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/microsoft/playwright/main/utils/docker/seccomp_profile.json
+docker run --security-opt seccomp=seccomp_profile.json your-image
+```
+
+Do not use `seccomp=unconfined` for this. It removes the whole filter from a container that is loading pages you do not control.
 
 ## Use it from the command line
 

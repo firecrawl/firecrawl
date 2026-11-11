@@ -767,7 +767,7 @@ pub fn meta_refresh_target(raw_html: &str, base: &Url) -> Option<Url> {
 fn chrome_start_error(chrome: &std::path::Path, detail: &str) -> String {
   if detail.contains("No usable sandbox") {
     return format!(
-      "Chrome at {} could not start its sandbox, which usually means a container or system policy blocks user namespaces. In Docker, run the container with `--security-opt seccomp=unconfined`. On Ubuntu 23.10 or newer, allow user namespaces for Chrome. Firecrawl Local does not run Chrome without its sandbox.",
+      "Chrome at {} could not start its sandbox, which usually means a container or system policy blocks user namespaces. In Docker, run the container with a seccomp profile that allows them; the Firecrawl Local README shows one. On Ubuntu 23.10 or newer, allow user namespaces for Chrome. Firecrawl Local does not run Chrome without its sandbox.",
       chrome.display()
     );
   }
@@ -787,9 +787,11 @@ mod tests {
       "Browser process exited ... No usable sandbox! If this is a Debian system ...",
     );
     assert!(
-      said.contains("seccomp=unconfined") && said.contains("/usr/bin/chromium"),
+      said.contains("seccomp profile") && said.contains("/usr/bin/chromium"),
       "{said}"
     );
+    // Turning the whole filter off is not what it recommends.
+    assert!(!said.contains("unconfined"), "{said}");
     assert!(!said.contains("Debian system"));
     let other = chrome_start_error(chrome, &"x".repeat(2000));
     assert!(other.len() < 400);

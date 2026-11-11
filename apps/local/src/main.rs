@@ -194,6 +194,9 @@ async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
     token: None,
     allowed_hosts: Vec::new(),
     cloud,
+    // The MCP server's key is the copy handed to it below, so this process
+    // stays the one that decides whether a call is signed in.
+    use_client_key: false,
   };
   let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
   let server = tokio::spawn(serve::serve_on(listener, engine, cfg, async move {
@@ -670,6 +673,7 @@ async fn run(cli: Cli) -> ExitCode {
         token: token.filter(|t| !t.is_empty()),
         allowed_hosts,
         cloud: Cloud::from_env().with_surface(firecrawl_local::cloud::Surface::Serve, None),
+        use_client_key: true,
       };
       tokio::spawn(engine.clone().trim_memory_when_idle());
       let served = serve::serve(engine.clone(), cfg).await;

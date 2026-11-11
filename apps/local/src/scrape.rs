@@ -177,22 +177,33 @@ pub fn add_warning(data: &mut Map<String, Value>, text: impl Into<String>) {
 /// What to say when a page needs JavaScript and was not rendered, so a
 /// near-empty result is not mistaken for the whole page. `None` when the
 /// browser was turned off on purpose or did its job.
-fn browser_warning(
-  mode: BrowserMode,
-  has_browser: bool,
-  render_error: Option<&str>,
-) -> Option<String> {
+fn browser_warning(mode: BrowserMode, has_browser: bool, render: &Render) -> Option<String> {
   if mode == BrowserMode::Never {
     return None;
   }
   let lead = "This page builds its content with JavaScript, so this result is probably incomplete.";
-  match (has_browser, render_error) {
+  match (has_browser, render) {
     (false, _) => Some(format!(
       "{lead} No Chrome or Chromium was found on this machine. Install one, or point FIRECRAWL_CHROME_PATH at it."
     )),
-    (true, Some(error)) => Some(format!("{lead} The local Chrome could not render it. {error}")),
-    (true, None) => None,
+    (true, Render::Failed(error)) => {
+      Some(format!("{lead} The local Chrome could not render it. {error}"))
+    }
+    (true, Render::Rejected) => Some(format!(
+      "{lead} The local Chrome loaded it but came back with less text than the plain fetch, as a consent wall or a half-loaded page does, so the plain fetch was kept."
+    )),
+    (true, Render::NotNeeded) => None,
   }
+}
+
+/// How the browser fared on a page that looked like it needed one.
+enum Render {
+  /// It was not asked, or its result was used.
+  NotNeeded,
+  /// It could not load the page.
+  Failed(String),
+  /// It loaded the page, and what it got was worse than the plain fetch.
+  Rejected,
 }
 
 fn looks_like_html(mime: Option<&str>, body: &[u8]) -> bool {
@@ -458,7 +469,7 @@ impl Engine {
         let needs_javascript =
           (200..400).contains(&fetched.status) && (needs_browser(&raw_html, &markdown) || nav_only);
         let shell = can_render && !challenged && needs_javascript;
-        let mut render_error: Option<String> = None;
+        let mut render = Render::NotNeeded;
         let rendered = if challenged {
           match self
             .render_with_markdown(&parsed, opts, &formats, wait_for, timeout, false)
@@ -484,9 +495,12 @@ impl Engine {
             {
               Some(doc)
             }
-            Ok(_) => None,
+            Ok(_) => {
+              render = Render::Rejected;
+              None
+            }
             Err(e) => {
-              render_error = Some(e.message);
+              render = Render::Failed(e.message);
               None
             }
           }
@@ -497,11 +511,9 @@ impl Engine {
           Some(doc) => doc,
           None => {
             if needs_javascript && !challenged {
-              if let Some(warning) = browser_warning(
-                self.browser_mode,
-                self.browser.is_some(),
-                render_error.as_deref(),
-              ) {
+              if let Some(warning) =
+                browser_warning(self.browser_mode, self.browser.is_some(), &render)
+              {
                 add_warning(&mut data, warning);
               }
             }
@@ -1120,16 +1132,24 @@ mod tests {
 
   #[test]
   fn a_page_that_needs_a_browser_says_so() {
-    let none = browser_warning(BrowserMode::Auto, false, None).unwrap();
+    let none = browser_warning(BrowserMode::Auto, false, &Render::NotNeeded).unwrap();
     assert!(none.contains("No Chrome or Chromium") && none.contains("FIRECRAWL_CHROME_PATH"));
-    let failed = browser_warning(BrowserMode::Auto, true, Some("Chrome could not start.")).unwrap();
+    let failed = browser_warning(
+      BrowserMode::Auto,
+      true,
+      &Render::Failed("Chrome could not start.".into()),
+    )
+    .unwrap();
     assert!(
       failed.contains("could not render it. Chrome could not start."),
       "{failed}"
     );
+    // A render that was thrown away leaves the JavaScript shell, so it warns too.
+    let rejected = browser_warning(BrowserMode::Auto, true, &Render::Rejected).unwrap();
+    assert!(rejected.contains("plain fetch was kept"), "{rejected}");
     // Rendered fine, or turned off on purpose: nothing to say.
-    assert!(browser_warning(BrowserMode::Auto, true, None).is_none());
-    assert!(browser_warning(BrowserMode::Never, false, None).is_none());
+    assert!(browser_warning(BrowserMode::Auto, true, &Render::NotNeeded).is_none());
+    assert!(browser_warning(BrowserMode::Never, false, &Render::NotNeeded).is_none());
   }
 
   #[test]

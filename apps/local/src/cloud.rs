@@ -109,10 +109,26 @@ pub fn local_sign_in_message(error: &str) -> String {
   }
 }
 
-/// Apply `local_sign_in_message` to the `error` field of a JSON answer.
-fn with_sign_in_step(body: &[u8]) -> Option<bytes::Bytes> {
+/// Whether a refusal is about the caller having no account, as opposed to a
+/// route's own rule or an ordinary rate limit that signing in would not lift.
+fn is_sign_in_refusal(status: u16, payload: &Value, error: &str) -> bool {
+  if status == 401 || payload.get("signup_url").is_some() || payload.get("signupUrl").is_some() {
+    return true;
+  }
+  let lower = error.to_ascii_lowercase();
+  ["keyless", "api key", "unauthorized", "authenticate with"]
+    .iter()
+    .any(|sign| lower.contains(sign))
+}
+
+/// Apply `local_sign_in_message` to the `error` field of a JSON answer, when
+/// the answer is a refusal for want of an account.
+fn with_sign_in_step(status: u16, body: &[u8]) -> Option<bytes::Bytes> {
   let mut payload: Value = serde_json::from_slice(body).ok()?;
   let error = payload.get("error")?.as_str()?.to_string();
+  if !is_sign_in_refusal(status, &payload, &error) {
+    return None;
+  }
   payload["error"] = Value::String(local_sign_in_message(&error));
   serde_json::to_vec(&payload).ok().map(bytes::Bytes::from)
 }
@@ -438,7 +454,7 @@ impl Cloud {
       message: format!("Firecrawl cloud's answer was cut short: {e}"),
     })?;
     if keyless && matches!(status, 401 | 402 | 403 | 429) {
-      if let Some(reworded) = with_sign_in_step(&body) {
+      if let Some(reworded) = with_sign_in_step(status, &body) {
         body = reworded;
       }
     }
@@ -670,7 +686,7 @@ fn blocked_warning(status: u16, mode: CloudMode, cloud_refusal: Option<&str>) ->
     "This site did not serve the page to this machine (status {status}), so the content is missing or is a bot check."
   );
   match (cloud_refusal, mode) {
-    (Some(refusal), _) => format!("{lead} Firecrawl cloud can fetch pages like this. {refusal}"),
+    (Some(refusal), _) => format!("{lead} Firecrawl cloud did not fetch it either. {refusal}"),
     (None, CloudMode::Fallback) => lead,
     (None, _) => {
       format!("{lead} Firecrawl cloud can fetch pages like this when FIRECRAWL_CLOUD is auto.")
@@ -942,16 +958,30 @@ mod tests {
     // Said once, not twice.
     assert_eq!(local_sign_in_message(&said), said);
 
-    let body =
-      with_sign_in_step(br#"{"success":false,"error":"Unauthorized","signup_url":"x"}"#).unwrap();
+    let body = with_sign_in_step(
+      429,
+      br#"{"success":false,"error":"Daily limit reached","signup_url":"x"}"#,
+    )
+    .unwrap();
     let payload: Value = serde_json::from_slice(&body).unwrap();
     assert!(payload["error"]
       .as_str()
       .unwrap()
       .contains("firecrawl-local login"));
     assert_eq!(payload["signup_url"], "x");
-    assert!(with_sign_in_step(b"not json").is_none());
-    assert!(with_sign_in_step(br#"{"error":{"code":1}}"#).is_none());
+    assert!(with_sign_in_step(401, br#"{"error":"Unauthorized"}"#).is_some());
+    assert!(with_sign_in_step(403, br#"{"error":"Alexandria requires an API key"}"#).is_some());
+
+    // A route's own rule, or a plain rate limit, is not a request to sign in.
+    assert!(with_sign_in_step(429, br#"{"error":"Rate limit exceeded. Retry in 10s."}"#).is_none());
+    assert!(with_sign_in_step(
+      403,
+      br#"{"error":"This route is not enabled for your team."}"#
+    )
+    .is_none());
+    assert!(with_sign_in_step(402, br#"{"error":"Insufficient credits."}"#).is_none());
+    assert!(with_sign_in_step(401, b"not json").is_none());
+    assert!(with_sign_in_step(401, br#"{"error":{"code":1}}"#).is_none());
   }
 
   #[tokio::test]
@@ -1004,6 +1034,7 @@ mod tests {
       Some("Firecrawl cloud needs a sign-in for this. Run `firecrawl-local login`."),
     );
     assert!(refused.contains("firecrawl-local login"), "{refused}");
+    assert!(refused.contains("did not fetch it either"), "{refused}");
     assert!(!blocked_warning(503, CloudMode::Fallback, None).contains("FIRECRAWL_CLOUD"));
   }
 
