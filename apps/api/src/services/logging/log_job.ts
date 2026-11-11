@@ -821,7 +821,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         });
         _logger.debug("Change tracking record inserted successfully");
       } catch (error) {
-        _logger.warn("Error inserting into change_tracking_scrapes", {
+        _logger.warn("Error writing change tracking record", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,

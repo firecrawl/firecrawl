@@ -79,17 +79,6 @@ export function billTeam7(params: {
   );
 }
 
-export function diffGetLastScrape(
-  i_team_id: string,
-  i_url: string,
-  i_tag: string | null,
-): Promise<{ o_job_id: string; o_date_added: string }[]> {
-  return execRows(
-    db,
-    sql`select * from diff_get_last_scrape_v7(i_team_id => ${i_team_id}, i_url => ${i_url}, i_tag => ${i_tag})`,
-  );
-}
-
 export function monitoringClaimDueMonitors<T = Record<string, any>>(params: {
   workerId: string;
   limit: number;
