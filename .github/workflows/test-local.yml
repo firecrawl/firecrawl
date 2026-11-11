@@ -62,4 +62,5 @@ jobs:
           mkdir -p "$out"
           tar -xzf target/package/firecrawl-local-*.crate -C "$out" --strip-components=1
           test -f "$out/src/native/html.rs"
-          CARGO_TARGET_DIR="$PWD/target" cargo test --locked --manifest-path "$out/Cargo.toml"
+          # Keep repository build-script output out of the packaged build.
+          CARGO_TARGET_DIR="$out/target" cargo test --locked --manifest-path "$out/Cargo.toml"
