@@ -31,6 +31,7 @@ const CAPTURE_MARGIN_MS = 2 * 60 * 1000;
 
 const SETTLEMENT_DUE_STATUSES = new Set([
   "built",
+  "refused",
   "failed",
   "cancelled",
   "expired",
@@ -218,7 +219,13 @@ export async function createDatasetOrder(input: {
         lockId: lock.lockId,
       }),
     );
-    if (held.order.status !== "built") return { order: held.order, existing };
+    // Settled here: an order that needs no build is charged, and a hold
+    // reported after its order was refused, cancelled or expired is released.
+    if (
+      held.order.holdState !== "held" ||
+      !SETTLEMENT_DUE_STATUSES.has(held.order.status)
+    )
+      return { order: held.order, existing };
     try {
       return { order: await settleDatasetOrder(held.order.id), existing };
     } catch (error) {
