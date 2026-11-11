@@ -19,9 +19,9 @@ use crate::guard::{self, Blocked, NetworkPolicy};
 pub const USER_AGENT: &str = concat!(
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ",
   "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 ",
-  "FirecrawlEngine/",
+  "FirecrawlLocal/",
   env!("CARGO_PKG_VERSION"),
-  " (+https://firecrawl.dev/engine)"
+  " (+https://firecrawl.dev/local)"
 );
 
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;

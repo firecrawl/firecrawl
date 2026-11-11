@@ -1,13 +1,13 @@
-name: Engine Test Suite
+name: Firecrawl Local Test Suite
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - apps/engine/**
+      - apps/local/**
       - apps/api/native/src/**
-      - .github/workflows/test-engine.yml
+      - .github/workflows/test-local.yml
 
 permissions:
   contents: read
@@ -32,21 +32,21 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            apps/engine/target
-          key: ${{ runner.os }}-cargo-engine-${{ hashFiles('apps/engine/Cargo.lock') }}
+            apps/local/target
+          key: ${{ runner.os }}-cargo-local-${{ hashFiles('apps/local/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-engine-
+            ${{ runner.os }}-cargo-local-
 
-      # The engine compiles the API's native cleaning code directly, so this
+      # Firecrawl Local compiles the API's native cleaning code directly, so this
       # also checks those shared files.
       - name: Check formatting
-        working-directory: ./apps/engine
+        working-directory: ./apps/local
         run: cargo fmt --check
 
       - name: Build
-        working-directory: ./apps/engine
+        working-directory: ./apps/local
         run: cargo build --locked
 
       - name: Run unit tests
-        working-directory: ./apps/engine
+        working-directory: ./apps/local
         run: cargo test --locked

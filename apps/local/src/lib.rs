@@ -1,4 +1,4 @@
-//! Firecrawl engine: the local primitive behind `firecrawl scrape|crawl|map`.
+//! Firecrawl Local: the local primitive behind `firecrawl scrape|crawl|map`.
 //!
 //! The HTML cleaning, link extraction, metadata and crawl-filter modules are
 //! compiled directly from `apps/api/native/src`, the same Rust the cloud API

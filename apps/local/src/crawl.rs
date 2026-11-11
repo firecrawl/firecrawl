@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// The token site owners can target in robots.txt.
-pub const ROBOTS_AGENT: &str = "FirecrawlEngine";
+pub const ROBOTS_AGENT: &str = "FirecrawlLocal";
 
 const SKIP_EXTENSIONS: &[&str] = &[
   "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "tiff", "avif", "css", "js", "mjs",

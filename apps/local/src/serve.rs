@@ -1,4 +1,4 @@
-//! `firecrawl-engine serve`: the Firecrawl HTTP API on one port.
+//! `firecrawl-local serve`: the Firecrawl HTTP API on one port.
 //!
 //! Safety defaults:
 //! - binds to loopback unless told otherwise;
@@ -583,9 +583,7 @@ async fn scrape_handler(
 }
 
 async fn health() -> impl IntoResponse {
-  Json(
-    json!({ "status": "ok", "engine": "firecrawl-engine", "version": env!("CARGO_PKG_VERSION") }),
-  )
+  Json(json!({ "status": "ok", "engine": "firecrawl-local", "version": env!("CARGO_PKG_VERSION") }))
 }
 
 /// Resolves on Ctrl-C or, on Unix, SIGTERM, so the caller can stop the
@@ -616,14 +614,14 @@ pub async fn serve(engine: Arc<Engine>, cfg: ServeConfig) -> Result<(), String> 
   if !cfg.addr.ip().is_loopback() && cfg.token.is_none() {
     return Err(format!(
       "Refusing to listen on {} without a token. Anyone who can reach that address could use this engine. \
-       Pass --token <secret> (or FIRECRAWL_ENGINE_TOKEN), or bind to 127.0.0.1.",
+       Pass --token <secret> (or FIRECRAWL_LOCAL_TOKEN), or bind to 127.0.0.1.",
       cfg.addr
     ));
   }
   let listener = tokio::net::TcpListener::bind(cfg.addr)
     .await
     .map_err(|e| format!("could not listen on {}: {e}", cfg.addr))?;
-  eprintln!("firecrawl-engine listening on http://{}", cfg.addr);
+  eprintln!("firecrawl-local listening on http://{}", cfg.addr);
   serve_on(listener, engine, cfg, shutdown_signal()).await
 }
 

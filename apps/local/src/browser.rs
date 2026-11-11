@@ -283,7 +283,7 @@ impl BrowserPool {
       return Ok(());
     }
     let profile = std::env::temp_dir().join(format!(
-      "firecrawl-engine-chrome-{}-{}",
+      "firecrawl-local-chrome-{}-{}",
       std::process::id(),
       uuid::Uuid::new_v4().simple()
     ));
@@ -411,7 +411,7 @@ impl BrowserPool {
       .and_then(|r| r.response.as_ref())
       .map(|resp| resp.status as u16);
 
-    let trace = std::env::var_os("FIRECRAWL_ENGINE_TRACE").is_some();
+    let trace = std::env::var_os("FIRECRAWL_LOCAL_TRACE").is_some();
     let t0 = Instant::now();
     settle(page, watch, Duration::from_secs(10), true).await;
     if trace {
@@ -430,9 +430,9 @@ impl BrowserPool {
     // only if scrolling actually made the page load or change something.
     let before_scroll = Instant::now();
     // Scrolling costs most of a second per rendered page and helped on few
-    // pages in testing, so it is opt-in: FIRECRAWL_ENGINE_SCROLL=1.
+    // pages in testing, so it is opt-in: FIRECRAWL_LOCAL_SCROLL=1.
     let scrolled =
-      std::env::var_os("FIRECRAWL_ENGINE_SCROLL").is_some() && scroll_through(page).await;
+      std::env::var_os("FIRECRAWL_LOCAL_SCROLL").is_some() && scroll_through(page).await;
     let changed = scrolled && page_changed_since(page, watch, before_scroll).await;
     if changed {
       settle(page, watch, Duration::from_millis(2500), false).await;
@@ -526,7 +526,7 @@ async fn settle(
     let pending: usize = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
     let text_len: usize = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
     let dom_quiet_ms: u64 = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
-    if std::env::var_os("FIRECRAWL_ENGINE_TRACE").is_some() {
+    if std::env::var_os("FIRECRAWL_LOCAL_TRACE").is_some() {
       eprintln!(
         "[settle] {:?} state={now} net_idle={}",
         started.elapsed(),

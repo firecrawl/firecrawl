@@ -50,13 +50,13 @@ pub struct Cloud {
 pub const SIGN_IN_HINT: &str = "Run `firecrawl login`, or set FIRECRAWL_API_KEY.";
 
 fn config_dir() -> Option<std::path::PathBuf> {
-  if let Some(dir) = std::env::var_os("FIRECRAWL_ENGINE_HOME") {
+  if let Some(dir) = std::env::var_os("FIRECRAWL_LOCAL_HOME") {
     return Some(std::path::PathBuf::from(dir));
   }
   std::env::var_os("HOME").map(|h| {
     std::path::PathBuf::from(h)
       .join(".config")
-      .join("firecrawl-engine")
+      .join("firecrawl-local")
   })
 }
 
@@ -134,13 +134,13 @@ pub enum Surface {
 /// The origin for a surface, in the forms Firecrawl already uses:
 /// `cli@<version>` for the CLI and `mcp-<client>@<version>` for an MCP
 /// server, where the client is the name the MCP client gave at initialize.
-/// The version is marked `engine-` so the engine can be told apart from the
+/// The version is marked `local-` so Firecrawl Local can be told apart from the
 /// Node CLI and the hosted MCP server.
 fn origin_for(surface: Surface, client: Option<&str>) -> String {
-  let version = concat!("engine-", env!("CARGO_PKG_VERSION"));
+  let version = concat!("local-", env!("CARGO_PKG_VERSION"));
   match surface {
     Surface::Cli => format!("cli@{version}"),
-    Surface::Serve => format!("firecrawl-engine@{version}"),
+    Surface::Serve => format!("firecrawl-local@{version}"),
     Surface::Mcp => {
       let token: String = client
         .unwrap_or("")
@@ -157,7 +157,7 @@ fn origin_for(surface: Surface, client: Option<&str>) -> String {
         .take(48)
         .collect();
       if token.is_empty() {
-        format!("mcp-engine@{version}")
+        format!("mcp-local@{version}")
       } else {
         format!("mcp-{token}@{version}")
       }
@@ -237,7 +237,7 @@ impl Cloud {
 
   pub fn new(base: String, api_key: Option<String>, mode: CloudMode) -> Self {
     let client = reqwest::Client::builder()
-      .user_agent(concat!("firecrawl-engine/", env!("CARGO_PKG_VERSION")))
+      .user_agent(concat!("firecrawl-local/", env!("CARGO_PKG_VERSION")))
       .connect_timeout(Duration::from_secs(10))
       .build()
       .unwrap_or_default();
@@ -608,11 +608,11 @@ mod tests {
 
   #[test]
   fn origins_follow_the_cli_and_mcp_conventions() {
-    let v = concat!("engine-", env!("CARGO_PKG_VERSION"));
+    let v = concat!("local-", env!("CARGO_PKG_VERSION"));
     assert_eq!(origin_for(Surface::Cli, None), format!("cli@{v}"));
     assert_eq!(
       origin_for(Surface::Serve, None),
-      format!("firecrawl-engine@{v}")
+      format!("firecrawl-local@{v}")
     );
     assert_eq!(
       origin_for(Surface::Mcp, Some("Claude Code")),
@@ -620,9 +620,9 @@ mod tests {
     );
     assert_eq!(
       origin_for(Surface::Mcp, Some("  ")),
-      format!("mcp-engine@{v}")
+      format!("mcp-local@{v}")
     );
-    assert_eq!(origin_for(Surface::Mcp, None), format!("mcp-engine@{v}"));
+    assert_eq!(origin_for(Surface::Mcp, None), format!("mcp-local@{v}"));
     assert!(origin_for(Surface::Mcp, Some("cursor/1.0 (x)")).starts_with("mcp-cursor-1-0-x@"));
   }
 

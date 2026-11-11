@@ -1,9 +1,9 @@
-//! `firecrawl-engine init`: add Firecrawl to every AI coding tool on this
+//! `firecrawl-local init`: add Firecrawl to every AI coding tool on this
 //! machine in one command.
 //!
 //! Each tool keeps its MCP servers in its own config file. This finds the
 //! ones that exist, backs each up, and adds a `firecrawl` entry that runs
-//! `firecrawl-engine mcp`. Nothing else in the file is touched.
+//! `firecrawl-local mcp`. Nothing else in the file is touched.
 
 use std::{
   fs,
@@ -269,7 +269,7 @@ mod tests {
   use super::*;
 
   fn bin() -> PathBuf {
-    PathBuf::from("/usr/local/bin/firecrawl-engine")
+    PathBuf::from("/usr/local/bin/firecrawl-local")
   }
 
   #[test]
@@ -301,7 +301,7 @@ mod tests {
     assert_eq!(outcome, Outcome::Added);
     assert!(text.starts_with(existing));
     assert!(text.contains(
-      "[mcp_servers.firecrawl]\ncommand = \"/usr/local/bin/firecrawl-engine\"\nargs = [\"mcp\"]"
+      "[mcp_servers.firecrawl]\ncommand = \"/usr/local/bin/firecrawl-local\"\nargs = [\"mcp\"]"
     ));
 
     let (again, outcome) = merge_codex_toml(Some(&text), &bin());
@@ -312,7 +312,7 @@ mod tests {
       "[mcp_servers.firecrawl]\ncommand = \"/old/path\"\n\n[mcp_servers.other]\ncommand = \"x\"\n";
     let (replaced, outcome) = merge_codex_toml(Some(old), &bin());
     assert_eq!(outcome, Outcome::Updated);
-    assert!(replaced.contains("/usr/local/bin/firecrawl-engine"));
+    assert!(replaced.contains("/usr/local/bin/firecrawl-local"));
     assert!(!replaced.contains("/old/path"));
     assert!(replaced.contains("[mcp_servers.other]\ncommand = \"x\""));
   }
@@ -341,7 +341,7 @@ mod tests {
     assert_eq!(written["mcpServers"]["a"]["command"], "b");
     assert_eq!(
       written["mcpServers"]["firecrawl"]["command"],
-      "/usr/local/bin/firecrawl-engine"
+      "/usr/local/bin/firecrawl-local"
     );
     assert!(home.join(".cursor/mcp.json.firecrawl-bak").exists());
     // Tools that are not installed get no config file.

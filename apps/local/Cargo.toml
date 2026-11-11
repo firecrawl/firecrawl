@@ -1,16 +1,16 @@
 [package]
-name = "firecrawl-engine"
+name = "firecrawl-local"
 version = "0.1.0"
 edition = "2021"
 description = "Firecrawl's local engine: scrape, crawl and map on your own machine, with a hand-off to Firecrawl cloud."
 license = "AGPL-3.0"
 
 [lib]
-name = "firecrawl_engine"
+name = "firecrawl_local"
 path = "src/lib.rs"
 
 [[bin]]
-name = "firecrawl-engine"
+name = "firecrawl-local"
 path = "src/main.rs"
 
 [dependencies]

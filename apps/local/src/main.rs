@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use futures::stream::{self, StreamExt};
 use serde_json::{json, Value};
 
-use firecrawl_engine::{
+use firecrawl_local::{
   cloud::Cloud,
   crawl::{self, CrawlOptions, MapOptions},
   guard::NetworkPolicy,
@@ -21,7 +21,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[derive(Parser)]
 #[command(
-  name = "firecrawl-engine",
+  name = "firecrawl-local",
   version,
   about = "Scrape, crawl and map the web from your own machine."
 )]
@@ -30,7 +30,7 @@ struct Cli {
   #[arg(
     long,
     global = true,
-    env = "FIRECRAWL_ENGINE_BROWSER",
+    env = "FIRECRAWL_LOCAL_BROWSER",
     default_value = "auto"
   )]
   browser: String,
@@ -64,7 +64,7 @@ enum Command {
     #[arg(long)]
     public_only: bool,
     /// Override the User-Agent header.
-    #[arg(long, env = "FIRECRAWL_ENGINE_USER_AGENT")]
+    #[arg(long, env = "FIRECRAWL_LOCAL_USER_AGENT")]
     user_agent: Option<String>,
   },
   /// Crawl a site from a start URL.
@@ -156,16 +156,16 @@ enum Command {
     #[arg(long, short = 'p', default_value_t = 3002)]
     port: u16,
     /// Bearer token clients must send. Required when --host is not loopback.
-    #[arg(long, env = "FIRECRAWL_ENGINE_TOKEN")]
+    #[arg(long, env = "FIRECRAWL_LOCAL_TOKEN")]
     token: Option<String>,
     /// Extra hostname accepted in the Host header. Repeatable.
     #[arg(long = "allowed-host")]
     allowed_hosts: Vec<String>,
     /// Let API callers scrape localhost and private-network targets.
-    #[arg(long, env = "FIRECRAWL_ENGINE_ALLOW_PRIVATE")]
+    #[arg(long, env = "FIRECRAWL_LOCAL_ALLOW_PRIVATE")]
     allow_private: bool,
     /// Override the User-Agent header.
-    #[arg(long, env = "FIRECRAWL_ENGINE_USER_AGENT")]
+    #[arg(long, env = "FIRECRAWL_LOCAL_USER_AGENT")]
     user_agent: Option<String>,
   },
 }
@@ -189,7 +189,7 @@ async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
     addr,
     token: None,
     allowed_hosts: Vec::new(),
-    cloud: Cloud::from_env().with_surface(firecrawl_engine::cloud::Surface::Mcp, None),
+    cloud: Cloud::from_env().with_surface(firecrawl_local::cloud::Surface::Mcp, None),
   };
   let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
   let server = tokio::spawn(serve::serve_on(listener, engine, cfg, async move {
@@ -259,7 +259,7 @@ fn local_engine(public_only: bool, browser: BrowserMode) -> Option<Arc<Engine>> 
   };
   match Engine::new(EngineConfig {
     policy,
-    user_agent: std::env::var("FIRECRAWL_ENGINE_USER_AGENT").ok(),
+    user_agent: std::env::var("FIRECRAWL_LOCAL_USER_AGENT").ok(),
     browser,
   }) {
     Ok(e) => Some(Arc::new(e)),
@@ -322,7 +322,7 @@ async fn run(cli: Cli) -> ExitCode {
         let opts = opts.clone();
         let cloud = cloud.clone();
         async move {
-          match firecrawl_engine::cloud::scrape_with_fallback(&engine, &cloud, &url, &opts).await {
+          match firecrawl_local::cloud::scrape_with_fallback(&engine, &cloud, &url, &opts).await {
             Ok(data) => json!({ "success": true, "data": data }),
             Err(e) => json!({ "success": false, "url": url, "code": e.code, "error": e.message }),
           }
