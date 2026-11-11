@@ -1,0 +1,59 @@
+{
+ "id": "0209",
+ "url": "test-site:/blog/launch-week-iii-day-7-integrations/",
+ "category": "test-site",
+ "container": "article < main < body",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Integrations Day: Launch Week III - Day 7",
+   "where": "h1 < div.title < div.prose < article < main"
+  },
+  {
+   "kind": "early",
+   "text": "Welcome to Launch Week III, Day 7 — Integrations Day",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "mid",
+   "text": "Today is all about making Firecrawl work better with the tools you’re",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "late",
+   "text": "More integrations are on the way — and if there’s something specific",
+   "where": "p < div.prose < article < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose < article",
+  "scope_tables_code": "div.prose < article",
+  "headings": 3,
+  "h1": 1,
+  "h2": 2,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 9,
+  "links": 9
+ },
+ "stats": {
+  "main_text_chars": 1385,
+  "page_text_chars": 1635,
+  "prose_blocks": 13
+ }
+}

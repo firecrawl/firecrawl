@@ -1,0 +1,74 @@
+{
+ "id": "0078",
+ "url": "https://en.wikipedia.org/wiki/Apollo_11",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Apollo 11",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "Apollo 11 (July 16–24, 1969) was the American spaceflight that first landed",
+   "where": "p#mwag < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "I'm talking to you by telephone from the Oval Room at the",
+   "where": "p < blockquote#mwBew.templatequote < section#mwBSk < section#mwA8U < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "late",
+   "text": "Aldrin, Collins, and Armstrong's sons were hosted by President Donald Trump in",
+   "where": "p#mwCmY < section#mwCh4 < section#mwCd8 < section#mwCKA < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "table_row",
+   "text": "Eldon C. Hall Apollo Guidance Computer hardware designer",
+   "where": "table#mwAjw.wikitable.plainrowheaders < section#mwAjY < section#mwAXA < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 7 November",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 42,
+  "h1": 0,
+  "h2": 10,
+  "h3": 32,
+  "tables": 4,
+  "table_rows": [
+   4,
+   4,
+   6,
+   13
+  ],
+  "code_blocks": 0,
+  "list_items": 32,
+  "links": 893
+ },
+ "stats": {
+  "main_text_chars": 133589,
+  "page_text_chars": 151086,
+  "prose_blocks": 157
+ }
+}

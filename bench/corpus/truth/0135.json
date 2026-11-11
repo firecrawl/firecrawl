@@ -1,0 +1,64 @@
+{
+ "id": "0135",
+ "url": "https://www.hetzner.com/cloud/",
+ "category": "product",
+ "container": "main.overflow-hidden < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Which Hetzner Cloud Server is right for you",
+   "where": "h2.default-header < div.container < div.gap-marker < div#174110.section-extension-compon.glue-1 < div.section-wrapper"
+  },
+  {
+   "kind": "early",
+   "text": "Shared cloud plans are perfect for development and testing environments",
+   "where": "p < div.d-flex.flex-column < div.two-column-block-item.align-items-center < div.d-flex.flex-column < div.container.relative"
+  },
+  {
+   "kind": "mid",
+   "text": "As one of Europe's leading internet service providers, Hetzner is represented in",
+   "where": "p < div.two-row-block-text < div.text-area.text-area-size-small < div.two-row-block-content < div.two-row-block.container"
+  },
+  {
+   "kind": "late",
+   "text": "In addition, C5 certification according to BSI ensures tested transparency and confirms",
+   "where": "p < div.d-flex.flex-column < div.two-column-block-item.align-items-center < div.d-flex.flex-column < div.container.relative"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Automatically translated by AI. Discrepancies or",
+   "where": "nav#header-nav.header-nav.js-nav-bar < header#header < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Hetzner Online GmbH. All Rights Reserved. Prices",
+   "where": "div.footer-wrapper.footer-wrapper-full < div.container.container-footer < footer#footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Subscribe to our Newsletter",
+   "where": "div.footer-wrapper.footer-wrapper-full < div.container.container-footer < footer#footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.section-wrapper < main.overflow-hidden",
+  "scope_tables_code": "div.section-wrapper < main.overflow-hidden",
+  "headings": 10,
+  "h1": 0,
+  "h2": 5,
+  "h3": 5,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 1
+ },
+ "stats": {
+  "main_text_chars": 6857,
+  "page_text_chars": 9753,
+  "prose_blocks": 9
+ }
+}

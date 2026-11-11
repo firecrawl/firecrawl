@@ -1,0 +1,64 @@
+{
+ "id": "0001",
+ "url": "https://docs.python.org/3/tutorial/classes.html",
+ "category": "docs",
+ "container": "div.body < div.bodywrapper < div.documentwrapper",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "9. Classes",
+   "where": "h1 < section#classes < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "early",
+   "text": "Classes provide a means of bundling data and functionality together",
+   "where": "p < section#classes < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "Actually, you may have guessed the answer: the special thing about methods",
+   "where": "p < section#method-objects < section#a-first-look-at-classes < section#classes < div.body"
+  },
+  {
+   "kind": "late",
+   "text": "In most cases, generator expressions must be wrapped in parentheses",
+   "where": "p < section#generator-expressions < section#classes < div.body < div.bodywrapper"
+  },
+  {
+   "kind": "code_line",
+   "text": "def addtwice(self, x):",
+   "where": "pre < div.highlight < div.highlight-python3.notranslate < section#random-remarks < section#classes"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Previous topic 8. Errors and Exceptions",
+   "where": "nav.menu < div.menu-wrapper < div.mobile-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright 2001 Python Software Foundation. This page is licensed",
+   "where": "div.footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#classes < div.body",
+  "scope_tables_code": "section#classes < div.body",
+  "headings": 18,
+  "h1": 1,
+  "h2": 10,
+  "h3": 7,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 32,
+  "list_items": 6,
+  "links": 75
+ },
+ "stats": {
+  "main_text_chars": 34158,
+  "page_text_chars": 36065,
+  "prose_blocks": 94
+ }
+}

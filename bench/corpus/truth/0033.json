@@ -1,0 +1,64 @@
+{
+ "id": "0033",
+ "url": "https://git-scm.com/docs/git-rebase",
+ "category": "docs",
+ "container": "div#main < div#content < div#content-wrapper",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "NAME",
+   "where": "h2#_name < div.sect1 < div#main < div#content < div#content-wrapper"
+  },
+  {
+   "kind": "early",
+   "text": "git-rebase - Reapply commits on top of another base tip",
+   "where": "p < div.paragraph < div.sectionbody < div.sect1 < div#main"
+  },
+  {
+   "kind": "mid",
+   "text": "The apply backend has not traditionally called the post-commit hook, while the",
+   "where": "p < div.paragraph < div.sect2 < div.sectionbody < div.sect1"
+  },
+  {
+   "kind": "late",
+   "text": "Text editor used by git rebase -i for editing the rebase instruction",
+   "where": "p < dd < dl < div.dlist < div.sectionbody"
+  },
+  {
+   "kind": "code_line",
+   "text": "pick deadbee The oneline of this commit",
+   "where": "pre < div.content < div.listingblock < div.sectionbody < div.sect1"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "About Trademark Learn Book Cheat Sheet",
+   "where": "nav < aside#sidebar.sidebar < div#content-wrapper < div.inner < body#documentation"
+  },
+  {
+   "kind": "footer",
+   "text": "About this site Patches, suggestions, and comments are",
+   "where": "footer < div.inner < body#documentation < html"
+  }
+ ],
+ "structure": {
+  "scope": "div#main < div#content",
+  "scope_tables_code": "div#main < div#content",
+  "headings": 26,
+  "h1": 0,
+  "h2": 16,
+  "h3": 10,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 37,
+  "list_items": 50,
+  "links": 28
+ },
+ "stats": {
+  "main_text_chars": 53663,
+  "page_text_chars": 57564,
+  "prose_blocks": 219
+ }
+}

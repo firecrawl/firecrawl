@@ -1,0 +1,59 @@
+{
+ "id": "0155",
+ "url": "https://doc.rust-lang.org/std/vec/struct.Vec.html",
+ "category": "code",
+ "container": "main < body.rustdoc.struct < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Struct Vec",
+   "where": "h1 < div.main-heading < section#main-content.content < div.width-limiter < main"
+  },
+  {
+   "kind": "early",
+   "text": "macro is provided for convenient initialization",
+   "where": "p < div.docblock < details.toggle.top-doc < section#main-content.content < div.width-limiter"
+  },
+  {
+   "kind": "mid",
+   "text": "If N is greater than the size of the slice, it will",
+   "where": "p < div.docblock < details.toggle.method-toggle < div#deref-methods-%5BT%5D-1.impl-items < details.toggle.big-toggle"
+  },
+  {
+   "kind": "late",
+   "text": "The vector will grow as needed",
+   "where": "p < div.docblock < section#impl-Write-for-Vec%3Cu8,+A%3E.impl < summary < details.toggle.implementors-toggle"
+  },
+  {
+   "kind": "code_line",
+   "text": "let mut iter = slice.rchunks(2);",
+   "where": "pre.rust.rust-example-rendered < div.example-wrap < div.docblock < details.toggle.method-toggle < div#deref-methods-%5BT%5D-1.impl-items"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "std 1.99.1 (58cf8f9c3 2026-10-13) Vec Sections",
+   "where": "nav.sidebar < body.rustdoc.struct < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#main-content.content < div.width-limiter",
+  "scope_tables_code": "section#main-content.content < div.width-limiter",
+  "headings": 100,
+  "h1": 1,
+  "h2": 10,
+  "h3": 89,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 278,
+  "list_items": 84,
+  "links": 2961
+ },
+ "stats": {
+  "main_text_chars": 223853,
+  "page_text_chars": 227818,
+  "prose_blocks": 842
+ }
+}

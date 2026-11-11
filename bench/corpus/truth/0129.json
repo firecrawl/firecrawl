@@ -1,0 +1,58 @@
+{
+ "id": "0129",
+ "url": "https://www.firecrawl.dev/pricing",
+ "category": "product",
+ "container": "main.overflow-x-clip < body.I_UNUa_variable._5fU0nW_variable < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Flexible pricing",
+   "where": "h1.lg:w-max.relative < div < div.relative < div.relative.py-64 < section.container.-mt-1"
+  },
+  {
+   "kind": "early",
+   "text": "Start for free, then scale as you grow.Are you an AI agent",
+   "where": "div.section-head-title.max-w-369 < div < div.relative < div.relative.py-64 < section.container.-mt-1"
+  },
+  {
+   "kind": "mid",
+   "text": "What changes from one plan to the next",
+   "where": "div.text-body-large.text-black-alpha-88 < div.px-24.lg:px-64 < section#compare-plans.container.relative < main.overflow-x-clip < body.I_UNUa_variable._5fU0nW_variable"
+  },
+  {
+   "kind": "late",
+   "text": "Local tax is applied based on your location and local tax rules",
+   "where": "div.px-20.lg:px-64 < div.text-body-large.text-black-alpha-64 < div#why-am-i-charged-vat-even-with.border-b.border-border-faint < div.lg:flex-1.lg:pt-111 < div.lg:flex.relative"
+  },
+  {
+   "kind": "table_row",
+   "text": "Standard Custom",
+   "where": "table.w-full.min-w-840 < div.overflow-x-auto < div.px-24.lg:px-64 < section#compare-plans.container.relative < main.overflow-x-clip"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "main.overflow-x-clip < body.I_UNUa_variable._5fU0nW_variable",
+  "scope_tables_code": "main.overflow-x-clip < body.I_UNUa_variable._5fU0nW_variable",
+  "headings": 19,
+  "h1": 1,
+  "h2": 7,
+  "h3": 11,
+  "tables": 4,
+  "table_rows": [
+   6,
+   4,
+   4,
+   7
+  ],
+  "code_blocks": 0,
+  "list_items": 5,
+  "links": 41
+ },
+ "stats": {
+  "main_text_chars": 17003,
+  "page_text_chars": 18506,
+  "prose_blocks": 24
+ }
+}

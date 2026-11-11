@@ -1,0 +1,58 @@
+{
+ "id": "0043",
+ "url": "https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/",
+ "category": "blog",
+ "container": "article#post-18175.post-18175.post < main#main.site-main < div#primary.content-area",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "More details about the October 4 outage"
+  },
+  {
+   "kind": "early",
+   "text": "Now that our platforms are up and running as usual after yesterday’s",
+   "where": "p < div.entry-content < article#post-18175.post-18175.post < main#main.site-main < div#primary.content-area"
+  },
+  {
+   "kind": "mid",
+   "text": "One of the jobs performed by our smaller facilities is to respond",
+   "where": "p < div.entry-content < article#post-18175.post-18175.post < main#main.site-main < div#primary.content-area"
+  },
+  {
+   "kind": "late",
+   "text": "We’ve done extensive work hardening our systems to prevent unauthorized access, and",
+   "where": "p < div.entry-content < article#post-18175.post-18175.post < main#main.site-main < div#primary.content-area"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Meta Terms Privacy Cookies Help Cookie settings",
+   "where": "footer#colophon.site-footer < div.col-md-12 < div.row < div.footer < div#wrapper-footer.wrapper-footer"
+  },
+  {
+   "kind": "footer",
+   "text": "Engineering at Meta is a technical news resource",
+   "where": "footer#meta-footer.meta-footer < div.col-md-12 < div.row < div.footer < div.inner-container"
+  }
+ ],
+ "structure": {
+  "scope": "div.entry-content < article#post-18175.post-18175.post",
+  "scope_tables_code": "div.entry-content < article#post-18175.post-18175.post",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 6889,
+  "page_text_chars": 10307,
+  "prose_blocks": 15
+ }
+}

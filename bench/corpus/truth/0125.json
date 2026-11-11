@@ -1,0 +1,59 @@
+{
+ "id": "0125",
+ "url": "https://fly.io/docs/about/pricing/",
+ "category": "product",
+ "container": "main#content-container.relative.w-full < div.flex.scroll-mt-(--scroll-mt) < div.max-lg:contents.lg:flex-1",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Fly.io Resource Pricing",
+   "where": "h1#page-title.text-3xl.sm:text-4xl < div.flex.flex-col < div.mt-0.5.space-y-2.5 < header#header.relative.leading-none < div#content-area.flex.flex-col"
+  },
+  {
+   "kind": "early",
+   "text": "Fly.io bills for the resources you use, with no monthly platform fee",
+   "where": "div#content.mdx-content.@container/columns-conta < div#content-area.flex.flex-col < main#content-container.relative.w-full < div.flex.scroll-mt-(--scroll-mt) < div.max-lg:contents.lg:flex-1"
+  },
+  {
+   "kind": "mid",
+   "text": "Every organization’s first 10 single hostname certificates are free",
+   "where": "div#content.mdx-content.@container/columns-conta < div#content-area.flex.flex-col < main#content-container.relative.w-full < div.flex.scroll-mt-(--scroll-mt) < div.max-lg:contents.lg:flex-1"
+  },
+  {
+   "kind": "late",
+   "text": "Free Trial What the Fly.io Free trial gives you and when billing",
+   "where": "li < ul < div#content.mdx-content.@container/columns-conta < div#content-area.flex.flex-col < main#content-container.relative.w-full"
+  },
+  {
+   "kind": "table_row",
+   "text": "Extensions such as Tigris and Upstash Provider’s list price",
+   "where": "table.m-0.min-w-full < div.px-(--page-padding).grow < div.flex < div.size-full.rounded-[inherit] < div.min-w-0.[--page-padding:16px]"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "div#content.mdx-content.@container/columns-conta < div#content-area.flex.flex-col",
+  "scope_tables_code": "div#content.mdx-content.@container/columns-conta < div#content-area.flex.flex-col",
+  "headings": 27,
+  "h1": 0,
+  "h2": 14,
+  "h3": 13,
+  "tables": 5,
+  "table_rows": [
+   20,
+   8,
+   4,
+   9,
+   4
+  ],
+  "code_blocks": 0,
+  "list_items": 26,
+  "links": 70
+ },
+ "stats": {
+  "main_text_chars": 17433,
+  "page_text_chars": 19286,
+  "prose_blocks": 46
+ }
+}

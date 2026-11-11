@@ -1,0 +1,64 @@
+{
+ "id": "0046",
+ "url": "https://jvns.ca/blog/2024/02/16/popular-git-config-options/",
+ "category": "blog",
+ "container": "main < article.hentry < div",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Popular git config options",
+   "where": "h1.entry-title < header < article.hentry < div < div#content"
+  },
+  {
+   "kind": "early",
+   "text": "I always wish that command line tools came with data about how",
+   "where": "p < main < article.hentry < div < div#content"
+  },
+  {
+   "kind": "mid",
+   "text": "If you want it to run the suggestion automatically, you can set",
+   "where": "p < main < article.hentry < div < div#content"
+  },
+  {
+   "kind": "late",
+   "text": "I might also ask people about aliases later, there were a bunch",
+   "where": "p < main < article.hentry < div < div#content"
+  },
+  {
+   "kind": "code_line",
+   "text": "transfer.fsckobjects = true",
+   "where": "pre < main < article.hentry < div < div#content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Favorites TIL Zines RSS",
+   "where": "nav.header-nav < div#wrap < body < html.no-js"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Julia Evans. If you like this, you may like",
+   "where": "footer < div#wrap < body < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "main < article.hentry",
+  "scope_tables_code": "main < article.hentry",
+  "headings": 20,
+  "h1": 0,
+  "h2": 0,
+  "h3": 20,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 8,
+  "list_items": 64,
+  "links": 51
+ },
+ "stats": {
+  "main_text_chars": 13932,
+  "page_text_chars": 14423,
+  "prose_blocks": 85
+ }
+}

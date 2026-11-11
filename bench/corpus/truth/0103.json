@@ -1,0 +1,63 @@
+{
+ "id": "0103",
+ "url": "https://github.com/jqlang/jq",
+ "category": "github",
+ "container": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd",
+ "container_rule": "hint:github-readme",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Command-line JSON processor"
+  },
+  {
+   "kind": "early",
+   "text": "It's written in portable C and has zero runtime dependencies, allowing you",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "mid",
+   "text": "If you're not using the latest git version but instead building a",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "late",
+   "text": "jq is released under the MIT License",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "code_line",
+   "text": "git submodule update --init # if building from git to get oniguruma",
+   "where": "pre < div.highlight.highlight-text-shell-ses < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "GitHub Repository hosting, code review, and",
+   "where": "nav.Nav__iEzvz_ < div.menuWrapper__Vmk5KX < div.menu__2EHTkB < div.bar__cF4m1O < header.root__q6pgdo.HeaderMktg"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms Privacy Security Status Community Docs Contact",
+   "where": "footer.footer.f6 < div.logged-out.env-production < body.logged-out.env-production < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "scope_tables_code": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "headings": 8,
+  "h1": 1,
+  "h2": 4,
+  "h3": 3,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 4,
+  "list_items": 9,
+  "links": 12
+ },
+ "stats": {
+  "main_text_chars": 2084,
+  "page_text_chars": 5555,
+  "prose_blocks": 6
+ }
+}

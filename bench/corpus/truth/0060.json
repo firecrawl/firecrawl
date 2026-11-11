@@ -1,0 +1,47 @@
+{
+ "id": "0060",
+ "url": "https://www.paulgraham.com/ds.html",
+ "category": "article",
+ "container": "td < tr < table",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Do Things that Don't Scale"
+  },
+  {
+   "kind": "early",
+   "text": "One of the most common types of advice we give at Y",
+   "where": "p < font < td < tr < table"
+  },
+  {
+   "kind": "mid",
+   "text": "Among companies, the best early adopters are usually other startups",
+   "where": "p < font < td < tr < table"
+  },
+  {
+   "kind": "late",
+   "text": "Thanks to Sam Altman, Paul Buchheit, Patrick Collison, Kevin Hale, Steven Levy",
+   "where": "p < font < td < tr < table"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "font < td",
+  "scope_tables_code": "font < td",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 17
+ },
+ "stats": {
+  "main_text_chars": 24941,
+  "page_text_chars": 25058,
+  "prose_blocks": 62
+ }
+}

@@ -1,0 +1,48 @@
+{
+ "id": "0058",
+ "url": "https://sive.rs/hellyeah",
+ "category": "blog",
+ "container": "main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "No “yes.” Either “HELL YEAH!” or “no",
+   "where": "h1 < header < article < main < body"
+  },
+  {
+   "kind": "early",
+   "text": "I was saying to someone the other day that I've been having",
+   "where": "p < li < ol < div#commentlist < section#comments"
+  },
+  {
+   "kind": "mid",
+   "text": "Not only is this a great concept, but I usually follow it",
+   "where": "p < li < ol < div#commentlist < section#comments"
+  },
+  {
+   "kind": "late",
+   "text": "Not working, even after completing Bachelor's of Engineering(Computer) in 2024",
+   "where": "p < li < ol < div#commentlist < section#comments"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "div#commentlist < section#comments",
+  "scope_tables_code": "div#commentlist < section#comments",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 568,
+  "links": 51
+ },
+ "stats": {
+  "main_text_chars": 205991,
+  "page_text_chars": 206031,
+  "prose_blocks": 782
+ }
+}

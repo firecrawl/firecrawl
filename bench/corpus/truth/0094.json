@@ -1,0 +1,72 @@
+{
+ "id": "0094",
+ "url": "https://simple.wikipedia.org/wiki/Computer",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Computer",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "A computer is a machine that uses electronics to input, process, store",
+   "where": "p#mwBg < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "In the first half of the 20th century, scientists started using computers",
+   "where": "p#mwmQ < section#mwmA < section#mwQg < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "A computer has several main parts",
+   "where": "p#mwAVw < section#mwAU8 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "table_row",
+   "text": "Manchester Small-Scale Experimental Machine (UK) June 1948 Binary",
+   "where": "table#mwpQ.wikitable < section#mwoQ < section#mwQg < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Getting around Main page Simple start",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike License and the GFDL; additional terms may",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last changed on 28 October",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 20,
+  "h1": 0,
+  "h2": 13,
+  "h3": 7,
+  "tables": 2,
+  "table_rows": [
+   11,
+   16
+  ],
+  "code_blocks": 0,
+  "list_items": 40,
+  "links": 320
+ },
+ "stats": {
+  "main_text_chars": 23708,
+  "page_text_chars": 27991,
+  "prose_blocks": 44
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "id": "0071",
+ "url": "https://www.nature.com/articles/d41586-023-00340-6",
+ "category": "article",
+ "container": "article.article-item.article-item--open < div.container-type-article < main#content.u-container.u-mt-32",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "What ChatGPT and generative AI mean for science",
+   "where": "h1.c-article-magazine-title < div.c-article-header__restri < header < div.c-article-header < article.article-item.article-item--open"
+  },
+  {
+   "kind": "early",
+   "text": "In December, computational biologists Casey Greene and Milton Pividori embarked on an",
+   "where": "p.article__teaser < div.c-article-main-column.u-float-left < article.article-item.article-item--open < div.container-type-article < main#content.u-container.u-mt-32"
+  },
+  {
+   "kind": "mid",
+   "text": "Prices may be subject to local taxes which are calculated during checkout",
+   "where": "p.c-buybox-tax < div.c-journal-buybox__conten < div#lm-nature-buybox-content.c-journal-buybox < div.u-clearfix < div.c-article-main-column.u-float-left"
+  },
+  {
+   "kind": "late",
+   "text": "Correction 08 February 2023: This News feature misrepresented Scott Aaronson’s views on",
+   "where": "p#correction-0 < li.c-article-corrections__i < ul.c-article-corrections < div.c-article-corrections__c < div.c-article-main-column.u-float-left"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Explore content Research articles News Opinion",
+   "where": "nav#explore.c-header__dropdown < body.article-page < html.grade-c"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Springer Nature Limited",
+   "where": "footer.composite-layer < body.article-page < html.grade-c"
+  },
+  {
+   "kind": "footer",
+   "text": "About Nature Portfolio About us Press releases Press",
+   "where": "footer.composite-layer < body.article-page < html.grade-c"
+  }
+ ],
+ "structure": {
+  "scope": "div.c-article-main-column.u-float-left < article.article-item.article-item--open",
+  "scope_tables_code": "div.c-article-main-column.u-float-left < article.article-item.article-item--open",
+  "headings": 6,
+  "h1": 0,
+  "h2": 4,
+  "h3": 2,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 21,
+  "links": 25
+ },
+ "stats": {
+  "main_text_chars": 5372,
+  "page_text_chars": 8807,
+  "prose_blocks": 4
+ }
+}

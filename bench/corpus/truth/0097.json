@@ -1,0 +1,59 @@
+{
+ "id": "0097",
+ "url": "https://github.com/sindresorhus/awesome",
+ "category": "github",
+ "container": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd",
+ "container_rule": "hint:github-readme",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Supercharge",
+   "where": "h2.heading-element < div.markdown-heading < div < div < article.markdown-body.entry-content"
+  },
+  {
+   "kind": "early",
+   "text": "Fast remote container builds and GitHub Actions runners",
+   "where": "div < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "mid",
+   "text": "Audio Over IP - Reliably transmit uncompressed, low-latency audio over an IP",
+   "where": "li < ul < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  },
+  {
+   "kind": "late",
+   "text": "Track Awesome List - View the latest updates of Awesome lists",
+   "where": "li < ul < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "GitHub Repository hosting, code review, and",
+   "where": "nav.Nav__iEzvz_ < div.menuWrapper__Vmk5KX < div.menu__2EHTkB < div.bar__cF4m1O < header.root__q6pgdo.HeaderMktg"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms Privacy Security Status Community Docs Contact",
+   "where": "footer.footer.f6 < div.logged-out.env-production < body.logged-out.env-production < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "scope_tables_code": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "headings": 29,
+  "h1": 0,
+  "h2": 29,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 705,
+  "links": 714
+ },
+ "stats": {
+  "main_text_chars": 35603,
+  "page_text_chars": 39342,
+  "prose_blocks": 324
+ }
+}

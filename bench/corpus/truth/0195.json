@@ -1,0 +1,49 @@
+{
+ "id": "0195",
+ "url": "https://danluu.com/",
+ "category": "tiny",
+ "container": "html",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "extra",
+   "text": "Let's compare Google, Bing, Marginalia, Kagi, Mwmbl, and ChatGPT",
+   "where": "li < ul < html"
+  },
+  {
+   "kind": "extra",
+   "text": "Evaluating decision quality in domains where evaluation is easy",
+   "where": "li < ul < html"
+  },
+  {
+   "kind": "extra",
+   "text": "keyboard efficiency are completely bogus",
+   "where": "li < ul < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer",
+   "text": "Archive Patreon Mastodon Bluesky Twitter RSS",
+   "where": "footer < html"
+  }
+ ],
+ "structure": {
+  "scope": "html",
+  "scope_tables_code": "html",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 206,
+  "links": 206
+ },
+ "stats": {
+  "main_text_chars": 9237,
+  "page_text_chars": 9281,
+  "prose_blocks": 0
+ }
+}

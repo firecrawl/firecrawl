@@ -1,0 +1,77 @@
+{
+ "id": "0093",
+ "url": "https://pt.wikipedia.org/wiki/Rio_de_Janeiro",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Rio de Janeiro",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "Rio de Janeiro, simplesmente referido como Rio, é a capital do estado",
+   "where": "p#mwNA < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "Desde meados dos anos 1990, em decorrência da violência urbana, o Rio",
+   "where": "p#mwBi0 < section#mwBiQ < section#mwBOA < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "No Rio de Janeiro, há três feriados municipais, que são: o dia",
+   "where": "p#mwDHI < section#mwDHE < section#mwCs0 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "Precipitação (mm) 228,6 177,8",
+   "where": "table.wikitable.collapsible < section#mwBBk < section#mwA6U < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navegação Página principal Conteúdo destacado Eventos",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons; pode estar sujeito a condições adicionais. Para mais",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "Esta página foi editada pela última vez em",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 40,
+  "h1": 0,
+  "h2": 12,
+  "h3": 28,
+  "tables": 7,
+  "table_rows": [
+   6,
+   5,
+   9,
+   9,
+   8,
+   9,
+   16
+  ],
+  "code_blocks": 0,
+  "list_items": 101,
+  "links": 1463
+ },
+ "stats": {
+  "main_text_chars": 147543,
+  "page_text_chars": 172916,
+  "prose_blocks": 115
+ }
+}

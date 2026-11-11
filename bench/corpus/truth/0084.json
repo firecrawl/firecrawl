@@ -1,0 +1,72 @@
+{
+ "id": "0084",
+ "url": "https://ja.wikipedia.org/wiki/%E6%9D%B1%E4%BA%AC%E9%83%BD",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "東京都",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "日本の関東地方に位置する都",
+   "where": "p#mwCw < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "他の地域から東京都区部へ通勤する者は",
+   "where": "p#mwB3M < section#mwB08 < section#mwByY < section#mwBu0 < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "late",
+   "text": "東京都平和の日条例前文は",
+   "where": "p#mwDAA < section#mwC_U < section#mwC4k < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "ジャカルタ首都特別州 1989年（平成元年）10月23日",
+   "where": "table#mwBjs.wikitable.sortable < section#mwBjo < section#mwBi8 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "案内 メインページ コミュニティ・ポータル",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "最終更新 2026年11月10日",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 69,
+  "h1": 0,
+  "h2": 19,
+  "h3": 50,
+  "tables": 7,
+  "table_rows": [
+   11,
+   7,
+   7,
+   14,
+   9,
+   12,
+   14
+  ],
+  "code_blocks": 0,
+  "list_items": 53,
+  "links": 1547
+ },
+ "stats": {
+  "main_text_chars": 50473,
+  "page_text_chars": 55846,
+  "prose_blocks": 161
+ }
+}

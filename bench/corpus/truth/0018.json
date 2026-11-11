@@ -1,0 +1,69 @@
+{
+ "id": "0018",
+ "url": "https://docs.djangoproject.com/en/5.2/topics/http/middleware/",
+ "category": "docs",
+ "container": "article#docs-content < main#main-content < div.container.sidebar-right",
+ "container_rule": "main>article share=0.99",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Middleware",
+   "where": "h1 < section#s-middleware < article#docs-content < main#main-content < div.container.sidebar-right"
+  },
+  {
+   "kind": "early",
+   "text": "It’s a light, low-level “plugin” system for globally altering Django’s input or",
+   "where": "p < section#s-middleware < article#docs-content < main#main-content < div.container.sidebar-right"
+  },
+  {
+   "kind": "mid",
+   "text": "object (or equivalent) returned by a Django view or by a middleware",
+   "where": "p < section#s-process-template-response < section#s-other-middleware-hooks < section#s-middleware < article#docs-content"
+  },
+  {
+   "kind": "late",
+   "text": "an exception raised from a middleware will immediately be converted to",
+   "where": "p < li < ol.arabic.simple < section#s-upgrading-pre-django-1-10-st < section#s-middleware"
+  },
+  {
+   "kind": "code_line",
+   "text": "for chunk in content:",
+   "where": "pre < div.highlight < div.highlight-default.notranslate < div.admonition.note < section#s-dealing-with-streaming-respo"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Overview Download Documentation News Code Issues",
+   "where": "nav < div.container.container--flex--wrap--m < header#top < body#generic < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2005-2026 Django Software Foundation and individual contributors. Django is",
+   "where": "div.footer < footer < body#generic < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Django Hosting by In-kind donors Design by Threespot",
+   "where": "div.footer < footer < body#generic < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#s-middleware < article#docs-content",
+  "scope_tables_code": "section#s-middleware < article#docs-content",
+  "headings": 14,
+  "h1": 1,
+  "h2": 8,
+  "h3": 5,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 7,
+  "list_items": 11,
+  "links": 74
+ },
+ "stats": {
+  "main_text_chars": 16505,
+  "page_text_chars": 20540,
+  "prose_blocks": 62
+ }
+}

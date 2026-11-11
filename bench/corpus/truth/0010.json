@@ -1,0 +1,59 @@
+{
+ "id": "0010",
+ "url": "https://kubernetes.io/docs/concepts/workloads/pods/",
+ "category": "docs",
+ "container": "main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Pods",
+   "where": "h1 < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "early",
+   "text": "Pods are the smallest deployable units of computing that you can create",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "mid",
+   "text": "does not directly observe or manage any of the details around pod",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "late",
+   "text": "To understand the context for why Kubernetes wraps a common Pod API",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "code_line",
+   "text": "- name: sec-ctx-demo",
+   "where": "pre.chroma < div.highlight < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 The Kubernetes Authors | Documentation Distributed under CC",
+   "where": "footer.bg-dark.py-5 < body.td-section < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "div.td-content < main.col-12.col-md-9",
+  "scope_tables_code": "div.td-content < main.col-12.col-md-9",
+  "headings": 21,
+  "h1": 1,
+  "h2": 11,
+  "h3": 9,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 4,
+  "list_items": 45,
+  "links": 47
+ },
+ "stats": {
+  "main_text_chars": 22356,
+  "page_text_chars": 47181,
+  "prose_blocks": 94
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "id": "0064",
+ "url": "https://www.bbc.com/news/technology-65855333",
+ "category": "article",
+ "container": "article < main#bbc-main < div.app",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "What is AI, how does it work and why are some people concerned about it",
+   "where": "h1.Headline-styles__Headlin.fxASub < div.GridItem-styles__GridIte.tlbDj < div.Grid-styles__GridStyled-.hRsXiV < div.Container-styles__Contai.hKOCJO < div"
+  },
+  {
+   "kind": "early",
+   "text": "AI has increasingly become part of everyday life over the past decade",
+   "where": "p.Paragraph-styles__Paragr.fqhmpl < div.GridItem-styles__GridIte.bnCeGm < div.Grid-styles__GridStyled-.hRsXiV < div.Container-styles__Contai.cPmzSx < div"
+  },
+  {
+   "kind": "mid",
+   "text": "But experts have urged a focus on present risks and AI dangers",
+   "where": "p.Paragraph-styles__Paragr.fqhmpl < div.GridItem-styles__GridIte.bnCeGm < div.Grid-styles__GridStyled-.hRsXiV < div.Container-styles__Contai.cPmzSx < div"
+  },
+  {
+   "kind": "late",
+   "text": "It has also established an independent AI Security Institute to identify risks",
+   "where": "p.Paragraph-styles__Paragr.fqhmpl < div.GridItem-styles__GridIte.bnCeGm < div.Grid-styles__GridStyled-.hRsXiV < div.Container-styles__Contai.cPmzSx < div"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Home News Sport Business Technology Health",
+   "where": "nav#main-navigation-container.Navigation-styles__Navig.gUOgcu < div.app < div#__next < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Copyright 2026 BBC. All rights reserved. The BBC is not",
+   "where": "footer#bbc-footer.Footer-styles__FooterSty.gEbLfI < div.app < div#__next < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Use Subscription Terms About the BBC",
+   "where": "footer#bbc-footer.Footer-styles__FooterSty.gEbLfI < div.app < div#__next < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "article < main#bbc-main",
+  "scope_tables_code": "article < main#bbc-main",
+  "headings": 11,
+  "h1": 1,
+  "h2": 10,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 2,
+  "links": 30
+ },
+ "stats": {
+  "main_text_chars": 7378,
+  "page_text_chars": 10582,
+  "prose_blocks": 43
+ }
+}

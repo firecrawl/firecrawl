@@ -1,0 +1,54 @@
+{
+ "id": "0051",
+ "url": "https://www.joelonsoftware.com/2000/08/09/the-joel-test-12-steps-to-better-code/",
+ "category": "blog",
+ "container": "article#post-898.post.post-898 < main#main.site-main < div#primary.content-area",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "The Joel Test: 12 Steps to Better Code",
+   "where": "h1.entry-title < header.entry-header < article#post-898.post.post-898 < main#main.site-main < div#primary.content-area"
+  },
+  {
+   "kind": "early",
+   "text": "Have you ever heard of SEMA",
+   "where": "p < div.entry-content < article#post-898.post.post-898 < main#main.site-main < div#primary.content-area"
+  },
+  {
+   "kind": "mid",
+   "text": "Unfortunately, that just doesn’t cut it",
+   "where": "p < div.entry-content < article#post-898.post.post-898 < main#main.site-main < div#primary.content-area"
+  },
+  {
+   "kind": "late",
+   "text": "But the most important thing about user interfaces is that if you",
+   "where": "p < div.entry-content < article#post-898.post.post-898 < main#main.site-main < div#primary.content-area"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer",
+   "text": "Proudly powered by WordPress",
+   "where": "footer#colophon.site-footer < div#page.hfeed.site < body.wp-singular.post-template-default < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.entry-content < article#post-898.post.post-898",
+  "scope_tables_code": "div.entry-content < article#post-898.post.post-898",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 17,
+  "links": 16
+ },
+ "stats": {
+  "main_text_chars": 20235,
+  "page_text_chars": 23033,
+  "prose_blocks": 62
+ }
+}

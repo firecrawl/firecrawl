@@ -1,0 +1,64 @@
+{
+ "id": "0204",
+ "url": "test-site:/blog/launch-week-iii-day-2-announcing-fire-1/",
+ "category": "test-site",
+ "container": "article < main < body",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Announcing FIRE-1, Our Web Action Agent: Launch Week III - Day 2",
+   "where": "h1 < div.title < div.prose < article < main"
+  },
+  {
+   "kind": "early",
+   "text": "Welcome to Launch Week III, Day 2",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "mid",
+   "text": "Note: The prompt field is required for scrape requests, instructing FIRE-1 precisely",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "late",
+   "text": "Sign up for Firecrawl and start with FIRE-1 today",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "code_line",
+   "text": "\"prompt\": \"Search for firecrawl and go to the company page.\"",
+   "where": "pre.astro-code.github-dark < div.prose < article < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose < article",
+  "scope_tables_code": "div.prose < article",
+  "headings": 7,
+  "h1": 1,
+  "h2": 6,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 2,
+  "list_items": 7,
+  "links": 4
+ },
+ "stats": {
+  "main_text_chars": 2360,
+  "page_text_chars": 2610,
+  "prose_blocks": 13
+ }
+}

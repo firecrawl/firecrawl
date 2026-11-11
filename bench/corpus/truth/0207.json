@@ -1,0 +1,59 @@
+{
+ "id": "0207",
+ "url": "test-site:/blog/launch-week-iii-day-5-dev-day/",
+ "category": "test-site",
+ "container": "article < main < body",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Developer Day: Launch Week III - Day 5",
+   "where": "h1 < div.title < div.prose < article < main"
+  },
+  {
+   "kind": "early",
+   "text": "Day 5 of Launch Week III is here — and it’s all",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "mid",
+   "text": "If you’re building in Rust, these changes open up a lot more",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "late",
+   "text": "We’ve also shipped a number of smaller improvements behind the scenes to",
+   "where": "p < div.prose < article < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose < article",
+  "scope_tables_code": "div.prose < article",
+  "headings": 5,
+  "h1": 1,
+  "h2": 4,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 10,
+  "links": 1
+ },
+ "stats": {
+  "main_text_chars": 1585,
+  "page_text_chars": 1835,
+  "prose_blocks": 11
+ }
+}

@@ -1,0 +1,63 @@
+{
+ "id": "0104",
+ "url": "https://github.com/astral-sh/uv",
+ "category": "github",
+ "container": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd",
+ "container_rule": "hint:github-readme",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "An extremely fast Python package and project manager, written in Rust."
+  },
+  {
+   "kind": "early",
+   "text": "uv is backed by Astral, the creators of Ruff and ty",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "mid",
+   "text": "uv installs Python and allows quickly switching between versions",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "late",
+   "text": "Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "code_line",
+   "text": "Resolved 1 package in 167ms",
+   "where": "pre < div.highlight.highlight-text-shell-ses < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "GitHub Repository hosting, code review, and",
+   "where": "nav.Nav__iEzvz_ < div.menuWrapper__Vmk5KX < div.menu__2EHTkB < div.bar__cF4m1O < header.root__q6pgdo.HeaderMktg"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms Privacy Security Status Community Docs Contact",
+   "where": "footer.footer.f6 < div.logged-out.env-production < body.logged-out.env-production < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "scope_tables_code": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "headings": 14,
+  "h1": 1,
+  "h2": 8,
+  "h3": 5,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 16,
+  "list_items": 13,
+  "links": 40
+ },
+ "stats": {
+  "main_text_chars": 6664,
+  "page_text_chars": 11013,
+  "prose_blocks": 29
+ }
+}

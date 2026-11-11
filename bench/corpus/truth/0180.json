@@ -1,0 +1,63 @@
+{
+ "id": "0180",
+ "url": "https://www.postgresql.org/docs/current/release-17.html",
+ "category": "long",
+ "container": "div#RELEASE-17.sect1 < div#docContent < div#pgContentWrap.col-11",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "E.12. Release 17"
+  },
+  {
+   "kind": "early",
+   "text": "Below you will find a detailed account of the changes between PostgreSQL",
+   "where": "p < div#RELEASE-17-CHANGES.sect2 < div#RELEASE-17.sect1 < div#docContent < div#pgContentWrap.col-11"
+  },
+  {
+   "kind": "mid",
+   "text": "This function can be used in the FROM clause of SELECT queries",
+   "where": "p < li.listitem < ul.itemizedlist < div.itemizedlist < div#RELEASE-17-FUNCTIONS.sect3"
+  },
+  {
+   "kind": "late",
+   "text": "This greatly reduces the number of entries needed to record PREPARE TRANSACTION",
+   "where": "p < li.listitem < ul.itemizedlist < div.itemizedlist < div#RELEASE-17-PGSTATSTATEMENTS.sect4"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Home About Download Documentation Community Developers",
+   "where": "nav.navbar.navbar-expand-lg < div.col < div.row.justify-content-md-cente < div.container-fluid < body"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Copyright © 1996-2026 The PostgreSQL Global Development Group",
+   "where": "footer#footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Policies | Code of Conduct | About PostgreSQL",
+   "where": "footer#footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div#RELEASE-17-CHANGES.sect2 < div#RELEASE-17.sect1",
+  "scope_tables_code": "div#RELEASE-17.sect1 < div#docContent",
+  "headings": 1,
+  "h1": 0,
+  "h2": 0,
+  "h3": 1,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 165,
+  "links": 406
+ },
+ "stats": {
+  "main_text_chars": 34900,
+  "page_text_chars": 35547,
+  "prose_blocks": 213
+ }
+}

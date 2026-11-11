@@ -1,0 +1,70 @@
+{
+ "id": "0174",
+ "url": "https://html.spec.whatwg.org/multipage/parsing.html",
+ "category": "long",
+ "container": "body < html.split",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "HTML",
+   "where": "h1.allcaps < hgroup < header#head.head.with-buttons < body < html.split"
+  },
+  {
+   "kind": "early",
+   "text": "This section only applies to user agents, data mining tools, and conformance",
+   "where": "p < body < html.split"
+  },
+  {
+   "kind": "mid",
+   "text": "can be the fragment parser's target or the DocumentFragment into which nodes",
+   "where": "p.note < li < ol < li < ol"
+  },
+  {
+   "kind": "late",
+   "text": "contains a script start tag without a matching end tag, that script",
+   "where": "p.note < li < ol < div < body"
+  },
+  {
+   "kind": "table_row",
+   "text": "pointsatx pointsAtX",
+   "where": "table < div < body < html.split"
+  },
+  {
+   "kind": "code_line",
+   "text": "window.SuperP = class extends HTMLParagraphElement {};",
+   "where": "pre < div#example-html-serializer-roundt.example < body < html.split"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "← 13 The HTML syntax — Table of Contents",
+   "where": "nav < body < html.split"
+  }
+ ],
+ "structure": {
+  "scope": "body < html.split",
+  "scope_tables_code": "body < html.split",
+  "headings": 4,
+  "h1": 1,
+  "h2": 0,
+  "h3": 3,
+  "tables": 5,
+  "table_rows": [
+   36,
+   28,
+   59,
+   12,
+   38
+  ],
+  "code_blocks": 18,
+  "list_items": 1017,
+  "links": 4350
+ },
+ "stats": {
+  "main_text_chars": 292741,
+  "page_text_chars": 292908,
+  "prose_blocks": 1358
+ }
+}

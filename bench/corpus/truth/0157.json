@@ -1,0 +1,54 @@
+{
+ "id": "0157",
+ "url": "https://gobyexample.com/json",
+ "category": "code",
+ "container": "table < div#json.example < body",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "early",
+   "text": "Go offers built-in support for JSON encoding and decoding, including to and",
+   "where": "p < td.docs < tr < table < div#json.example"
+  },
+  {
+   "kind": "mid",
+   "text": "Now let’s look at decoding JSON data into Go values",
+   "where": "p < td.docs < tr < table < div#json.example"
+  },
+  {
+   "kind": "late",
+   "text": "In the examples above we always used bytes and strings as intermediates",
+   "where": "p < td.docs < tr < table < div#json.example"
+  },
+  {
+   "kind": "code_line",
+   "text": "res1D := &response1{",
+   "where": "pre.chroma < td.code.leading < tr < table < div#json.example"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer",
+   "text": "by Mark McGranaghan and Eli Bendersky | source",
+   "where": "p.footer < div#json.example < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "table < div#json.example",
+  "scope_tables_code": "table < div#json.example",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 21,
+  "list_items": 0,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 3867,
+  "page_text_chars": 4359,
+  "prose_blocks": 15
+ }
+}

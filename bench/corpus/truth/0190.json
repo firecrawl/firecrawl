@@ -1,0 +1,48 @@
+{
+ "id": "0190",
+ "url": "https://www.paulgraham.com/todo.html",
+ "category": "tiny",
+ "container": "td < tr < table",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "early",
+   "text": "A palliative care nurse called Bronnie Ware made a list of the",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "mid",
+   "text": "I would like to avoid making these mistakes",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "late",
+   "text": "which I then put at the top of the file I use",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "extra",
+   "text": "If you had to compress them into a single piece of advice",
+   "where": "td < tr < table < td < tr"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "td < tr",
+  "scope_tables_code": "td < tr",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 2
+ },
+ "stats": {
+  "main_text_chars": 1294,
+  "page_text_chars": 1294,
+  "prose_blocks": 6
+ }
+}

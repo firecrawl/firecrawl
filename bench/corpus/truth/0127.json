@@ -1,0 +1,64 @@
+{
+ "id": "0127",
+ "url": "https://tailscale.com/pricing",
+ "category": "product",
+ "container": "main.mt-[-60px].lg:mt-[-66px] < body.has-data-[body-bg=white].bg-neutral-100 < html.sCjy7q_variable.skerTq_variable",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Plans that work for engineers, IT, security, and home users",
+   "where": "h1.text-display-sm.text-center < div.mx-auto.w-full < section < div.pt-120.flex < main.mt-[-60px].lg:mt-[-66px]"
+  },
+  {
+   "kind": "early",
+   "text": "For individuals who want to securely connect devices, servers, or software",
+   "where": "p.text-body-md.text-neutral-800/80 < div.shadow-2.p-30 < div.shadow-2.border-neutral-300 < div.row-span-5.grid < div.grid.grid-cols-[repeat(4,320p"
+  },
+  {
+   "kind": "mid",
+   "text": "Manage your device fleet, robotics, vehicles, and more through our platform",
+   "where": "p.text-body-lg.text-neutral-800/80 < div.p-30.@min-[1000px]:max-w-470 < div.@min-[1000px]:flex-row.flex < div.shadow-2.border-neutral-300 < div.@container"
+  },
+  {
+   "kind": "late",
+   "text": "Seamlessly deploy and manage Tailscale in your Azure infrastructure while consolidating billing",
+   "where": "p.text-body-lg.text-neutral-800/80 < div.p-30.@min-[1000px]:max-w-470 < div.@min-[1000px]:flex-row.flex < div.shadow-2.border-neutral-300 < div.@container"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Blog Docs Download Contact sales",
+   "where": "nav.xlsmall:block.max-xlsmall:hidden < div.mx-auto.w-full < div.xlsmall:!p-6.min-h-54 < section.sticky.top-0 < body.has-data-[body-bg=white].bg-neutral-100"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Tailscale Inc. Tailscale is a registered trademark of",
+   "where": "footer.mt-64.bg-white < body.has-data-[body-bg=white].bg-neutral-100 < html.sCjy7q_variable.skerTq_variable"
+  },
+  {
+   "kind": "footer",
+   "text": "Company About Tailscale Careers Press Open Source Help",
+   "where": "footer.mt-64.bg-white < body.has-data-[body-bg=white].bg-neutral-100 < html.sCjy7q_variable.skerTq_variable"
+  }
+ ],
+ "structure": {
+  "scope": "div.pt-120.flex < main.mt-[-60px].lg:mt-[-66px]",
+  "scope_tables_code": "div.pt-120.flex < main.mt-[-60px].lg:mt-[-66px]",
+  "headings": 32,
+  "h1": 1,
+  "h2": 15,
+  "h3": 16,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 39,
+  "links": 19
+ },
+ "stats": {
+  "main_text_chars": 29289,
+  "page_text_chars": 31688,
+  "prose_blocks": 58
+ }
+}

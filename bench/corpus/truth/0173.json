@@ -1,0 +1,64 @@
+{
+ "id": "0173",
+ "url": "https://en.wikipedia.org/wiki/History_of_the_Internet",
+ "category": "long",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "History of the Internet",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "The Internet originated in the efforts of scientists and engineers to build",
+   "where": "p#mwDA < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "As with the other regions, the Latin American and Caribbean Internet Addresses",
+   "where": "p#mwBaQ < section#mwBaM < section#mwBJo < section#mwAzg < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "late",
+   "text": "tends to be too close to its sources",
+   "where": "p < blockquote.templatequote < section#mwCg4 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 8 November",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 46,
+  "h1": 0,
+  "h2": 16,
+  "h3": 30,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 37,
+  "links": 1161
+ },
+ "stats": {
+  "main_text_chars": 156629,
+  "page_text_chars": 165304,
+  "prose_blocks": 186
+ }
+}

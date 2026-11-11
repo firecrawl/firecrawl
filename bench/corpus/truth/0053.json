@@ -1,0 +1,54 @@
+{
+ "id": "0053",
+ "url": "https://antirez.com/news/108",
+ "category": "blog",
+ "container": "article#108-.comment < topcomment < div#content",
+ "container_rule": "article share=0.98",
+ "must_contain": [
+  {
+   "kind": "code_line",
+   "text": "For the sentimentalists, keep reading…",
+   "where": "pre < article#108-.comment < topcomment < div#content < div#container"
+  },
+  {
+   "kind": "pre_line",
+   "text": "This is how I started to think about writing a text editor",
+   "where": "pre < article#108-.comment < topcomment < div#content < div#container"
+  },
+  {
+   "kind": "pre_line",
+   "text": "Well, all nice, but my time was very limited",
+   "where": "pre < article#108-.comment < topcomment < div#content < div#container"
+  },
+  {
+   "kind": "pre_line",
+   "text": "The first week Saturday morning I went to the sea, and it",
+   "where": "pre < article#108-.comment < topcomment < div#content < div#container"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer",
+   "text": "rss feed | twitter | google group |",
+   "where": "footer < div#container < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "article#108-.comment < topcomment",
+  "scope_tables_code": "article#108-.comment < topcomment",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 1,
+  "list_items": 0,
+  "links": 5
+ },
+ "stats": {
+  "main_text_chars": 4871,
+  "page_text_chars": 5023,
+  "prose_blocks": 0
+ }
+}

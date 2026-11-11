@@ -1,0 +1,59 @@
+{
+ "id": "0201",
+ "url": "test-site:/blog/introducing-firecrawl-templates/",
+ "category": "test-site",
+ "container": "article < main < body",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Introducing Templates: Ready to use Firecrawl examples",
+   "where": "h1 < div.title < div.prose < article < main"
+  },
+  {
+   "kind": "early",
+   "text": "Today we’re launching Templates – making it super easy to discover, share",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "mid",
+   "text": "Reusable code segments you can drop into your own applications",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "late",
+   "text": "We can’t wait to see what you build and share",
+   "where": "p < div.prose < article < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose < article",
+  "scope_tables_code": "div.prose < article",
+  "headings": 7,
+  "h1": 1,
+  "h2": 3,
+  "h3": 3,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 7,
+  "links": 3
+ },
+ "stats": {
+  "main_text_chars": 2376,
+  "page_text_chars": 2626,
+  "prose_blocks": 14
+ }
+}

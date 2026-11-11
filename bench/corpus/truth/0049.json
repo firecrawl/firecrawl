@@ -1,0 +1,59 @@
+{
+ "id": "0049",
+ "url": "https://martinfowler.com/articles/microservices.html",
+ "category": "blog",
+ "container": "main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Microservices",
+   "where": "h1 < main < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "Although our natural inclination is to pass such things by with a",
+   "where": "p < div.paperBody.deep < main < body < html"
+  },
+  {
+   "kind": "mid",
+   "text": "Teams building microservices prefer a different approach to standards too",
+   "where": "p < section#DecentralizedGovernance < section#CharacteristicsOfAMicroservice < div.paperBody.deep < main"
+  },
+  {
+   "kind": "late",
+   "text": "So we write this with cautious optimism",
+   "where": "p < section#AreMicroservicesTheFuture < div.paperBody.deep < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Refactoring Agile Architecture About Thoughtworks",
+   "where": "nav.top-menu < header#banner < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Martin Fowler | Disclosures",
+   "where": "footer#page-footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.paperBody.deep < main",
+  "scope_tables_code": "div.paperBody.deep < main",
+  "headings": 11,
+  "h1": 0,
+  "h2": 2,
+  "h3": 9,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 32
+ },
+ "stats": {
+  "main_text_chars": 49445,
+  "page_text_chars": 50641,
+  "prose_blocks": 81
+ }
+}

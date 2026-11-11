@@ -1,0 +1,59 @@
+{
+ "id": "0068",
+ "url": "https://www.npr.org/2023/05/25/1177700852/ai-future-dangers-benefits",
+ "category": "article",
+ "container": "article.story < section#main-section < div#wrapper",
+ "container_rule": "main>article share=0.92",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "What is AI and how will it change our lives? NPR Explains",
+   "where": "h1 < div.storytitle < article.story < section#main-section < div#wrapper"
+  },
+  {
+   "kind": "early",
+   "text": "Artificial intelligence is changing our lives – from education and politics to",
+   "where": "p < div#storytext.storytext.storylocation < article.story < section#main-section < div#wrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "NPR Explains: AI answers your most pressing questions about artificial intelligence",
+   "where": "p < div#storytext.storytext.storylocation < article.story < section#main-section < div#wrapper"
+  },
+  {
+   "kind": "late",
+   "text": "Listen to NPR Explains: AI, a podcast series available exclusively in the",
+   "where": "p < div#storytext.storytext.storylocation < article.story < section#main-section < div#wrapper"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "National World Politics Business Elections Health",
+   "where": "nav.navigation < header#globalheader.npr-header < body#news.news.tmplNewsStory < html.no-js"
+  },
+  {
+   "kind": "nav",
+   "text": "Books Movies Television Pop Culture Food",
+   "where": "section#main-menu.menu.menu--main < nav.navigation < header#globalheader.npr-header < body#news.news.tmplNewsStory < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "div#storytext.storytext.storylocation < article.story",
+  "scope_tables_code": "div#storytext.storytext.storylocation < article.story",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 6,
+  "links": 17
+ },
+ "stats": {
+  "main_text_chars": 3270,
+  "page_text_chars": 4942,
+  "prose_blocks": 11
+ }
+}

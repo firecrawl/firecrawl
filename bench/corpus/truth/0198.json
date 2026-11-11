@@ -1,0 +1,59 @@
+{
+ "id": "0198",
+ "url": "test-site:/blog/category/updates/",
+ "category": "test-site",
+ "container": "main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Blog",
+   "where": "h1 < section < main < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "This page contains sample posts, learn more on theabout page",
+   "where": "p < section < main < body < html"
+  },
+  {
+   "kind": "extra",
+   "text": "For more information about Firecrawl, visit firecrawl.dev",
+   "where": "p < section < main < body < html"
+  },
+  {
+   "kind": "extra",
+   "text": "All content on this website may not be real or representative of",
+   "where": "p < section < main < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "main < body",
+  "scope_tables_code": "section < main",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 11,
+  "links": 13
+ },
+ "stats": {
+  "main_text_chars": 993,
+  "page_text_chars": 1261,
+  "prose_blocks": 1
+ }
+}

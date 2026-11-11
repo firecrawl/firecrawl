@@ -1,0 +1,59 @@
+{
+ "id": "0073",
+ "url": "https://plato.stanford.edu/entries/turing-test/",
+ "category": "article",
+ "container": "div#main-text < div#aueditable < div#article-content",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "The Turing Test",
+   "where": "h1 < div#aueditable < div#article-content < div#article < div#content"
+  },
+  {
+   "kind": "early",
+   "text": "Turing (1950) describes the following kind of game",
+   "where": "p < div#main-text < div#aueditable < div#article-content < div#article"
+  },
+  {
+   "kind": "mid",
+   "text": "Consider, for example, those people who have claimed that The Turing Test",
+   "where": "p < div#main-text < div#aueditable < div#article-content < div#article"
+  },
+  {
+   "kind": "late",
+   "text": "And there are radically different views about the most likely paths to",
+   "where": "p < div#main-text < div#aueditable < div#article-content < div#article"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "copyright © 2025 by The Metaphysics Research Lab, Department of",
+   "where": "div#footer < div#container < body#pagetopright.nojs.article < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Browse Table of Contents What's New Random Entry",
+   "where": "div#footer < div#container < body#pagetopright.nojs.article < html"
+  }
+ ],
+ "structure": {
+  "scope": "div#main-text < div#aueditable",
+  "scope_tables_code": "div#main-text < div#aueditable",
+  "headings": 28,
+  "h1": 0,
+  "h2": 7,
+  "h3": 21,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 18,
+  "links": 2
+ },
+ "stats": {
+  "main_text_chars": 101036,
+  "page_text_chars": 120109,
+  "prose_blocks": 124
+ }
+}

@@ -1,0 +1,49 @@
+{
+ "id": "0216",
+ "url": "test-site:/prompt-injection/",
+ "category": "test-site",
+ "container": "main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Firecrawl Test Widget",
+   "where": "h1 < main < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "This page looks like an ordinary product page, but embeds several prompt-injection",
+   "where": "p < main < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "main < body",
+  "scope_tables_code": "main < body",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 4,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 408,
+  "page_text_chars": 818,
+  "prose_blocks": 1
+ }
+}

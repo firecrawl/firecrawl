@@ -1,0 +1,66 @@
+{
+ "id": "0145",
+ "url": "https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=http",
+ "category": "tables",
+ "container": "main < article.hemmed.sidenav < div#body",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Service Name and Transport Protocol Port Number Registry",
+   "where": "h1 < div#service-names-port-numbers.registry < div.registry-content < main < article.hemmed.sidenav"
+  },
+  {
+   "kind": "early",
+   "text": "Service names and port numbers are used to distinguish between different services",
+   "where": "p < div#service-names-port-numbers.registry < div.registry-content < main < article.hemmed.sidenav"
+  },
+  {
+   "kind": "mid",
+   "text": "The registration procedures for service names and port numbers are specified in",
+   "where": "p < div#service-names-port-numbers.registry < div.registry-content < main < article.hemmed.sidenav"
+  },
+  {
+   "kind": "late",
+   "text": "Assignment of a port number does not in any way imply an",
+   "where": "p < div.panel_warning.icon < div#service-names-port-numbers.registry < div.registry-content < main"
+  },
+  {
+   "kind": "table_row",
+   "text": "Paul McGough 2007-02 2016-01-05",
+   "where": "table#table-service-names-port-numbe.sortable_srv.dtable < div.dtable-wrap.dtable-wrap--shade < div#service-names-port-numbers.registry < div.registry-content < main"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Domains Protocols Numbers About",
+   "where": "div.navigation < div#header < header.full-width < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Domain Names Root Zone Registry .INT Registry .ARPA",
+   "where": "div#footer < footer.full-width < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div#service-names-port-numbers.registry < div.registry-content",
+  "scope_tables_code": "div.dtable-wrap.dtable-wrap--shade < div#service-names-port-numbers.registry",
+  "headings": 7,
+  "h1": 1,
+  "h2": 0,
+  "h3": 6,
+  "tables": 1,
+  "table_rows": [
+   101
+  ],
+  "code_blocks": 0,
+  "list_items": 14,
+  "links": 212
+ },
+ "stats": {
+  "main_text_chars": 14802,
+  "page_text_chars": 15290,
+  "prose_blocks": 12
+ }
+}

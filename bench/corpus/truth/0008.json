@@ -1,0 +1,54 @@
+{
+ "id": "0008",
+ "url": "https://doc.rust-lang.org/book/ch10-02-traits.html",
+ "category": "docs",
+ "container": "main < div#mdbook-content.content < div.page",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "The Rust Programming Language",
+   "outside_container": true,
+   "where": "h1.menu-title < div#mdbook-menu-bar.menu-bar.sticky < div.page < div#mdbook-page-wrapper.page-wrapper < div#mdbook-body-container"
+  },
+  {
+   "kind": "early",
+   "text": "A trait defines the functionality a particular type has and can share",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "Note that it isn’t possible to call the default implementation from an",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "late",
+   "text": "Traits and trait bounds let us write code that uses generic type",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "code_line",
+   "text": "pub fn notify(item1: &impl Summary, item2: &impl Summary) {",
+   "where": "pre < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "main < div#mdbook-content.content",
+  "scope_tables_code": "main < div#mdbook-content.content",
+  "headings": 7,
+  "h1": 0,
+  "h2": 1,
+  "h3": 6,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 21,
+  "list_items": 0,
+  "links": 12
+ },
+ "stats": {
+  "main_text_chars": 20784,
+  "page_text_chars": 20993,
+  "prose_blocks": 48
+ }
+}

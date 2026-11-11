@@ -1,0 +1,72 @@
+{
+ "id": "0089",
+ "url": "https://ko.wikipedia.org/wiki/%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "서울특별시",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "인구는 1992년 1,097만 명으로 가장 많았다가 교외화와 출산율 저하로 줄어들고 있다",
+   "where": "p#mwSw < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "2025년 7월 말 기준 서울에는 전통 시장 433곳이 있다",
+   "where": "p#mwCuk < section#mwCuE < section#mwCmE < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "2002년 이명박 시장 때 도입된 'Hi Seoul'은",
+   "where": "p#mwEz4 < section#mwEwI < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "table_row",
+   "text": "서대문구 西大門區 17.63",
+   "where": "table#mwBkM.wikitable.sortable < section#mwBiM < section#mwBhA < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "둘러보기 대문 최근 바뀜 요즘 화제 임의 문서로 사용자 모임",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "이 문서는 2026년 11월 7일 (토) 21:30에 마지막으로",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 85,
+  "h1": 0,
+  "h2": 21,
+  "h3": 64,
+  "tables": 7,
+  "table_rows": [
+   4,
+   13,
+   27,
+   17,
+   8,
+   10,
+   13
+  ],
+  "code_blocks": 0,
+  "list_items": 63,
+  "links": 1812
+ },
+ "stats": {
+  "main_text_chars": 117651,
+  "page_text_chars": 128612,
+  "prose_blocks": 179
+ }
+}

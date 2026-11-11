@@ -1,0 +1,64 @@
+{
+ "id": "0023",
+ "url": "https://svelte.dev/docs/svelte/$state",
+ "category": "docs",
+ "container": "main#main.svelte-1ftfg6q < div < body",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "$state",
+   "where": "h1 < header < div#docs-content < div.page.content < div.container.svelte-13r3uwa"
+  },
+  {
+   "kind": "early",
+   "text": "Unlike other frameworks you may have encountered, there is no API for",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "mid",
+   "text": "This can improve performance with large arrays and objects that you weren’t",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "late",
+   "text": "This leaves you with two options for sharing state between modules",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "code_line",
+   "text": "let counter = $state({ count: 0 });",
+   "where": "pre.twinkleplop < div.code-block < div.text.svelte-h44pz9 < div.text.content < div#docs-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Svelte SvelteKit CLI AI Playground",
+   "where": "nav.svelte-wf8082.visible < div < body < html.theme-default.typo-default"
+  },
+  {
+   "kind": "nav",
+   "text": "Create new app Your saved apps",
+   "where": "nav.dropdown-content.svelte-fwukmr < div.dropdown.svelte-fwukmr < div.links.svelte-wf8082 < div.desktop.svelte-wf8082 < nav.svelte-wf8082.visible"
+  }
+ ],
+ "structure": {
+  "scope": "div.text.svelte-h44pz9 < div.text.content",
+  "scope_tables_code": "div.text.svelte-h44pz9 < div.text.content",
+  "headings": 8,
+  "h1": 0,
+  "h2": 5,
+  "h3": 3,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 24,
+  "list_items": 0,
+  "links": 9
+ },
+ "stats": {
+  "main_text_chars": 52335,
+  "page_text_chars": 53925,
+  "prose_blocks": 33
+ }
+}

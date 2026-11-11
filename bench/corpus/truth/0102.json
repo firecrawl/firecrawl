@@ -1,0 +1,73 @@
+{
+ "id": "0102",
+ "url": "https://github.com/junegunn/fzf",
+ "category": "github",
+ "container": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd",
+ "container_rule": "hint:github-readme",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "junegunn/fzf"
+  },
+  {
+   "kind": "early",
+   "text": "fzf is a general-purpose command-line fuzzy finder and an interactive terminal toolkit",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "mid",
+   "text": "By setting up shell integration, you can use the following key bindings",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "late",
+   "text": "I would like to thank all the sponsors of this project who",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "table_row",
+   "text": "pkg FreeBSD pkg install fzf",
+   "where": "table < markdown-accessiblity-table < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  },
+  {
+   "kind": "code_line",
+   "text": "ssh) fzf --preview 'dig {}' \"$@\" ;;",
+   "where": "pre < div.highlight.highlight-source-shell < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "GitHub Repository hosting, code review, and",
+   "where": "nav.Nav__iEzvz_ < div.menuWrapper__Vmk5KX < div.menu__2EHTkB < div.bar__cF4m1O < header.root__q6pgdo.HeaderMktg"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms Privacy Security Status Community Docs Contact",
+   "where": "footer.footer.f6 < div.logged-out.env-production < body.logged-out.env-production < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "scope_tables_code": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "headings": 48,
+  "h1": 0,
+  "h2": 16,
+  "h3": 32,
+  "tables": 4,
+  "table_rows": [
+   14,
+   5,
+   9,
+   4
+  ],
+  "code_blocks": 54,
+  "list_items": 150,
+  "links": 100
+ },
+ "stats": {
+  "main_text_chars": 32032,
+  "page_text_chars": 35784,
+  "prose_blocks": 145
+ }
+}

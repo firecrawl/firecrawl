@@ -1,0 +1,66 @@
+{
+ "id": "0153",
+ "url": "https://www.scrapethissite.com/pages/forms/",
+ "category": "tables",
+ "container": "div.container < section#hockey < div#page",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Hockey Teams: Forms, Searching and Pagination 25 items",
+   "where": "h1 < div.col-md-12 < div.row < div.container < section#hockey"
+  },
+  {
+   "kind": "early",
+   "text": "Browse through a database of NHL team stats since 1990",
+   "where": "p.lead < div.col-md-12 < div.row < div.container < section#hockey"
+  },
+  {
+   "kind": "mid",
+   "text": "There are 8 video lessons that show you how to scrape this",
+   "where": "p < div.col-md-6 < div.row < div.container < section#hockey"
+  },
+  {
+   "kind": "extra",
+   "text": "Practice building a scraper that handles common website interface components",
+   "where": "p.lead < div.col-md-12 < div.row < div.container < section#hockey"
+  },
+  {
+   "kind": "table_row",
+   "text": "New York Rangers 1990 36",
+   "where": "table.table < div.container < section#hockey < div#page < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Scrape This Site Sandbox Lessons FAQ",
+   "where": "nav#site-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Lessons and Videos © Hartley Brody 2023",
+   "where": "section#footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.container < section#hockey",
+  "scope_tables_code": "div.container < section#hockey",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   26
+  ],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 2
+ },
+ "stats": {
+  "main_text_chars": 1772,
+  "page_text_chars": 1854,
+  "prose_blocks": 2
+ }
+}

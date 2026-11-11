@@ -1,0 +1,81 @@
+{
+ "id": "0151",
+ "url": "https://en.wikipedia.org/wiki/Periodic_table",
+ "category": "tables",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Periodic table",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "The periodic table, also known as the periodic table of the elements",
+   "where": "p#mwHA < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "As elements in the same group share the same valence configurations, they",
+   "where": "p#mwDGg < section#mwCks < section#mwCWg < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "Alternative periodic tables are often developed to highlight or emphasize chemical or",
+   "where": "p#mwEko < section#mwEi4 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "table_row",
+   "text": "Period 2 Li Be",
+   "where": "table < div.mw-collapsible-content < div#mw3Q.mw-collapsible.uncollapsed < section#mwwA < section#mwQg"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 22 October",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 31,
+  "h1": 0,
+  "h2": 13,
+  "h3": 18,
+  "tables": 11,
+  "table_rows": [
+   12,
+   13,
+   7,
+   10,
+   3,
+   5,
+   7,
+   8,
+   12,
+   10,
+   11
+  ],
+  "code_blocks": 0,
+  "list_items": 32,
+  "links": 2130
+ },
+ "stats": {
+  "main_text_chars": 191964,
+  "page_text_chars": 206039,
+  "prose_blocks": 132
+ }
+}

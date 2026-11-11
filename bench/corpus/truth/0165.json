@@ -1,0 +1,66 @@
+{
+ "id": "0165",
+ "url": "https://expressjs.com/en/guide/routing.html",
+ "category": "code",
+ "container": "article < div.doc-layout < div.container",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Routing",
+   "where": "h1#overview < article < div.doc-layout < div.container < main#main-content"
+  },
+  {
+   "kind": "early",
+   "text": "Routing refers to how an application’s endpoints (URIs) respond to client requests",
+   "where": "p < article < div.doc-layout < div.container < main#main-content"
+  },
+  {
+   "kind": "mid",
+   "text": "Regexp characters are not supported inside string paths, so a parameter cannot",
+   "where": "p < div.alert__description < div.alert.alert--alert < article < div.doc-layout"
+  },
+  {
+   "kind": "late",
+   "text": "To make it accessible, you will need to pass the mergeParams option",
+   "where": "p < article < div.doc-layout < div.container < main#main-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "res.redirect() Redirect a request.",
+   "where": "table < div.table-scroller < article < div.doc-layout < div.container"
+  },
+  {
+   "kind": "code_line",
+   "text": "const birds = require('./birds');",
+   "where": "pre < figure.frame.has-title < div.expressive-code < div.code-tabs__panel < div.code-tabs"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "Copyright OpenJS Foundation and Express.js contributors. All rights reserved. The",
+   "where": "footer.footer < div.flex.flex--column < div.flex-item--grow-1.layout-content < div.flex.flex--row < body"
+  }
+ ],
+ "structure": {
+  "scope": "article < div.doc-layout",
+  "scope_tables_code": "article < div.doc-layout",
+  "headings": 18,
+  "h1": 1,
+  "h2": 7,
+  "h3": 10,
+  "tables": 1,
+  "table_rows": [
+   10
+  ],
+  "code_blocks": 23,
+  "list_items": 2,
+  "links": 42
+ },
+ "stats": {
+  "main_text_chars": 20276,
+  "page_text_chars": 22343,
+  "prose_blocks": 44
+ }
+}

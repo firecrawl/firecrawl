@@ -1,0 +1,49 @@
+{
+ "id": "0050",
+ "url": "https://simonwillison.net/2024/Dec/31/llms-in-2024/",
+ "category": "blog",
+ "container": "div < div.entry.entryPage < div#primary",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Simon Willison’s Weblog",
+   "outside_container": true,
+   "where": "h1 < div#smallhead-inner < div#smallhead < body.smallhead < html"
+  },
+  {
+   "kind": "early",
+   "text": "A lot has happened in the world of Large Language Models over",
+   "where": "p < div < div.entry.entryPage < div#primary < div#wrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "We completely pivoted to let it rip",
+   "where": "p < blockquote < div < div.entry.entryPage < div#primary"
+  },
+  {
+   "kind": "late",
+   "text": "Because I undoubtedly missed a whole bunch of things, here’s every long-form",
+   "where": "p < div < div.entry.entryPage < div#primary < div#wrapper"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "div < div.entry.entryPage",
+  "scope_tables_code": "div < div.entry.entryPage",
+  "headings": 1,
+  "h1": 0,
+  "h2": 1,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 1,
+  "list_items": 96,
+  "links": 207
+ },
+ "stats": {
+  "main_text_chars": 40605,
+  "page_text_chars": 42248,
+  "prose_blocks": 157
+ }
+}

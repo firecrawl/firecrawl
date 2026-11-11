@@ -1,0 +1,66 @@
+{
+ "id": "0002",
+ "url": "https://docs.python.org/3/library/asyncio-task.html",
+ "category": "docs",
+ "container": "div.body < div.bodywrapper < div.documentwrapper",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Coroutines and tasks",
+   "where": "h1 < section#coroutines-and-tasks < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "early",
+   "text": "For example, the following snippet of code prints “hello”, waits 1 second",
+   "where": "p < section#coroutines < section#coroutines-and-tasks < div.body < div.bodywrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "Return the current deadline, or None if the current deadline is not",
+   "where": "p < dd < dl.py.method < div < blockquote"
+  },
+  {
+   "kind": "late",
+   "text": "Note that if this number is greater than zero but the Task",
+   "where": "p < dd < dl.py.method < dd < dl.py.class"
+  },
+  {
+   "kind": "code_line",
+   "text": "res = await something()",
+   "where": "pre < div.highlight < div.highlight-python3.notranslate < dd < dl.py.function"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Previous topic Runners Next topic Streams",
+   "where": "nav.menu < div.menu-wrapper < div.mobile-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright 2001 Python Software Foundation. This page is licensed",
+   "where": "div.footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#coroutines-and-tasks < div.body",
+  "scope_tables_code": "section#coroutines-and-tasks < div.body",
+  "headings": 16,
+  "h1": 1,
+  "h2": 15,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   4
+  ],
+  "code_blocks": 32,
+  "list_items": 11,
+  "links": 213
+ },
+ "stats": {
+  "main_text_chars": 44304,
+  "page_text_chars": 45951,
+  "prose_blocks": 175
+ }
+}

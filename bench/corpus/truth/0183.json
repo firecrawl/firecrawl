@@ -1,0 +1,59 @@
+{
+ "id": "0183",
+ "url": "https://curl.se/docs/manpage.html",
+ "category": "long",
+ "container": "div.contents < div.main < body",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "curl man page",
+   "where": "h1 < div.contents < div.main < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "curl is a tool for transferring data from or to a server",
+   "where": "p.level0 < div.contents < div.main < body < html"
+  },
+  {
+   "kind": "mid",
+   "text": "Without this option set, curl guesses protocol based on the hostname, see",
+   "where": "p.level1 < div.contents < div.main < body < html"
+  },
+  {
+   "kind": "late",
+   "text": "Daniel Stenberg is the main author, but the whole list of contributors",
+   "where": "p.level0 < div.contents < div.main < body < html"
+  },
+  {
+   "kind": "code_line",
+   "text": "curl -o aa example.com -o bb example.net",
+   "where": "pre.level1 < div.contents < div.main < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Docs Overview Project",
+   "where": "nav.sitenav < div.main < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.contents < div.main",
+  "scope_tables_code": "div.contents < div.main",
+  "headings": 21,
+  "h1": 1,
+  "h2": 20,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 334,
+  "list_items": 0,
+  "links": 1443
+ },
+ "stats": {
+  "main_text_chars": 265043,
+  "page_text_chars": 265729,
+  "prose_blocks": 1480
+ }
+}

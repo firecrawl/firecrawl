@@ -1,0 +1,48 @@
+{
+ "id": "0110",
+ "url": "https://news.ycombinator.com/item?id=1",
+ "category": "forum",
+ "container": "td < tr#bigbox < table#hnmain",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Y Combinator"
+  },
+  {
+   "kind": "early",
+   "text": "Is there anywhere to eat on Sandhill Road",
+   "where": "div.commtext.c00 < div.comment < td.default < tr < table"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Hacker News new | past | comments | ask |",
+   "where": "span.pagetop < td < tr < table < td"
+  },
+  {
+   "kind": "footer",
+   "text": "Guidelines | FAQ | Lists | API |",
+   "where": "span.yclinks < center < td < tr < table#hnmain"
+  }
+ ],
+ "structure": {
+  "scope": "td < tr#bigbox",
+  "scope_tables_code": "td < tr#bigbox",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 17
+ },
+ "stats": {
+  "main_text_chars": 314,
+  "page_text_chars": 464,
+  "prose_blocks": 2
+ }
+}

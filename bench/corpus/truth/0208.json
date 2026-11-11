@@ -1,0 +1,59 @@
+{
+ "id": "0208",
+ "url": "test-site:/blog/launch-week-iii-day-6-firecrawl-mcp/",
+ "category": "test-site",
+ "container": "article < main < body",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Firecrawl MCP Upgrades: Launch Week III - Day 6",
+   "where": "h1 < div.title < div.prose < article < main"
+  },
+  {
+   "kind": "early",
+   "text": "Welcome to Launch Week III, Day 6 — Firecrawl MCP Upgrades",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "mid",
+   "text": "The Firecrawl MCP server now supports our new FIRE-1 model",
+   "where": "p < div.prose < article < main < body"
+  },
+  {
+   "kind": "late",
+   "text": "Check out our updated docs and MCP repo",
+   "where": "p < div.prose < article < main < body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose < article",
+  "scope_tables_code": "div.prose < article",
+  "headings": 4,
+  "h1": 1,
+  "h2": 3,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 7,
+  "links": 2
+ },
+ "stats": {
+  "main_text_chars": 988,
+  "page_text_chars": 1238,
+  "prose_blocks": 9
+ }
+}

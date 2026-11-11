@@ -1,0 +1,64 @@
+{
+ "id": "0054",
+ "url": "https://eli.thegreenplace.net/2018/type-erasure-and-reification/",
+ "category": "blog",
+ "container": "article < section#content < div.row",
+ "container_rule": "article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Type erasure and reification",
+   "where": "h1 < header.page-header < article < section#content < div.row"
+  },
+  {
+   "kind": "early",
+   "text": "In this post I'd like to discuss the concepts of type erasure",
+   "where": "p < div.entry-content < article < section#content < div.row"
+  },
+  {
+   "kind": "mid",
+   "text": "The first call will successfully invoke derivedfunc; the second will not, because",
+   "where": "p < div#reification-retaining-types-at.section < div.entry-content < article < section#content"
+  },
+  {
+   "kind": "late",
+   "text": "Fire at run-time, because there's no static type checking",
+   "where": "p < div#reification-in-dynamically-typ.section < div.entry-content < article < section#content"
+  },
+  {
+   "kind": "code_line",
+   "text": "Exception in thread \"main\" java.lang.ArrayStoreException: java.lang.Integer",
+   "where": "pre < div.highlight < div#reification-retaining-types-at.section < div.entry-content < article"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Eli Bendersky's website",
+   "where": "div.navbar.navbar-default < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2003-2026 Eli Bendersky Back to top",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.entry-content < article",
+  "scope_tables_code": "div.entry-content < article",
+  "headings": 4,
+  "h1": 0,
+  "h2": 4,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 11,
+  "list_items": 3,
+  "links": 9
+ },
+ "stats": {
+  "main_text_chars": 9642,
+  "page_text_chars": 9745,
+  "prose_blocks": 27
+ }
+}

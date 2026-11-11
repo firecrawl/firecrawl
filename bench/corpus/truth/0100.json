@@ -1,0 +1,64 @@
+{
+ "id": "0100",
+ "url": "https://github.com/tokio-rs/tokio",
+ "category": "github",
+ "container": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd",
+ "container_rule": "hint:github-readme",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Tokio",
+   "where": "h1.heading-element < div.markdown-heading < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  },
+  {
+   "kind": "early",
+   "text": "A runtime for writing reliable, asynchronous, and slim applications with the Rust",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "mid",
+   "text": "warp: A super-easy, composable, web server framework for warp speeds",
+   "where": "p < li < ul < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J"
+  },
+  {
+   "kind": "late",
+   "text": "Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in",
+   "where": "p < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd < div.Box_1__CzsAnb"
+  },
+  {
+   "kind": "code_line",
+   "text": "use tokio::io::{AsyncReadExt, AsyncWriteExt};",
+   "where": "pre < div.highlight.highlight-source-rust < article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J < div.Box_2__zaRucd"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "GitHub Repository hosting, code review, and",
+   "where": "nav.Nav__iEzvz_ < div.menuWrapper__Vmk5KX < div.menu__2EHTkB < div.bar__cF4m1O < header.root__q6pgdo.HeaderMktg"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms Privacy Security Status Community Docs Contact",
+   "where": "footer.footer.f6 < div.logged-out.env-production < body.logged-out.env-production < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "scope_tables_code": "article.markdown-body.entry-content < div.js-snippet-clipboard-cop.SharedMarkdownContent__J",
+  "headings": 13,
+  "h1": 1,
+  "h2": 10,
+  "h3": 2,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 3,
+  "list_items": 41,
+  "links": 30
+ },
+ "stats": {
+  "main_text_chars": 6506,
+  "page_text_chars": 10500,
+  "prose_blocks": 36
+ }
+}

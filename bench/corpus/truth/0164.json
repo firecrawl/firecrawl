@@ -1,0 +1,69 @@
+{
+ "id": "0164",
+ "url": "https://fastapi.tiangolo.com/tutorial/first-steps/",
+ "category": "code",
+ "container": "article.md-content__inner.md-typeset < div.md-content < div.md-main__inner.md-grid",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "First Steps",
+   "where": "h1#first-steps < article.md-content__inner.md-typeset < div.md-content < div.md-main__inner.md-grid < main.md-main"
+  },
+  {
+   "kind": "early",
+   "text": "The simplest FastAPI file could look like this",
+   "where": "p < article.md-content__inner.md-typeset < div.md-content < div.md-main__inner.md-grid < main.md-main"
+  },
+  {
+   "kind": "mid",
+   "text": "This will be the main point of interaction to create all your",
+   "where": "p < article.md-content__inner.md-typeset < div.md-content < div.md-main__inner.md-grid < main.md-main"
+  },
+  {
+   "kind": "late",
+   "text": "Follow your cloud provider's guides to deploy FastAPI apps with them",
+   "where": "p < article.md-content__inner.md-typeset < div.md-content < div.md-main__inner.md-grid < main.md-main"
+  },
+  {
+   "kind": "code_line",
+   "text": "Deploying to FastAPI Cloud...",
+   "where": "pre < div.highlight < div.termy < article.md-content__inner.md-typeset < div.md-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "en - English de - Deutsch",
+   "where": "nav.md-header__inner.md-grid < header.md-header.md-header--shadow < body < html.no-js"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "trademark is owned by @tiangolo and is registered in the",
+   "where": "footer.md-footer < div.md-container < body < html.no-js"
+  },
+  {
+   "kind": "footer",
+   "text": "Previous Tutorial - User Guide Next Path Parameters",
+   "where": "footer.md-footer < div.md-container < body < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "article.md-content__inner.md-typeset < div.md-content",
+  "scope_tables_code": "article.md-content__inner.md-typeset < div.md-content",
+  "headings": 16,
+  "h1": 1,
+  "h2": 2,
+  "h3": 13,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 21,
+  "list_items": 30,
+  "links": 42
+ },
+ "stats": {
+  "main_text_chars": 12077,
+  "page_text_chars": 17473,
+  "prose_blocks": 66
+ }
+}

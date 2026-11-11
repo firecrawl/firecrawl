@@ -1,0 +1,64 @@
+{
+ "id": "0132",
+ "url": "https://www.postgresql.org/about/",
+ "category": "product",
+ "container": "div#pgContentWrap < div.col-lg-10 < div.row",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "About",
+   "where": "h1 < div#pgContentWrap < div.col-lg-10 < div.row < div.container-fluid.margin"
+  },
+  {
+   "kind": "early",
+   "text": "PostgreSQL is a powerful, open source object-relational database system that uses and",
+   "where": "p < div#pgContentWrap < div.col-lg-10 < div.row < div.container-fluid.margin"
+  },
+  {
+   "kind": "mid",
+   "text": "Below is an inexhaustive list of various features found in PostgreSQL, with",
+   "where": "p < div#pgContentWrap < div.col-lg-10 < div.row < div.container-fluid.margin"
+  },
+  {
+   "kind": "late",
+   "text": "We also have many mailing lists where you can connect and participate",
+   "where": "p < div#pgContentWrap < div.col-lg-10 < div.row < div.container-fluid.margin"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Home About Download Documentation Community Developers",
+   "where": "nav.navbar.navbar-expand-lg < div.col < div.row.justify-content-md-cente < div.container-fluid < body"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Copyright © 1996-2026 The PostgreSQL Global Development Group",
+   "where": "footer#footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Policies | Code of Conduct | About PostgreSQL",
+   "where": "footer#footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div#pgContentWrap < div.col-lg-10",
+  "scope_tables_code": "div#pgContentWrap < div.col-lg-10",
+  "headings": 14,
+  "h1": 1,
+  "h2": 5,
+  "h3": 8,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 44,
+  "links": 16
+ },
+ "stats": {
+  "main_text_chars": 6373,
+  "page_text_chars": 6782,
+  "prose_blocks": 21
+ }
+}

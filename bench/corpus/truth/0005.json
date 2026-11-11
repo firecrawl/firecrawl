@@ -1,0 +1,69 @@
+{
+ "id": "0005",
+ "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Basic_concepts_of_grid_layout",
+ "category": "docs",
+ "container": "main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Basic concepts of grid layout",
+   "where": "h1 < div.layout__header.reference-layout__header < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main"
+  },
+  {
+   "kind": "early",
+   "text": "A grid is a set of intersecting horizontal and vertical lines defining",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "mid",
+   "text": "You can also define a set size for tracks created in the",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "late",
+   "text": "In this overview, we took a very quick look at the possibilities",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "code_line",
+   "text": "border: 2px solid #ffec99;",
+   "where": "pre.brush:.css < div.code-example < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "HTML: Markup language HTML reference Elements",
+   "where": "nav.navigation < header.page-layout__header < body.page-layout < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "©1998–2026 by individual mozilla.org contributors. Content available under a Creative",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Your blueprint for a better internet. MDN About",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "scope_tables_code": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "headings": 28,
+  "h1": 0,
+  "h2": 10,
+  "h3": 18,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 28,
+  "list_items": 0,
+  "links": 59
+ },
+ "stats": {
+  "main_text_chars": 19965,
+  "page_text_chars": 43255,
+  "prose_blocks": 52
+ }
+}

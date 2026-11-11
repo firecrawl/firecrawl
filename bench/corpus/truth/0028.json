@@ -1,0 +1,69 @@
+{
+ "id": "0028",
+ "url": "https://go.dev/doc/effective_go",
+ "category": "docs",
+ "container": "article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Effective Go",
+   "where": "h1 < article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site < html"
+  },
+  {
+   "kind": "early",
+   "text": "Go is an open-source programming language that focuses on simplicity, reliability, and",
+   "where": "p < article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site < html"
+  },
+  {
+   "kind": "mid",
+   "text": "Variables can be initialized just like constants but the initializer can be",
+   "where": "p < article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site < html"
+  },
+  {
+   "kind": "late",
+   "text": "And there you have it: a useful web server in a few",
+   "where": "p < article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site < html"
+  },
+  {
+   "kind": "code_line",
+   "text": "func Printf(format string, v ...interface{}) (n int, err error) {",
+   "where": "pre < article.Doc.Article < main#main-content.SiteContent.SiteContent--default < body.Site < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Skip to Main Content Why Go",
+   "where": "nav.Header-nav < div.Header.Header--dark < header.Site-header.js-siteHeader < body.Site < html"
+  },
+  {
+   "kind": "cookie",
+   "text": "go.dev uses cookies from Google to deliver and enhance the quality of",
+   "where": "section.Cookie-notice.js-cookieNotice < body.Site < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Copyright Terms of Service Privacy Policy Report an Issue",
+   "where": "div.Footer < footer.Site-footer < body.Site < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.Doc.Article < main#main-content.SiteContent.SiteContent--default",
+  "scope_tables_code": "article.Doc.Article < main#main-content.SiteContent.SiteContent--default",
+  "headings": 60,
+  "h1": 1,
+  "h2": 16,
+  "h3": 43,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 153,
+  "list_items": 8,
+  "links": 31
+ },
+ "stats": {
+  "main_text_chars": 95899,
+  "page_text_chars": 97796,
+  "prose_blocks": 281
+ }
+}

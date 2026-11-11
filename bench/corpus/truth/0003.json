@@ -1,0 +1,74 @@
+{
+ "id": "0003",
+ "url": "https://docs.python.org/3/howto/logging.html",
+ "category": "docs",
+ "container": "div.body < div.bodywrapper < div.documentwrapper",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Logging HOWTO",
+   "where": "h1 < section#logging-howto < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "early",
+   "text": "For links to reference information and a logging cookbook, please see",
+   "where": "p#logging-basic-tutorial < section#logging-howto < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "Formatter objects configure the final order, structure, and contents of the log",
+   "where": "p < section#formatters < section#advanced-logging-tutorial < section#logging-howto < div.body"
+  },
+  {
+   "kind": "late",
+   "text": "Also note that the core logging module only includes the basic handlers",
+   "where": "p < section#optimization < section#logging-howto < div.body < div.bodywrapper"
+  },
+  {
+   "kind": "table_row",
+   "text": "CRITICAL 50",
+   "where": "table.docutils.align-default < section#logging-levels < section#logging-howto < div.body < div.bodywrapper"
+  },
+  {
+   "kind": "code_line",
+   "text": "logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')",
+   "where": "pre < div.highlight < div.highlight-python3.notranslate < section#displaying-the-date-time-in-me < section#basic-logging-tutorial"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Previous topic Functional Programming HOWTO Next",
+   "where": "nav.menu < div.menu-wrapper < div.mobile-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright 2001 Python Software Foundation. This page is licensed",
+   "where": "div.footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#logging-howto < div.body",
+  "scope_tables_code": "section#logging-howto < div.body",
+  "headings": 24,
+  "h1": 1,
+  "h2": 8,
+  "h3": 15,
+  "tables": 4,
+  "table_rows": [
+   6,
+   6,
+   7,
+   6
+  ],
+  "code_blocks": 28,
+  "list_items": 31,
+  "links": 176
+ },
+ "stats": {
+  "main_text_chars": 40891,
+  "page_text_chars": 42888,
+  "prose_blocks": 126
+ }
+}

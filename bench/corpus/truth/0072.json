@@ -1,0 +1,64 @@
+{
+ "id": "0072",
+ "url": "https://en.wikisource.org/wiki/A_Modest_Proposal",
+ "category": "article",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "The Works of the Rev. Jonathan Swift/Volume 9/A Modest Proposal",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "FOR PREVENTING THE CHILDREN OF POOR PEOPLE IN IRELAND FROM BEING A",
+   "where": "p#mwFQ < div#mwFA.wst-center.tiInherit < div#mwBQ.prp-pages-output < section#mwAQ < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "mid",
+   "text": "A very worthy person, a true lover of his country, and whose",
+   "where": "p#mwZA < div#mwBQ.prp-pages-output < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "I profess in the sincerity of my heart, that I have not",
+   "where": "p#mwnQ < div#mwBQ.prp-pages-output < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main Page Community portal Central",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike License; additional terms may apply. By using",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 17 March",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div#mwBQ.prp-pages-output < section#mwAQ",
+  "scope_tables_code": "div#mwBQ.prp-pages-output < section#mwAQ",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 28
+ },
+ "stats": {
+  "main_text_chars": 20244,
+  "page_text_chars": 21883,
+  "prose_blocks": 34
+ }
+}

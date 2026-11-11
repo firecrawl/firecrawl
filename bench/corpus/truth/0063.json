@@ -1,0 +1,64 @@
+{
+ "id": "0063",
+ "url": "https://www.theguardian.com/technology/2023/may/02/geoffrey-hinton-godfather-of-ai-quits-google-warns-dangers-of-machine-learning",
+ "category": "article",
+ "container": "article.dcr-44wfm0 < div#article < main",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Godfather of AI’ Geoffrey Hinton quits Google and warns over dangers of misinformation",
+   "where": "h1.dcr-l0wuod < div.dcr-6mja0y < div.dcr-1padgi9 < article.dcr-44wfm0 < div#article"
+  },
+  {
+   "kind": "early",
+   "text": "The man often touted as the godfather of AI has quit Google",
+   "where": "p.dcr-1s160rg < div.article-body-commercial-.article-body-viewer-sele < div#maincontent.dcr-lwjnk2 < div.dcr-uwflda < div.dcr-1fm8akb"
+  },
+  {
+   "kind": "mid",
+   "text": "Valérie Pisano, the chief executive of Mila – the Quebec Artificial Intelligence",
+   "where": "p.dcr-1s160rg < div.article-body-commercial-.article-body-viewer-sele < div#maincontent.dcr-lwjnk2 < div.dcr-uwflda < div.dcr-1fm8akb"
+  },
+  {
+   "kind": "late",
+   "text": "When it comes to any digital data you see – audio or",
+   "where": "p.dcr-1s160rg < div.article-body-commercial-.article-body-viewer-sele < div#maincontent.dcr-lwjnk2 < div.dcr-uwflda < div.dcr-1fm8akb"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "US edition UK edition Australia edition",
+   "where": "nav.dcr-lypmm < gu-island < header < div#bannerandheader < body"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Guardian News & Media Limited or its affiliated",
+   "where": "footer.dcr-1xdhyk6 < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "News Opinion Sport Culture Lifestyle Original reporting and",
+   "where": "footer.dcr-1xdhyk6 < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.article-body-commercial-.article-body-viewer-sele < div#maincontent.dcr-lwjnk2",
+  "scope_tables_code": "div.article-body-commercial-.article-body-viewer-sele < div#maincontent.dcr-lwjnk2",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 8
+ },
+ "stats": {
+  "main_text_chars": 4840,
+  "page_text_chars": 7001,
+  "prose_blocks": 17
+ }
+}

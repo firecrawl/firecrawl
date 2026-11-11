@@ -1,0 +1,59 @@
+{
+ "id": "0170",
+ "url": "https://craftinginterpreters.com/scanning.html",
+ "category": "code",
+ "container": "article.chapter < div.page < body#top",
+ "container_rule": "article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Scanning",
+   "where": "h1 < article.chapter < div.page < body#top < html"
+  },
+  {
+   "kind": "early",
+   "text": "Anything worth doing is worth overdoing",
+   "where": "p < blockquote < article.chapter < div.page < body#top"
+  },
+  {
+   "kind": "mid",
+   "text": "Using match(), we recognize these lexemes in two stages",
+   "where": "p < article.chapter < div.page < body#top < html"
+  },
+  {
+   "kind": "late",
+   "text": "If you’re designing a new language, you almost surely should avoid an",
+   "where": "p < div.design-note < article.chapter < div.page < body#top"
+  },
+  {
+   "kind": "code_line",
+   "text": "case '\"': string(); break;",
+   "where": "pre.insert < div.codehilite < article.chapter < div.page < body#top"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Scanning 4 4.1 The Interpreter Framework",
+   "where": "nav.wide < body#top < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.chapter < div.page",
+  "scope_tables_code": "article.chapter < div.page",
+  "headings": 18,
+  "h1": 1,
+  "h2": 9,
+  "h3": 8,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 63,
+  "list_items": 11,
+  "links": 25
+ },
+ "stats": {
+  "main_text_chars": 40647,
+  "page_text_chars": 41174,
+  "prose_blocks": 108
+ }
+}

@@ -1,0 +1,71 @@
+{
+ "id": "0141",
+ "url": "https://en.wikipedia.org/wiki/List_of_chemical_elements",
+ "category": "tables",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "List of chemical elements",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "118 chemical elements have been identified and named officially by IUPAC",
+   "where": "p#mwAg < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "Extended periodic table — Periodic table with eight or more periods",
+   "where": "li#mwBg4 < ul#mwBgU < section#mwBgQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "Atoms made thinkable, an interactive visualisation of the elements allowing physical and",
+   "where": "li#mwBlc < ul#mwBlY < section#mwBlU < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "60 Nd Neodymium",
+   "where": "table.wikitable.sortable < section#mwHw < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 10 November",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body",
+  "scope_tables_code": "section#mwHw < div.mw-content-ltr.mw-parser-output",
+  "headings": 4,
+  "h1": 0,
+  "h2": 4,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   120
+  ],
+  "code_blocks": 0,
+  "list_items": 6,
+  "links": 316
+ },
+ "stats": {
+  "main_text_chars": 20468,
+  "page_text_chars": 25709,
+  "prose_blocks": 4
+ }
+}

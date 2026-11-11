@@ -1,0 +1,66 @@
+{
+ "id": "0080",
+ "url": "https://de.wikipedia.org/wiki/Johann_Sebastian_Bach",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Johann Sebastian Bach",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "Er war der prominenteste Vertreter der Musikerfamilie Bach und in seiner Hauptschaffensperiode",
+   "where": "p#mwGw < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "Einige moderne Musikwissenschaftler ziehen die Identität der Gebeine in Zweifel und fordern",
+   "where": "p#mwA60 < section#mwA1M < section#mwcg < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "Bach und seine Werke werden auf zahlreichen deutschen und ausländischen Briefmarken und",
+   "where": "p#mwB5w < section#mwB5s < section#mwBxc < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "1724 Laurentiuskirche in Stöntzsch J. C. Schmieder",
+   "where": "table#mwBRs.wikitable < section#mwBRo < section#mwA9M < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Hauptseite Themenportale Zufälliger Artikel Spezialseiten",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "Diese Seite wurde zuletzt am 3. Oktober 2026",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 41,
+  "h1": 0,
+  "h2": 10,
+  "h3": 31,
+  "tables": 1,
+  "table_rows": [
+   22
+  ],
+  "code_blocks": 0,
+  "list_items": 162,
+  "links": 1049
+ },
+ "stats": {
+  "main_text_chars": 133696,
+  "page_text_chars": 143209,
+  "prose_blocks": 243
+ }
+}

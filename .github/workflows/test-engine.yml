@@ -1,0 +1,52 @@
+name: Engine Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/engine/**
+      - apps/api/native/src/**
+      - .github/workflows/test-engine.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/engine/target
+          key: ${{ runner.os }}-cargo-engine-${{ hashFiles('apps/engine/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-engine-
+
+      # The engine compiles the API's native cleaning code directly, so this
+      # also checks those shared files.
+      - name: Check formatting
+        working-directory: ./apps/engine
+        run: cargo fmt --check
+
+      - name: Build
+        working-directory: ./apps/engine
+        run: cargo build --locked
+
+      - name: Run unit tests
+        working-directory: ./apps/engine
+        run: cargo test --locked

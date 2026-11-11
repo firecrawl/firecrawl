@@ -1,0 +1,81 @@
+{
+ "id": "0147",
+ "url": "https://docs.python.org/3/library/stdtypes.html",
+ "category": "tables",
+ "container": "div.body < div.bodywrapper < div.documentwrapper",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Built-in Types",
+   "where": "h1 < section#built-in-types < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "early",
+   "text": "The following sections describe the standard types that are built into the",
+   "where": "p < section#built-in-types < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "Both bytes and bytearray objects support the",
+   "where": "p#index-50 < section#bytes-and-bytearray-operations < section#binary-sequence-types-bytes-by < section#built-in-types < div.body"
+  },
+  {
+   "kind": "late",
+   "text": "If you need to disable it entirely, set it to 0",
+   "where": "p < section#recommended-configuration < section#integer-string-conversion-leng < section#built-in-types < div.body"
+  },
+  {
+   "kind": "table_row",
+   "text": "'c' Single byte (accepts integer or single byte objects).",
+   "where": "table.docutils.align-default < section#printf-style-bytes-formatting < section#binary-sequence-types-bytes-by < section#built-in-types < div.body"
+  },
+  {
+   "kind": "code_line",
+   "text": "... {b'language': b\"Python\", b\"number\": 2})",
+   "where": "pre < div.highlight < div.doctest.highlight-default < section#printf-style-bytes-formatting < section#binary-sequence-types-bytes-by"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Previous topic Python built-ins reference Next",
+   "where": "nav.menu < div.menu-wrapper < div.mobile-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright 2001 Python Software Foundation. This page is licensed",
+   "where": "div.footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#built-in-types < div.body",
+  "scope_tables_code": "section#built-in-types < div.body",
+  "headings": 54,
+  "h1": 1,
+  "h2": 16,
+  "h3": 37,
+  "tables": 11,
+  "table_rows": [
+   4,
+   9,
+   17,
+   7,
+   11,
+   9,
+   12,
+   6,
+   18,
+   6,
+   19
+  ],
+  "code_blocks": 172,
+  "list_items": 205,
+  "links": 1141
+ },
+ "stats": {
+  "main_text_chars": 192526,
+  "page_text_chars": 196581,
+  "prose_blocks": 694
+ }
+}

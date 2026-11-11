@@ -1,0 +1,64 @@
+{
+ "id": "0168",
+ "url": "https://pandas.pydata.org/docs/user_guide/10min.html",
+ "category": "code",
+ "container": "article.bd-article < div.bd-article-container < div.bd-content",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "10 minutes to pandas",
+   "where": "h1 < section#minutes-to-pandas < article.bd-article < div.bd-article-container < div.bd-content"
+  },
+  {
+   "kind": "early",
+   "text": "This is a short introduction to pandas, geared mainly for new users",
+   "where": "p < section#minutes-to-pandas < article.bd-article < div.bd-article-container < div.bd-content"
+  },
+  {
+   "kind": "mid",
+   "text": "gets the boolean mask where values are nan",
+   "where": "p < section#missing-data < section#minutes-to-pandas < article.bd-article < div.bd-article-container"
+  },
+  {
+   "kind": "late",
+   "text": "for an explanation and what to do",
+   "where": "p < section#gotchas < section#minutes-to-pandas < article.bd-article < div.bd-article-container"
+  },
+  {
+   "kind": "code_line",
+   "text": "2013-01-01 0.000000 0.000000 -1.509059 5.0 5.0 1.0",
+   "where": "pre < div.highlight < div.highlight-ipython.notranslate < section#missing-data < section#minutes-to-pandas"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Getting started User Guide API reference",
+   "where": "nav < div.navbar-item < div.me-auto.navbar-header-items__cen < div.navbar-header-items < div.bd-header__inner.bd-page-width"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026, pandas via NumFOCUS, Inc. Created using Sphinx 9.1.1",
+   "where": "footer.bd-footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#minutes-to-pandas < article.bd-article",
+  "scope_tables_code": "section#minutes-to-pandas < article.bd-article",
+  "headings": 31,
+  "h1": 1,
+  "h2": 14,
+  "h3": 16,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 80,
+  "list_items": 5,
+  "links": 132
+ },
+ "stats": {
+  "main_text_chars": 30542,
+  "page_text_chars": 32175,
+  "prose_blocks": 58
+ }
+}

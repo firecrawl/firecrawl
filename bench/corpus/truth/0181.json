@@ -1,0 +1,72 @@
+{
+ "id": "0181",
+ "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+ "category": "long",
+ "container": "body < html.RFC.STD",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "RFC 9110",
+   "where": "h1#rfcnum < body < html.RFC.STD"
+  },
+  {
+   "kind": "early",
+   "text": "This document updates RFC 3864 and obsoletes RFCs 2818, 7231, 7232, 7233",
+   "where": "p#section-abstract-2 < section#section-abstract < body < html.RFC.STD"
+  },
+  {
+   "kind": "mid",
+   "text": "Likewise, upon receipt of a request that omits proxy credentials or contains",
+   "where": "p#section-11.4-4 < section#section-11.4 < div#credentials < section#section-11 < div#authentication"
+  },
+  {
+   "kind": "late",
+   "text": "Alan Egerton, Alex Rousskov, Amichai Rothman, Amos Jeffries, Anders Kaseorg, Andreas Gebhardt",
+   "where": "p#appendix-C-4 < section#appendix-C < div#acks < body < html.RFC.STD"
+  },
+  {
+   "kind": "table_row",
+   "text": "405 Method Not Allowed 15.5.6",
+   "where": "table#table-8.center < div#iana.status.code.registration. < section#section-18.3 < div#status.code.registration < section#section-18"
+  },
+  {
+   "kind": "code_line",
+   "text": "User-Agent: CERN-LineMode/2.15 libwww/2.17b3",
+   "where": "pre.lang-http-message.sourcecode < div#section-10.1.5-7 < section#section-10.1.5 < div#field.user-agent < section#section-10.1"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "body < html.RFC.STD",
+  "scope_tables_code": "body < html.RFC.STD",
+  "headings": 152,
+  "h1": 2,
+  "h2": 26,
+  "h3": 124,
+  "tables": 13,
+  "table_rows": [
+   2,
+   10,
+   3,
+   5,
+   9,
+   7,
+   7,
+   10,
+   47,
+   44,
+   7,
+   3,
+   2
+  ],
+  "code_blocks": 160,
+  "list_items": 239,
+  "links": 4634
+ },
+ "stats": {
+  "main_text_chars": 450757,
+  "page_text_chars": 450757,
+  "prose_blocks": 1246
+ }
+}

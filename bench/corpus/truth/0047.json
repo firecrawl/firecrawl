@@ -1,0 +1,70 @@
+{
+ "id": "0047",
+ "url": "https://fly.io/blog/sqlite-internals-btree/",
+ "category": "blog",
+ "container": "article.xl:grid.grid-cols-auto-span-auto < main.container.mx-auto < body.post.relative",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "SQLite Internals: Pages & B-trees",
+   "outside_container": true,
+   "where": "h1.relative.w-full < header.max-w-[44rem].mx-auto < main.container.mx-auto < body.post.relative < html.h-full"
+  },
+  {
+   "kind": "early",
+   "text": "Fly.io runs apps close to users around the world, by taking containers",
+   "where": "p < div.lead < section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto < main.container.mx-auto"
+  },
+  {
+   "kind": "mid",
+   "text": "A naive approach to a database would just be to pack records",
+   "where": "p < section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto < main.container.mx-auto < body.post.relative"
+  },
+  {
+   "kind": "late",
+   "text": "I’ll be writing more on SQLite internals in future posts—from rollback journals",
+   "where": "p < section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto < main.container.mx-auto < body.post.relative"
+  },
+  {
+   "kind": "code_line",
+   "text": "0d xx xx 00 03 xx xx xx",
+   "where": "pre.highlight < div.highlight.relative < div.highlight-wrapper.group < section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Need a Logo? View Our Brand",
+   "where": "header.navbar.relative < body.post.relative < html.h-full"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Copyright © 2026 Fly.io",
+   "where": "footer.text-sm.text-gray-400 < body.post.relative < html.h-full"
+  },
+  {
+   "kind": "footer",
+   "text": "Company About Pricing Jobs News Articles Blog Infra",
+   "where": "footer.text-sm.text-gray-400 < body.post.relative < html.h-full"
+  }
+ ],
+ "structure": {
+  "scope": "section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto",
+  "scope_tables_code": "section.relative.max-w-[44rem] < article.xl:grid.grid-cols-auto-span-auto",
+  "headings": 12,
+  "h1": 0,
+  "h2": 3,
+  "h3": 9,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 7,
+  "list_items": 0,
+  "links": 15
+ },
+ "stats": {
+  "main_text_chars": 14260,
+  "page_text_chars": 15617,
+  "prose_blocks": 56
+ }
+}

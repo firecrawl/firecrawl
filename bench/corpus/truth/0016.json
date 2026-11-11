@@ -1,0 +1,69 @@
+{
+ "id": "0016",
+ "url": "https://docs.djangoproject.com/en/5.2/topics/db/queries/",
+ "category": "docs",
+ "container": "article#docs-content < main#main-content < div.container.sidebar-right",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Making queries",
+   "where": "h1 < section#s-making-queries < article#docs-content < main#main-content < div.container.sidebar-right"
+  },
+  {
+   "kind": "early",
+   "text": "Django automatically gives you a database-abstraction API that lets you create",
+   "where": "p < section#s-making-queries < article#docs-content < main#main-content < div.container.sidebar-right"
+  },
+  {
+   "kind": "mid",
+   "text": "pk lookups also work across joins",
+   "where": "p < section#s-the-pk-lookup-shortcut < section#s-retrieving-objects < section#s-making-queries < article#docs-content"
+  },
+  {
+   "kind": "late",
+   "text": "Finally, it’s important to note that the Django database layer is merely",
+   "where": "p < section#s-falling-back-to-raw-sql < section#s-making-queries < article#docs-content < main#main-content"
+  },
+  {
+   "kind": "code_line",
+   "text": "data = models.JSONField(null=True)",
+   "where": "pre < div.highlight < div.highlight-default.notranslate < section#s-querying-jsonfield < section#s-making-queries"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Overview Download Documentation News Code Issues",
+   "where": "nav < div.container.container--flex--wrap--m < header#top < body#generic < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2005-2026 Django Software Foundation and individual contributors. Django is",
+   "where": "div.footer < footer < body#generic < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Django Hosting by In-kind donors Design by Threespot",
+   "where": "div.footer < footer < body#generic < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#s-making-queries < article#docs-content",
+  "scope_tables_code": "section#s-making-queries < article#docs-content",
+  "headings": 31,
+  "h1": 1,
+  "h2": 11,
+  "h3": 19,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 96,
+  "list_items": 2,
+  "links": 219
+ },
+ "stats": {
+  "main_text_chars": 59839,
+  "page_text_chars": 64851,
+  "prose_blocks": 182
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "id": "0214",
+ "url": "test-site:/",
+ "category": "test-site",
+ "container": "main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Firecrawl Test Site",
+   "where": "h1 < main < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "Welcome to the Firecrawl test website",
+   "where": "p < main < body < html"
+  },
+  {
+   "kind": "mid",
+   "text": "This website contains no real content and is not intended to be",
+   "where": "p < main < body < html"
+  },
+  {
+   "kind": "late",
+   "text": "The test blog contains sample posts, learn more on theabout page",
+   "where": "p < main < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Firecrawl. Test website for Firecrawl",
+   "where": "footer < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Policy Report Abuse",
+   "where": "footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "main < body",
+  "scope_tables_code": "main < body",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 6
+ },
+ "stats": {
+  "main_text_chars": 895,
+  "page_text_chars": 1145,
+  "prose_blocks": 4
+ }
+}

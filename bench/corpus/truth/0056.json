@@ -1,0 +1,59 @@
+{
+ "id": "0056",
+ "url": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
+ "category": "blog",
+ "container": "main#main < div.blog-body < div.blog-wrapper.fig-1r6k4w4",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "How Figma’s multiplayer technology works",
+   "where": "h1.fig-1utvdod < div.fig-g51och < section.fig-17hbuxu < div < main#main"
+  },
+  {
+   "kind": "early",
+   "text": "Operational transformation (OT) is a technology for supporting a range of collaboration",
+   "where": "p < div.fig-xqujga < div.fig-1wlyk5q < div.fig-79elbk < div"
+  },
+  {
+   "kind": "mid",
+   "text": "Ok, so we want to sync updates to Figma documents using CRDTs",
+   "where": "p.fig-14u2zfy < div < div < div.fig-1gglwvl < div"
+  },
+  {
+   "kind": "late",
+   "text": "Do you love thinking about collaborative editing, distributed systems, or building scalable",
+   "where": "p.fig-14u2zfy < div < div < div.fig-1gglwvl < div"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Categories Maker Stories Working Well Inside",
+   "where": "nav.blog-nav.fig-1axo93r < div < header.fig-1obf64m < div.blog-body < div.blog-wrapper.fig-1r6k4w4"
+  },
+  {
+   "kind": "footer",
+   "text": "Product Figma Design Figma Make Figma Weave New",
+   "where": "footer.fig-rwo3m5 < div#app.css-14r34si < body < html.__variable_1a606a.__variable_48aa6c"
+  }
+ ],
+ "structure": {
+  "scope": "div.fig-1gglwvl < div",
+  "scope_tables_code": "div.fig-1gglwvl < div",
+  "headings": 11,
+  "h1": 0,
+  "h2": 4,
+  "h3": 7,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 10,
+  "links": 27
+ },
+ "stats": {
+  "main_text_chars": 21293,
+  "page_text_chars": 23199,
+  "prose_blocks": 59
+ }
+}

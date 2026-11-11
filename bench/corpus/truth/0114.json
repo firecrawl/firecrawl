@@ -1,0 +1,59 @@
+{
+ "id": "0114",
+ "url": "https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional/22606",
+ "category": "forum",
+ "container": "div#main-outlet.wrap < body.crawler < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "PEP 703: Making the Global Interpreter Lock Optional",
+   "where": "h1 < div#topic-title < div#main-outlet.wrap < body.crawler < html"
+  },
+  {
+   "kind": "early",
+   "text": "The document is somewhat of a demanding read as it’s one of",
+   "where": "p < div.post < div#post_1.topic-body.crawler-post < div < div#main-outlet.wrap"
+  },
+  {
+   "kind": "mid",
+   "text": "If multiple locks are taken to ensure mutual consistency across multiple resources",
+   "where": "p < div.post < div#post_10.topic-body.crawler-post < div < div#main-outlet.wrap"
+  },
+  {
+   "kind": "late",
+   "text": "Somewhat relatedly, this came up in my feed today about a similar",
+   "where": "p < div.post < div#post_20.topic-body.crawler-post < div < div#main-outlet.wrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Home Categories Guidelines Terms of Service",
+   "where": "nav.crawler-nav < footer.container.wrap < body.crawler < html"
+  },
+  {
+   "kind": "nav",
+   "text": "Discussions on Python.org",
+   "where": "header < body.crawler < html"
+  }
+ ],
+ "structure": {
+  "scope": "div < div#main-outlet.wrap",
+  "scope_tables_code": "div < div#main-outlet.wrap",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 6,
+  "links": 18
+ },
+ "stats": {
+  "main_text_chars": 15525,
+  "page_text_chars": 15680,
+  "prose_blocks": 48
+ }
+}

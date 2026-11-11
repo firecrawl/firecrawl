@@ -1,0 +1,66 @@
+{
+ "id": "0040",
+ "url": "https://github.blog/engineering/infrastructure/githubs-engineering-fundamentals-program-how-we-deliver-on-availability-security-and-accessibility/",
+ "category": "blog",
+ "container": "main#start-of-content < body.wp-singular.post-template-default < html.mt-0",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "GitHub’s Engineering Fundamentals program: How we deliver on availability, security, and accessibility",
+   "where": "h1.h3-mktg.lh-condensed < div.col-12.offset-lg-1 < div.gutter-spacious < div.container-xl.p-responsive-blog < header.position-relative"
+  },
+  {
+   "kind": "early",
+   "text": "How do we ensure over 100 million users across the world have",
+   "where": "p < section.col-12.col-md-8 < div.d-flex.flex-wrap < div.container-xl.mx-auto < main#start-of-content"
+  },
+  {
+   "kind": "mid",
+   "text": "Through the successful implementation of the Fundamentals program, we have effectively managed",
+   "where": "p < section.col-12.col-md-8 < div.d-flex.flex-wrap < div.container-xl.mx-auto < main#start-of-content"
+  },
+  {
+   "kind": "late",
+   "text": "Want to learn more about how we do engineering GitHub",
+   "where": "p < section.col-12.col-md-8 < div.d-flex.flex-wrap < div.container-xl.mx-auto < main#start-of-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "1 incident-readiness",
+   "where": "table < content-table-wrap < div.content-table-wrap < section.col-12.col-md-8 < div.d-flex.flex-wrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Product Features Security Enterprise Customer Stories",
+   "where": "nav.col-6.col-sm-3 < div.d-flex.flex-wrap < div.container-xl.p-responsive-blog < footer.footer.pt-6 < div"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 GitHub, Inc. Terms Privacy",
+   "where": "footer.footer.pt-6 < div < html.mt-0"
+  }
+ ],
+ "structure": {
+  "scope": "section.col-12.col-md-8 < div.d-flex.flex-wrap",
+  "scope_tables_code": "section.col-12.col-md-8 < div.d-flex.flex-wrap",
+  "headings": 6,
+  "h1": 0,
+  "h2": 3,
+  "h3": 3,
+  "tables": 1,
+  "table_rows": [
+   3
+  ],
+  "code_blocks": 0,
+  "list_items": 22,
+  "links": 11
+ },
+ "stats": {
+  "main_text_chars": 10363,
+  "page_text_chars": 21457,
+  "prose_blocks": 37
+ }
+}

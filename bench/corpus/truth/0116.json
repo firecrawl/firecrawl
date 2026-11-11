@@ -1,0 +1,48 @@
+{
+ "id": "0116",
+ "url": "https://lists.debian.org/debian-devel-announce/2023/06/msg00001.html",
+ "category": "forum",
+ "container": "body < html",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Bits from the Release Team: a trixie customer",
+   "where": "h1 < body < html"
+  },
+  {
+   "kind": "code_line",
+   "text": "On 10th June 2023 we released Debian 12 \"bookworm\".",
+   "where": "pre < body < html"
+  },
+  {
+   "kind": "pre_line",
+   "text": "With the commencement of trixie's development cycle, packages will be",
+   "where": "pre < body < html"
+  },
+  {
+   "kind": "pre_line",
+   "text": "Although it's not yet in the official architecture list, the riscv64 port",
+   "where": "pre < body < html"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "body < html",
+  "scope_tables_code": "body < html",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 1,
+  "list_items": 16,
+  "links": 17
+ },
+ "stats": {
+  "main_text_chars": 3194,
+  "page_text_chars": 3194,
+  "prose_blocks": 1
+ }
+}

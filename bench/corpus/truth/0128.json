@@ -1,0 +1,72 @@
+{
+ "id": "0128",
+ "url": "https://supabase.com/pricing",
+ "category": "product",
+ "container": "main#main.relative.min-h-screen < body < html.__variable_d157aa.__variable_d9c8b0",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Predictable pricing, designed to scale",
+   "where": "h1.h1 < div.mx-auto.max-w-3xl < div.mx-auto.max-w-7xl < div.relative.z-10 < main#main.relative.min-h-screen"
+  },
+  {
+   "kind": "early",
+   "text": "Start building for free, collaborate with your team, then scale to millions",
+   "where": "p.p.text-lg < div.mx-auto.max-w-3xl < div.mx-auto.max-w-7xl < div.relative.z-10 < main#main.relative.min-h-screen"
+  },
+  {
+   "kind": "mid",
+   "text": "Spend caps are on by default on the Pro Plan",
+   "where": "p < div.prose.text-foreground-lighter < div.pb-4 < div.min-h-0.overflow-hidden < div.grid.grid-rows-[0fr]"
+  },
+  {
+   "kind": "late",
+   "text": "Can't find the answer to your question",
+   "where": "p.p.text-center < div.sm:py-18.mx-auto < div.mx-auto.max-w-5xl < div#faq.border-t < main#main.relative.min-h-screen"
+  },
+  {
+   "kind": "table_row",
+   "text": "Memory 32 GB",
+   "where": "table.text-foreground.m-0 < div < div.relative.w-full < div.flex.flex-col < div.relative.z-10"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "Acceptable Use Policy Humans.txt Lawyers.txt Security.txt Contact Us © Supabase",
+   "where": "footer.bg-alternative < body < html.__variable_d157aa.__variable_d9c8b0"
+  },
+  {
+   "kind": "footer",
+   "text": "We protect your data. More on Security",
+   "where": "footer.bg-alternative < body < html.__variable_d157aa.__variable_d9c8b0"
+  }
+ ],
+ "structure": {
+  "scope": "main#main.relative.min-h-screen < body",
+  "scope_tables_code": "main#main.relative.min-h-screen < body",
+  "headings": 18,
+  "h1": 1,
+  "h2": 6,
+  "h3": 11,
+  "tables": 7,
+  "table_rows": [
+   66,
+   12,
+   11,
+   19,
+   7,
+   5,
+   16
+  ],
+  "code_blocks": 0,
+  "list_items": 29,
+  "links": 31
+ },
+ "stats": {
+  "main_text_chars": 18703,
+  "page_text_chars": 20329,
+  "prose_blocks": 27
+ }
+}

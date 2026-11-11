@@ -1,0 +1,54 @@
+{
+ "id": "0009",
+ "url": "https://doc.rust-lang.org/book/ch16-01-threads.html",
+ "category": "docs",
+ "container": "main < div#mdbook-content.content < div.page",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "The Rust Programming Language",
+   "outside_container": true,
+   "where": "h1.menu-title < div#mdbook-menu-bar.menu-bar.sticky < div.page < div#mdbook-page-wrapper.page-wrapper < div#mdbook-body-container"
+  },
+  {
+   "kind": "early",
+   "text": "In most current operating systems, an executed program’s code is run in",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "The main thread will wait for the spawned thread to finish and",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "late",
+   "text": "Now that we’ve covered what threads are and the methods supplied by",
+   "where": "p < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  },
+  {
+   "kind": "code_line",
+   "text": "help: consider cloning the value before moving it into the closure",
+   "where": "pre < main < div#mdbook-content.content < div.page < div#mdbook-page-wrapper.page-wrapper"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "main < div#mdbook-content.content",
+  "scope_tables_code": "main < div#mdbook-content.content",
+  "headings": 4,
+  "h1": 0,
+  "h2": 1,
+  "h3": 3,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 12,
+  "list_items": 3,
+  "links": 5
+ },
+ "stats": {
+  "main_text_chars": 13329,
+  "page_text_chars": 13538,
+  "prose_blocks": 29
+ }
+}

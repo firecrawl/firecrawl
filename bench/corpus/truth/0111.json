@@ -1,0 +1,63 @@
+{
+ "id": "0111",
+ "url": "https://news.ycombinator.com/item?id=30347719",
+ "category": "forum",
+ "container": "table.comment-tree < td < tr#bigbox",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Google Search Is Dying"
+  },
+  {
+   "kind": "early",
+   "text": "What I'm shocked by is that Google somehow maintained a balance on",
+   "where": "p < div.commtext.c00 < div.comment < td.default < tr"
+  },
+  {
+   "kind": "mid",
+   "text": "And that literally has nothing to do with the quality of the",
+   "where": "p < div.commtext.c00 < div.comment < td.default < tr"
+  },
+  {
+   "kind": "late",
+   "text": "And yeah I too am not hyped for it but it still",
+   "where": "p < div.commtext.c00 < div.comment < td.default < tr"
+  },
+  {
+   "kind": "code_line",
+   "text": "No results containing all your search terms were found.",
+   "where": "pre < div.commtext.c00 < div.comment < td.default < tr"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Hacker News new | past | comments | ask |",
+   "where": "span.pagetop < td < tr < table < td"
+  },
+  {
+   "kind": "footer",
+   "text": "Guidelines | FAQ | Lists | API |",
+   "where": "span.yclinks < center < td < tr < table#hnmain"
+  }
+ ],
+ "structure": {
+  "scope": "table.comment-tree < td",
+  "scope_tables_code": "table.comment-tree < td",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 6,
+  "list_items": 0,
+  "links": 4904
+ },
+ "stats": {
+  "main_text_chars": 676717,
+  "page_text_chars": 676983,
+  "prose_blocks": 2879
+ }
+}

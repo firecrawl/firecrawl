@@ -1,0 +1,66 @@
+{
+ "id": "0175",
+ "url": "https://www.w3.org/TR/CSS2/visuren.html",
+ "category": "long",
+ "container": "body < html",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "9 Visual formatting model",
+   "where": "h1 < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "Note: Several sections of this specification have been updated by other specifications",
+   "where": "p < div.annoying-warning < div < body < html"
+  },
+  {
+   "kind": "mid",
+   "text": "The contents of floats are stacked as if floats generated new stacking",
+   "where": "p < body < html"
+  },
+  {
+   "kind": "late",
+   "text": "Because HEBREW18 must be read before english19, it is on the line",
+   "where": "p < div.example < body < html"
+  },
+  {
+   "kind": "table_row",
+   "text": "others same as specified",
+   "where": "table < body < html"
+  },
+  {
+   "kind": "code_line",
+   "text": "body { display: block; font-size:12px; line-height: 200%;",
+   "where": "pre.example < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "previous next contents properties index",
+   "where": "div.navbar < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "body < html",
+  "scope_tables_code": "body < html",
+  "headings": 30,
+  "h1": 1,
+  "h2": 10,
+  "h3": 19,
+  "tables": 1,
+  "table_rows": [
+   4
+  ],
+  "code_blocks": 37,
+  "list_items": 40,
+  "links": 273
+ },
+ "stats": {
+  "main_text_chars": 70765,
+  "page_text_chars": 70844,
+  "prose_blocks": 261
+ }
+}

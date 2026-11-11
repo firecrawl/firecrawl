@@ -1,0 +1,48 @@
+{
+ "id": "0059",
+ "url": "https://www.paulgraham.com/greatwork.html",
+ "category": "article",
+ "container": "td < tr < table",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "early",
+   "text": "If you collected lists of techniques for doing great work in a",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "mid",
+   "text": "You do need to work on important problems, but almost everyone is",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "late",
+   "text": "Thanks to Trevor Blackwell, Daniel Gackle, Pam Graham, Tom Howard, Patrick Hsu",
+   "where": "td < tr < table < td < tr"
+  },
+  {
+   "kind": "extra",
+   "text": "Fortunately there's a kind of economy of scale here",
+   "where": "td < tr < table < td < tr"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "td < tr",
+  "scope_tables_code": "td < tr",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 29
+ },
+ "stats": {
+  "main_text_chars": 66840,
+  "page_text_chars": 66840,
+  "prose_blocks": 232
+ }
+}

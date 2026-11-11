@@ -1,0 +1,64 @@
+{
+ "id": "0041",
+ "url": "https://stripe.com/blog/online-migrations",
+ "category": "blog",
+ "container": "article.Section.BlogPost < div#MktContent < body.MktBody.theme--White",
+ "container_rule": "article share=0.98",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Online migrations at scale",
+   "where": "h1.BlogPost__title < header.BlogPost__hero < div.Section__layout < div.Section__layoutContainer < div.Section__container"
+  },
+  {
+   "kind": "early",
+   "text": "Engineering teams face a common challenge when building software: they eventually need",
+   "where": "p.BlogBodyParagraph < section.BlogPost__body < div.Section__layout < div.Section__layoutContainer < div.Section__container"
+  },
+  {
+   "kind": "mid",
+   "text": "Finally, we’ll backfill any remaining Customer subscriptions into the new Subscriptions table",
+   "where": "p.BlogBodyParagraph < section.BlogPost__body < div.Section__layout < div.Section__layoutContainer < div.Section__container"
+  },
+  {
+   "kind": "late",
+   "text": "We’ve found this approach effective in the many online migrations we’ve executed",
+   "where": "p.BlogBodyParagraph < section.BlogPost__body < div.Section__layout < div.Section__layoutContainer < div.Section__container"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Pricing Not sure where to start",
+   "where": "nav.MobileMenu__nav < div.MobileMenu__body < div.MobileMenu.MobileMenu--isRefreshed < div.SiteHeader__stickyContai < header.SiteHeader.SiteHeader--noTransition"
+  },
+  {
+   "kind": "cookie",
+   "text": "Receive marketing communication from Stripe (including via automated systems) regarding product updates",
+   "where": "div.newsletter-signup__conse < form.Form__form < section.Form.newsletter-signup__form < div.newsletter-signup-layout < nav.SiteFooterSection__layou"
+  },
+  {
+   "kind": "footer",
+   "text": "Products & pricing Pricing Atlas Authorization Boost Billing",
+   "where": "footer.Section.SiteFooterSection < div#MktContent < body.MktBody.theme--White < html.MktRoot"
+  }
+ ],
+ "structure": {
+  "scope": "section.BlogPost__body < div.Section__layout",
+  "scope_tables_code": "section.BlogPost__body < div.Section__layout",
+  "headings": 11,
+  "h1": 0,
+  "h2": 8,
+  "h3": 3,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 17,
+  "links": 6
+ },
+ "stats": {
+  "main_text_chars": 11120,
+  "page_text_chars": 19708,
+  "prose_blocks": 56
+ }
+}

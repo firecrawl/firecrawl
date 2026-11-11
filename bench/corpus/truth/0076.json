@@ -1,0 +1,69 @@
+{
+ "id": "0076",
+ "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Rust (programming language",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "Rust is a general-purpose programming language that emphasizes performance, type safety, concurrency",
+   "where": "p#mwWg < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "The Rust standard library defines and implements many widely used custom data",
+   "where": "p#mwCJ8 < section#mwCJo < section#mwCHM < section#mwAgI < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "late",
+   "text": "The Rust project is maintained by 8 top-level teams as of November",
+   "where": "p#mwDow < section#mwDos < section#mwDjs < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "code_line",
+   "text": "if let Some(value) = x {",
+   "where": "pre#mwBZI < div#mwBZE.mw-highlight.mw-highlight-lang-rust < section#mwBUg < section#mwAgI < div.mw-content-ltr.mw-parser-output"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 10 November",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 43,
+  "h1": 0,
+  "h2": 13,
+  "h3": 30,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 29,
+  "list_items": 16,
+  "links": 631
+ },
+ "stats": {
+  "main_text_chars": 76788,
+  "page_text_chars": 83885,
+  "prose_blocks": 124
+ }
+}

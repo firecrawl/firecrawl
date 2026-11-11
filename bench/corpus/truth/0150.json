@@ -1,0 +1,71 @@
+{
+ "id": "0150",
+ "url": "https://www.worldometers.info/world-population/population-by-country/",
+ "category": "tables",
+ "container": "div.prose.max-w-none < div.container < div#page-content.min-h-125.grow",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Countries in the world by population (2026",
+   "where": "h1 < div.prose.max-w-none < div.container < div#page-content.min-h-125.grow < div.flex.flex-col"
+  },
+  {
+   "kind": "early",
+   "text": "This list includes both the 195 countries and 44 of the 48",
+   "where": "p < div.prose.max-w-none < div.container < div#page-content.min-h-125.grow < div.flex.flex-col"
+  },
+  {
+   "kind": "mid",
+   "text": "Population includes Svalbard and Jan Mayen",
+   "where": "p.mt-1 < div.min-w-0 < li#population-note-norway-country.-mx-2.flex < ol.not-prose.my-6 < div.prose.max-w-none"
+  },
+  {
+   "kind": "late",
+   "text": "Elaboration of data by United Nations, Department of Economic and Social Affairs",
+   "where": "p.mt-2.text-xs < div.not-prose.flex < div.prose.max-w-none < div.container < div#page-content.min-h-125.grow"
+  },
+  {
+   "kind": "table_row",
+   "text": "Oman 5,671,458",
+   "where": "table.datatable.w-full < div.not-prose.datatable-shell < div.prose.max-w-none < div.container < div#page-content.min-h-125.grow"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Bahasa Indonesia Català Čeština Dansk Deutsch",
+   "where": "nav.container.py-2 < header.border-b < div < div.shrink-0 < div.flex.flex-col"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright Worldometers.info - All rights reserved - Disclaimer &",
+   "where": "footer.text-sm < div.shrink-0 < div.flex.flex-col < body.font-body.text-base < html.highcharts-light"
+  },
+  {
+   "kind": "footer",
+   "text": "about | faq | languages | contact ©",
+   "where": "footer.text-sm < div.shrink-0 < div.flex.flex-col < body.font-body.text-base < html.highcharts-light"
+  }
+ ],
+ "structure": {
+  "scope": "div.prose.max-w-none < div.container",
+  "scope_tables_code": "div.prose.max-w-none < div.container",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   240
+  ],
+  "code_blocks": 0,
+  "list_items": 86,
+  "links": 414
+ },
+ "stats": {
+  "main_text_chars": 30822,
+  "page_text_chars": 31832,
+  "prose_blocks": 57
+ }
+}

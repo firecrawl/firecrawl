@@ -1,0 +1,64 @@
+{
+ "id": "0024",
+ "url": "https://svelte.dev/docs/kit/routing",
+ "category": "docs",
+ "container": "main#main.svelte-1ftfg6q < div < body",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Routing",
+   "where": "h1 < header < div#docs-content < div.page.content < div.container.svelte-13r3uwa"
+  },
+  {
+   "kind": "early",
+   "text": "At the heart of SvelteKit is a filesystem-based router",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "mid",
+   "text": "the nav will always be visible, and clicking between the three pages",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "late",
+   "text": "If components and modules are needed by multiple routes, it’s a good",
+   "where": "p < div.text.svelte-h44pz9 < div.text.content < div#docs-content < div.page.content"
+  },
+  {
+   "kind": "code_line",
+   "text": "let { data, form } = $props();",
+   "where": "pre.twinkleplop.twoslash < div.code-block < blockquote.note < div.text.svelte-h44pz9 < div.text.content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Svelte SvelteKit CLI AI Playground",
+   "where": "nav.svelte-wf8082.visible < div < body < html.theme-default.typo-default"
+  },
+  {
+   "kind": "nav",
+   "text": "Create new app Your saved apps",
+   "where": "nav.dropdown-content.svelte-fwukmr < div.dropdown.svelte-fwukmr < div.links.svelte-wf8082 < div.desktop.svelte-wf8082 < nav.svelte-wf8082.visible"
+  }
+ ],
+ "structure": {
+  "scope": "div.text.svelte-h44pz9 < div.text.content",
+  "scope_tables_code": "div.text.svelte-h44pz9 < div.text.content",
+  "headings": 16,
+  "h1": 0,
+  "h2": 7,
+  "h3": 9,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 38,
+  "list_items": 15,
+  "links": 97
+ },
+ "stats": {
+  "main_text_chars": 48857,
+  "page_text_chars": 50483,
+  "prose_blocks": 68
+ }
+}

@@ -1,0 +1,66 @@
+{
+ "id": "0120",
+ "url": "https://www.netlify.com/pricing/",
+ "category": "product",
+ "container": "main#main < body < html",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Build free. Scale when you need it",
+   "where": "h1.title.text-5 < section#intro.hero.| < div#pricing-page.l-stack.l-stack-2xl < main#main < body"
+  },
+  {
+   "kind": "early",
+   "text": "I’m an existing Netlify customer, do I have to change plans",
+   "where": "summary.tracking-tight.text-1 < details < article.faq.| < section#faq.l-section.l-breakout < div#pricing-page.l-stack.l-stack-2xl"
+  },
+  {
+   "kind": "mid",
+   "text": "What happens when a project reaches its credit limit",
+   "where": "summary.tracking-tight.text-1 < details < article.faq.| < section#faq.l-section.l-breakout < div#pricing-page.l-stack.l-stack-2xl"
+  },
+  {
+   "kind": "late",
+   "text": "Do you offer discounts for open source projects",
+   "where": "summary.tracking-tight.text-1 < details < article.faq.| < section#faq.l-section.l-breakout < div#pricing-page.l-stack.l-stack-2xl"
+  },
+  {
+   "kind": "table_row",
+   "text": "Code-based rules Code-based rules (UI-based rules for Enterprise with HP Edge only)",
+   "where": "table#pricing-table.pricing-table < div#pricing-table-container.table-container < section#pricing-table-section.l-section.l-breakout < div#pricing-page.l-stack.l-stack-2xl < main#main"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "The Netlify Platform Your app, live",
+   "where": "nav#site-nav.site-navigation < section.wrapper.l-breakout < header.site-header < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Products Agent Runners Deploy Previews Functions Observability Security",
+   "where": "footer.site-footer.| < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "article.faq.| < section#faq.l-section.l-breakout",
+  "scope_tables_code": "div#pricing-page.l-stack.l-stack-2xl < main#main",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   67
+  ],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 16027,
+  "page_text_chars": 18148,
+  "prose_blocks": 11
+ }
+}

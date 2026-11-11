@@ -1,0 +1,64 @@
+{
+ "id": "0143",
+ "url": "https://en.wikipedia.org/wiki/List_of_HTTP_status_codes",
+ "category": "tables",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "List of HTTP status codes",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "Standardized codes are defined by IETF as documented in Request for Comments",
+   "where": "p#mwDg < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "5xx status indicates that the server is aware that it has encountered",
+   "where": "p#mwAc8 < section#mwAc4 < section#mwGw < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "late",
+   "text": "Used by Qualys in the SSLLabs server testing API",
+   "where": "p#mwAzU < section#mwAzQ < section#mwAgY < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 11 October",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 25,
+  "h1": 0,
+  "h2": 5,
+  "h3": 20,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 7,
+  "links": 222
+ },
+ "stats": {
+  "main_text_chars": 38719,
+  "page_text_chars": 42670,
+  "prose_blocks": 121
+ }
+}

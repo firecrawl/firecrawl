@@ -1,0 +1,67 @@
+{
+ "id": "0177",
+ "url": "https://docs.python.org/3/whatsnew/3.12.html",
+ "category": "long",
+ "container": "div.body < div.bodywrapper < div.documentwrapper",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "What’s New In Python 3.12",
+   "where": "h1 < section#what-s-new-in-python-3-12 < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "early",
+   "text": "This article explains the new features in Python 3.12, compared to 3.11",
+   "where": "p < section#what-s-new-in-python-3-12 < div.body < div.bodywrapper < div.documentwrapper"
+  },
+  {
+   "kind": "mid",
+   "text": "asyncio.iscoroutinefunction() is deprecated and will be removed in Python 3.16; use",
+   "where": "p < li < ul < li < ul"
+  },
+  {
+   "kind": "late",
+   "text": "Legacy Unicode APIs have been removed",
+   "where": "p < li < ul.simple < section#id11 < section#c-api-changes"
+  },
+  {
+   "kind": "code_line",
+   "text": "PyInterpreterConfig config = {",
+   "where": "pre < div.highlight < div.highlight-c.notranslate < section#pep-684-a-per-interpreter-gil < section#new-features"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Previous topic What’s New In Python",
+   "where": "nav.menu < div.menu-wrapper < div.mobile-nav < body < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© Copyright 2001 Python Software Foundation. This page is licensed",
+   "where": "div.footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "section#what-s-new-in-python-3-12 < div.body",
+  "scope_tables_code": "section#what-s-new-in-python-3-12 < div.body",
+  "headings": 83,
+  "h1": 1,
+  "h2": 13,
+  "h3": 69,
+  "tables": 2,
+  "table_rows": [
+   12,
+   16
+  ],
+  "code_blocks": 22,
+  "list_items": 671,
+  "links": 1338
+ },
+ "stats": {
+  "main_text_chars": 103657,
+  "page_text_chars": 107714,
+  "prose_blocks": 430
+ }
+}

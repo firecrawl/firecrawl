@@ -1,0 +1,52 @@
+{
+ "id": "0156",
+ "url": "https://gobyexample.com/goroutines",
+ "category": "code",
+ "container": "div#goroutines.example < body < html",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Go by Example"
+  },
+  {
+   "kind": "early",
+   "text": "A goroutine is a lightweight thread of execution",
+   "where": "p < td.docs < tr < table < div#goroutines.example"
+  },
+  {
+   "kind": "mid",
+   "text": "You can also start a goroutine for an anonymous function call",
+   "where": "p < td.docs < tr < table < div#goroutines.example"
+  },
+  {
+   "kind": "late",
+   "text": "Next we’ll look at a complement to goroutines in concurrent Go programs",
+   "where": "p < td.docs < tr < table < div#goroutines.example"
+  },
+  {
+   "kind": "code_line",
+   "text": "go func(msg string) {",
+   "where": "pre.chroma < td.code.leading < tr < table < div#goroutines.example"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "div#goroutines.example < body",
+  "scope_tables_code": "div#goroutines.example < body",
+  "headings": 1,
+  "h1": 0,
+  "h2": 1,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 9,
+  "list_items": 0,
+  "links": 3
+ },
+ "stats": {
+  "main_text_chars": 1242,
+  "page_text_chars": 1298,
+  "prose_blocks": 7
+ }
+}

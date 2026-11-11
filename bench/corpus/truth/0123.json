@@ -1,0 +1,59 @@
+{
+ "id": "0123",
+ "url": "https://linear.app/pricing",
+ "category": "product",
+ "container": "main._5l06ia_content < div._5l06ia_container < div",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Pricing",
+   "where": "h1.sc-KOGVz.fqiDfk < div.ImRUSq_root.ImRUSq_align-center < header.Jbvjba_root < div.Fzcv4W_inset < div._7bwwmq_root._7bwwmq_wide"
+  },
+  {
+   "kind": "extra",
+   "text": "Unlimited file uploads",
+   "where": "li.sItxrG_feature < ul.ImRUSq_root.ImRUSq_column < section#basic.sItxrG_card.ImRUSq_root < div.sItxrG_plans < div._7bwwmq_root._7bwwmq_wide"
+  },
+  {
+   "kind": "extra",
+   "text": "Private teams and guests",
+   "where": "li.sItxrG_feature < ul.ImRUSq_root.ImRUSq_column < section#business.sItxrG_card.ImRUSq_root < div.sItxrG_plans < div._7bwwmq_root._7bwwmq_wide"
+  },
+  {
+   "kind": "extra",
+   "text": "Zendesk and Intercom integrations",
+   "where": "li.sItxrG_feature < ul.ImRUSq_root.ImRUSq_column < section#business.sItxrG_card.ImRUSq_root < div.sItxrG_plans < div._7bwwmq_root._7bwwmq_wide"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Customers Pricing Now Contact Docs",
+   "where": "nav.TZTsQG_menuRoot < header.TZTsQG_header.TZTsQG_header < div < div._5l06ia_container < div"
+  },
+  {
+   "kind": "footer",
+   "text": "Product Intake Plan AI Build Pricing Security Features",
+   "where": "footer.Jmh1Wq_footer < div._5l06ia_container < div < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "main._5l06ia_content < div._5l06ia_container",
+  "scope_tables_code": "main._5l06ia_content < div._5l06ia_container",
+  "headings": 6,
+  "h1": 1,
+  "h2": 1,
+  "h3": 4,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 35,
+  "links": 22
+ },
+ "stats": {
+  "main_text_chars": 4389,
+  "page_text_chars": 4908,
+  "prose_blocks": 0
+ }
+}

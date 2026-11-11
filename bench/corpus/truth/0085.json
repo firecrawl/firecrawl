@@ -1,0 +1,59 @@
+{
+ "id": "0085",
+ "url": "https://zh.wikipedia.org/wiki/%E9%95%BF%E5%9F%8E",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "长城",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "长城是在中國大陸華北一帶歷朝修筑的大規模軍用隔離牆的统称",
+   "where": "p < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body"
+  },
+  {
+   "kind": "mid",
+   "text": "外两段长城在西边于山西忻州市偏头关",
+   "where": "p < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body"
+  },
+  {
+   "kind": "late",
+   "text": "2003年十届全国人大一次会议上",
+   "where": "p < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "导航 首页 分类索引 特色内容",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "本页面最后修订于2026年9月29日",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 24,
+  "h1": 0,
+  "h2": 9,
+  "h3": 15,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 46,
+  "links": 522
+ },
+ "stats": {
+  "main_text_chars": 16145,
+  "page_text_chars": 21911,
+  "prose_blocks": 62
+ }
+}

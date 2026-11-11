@@ -1,0 +1,72 @@
+{
+ "id": "0083",
+ "url": "https://ja.wikipedia.org/wiki/%E5%AF%8C%E5%A3%AB%E5%B1%B1",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "富士山",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "その優美な風貌は日本国外でも日本の象徴として広く知られて",
+   "where": "p#mwIw < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "須走村が山頂の支配権は同村の支配にあるとして浅間大社を相",
+   "where": "p#mwBiY < section#mwBiU < section#mwBdo < section#mwBIw < div.mw-content-ltr.mw-parser-output"
+  },
+  {
+   "kind": "late",
+   "text": "2014年には日本富士山協会と中華民国山岳協会との間で",
+   "where": "p#mwCPk < section#mwCO0 < section#mwCH8 < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "明治時代 1874 スチュワート",
+   "where": "table#mw7g.wikitable < section#mw5g < section#mw3A < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "案内 メインページ コミュニティ・ポータル",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "最終更新 2026年11月8日",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 48,
+  "h1": 0,
+  "h2": 15,
+  "h3": 33,
+  "tables": 7,
+  "table_rows": [
+   20,
+   5,
+   8,
+   3,
+   19,
+   7,
+   2
+  ],
+  "code_blocks": 0,
+  "list_items": 177,
+  "links": 1064
+ },
+ "stats": {
+  "main_text_chars": 46180,
+  "page_text_chars": 50036,
+  "prose_blocks": 167
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "id": "0044",
+ "url": "https://slack.engineering/scaling-slacks-job-queue/",
+ "category": "blog",
+ "container": "main#main.ts-site-primary < div.ts-site-inner < div.ts-site",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Scaling Slack’s Job Queue",
+   "where": "h1.ts-jumbo < div.ts-entry__header-info < div.ts-entry__header-inner < div.ts-entry__header.ts-entry__header-large < div.ts-content-area"
+  },
+  {
+   "kind": "early",
+   "text": "Slack uses a job queue system for business logic that is too",
+   "where": "p < div.ts-single-post.ts-wysiwyg < div.ts-entry__content-wrap < div.ts-entry__container < div.ts-entry__wrap"
+  },
+  {
+   "kind": "mid",
+   "text": "Subsequently, the job queue worker (also written in PHP) would decode the",
+   "where": "p < div.ts-single-post.ts-wysiwyg < div.ts-entry__content-wrap < div.ts-entry__container < div.ts-entry__wrap"
+  },
+  {
+   "kind": "late",
+   "text": "Even with new systems like this in place, we are always looking",
+   "where": "p < div.ts-single-post.ts-wysiwyg < div.ts-entry__content-wrap < div.ts-entry__container < div.ts-entry__wrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Articles Careers Slack Developer Blog The",
+   "where": "nav.ts-footer__nav < div.ts-footer__inner < div.ts-footer__col.ts-col-canter < div.ts-footer__item < div.ts-container"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 Slack Technologies, LLC, a Salesforce company. All rights",
+   "where": "footer.ts-footer < div.ts-site-inner < div.ts-site < body.wp-singular.post-template-default < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Terms of Service Privacy Information Cookie Preferences Your",
+   "where": "footer.ts-footer < div.ts-site-inner < div.ts-site < body.wp-singular.post-template-default < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.ts-single-post.ts-wysiwyg < div.ts-entry__content-wrap",
+  "scope_tables_code": "div.ts-single-post.ts-wysiwyg < div.ts-entry__content-wrap",
+  "headings": 16,
+  "h1": 0,
+  "h2": 8,
+  "h3": 8,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 24,
+  "links": 8
+ },
+ "stats": {
+  "main_text_chars": 18561,
+  "page_text_chars": 18879,
+  "prose_blocks": 52
+ }
+}

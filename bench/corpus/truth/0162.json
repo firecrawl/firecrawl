@@ -1,0 +1,64 @@
+{
+ "id": "0162",
+ "url": "https://www.learncpp.com/cpp-tutorial/introduction-to-pointers/",
+ "category": "code",
+ "container": "article#post-99.post-99.post < main#main.main < div#container.three-columns-sided",
+ "container_rule": "main>article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "12.7 — Introduction to pointers",
+   "where": "h1.entry-title.singular-title < header < div.article-inner < article#post-99.post-99.post < main#main.main"
+  },
+  {
+   "kind": "early",
+   "text": "However, as you’ll see shortly, pointers are nothing to be scared of",
+   "where": "p < div.entry-content < div.article-inner < article#post-99.post-99.post < main#main.main"
+  },
+  {
+   "kind": "mid",
+   "text": "Once we have a pointer holding the address of another object, we",
+   "where": "p < div.entry-content < div.article-inner < article#post-99.post-99.post < main#main.main"
+  },
+  {
+   "kind": "late",
+   "text": "What values does this program print",
+   "where": "p < div.entry-content < div.article-inner < article#post-99.post-99.post < main#main.main"
+  },
+  {
+   "kind": "code_line",
+   "text": "ptr = &y; // // change ptr to point at y",
+   "where": "pre.language-cpp.line-numbers < div.entry-content < div.article-inner < article#post-99.post-99.post < main#main.main"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigate 12.8 — Null pointers Table",
+   "where": "nav#mobile-menu < div#site-header-main-inside < div#site-header-main < header#masthead.cryout < div#site-wrapper"
+  },
+  {
+   "kind": "nav",
+   "text": "Learn C++ Skill up with our",
+   "where": "header#masthead.cryout < div#site-wrapper < body.post-template-default.single < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.entry-content < div.article-inner",
+  "scope_tables_code": "div.entry-content < div.article-inner",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 22,
+  "list_items": 10,
+  "links": 7
+ },
+ "stats": {
+  "main_text_chars": 19835,
+  "page_text_chars": 21304,
+  "prose_blocks": 70
+ }
+}

@@ -1,0 +1,52 @@
+{
+ "id": "0176",
+ "url": "https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html",
+ "category": "long",
+ "container": "emu-clause#sec-ecmascript-language-expres < div#spec-container < body",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "13 ECMAScript Language: Expressions",
+   "where": "h1 < emu-clause#sec-ecmascript-language-expres < div#spec-container < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "yield and await are permitted as BindingIdentifier in the grammar, and prohibited",
+   "where": "p < div.note-contents < emu-note < emu-clause#sec-identifiers < emu-clause#sec-ecmascript-language-expres"
+  },
+  {
+   "kind": "mid",
+   "text": "The abstract operation EvaluateCall takes arguments",
+   "where": "p < emu-clause#sec-evaluatecall < emu-clause#sec-function-calls < emu-clause#sec-left-hand-side-expressions < emu-clause#sec-ecmascript-language-expres"
+  },
+  {
+   "kind": "late",
+   "text": "The syntax-directed operation KeyedDestructuringAssignmentEvaluation takes arguments",
+   "where": "p < emu-clause#sec-runtime-semantics-keyeddes < emu-clause#sec-destructuring-assignment < emu-clause#sec-assignment-operators < emu-clause#sec-ecmascript-language-expres"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "emu-clause#sec-ecmascript-language-expres < div#spec-container",
+  "scope_tables_code": "emu-clause#sec-ecmascript-language-expres < div#spec-container",
+  "headings": 156,
+  "h1": 131,
+  "h2": 25,
+  "h3": 0,
+  "tables": 3,
+  "table_rows": [
+   13,
+   9,
+   13
+  ],
+  "code_blocks": 5,
+  "list_items": 935,
+  "links": 2370
+ },
+ "stats": {
+  "main_text_chars": 104240,
+  "page_text_chars": 201228,
+  "prose_blocks": 229
+ }
+}

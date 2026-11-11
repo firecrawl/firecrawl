@@ -1,0 +1,72 @@
+{
+ "id": "0006",
+ "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching",
+ "category": "docs",
+ "container": "main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "HTTP caching",
+   "where": "h1 < div.layout__header.reference-layout__header < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main"
+  },
+  {
+   "kind": "early",
+   "text": "A private cache is a cache tied to a specific client",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "mid",
+   "text": "If the server does not support conditional requests, you can force the",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "late",
+   "text": "For more information, see the documentation for your CDN, and consult the",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "code_line",
+   "text": "If-Modified-Since: Tue, 22 Feb 2022 20:20:20 GMT",
+   "where": "pre.brush:.http < div.code-example < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "HTML: Markup language HTML reference Elements",
+   "where": "nav.navigation < header.page-layout__header < body.page-layout < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "©1998–2026 by individual mozilla.org contributors. Content available under a Creative",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Your blueprint for a better internet. MDN About",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "scope_tables_code": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "headings": 29,
+  "h1": 0,
+  "h2": 12,
+  "h3": 17,
+  "tables": 2,
+  "table_rows": [
+   4,
+   5
+  ],
+  "code_blocks": 39,
+  "list_items": 8,
+  "links": 60
+ },
+ "stats": {
+  "main_text_chars": 32882,
+  "page_text_chars": 42323,
+  "prose_blocks": 147
+ }
+}

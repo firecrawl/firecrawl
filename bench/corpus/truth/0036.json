@@ -1,0 +1,70 @@
+{
+ "id": "0036",
+ "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html",
+ "category": "docs",
+ "container": "article < div#handbook-content < section#doc-layout",
+ "container_rule": "main>article share=0.99",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Everyday Types",
+   "outside_container": true,
+   "where": "h1 < div#handbook-content < section#doc-layout < main < div.ms-Fabric"
+  },
+  {
+   "kind": "early",
+   "text": "In this chapter, we’ll cover some of the most common types of",
+   "where": "p < div.markdown < div.whitespace.raised < article < div#handbook-content"
+  },
+  {
+   "kind": "mid",
+   "text": "It might be confusing that a union of types appears to have",
+   "where": "p < blockquote < div.markdown < div.whitespace.raised < article"
+  },
+  {
+   "kind": "late",
+   "text": "You can learn more about them in Symbols reference page",
+   "where": "p < div.markdown < div.whitespace.raised < article < div#handbook-content"
+  },
+  {
+   "kind": "code_line",
+   "text": "interface Bear extends Animal {",
+   "where": "pre < code < td < tr < tbody"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Download Docs Handbook Community Playground Tools",
+   "where": "nav < div.left.below-small < div#top-menu.up < header < div.ms-Fabric"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "© 2012-2026 Microsoft Privacy Terms of Use Using TypeScript Get",
+   "where": "footer#site-footer < div.ms-Fabric < div#gatsby-focus-wrapper < div#___gatsby < body"
+  },
+  {
+   "kind": "footer",
+   "text": "Popular Documentation Pages Everyday Types All of the",
+   "where": "footer#site-footer < div.ms-Fabric < div#gatsby-focus-wrapper < div#___gatsby < body"
+  }
+ ],
+ "structure": {
+  "scope": "div.markdown < div.whitespace.raised",
+  "scope_tables_code": "div.markdown < div.whitespace.raised",
+  "headings": 28,
+  "h1": 0,
+  "h2": 14,
+  "h3": 14,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 42,
+  "list_items": 10,
+  "links": 53
+ },
+ "stats": {
+  "main_text_chars": 26802,
+  "page_text_chars": 30392,
+  "prose_blocks": 94
+ }
+}

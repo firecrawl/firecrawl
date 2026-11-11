@@ -1,0 +1,71 @@
+{
+ "id": "0077",
+ "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+ "category": "wikipedia",
+ "container": "div#mw-content-text.mw-body-content < div#bodyContent.vector-body < main#content.mw-body",
+ "container_rule": "hint:mediawiki",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Photosynthesis",
+   "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
+  },
+  {
+   "kind": "early",
+   "text": "is a system of biological processes by which photopigment-bearing autotrophic organisms, such",
+   "where": "p#mwFA < section#mwAQ < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "mid",
+   "text": "Chlorophyll fluorescence of photosystem II can measure the light reaction, and infrared",
+   "where": "p#mwA5w < section#mwA0Y < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  },
+  {
+   "kind": "late",
+   "text": "The salvaging pathway for the products of RuBisCO oxygenase activity is more",
+   "where": "p#mwBrY < section#mwBpk < section#mwBlo < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content"
+  },
+  {
+   "kind": "table_row",
+   "text": "3 Electron transport chain and ATP synthesis Microsecond to millisecond",
+   "where": "table#mwAxk.wikitable < section#mwAxI < div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content < div#bodyContent.vector-body"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Navigation Main page Contents Current events",
+   "where": "nav.vector-main-menu-landmar < div.vector-header-start < header.vector-header.mw-header < div.vector-header-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  },
+  {
+   "kind": "footer",
+   "text": "This page was last edited on 1 November",
+   "where": "footer#footer.mw-footer < div.mw-footer-container < div.mw-page-container-inner < div.mw-page-container < body.mediawiki.ltr"
+  }
+ ],
+ "structure": {
+  "scope": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "scope_tables_code": "div.mw-content-ltr.mw-parser-output < div#mw-content-text.mw-body-content",
+  "headings": 30,
+  "h1": 0,
+  "h2": 14,
+  "h3": 16,
+  "tables": 1,
+  "table_rows": [
+   5
+  ],
+  "code_blocks": 0,
+  "list_items": 44,
+  "links": 896
+ },
+ "stats": {
+  "main_text_chars": 84564,
+  "page_text_chars": 99135,
+  "prose_blocks": 103
+ }
+}

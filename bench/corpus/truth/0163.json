@@ -1,0 +1,69 @@
+{
+ "id": "0163",
+ "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+ "category": "code",
+ "container": "main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Using the Fetch API",
+   "where": "h1 < div.layout__header.reference-layout__header < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout < div.page-layout__main"
+  },
+  {
+   "kind": "early",
+   "text": "To make a request, call fetch(), passing in",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "mid",
+   "text": "This also means that you can create a request from another request",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "late",
+   "text": "This is a common pattern when implementing an offline cache with service",
+   "where": "p < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content < div.layout__2-sidebars-inlin.reference-layout"
+  },
+  {
+   "kind": "code_line",
+   "text": "async function post(request) {",
+   "where": "pre.brush:.js < div.code-example < section.content-section < div.layout__body.reference-layout__body < main#content.layout__content"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "HTML: Markup language HTML reference Elements",
+   "where": "nav.navigation < header.page-layout__header < body.page-layout < html"
+  },
+  {
+   "kind": "footer_legal",
+   "text": "©1998–2026 by individual mozilla.org contributors. Content available under a Creative",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Your blueprint for a better internet. MDN About",
+   "where": "footer.footer < div.page-layout__footer < body.page-layout < html"
+  }
+ ],
+ "structure": {
+  "scope": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "scope_tables_code": "div.layout__body.reference-layout__body < main#content.layout__content",
+  "headings": 18,
+  "h1": 0,
+  "h2": 4,
+  "h3": 14,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 22,
+  "list_items": 46,
+  "links": 98
+ },
+ "stats": {
+  "main_text_chars": 22179,
+  "page_text_chars": 24677,
+  "prose_blocks": 74
+ }
+}

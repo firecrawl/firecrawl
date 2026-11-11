@@ -1,0 +1,59 @@
+{
+ "id": "0118",
+ "url": "https://www.notion.com/pricing",
+ "category": "product",
+ "container": "main.sf3SsW_layoutBase.sf3SsW_xl < div.QPCBRq_theme.thoEPa_theme < div#__next",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "One tool to run your company",
+   "where": "h1.Db2fhq_semanticTypograph.Db2fhq_variantGlobalTitl < div.hCkUHG_headlineFirstline < div.hCkUHG_headerWrapper.hCkUHG_headerWrapperRede < section.hCkUHG_titleSectionRedes < main.sf3SsW_layoutBase.sf3SsW_xl"
+  },
+  {
+   "kind": "early",
+   "text": "For individuals to organize personal projects and life",
+   "where": "p.Db2fhq_semanticTypograph.Db2fhq_variantCardBody < div.AkOUza_header < article.AkOUza_pricingPlanCard < div.rOcwtW_cardsGrid < section.surface.surfaceBase"
+  },
+  {
+   "kind": "mid",
+   "text": "What happens when I go over the block storage limit on a",
+   "where": "p.W75WuG_text.W75WuG_textWeightSemibol < div.ZMoceq_questionText < summary.ZMoceq_question < details.ZMoceq_faq < article.ZMoceq_faqWrap"
+  },
+  {
+   "kind": "late",
+   "text": "What if I live in a region with a mandatory refund policy",
+   "where": "p.W75WuG_text.W75WuG_textWeightSemibol < div.ZMoceq_questionText < summary.ZMoceq_question < details.ZMoceq_faq < article.ZMoceq_faqWrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Pricing Request a demo Log in",
+   "where": "nav.HWB10a_globalNavigation < div.QPCBRq_theme.thoEPa_theme < div.HWB10a_globalNavigationW.HWB10a_stickyWrapper < div.QPCBRq_theme.thoEPa_theme < div#__next"
+  },
+  {
+   "kind": "footer",
+   "text": "We shape our tools, and thereafter our tools",
+   "where": "footer#site-footer.surface.surfaceBase < div.QPCBRq_theme.thoEPa_theme < div.QPCBRq_theme.thoEPa_theme < div#__next < body"
+  }
+ ],
+ "structure": {
+  "scope": "main.sf3SsW_layoutBase.sf3SsW_xl < div.QPCBRq_theme.thoEPa_theme",
+  "scope_tables_code": "main.sf3SsW_layoutBase.sf3SsW_xl < div.QPCBRq_theme.thoEPa_theme",
+  "headings": 11,
+  "h1": 1,
+  "h2": 4,
+  "h3": 6,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 29,
+  "links": 5
+ },
+ "stats": {
+  "main_text_chars": 20818,
+  "page_text_chars": 21930,
+  "prose_blocks": 11
+ }
+}

@@ -1,0 +1,61 @@
+{
+ "id": "0011",
+ "url": "https://kubernetes.io/docs/concepts/services-networking/service/",
+ "category": "docs",
+ "container": "main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Service",
+   "where": "h1 < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "early",
+   "text": "In Kubernetes, a Service is a method for exposing a network application",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "mid",
+   "text": "You can change the set of node IPs that NodePort Services are",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "late",
+   "text": "Learn more about Services and how they fit into Kubernetes",
+   "where": "p < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap < div.td-main"
+  },
+  {
+   "kind": "code_line",
+   "text": "- name: name-of-service-port",
+   "where": "pre.chroma < div.highlight < div.td-content < main.col-12.col-md-9 < div.row.flex-xl-nowrap"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "footer_legal",
+   "text": "© 2026 The Kubernetes Authors | Documentation Distributed under CC",
+   "where": "footer.bg-dark.py-5 < body.td-page < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "div.td-content < main.col-12.col-md-9",
+  "scope_tables_code": "div.td-content < main.col-12.col-md-9",
+  "headings": 28,
+  "h1": 1,
+  "h2": 9,
+  "h3": 18,
+  "tables": 1,
+  "table_rows": [
+   4
+  ],
+  "code_blocks": 19,
+  "list_items": 31,
+  "links": 63
+ },
+ "stats": {
+  "main_text_chars": 40783,
+  "page_text_chars": 65844,
+  "prose_blocks": 163
+ }
+}

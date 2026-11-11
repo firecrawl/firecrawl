@@ -1,0 +1,59 @@
+{
+ "id": "0186",
+ "url": "https://www.iana.org/help/example-domains",
+ "category": "tiny",
+ "container": "main < article.hemmed.sidenav < div#body",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Example Domains",
+   "where": "h1#example-domains < main < article.hemmed.sidenav < div#body < body"
+  },
+  {
+   "kind": "early",
+   "text": "A number of domains such as example.com and example.org are maintained for",
+   "where": "p < div.help-article < div.help-article-flow < main < article.hemmed.sidenav"
+  },
+  {
+   "kind": "mid",
+   "text": "We provide a web service on the example domain hosts to provide",
+   "where": "p < div.help-article < div.help-article-flow < main < article.hemmed.sidenav"
+  },
+  {
+   "kind": "extra",
+   "text": "These domains may be used as illustrative examples in documents without prior",
+   "where": "p < div.help-article < div.help-article-flow < main < article.hemmed.sidenav"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Domains Protocols Numbers About",
+   "where": "div.navigation < div#header < header < body < html"
+  },
+  {
+   "kind": "footer",
+   "text": "Domain Names Root Zone Registry .INT Registry .ARPA",
+   "where": "div#footer < footer < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "main < article.hemmed.sidenav",
+  "scope_tables_code": "div.help-article < div.help-article-flow",
+  "headings": 2,
+  "h1": 1,
+  "h2": 1,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 3,
+  "links": 3
+ },
+ "stats": {
+  "main_text_chars": 774,
+  "page_text_chars": 1246,
+  "prose_blocks": 2
+ }
+}

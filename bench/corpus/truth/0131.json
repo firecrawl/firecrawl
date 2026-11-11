@@ -1,0 +1,54 @@
+{
+ "id": "0131",
+ "url": "https://www.sqlite.org/about.html",
+ "category": "product",
+ "container": "body < html",
+ "container_rule": "density",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "About SQLite",
+   "where": "h1 < body < html"
+  },
+  {
+   "kind": "early",
+   "text": "SQLite is an in-process library that implements a self-contained, serverless, zero-configuration, transactional",
+   "where": "p < body < html"
+  },
+  {
+   "kind": "mid",
+   "text": "The SQLite code base is supported by an international team of developers",
+   "where": "p < body < html"
+  },
+  {
+   "kind": "late",
+   "text": "This page was last updated on 2025-11-13 07:12:58Z",
+   "where": "p < body < html"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Home Menu About Documentation Download License",
+   "where": "div.menu.mainmenu < div.nosearch < body < html"
+  }
+ ],
+ "structure": {
+  "scope": "body < html",
+  "scope_tables_code": "body < html",
+  "headings": 1,
+  "h1": 1,
+  "h2": 0,
+  "h3": 0,
+  "tables": 0,
+  "table_rows": [],
+  "code_blocks": 0,
+  "list_items": 15,
+  "links": 42
+ },
+ "stats": {
+  "main_text_chars": 4093,
+  "page_text_chars": 4163,
+  "prose_blocks": 8
+ }
+}

@@ -1,0 +1,50 @@
+{
+ "id": "0055",
+ "url": "https://lwn.net/Articles/193245/",
+ "category": "blog",
+ "container": "main < div.ArticleText < div.middlecolumn",
+ "container_rule": "main",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "Re: Licensing and the library version of git",
+   "where": "h1 < div.PageHeadline < div.middlecolumn < div.maincolumn.flexcol < body"
+  },
+  {
+   "kind": "code_line",
+   "text": "On Thu, 27 Jul 2006, Jon Smirl wrote:",
+   "where": "pre < main < div.ArticleText < div.middlecolumn < div.maincolumn.flexcol"
+  },
+  {
+   "kind": "pre_line",
+   "text": "I'd also like to point out that unlike every single horror I've ever",
+   "where": "pre < main < div.ArticleText < div.middlecolumn < div.maincolumn.flexcol"
+  },
+  {
+   "kind": "pre_line",
+   "text": "So it's easy enough to just write whatever Java code or something to just",
+   "where": "pre < main < div.ArticleText < div.middlecolumn < div.maincolumn.flexcol"
+  }
+ ],
+ "must_not_contain": [],
+ "structure": {
+  "scope": "main < div.ArticleText",
+  "scope_tables_code": "main < div.ArticleText",
+  "headings": 0,
+  "h1": 0,
+  "h2": 0,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   5
+  ],
+  "code_blocks": 1,
+  "list_items": 0,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 1789,
+  "page_text_chars": 2201,
+  "prose_blocks": 0
+ }
+}

@@ -1,0 +1,61 @@
+{
+ "id": "0137",
+ "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+ "category": "product",
+ "container": "article.product_page < div#content_inner < div.content",
+ "container_rule": "article share=1.00",
+ "must_contain": [
+  {
+   "kind": "heading",
+   "text": "A Light in the Attic",
+   "where": "h1 < div.col-sm-6.product_main < div.row < article.product_page < div#content_inner"
+  },
+  {
+   "kind": "early",
+   "text": "RockabyeRockabye baby, in the treetopDon't you know a treetopIs no safe place",
+   "where": "p < article.product_page < div#content_inner < div.content < div.page_inner"
+  },
+  {
+   "kind": "extra",
+   "text": "Shel, you never sounded so good",
+   "where": "p < article.product_page < div#content_inner < div.content < div.page_inner"
+  },
+  {
+   "kind": "extra",
+   "text": "Need proof of his genius",
+   "where": "p < article.product_page < div#content_inner < div.content < div.page_inner"
+  },
+  {
+   "kind": "table_row",
+   "text": "Availability In stock (22 available)",
+   "where": "table.table.table-striped < article.product_page < div#content_inner < div.content < div.page_inner"
+  }
+ ],
+ "must_not_contain": [
+  {
+   "kind": "nav",
+   "text": "Books to Scrape We love being",
+   "where": "header.header.container-fluid < body#default.default < html.no-js"
+  }
+ ],
+ "structure": {
+  "scope": "article.product_page < div#content_inner",
+  "scope_tables_code": "article.product_page < div#content_inner",
+  "headings": 3,
+  "h1": 1,
+  "h2": 2,
+  "h3": 0,
+  "tables": 1,
+  "table_rows": [
+   7
+  ],
+  "code_blocks": 0,
+  "list_items": 0,
+  "links": 0
+ },
+ "stats": {
+  "main_text_chars": 1398,
+  "page_text_chars": 1475,
+  "prose_blocks": 1
+ }
+}
