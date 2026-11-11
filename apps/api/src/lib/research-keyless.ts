@@ -7,7 +7,7 @@ function researchKeylessOperation(
   const segments = req.path.toLowerCase().split("/").filter(Boolean);
   const papersIndex = segments.indexOf("papers");
   if (papersIndex === -1) {
-    return segments.at(-1) === "proteins" ? "protein" : null;
+    return segments.at(-1) === "proteins" ? "inspect" : null;
   }
 
   const rest = segments.slice(papersIndex + 1);

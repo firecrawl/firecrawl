@@ -51,14 +51,13 @@ const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
 const PAPER_READ_TIMEOUT_MS = 120_000;
 const PROTEIN_LOOKUP_TIMEOUT_MS = 5_000;
 
-// The paper and protein endpoints, all served by the Research Index and
-// limited by its daily budget.
+// The paper endpoints, all served by the Research Index and limited by its
+// daily budget.
 const RESEARCH_INDEX_KINDS = new Set<ResearchRequestKind>([
   "research_paper_search",
   "research_related_papers",
   "research_paper_read",
   "research_paper_inspect",
-  "research_protein_lookup",
 ]);
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
@@ -725,13 +724,13 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       "/proteins",
       wrap(
         createResearchController(proteinLookupSchema, ["protein", "organism"], {
-          kind: "research_protein_lookup",
-          table: "research_protein_lookups",
+          kind: "research_paper_inspect",
+          table: "research_paper_inspects",
           action: "lookupProtein",
           targetHint: params =>
             params.organism === undefined
-              ? params.protein
-              : `${params.protein} (${params.organism})`,
+              ? `protein:${params.protein}`
+              : `protein:${params.protein} organism:${params.organism}`,
           upstreamPath: () => "/v2/research/proteins",
           timeoutMs: PROTEIN_LOOKUP_TIMEOUT_MS,
           billAs: "scrape",

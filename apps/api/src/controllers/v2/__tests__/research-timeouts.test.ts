@@ -125,6 +125,14 @@ describe("research upstream timeouts", () => {
       timeoutMs: 10_000,
     },
     {
+      name: "protein lookup",
+      router: () => createResearchRouter(),
+      path: "/proteins",
+      query: { protein: "RPUSD3" },
+      params: {},
+      timeoutMs: 5_000,
+    },
+    {
       name: "developer search",
       router: () => createDeveloperRouter(),
       path: "/search",
