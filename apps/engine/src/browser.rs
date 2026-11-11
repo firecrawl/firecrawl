@@ -166,15 +166,15 @@ impl NetWatch {
     }
   }
 
+  fn last_document(&self) -> Option<String> {
+    self.last_document.lock().ok().and_then(|d| d.clone())
+  }
+
   /// True when the network has gone quiet: nothing started or finished for
   /// a third of a second and no recent request is still in flight. A request open
   /// for more than 1.5 seconds is a long-lived connection or one that will
   /// never report back (a beacon, a blocked script), not "still loading";
   /// slow data calls are still caught by the in-page fetch and XHR counter.
-  fn last_document(&self) -> Option<String> {
-    self.last_document.lock().ok().and_then(|d| d.clone())
-  }
-
   fn idle(&self) -> bool {
     let quiet = self
       .last_event

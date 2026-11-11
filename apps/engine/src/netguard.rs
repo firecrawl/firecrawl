@@ -119,20 +119,24 @@ async fn allowed_targets(
           reason: None,
         })?
         .collect();
-      let mut first_refusal = None;
+      // The reason names the kind of address, never the address itself:
+      // what an internal name resolves to is not the caller's to learn.
+      let mut never_reachable = false;
       let mut allowed = Vec::new();
+      let any = !resolved.is_empty();
       for addr in resolved {
         match guard::check_ip(addr.ip(), policy) {
           Ok(()) => allowed.push(addr),
-          Err(e) => {
-            first_refusal.get_or_insert(e.0);
-          }
+          Err(_) => never_reachable |= guard::ip_always_blocked(addr.ip()),
         }
       }
       if allowed.is_empty() {
-        return Err(Refused::policy(match first_refusal {
-          Some(why) => format!("'{name}' resolves to an address this engine may not reach: {why}"),
-          None => format!("'{name}' does not resolve to any address"),
+        return Err(Refused::policy(if !any {
+          format!("'{name}' does not resolve to any address")
+        } else if never_reachable {
+          format!("'{name}' resolves to a link-local or metadata address, which is never reachable")
+        } else {
+          format!("'{name}' resolves to a private address; private targets are off for this engine")
         }));
       }
       Ok(allowed)
@@ -333,6 +337,16 @@ mod tests {
       why.contains("never reachable") && !why.contains("are off"),
       "{why}"
     );
+  }
+
+  #[tokio::test]
+  async fn a_named_refusal_does_not_reveal_the_address() {
+    // Resolves to 127.0.0.1 through public DNS; skipped when offline.
+    let named = Url::parse("http://127.0.0.1.nip.io:8080/").unwrap();
+    if let Some(why) = refusal_reason(&named, NetworkPolicy::PublicOnly).await {
+      assert!(why.contains("private"), "{why}");
+      assert!(!why.contains("127.0.0.1 is"), "{why}");
+    }
   }
 
   #[tokio::test]
