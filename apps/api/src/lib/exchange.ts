@@ -68,6 +68,9 @@ type ExchangeProvider = {
   routes: {
     domains: Set<string>;
     pathPrefixes: string[];
+    // Whole-path shapes, "*" one non-empty segment. When a route has any, the
+    // path is matched against these instead of the prefixes.
+    pathPatterns: string[][];
   }[];
 };
 
@@ -118,6 +121,7 @@ const exchangeProvidersSchema = z.object({
                       .object({
                         domains: z.string().array(),
                         pathPrefixes: z.string().array(),
+                        pathPatterns: z.string().array().optional(),
                       })
                       .passthrough(),
                   )
@@ -153,6 +157,34 @@ function normalizePathPrefix(prefix: string): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+function normalizePathPattern(pattern: string): string[] {
+  return normalizePathPrefix(pattern).replace(/\/$/, "").split("/");
+}
+
+// A pattern claims a path of the same number of segments, each equal to the
+// pattern's or, where the pattern's has a "*", a longer string with the same
+// text before and after it. A trailing slash on the path is ignored.
+function pathMatchesPattern(pathname: string, pattern: string[]): boolean {
+  const segments = pathname.replace(/\/$/, "").split("/");
+  return (
+    segments.length === pattern.length &&
+    pattern.every((part, index) => {
+      const segment = segments[index];
+      const star = part.indexOf("*");
+      if (star === -1) {
+        return part === segment;
+      }
+      const head = part.slice(0, star);
+      const tail = part.slice(star + 1);
+      return (
+        segment.length > head.length + tail.length &&
+        segment.startsWith(head) &&
+        segment.endsWith(tail)
+      );
+    })
+  );
+}
+
 function getExchangeBaseUrl(): string | null {
   if (!config.FIRE_EXCHANGE_URL) {
     return null;
@@ -172,6 +204,7 @@ function normalizeProviders(
       routes: (provider.capabilities.scrape?.urlRoutes ?? []).map(route => ({
         domains: new Set(route.domains.map(normalizeHost)),
         pathPrefixes: route.pathPrefixes.map(normalizePathPrefix),
+        pathPatterns: (route.pathPatterns ?? []).map(normalizePathPattern),
       })),
     }))
     .filter(provider => provider.routes.length > 0);
@@ -266,6 +299,12 @@ function providerMatchesUrl(
       !wildcards.some(wildcard => route.domains.has(wildcard))
     ) {
       return false;
+    }
+
+    if (route.pathPatterns.length > 0) {
+      return route.pathPatterns.some(pattern =>
+        pathMatchesPattern(pathname, pattern),
+      );
     }
 
     if (route.pathPrefixes.length === 0) {
@@ -1065,7 +1104,11 @@ export function setExchangeProvidersForTest(
     id: string;
     creditsCost?: number;
     terms?: ExchangeTerms;
-    routes: { domains: string[]; pathPrefixes?: string[] }[];
+    routes: {
+      domains: string[];
+      pathPrefixes?: string[];
+      pathPatterns?: string[];
+    }[];
   }[],
   ttlMs = 300_000,
 ) {
@@ -1077,6 +1120,7 @@ export function setExchangeProvidersForTest(
       routes: provider.routes.map(route => ({
         domains: new Set(route.domains.map(normalizeHost)),
         pathPrefixes: (route.pathPrefixes ?? []).map(normalizePathPrefix),
+        pathPatterns: (route.pathPatterns ?? []).map(normalizePathPattern),
       })),
     })),
     expiresAt: Date.now() + ttlMs,

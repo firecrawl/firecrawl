@@ -113,6 +113,45 @@ describe("Exchange routing", () => {
     ).resolves.not.toBeNull();
   });
 
+  it("matches a route's path patterns instead of its prefixes", async () => {
+    setExchangeProvidersForTest([
+      {
+        id: "videos",
+        creditsCost: 10,
+        routes: [
+          {
+            domains: ["clips.example", "www.clips.example"],
+            // What a core that predates patterns falls back to: claims nothing.
+            pathPrefixes: ["/@*/video/*"],
+            pathPatterns: ["/@*/video/*"],
+          },
+        ],
+      },
+    ]);
+
+    for (const url of [
+      "https://www.clips.example/@someone/video/7289245345465109802",
+      "https://clips.example/@someone/video/7289245345465109802/",
+      "https://clips.example/@someone/video/7289245345465109802?lang=en",
+    ]) {
+      await expect(resolveExchangeProvider(url)).resolves.toMatchObject({
+        id: "videos",
+      });
+    }
+    for (const url of [
+      "https://clips.example/@someone",
+      "https://clips.example/@someone/video",
+      "https://clips.example/@someone/video/",
+      "https://clips.example/@/video/1",
+      "https://clips.example/someone/video/1",
+      "https://clips.example/@someone/photo/1",
+      "https://clips.example/@someone/video/1/extra",
+      "https://clips.example/@*/video/*/more",
+    ]) {
+      await expect(resolveExchangeProvider(url)).resolves.toBeNull();
+    }
+  });
+
   it("respects path segment boundaries for prefixes without trailing slashes", async () => {
     setExchangeProvidersForTest([
       {
