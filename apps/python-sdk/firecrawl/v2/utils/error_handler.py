@@ -97,6 +97,23 @@ class CrawlJobFailedError(FirecrawlError):
         return (type(self), (self.job,))
 
 
+class BatchScrapeJobFailedError(FirecrawlError):
+    """Raised when a batch scrape job ends in a failed or cancelled state.
+
+    The original job is retained so callers can inspect its ID-equivalent
+    context, terminal status, and any partial results returned by the API.
+    """
+
+    def __init__(self, job: Any):
+        status = getattr(job, "status", None)
+        super().__init__(f"Batch scrape job ended with status '{status}'")
+        self.job = job
+        self.status = status
+
+    def __reduce__(self):
+        return (type(self), (self.job,))
+
+
 class CrawlJobTimeoutError(TimeoutError):
     """Raised when a crawl job does not finish within the wait timeout.
 
