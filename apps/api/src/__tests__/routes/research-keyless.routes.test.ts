@@ -37,6 +37,7 @@ async function appWithResearchGate(flag: string | undefined) {
   router.get("/papers", reached);
   router.get("/papers/*id/similar", reached);
   router.get("/papers/*id", reached);
+  router.get("/proteins", reached);
 
   app.use(
     "/v2/search/research",
@@ -61,6 +62,7 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
       "inspect",
       "read",
       "similar",
+      "protein",
     ]);
     expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
       true,
@@ -78,6 +80,7 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
       "inspect",
       "read",
       "similar",
+      "protein",
     ]);
   });
 
@@ -101,6 +104,7 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
         "inspect",
         "read",
         "similar",
+        "protein",
       ]);
     }
   });
@@ -139,6 +143,19 @@ describe("Research Index paper operation gate", () => {
     expect(
       isResearchKeylessDisabled(fakeRequest("/github", { query: "x" })),
     ).toBe(false);
+  });
+
+  it("gates the protein lookup on its own flag entry", async () => {
+    const proteins = fakeRequest("/proteins", { protein: "RPUSD3" });
+
+    const narrowed = await loadWithFlag("protein");
+    expect(narrowed.isResearchKeylessDisabled(proteins)).toBe(true);
+    expect(
+      narrowed.isResearchKeylessDisabled(fakeRequest("/papers/proteins")),
+    ).toBe(false);
+
+    const papersOnly = await loadWithFlag("search,inspect,read,similar");
+    expect(papersOnly.isResearchKeylessDisabled(proteins)).toBe(false);
   });
 
   it("blocks only the named operation when the scope is narrowed", async () => {
@@ -188,6 +205,7 @@ describe("keyless Research Index requests through the auth middleware", () => {
       "/v2/search/research/papers/2401.00001/similar",
       "/v2/search/research/papers/doi:10.1101/2025.07.31.667845?query=x",
       "/v2/search/research/papers/doi:10.1101/2025.07.31.667845/similar",
+      "/v2/search/research/proteins?protein=RPUSD3",
     ]) {
       const response = await request(app).get(path);
 
