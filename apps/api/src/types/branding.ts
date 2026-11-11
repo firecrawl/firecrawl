@@ -48,6 +48,10 @@ export interface BrandingProfile {
       [key: string]: number | undefined;
     };
     fontWeights?: {
+      /** Measured weights, keyed like fontSizes above. */
+      h1?: number;
+      h2?: number;
+      body?: number;
       light?: number;
       regular?: number;
       medium?: number;
