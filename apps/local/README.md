@@ -12,6 +12,8 @@ cargo build --release
 ./target/release/firecrawl-local --help
 ```
 
+Once a release is on crates.io, `cargo install firecrawl-local` installs the same binary without cloning the repository.
+
 Pages that need JavaScript are rendered in the Chrome or Chromium already installed on the machine. Without one it still handles static pages. Set `FIRECRAWL_CHROME_PATH` to point it at a specific browser.
 
 ## Use it from the command line
@@ -85,6 +87,25 @@ Everything else uses Firecrawl cloud, because it needs an index, data or a servi
 | `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login file, which defaults to the Firecrawl CLI's |
 | `FIRECRAWL_WEB_URL` | Address of the site `login` opens, for testing against another deployment |
 | `FIRECRAWL_MCP_PACKAGE` | The npm package `mcp` runs, which defaults to `firecrawl-mcp` |
+
+## Releases
+
+`.github/workflows/publish-local.yml` publishes the crate to crates.io when the version in `Cargo.toml` on main is newer than the published one. It uses trusted publishing, so there is no token stored in the repository, and the publish step waits for approval in the `release` environment.
+
+A crate on crates.io cannot reach `apps/api/native/src`, so `scripts/vendor-native.sh` copies the shared cleaning code into `src/native` before packaging. `build.rs` uses that copy only when the repository's files are not there, so a build inside the repository always uses the shared files.
+
+Two things have to happen once, by hand, before the workflow can publish.
+
+1. Publish `nodesig` 1.0.0 to crates.io from [firecrawl/nodesig](https://github.com/firecrawl/nodesig). crates.io does not accept git dependencies, and the cleaning code depends on it.
+2. Publish the first version of `firecrawl-local` with an API token, since trusted publishing only works for a crate that already exists. Then add a trusted publisher in the crate's settings on crates.io with repository `firecrawl/firecrawl`, workflow `publish-local.yml` and environment `release`.
+
+```sh
+cd apps/local
+./scripts/vendor-native.sh
+cargo publish --allow-dirty
+```
+
+After that, a release is a version bump in `Cargo.toml`.
 
 ## Tests
 
