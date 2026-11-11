@@ -62,6 +62,12 @@ security, availability, capacity, upgrades, data retention, and compliance.
   the default `postgres` database.
 - **If you publish dependency ports,** secure them explicitly. PostgreSQL,
   Redis, RabbitMQ, and worker ports should remain private by default.
+- **If you turn on `STEALTH_MODE`,** decide first whether evading bot
+  detection is appropriate for the sites you scrape, under the terms and law
+  that apply to them. It defaults to `off`. `basic` stops Chromium advertising
+  `navigator.webdriver`; `full` additionally injects `window.chrome` and
+  `navigator.plugins` shims into every page the bundled Playwright service
+  loads.
 - **If you have availability or scale targets,** define monitoring, resource
   limits, scaling triggers, and upgrade and rollback procedures. The checked-in
   Compose file is a source-aligned starting point, not a production
