@@ -5,7 +5,6 @@
 //! the first page that needs it and is reused after that.
 
 use std::{
-  net::IpAddr,
   path::PathBuf,
   sync::{Arc, Mutex as StdMutex},
   time::{Duration, Instant},
@@ -197,6 +196,8 @@ struct Launched {
   browser: Browser,
   handler: tokio::task::JoinHandle<()>,
   profile: PathBuf,
+  /// Every connection Chrome makes goes through this; dropped with Chrome.
+  _proxy: crate::netguard::GuardProxy,
 }
 
 pub struct BrowserPool {
@@ -273,6 +274,12 @@ impl BrowserPool {
     ));
     std::fs::create_dir_all(&profile)
       .map_err(|e| format!("could not create a browser profile: {e}"))?;
+    // Chrome does its own networking, so it is sent through a loopback proxy
+    // that applies the network policy to every connection it opens: the
+    // page, its redirects, subresources, scripts' requests and WebSockets.
+    let proxy = crate::netguard::GuardProxy::start(self.policy)
+      .await
+      .map_err(|e| format!("could not start the browser's network guard: {e}"))?;
     let config = BrowserConfig::builder()
       .chrome_executable(&self.chrome)
       .user_data_dir(&profile)
@@ -289,6 +296,7 @@ impl BrowserPool {
         "disable-notifications",
         "disable-save-password-bubble",
       ])
+      .args(proxy.chrome_args())
       .build()
       .map_err(|e| format!("browser configuration failed: {e}"))?;
     let (browser, mut handler) = Browser::launch(config)
@@ -305,6 +313,7 @@ impl BrowserPool {
       browser,
       handler,
       profile,
+      _proxy: proxy,
     });
     Ok(())
   }
@@ -367,24 +376,23 @@ impl BrowserPool {
     screenshot: bool,
     watch: &NetWatch,
   ) -> Result<Rendered, String> {
-    page
-      .goto(url.as_str())
-      .await
-      .map_err(|e| format!("navigation failed: {e}"))?;
+    if let Err(e) = page.goto(url.as_str()).await {
+      return Err(
+        match crate::netguard::refusal_reason(url, self.policy).await {
+          Some(reason) => reason,
+          None => format!("navigation failed: {e}"),
+        },
+      );
+    }
     let response = page.wait_for_navigation_response().await.ok().flatten();
 
-    // The address Chrome actually connected to. Checking it here closes the
-    // gap where a public hostname resolves, or redirects, to a private one.
-    let mut status = None;
-    if let Some(resp) = response.as_ref().and_then(|r| r.response.as_ref()) {
-      status = Some(resp.status as u16);
-      if let Some(ip) = resp.remote_ip_address.as_deref() {
-        let ip = ip.trim_start_matches('[').trim_end_matches(']');
-        if let Ok(parsed) = ip.parse::<IpAddr>() {
-          guard::check_ip(parsed, self.policy).map_err(|e| e.0)?;
-        }
-      }
-    }
+    // Which address each connection reaches is enforced by the guard proxy
+    // Chrome runs behind, for this response and everything else the page
+    // loads, so there is nothing further to check here.
+    let status = response
+      .as_ref()
+      .and_then(|r| r.response.as_ref())
+      .map(|resp| resp.status as u16);
 
     let trace = std::env::var_os("FIRECRAWL_ENGINE_TRACE").is_some();
     let t0 = Instant::now();

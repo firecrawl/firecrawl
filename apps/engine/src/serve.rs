@@ -180,13 +180,25 @@ fn new_job(state: &AppState, total: usize) -> (String, Arc<Mutex<Job>>) {
     task: None,
   }));
   let mut jobs = state.jobs.lock().unwrap();
+  drop_expired(&mut jobs);
+  jobs.insert(id.clone(), job.clone());
+  (id, job)
+}
+
+/// Remove jobs older than `JOB_TTL`. Runs whenever a job is created or
+/// looked up, so an expired job is never served.
+fn drop_expired(jobs: &mut HashMap<String, Arc<Mutex<Job>>>) {
   jobs.retain(|_, j| {
     j.lock()
       .map(|j| j.created.elapsed() < JOB_TTL)
       .unwrap_or(false)
   });
-  jobs.insert(id.clone(), job.clone());
-  (id, job)
+}
+
+fn find_job(state: &AppState, id: &str) -> Option<Arc<Mutex<Job>>> {
+  let mut jobs = state.jobs.lock().unwrap();
+  drop_expired(&mut jobs);
+  jobs.get(id).cloned()
 }
 
 fn job_url(headers: &HeaderMap, path: &str, id: &str) -> String {
@@ -372,7 +384,7 @@ async fn batch_handler(
 }
 
 async fn job_status(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-  let job = state.jobs.lock().unwrap().get(&id).cloned();
+  let job = find_job(&state, &id);
   let Some(job) = job else {
     return error_response(StatusCode::NOT_FOUND, "JOB_NOT_FOUND", "Job not found.");
   };
@@ -392,7 +404,7 @@ async fn job_status(State(state): State<Arc<AppState>>, Path(id): Path<String>) 
 }
 
 async fn job_cancel(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-  let job = state.jobs.lock().unwrap().get(&id).cloned();
+  let job = find_job(&state, &id);
   let Some(job) = job else {
     return error_response(StatusCode::NOT_FOUND, "JOB_NOT_FOUND", "Job not found.");
   };

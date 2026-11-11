@@ -20,7 +20,9 @@ path = "src/main.rs"
 # same. `noop` turns the N-API macros into plain Rust so no Node is needed.
 napi = { version = "3", default-features = false, features = ["noop", "napi4", "serde-json", "tokio_rt"] }
 napi-derive = { version = "3", default-features = false, features = ["noop"] }
-nodesig = { git = "https://github.com/firecrawl/nodesig" }
+# Pinned to the commit in Cargo.lock so `cargo update` cannot change the
+# cleaning rules under the engine. Move it together with apps/api/native.
+nodesig = { git = "https://github.com/firecrawl/nodesig", rev = "b8ebc4a710810dbc36e189d9a0df87b877702b3c" }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 psl = "2.1.140"
@@ -58,5 +60,4 @@ getrandom = "0.3"
 lto = "fat"
 codegen-units = 1
 strip = true
-panic = "abort"
 opt-level = 3
