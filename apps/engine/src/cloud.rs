@@ -165,6 +165,13 @@ fn origin_for(surface: Surface, client: Option<&str>) -> String {
   }
 }
 
+/// Firecrawl cloud's answer to a forwarded request, passed back untouched.
+pub struct Forwarded {
+  pub status: u16,
+  pub content_type: Option<String>,
+  pub body: bytes::Bytes,
+}
+
 #[derive(Debug)]
 pub struct CloudError {
   pub status: u16,
@@ -258,6 +265,81 @@ impl Cloud {
 
   pub fn has_key(&self) -> bool {
     self.api_key.is_some()
+  }
+
+  /// Use the origin a client stamped on its own request, so a call the
+  /// engine passes on is attributed to that client and not to the engine.
+  pub fn with_origin(mut self, origin: &str) -> Self {
+    let clean: String = origin
+      .chars()
+      .filter(|c| c.is_ascii_graphic())
+      .take(100)
+      .collect();
+    if !clean.is_empty() {
+      self.origin = clean;
+    }
+    self
+  }
+
+  /// Whether a request for `path` may be passed on to Firecrawl cloud.
+  pub fn allows(&self, path: &str) -> bool {
+    match self.mode {
+      CloudMode::Off => false,
+      CloudMode::SearchOnly => path == "/v2/search" || path.starts_with("/v2/search/"),
+      CloudMode::Fallback => true,
+    }
+  }
+
+  /// Pass a request this engine does not serve itself on to Firecrawl cloud
+  /// and return the answer as it came. The engine's own key is used when it
+  /// has one; otherwise the caller's, and with neither the call is keyless.
+  pub async fn forward(
+    &self,
+    method: reqwest::Method,
+    path_and_query: &str,
+    content_type: Option<&str>,
+    body: bytes::Bytes,
+    client_auth: Option<&str>,
+    client_origin: Option<&str>,
+  ) -> Result<Forwarded, CloudError> {
+    let origin = match client_origin {
+      Some(o) => self.clone().with_origin(o).origin,
+      None => self.origin.clone(),
+    };
+    let mut req = self
+      .client
+      .request(method, format!("{}{}", self.base, path_and_query))
+      .timeout(Duration::from_secs(190))
+      .header("x-origin", origin)
+      .body(body);
+    if let Some(ct) = content_type {
+      req = req.header(reqwest::header::CONTENT_TYPE, ct);
+    }
+    if let Some(id) = self.install_id.clone().or_else(load_install_id) {
+      req = req.header("x-firecrawl-install", id);
+    }
+    if let Some(key) = self.api_key.as_deref().or(client_auth) {
+      req = req.bearer_auth(key);
+    }
+    let resp = req.send().await.map_err(|e| CloudError {
+      status: 502,
+      message: format!("Could not reach Firecrawl cloud: {e}"),
+    })?;
+    let status = resp.status().as_u16();
+    let content_type = resp
+      .headers()
+      .get(reqwest::header::CONTENT_TYPE)
+      .and_then(|v| v.to_str().ok())
+      .map(str::to_string);
+    let body = resp.bytes().await.map_err(|e| CloudError {
+      status: 502,
+      message: format!("Firecrawl cloud's answer was cut short: {e}"),
+    })?;
+    Ok(Forwarded {
+      status,
+      content_type,
+      body,
+    })
   }
 
   async fn post(
@@ -542,6 +624,112 @@ mod tests {
     );
     assert_eq!(origin_for(Surface::Mcp, None), format!("mcp-engine@{v}"));
     assert!(origin_for(Surface::Mcp, Some("cursor/1.0 (x)")).starts_with("mcp-cursor-1-0-x@"));
+  }
+
+  /// A one-request HTTP server that returns what it was sent.
+  async fn echo_cloud() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+      while let Ok((mut socket, _)) = listener.accept().await {
+        tokio::spawn(async move {
+          let mut buf = vec![0u8; 8192];
+          let n = socket.read(&mut buf).await.unwrap_or(0);
+          let request = String::from_utf8_lossy(&buf[..n]).to_string();
+          let body = serde_json::json!({ "request": request }).to_string();
+          let answer = format!(
+            "HTTP/1.1 207 Multi-Status\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+          );
+          let _ = socket.write_all(answer.as_bytes()).await;
+        });
+      }
+    });
+    base
+  }
+
+  #[tokio::test]
+  async fn forward_passes_the_request_and_the_answer_through() {
+    let base = echo_cloud().await;
+    let keyless = Cloud::new(base.clone(), None, CloudMode::Fallback);
+    let answer = keyless
+      .forward(
+        reqwest::Method::POST,
+        "/v2/search?x=1",
+        Some("application/json"),
+        bytes::Bytes::from_static(b"{\"query\":\"q\"}"),
+        None,
+        Some("mcp-claude-code@3.39.0"),
+      )
+      .await
+      .unwrap();
+    assert_eq!(answer.status, 207);
+    assert_eq!(answer.content_type.as_deref(), Some("application/json"));
+    let seen = String::from_utf8_lossy(&answer.body).to_lowercase();
+    assert!(seen.contains("post /v2/search?x=1"), "{seen}");
+    assert!(seen.contains("x-origin: mcp-claude-code@3.39.0"), "{seen}");
+    assert!(seen.contains("{\\\"query\\\":\\\"q\\\"}"), "{seen}");
+    assert!(
+      !seen.contains("authorization:"),
+      "a keyless call carries no key: {seen}"
+    );
+
+    // The caller's key is used when the engine has none, and the engine's wins when it has one.
+    let with_client_key = keyless
+      .forward(
+        reqwest::Method::GET,
+        "/v2/team/credit-usage",
+        None,
+        bytes::Bytes::new(),
+        Some("fc-client"),
+        None,
+      )
+      .await
+      .unwrap();
+    assert!(String::from_utf8_lossy(&with_client_key.body).contains("Bearer fc-client"));
+    let own = Cloud::new(base, Some("fc-engine".into()), CloudMode::Fallback);
+    let with_own_key = own
+      .forward(
+        reqwest::Method::GET,
+        "/v2/team/credit-usage",
+        None,
+        bytes::Bytes::new(),
+        Some("fc-client"),
+        None,
+      )
+      .await
+      .unwrap();
+    let seen = String::from_utf8_lossy(&with_own_key.body).to_string();
+    assert!(
+      seen.contains("Bearer fc-engine") && !seen.contains("fc-client"),
+      "{seen}"
+    );
+  }
+
+  #[test]
+  fn modes_decide_what_is_passed_on() {
+    let cloud = |mode| Cloud::new("https://api.example.test".into(), None, mode);
+    assert!(!cloud(CloudMode::Off).allows("/v2/search"));
+    assert!(cloud(CloudMode::SearchOnly).allows("/v2/search"));
+    assert!(cloud(CloudMode::SearchOnly).allows("/v2/search/research/papers"));
+    assert!(!cloud(CloudMode::SearchOnly).allows("/v2/agent"));
+    assert!(!cloud(CloudMode::SearchOnly).allows("/v2/searching"));
+    assert!(cloud(CloudMode::Fallback).allows("/v2/agent"));
+  }
+
+  #[test]
+  fn a_client_origin_replaces_the_engine_origin() {
+    let cloud = Cloud::new("https://api.example.test".into(), None, CloudMode::Fallback);
+    assert_eq!(
+      cloud.clone().with_origin("mcp-claude-code@3.39.0").origin(),
+      "mcp-claude-code@3.39.0"
+    );
+    assert_eq!(cloud.clone().with_origin("  ").origin(), cloud.origin());
+    assert_eq!(cloud.with_origin("a b\nc").origin(), "abc");
   }
 
   #[test]

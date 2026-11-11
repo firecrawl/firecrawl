@@ -10,7 +10,6 @@ use firecrawl_engine::{
   guard::NetworkPolicy,
   init::{self, InitOptions},
   login::{self, LoginSession},
-  mcp,
   scrape::{BrowserMode, Engine, EngineConfig, ScrapeOptions},
   serve::{self, ServeConfig},
 };
@@ -169,6 +168,64 @@ enum Command {
     #[arg(long, env = "FIRECRAWL_ENGINE_USER_AGENT")]
     user_agent: Option<String>,
   },
+}
+
+/// Run the Firecrawl MCP server against this engine.
+///
+/// Firecrawl already maintains one MCP server, the `firecrawl-mcp` package,
+/// and it can talk to any Firecrawl API address. So this starts the engine's
+/// API on a loopback port the system picks, then runs that server pointed at
+/// it, with this process's stdin and stdout handed straight through. Scrape,
+/// crawl and map are answered here; everything else the server offers is
+/// passed on to Firecrawl cloud.
+async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
+  let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+    .await
+    .map_err(|e| format!("could not open a local port for the engine: {e}"))?;
+  let addr = listener
+    .local_addr()
+    .map_err(|e| format!("could not read the local port: {e}"))?;
+  let cfg = ServeConfig {
+    addr,
+    token: None,
+    allowed_hosts: Vec::new(),
+    cloud: Cloud::from_env().with_surface(firecrawl_engine::cloud::Surface::Mcp, None),
+  };
+  let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+  let server = tokio::spawn(serve::serve_on(listener, engine, cfg, async move {
+    let _ = stop_rx.await;
+  }));
+
+  let package = std::env::var("FIRECRAWL_MCP_PACKAGE")
+    .ok()
+    .filter(|p| !p.trim().is_empty())
+    .unwrap_or_else(|| "firecrawl-mcp".to_string());
+  let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+  let child = tokio::process::Command::new(npx)
+    .args(["-y", &package])
+    .env("FIRECRAWL_API_URL", format!("http://{addr}"))
+    .stdin(std::process::Stdio::inherit())
+    .stdout(std::process::Stdio::inherit())
+    .stderr(std::process::Stdio::inherit())
+    .spawn();
+  let outcome = match child {
+    Ok(mut child) => match child.wait().await {
+      Ok(status) if status.success() => Ok(()),
+      Ok(status) => Err(format!("the Firecrawl MCP server stopped ({status})")),
+      Err(e) => Err(format!(
+        "the Firecrawl MCP server could not be watched: {e}"
+      )),
+    },
+    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(
+      "The MCP server needs Node.js 22 or newer, and `npx` was not found on this machine. \
+       Install Node.js from https://nodejs.org and try again."
+        .to_string(),
+    ),
+    Err(e) => Err(format!("could not start the Firecrawl MCP server: {e}")),
+  };
+  let _ = stop_tx.send(());
+  let _ = server.await;
+  outcome
 }
 
 fn main() -> ExitCode {
@@ -336,7 +393,7 @@ async fn run(cli: Cli) -> ExitCode {
         Ok(outcome) => {
           let secs = started.elapsed().as_secs_f64();
           match out {
-            Some(dir) => match mcp::write_pages(&dir, &outcome.pages).await {
+            Some(dir) => match crawl::write_pages(&dir, &outcome.pages).await {
               Ok(index) => {
                 eprintln!(
                   "{} pages in {secs:.2}s ({:.1} pages/s), {} errors, {} skipped by robots.txt, saved to {}",
@@ -491,11 +548,7 @@ async fn run(cli: Cli) -> ExitCode {
         return ExitCode::FAILURE;
       };
       tokio::spawn(engine.clone().trim_memory_when_idle());
-      let served = mcp::run(
-        engine.clone(),
-        Cloud::from_env().with_surface(firecrawl_engine::cloud::Surface::Mcp, None),
-      )
-      .await;
+      let served = launch_mcp(engine.clone()).await;
       engine.shutdown().await;
       match served {
         Ok(()) => ExitCode::SUCCESS,
@@ -534,6 +587,16 @@ async fn run(cli: Cli) -> ExitCode {
         println!("Firecrawl MCP server:");
         for line in &report.lines {
           println!("{line}");
+        }
+        // The MCP server is the firecrawl-mcp package, run through npx.
+        let has_npx = std::env::var_os("PATH")
+          .map(|path| {
+            std::env::split_paths(&path)
+              .any(|dir| dir.join("npx").exists() || dir.join("npx.cmd").exists())
+          })
+          .unwrap_or(false);
+        if !has_npx {
+          println!("  Needs Node.js 22 or newer, and `npx` was not found. Install it from https://nodejs.org.");
         }
       }
       println!();
@@ -593,6 +656,7 @@ async fn run(cli: Cli) -> ExitCode {
         addr: SocketAddr::new(ip, port),
         token: token.filter(|t| !t.is_empty()),
         allowed_hosts,
+        cloud: Cloud::from_env_opt_in(),
       };
       tokio::spawn(engine.clone().trim_memory_when_idle());
       let served = serve::serve(engine.clone(), cfg).await;

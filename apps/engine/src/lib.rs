@@ -30,7 +30,6 @@ pub mod guard;
 pub mod init;
 pub mod login;
 pub mod markdown;
-pub mod mcp;
 pub mod mem;
 pub mod netguard;
 pub mod scrape;

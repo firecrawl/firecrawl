@@ -18,7 +18,7 @@ use std::{
 use axum::{
   body::Bytes,
   extract::{Path, Request, State},
-  http::{header, HeaderMap, StatusCode},
+  http::{header, HeaderMap, Method, StatusCode, Uri},
   middleware::{self, Next},
   response::{IntoResponse, Response},
   routing::{delete, get, post},
@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use futures::stream::{self, StreamExt};
 
 use crate::{
-  cloud::{self, Cloud, CloudMode},
+  cloud::{self, Cloud},
   crawl::{self, CrawlOptions, MapOptions},
   scrape::{Engine, ScrapeError, ScrapeOptions},
 };
@@ -55,6 +55,9 @@ pub struct ServeConfig {
   /// Extra hostnames accepted in the Host header (for example a compose
   /// service name).
   pub allowed_hosts: Vec<String>,
+  /// What may be passed on to Firecrawl cloud. `serve` keeps it off unless a
+  /// key or setting turns it on; the MCP launcher runs with it on.
+  pub cloud: Cloud,
 }
 
 struct AppState {
@@ -127,6 +130,114 @@ async fn gate(State(state): State<Arc<AppState>>, req: Request, next: Next) -> R
     }
   }
   next.run(req).await
+}
+
+/// The origin a client put on its request, in the body or the header.
+fn client_origin(headers: &HeaderMap, body_origin: Option<&str>) -> Option<String> {
+  body_origin
+    .filter(|o| !o.is_empty() && *o != "api")
+    .map(str::to_string)
+    .or_else(|| {
+      headers
+        .get("x-origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| !o.is_empty())
+        .map(str::to_string)
+    })
+}
+
+/// Pass a request on to Firecrawl cloud and hand its answer back, or say
+/// plainly that the cloud is off for this engine.
+async fn pass_on(
+  state: &AppState,
+  method: Method,
+  path_and_query: &str,
+  headers: &HeaderMap,
+  body: Bytes,
+) -> Response {
+  let path = path_and_query.split('?').next().unwrap_or(path_and_query);
+  if !state.cloud.allows(path) {
+    return (
+      StatusCode::NOT_IMPLEMENTED,
+      Json(json!({
+        "success": false,
+        "code": "CLOUD_ONLY",
+        "error": format!(
+          "{path} runs on Firecrawl cloud, and the cloud is off for this engine. Set FIRECRAWL_API_KEY or FIRECRAWL_CLOUD=auto to pass these requests on."
+        ),
+        "cloud": { "url": "https://www.firecrawl.dev", "docs": "https://docs.firecrawl.dev" }
+      })),
+    )
+      .into_response();
+  }
+  // With a token set, the caller's bearer is this engine's token and must
+  // not travel on. Without one it is the caller's own Firecrawl key.
+  let client_auth = if state.token.is_none() {
+    headers
+      .get(header::AUTHORIZATION)
+      .and_then(|v| v.to_str().ok())
+      .and_then(|v| {
+        v.strip_prefix("Bearer ")
+          .or_else(|| v.strip_prefix("bearer "))
+      })
+      .filter(|k| !k.is_empty())
+  } else {
+    None
+  };
+  let content_type = headers
+    .get(header::CONTENT_TYPE)
+    .and_then(|v| v.to_str().ok());
+  let origin = client_origin(headers, None);
+  match state
+    .cloud
+    .forward(
+      method,
+      path_and_query,
+      content_type,
+      body,
+      client_auth,
+      origin.as_deref(),
+    )
+    .await
+  {
+    Ok(answer) => {
+      let status = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::BAD_GATEWAY);
+      let mut response = (status, answer.body).into_response();
+      if let Some(ct) = answer.content_type.and_then(|ct| ct.parse().ok()) {
+        response.headers_mut().insert(header::CONTENT_TYPE, ct);
+      }
+      response
+    }
+    Err(e) => error_response(
+      StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_GATEWAY),
+      "CLOUD_ERROR",
+      e.message,
+    ),
+  }
+}
+
+/// Everything this engine does not serve itself. Routes under /v2 go to
+/// Firecrawl cloud: search, data providers, the agent and the rest of the
+/// API. Anything else is not an API route.
+async fn forward_handler(
+  State(state): State<Arc<AppState>>,
+  method: Method,
+  uri: Uri,
+  headers: HeaderMap,
+  body: Bytes,
+) -> Response {
+  if !uri.path().starts_with("/v2/") {
+    return error_response(
+      StatusCode::NOT_FOUND,
+      "NOT_FOUND",
+      "This engine serves the Firecrawl v2 API. Use /v2/scrape, /v2/map, /v2/crawl or /v2/batch/scrape.",
+    );
+  }
+  let path_and_query = uri
+    .path_and_query()
+    .map(|pq| pq.as_str())
+    .unwrap_or(uri.path());
+  pass_on(&state, method, path_and_query, &headers, body).await
 }
 
 fn scrape_error(e: ScrapeError) -> Response {
@@ -226,7 +337,6 @@ fn job_url(headers: &HeaderMap, path: &str, id: &str) -> String {
 
 async fn map_handler(
   State(state): State<Arc<AppState>>,
-  req_uri: axum::http::Uri,
   headers: HeaderMap,
   body: Bytes,
 ) -> Response {
@@ -250,12 +360,7 @@ async fn map_handler(
   };
   match crawl::map(state.engine.clone(), &url, &opts).await {
     Ok(links) => {
-      // v1 returns plain strings; v2 returns objects.
-      let links: Value = if req_uri.path().starts_with("/v1/") {
-        json!(links)
-      } else {
-        Value::Array(links.into_iter().map(|u| json!({ "url": u })).collect())
-      };
+      let links = Value::Array(links.into_iter().map(|u| json!({ "url": u })).collect());
       Json(json!({ "success": true, "links": links })).into_response()
     }
     Err(e) => scrape_error(e),
@@ -442,36 +547,19 @@ async fn scrape_handler(
     Ok(v) => v,
     Err(r) => return r,
   };
-  // An Alexandria provider call: this server has no data providers of its
-  // own, so it forwards to Firecrawl when a key is configured and otherwise
-  // says, in a form a client can act on, that this needs the cloud.
-  if let Some(calls) = payload.get("alexandria") {
-    if state.cloud.mode == CloudMode::Off || !state.cloud.has_key() {
-      return (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-          "success": false,
-          "code": "CLOUD_ONLY",
-          "feature": "alexandria",
-          "error": "Alexandria data providers run on Firecrawl cloud. Set FIRECRAWL_API_KEY on this server to forward these calls.",
-          "cloud": { "url": "https://www.firecrawl.dev/alexandria", "docs": "https://docs.firecrawl.dev" }
-        })),
-      )
-        .into_response();
-    }
-    return match state.cloud.alexandria(calls).await {
-      Ok(body) => Json(body).into_response(),
-      Err(e) => error_response(
-        StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_GATEWAY),
-        "CLOUD_ERROR",
-        e.message,
-      ),
-    };
+  // An Alexandria provider call. This engine has no data providers of its
+  // own, so the request goes to Firecrawl cloud as it came.
+  if payload.get("alexandria").is_some() {
+    return pass_on(&state, Method::POST, "/v2/scrape", &headers, body).await;
   }
   let url = match required_url(&payload) {
     Ok(u) => u,
     Err(r) => return r,
   };
+  let origin = payload
+    .get("origin")
+    .and_then(Value::as_str)
+    .map(str::to_string);
   let opts: ScrapeOptions = match serde_json::from_value(payload) {
     Ok(o) => o,
     Err(e) => {
@@ -482,7 +570,13 @@ async fn scrape_handler(
       )
     }
   };
-  match cloud::scrape_with_fallback(&state.engine, &state.cloud, &url, &opts).await {
+  // A page this machine cannot load is fetched by Firecrawl cloud under the
+  // origin the client gave, so the call is counted as that client's.
+  let cloud = match client_origin(&headers, origin.as_deref()) {
+    Some(origin) => state.cloud.clone().with_origin(&origin),
+    None => state.cloud.clone(),
+  };
+  match cloud::scrape_with_fallback(&state.engine, &cloud, &url, &opts).await {
     Ok(data) => Json(json!({ "success": true, "data": data })).into_response(),
     Err(e) => scrape_error(e),
   }
@@ -526,7 +620,21 @@ pub async fn serve(engine: Arc<Engine>, cfg: ServeConfig) -> Result<(), String> 
       cfg.addr
     ));
   }
+  let listener = tokio::net::TcpListener::bind(cfg.addr)
+    .await
+    .map_err(|e| format!("could not listen on {}: {e}", cfg.addr))?;
+  eprintln!("firecrawl-engine listening on http://{}", cfg.addr);
+  serve_on(listener, engine, cfg, shutdown_signal()).await
+}
 
+/// Serve the API on a listener the caller already bound, until `stop`
+/// resolves. The MCP launcher uses this with a port the system picked.
+pub async fn serve_on(
+  listener: tokio::net::TcpListener,
+  engine: Arc<Engine>,
+  cfg: ServeConfig,
+  stop: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), String> {
   let mut allowed_hosts = cfg.allowed_hosts.clone();
   if !cfg.addr.ip().is_unspecified() {
     allowed_hosts.push(cfg.addr.ip().to_string());
@@ -534,41 +642,28 @@ pub async fn serve(engine: Arc<Engine>, cfg: ServeConfig) -> Result<(), String> 
 
   let state = Arc::new(AppState {
     engine,
-    cloud: Cloud::from_env_opt_in(),
+    cloud: cfg.cloud,
     token: cfg.token,
     allowed_hosts,
     jobs: Mutex::new(HashMap::new()),
   });
 
   let app = Router::new()
-    .route("/v1/scrape", post(scrape_handler))
     .route("/v2/scrape", post(scrape_handler))
-    .route("/v1/map", post(map_handler))
     .route("/v2/map", post(map_handler))
-    .route("/v1/crawl", post(crawl_handler))
     .route("/v2/crawl", post(crawl_handler))
-    .route("/v1/crawl/{id}", get(job_status))
     .route("/v2/crawl/{id}", get(job_status))
-    .route("/v1/crawl/{id}", delete(job_cancel))
     .route("/v2/crawl/{id}", delete(job_cancel))
-    .route("/v1/batch/scrape", post(batch_handler))
     .route("/v2/batch/scrape", post(batch_handler))
-    .route("/v1/batch/scrape/{id}", get(job_status))
     .route("/v2/batch/scrape/{id}", get(job_status))
-    .route("/v1/batch/scrape/{id}", delete(job_cancel))
     .route("/v2/batch/scrape/{id}", delete(job_cancel))
     .route("/health", get(health))
-    .route("/v0/health/liveness", get(health))
-    .route("/v0/health/readiness", get(health))
+    .fallback(forward_handler)
     .layer(middleware::from_fn_with_state(state.clone(), gate))
     .with_state(state);
 
-  let listener = tokio::net::TcpListener::bind(cfg.addr)
-    .await
-    .map_err(|e| format!("could not listen on {}: {e}", cfg.addr))?;
-  eprintln!("firecrawl-engine listening on http://{}", cfg.addr);
   axum::serve(listener, app)
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(stop)
     .await
     .map_err(|e| format!("server error: {e}"))
 }

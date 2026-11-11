@@ -514,6 +514,53 @@ pub async fn map(
   Ok(out)
 }
 
+fn file_name_for(url: &str, index: usize) -> String {
+  let slug: String = url
+    .trim_start_matches("https://")
+    .trim_start_matches("http://")
+    .chars()
+    .map(|c| {
+      if c.is_ascii_alphanumeric() || c == '-' || c == '.' {
+        c
+      } else {
+        '_'
+      }
+    })
+    .collect();
+  let slug = slug.trim_matches('_');
+  let slug = if slug.len() > 120 { &slug[..120] } else { slug };
+  format!("{:04}-{slug}.md", index + 1)
+}
+
+/// Write one markdown file per page and return an index of "file  url  title".
+pub async fn write_pages(dir: &std::path::Path, pages: &[Value]) -> Result<Vec<String>, String> {
+  tokio::fs::create_dir_all(dir)
+    .await
+    .map_err(|e| format!("{}: {e}", dir.display()))?;
+  let mut index = Vec::new();
+  for (i, page) in pages.iter().enumerate() {
+    let url = page
+      .pointer("/metadata/url")
+      .and_then(Value::as_str)
+      .unwrap_or("");
+    let title = page
+      .pointer("/metadata/title")
+      .and_then(Value::as_str)
+      .unwrap_or("");
+    let md = page.get("markdown").and_then(Value::as_str).unwrap_or("");
+    let name = file_name_for(url, i);
+    let body = format!(
+      "---\nurl: {url}\ntitle: {}\n---\n\n{md}\n",
+      title.replace('\n', " ")
+    );
+    tokio::fs::write(dir.join(&name), body)
+      .await
+      .map_err(|e| format!("{name}: {e}"))?;
+    index.push(format!("{name}\t{url}\t{title}"));
+  }
+  Ok(index)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
