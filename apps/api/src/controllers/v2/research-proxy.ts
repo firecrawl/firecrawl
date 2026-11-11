@@ -49,14 +49,16 @@ const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
 const PAPER_READ_TIMEOUT_MS = 120_000;
+const PROTEIN_LOOKUP_TIMEOUT_MS = 5_000;
 
-// The paper endpoints, all served by the Research Index and limited by its
-// daily budget.
+// The paper and protein endpoints, all served by the Research Index and
+// limited by its daily budget.
 const RESEARCH_INDEX_KINDS = new Set<ResearchRequestKind>([
   "research_paper_search",
   "research_related_papers",
   "research_paper_read",
   "research_paper_inspect",
+  "research_protein_lookup",
 ]);
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
@@ -114,6 +116,12 @@ const similarPapersSchema = z.strictObject({
     .optional()
     .transform(value => (value === undefined ? undefined : value === "true")),
   anchor: multiString,
+  ...commonQuery,
+});
+
+const proteinLookupSchema = z.strictObject({
+  protein: z.string().trim().min(1).max(200),
+  organism: z.string().trim().min(1).optional(),
   ...commonQuery,
 });
 
@@ -711,6 +719,26 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       return controller(authedReq, res);
     }),
   );
+
+  if (!options.legacy) {
+    router.get(
+      "/proteins",
+      wrap(
+        createResearchController(proteinLookupSchema, ["protein", "organism"], {
+          kind: "research_protein_lookup",
+          table: "research_protein_lookups",
+          action: "lookupProtein",
+          targetHint: params =>
+            params.organism === undefined
+              ? params.protein
+              : `${params.protein} (${params.organism})`,
+          upstreamPath: () => "/v2/research/proteins",
+          timeoutMs: PROTEIN_LOOKUP_TIMEOUT_MS,
+          billAs: "scrape",
+        }),
+      ),
+    );
+  }
 
   return router;
 }

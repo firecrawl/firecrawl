@@ -117,6 +117,12 @@ describe.each([
     query: { query: "private research query" },
   },
   {
+    name: "protein lookup",
+    router: () => createResearchRouter(),
+    path: "/proteins",
+    query: { protein: "private protein" },
+  },
+  {
     name: "developer search",
     router: () => createDeveloperRouter(),
     path: "/search",
