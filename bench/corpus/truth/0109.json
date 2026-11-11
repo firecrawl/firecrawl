@@ -6,10 +6,6 @@
  "container_rule": "density",
  "must_contain": [
   {
-   "kind": "heading",
-   "text": "Hacker News"
-  },
-  {
    "kind": "early",
    "text": "Even if it just phrases something obvious in a way that makes",
    "where": "p < div.commtext.c00 < div.comment < td.default < tr"

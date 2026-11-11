@@ -8,6 +8,7 @@
   {
    "kind": "heading",
    "text": "flex",
+   "outside_container": true,
    "where": "h1.mt-2.text-3xl < div.px-4.pt-10 < div.mx-auto.grid < div.relative.row-start-1 < div.grid.min-h-dvh"
   },
   {

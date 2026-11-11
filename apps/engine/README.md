@@ -42,7 +42,7 @@ curl -s localhost:3002/v2/scrape -H 'content-type: application/json' \
   -d '{"url":"https://example.com","formats":["markdown"]}'
 ```
 
-`serve` answers `/v1` and `/v2` requests for `/scrape`, `/map`, `/crawl` and `/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. Crawl and batch jobs are kept in memory for an hour.
+`serve` answers `/v1` and `/v2` requests for `/scrape`, `/map`, `/crawl` and `/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. Crawl and batch jobs are kept in memory and expire an hour after they are created.
 
 It does not cover the whole API. `/search` and data providers run on Firecrawl cloud, and `/agent`, browser actions and structured JSON output are not implemented locally. The full self-hosted server in `apps/api` is unchanged.
 
@@ -56,12 +56,13 @@ Three things use Firecrawl cloud, because they need an index or data the machine
 - **Pages that will not load locally.** When a site refuses a plain fetch and the local browser, the CLI and MCP server ask Firecrawl cloud for the page and mark the result with `source: firecrawl-cloud`.
 - **Alexandria data providers.** `find-tools` and `data` reach structured data providers and need a Firecrawl account.
 
-`firecrawl-engine login` signs in through the browser and saves the key where the Firecrawl CLI keeps it. Set `FIRECRAWL_CLOUD=off` to keep every request on the machine, or `FIRECRAWL_CLOUD=search` to allow search only. `serve` stays local unless a key or `FIRECRAWL_CLOUD` is set.
+`firecrawl-engine login` signs in through the browser and saves the key where the Firecrawl CLI keeps it. Set `FIRECRAWL_CLOUD=off` to turn off search, the cloud fallback and data providers, or `FIRECRAWL_CLOUD=search` to allow search only. `login` always talks to Firecrawl, since signing in is its whole job. `serve` stays local unless a key or `FIRECRAWL_CLOUD` is set.
 
 ## Safety defaults
 
 - `serve` listens on `127.0.0.1`. Binding any other address requires `--token`, and requests are checked against an allowed `Host` list.
 - API callers cannot reach localhost, private networks or cloud metadata addresses unless `--allow-private` is set. Link-local and metadata addresses are refused in every mode, including after redirects and DNS resolution.
+- The same rule covers the browser. Chrome runs behind a loopback proxy inside the engine that checks every connection it opens, including redirects, subresources, scripts' own requests and WebSockets, so a public page cannot make the browser call a private address.
 - The local browser runs headless and sandboxed with a throwaway profile.
 - The engine identifies itself in its User-Agent and reads `robots.txt` when crawling.
 
@@ -78,6 +79,9 @@ Three things use Firecrawl cloud, because they need an index or data the machine
 | `FIRECRAWL_ENGINE_USER_AGENT` | Override the User-Agent |
 | `FIRECRAWL_ENGINE_SCROLL` | Scroll rendered pages before reading them |
 | `FIRECRAWL_ENGINE_TRACE` | Print browser settle timing to stderr |
+| `FIRECRAWL_ENGINE_HOME` | Folder for the engine's own files, such as its install ID |
+| `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login file, which defaults to the Firecrawl CLI's |
+| `FIRECRAWL_WEB_URL` | Address of the site `login` opens, for testing against another deployment |
 
 ## Tests and benchmark
 

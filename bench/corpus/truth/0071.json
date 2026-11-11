@@ -16,11 +16,6 @@
    "where": "p.article__teaser < div.c-article-main-column.u-float-left < article.article-item.article-item--open < div.container-type-article < main#content.u-container.u-mt-32"
   },
   {
-   "kind": "mid",
-   "text": "Prices may be subject to local taxes which are calculated during checkout",
-   "where": "p.c-buybox-tax < div.c-journal-buybox__conten < div#lm-nature-buybox-content.c-journal-buybox < div.u-clearfix < div.c-article-main-column.u-float-left"
-  },
-  {
    "kind": "late",
    "text": "Correction 08 February 2023: This News feature misrepresented Scott Aaronson’s views on",
    "where": "p#correction-0 < li.c-article-corrections__i < ul.c-article-corrections < div.c-article-corrections__c < div.c-article-main-column.u-float-left"

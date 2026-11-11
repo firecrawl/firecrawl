@@ -8,6 +8,7 @@
   {
    "kind": "heading",
    "text": "The Rust Reference",
+   "outside_container": true,
    "where": "h1.menu-title < div#mdbook-menu-bar.menu-bar.sticky < div.page < div#mdbook-page-wrapper.page-wrapper < div#mdbook-body-container"
   },
   {

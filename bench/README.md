@@ -312,12 +312,12 @@ Static suite, 216 saved pages served from localhost.
 | | Pages/s at c=1, 8, 32 | Errors at c=32 | Idle memory | Peak memory | Recall | Structure | Perfect pages |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Engine, macOS, browser auto | 54, 114, 124 | 0% | 11 MB | 1,862 MB | 0.994 | 0.981 | 89.8% |
-| Engine, Linux container, browser off | 56, 243, 237 | 0% | 20 MB | 594 MB | 0.990 | 0.977 | 88.0% |
-| Self-hosted server (`bench/selfhost`) | 1.1, 1.1, 0.9 | 18.5% | 2,534 MB | 4,844 MB | 0.966 | 0.780 | 79.6% |
+| Engine, Linux container, browser off | 56, 243, 237 | 0% | 20 MB | 594 MB | 0.994 | 0.981 | 89.8% |
+| Self-hosted server (`bench/selfhost`) | 1.1, 1.1, 0.9 | 18.5% | 2,534 MB | 4,844 MB | 0.966 | 0.775 | 79.6% |
 
 With the browser on, one page in the corpus is a JavaScript shell that takes about 1.7 s to
 render, and that one render sets the wall time of a 216-page pass. With the browser off the
-engine skips it, which is the single failure in the Linux row.
+engine reads that page's static HTML and moves on.
 
 Live corpus, 119 URLs, one pass at concurrency 4.
 

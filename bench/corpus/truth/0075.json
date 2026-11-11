@@ -8,6 +8,7 @@
   {
    "kind": "heading",
    "text": "Web scraping",
+   "outside_container": true,
    "where": "h1#firstHeading.firstHeading.mw-first-heading < header.mw-body-header.vector-page-titlebar < main#content.mw-body < div.mw-content-container < div.mw-page-container-inner"
   },
   {

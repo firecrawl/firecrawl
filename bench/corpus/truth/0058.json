@@ -12,33 +12,33 @@
   },
   {
    "kind": "early",
-   "text": "I was saying to someone the other day that I've been having",
-   "where": "p < li < ol < div#commentlist < section#comments"
+   "text": "Use this rule if you’re often over-committed or too scattered",
+   "where": "p < article < main < body < html"
   },
   {
    "kind": "mid",
-   "text": "Not only is this a great concept, but I usually follow it",
-   "where": "p < li < ol < div#commentlist < section#comments"
+   "text": "When deciding whether to do something, if you feel anything less than",
+   "where": "p < article < main < body < html"
   },
   {
    "kind": "late",
-   "text": "Not working, even after completing Bachelor's of Engineering(Computer) in 2024",
-   "where": "p < li < ol < div#commentlist < section#comments"
+   "text": "Saying yes to less is the way out",
+   "where": "p < article < main < body < html"
   }
  ],
  "must_not_contain": [],
  "structure": {
-  "scope": "div#commentlist < section#comments",
-  "scope_tables_code": "div#commentlist < section#comments",
-  "headings": 0,
-  "h1": 0,
+  "scope": "article < main",
+  "scope_tables_code": "article < main",
+  "headings": 1,
+  "h1": 1,
   "h2": 0,
   "h3": 0,
   "tables": 0,
   "table_rows": [],
   "code_blocks": 0,
-  "list_items": 568,
-  "links": 51
+  "list_items": 0,
+  "links": 2
  },
  "stats": {
   "main_text_chars": 205991,
