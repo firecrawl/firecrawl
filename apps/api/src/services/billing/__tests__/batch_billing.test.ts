@@ -229,6 +229,84 @@ describe("processBillingBatch", () => {
     );
   });
 
+  it("refunds request-tracked credits when finalization returns success false, then continues", async () => {
+    queue = [
+      makeOp({
+        team_id: "team-1",
+        autumnTrackInRequest: true,
+        exchange_access_event_id: "evt-failed",
+      }),
+      makeOp({
+        team_id: "team-2",
+        autumnTrackInRequest: true,
+        exchange_access_event_id: "evt-ok",
+      }),
+    ];
+    withAuth.mockImplementationOnce(() => async () => ({ success: false }));
+
+    await processBillingBatch();
+
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+      },
+      featureId: "CREDITS",
+    });
+    expect(reportExchangeBilling).toHaveBeenCalledExactlyOnceWith({
+      accessEventId: "evt-ok",
+      status: "confirmed",
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-2 for 10 credits",
+    );
+    expect(billTeam7).not.toHaveBeenCalled();
+    expect(trackCredits).not.toHaveBeenCalled();
+  });
+
+  it("refunds when finalization throws and still finalizes the next group if the refund fails", async () => {
+    queue = [
+      makeOp({
+        team_id: "team-1",
+        autumnTrackInRequest: true,
+      }),
+      makeOp({
+        team_id: "team-2",
+        autumnTrackInRequest: true,
+      }),
+    ];
+    withAuth.mockImplementationOnce(() => async () => {
+      throw new Error("finalization failed");
+    });
+    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
+
+    await processBillingBatch();
+
+    expect(refundCredits).toHaveBeenCalledExactlyOnceWith({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+      },
+      featureId: "CREDITS",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Failed to refund Autumn request-tracked credits",
+      expect.objectContaining({ team_id: "team-1", credits: 10 }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-2 for 10 credits",
+    );
+    expect(billTeam7).not.toHaveBeenCalled();
+  });
+
   // Transitional: operations enqueued before org_id was carried. Remove with
   // the lookup they exist for, after one deploy.
   it("resolves the org once for operations that predate the field", async () => {
