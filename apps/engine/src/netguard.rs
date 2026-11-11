@@ -131,16 +131,22 @@ async fn allowed_targets(
         }
       }
       if allowed.is_empty() {
-        return Err(Refused::policy(if !any {
-          format!("'{name}' does not resolve to any address")
-        } else if never_reachable {
-          format!("'{name}' resolves to a link-local or metadata address, which is never reachable")
-        } else {
-          format!("'{name}' resolves to a private address; private targets are off for this engine")
-        }));
+        return Err(Refused::policy(name_refusal(&name, any, never_reachable)));
       }
       Ok(allowed)
     }
+  }
+}
+
+/// The reason a hostname is refused. It names the kind of address the name
+/// resolved to and never the address.
+fn name_refusal(name: &str, resolved_any: bool, never_reachable: bool) -> String {
+  if !resolved_any {
+    format!("'{name}' does not resolve to any address")
+  } else if never_reachable {
+    format!("'{name}' resolves to a link-local or metadata address, which is never reachable")
+  } else {
+    format!("'{name}' resolves to a private address; private targets are off for this engine")
   }
 }
 
@@ -339,13 +345,21 @@ mod tests {
     );
   }
 
-  #[tokio::test]
-  async fn a_named_refusal_does_not_reveal_the_address() {
-    // Resolves to 127.0.0.1 through public DNS; skipped when offline.
-    let named = Url::parse("http://127.0.0.1.nip.io:8080/").unwrap();
-    if let Some(why) = refusal_reason(&named, NetworkPolicy::PublicOnly).await {
-      assert!(why.contains("private"), "{why}");
-      assert!(!why.contains("127.0.0.1 is"), "{why}");
+  #[test]
+  fn a_named_refusal_does_not_reveal_the_address() {
+    let private = name_refusal("intranet.example", true, false);
+    assert!(
+      private.contains("private") && private.contains("intranet.example"),
+      "{private}"
+    );
+    let metadata = name_refusal("meta.example", true, true);
+    assert!(metadata.contains("never reachable"), "{metadata}");
+    for message in [
+      private,
+      metadata,
+      name_refusal("gone.example", false, false),
+    ] {
+      assert!(!message.chars().any(|c| c.is_ascii_digit()), "{message}");
     }
   }
 
