@@ -1,6 +1,6 @@
 # Firecrawl engine
 
-A single Rust binary that scrapes, crawls and maps the web from your own machine. It speaks the Firecrawl API, runs as an MCP server for AI agents, and needs no database, queue or container.
+A single Rust binary that scrapes, crawls and maps the web from your own machine. It speaks the Firecrawl v2 API, plugs into AI agents through the Firecrawl MCP server, and needs no database, queue or container.
 
 It shares its HTML cleaning code with the Firecrawl API. The engine compiles `apps/api/native/src` directly, so a page cleaned locally and a page cleaned in the cloud go through the same rules.
 
@@ -32,7 +32,7 @@ firecrawl-engine init
 
 `init` adds the engine as an MCP server to the AI coding tools it finds on the machine (Claude Code, Claude desktop, Cursor, Windsurf, Gemini CLI and Codex). It backs up each config file before changing it, and `--dry-run` shows the change without writing it. To wire it up by hand, run `firecrawl-engine mcp` as a stdio MCP server.
 
-The MCP server exposes `firecrawl_scrape`, `firecrawl_batch_scrape`, `firecrawl_map`, `firecrawl_crawl`, `firecrawl_search` and `firecrawl_find_tools`.
+The engine does not carry an MCP server of its own. `firecrawl-engine mcp` starts the engine's API on a loopback port and runs the [Firecrawl MCP server](https://github.com/firecrawl/firecrawl-mcp-server) against it, so the tools, their descriptions and their updates are the same ones every other Firecrawl MCP user gets. Scrape, map, crawl and batch scrape are answered on your machine, and the other tools are passed on to Firecrawl cloud. It needs Node.js 22 or newer, because the MCP server is the `firecrawl-mcp` package run through `npx`.
 
 ## Use it as a local API
 
@@ -42,17 +42,17 @@ curl -s localhost:3002/v2/scrape -H 'content-type: application/json' \
   -d '{"url":"https://example.com","formats":["markdown"]}'
 ```
 
-`serve` answers `/v1` and `/v2` requests for `/scrape`, `/map`, `/crawl` and `/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. Crawl and batch jobs are kept in memory and expire an hour after they are created.
+`serve` answers `/v2/scrape`, `/v2/map`, `/v2/crawl` and `/v2/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. The older v0 and v1 routes are not served. Crawl and batch jobs are kept in memory and expire an hour after they are created.
 
-It does not cover the whole API. `/search` and data providers run on Firecrawl cloud, and `/agent`, browser actions and structured JSON output are not implemented locally. The full self-hosted server in `apps/api` is unchanged.
+Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when a key or `FIRECRAWL_CLOUD` is set, and answers `CLOUD_ONLY` otherwise. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
 
 ## What runs locally and what runs on Firecrawl cloud
 
 Scrape, crawl, map and document parsing run on your machine and send nothing to Firecrawl.
 
-Three things use Firecrawl cloud, because they need an index or data the machine does not have.
+Everything else uses Firecrawl cloud, because it needs an index, data or a service the machine does not have. The three you will meet most are these.
 
-- **Search.** `firecrawl-engine search` and the `firecrawl_search` tool query Firecrawl's search, then read the top results locally when asked.
+- **Search.** `firecrawl-engine search` and the MCP server's `firecrawl_search` tool query Firecrawl's search.
 - **Pages that will not load locally.** When a site refuses a plain fetch and the local browser, the CLI and MCP server ask Firecrawl cloud for the page and mark the result with `source: firecrawl-cloud`.
 - **Alexandria data providers.** `find-tools` and `data` reach structured data providers and need a Firecrawl account.
 
@@ -84,11 +84,10 @@ Three things use Firecrawl cloud, because they need an index or data the machine
 | `FIRECRAWL_ENGINE_HOME` | Folder for the engine's own files, such as its install ID |
 | `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login file, which defaults to the Firecrawl CLI's |
 | `FIRECRAWL_WEB_URL` | Address of the site `login` opens, for testing against another deployment |
+| `FIRECRAWL_MCP_PACKAGE` | The npm package `mcp` runs, which defaults to `firecrawl-mcp` |
 
-## Tests and benchmark
+## Tests
 
 ```sh
 cargo test
 ```
-
-`bench/` at the repository root holds the benchmark used to compare the engine with the current self-hosted server. Its README covers the corpus, the scoring and how to rerun it.
