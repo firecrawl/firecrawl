@@ -6,39 +6,55 @@ import { brandFromTitle } from "../../../scraper/scrapeURL/engines/fire-engine/b
 
 describe("brandFromTitle", () => {
   it("takes the leading brand of 'Brand | Tagline'", () => {
-    expect(brandFromTitle("Stripe | Financial Infrastructure", "Stripe")).toBe(
-      "Stripe",
-    );
+    expect(
+      brandFromTitle("Stripe | Financial Infrastructure", "stripe.com"),
+    ).toBe("Stripe");
   });
 
   it("takes the trailing brand of 'Tagline - Brand'", () => {
     expect(
       brandFromTitle(
         "Frische Einrichtungsideen & erschwingliche Möbel - IKEA Deutschland",
-        "Ikea",
+        "www.ikea.com",
       ),
     ).toBe("IKEA Deutschland");
-    expect(brandFromTitle("Home | The Home Depot", "Homedepot")).toBe(
+    expect(brandFromTitle("Home | The Home Depot", "www.homedepot.com")).toBe(
       "The Home Depot",
     );
   });
 
   it("keeps hyphenated brand names whole", () => {
-    expect(brandFromTitle("Coca-Cola | Refresh the World", "Coca-cola")).toBe(
-      "Coca-Cola",
-    );
+    expect(
+      brandFromTitle("Coca-Cola | Refresh the World", "www.coca-cola.com"),
+    ).toBe("Coca-Cola");
   });
 
   it("falls back to the first part when none names the domain", () => {
-    expect(brandFromTitle("楽天市場 - 日本最大級の通販サイト", "Rakuten")).toBe(
-      "楽天市場",
+    expect(
+      brandFromTitle("楽天市場 - 日本最大級の通販サイト", "www.rakuten.co.jp"),
+    ).toBe("楽天市場");
+    expect(brandFromTitle("Welcome: the place to be", "acme.com")).toBe(
+      "Welcome",
     );
-    expect(brandFromTitle("Welcome: the place to be", "Acme")).toBe("Welcome");
+  });
+
+  it("prefers the registrable domain over a subdomain", () => {
+    expect(brandFromTitle("Support - Example", "support.example.com")).toBe(
+      "Example",
+    );
+    expect(brandFromTitle("Example - Support", "support.example.com")).toBe(
+      "Example",
+    );
+  });
+
+  it("matches whole words, not a domain hidden inside a word", () => {
+    expect(brandFromTitle("Best Buy - Ace", "www.ace.com")).toBe("Ace");
+    expect(brandFromTitle("Space travel - Ace", "www.ace.com")).toBe("Ace");
   });
 
   it("returns an empty string for an empty title", () => {
-    expect(brandFromTitle("", "Acme")).toBe("");
-    expect(brandFromTitle(undefined, "Acme")).toBe("");
+    expect(brandFromTitle("", "acme.com")).toBe("");
+    expect(brandFromTitle(undefined, "acme.com")).toBe("");
   });
 });
 

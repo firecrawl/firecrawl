@@ -156,9 +156,10 @@ export const extractBrandName = (): string => {
   const title = document.title;
   const h1 = document.querySelector("h1")?.textContent?.trim();
 
+  let hostname = "";
   let domainName = "";
   try {
-    const hostname = window.location.hostname;
+    hostname = window.location.hostname;
     domainName = hostname.replace(/^www\./, "").split(".")[0];
     domainName = domainName.charAt(0).toUpperCase() + domainName.slice(1);
   } catch (e) {
@@ -166,30 +167,49 @@ export const extractBrandName = (): string => {
   }
 
   return (
-    ogSiteName || brandFromTitle(title, domainName) || h1 || domainName || ""
+    ogSiteName || brandFromTitle(title, hostname) || h1 || domainName || ""
   );
 };
 
 /**
  * The brand part of a title such as "Brand | Tagline" or "Tagline - Brand":
- * the first part naming the site's domain, else the first part. A hyphen only
- * separates parts when spaced, so "Coca-Cola" stays whole.
+ * the part whose words spell a hostname label, trying the label nearest the
+ * registrable domain first, else the first part. A hyphen only separates
+ * parts when spaced, so "Coca-Cola" stays whole.
  */
 export const brandFromTitle = (
   title: string | null | undefined,
-  domainName: string,
+  hostname: string,
 ): string => {
   const parts = (title ?? "")
     .split(/\s*[|–—·•]\s*|\s+-\s+|:\s+/)
     .map(part => part.trim())
     .filter(Boolean);
-  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const domain = squash(domainName);
-  return (
-    (domain && parts.find(part => squash(part).includes(domain))) ||
-    parts[0] ||
-    ""
-  );
+  const labels = hostname
+    .toLowerCase()
+    .split(".")
+    .slice(0, -1)
+    .filter(label => label !== "www")
+    .map(label => label.replace(/[^a-z0-9]/g, ""))
+    .filter(label => label.length >= 3)
+    .reverse();
+  const spells = (part: string, label: string) => {
+    const words = part.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    for (let start = 0; start < words.length; start++) {
+      let joined = "";
+      for (let end = start; end < words.length; end++) {
+        joined += words[end];
+        if (joined === label) return true;
+        if (joined.length >= label.length) break;
+      }
+    }
+    return false;
+  };
+  for (const label of labels) {
+    const match = parts.find(part => spells(part, label));
+    if (match) return match;
+  }
+  return parts[0] ?? "";
 };
 
 export const normalizeColor = (
