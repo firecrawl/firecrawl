@@ -15,7 +15,7 @@ the services and configuration match the revision you checked out.
 | Check which variables and services exist at this revision | [Root Compose configuration](./docker-compose.yaml) |
 | Adapt a Kubernetes deployment | [Kubernetes manifests](./examples/kubernetes/cluster-install/) or [Helm chart](./examples/kubernetes/firecrawl-helm/) |
 | Change Firecrawl product code | [Running Locally](https://docs.firecrawl.dev/contributing/guide), then the [contribution guide](./CONTRIBUTING.md) |
-| Give one person's AI agent web data on their own machine | [Local engine](./apps/engine/README.md), one binary with no server to run |
+| Give one person's AI agent web data on their own machine | [Firecrawl Local](./apps/local/README.md), one binary with no server to run |
 | Connect an agent or terminal client to this server | [Local MCP](https://docs.firecrawl.dev/mcp-server/local) or [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli#connect-the-cli-to-self-hosted-firecrawl) |
 
 ## Keep the first run simple

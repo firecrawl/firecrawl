@@ -5,7 +5,7 @@ If you are an AI agent and the person you work with asked for Firecrawl, choose 
 
 | What they need | What to do |
 | --- | --- |
-| Web data inside this agent or another MCP client | Fetch the onboarding skill below and follow the path it gives you. It covers the hosted setup and the local engine that runs on their machine. |
+| Web data inside this agent or another MCP client | Fetch the onboarding skill below and follow the path it gives you. It covers the hosted setup and Firecrawl Local, which runs on their machine. |
 | Their own scraping service for an app or a team | Self-host the full server. Follow `SELF_HOST.md` at the repository root. |
 | A change to Firecrawl's own code | Follow the contributor steps in `AGENTS.md` at the repository root. |
 
@@ -13,14 +13,14 @@ If you are an AI agent and the person you work with asked for Firecrawl, choose 
 curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 ```
 
-The onboarding skill is the one place setup steps are kept current, so this file does not repeat them. If you cannot reach it, `apps/engine/README.md` has the local engine's commands.
+The onboarding skill is the one place setup steps are kept current, so this file does not repeat them. If you cannot reach it, `apps/local/README.md` has Firecrawl Local's commands.
 <!-- agent-routing:end -->
 
 ## Changing Firecrawl's code
 
 Firecrawl is a web scraper API. The directory you have access to is a monorepo:
  - `apps/api` has the actual API and worker code
- - `apps/engine` is the local engine, a single Rust binary
+ - `apps/local` is Firecrawl Local, a single Rust binary that scrapes, crawls and maps on your own machine
  - `apps/*-sdk` are various SDKs
 
 When making changes to the API, here are the general steps you should take:

@@ -301,16 +301,16 @@ Connect any MCP-compatible client to the web in seconds.
 }
 ```
 
-### Local engine
+### Firecrawl Local
 
 Run scrape, crawl and map on your own machine with one binary and no Docker. It adds itself to the AI coding tools it finds as an MCP server.
 
 ```bash
-cd apps/engine && cargo build --release
-./target/release/firecrawl-engine init
+cd apps/local && cargo build --release
+./target/release/firecrawl-local init
 ```
 
-Search and Alexandria data providers still run on Firecrawl cloud. See [apps/engine](./apps/engine/README.md) for every command.
+Search and Alexandria data providers still run on Firecrawl cloud. See [apps/local](./apps/local/README.md) for every command.
 
 ### Agent Onboarding
 
