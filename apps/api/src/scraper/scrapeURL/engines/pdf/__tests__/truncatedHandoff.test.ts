@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,8 @@ import {
   isTruncatedPdf,
   startsWithSameBytes,
 } from "../truncatedHandoff";
+import { config } from "../../../../../config";
+import { deterministicPercentage } from "../fire-pdf/routing";
 
 const FULL_PDF = Buffer.from(
   "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
@@ -188,6 +190,52 @@ describe("startsWithSameBytes", () => {
 });
 
 describe("completeTruncatedHandoff", () => {
+  const originalPercent = config.PDF_TRUNCATED_REFETCH_PERCENT;
+  beforeEach(() => {
+    (config as any).PDF_TRUNCATED_REFETCH_PERCENT = 100;
+  });
+  afterEach(() => {
+    (config as any).PDF_TRUNCATED_REFETCH_PERCENT = originalPercent;
+  });
+
+  it("only downloads again for scrapes in the rollout percentage", async () => {
+    const meta = makeMeta();
+    const share = deterministicPercentage(`truncated-refetch:${meta.id}`);
+
+    (config as any).PDF_TRUNCATED_REFETCH_PERCENT = share;
+    const outside = await handoffOf(CUT_PDF);
+    const skipped = downloadReturning(FULL_PDF);
+    expect(await completeTruncatedHandoff(meta, outside, 1024, skipped)).toBe(
+      outside,
+    );
+    expect(skipped).not.toHaveBeenCalled();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "PDF handoff looks truncated",
+      expect.objectContaining({ outcome: "skipped_rollout" }),
+    );
+
+    (config as any).PDF_TRUNCATED_REFETCH_PERCENT = Math.min(
+      share + 0.001,
+      100,
+    );
+    const inside = await handoffOf(CUT_PDF);
+    const download = downloadReturning(FULL_PDF);
+    const result = await completeTruncatedHandoff(meta, inside, 1024, download);
+    expect(download).toHaveBeenCalledOnce();
+    expect(await readFile(result.filePath)).toEqual(FULL_PDF);
+  });
+
+  it("never downloads again at the default of 0", async () => {
+    (config as any).PDF_TRUNCATED_REFETCH_PERCENT = 0;
+    const handoff = await handoffOf(CUT_PDF);
+    const download = downloadReturning(FULL_PDF);
+
+    expect(
+      await completeTruncatedHandoff(makeMeta(), handoff, 1024, download),
+    ).toBe(handoff);
+    expect(download).not.toHaveBeenCalled();
+  });
+
   it("replaces a cut-off handoff with a complete direct download", async () => {
     const meta = makeMeta();
     const handoff = await handoffOf(CUT_PDF, FULL_PDF.length);
