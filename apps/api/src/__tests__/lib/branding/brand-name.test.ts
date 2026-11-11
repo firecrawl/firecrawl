@@ -52,6 +52,15 @@ describe("brandFromTitle", () => {
     expect(brandFromTitle("Space travel - Ace", "www.ace.com")).toBe("Ace");
   });
 
+  it("matches short brands and skips country second-level suffixes", () => {
+    expect(brandFromTitle("Laptops and printers | HP", "www.hp.com")).toBe(
+      "HP",
+    );
+    expect(
+      brandFromTitle("Groceries delivered - Ocado", "www.ocado.co.uk"),
+    ).toBe("Ocado");
+  });
+
   it("returns an empty string for an empty title", () => {
     expect(brandFromTitle("", "acme.com")).toBe("");
     expect(brandFromTitle(undefined, "acme.com")).toBe("");

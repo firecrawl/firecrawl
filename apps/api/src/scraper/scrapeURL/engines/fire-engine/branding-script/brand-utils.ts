@@ -171,6 +171,20 @@ export const extractBrandName = (): string => {
   );
 };
 
+// Second-level labels under a country TLD that are part of the public suffix
+// (example.co.uk, example.com.br), not the brand.
+const COUNTRY_SECOND_LEVELS = new Set([
+  "co",
+  "com",
+  "net",
+  "org",
+  "ac",
+  "gov",
+  "edu",
+  "ne",
+  "or",
+]);
+
 /**
  * The brand part of a title such as "Brand | Tagline" or "Tagline - Brand":
  * the part whose words spell a hostname label, trying the label nearest the
@@ -185,13 +199,18 @@ export const brandFromTitle = (
     .split(/\s*[|–—·•]\s*|\s+-\s+|:\s+/)
     .map(part => part.trim())
     .filter(Boolean);
-  const labels = hostname
-    .toLowerCase()
-    .split(".")
-    .slice(0, -1)
+  const hostLabels = hostname.toLowerCase().split(".");
+  const secondLevel = hostLabels[hostLabels.length - 2];
+  const suffixLength =
+    hostLabels[hostLabels.length - 1]?.length === 2 &&
+    COUNTRY_SECOND_LEVELS.has(secondLevel)
+      ? 2
+      : 1;
+  const labels = hostLabels
+    .slice(0, -suffixLength)
     .filter(label => label !== "www")
     .map(label => label.replace(/[^a-z0-9]/g, ""))
-    .filter(label => label.length >= 3)
+    .filter(Boolean)
     .reverse();
   const spells = (part: string, label: string) => {
     const words = part.toLowerCase().match(/[a-z0-9]+/g) ?? [];
