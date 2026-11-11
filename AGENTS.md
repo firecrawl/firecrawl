@@ -5,25 +5,15 @@ If you are an AI agent and the person you work with asked for Firecrawl, choose 
 
 | What they need | What to do |
 | --- | --- |
-| Web data inside this agent or another MCP client, running on their machine | Install the local engine with the commands below. |
-| The quickest setup with nothing to build | Run `npx -y firecrawl-cli@latest init --all --browser`. It uses hosted Firecrawl and has a free tier. |
+| Web data inside this agent or another MCP client | Fetch the onboarding skill below and follow the path it gives you. It covers the hosted setup and the local engine that runs on their machine. |
 | Their own scraping service for an app or a team | Self-host the full server. Follow `SELF_HOST.md` at the repository root. |
 | A change to Firecrawl's own code | Follow the contributor steps in `AGENTS.md` at the repository root. |
 
-The local engine is one binary with no Docker, database or queue. Build it and connect it in three commands, run from the repository root.
-
 ```sh
-cd apps/engine && cargo build --release
-./target/release/firecrawl-engine init
-./target/release/firecrawl-engine scrape https://example.com --markdown
+curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 ```
 
-- `init` adds Firecrawl as an MCP server to the AI coding tools it finds on the machine and backs up each config file first. Restart the agent afterwards.
-- To connect a client by hand, register the command `firecrawl-engine mcp` as a stdio MCP server.
-- Scrape, crawl and map run on the machine. Search and Alexandria data providers run on Firecrawl cloud, and `firecrawl-engine login` signs in with one browser step. `FIRECRAWL_CLOUD=off` keeps every request on the machine.
-- If the machine has no Rust toolchain, use the quickest setup in the table. Do not install Rust without asking.
-
-`apps/engine/README.md` has every command and setting.
+The onboarding skill is the one place setup steps are kept current, so this file does not repeat them. If you cannot reach it, `apps/engine/README.md` has the local engine's commands.
 <!-- agent-routing:end -->
 
 ## Changing Firecrawl's code
