@@ -44,7 +44,7 @@ curl -s localhost:3002/v2/scrape -H 'content-type: application/json' \
 
 `serve` answers `/v2/scrape`, `/v2/map`, `/v2/crawl` and `/v2/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. The older v0 and v1 routes are not served. Crawl and batch jobs are kept in memory and expire an hour after they are created.
 
-Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when a key or `FIRECRAWL_CLOUD` is set, and answers `CLOUD_ONLY` otherwise. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
+Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when the cloud setting allows that route, and answers `CLOUD_ONLY` otherwise. With no key and no `FIRECRAWL_CLOUD`, `serve` passes nothing on. `FIRECRAWL_CLOUD=search` passes on search only, `FIRECRAWL_CLOUD=off` passes on nothing, and a value that is not recognised is read as `off`. Forwarded requests must be `application/json` or come from a tool, not a web page, and bodies may be up to 64 MB. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
 
 ## What runs locally and what runs on Firecrawl cloud
 
@@ -74,7 +74,7 @@ Everything else uses Firecrawl cloud, because it needs an index, data or a servi
 | --- | --- |
 | `FIRECRAWL_LOCAL_BROWSER` | `auto` (default), `never` or `always` |
 | `FIRECRAWL_CHROME_PATH` | Path to the Chrome or Chromium to use |
-| `FIRECRAWL_CLOUD` | `auto`, `search` or `off` |
+| `FIRECRAWL_CLOUD` | `auto`, `search` or `off`. Anything else is read as `off` |
 | `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` | Firecrawl cloud key and address |
 | `FIRECRAWL_LOCAL_TOKEN` | Bearer token for `serve` |
 | `FIRECRAWL_LOCAL_ALLOW_PRIVATE` | Let `serve` callers reach private addresses |
