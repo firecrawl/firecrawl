@@ -11,9 +11,11 @@ use std::path::Path;
 fn main() {
   println!("cargo:rustc-check-cfg=cfg(vendored_native)");
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=src/native");
   let root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
   let root = Path::new(&root);
+  if root.join("src/native").exists() {
+    println!("cargo:rerun-if-changed=src/native");
+  }
   let in_repository = root.join("../api/native/src/html.rs").exists();
   let vendored = root.join("src/native/html.rs").exists();
   if !in_repository && vendored {

@@ -51,20 +51,15 @@ jobs:
         working-directory: ./apps/local
         run: cargo test --locked
 
-      # A published crate carries a copy of the shared code instead of reaching
-      # into apps/api/native/src. Build from that file set, away from the
-      # repository, so a release is never the first time it is tried.
-      - name: Build from the packaged files
+      # Test the actual archive and normalized manifest, including registry
+      # dependencies, rather than a copy of the repository manifest.
+      - name: Build and test the packaged crate
         working-directory: ./apps/local
         run: |
           ./scripts/vendor-native.sh
+          cargo package --no-verify --allow-dirty
           out="$RUNNER_TEMP/firecrawl-local-package"
           mkdir -p "$out"
-          cargo package --list --allow-dirty \
-            | grep -v -e '^\.cargo_vcs_info\.json$' -e '^Cargo\.toml\.orig$' \
-            | while read -r file; do
-                mkdir -p "$out/$(dirname "$file")"
-                cp "$file" "$out/$file"
-              done
+          tar -xzf target/package/firecrawl-local-*.crate -C "$out" --strip-components=1
           test -f "$out/src/native/html.rs"
-          CARGO_TARGET_DIR="$PWD/target" cargo build --locked --manifest-path "$out/Cargo.toml"
+          CARGO_TARGET_DIR="$PWD/target" cargo test --locked --manifest-path "$out/Cargo.toml"
