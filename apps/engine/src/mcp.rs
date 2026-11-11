@@ -471,7 +471,10 @@ impl Server {
           .and_then(Value::as_str)
           .map(str::to_string);
         if let Ok(mut c) = self.cloud.lock() {
-          *c = c.clone().with_harness(harness);
+          *c = c
+            .clone()
+            .with_surface(crate::cloud::Surface::Mcp, harness.as_deref())
+            .with_harness(harness);
         }
         let version = params
           .get("protocolVersion")

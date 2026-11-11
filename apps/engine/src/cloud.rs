@@ -44,6 +44,7 @@ pub struct Cloud {
   install_id: Option<String>,
   /// The agent harness that launched the engine (from the MCP handshake).
   harness: Option<String>,
+  origin: String,
 }
 
 pub const SIGN_IN_HINT: &str = "Run `firecrawl login`, or set FIRECRAWL_API_KEY.";
@@ -119,6 +120,51 @@ fn load_install_id() -> Option<String> {
   Some(id)
 }
 
+/// How the engine was started, which decides the origin its cloud calls carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Surface {
+  /// A command typed in a terminal, or run by an AI agent through one.
+  Cli,
+  /// The stdio MCP server.
+  Mcp,
+  /// The local HTTP API.
+  Serve,
+}
+
+/// The origin for a surface, in the forms Firecrawl already uses:
+/// `cli@<version>` for the CLI and `mcp-<client>@<version>` for an MCP
+/// server, where the client is the name the MCP client gave at initialize.
+/// The version is marked `engine-` so the engine can be told apart from the
+/// Node CLI and the hosted MCP server.
+fn origin_for(surface: Surface, client: Option<&str>) -> String {
+  let version = concat!("engine-", env!("CARGO_PKG_VERSION"));
+  match surface {
+    Surface::Cli => format!("cli@{version}"),
+    Surface::Serve => format!("firecrawl-engine@{version}"),
+    Surface::Mcp => {
+      let token: String = client
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+      let token: String = token
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .take(48)
+        .collect();
+      if token.is_empty() {
+        format!("mcp-engine@{version}")
+      } else {
+        format!("mcp-{token}@{version}")
+      }
+    }
+  }
+}
+
 #[derive(Debug)]
 pub struct CloudError {
   pub status: u16,
@@ -158,7 +204,7 @@ impl Cloud {
   /// `FIRECRAWL_CLOUD` setting turns it on. For `serve`, where the people
   /// calling the API did not install this engine themselves.
   pub fn from_env_opt_in() -> Self {
-    let mut cloud = Self::from_env();
+    let mut cloud = Self::from_env().with_surface(Surface::Serve, None);
     if std::env::var("FIRECRAWL_CLOUD").is_err() && !cloud.has_key() {
       cloud.mode = CloudMode::Off;
     }
@@ -195,19 +241,43 @@ impl Cloud {
       mode,
       install_id: None,
       harness: None,
+      origin: origin_for(Surface::Cli, None),
     }
+  }
+
+  /// Stamp cloud calls with the surface the engine is running as, so the
+  /// request is attributed the way the Firecrawl CLI and MCP server are.
+  pub fn with_surface(mut self, surface: Surface, client: Option<&str>) -> Self {
+    self.origin = origin_for(surface, client);
+    self
+  }
+
+  pub fn origin(&self) -> &str {
+    &self.origin
   }
 
   pub fn has_key(&self) -> bool {
     self.api_key.is_some()
   }
 
-  async fn post(&self, path: &str, body: Value, timeout: Duration) -> Result<Value, CloudError> {
+  async fn post(
+    &self,
+    path: &str,
+    mut body: Value,
+    timeout: Duration,
+  ) -> Result<Value, CloudError> {
+    // The scrape route reads the origin from the body only, so it travels
+    // there as well as in the header.
+    if let Some(obj) = body.as_object_mut() {
+      obj
+        .entry("origin")
+        .or_insert_with(|| Value::String(self.origin.clone()));
+    }
     let mut req = self
       .client
       .post(format!("{}{}", self.base, path))
       .timeout(timeout)
-      .header("x-origin", "firecrawl-engine")
+      .header("x-origin", &self.origin)
       .json(&body);
     if let Some(id) = self.install_id.clone().or_else(load_install_id) {
       req = req.header("x-firecrawl-install", id);
@@ -317,7 +387,7 @@ impl Cloud {
     let mut payload = self
       .post(
         "/v2/scrape",
-        json!({ "alexandria": calls, "origin": "firecrawl-engine" }),
+        json!({ "alexandria": calls, "origin": self.origin }),
         Duration::from_secs(190),
       )
       .await?;
@@ -338,7 +408,7 @@ impl Cloud {
     let mut payload = self
       .post(
         "/v2/scrape",
-        json!({ "alexandria": call, "origin": "firecrawl-engine" }),
+        json!({ "alexandria": call, "origin": self.origin }),
         Duration::from_secs(60),
       )
       .await?;
@@ -452,6 +522,26 @@ mod tests {
     assert_eq!(cli_credentials(), (None, None));
     std::env::remove_var("FIRECRAWL_CLI_CREDENTIALS");
     let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn origins_follow_the_cli_and_mcp_conventions() {
+    let v = concat!("engine-", env!("CARGO_PKG_VERSION"));
+    assert_eq!(origin_for(Surface::Cli, None), format!("cli@{v}"));
+    assert_eq!(
+      origin_for(Surface::Serve, None),
+      format!("firecrawl-engine@{v}")
+    );
+    assert_eq!(
+      origin_for(Surface::Mcp, Some("Claude Code")),
+      format!("mcp-claude-code@{v}")
+    );
+    assert_eq!(
+      origin_for(Surface::Mcp, Some("  ")),
+      format!("mcp-engine@{v}")
+    );
+    assert_eq!(origin_for(Surface::Mcp, None), format!("mcp-engine@{v}"));
+    assert!(origin_for(Surface::Mcp, Some("cursor/1.0 (x)")).starts_with("mcp-cursor-1-0-x@"));
   }
 
   #[test]

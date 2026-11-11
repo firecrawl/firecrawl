@@ -491,7 +491,11 @@ async fn run(cli: Cli) -> ExitCode {
         return ExitCode::FAILURE;
       };
       tokio::spawn(engine.clone().trim_memory_when_idle());
-      let served = mcp::run(engine.clone(), Cloud::from_env()).await;
+      let served = mcp::run(
+        engine.clone(),
+        Cloud::from_env().with_surface(firecrawl_engine::cloud::Surface::Mcp, None),
+      )
+      .await;
       engine.shutdown().await;
       match served {
         Ok(()) => ExitCode::SUCCESS,
