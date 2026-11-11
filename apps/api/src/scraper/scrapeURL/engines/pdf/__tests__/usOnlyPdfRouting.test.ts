@@ -6,8 +6,6 @@ import { config } from "../../../../../config";
 import { UsOnlyUnavailableError } from "../../../error";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { scrapePDFWithParsePDF } from "../pdfParse";
-import { scrapePDFWithRunPodMU } from "../runpodMU";
-import { mineruDiverted } from "../fire-pdf/by-reference";
 import { scrapePDF } from "../index";
 
 vi.mock("@mendable/firecrawl-rs", () => ({
@@ -24,10 +22,6 @@ vi.mock("../pdfParse", () => ({
   scrapePDFWithParsePDF: vi.fn(),
 }));
 
-vi.mock("../runpodMU", () => ({
-  scrapePDFWithRunPodMU: vi.fn(),
-}));
-
 vi.mock("../markdownToHtml", () => ({
   safeMarkdownToHtml: vi.fn(async (markdown: string) => `<p>${markdown}</p>`),
 }));
@@ -35,7 +29,6 @@ vi.mock("../markdownToHtml", () => ({
 const mockedProcessPdf = vi.mocked(processPdf);
 const mockedFirePdf = vi.mocked(scrapePDFWithFirePDF);
 const mockedPdfParse = vi.mocked(scrapePDFWithParsePDF);
-const mockedRunPodMU = vi.mocked(scrapePDFWithRunPodMU);
 
 const configKeys = [
   "PDF_RUST_EXTRACT_ENABLE",
@@ -43,9 +36,6 @@ const configKeys = [
   "FIRE_PDF_BASE_URL",
   "FIRE_PDF_PERCENT",
   "FIRE_PDF_ASYNC_PERCENT",
-  "MINERU_PERCENT",
-  "RUNPOD_MU_API_KEY",
-  "RUNPOD_MU_POD_ID",
   "PARSE_PDF_ALWAYS_FIRE_PDF",
 ] as const;
 const originalConfig = Object.fromEntries(
@@ -118,9 +108,6 @@ describe("PDF routing for US-only teams", () => {
       FIRE_PDF_BASE_URL: "http://fire-pdf.test",
       FIRE_PDF_PERCENT: 100,
       FIRE_PDF_ASYNC_PERCENT: 0,
-      MINERU_PERCENT: 0,
-      RUNPOD_MU_API_KEY: "test-key",
-      RUNPOD_MU_POD_ID: "test-endpoint",
       PARSE_PDF_ALWAYS_FIRE_PDF: false,
     });
     mockedProcessPdf.mockResolvedValue(nativeResult("TextBased", "text layer"));
@@ -132,10 +119,6 @@ describe("PDF routing for US-only teams", () => {
     mockedPdfParse.mockResolvedValue({
       markdown: "pdf-parse",
       html: "<p>pdf-parse</p>",
-    });
-    mockedRunPodMU.mockResolvedValue({
-      markdown: "serverless",
-      html: "<p>serverless</p>",
     });
   });
 
@@ -149,21 +132,8 @@ describe("PDF routing for US-only teams", () => {
     Object.assign(config as any, originalConfig);
   });
 
-  it("never diverts a US-only team to the alternate PDF engine", async () => {
-    setConfig({ MINERU_PERCENT: 100 });
-
-    expect(mineruDiverted(await makeMeta(false))).toBe(true);
-    expect(mineruDiverted(await makeMeta(true))).toBe(false);
-
-    const result = await scrapePDF(await makeMeta(true));
-
-    expect(result.markdown).toBe("fire-pdf");
-    expect(mockedFirePdf).toHaveBeenCalledTimes(1);
-    expect(mockedRunPodMU).not.toHaveBeenCalled();
-  });
-
   it("sends a US-only PDF to the PDF service regardless of FIRE_PDF_PERCENT", async () => {
-    setConfig({ FIRE_PDF_PERCENT: 0, RUNPOD_MU_API_KEY: undefined });
+    setConfig({ FIRE_PDF_PERCENT: 0 });
 
     expect((await scrapePDF(await makeMeta(false))).markdown).toBe("pdf-parse");
     expect(mockedFirePdf).not.toHaveBeenCalled();
@@ -180,21 +150,13 @@ describe("PDF routing for US-only teams", () => {
     const error = await scrapePDF(await makeMeta(true)).catch(e => e);
 
     expect(error).toBeInstanceOf(UsOnlyUnavailableError);
-    expect(mockedRunPodMU).not.toHaveBeenCalled();
     expect(mockedPdfParse).not.toHaveBeenCalled();
   });
 
-  it("skips the serverless fallback but keeps the text layer for a US-only team", async () => {
+  it("falls back to the text layer for a US-only team", async () => {
     mockedFirePdf.mockRejectedValue(new Error("fire-pdf 500"));
 
-    expect((await scrapePDF(await makeMeta(false))).markdown).toBe(
-      "serverless",
-    );
-    expect(mockedRunPodMU).toHaveBeenCalledTimes(1);
-
-    mockedRunPodMU.mockClear();
     expect((await scrapePDF(await makeMeta(true))).markdown).toBe("pdf-parse");
-    expect(mockedRunPodMU).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -211,7 +173,6 @@ describe("PDF routing for US-only teams", () => {
 
       expect(error).toBeInstanceOf(UsOnlyUnavailableError);
       expect(error.message).toContain("This PDF needs OCR");
-      expect(mockedRunPodMU).not.toHaveBeenCalled();
     },
   );
 });

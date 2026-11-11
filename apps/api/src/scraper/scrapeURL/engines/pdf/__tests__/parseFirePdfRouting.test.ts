@@ -36,9 +36,6 @@ const configKeys = [
   "FIRE_PDF_BASE_URL",
   "FIRE_PDF_PERCENT",
   "FIRE_PDF_ASYNC_PERCENT",
-  "MINERU_PERCENT",
-  "RUNPOD_MU_API_KEY",
-  "RUNPOD_MU_POD_ID",
   "PARSE_PDF_ALWAYS_FIRE_PDF",
 ] as const;
 const originalConfig = Object.fromEntries(
@@ -100,6 +97,14 @@ const eligibleTextPdf = {
   logs: [],
 };
 
+const scannedPdf = {
+  ...eligibleTextPdf,
+  pdfType: "Scanned",
+  confidence: 0.2,
+  markdown: "",
+  pagesNeedingOcr: [1],
+};
+
 describe("PDF routing for /v2/parse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -109,9 +114,6 @@ describe("PDF routing for /v2/parse", () => {
       FIRE_PDF_BASE_URL: "http://fire-pdf.test",
       FIRE_PDF_PERCENT: 0,
       FIRE_PDF_ASYNC_PERCENT: 0,
-      MINERU_PERCENT: 0,
-      RUNPOD_MU_API_KEY: undefined,
-      RUNPOD_MU_POD_ID: undefined,
       PARSE_PDF_ALWAYS_FIRE_PDF: true,
     });
     mockedProcessPdf.mockResolvedValue(eligibleTextPdf as any);
@@ -151,15 +153,6 @@ describe("PDF routing for /v2/parse", () => {
     expect(mockedFirePdf).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps parse PDFs away from the MinerU diversion", async () => {
-    setConfig({ MINERU_PERCENT: 100 });
-
-    const result = await scrapePDF(await makeMeta({ isParse: true }));
-
-    expect(result.markdown).toBe("fire-pdf");
-    expect(mockedFirePdf).toHaveBeenCalledTimes(1);
-  });
-
   it("falls back to pdf-parse when FirePDF fails", async () => {
     mockedFirePdf.mockRejectedValueOnce(new Error("fire-pdf 503"));
 
@@ -167,6 +160,28 @@ describe("PDF routing for /v2/parse", () => {
 
     expect(result.markdown).toBe("pdf-parse");
     expect(mockedFirePdf).toHaveBeenCalledTimes(1);
+    expect(mockedPdfParse).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to pdf-parse when FirePDF fails on a scrape request", async () => {
+    setConfig({ FIRE_PDF_PERCENT: 100 });
+    mockedProcessPdf.mockResolvedValue(scannedPdf as any);
+    mockedFirePdf.mockRejectedValueOnce(new Error("fire-pdf 503"));
+
+    const result = await scrapePDF(await makeMeta({}));
+
+    expect(result.markdown).toBe("pdf-parse");
+    expect(mockedFirePdf).toHaveBeenCalledTimes(1);
+    expect(mockedPdfParse).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses pdf-parse for a scrape request outside the FirePDF sample", async () => {
+    mockedProcessPdf.mockResolvedValue(scannedPdf as any);
+
+    const result = await scrapePDF(await makeMeta({}));
+
+    expect(result.markdown).toBe("pdf-parse");
+    expect(mockedFirePdf).not.toHaveBeenCalled();
     expect(mockedPdfParse).toHaveBeenCalledTimes(1);
   });
 
