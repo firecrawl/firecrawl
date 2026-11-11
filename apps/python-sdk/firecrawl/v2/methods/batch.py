@@ -14,7 +14,7 @@ from ..types import (
     PaginationConfig,
     AuditMetadata,
 )
-from ..utils import FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
+from ..utils import BatchScrapeJobFailedError, FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 from ..utils.normalize import normalize_document_input
 from ..types import CrawlErrorsResponse
 
@@ -334,9 +334,7 @@ def wait_for_batch_completion(
             return status_job
         if status_job.status in ["failed", "cancelled"]:
             if raise_on_failure:
-                raise FirecrawlError(
-                    f"Batch scrape job {job_id} ended with status '{status_job.status}'"
-                )
+                raise BatchScrapeJobFailedError(status_job)
             return status_job
         
         # Check timeout
