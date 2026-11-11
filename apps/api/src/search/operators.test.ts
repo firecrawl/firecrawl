@@ -128,6 +128,14 @@ describe("stripSiteOperators", () => {
       ),
     ).toBe("electric vehicles");
     expect(
+      stripSiteOperators(
+        "electric vehicles site:a.com OR site:b.com OR site:c.com",
+      ),
+    ).toBe("electric vehicles");
+    expect(
+      stripSiteOperators("electric vehicles site:a.com OR ((site:b.com))"),
+    ).toBe("electric vehicles");
+    expect(
       stripSiteOperators("electric vehicles -site:facebook.com"),
     ).toBe("electric vehicles");
   });
