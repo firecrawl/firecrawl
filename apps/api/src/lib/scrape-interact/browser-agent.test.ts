@@ -9,6 +9,9 @@
 const agentMocks = vi.hoisted(() => ({
   execCalls: [] as { code: string; timeout: number; language?: string }[],
   runAgent: undefined as undefined | ((args: any) => Promise<any>),
+  onExec: undefined as
+    | undefined
+    | ((opts: { code: string; timeout: number; language?: string }) => void),
 }));
 
 vi.mock("../../config", async importOriginal => {
@@ -43,6 +46,7 @@ vi.mock("../hangar", () => ({
       _browserId: string,
       opts: { code: string; timeout: number; language?: string },
     ) => {
+      agentMocks.onExec?.(opts);
       agentMocks.execCalls.push({
         code: opts.code,
         timeout: opts.timeout,
@@ -81,6 +85,8 @@ describe("executePromptViaBrowserAgent timeout budget", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-11T00:00:00Z"));
     agentMocks.execCalls.length = 0;
+    agentMocks.onExec = undefined;
+    agentMocks.runAgent = undefined;
   });
 
   afterEach(() => {
@@ -113,10 +119,10 @@ describe("executePromptViaBrowserAgent timeout budget", () => {
     );
     expect(snap.timeout).toBe(10);
     // Only ~2s remained when the second command started.
-    expect(click.timeout).toBeLessThanOrEqual(2);
+    expect(click.timeout).toBe(2);
   });
 
-  it("stops the agent loop once the total budget is spent", async () => {
+  it("refuses browser commands once the total budget is spent", async () => {
     agentMocks.runAgent = async ({ tools }: any) => {
       const browser = tools.browser as any;
       await browser.execute({ code: "agent-browser snapshot" });
@@ -175,7 +181,9 @@ describe("executePromptViaBrowserAgent timeout budget", () => {
   it("reports a clear message when the deadline aborts the model call", async () => {
     const timeoutErr = new Error("The operation was aborted due to timeout");
     timeoutErr.name = "TimeoutError";
-    agentMocks.runAgent = async () => {
+    const seen: { abortSignal?: unknown } = {};
+    agentMocks.runAgent = async (args: any) => {
+      seen.abortSignal = args.abortSignal;
       throw timeoutErr;
     };
 
@@ -187,7 +195,122 @@ describe("executePromptViaBrowserAgent timeout budget", () => {
       undefined,
     );
 
+    // The model call runs under the deadline-based abort signal.
+    expect(seen.abortSignal).toBeInstanceOf(AbortSignal);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("Prompt execution timed out after 10s.");
+  });
+
+  it("caps the setup probes at the remaining budget", async () => {
+    agentMocks.onExec = opts => {
+      // The tab-visibility probe burns 6 of the 10 allowed seconds.
+      if (opts.language === "node") {
+        vi.setSystemTime(Date.now() + 6000);
+      }
+    };
+    agentMocks.runAgent = async () => ({ text: "done" });
+
+    await executePromptViaBrowserAgent(
+      "get the price",
+      "browser-1",
+      10,
+      logger,
+      undefined,
+    );
+
+    const tabSelect = agentMocks.execCalls.find(c =>
+      c.code.startsWith("agent-browser tab "),
+    );
+    const snapshotProbe = agentMocks.execCalls.find(
+      c => c.code === "agent-browser snapshot -i",
+    );
+    const urlProbe = agentMocks.execCalls.find(
+      c => c.code === "agent-browser get url",
+    );
+    // 4s remain when the tab selection and probes start.
+    expect(tabSelect?.timeout).toBe(4);
+    expect(snapshotProbe?.timeout).toBe(4);
+    expect(urlProbe?.timeout).toBe(4);
+  });
+
+  it("reports the timeout without a model call when setup spends the budget", async () => {
+    agentMocks.onExec = opts => {
+      if (opts.code === "agent-browser snapshot -i") {
+        vi.setSystemTime(Date.now() + 11000);
+      }
+    };
+    let modelCalled = false;
+    agentMocks.runAgent = async () => {
+      modelCalled = true;
+      return { text: "done" };
+    };
+
+    const result = await executePromptViaBrowserAgent(
+      "get the price",
+      "browser-1",
+      10,
+      logger,
+      undefined,
+    );
+
+    expect(modelCalled).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe("Prompt execution timed out after 10s.");
+  });
+
+  it("bounds tab re-selection by the remaining budget", async () => {
+    agentMocks.runAgent = async ({ tools }: any) => {
+      const browser = tools.browser as any;
+      await browser.execute({ code: "agent-browser snapshot" });
+      vi.setSystemTime(Date.now() + 6000);
+      await browser.execute({ code: "agent-browser click @e1" });
+      return { text: "done" };
+    };
+
+    const result = await executePromptViaBrowserAgent(
+      "get the price",
+      "browser-1",
+      10,
+      logger,
+      undefined,
+    );
+
+    const nodeExecs = agentMocks.execCalls.filter(c => c.language === "node");
+    // Setup selection + re-selection after each of the two commands; the
+    // one after the click runs with 4s left, not the fixed 10s.
+    expect(nodeExecs.length).toBe(3);
+    expect(nodeExecs[2].timeout).toBe(4);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("skips tab re-selection once the budget is spent", async () => {
+    agentMocks.onExec = opts => {
+      // The click outlives the budget while it runs.
+      if (opts.code === "agent-browser click @e1" && opts.language === "bash") {
+        vi.setSystemTime(Date.now() + 2000);
+      }
+    };
+    agentMocks.runAgent = async ({ tools }: any) => {
+      const browser = tools.browser as any;
+      await browser.execute({ code: "agent-browser snapshot" });
+      // 8s spent: the click runs with the last 2s and finishes past the
+      // deadline, so its re-selection must be skipped.
+      vi.setSystemTime(Date.now() + 8000);
+      await browser.execute({ code: "agent-browser click @e1" });
+      return { text: "done" };
+    };
+
+    const result = await executePromptViaBrowserAgent(
+      "get the price",
+      "browser-1",
+      10,
+      logger,
+      undefined,
+    );
+
+    const nodeExecs = agentMocks.execCalls.filter(c => c.language === "node");
+    // Setup selection + re-selection after the snapshot only.
+    expect(nodeExecs.length).toBe(2);
+    expect(result.exitCode).toBe(0);
   });
 });
