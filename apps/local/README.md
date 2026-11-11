@@ -6,6 +6,8 @@ It shares its HTML cleaning code with the Firecrawl API. Firecrawl Local compile
 
 ## Build
 
+You need git, [Rust](https://rustup.rs) and a C compiler (`build-essential` on Debian and Ubuntu, the Xcode command line tools on macOS).
+
 ```sh
 cd apps/local
 cargo build --release
@@ -14,7 +16,9 @@ cargo build --release
 
 Once a release is on crates.io, `cargo install firecrawl-local` installs the same binary without cloning the repository.
 
-Pages that need JavaScript are rendered in the Chrome or Chromium already installed on the machine. Without one it still handles static pages. Set `FIRECRAWL_CHROME_PATH` to point it at a specific browser.
+Pages that need JavaScript are rendered in the Chrome or Chromium already installed on the machine. Without one it still handles static pages, and a page that needed a browser comes back with a `warning` saying so. Set `FIRECRAWL_CHROME_PATH` to point it at a specific browser.
+
+Chrome keeps its sandbox on. Inside a Docker container that needs user namespaces, which Docker blocks by default, so run the container with `--security-opt seccomp=unconfined` if you want JavaScript pages there.
 
 ## Use it from the command line
 
@@ -46,7 +50,7 @@ curl -s localhost:3002/v2/scrape -H 'content-type: application/json' \
 
 `serve` answers `/v2/scrape`, `/v2/map`, `/v2/crawl` and `/v2/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. The older v0 and v1 routes are not served. Crawl and batch jobs are kept in memory and expire an hour after they are created.
 
-Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when the cloud setting allows that route, and answers `CLOUD_ONLY` otherwise. With no key and no `FIRECRAWL_CLOUD`, `serve` passes nothing on. `FIRECRAWL_CLOUD=search` passes on search only, `FIRECRAWL_CLOUD=off` passes on nothing, and a value that is not recognised is read as `off`. Forwarded requests must be `application/json` or come from a tool, not a web page, and bodies may be up to 64 MB. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
+Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when the cloud setting allows that route, and answers `CLOUD_ONLY` otherwise. By default they are passed on, without a key until you sign in, the same as the command line and the MCP server. `FIRECRAWL_CLOUD=search` passes on search only, `FIRECRAWL_CLOUD=off` passes on nothing, and a value that is not recognised is read as `off`. Forwarded requests must be `application/json` or come from a tool, not a web page, and bodies may be up to 64 MB. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
 
 ## What runs locally and what runs on Firecrawl cloud
 
@@ -55,10 +59,12 @@ Scrape, crawl, map and document parsing run on your machine and send nothing to 
 Everything else uses Firecrawl cloud, because it needs an index, data or a service the machine does not have. The three you will meet most are these.
 
 - **Search.** `firecrawl-local search` and the MCP server's `firecrawl_search` tool query Firecrawl's search.
-- **Pages that will not load locally.** When a site refuses a plain fetch and the local browser, the CLI and MCP server ask Firecrawl cloud for the page and mark the result with `source: firecrawl-cloud`.
+- **Pages that will not load locally.** When a site refuses a plain fetch and the local browser, Firecrawl Local asks Firecrawl cloud for the page and marks the result with `source: firecrawl-cloud`. If the cloud cannot take it either, the result is marked `blocked` and carries a `warning` that says why.
 - **Alexandria data providers.** `find-tools` and `data` reach structured data providers and need a Firecrawl account.
 
-`firecrawl-local login` signs in through the browser and saves the key where the Firecrawl CLI keeps it. Set `FIRECRAWL_CLOUD=off` to turn off search, the cloud fallback and data providers, or `FIRECRAWL_CLOUD=search` to allow search only. `login` always talks to Firecrawl, since signing in is its whole job. `serve` stays local unless a key or `FIRECRAWL_CLOUD` is set.
+`firecrawl-local login` signs in through the browser and saves the key where the Firecrawl CLI keeps it. Set `FIRECRAWL_CLOUD=off` to turn off search, the cloud fallback and data providers, or `FIRECRAWL_CLOUD=search` to allow search only. `login` always talks to Firecrawl, since signing in is its whole job. A login is picked up by `serve` and by the MCP server's search and scrape tools while they are running. The MCP server's Alexandria tools check for a key when it starts, so restart the MCP server after signing in to use them.
+
+Without an account, Firecrawl cloud allows a limited amount of search. When that runs out, or when a call needs an account, the answer says to run `firecrawl-local login`.
 
 ## Safety defaults
 

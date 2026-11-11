@@ -316,7 +316,7 @@ impl BrowserPool {
       .map_err(|e| format!("browser configuration failed: {e}"))?;
     let (browser, mut handler) = Browser::launch(config)
       .await
-      .map_err(|e| format!("could not start Chrome at {}: {e}", self.chrome.display()))?;
+      .map_err(|e| chrome_start_error(&self.chrome, &e.to_string()))?;
     let handler = tokio::spawn(async move {
       while let Some(event) = handler.next().await {
         if event.is_err() {
@@ -762,9 +762,38 @@ pub fn meta_refresh_target(raw_html: &str, base: &Url) -> Option<Url> {
   }
 }
 
+/// Why Chrome did not start, in words someone can act on. Chrome's own
+/// message runs to several hundred characters of log line.
+fn chrome_start_error(chrome: &std::path::Path, detail: &str) -> String {
+  if detail.contains("No usable sandbox") {
+    return format!(
+      "Chrome at {} could not start its sandbox, which usually means a container or system policy blocks user namespaces. In Docker, run the container with `--security-opt seccomp=unconfined`. On Ubuntu 23.10 or newer, allow user namespaces for Chrome. Firecrawl Local does not run Chrome without its sandbox.",
+      chrome.display()
+    );
+  }
+  let short: String = detail.chars().take(300).collect();
+  format!("could not start Chrome at {}: {short}", chrome.display())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn a_sandbox_failure_is_explained() {
+    let chrome = std::path::Path::new("/usr/bin/chromium");
+    let said = chrome_start_error(
+      chrome,
+      "Browser process exited ... No usable sandbox! If this is a Debian system ...",
+    );
+    assert!(
+      said.contains("seccomp=unconfined") && said.contains("/usr/bin/chromium"),
+      "{said}"
+    );
+    assert!(!said.contains("Debian system"));
+    let other = chrome_start_error(chrome, &"x".repeat(2000));
+    assert!(other.len() < 400);
+  }
 
   #[test]
   fn link_share_and_nav_only_shells() {

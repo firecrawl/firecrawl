@@ -164,6 +164,37 @@ impl Drop for InFlight<'_> {
   }
 }
 
+/// Add a warning to a document, keeping any that is already there.
+pub fn add_warning(data: &mut Map<String, Value>, text: impl Into<String>) {
+  let text = text.into();
+  let joined = match data.get("warning").and_then(Value::as_str) {
+    Some(existing) if !existing.is_empty() => format!("{existing} {text}"),
+    _ => text,
+  };
+  data.insert("warning".into(), Value::String(joined));
+}
+
+/// What to say when a page needs JavaScript and was not rendered, so a
+/// near-empty result is not mistaken for the whole page. `None` when the
+/// browser was turned off on purpose or did its job.
+fn browser_warning(
+  mode: BrowserMode,
+  has_browser: bool,
+  render_error: Option<&str>,
+) -> Option<String> {
+  if mode == BrowserMode::Never {
+    return None;
+  }
+  let lead = "This page builds its content with JavaScript, so this result is probably incomplete.";
+  match (has_browser, render_error) {
+    (false, _) => Some(format!(
+      "{lead} No Chrome or Chromium was found on this machine. Install one, or point FIRECRAWL_CHROME_PATH at it."
+    )),
+    (true, Some(error)) => Some(format!("{lead} The local Chrome could not render it. {error}")),
+    (true, None) => None,
+  }
+}
+
 fn looks_like_html(mime: Option<&str>, body: &[u8]) -> bool {
   match mime {
     Some("text/html") | Some("application/xhtml+xml") => true,
@@ -424,10 +455,10 @@ impl Engine {
         let challenged = can_render
           && (matches!(fetched.status, 403 | 503) || crate::cloud::looks_like_bot_check(&markdown));
         let nav_only = looks_like_nav_only_shell(&raw_html, &markdown);
-        let shell = can_render
-          && !challenged
-          && (200..400).contains(&fetched.status)
-          && (needs_browser(&raw_html, &markdown) || nav_only);
+        let needs_javascript =
+          (200..400).contains(&fetched.status) && (needs_browser(&raw_html, &markdown) || nav_only);
+        let shell = can_render && !challenged && needs_javascript;
+        let mut render_error: Option<String> = None;
         let rendered = if challenged {
           match self
             .render_with_markdown(&parsed, opts, &formats, wait_for, timeout, false)
@@ -453,7 +484,11 @@ impl Engine {
             {
               Some(doc)
             }
-            _ => None,
+            Ok(_) => None,
+            Err(e) => {
+              render_error = Some(e.message);
+              None
+            }
           }
         } else {
           None
@@ -461,6 +496,15 @@ impl Engine {
         match rendered {
           Some(doc) => doc,
           None => {
+            if needs_javascript && !challenged {
+              if let Some(warning) = browser_warning(
+                self.browser_mode,
+                self.browser.is_some(),
+                render_error.as_deref(),
+              ) {
+                add_warning(&mut data, warning);
+              }
+            }
             finish_metadata(
               &mut metadata,
               &parsed,
@@ -510,12 +554,12 @@ impl Engine {
     };
 
     if !unsupported.is_empty() {
-      data.insert(
-        "warning".into(),
-        Value::String(format!(
+      add_warning(
+        &mut data,
+        format!(
           "These formats are not produced by the local engine and were skipped: {}.",
           unsupported.join(", ")
-        )),
+        ),
       );
     }
     Ok(Value::Object(data))
@@ -1072,6 +1116,28 @@ mod tests {
         "mailto:hi@example.com"
       ]
     );
+  }
+
+  #[test]
+  fn a_page_that_needs_a_browser_says_so() {
+    let none = browser_warning(BrowserMode::Auto, false, None).unwrap();
+    assert!(none.contains("No Chrome or Chromium") && none.contains("FIRECRAWL_CHROME_PATH"));
+    let failed = browser_warning(BrowserMode::Auto, true, Some("Chrome could not start.")).unwrap();
+    assert!(
+      failed.contains("could not render it. Chrome could not start."),
+      "{failed}"
+    );
+    // Rendered fine, or turned off on purpose: nothing to say.
+    assert!(browser_warning(BrowserMode::Auto, true, None).is_none());
+    assert!(browser_warning(BrowserMode::Never, false, None).is_none());
+  }
+
+  #[test]
+  fn warnings_add_up() {
+    let mut data = Map::new();
+    add_warning(&mut data, "First.");
+    add_warning(&mut data, "Second.");
+    assert_eq!(data["warning"], "First. Second.");
   }
 
   #[test]

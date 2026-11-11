@@ -59,8 +59,9 @@ pub struct ServeConfig {
   /// Extra hostnames accepted in the Host header (for example a compose
   /// service name).
   pub allowed_hosts: Vec<String>,
-  /// What may be passed on to Firecrawl cloud. `serve` keeps it off unless a
-  /// key or setting turns it on; the MCP launcher runs with it on.
+  /// What may be passed on to Firecrawl cloud. On by default, as it is for
+  /// the command line and the MCP launcher; `FIRECRAWL_CLOUD=off` keeps
+  /// every request on the machine.
   pub cloud: Cloud,
 }
 
@@ -206,7 +207,7 @@ fn forward_refusal(
           "success": false,
           "code": "CLOUD_ONLY",
           "error": format!(
-            "{path} runs on Firecrawl cloud, and the cloud is off here. Set FIRECRAWL_API_KEY or FIRECRAWL_CLOUD=auto to pass these requests on."
+            "{path} runs on Firecrawl cloud, and FIRECRAWL_CLOUD is set so that it is not passed on. Unset FIRECRAWL_CLOUD, or set it to auto, to pass these requests on."
           ),
           "cloud": { "url": "https://www.firecrawl.dev", "docs": "https://docs.firecrawl.dev" }
         })),
@@ -697,7 +698,17 @@ pub async fn serve(engine: Arc<Engine>, cfg: ServeConfig) -> Result<(), String> 
     .await
     .map_err(|e| format!("could not listen on {}: {e}", cfg.addr))?;
   eprintln!("firecrawl-local listening on http://{}", cfg.addr);
+  eprintln!("{}", cloud_notice(&cfg.cloud));
   serve_on(listener, engine, cfg, shutdown_signal()).await
+}
+
+/// One line at startup saying what leaves the machine.
+fn cloud_notice(cloud: &Cloud) -> &'static str {
+  match cloud.mode {
+    cloud::CloudMode::Off => "Firecrawl cloud is off (FIRECRAWL_CLOUD). Every request stays on this machine.",
+    cloud::CloudMode::SearchOnly => "Search is passed on to Firecrawl cloud. Everything else stays on this machine.",
+    cloud::CloudMode::Fallback => "Scrape, crawl and map run here. Search, data providers and pages this machine cannot load go to Firecrawl cloud. FIRECRAWL_CLOUD=off keeps everything local.",
+  }
 }
 
 /// Serve the API on a listener the caller already bound, until `stop`
