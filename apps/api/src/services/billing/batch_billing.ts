@@ -1,6 +1,5 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import { billTeam7 } from "../../db/rpc";
 import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
@@ -204,8 +203,12 @@ async function refundRequestTrackedCredits(
 }
 
 /**
- * Dequeues pending billing operations from Redis, groups them by team, and
- * commits each group to Supabase via the `bill_team_7` RPC.
+ * Dequeues pending billing operations from Redis and finalizes each group.
+ * The Autumn charge already happened at request time. This used to record the
+ * group by calling `bill_team_7`, whose only write is an insert into
+ * `credit_usage`; that call is skipped. A failed finalization still refunds
+ * the request-time charge, and a committed group still confirms its Exchange
+ * accesses.
  */
 export async function processBillingBatch() {
   const redis = getRedisConnection();
@@ -345,7 +348,8 @@ export async function processBillingBatch() {
       }
 
       try {
-        // Execute the actual billing
+        // Finalize the group. Charging already happened; this no longer
+        // writes a credit_usage row.
         const billingResult = await withAuth(supaBillTeam, {
           success: true,
           message: "No DB, bypassed.",
@@ -379,7 +383,7 @@ export async function processBillingBatch() {
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
-        // Ledger commit only — usage is tracked to Autumn at request time, not here.
+        // Usage is tracked to Autumn at request time, not here.
 
         // The debit is committed: confirm the Exchange accesses it covered
         // once the batch lock is released.
@@ -517,9 +521,9 @@ export async function queueBillingOperation(
 async function supaBillTeam(
   team_id: string,
   credits: number,
-  api_key_id: number | null,
+  _api_key_id: number | null,
   __logger?: any,
-  is_extract: boolean = false,
+  _is_extract: boolean = false,
 ) {
   const _logger = (__logger ?? logger).child({
     module: "credit_billing",
@@ -534,22 +538,12 @@ async function supaBillTeam(
 
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
 
-  // Perform the actual database operation
-  let data: { api_key: string }[];
-  try {
-    data = await billTeam7({
-      team_id,
-      subscription_id: null,
-      credits,
-      api_key_id: api_key_id ?? null,
-      is_extract,
-    });
-  } catch (error) {
-    _logger.error("Failed to bill team.", { error });
-    return { success: false, error };
-  }
-
-  return { success: true, data };
+  // `bill_team_7` inserted one `credit_usage` row and returned the team's API
+  // keys, which this batch does not read. It does not deduct credits. The
+  // charge is the request-time Autumn track, so the group is finalized
+  // without that insert. Success leaves the charge in place and lets the
+  // caller confirm Exchange accesses.
+  return { success: true };
 }
 
 // Cleanup on exit
