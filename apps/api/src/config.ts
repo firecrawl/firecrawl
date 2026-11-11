@@ -327,6 +327,11 @@ const configSchema = z.object({
   MCP_CREDITS_FEATURE_ID: emptyStringAsDefault(
     z.string().trim().min(1).default("MCP_CREDITS"),
   ),
+  // Rolling window on hosted MCP credits (see services/autumn/mcp-window.ts):
+  // an org spends at most MCP_WINDOW_CREDITS MCP credits per MCP_WINDOW_HOURS,
+  // counted from its first charge in the window. Off unless both are positive.
+  MCP_WINDOW_HOURS: z.coerce.number().nonnegative().default(0),
+  MCP_WINDOW_CREDITS: z.coerce.number().int().nonnegative().default(0),
 
   // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
   AGENT_AUTH_RESOURCE_METADATA_URL: z
