@@ -359,7 +359,9 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
             timestamp: new Date().toISOString(),
             originating_job_id: order.id,
             api_key_id: typeof apiKeyId === "number" ? apiKeyId : null,
-            autumnTrackInRequest: true,
+            // The worker refunds request-tracked credits when the ledger
+            // write fails. These files stay delivered, so the charge stands.
+            autumnTrackInRequest: false,
           },
           { jobId: capture.billingReference, priority: 10 },
         );
