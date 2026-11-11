@@ -77,6 +77,7 @@ import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
 import { isUsOnly } from "../../lib/us-only";
+import { isMonitorZdrBlocked } from "../../lib/zdr-helpers";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import {
@@ -92,6 +93,8 @@ const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
 const MONITOR_CHECK_NO_CREDITS_ERROR =
   "Monitor check skipped: insufficient credits.";
+const MONITOR_CHECK_ZDR_ERROR =
+  "Monitor check skipped: monitoring is not supported for zero data retention teams.";
 const MONITOR_CHECK_REVOKED_ERROR =
   "Monitor check skipped: the partner has revoked this job.";
 
@@ -1063,6 +1066,27 @@ export async function processMonitorCheckJob(
   );
   if (!admissionCheck || admissionCheck.status !== "running") return;
   check = admissionCheck;
+
+  // The API gate only runs on create, update and manual run, so a team that
+  // turns ZDR on later is caught here before any scrape or search is sent.
+  const acuc = await getACUCTeam(monitor.team_id);
+  if (isMonitorZdrBlocked(acuc?.flags ?? undefined, monitor.targets)) {
+    const skipped = await updateMonitorCheckIfRunning(check.id, {
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      actual_credits: 0,
+      billing_status: "not_applicable",
+      error: MONITOR_CHECK_ZDR_ERROR,
+    });
+    if (!skipped) return;
+    await updateMonitorScheduleAfterRun({ monitor, check: skipped });
+    logger.info("Skipped monitor check: team has zero data retention", {
+      monitorId: monitor.id,
+      checkId: check.id,
+      teamId: monitor.team_id,
+    });
+    return;
+  }
   const partnerJobToken = check.partner_run_token
     ? null
     : monitor.partner_job_token;

@@ -60,6 +60,21 @@ export function getSearchForcedKind(
 }
 
 /**
+ * Whether a monitor must be refused for a ZDR team. Every monitor scrapes, and
+ * monitors with search targets also search.
+ */
+export function isMonitorZdrBlocked(
+  flags: TeamFlags | undefined,
+  targets: ReadonlyArray<{ type: string }> | null | undefined,
+): boolean {
+  if (getScrapeZDR(flags) === "forced") return true;
+  return (
+    (targets ?? []).some(target => target.type === "search") &&
+    getSearchForcedKind(flags) !== null
+  );
+}
+
+/**
  * Resolves the effective ignoreRobots mode from team flags.
  */
 export function getIgnoreRobots(flags: TeamFlags | undefined): OrgFlagMode {
