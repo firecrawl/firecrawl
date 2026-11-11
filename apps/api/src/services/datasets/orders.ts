@@ -16,9 +16,9 @@ const EXCHANGE_TIMEOUT_MS = 10_000;
 /**
  * How long a captured order is remembered, with the credits charged and the
  * billing reference reported for them. A charged order is only ever reported
- * as captured again, never released. The same record keeps its ledger job to
- * one: the billing queue forgets a finished job within minutes, so the job id
- * alone would let a repeated capture enqueue it again.
+ * as captured again, never released. The same record keeps its billing job
+ * to one: the billing queue forgets a finished job within minutes, so the job
+ * id alone would let a repeated capture enqueue it again.
  */
 const CAPTURE_MARKER_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -379,8 +379,9 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
             timestamp: new Date().toISOString(),
             originating_job_id: order.id,
             api_key_id: typeof apiKeyId === "number" ? apiKeyId : null,
-            // The worker refunds request-tracked credits when the ledger
-            // write fails. These files stay delivered, so the charge stands.
+            // The worker refunds request-tracked credits when it cannot
+            // finalize a batch. These files stay delivered, so the charge
+            // stands.
             autumnTrackInRequest: false,
           },
           { jobId: capture.billingReference, priority: 10 },
@@ -391,7 +392,7 @@ export async function settleDatasetOrder(id: string): Promise<DatasetOrder> {
           await new Promise(resolve => setTimeout(resolve, 250 * attempt));
         else
           logger.error(
-            "Dataset order ledger job was not enqueued; the charge stands",
+            "Dataset order billing job was not enqueued; the charge stands",
             { orderId: order.id, teamId, credits, error },
           );
       }
