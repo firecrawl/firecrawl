@@ -74,7 +74,7 @@ Everything else uses Firecrawl cloud, because it needs an index, data or a servi
 | --- | --- |
 | `FIRECRAWL_LOCAL_BROWSER` | `auto` (default), `never` or `always` |
 | `FIRECRAWL_CHROME_PATH` | Path to the Chrome or Chromium to use |
-| `FIRECRAWL_CLOUD` | `auto`, `search` or `off`. Anything else is read as `off` |
+| `FIRECRAWL_CLOUD` | `auto` (also `on`, `yes`, `fallback`), `search` or `off` (also `no`, `none`, `disabled`). Unrecognized values are read as `off` |
 | `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` | Firecrawl cloud key and address |
 | `FIRECRAWL_LOCAL_TOKEN` | Bearer token for `serve` |
 | `FIRECRAWL_LOCAL_ALLOW_PRIVATE` | Let `serve` callers reach private addresses |
