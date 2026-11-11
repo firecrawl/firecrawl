@@ -3,6 +3,7 @@ import request from "supertest";
 
 vi.mock("../../controllers/auth", () => ({ getApiKeyTeamFlags: vi.fn() }));
 
+import { config } from "../../config";
 import { deprecationMiddleware } from "../../lib/deprecations";
 
 const V1_DEPRECATED_AT = "@1793923200";
@@ -56,12 +57,17 @@ function extendedOn(surface: string) {
   return { deprecationExtensions: { [surface]: "2027-01-31T00:00:00Z" } };
 }
 
+const dbAuthentication = config.USE_DB_AUTHENTICATION;
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
+  // Cloud: a self-hosted deployment never removes a route.
+  config.USE_DB_AUTHENTICATION = true;
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  config.USE_DB_AUTHENTICATION = dbAuthentication;
 });
 
 describe("v1 route deprecations", () => {
@@ -113,6 +119,18 @@ describe("v1 sunset", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ markdown: "# hi" });
+    });
+
+    it(`${key} keeps serving a self-hosted deployment, with the notice`, async () => {
+      config.USE_DB_AUTHENTICATION = undefined;
+      const res = await request(appFor(key)).get("/probe");
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ markdown: "# hi" });
+      expect(res.body.replacement).toBe(V1[key]);
+      expect(res.body.warnings).toHaveLength(1);
+      expect(res.headers["deprecation"]).toBe(V1_DEPRECATED_AT);
+      expect(res.headers["sunset"]).toBe(V1_SUNSET);
     });
   }
 

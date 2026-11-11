@@ -7,6 +7,7 @@ vi.mock("../../controllers/auth", () => ({
   getApiKeyTeamFlags: mocks.getApiKeyTeamFlags,
 }));
 
+import { config } from "../../config";
 import {
   deprecationMiddleware,
   hasSunsetExtension,
@@ -41,13 +42,18 @@ function extendedUntil(until: string, surface = SUNSET_KEY) {
   return { deprecationExtensions: { [surface]: until } };
 }
 
+const dbAuthentication = config.USE_DB_AUTHENTICATION;
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   mocks.getApiKeyTeamFlags.mockReset();
+  // Cloud: a self-hosted deployment never removes a route.
+  config.USE_DB_AUTHENTICATION = true;
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  config.USE_DB_AUTHENTICATION = dbAuthentication;
 });
 
 describe("sunsetInstant", () => {
@@ -217,6 +223,39 @@ describe("deprecationMiddleware sunset gate", () => {
     const res = await request(appFor(SUNSET_KEY)).get("/probe");
 
     expect(res.status).toBe(500);
+  });
+
+  it.each([undefined, false])(
+    "keeps serving a self-hosted deployment after the sunset (USE_DB_AUTHENTICATION=%s)",
+    async dbAuth => {
+      config.USE_DB_AUTHENTICATION = dbAuth;
+      vi.setSystemTime(AFTER_SUNSET);
+      // The self-hosted mock team has no flags, with or without req.acuc.
+      for (const acuc of [{ flags: null }, undefined]) {
+        const res = await request(appFor(SUNSET_KEY, acuc)).get("/probe");
+
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.warnings).toHaveLength(1);
+        expect(res.body.replacement).toBe("/v2/search/developer");
+        expect(res.headers["deprecation"]).toBe("@1788393600");
+        expect(res.headers["sunset"]).toBe("Tue, 03 Nov 2026 23:59:59 GMT");
+        expect(res.headers["warning"]).toMatch(/^299 - "/);
+        expect(res.headers["link"]).toContain('rel="successor-version"');
+      }
+      expect(mocks.getApiKeyTeamFlags).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still answers 410 with DB authentication on and no extension", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.setSystemTime(AFTER_SUNSET);
+    const res = await request(appFor(SUNSET_KEY, { flags: null })).get(
+      "/probe",
+    );
+
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe("ENDPOINT_REMOVED");
   });
 
   it("never looks anything up for an entry without a sunset", async () => {

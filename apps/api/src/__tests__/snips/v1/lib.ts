@@ -17,6 +17,7 @@ import {
 import request from "supertest";
 import {
   TEST_API_URL,
+  TEST_SELF_HOST,
   describeIf,
   scrapeTimeout,
   indexCooldown,
@@ -29,8 +30,8 @@ import { sunsetOf } from "../../../lib/deprecations";
 export { scrapeTimeout, indexCooldown, Identity, idmux };
 
 // From the v1 sunset every v1 route answers 410, so suites that expect its
-// old behavior stop running.
-export const V1_LIVE = Date.now() < sunsetOf("v1_scrape");
+// old behavior stop running. Self-hosted deployments keep v1, so theirs stay.
+export const V1_LIVE = TEST_SELF_HOST || Date.now() < sunsetOf("v1_scrape");
 export const describeV1 = (cond = true) => describeIf(V1_LIVE && cond);
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));

@@ -3,6 +3,7 @@ import { logger } from "./logger";
 import { requestOrigin } from "./request-origin";
 import { resolveIntegration } from "../utils/integration";
 import { getApiKeyTeamFlags } from "../controllers/auth";
+import { isSelfHosted } from "./deployment";
 import type { RequestWithMaybeACUC, TeamFlags } from "../controllers/v1/types";
 
 interface Deprecation {
@@ -11,7 +12,8 @@ interface Deprecation {
   // RFC 9745 requires a Date here, e.g. "@1788393600".
   deprecatedAt: string;
   // RFC 8594 IMF-fixdate. From then on deprecationMiddleware answers 410,
-  // except for a team whose deprecationExtensions flag runs later.
+  // except for a team whose deprecationExtensions flag runs later and on
+  // self-hosted deployments, which keep the route.
   sunset?: string;
   docs?: string;
   // Key of the team extension flag, shared by every entry of one surface.
@@ -370,6 +372,8 @@ export function hasSunsetExtension(
 /**
  * Mount after authMiddleware where the route has one: past sunset it reads the
  * team's extension from req.acuc, so keyless callers still get 401 first.
+ * A self-hosted deployment has no team flags to extend, so its routes are
+ * never removed: they keep serving with the deprecation notice.
  */
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
@@ -381,7 +385,7 @@ export function deprecationMiddleware(key: DeprecationKey) {
   };
 
   return (req: RequestWithMaybeACUC, res: Response, next: NextFunction) => {
-    if (Date.now() < sunsetAt) {
+    if (Date.now() < sunsetAt || isSelfHosted()) {
       annotate(res);
       return next();
     }
