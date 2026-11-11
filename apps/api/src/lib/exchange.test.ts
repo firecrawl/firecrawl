@@ -152,6 +152,20 @@ describe("Exchange routing", () => {
     }
   });
 
+  it("claims nothing for a pattern segment with more than one wildcard", async () => {
+    setExchangeProvidersForTest([
+      {
+        id: "videos",
+        creditsCost: 10,
+        routes: [{ domains: ["clips.example"], pathPatterns: ["/a*b*c"] }],
+      },
+    ]);
+
+    await expect(
+      resolveExchangeProvider("https://clips.example/a1b2c"),
+    ).resolves.toBeNull();
+  });
+
   it("respects path segment boundaries for prefixes without trailing slashes", async () => {
     setExchangeProvidersForTest([
       {

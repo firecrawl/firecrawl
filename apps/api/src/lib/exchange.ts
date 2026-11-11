@@ -163,7 +163,9 @@ function normalizePathPattern(pattern: string): string[] {
 
 // A pattern claims a path of the same number of segments, each equal to the
 // pattern's or, where the pattern's has a "*", a longer string with the same
-// text before and after it. A trailing slash on the path is ignored.
+// text before and after it. A trailing slash on the path is ignored. The
+// Exchange's contract allows one "*" per segment; a second is read literally,
+// so such a pattern claims nothing rather than more than was meant.
 function pathMatchesPattern(pathname: string, pattern: string[]): boolean {
   const segments = pathname.replace(/\/$/, "").split("/");
   return (
