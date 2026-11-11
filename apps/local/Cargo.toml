@@ -2,8 +2,16 @@
 name = "firecrawl-local"
 version = "0.1.0"
 edition = "2021"
-description = "Firecrawl's local engine: scrape, crawl and map on your own machine, with a hand-off to Firecrawl cloud."
+description = "Firecrawl Local: scrape, crawl and map on your own machine from one binary, with a hand-off to Firecrawl cloud."
 license = "AGPL-3.0"
+repository = "https://github.com/firecrawl/firecrawl"
+homepage = "https://www.firecrawl.dev"
+readme = "README.md"
+keywords = ["scraping", "crawler", "markdown", "mcp", "firecrawl"]
+categories = ["command-line-utilities", "web-programming"]
+# Listed by hand so the vendored copy in src/native, which git ignores, is
+# part of a published crate.
+include = ["src/**/*", "build.rs", "README.md"]
 
 [lib]
 name = "firecrawl_local"
@@ -21,8 +29,9 @@ path = "src/main.rs"
 napi = { version = "3", default-features = false, features = ["noop", "napi4", "serde-json", "tokio_rt"] }
 napi-derive = { version = "3", default-features = false, features = ["noop"] }
 # Pinned to the commit in Cargo.lock so `cargo update` cannot change the
-# cleaning rules under the engine. Move it together with apps/api/native.
-nodesig = { git = "https://github.com/firecrawl/nodesig", rev = "b8ebc4a710810dbc36e189d9a0df87b877702b3c" }
+# cleaning rules. Move it together with apps/api/native. The version is what
+# a published crate depends on, since crates.io does not take git sources.
+nodesig = { version = "1.0.0", git = "https://github.com/firecrawl/nodesig", rev = "b8ebc4a710810dbc36e189d9a0df87b877702b3c" }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 psl = "2.1.140"
