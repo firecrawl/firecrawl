@@ -185,11 +185,18 @@ async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
   let addr = listener
     .local_addr()
     .map_err(|e| format!("could not read the local port: {e}"))?;
+  let cloud = Cloud::from_env().with_surface(firecrawl_local::cloud::Surface::Mcp, None);
+  // The MCP server refuses Alexandria tools by itself unless it holds a key,
+  // so someone who signed in with `firecrawl-local login` needs it passed on.
+  let signed_in_key = cloud.api_key();
   let cfg = ServeConfig {
     addr,
     token: None,
     allowed_hosts: Vec::new(),
-    cloud: Cloud::from_env().with_surface(firecrawl_local::cloud::Surface::Mcp, None),
+    cloud,
+    // The MCP server's key is the copy handed to it below, so this process
+    // stays the one that decides whether a call is signed in.
+    use_client_key: false,
   };
   let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
   let server = tokio::spawn(serve::serve_on(listener, engine, cfg, async move {
@@ -201,13 +208,17 @@ async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
     .filter(|p| !p.trim().is_empty())
     .unwrap_or_else(|| "firecrawl-mcp".to_string());
   let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
-  let child = tokio::process::Command::new(npx)
+  let mut command = tokio::process::Command::new(npx);
+  command
     .args(["-y", &package])
     .env("FIRECRAWL_API_URL", format!("http://{addr}"))
     .stdin(std::process::Stdio::inherit())
     .stdout(std::process::Stdio::inherit())
-    .stderr(std::process::Stdio::inherit())
-    .spawn();
+    .stderr(std::process::Stdio::inherit());
+  if let Some(key) = signed_in_key {
+    command.env("FIRECRAWL_API_KEY", key);
+  }
+  let child = command.spawn();
   let outcome = match child {
     Ok(mut child) => match child.wait().await {
       Ok(status) if status.success() => Ok(()),
@@ -339,6 +350,11 @@ async fn run(cli: Cli) -> ExitCode {
 
       if markdown {
         for r in &results {
+          // With only the markdown on screen, a warning is the one sign that
+          // an empty or short result is not the whole page.
+          if let Some(warning) = r.pointer("/data/warning").and_then(Value::as_str) {
+            eprintln!("warning: {warning}");
+          }
           match r.pointer("/data/markdown").and_then(Value::as_str) {
             Some(md) => println!("{md}\n"),
             None => eprintln!(
@@ -656,7 +672,8 @@ async fn run(cli: Cli) -> ExitCode {
         addr: SocketAddr::new(ip, port),
         token: token.filter(|t| !t.is_empty()),
         allowed_hosts,
-        cloud: Cloud::from_env_opt_in(),
+        cloud: Cloud::from_env().with_surface(firecrawl_local::cloud::Surface::Serve, None),
+        use_client_key: true,
       };
       tokio::spawn(engine.clone().trim_memory_when_idle());
       let served = serve::serve(engine.clone(), cfg).await;

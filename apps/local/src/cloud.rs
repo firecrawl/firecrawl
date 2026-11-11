@@ -75,9 +75,63 @@ pub struct Cloud {
   /// The agent harness that launched the engine (from the MCP handshake).
   harness: Option<String>,
   origin: String,
+  /// Whether to use the login saved by `firecrawl-local login` or the
+  /// Firecrawl CLI. It is read again on every call, so signing in while an
+  /// MCP server or `serve` is running takes effect without a restart.
+  saved_login: bool,
 }
 
-pub const SIGN_IN_HINT: &str = "Run `firecrawl login`, or set FIRECRAWL_API_KEY.";
+pub const SIGN_IN_HINT: &str = "Run `firecrawl-local login`, or set FIRECRAWL_API_KEY.";
+
+/// Reword a refusal Firecrawl cloud sent to a caller with no key, so it says
+/// what to do on this machine. The cloud writes these for people calling the
+/// API directly ("authenticate with: Authorization: Bearer ..."); someone
+/// using a local MCP server or `serve` signs in with one command instead.
+pub fn local_sign_in_message(error: &str) -> String {
+  let lower = error.to_ascii_lowercase();
+  let mut text = match lower.find("then authenticate with") {
+    Some(at) => error[..at].trim_end().to_string(),
+    None => error.trim().to_string(),
+  };
+  if lower.contains("alexandria") && lower.contains("api key") {
+    text = "Alexandria data providers need a free Firecrawl account.".to_string();
+  }
+  if text.contains("firecrawl-local login") {
+    return text;
+  }
+  if text.contains("http") {
+    // Keep the sign-up link on its own line so nothing is glued to it.
+    format!(
+      "{text}\n\nOr run `firecrawl-local login`, which signs you in and saves the key for you."
+    )
+  } else {
+    format!("{text} Run `firecrawl-local login` to create one or sign in. It is one step in the browser and the key is saved for you, then the same call works.")
+  }
+}
+
+/// Whether a refusal is about the caller having no account, as opposed to a
+/// route's own rule or an ordinary rate limit that signing in would not lift.
+fn is_sign_in_refusal(status: u16, payload: &Value, error: &str) -> bool {
+  if status == 401 || payload.get("signup_url").is_some() || payload.get("signupUrl").is_some() {
+    return true;
+  }
+  let lower = error.to_ascii_lowercase();
+  ["keyless", "api key", "unauthorized", "authenticate with"]
+    .iter()
+    .any(|sign| lower.contains(sign))
+}
+
+/// Apply `local_sign_in_message` to the `error` field of a JSON answer, when
+/// the answer is a refusal for want of an account.
+fn with_sign_in_step(status: u16, body: &[u8]) -> Option<bytes::Bytes> {
+  let mut payload: Value = serde_json::from_slice(body).ok()?;
+  let error = payload.get("error")?.as_str()?.to_string();
+  if !is_sign_in_refusal(status, &payload, &error) {
+    return None;
+  }
+  payload["error"] = Value::String(local_sign_in_message(&error));
+  serde_json::to_vec(&payload).ok().map(bytes::Bytes::from)
+}
 
 fn config_dir() -> Option<std::path::PathBuf> {
   if let Some(dir) = std::env::var_os("FIRECRAWL_LOCAL_HOME") {
@@ -216,15 +270,14 @@ impl std::fmt::Display for CloudError {
 
 impl Cloud {
   /// Reads `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` and `FIRECRAWL_CLOUD`,
-  /// falling back to the login saved by `firecrawl login`.
-  /// With no explicit setting: a key turns the fallback on, no key means
-  /// search only.
+  /// falling back to the login saved by `firecrawl-local login` or the
+  /// Firecrawl CLI. With no key, cloud calls go out keyless and Firecrawl
+  /// cloud decides what a caller without an account may do.
   pub fn from_env() -> Self {
-    let (saved_key, saved_url) = cli_credentials();
+    let (_, saved_url) = cli_credentials();
     let api_key = std::env::var("FIRECRAWL_API_KEY")
       .ok()
-      .filter(|k| !k.trim().is_empty())
-      .or(saved_key);
+      .filter(|k| !k.trim().is_empty());
     let base = std::env::var("FIRECRAWL_API_URL")
       .ok()
       .filter(|u| !u.trim().is_empty())
@@ -237,19 +290,21 @@ impl Cloud {
       }
     }
     let mode = CloudMode::requested(setting.as_deref()).unwrap_or(CloudMode::Fallback);
-    Self::new(base, api_key, mode)
+    let mut cloud = Self::new(base, api_key, mode);
+    cloud.saved_login = true;
+    cloud
   }
 
-  /// Same as `from_env`, but with the cloud off unless a key or an explicit
-  /// `FIRECRAWL_CLOUD` setting turns it on. For `serve`, where the people
-  /// calling the API did not install this engine themselves.
-  pub fn from_env_opt_in() -> Self {
-    let mut cloud = Self::from_env().with_surface(Surface::Serve, None);
-    let setting = std::env::var("FIRECRAWL_CLOUD").ok();
-    if CloudMode::requested(setting.as_deref()).is_none() && !cloud.has_key() {
-      cloud.mode = CloudMode::Off;
-    }
-    cloud
+  /// The key cloud calls go out with: the one given explicitly, or else the
+  /// saved login as it is on disk right now.
+  fn key(&self) -> Option<String> {
+    self.api_key.clone().or_else(|| {
+      if self.saved_login {
+        cli_credentials().0
+      } else {
+        None
+      }
+    })
   }
 
   /// Give the cloud a fixed install ID, so a test never writes one to the
@@ -291,6 +346,7 @@ impl Cloud {
       install_id: None,
       harness: None,
       origin: origin_for(Surface::Cli, None),
+      saved_login: false,
     }
   }
 
@@ -306,7 +362,13 @@ impl Cloud {
   }
 
   pub fn has_key(&self) -> bool {
-    self.api_key.is_some()
+    self.key().is_some()
+  }
+
+  /// The key in use right now, for handing to the MCP server this process
+  /// starts. Never printed.
+  pub fn api_key(&self) -> Option<String> {
+    self.key()
   }
 
   /// Use the origin a client stamped on its own request, so a call the
@@ -335,9 +397,10 @@ impl Cloud {
     }
   }
 
-  /// Pass a request this engine does not serve itself on to Firecrawl cloud
-  /// and return the answer as it came. The engine's own key is used when it
-  /// has one; otherwise the caller's, and with neither the call is keyless.
+  /// Pass a request Firecrawl Local does not serve itself on to Firecrawl
+  /// cloud and return the answer. Its own key is used when it has one;
+  /// otherwise the caller's, and with neither the call is keyless. A keyless
+  /// call that the cloud refuses comes back with the sign-in step added.
   pub async fn forward(
     &self,
     method: reqwest::Method,
@@ -370,7 +433,10 @@ impl Cloud {
     if let Some(id) = self.install_id.clone().or_else(load_install_id) {
       req = req.header("x-firecrawl-install", id);
     }
-    if let Some(key) = self.api_key.as_deref().or(client_auth) {
+    let own_key = self.key();
+    let key = own_key.as_deref().or(client_auth);
+    let keyless = key.is_none();
+    if let Some(key) = key {
       req = req.bearer_auth(key);
     }
     let resp = req.send().await.map_err(|e| CloudError {
@@ -383,10 +449,15 @@ impl Cloud {
       .get(reqwest::header::CONTENT_TYPE)
       .and_then(|v| v.to_str().ok())
       .map(str::to_string);
-    let body = resp.bytes().await.map_err(|e| CloudError {
+    let mut body = resp.bytes().await.map_err(|e| CloudError {
       status: 502,
       message: format!("Firecrawl cloud's answer was cut short: {e}"),
     })?;
+    if keyless && matches!(status, 401 | 402 | 403 | 429) {
+      if let Some(reworded) = with_sign_in_step(status, &body) {
+        body = reworded;
+      }
+    }
     Ok(Forwarded {
       status,
       content_type,
@@ -419,7 +490,9 @@ impl Cloud {
     if let Some(h) = &self.harness {
       req = req.header("x-firecrawl-harness", h);
     }
-    if let Some(key) = &self.api_key {
+    let key = self.key();
+    let signed_in = key.is_some();
+    if let Some(key) = &key {
       req = req.bearer_auth(key);
     }
     let resp = req.send().await.map_err(|e| CloudError {
@@ -435,7 +508,7 @@ impl Cloud {
         .unwrap_or("request failed")
         .to_string();
       let message = match status {
-        401 | 402 | 403 | 429 if !self.has_key() => {
+        401 | 402 | 403 | 429 if !signed_in => {
           // The cloud sends a signup link made for this caller; pass it on.
           let link = payload
             .get("signupUrl")
@@ -445,8 +518,8 @@ impl Cloud {
           let reason = detail.lines().next().unwrap_or("").trim();
           format!("Firecrawl cloud needs a sign-in for this ({reason}). {SIGN_IN_HINT}{link}")
         }
-        401 if self.has_key() => format!(
-          "Firecrawl rejected the saved login ({detail}). It may have been rotated or revoked. Run `firecrawl login` again, or update FIRECRAWL_API_KEY."
+        401 if signed_in => format!(
+          "Firecrawl rejected the saved login ({detail}). It may have been rotated or revoked. Run `firecrawl-local login` again, or update FIRECRAWL_API_KEY."
         ),
         _ => format!("Firecrawl cloud returned {status}: {detail}"),
       };
@@ -560,9 +633,10 @@ pub async fn scrape_with_fallback(
   opts: &crate::scrape::ScrapeOptions,
 ) -> Result<Value, crate::scrape::ScrapeError> {
   let local = engine.scrape(url, opts).await;
+  let mut status = 0u16;
   let blocked = match &local {
     Ok(doc) => {
-      let status = doc
+      status = doc
         .pointer("/metadata/statusCode")
         .and_then(Value::as_u64)
         .unwrap_or(200) as u16;
@@ -571,15 +645,20 @@ pub async fn scrape_with_fallback(
     }
     Err(e) => matches!(e.code, "FETCH_FAILED" | "SCRAPE_TIMEOUT"),
   };
+  // Why the cloud did not take over, when it was asked and could not.
+  let mut cloud_refusal: Option<String> = None;
   if blocked && cloud.mode == CloudMode::Fallback {
     let cloud_opts = json!({ "formats": ["markdown"], "onlyMainContent": opts.only_main_content });
-    if let Ok(payload) = cloud.scrape(url, &cloud_opts).await {
-      if let Some(mut data) = payload.get("data").cloned() {
-        if let Some(obj) = data.as_object_mut() {
-          obj.insert("source".into(), Value::String("firecrawl-cloud".into()));
+    match cloud.scrape(url, &cloud_opts).await {
+      Ok(payload) => {
+        if let Some(mut data) = payload.get("data").cloned() {
+          if let Some(obj) = data.as_object_mut() {
+            obj.insert("source".into(), Value::String("firecrawl-cloud".into()));
+          }
+          return Ok(data);
         }
-        return Ok(data);
       }
+      Err(e) => cloud_refusal = Some(e.message),
     }
   }
   match local {
@@ -588,11 +667,30 @@ pub async fn scrape_with_fallback(
         obj.insert("source".into(), Value::String("local".into()));
         if blocked {
           obj.insert("blocked".into(), Value::Bool(true));
+          crate::scrape::add_warning(
+            obj,
+            blocked_warning(status, cloud.mode, cloud_refusal.as_deref()),
+          );
         }
       }
       Ok(doc)
     }
     Err(e) => Err(e),
+  }
+}
+
+/// What to tell someone whose page came back refused, so an empty result is
+/// never mistaken for an empty page.
+fn blocked_warning(status: u16, mode: CloudMode, cloud_refusal: Option<&str>) -> String {
+  let lead = format!(
+    "This site did not serve the page to this machine (status {status}), so the content is missing or is a bot check."
+  );
+  match (cloud_refusal, mode) {
+    (Some(refusal), _) => format!("{lead} Firecrawl cloud did not fetch it either. {refusal}"),
+    (None, CloudMode::Fallback) => lead,
+    (None, _) => {
+      format!("{lead} Firecrawl cloud can fetch pages like this when FIRECRAWL_CLOUD is auto.")
+    }
   }
 }
 
@@ -689,6 +787,38 @@ pub(crate) async fn echo_cloud() -> String {
   base
 }
 
+/// A stand-in for Firecrawl cloud that refuses every call the way the
+/// keyless limit does.
+#[cfg(test)]
+pub(crate) async fn refusing_cloud() -> String {
+  use tokio::io::{AsyncReadExt, AsyncWriteExt};
+  let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+    .await
+    .unwrap();
+  let base = format!("http://{}", listener.local_addr().unwrap());
+  tokio::spawn(async move {
+    while let Ok((mut socket, _)) = listener.accept().await {
+      tokio::spawn(async move {
+        let mut buf = vec![0u8; 8192];
+        let _ = socket.read(&mut buf).await;
+        let body = serde_json::json!({
+          "success": false,
+          "error": "You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at https://firecrawl.dev/k/abc123\n\nThen authenticate with:\nAuthorization: Bearer YOUR_API_KEY",
+          "signup_url": "https://firecrawl.dev/k/abc123"
+        })
+        .to_string();
+        let answer = format!(
+          "HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+          body.len(),
+          body
+        );
+        let _ = socket.write_all(answer.as_bytes()).await;
+      });
+    }
+  });
+  base
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -709,6 +839,25 @@ mod tests {
     assert_eq!(url.as_deref(), Some("https://api.example.test"));
     std::fs::write(&path, "not json").unwrap();
     assert_eq!(cli_credentials(), (None, None));
+
+    // A login made while the process is running is picked up on the next call.
+    let mut running = Cloud::new("https://api.example.test".into(), None, CloudMode::Fallback);
+    running.saved_login = true;
+    assert!(!running.has_key());
+    std::fs::write(&path, r#"{"apiKey":"fc-signed-in-later"}"#).unwrap();
+    assert_eq!(running.key().as_deref(), Some("fc-signed-in-later"));
+    // A key given explicitly wins, and a cloud that was not told to use the
+    // saved login never reads it.
+    assert_eq!(
+      running
+        .clone()
+        .with_key("fc-explicit".into())
+        .key()
+        .as_deref(),
+      Some("fc-explicit")
+    );
+    let plain = Cloud::new("https://api.example.test".into(), None, CloudMode::Fallback);
+    assert!(!plain.has_key());
     std::env::remove_var("FIRECRAWL_CLI_CREDENTIALS");
     let _ = std::fs::remove_dir_all(&dir);
   }
@@ -791,6 +940,102 @@ mod tests {
       seen.contains("Bearer fc-engine") && !seen.contains("fc-client"),
       "{seen}"
     );
+  }
+
+  #[test]
+  fn refusals_are_reworded_for_a_local_user() {
+    let limit = "You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at https://firecrawl.dev/k/abc123\n\nThen authenticate with:\nAuthorization: Bearer YOUR_API_KEY";
+    let said = local_sign_in_message(limit);
+    assert!(said.contains("https://firecrawl.dev/k/abc123\n"), "{said}");
+    assert!(said.contains("firecrawl-local login"), "{said}");
+    assert!(!said.contains("Authorization"), "{said}");
+
+    let alexandria =
+      local_sign_in_message("Alexandria requires an API key on a team with Alexandria access");
+    assert!(alexandria.starts_with("Alexandria data providers need a free Firecrawl account."));
+    assert!(alexandria.contains("firecrawl-local login"), "{alexandria}");
+
+    // Said once, not twice.
+    assert_eq!(local_sign_in_message(&said), said);
+
+    let body = with_sign_in_step(
+      429,
+      br#"{"success":false,"error":"Daily limit reached","signup_url":"x"}"#,
+    )
+    .unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload["error"]
+      .as_str()
+      .unwrap()
+      .contains("firecrawl-local login"));
+    assert_eq!(payload["signup_url"], "x");
+    assert!(with_sign_in_step(401, br#"{"error":"Unauthorized"}"#).is_some());
+    assert!(with_sign_in_step(403, br#"{"error":"Alexandria requires an API key"}"#).is_some());
+
+    // A route's own rule, or a plain rate limit, is not a request to sign in.
+    assert!(with_sign_in_step(429, br#"{"error":"Rate limit exceeded. Retry in 10s."}"#).is_none());
+    assert!(with_sign_in_step(
+      403,
+      br#"{"error":"This route is not enabled for your team."}"#
+    )
+    .is_none());
+    assert!(with_sign_in_step(402, br#"{"error":"Insufficient credits."}"#).is_none());
+    assert!(with_sign_in_step(401, b"not json").is_none());
+    assert!(with_sign_in_step(401, br#"{"error":{"code":1}}"#).is_none());
+  }
+
+  #[tokio::test]
+  async fn a_keyless_refusal_gains_the_sign_in_step_and_a_keyed_one_does_not() {
+    let base = refusing_cloud().await;
+    let keyless = Cloud::new(base.clone(), None, CloudMode::Fallback).with_install_id("test");
+    let answer = keyless
+      .forward(
+        reqwest::Method::POST,
+        "/v2/search",
+        Some("application/json"),
+        bytes::Bytes::from_static(b"{}"),
+        None,
+        None,
+      )
+      .await
+      .unwrap();
+    assert_eq!(answer.status, 429);
+    let text = String::from_utf8_lossy(&answer.body).to_string();
+    assert!(text.contains("firecrawl-local login"), "{text}");
+    assert!(!text.contains("Authorization"), "{text}");
+
+    // A caller who sent a key gets the cloud's words as they came.
+    let with_client_key = keyless
+      .forward(
+        reqwest::Method::POST,
+        "/v2/search",
+        Some("application/json"),
+        bytes::Bytes::from_static(b"{}"),
+        Some("fc-client"),
+        None,
+      )
+      .await
+      .unwrap();
+    let text = String::from_utf8_lossy(&with_client_key.body).to_string();
+    assert!(text.contains("Authorization"), "{text}");
+    assert!(!text.contains("firecrawl-local login"), "{text}");
+  }
+
+  #[test]
+  fn a_blocked_page_says_why_it_is_empty() {
+    let off = blocked_warning(403, CloudMode::Off, None);
+    assert!(
+      off.contains("status 403") && off.contains("FIRECRAWL_CLOUD"),
+      "{off}"
+    );
+    let refused = blocked_warning(
+      403,
+      CloudMode::Fallback,
+      Some("Firecrawl cloud needs a sign-in for this. Run `firecrawl-local login`."),
+    );
+    assert!(refused.contains("firecrawl-local login"), "{refused}");
+    assert!(refused.contains("did not fetch it either"), "{refused}");
+    assert!(!blocked_warning(503, CloudMode::Fallback, None).contains("FIRECRAWL_CLOUD"));
   }
 
   #[test]
