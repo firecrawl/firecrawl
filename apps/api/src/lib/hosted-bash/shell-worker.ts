@@ -120,7 +120,18 @@ const pending = new Map<
 let nextId = 0;
 process.on("message", (message: ParentMessage) => {
   if (message.type === "job") {
-    void run(message.job).then(result => send({ type: "done", result }));
+    void run(message.job)
+      .catch(
+        (error: unknown): SandboxResult => ({
+          stdout: "",
+          stderr: `bash: ${error instanceof Error ? error.message : String(error)}\n`,
+          exitCode: 1,
+          truncated: false,
+          endpoints: [],
+          failedEndpoints: [],
+        }),
+      )
+      .then(result => send({ type: "done", result }));
     return;
   }
   const waiter = pending.get(message.id);

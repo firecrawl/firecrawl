@@ -53,7 +53,22 @@ export async function runShell(
       new Promise<InitialFiles>(resolve =>
         setTimeout(() => resolve({}), DOCS_WAIT_MS).unref(),
       ),
+      new Promise<InitialFiles>(resolve => {
+        if (signal.aborted) resolve({});
+        signal.addEventListener("abort", () => resolve({}), { once: true });
+      }),
     ]);
+    if (signal.aborted) {
+      return {
+        stdout: "",
+        stderr: "bash: the request was closed\n",
+        exitCode: 130,
+        truncated: false,
+        endpoints: [],
+        failedEndpoints: [],
+        durationMs: Date.now() - started,
+      };
+    }
     const job: ShellJob = {
       command,
       caller: { ...caller, maxCalls: MAX_FIRECRAWL_CALLS, deadline },
