@@ -140,6 +140,39 @@ describe("research.similarPapers", () => {
   });
 });
 
+describe("research.lookupProtein", () => {
+  test("sends protein and organism to the proteins path", async () => {
+    const { client, calls } = makeClient(() => ({
+      status: 200,
+      data: { success: true, match: "not_found" },
+    }));
+    await client.lookupProtein("RUSD3_HUMAN", { organism: "Homo sapiens" });
+    const [path, query] = calls[0].split("?");
+    expect(path).toBe("/v2/search/research/proteins");
+    const qs = new URLSearchParams(query);
+    expect([...qs.keys()]).toEqual(["protein", "organism", "origin"]);
+    expect(qs.get("protein")).toBe("RUSD3_HUMAN");
+    expect(qs.get("organism")).toBe("Homo sapiens");
+  });
+
+  test("omits organism when absent", async () => {
+    const { client, calls } = makeClient(() => ({
+      status: 200,
+      data: { success: true, match: "not_found" },
+    }));
+    await client.lookupProtein("RPUSD3");
+    const qs = new URLSearchParams(calls[0].split("?")[1]);
+    expect([...qs.keys()]).toEqual(["protein", "origin"]);
+  });
+
+  test("rejects empty protein", async () => {
+    const { client } = makeClient();
+    await expect(client.lookupProtein(" ")).rejects.toThrow(
+      /protein cannot be empty/i,
+    );
+  });
+});
+
 describe("research.searchGithub", () => {
   test("builds query string", async () => {
     const { client, calls } = makeClient(() => ({ status: 200, data: { results: [] } }));
