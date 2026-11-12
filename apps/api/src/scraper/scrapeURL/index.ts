@@ -61,6 +61,7 @@ import {
   BrandingNotSupportedError,
   XTwitterConfigurationError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
@@ -1067,6 +1068,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof XTwitterConfigurationError ||
               error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
