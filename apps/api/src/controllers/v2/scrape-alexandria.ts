@@ -5,6 +5,8 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { billingCountryForTeam } from "../../lib/billing-country";
@@ -119,10 +121,10 @@ export async function providerScrapeController(
     res.setHeader("x-request-id", requestId);
 
   if (req.auth.team_id.startsWith("preview_keyless_")) {
-    return res.status(403).json({
-      success: false,
-      error: "An API key is required for provider tools.",
-    });
+    applyAgentAuthDiscoveryHeader(res);
+    return res
+      .status(403)
+      .json(keylessProviderToolsBody(req.auth.team_id, req));
   }
 
   if (!req.acuc)
