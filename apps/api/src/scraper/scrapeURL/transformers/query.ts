@@ -8,7 +8,7 @@ import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 import {
   parseMarkdownToSentences,
   assembleAnswer,
