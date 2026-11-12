@@ -26,17 +26,6 @@ setup(
     long_description=long_description_content,
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    install_requires=[
-        'requests',
-        'certifi>=2026.10.19',
-        'pytest',
-        'python-dotenv',
-        'websockets',
-        'asyncio',
-        'nest-asyncio',
-        'pydantic>=2.0',
-        'aiohttp'
-    ],
     python_requires=">=3.8",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
