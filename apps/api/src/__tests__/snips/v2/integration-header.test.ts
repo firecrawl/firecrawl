@@ -6,6 +6,7 @@ import {
   describeIf,
 } from "../lib";
 import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
+import { V1_LIVE } from "../v1/lib";
 import { HAS_JOB_LOG, waitForJobLogRow } from "../job-log";
 
 const CAN_READ_LOG = !!config.USE_DB_AUTHENTICATION && HAS_JOB_LOG;
@@ -46,7 +47,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
     });
   }, 10000);
 
-  concurrentIf(CAN_READ_LOG).each(["/v1/scrape", "/v2/scrape"] as const)(
+  concurrentIf(CAN_READ_LOG).each(
+    V1_LIVE
+      ? (["/v1/scrape", "/v2/scrape"] as const)
+      : (["/v2/scrape"] as const),
+  )(
     "attributes %s to a header-only integration",
     async path => {
       const url = createTestIdUrl();

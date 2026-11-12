@@ -1,5 +1,5 @@
-import { describeIf, HAS_PROXY, HAS_SEARCH, TEST_PRODUCTION } from "../lib";
-import { search, searchRaw, idmux, Identity } from "./lib";
+import { HAS_PROXY, HAS_SEARCH, TEST_PRODUCTION } from "../lib";
+import { describeV1, search, searchRaw, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -12,7 +12,7 @@ beforeAll(async () => {
 }, 10000);
 
 // NOTE: if DDG gives us issues with this, we can disable if SEARXNG is not enabled
-describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
+describeV1(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   it.concurrent(
     "works",
     async () => {
