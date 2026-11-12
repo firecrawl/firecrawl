@@ -6,7 +6,9 @@ import {
   acceptProviderTerms,
   acceptTermsSchema,
 } from "../services/alexandria/terms";
+import compression from "compression";
 import express, { Request, Response } from "express";
+import { constants as zlibConstants } from "node:zlib";
 import { Agent, fetch, type Response as UpstreamResponse } from "undici";
 import type { Logger } from "winston";
 import { config } from "../config";
@@ -28,6 +30,7 @@ const INGEST_TIMEOUT_MS = 50_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+const NO_TRANSFORM = /(?:^|,)\s*no-transform\s*(?:,|$)/i;
 const FORWARDED_PATH_ROOTS = new Set([
   "analytics",
   "applications",
@@ -77,6 +80,10 @@ function sendUpstream(res: Response, upstream: UpstreamResponse, text: string) {
   for (const h of FORWARDED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(h);
     if (value) res.setHeader(h, value);
+  }
+  // An upstream opt-out from transformation is the only cache directive kept.
+  if (NO_TRANSFORM.test(upstream.headers.get("cache-control") ?? "")) {
+    res.setHeader("Cache-Control", "no-transform");
   }
 
   let body: unknown;
@@ -281,6 +288,26 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 }
 
 export const exchangeRouter = express.Router();
+
+// Compresses responses that declare a Content-Length larger than one TCP
+// segment, as res.json and res.send do. A response without that header, or
+// with Cache-Control: no-transform, is not compressed.
+exchangeRouter.use(
+  compression({
+    threshold: 1400,
+    level: 6,
+    brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } },
+    filter: (req, res) => {
+      // Express strips Content-Length from a 304, which still has to carry the
+      // Vary of the 200 it stands for.
+      if (res.statusCode === 304) {
+        res.vary("Accept-Encoding");
+        return false;
+      }
+      return res.hasHeader("Content-Length") && compression.filter(req, res);
+    },
+  }),
+);
 
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
 // the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
