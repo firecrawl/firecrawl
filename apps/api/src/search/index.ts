@@ -20,6 +20,7 @@ export async function search({
   sleep_interval = 0,
   timeout = 5000,
   usOnly = false,
+  zeroDataRetention,
 }: {
   query: string;
   logger: Logger;
@@ -34,6 +35,7 @@ export async function search({
   sleep_interval?: number;
   timeout?: number;
   usOnly?: boolean;
+  zeroDataRetention?: boolean;
 }): Promise<SearchResult[]> {
   // The fallback backends below take no US-only routing.
   if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
@@ -52,6 +54,7 @@ export async function search({
         country,
         location,
         usOnly,
+        zeroDataRetention: zeroDataRetention === true,
       });
       return results;
     }

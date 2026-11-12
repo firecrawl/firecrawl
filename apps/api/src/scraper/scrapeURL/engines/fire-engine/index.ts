@@ -509,7 +509,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
-      zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      zeroDataRetention: meta.internalOptions.zeroDataRetention === true,
       // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
       // it fire-engine grants no raise and PDFs keep its inline cap, so the
       // worker never captures bytes this team may not use.
@@ -738,7 +738,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
-      zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      zeroDataRetention: meta.internalOptions.zeroDataRetention === true,
       ...requestOverrides(meta),
     };
 

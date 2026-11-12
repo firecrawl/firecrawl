@@ -80,6 +80,7 @@ async function searchHelper(
     country: searchOptions.country ?? "us",
     location: searchOptions.location,
     usOnly: isUsOnly(flags),
+    zeroDataRetention: false,
   });
 
   let justSearch = pageOptions.fetchPageContent === false;

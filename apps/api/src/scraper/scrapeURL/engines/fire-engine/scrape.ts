@@ -60,7 +60,7 @@ export type FireEngineScrapeRequestCommon = {
   timeout?: number;
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
-  zeroDataRetention?: boolean;
+  zeroDataRetention: boolean;
 
   behaviorOverrides?: {
     disableSiteHandling?: boolean;
