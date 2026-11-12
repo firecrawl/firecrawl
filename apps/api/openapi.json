@@ -6012,7 +6012,7 @@
             "name": "organism",
             "in": "query",
             "required": false,
-            "description": "Organism for a gene symbol or protein name: an NCBI taxon ID, a scientific name, or a UniProt common name. Accessions and entry names ignore it.",
+            "description": "Organism in which a gene symbol or protein name is looked up first: an NCBI taxon ID, a scientific name, or a UniProt common name. A name found only in other organisms returns `ambiguous`. Accessions and entry names ignore it.",
             "schema": {
               "type": "string",
               "minLength": 1,
@@ -6155,6 +6155,9 @@
           },
           "500": {
             "description": "Internal server error"
+          },
+          "504": {
+            "description": "The lookup exceeded its time limit"
           }
         }
       }
@@ -12353,6 +12356,7 @@
           },
           "paperIds": {
             "type": "array",
+            "description": "Papers for the term. Empty when no paper is loaded for it. Only GO terms of human entries have paper IDs.",
             "items": {
               "type": "string"
             }
