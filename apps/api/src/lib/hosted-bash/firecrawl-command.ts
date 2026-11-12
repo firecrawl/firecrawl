@@ -30,7 +30,10 @@ const SCRAPE_FORMATS = [
 const API_KEY_FLAG =
   "--api-key isn't accepted in the hosted shell. Send your key in the HTTP request's Authorization: Bearer fc-... header instead";
 const KEY_NEEDED =
-  "Firecrawl's free tier without an API key isn't available from your network (it needs an IPv4 address). Create a free API key at https://www.firecrawl.dev/signin and send it as Authorization: Bearer fc-...";
+  "Firecrawl's free tier without an API key isn't available from your network (it needs an IPv4 address).";
+const SIGNUP_URL = "https://www.firecrawl.dev/signin";
+// Statuses where the keyless tier refused the caller and an API key would help.
+const KEYLESS_REFUSALS = [401, 402, 403, 429];
 
 export interface FirecrawlCaller {
   /** This server's own address: calls go through the same routes a REST caller uses. */
@@ -40,6 +43,8 @@ export interface FirecrawlCaller {
   authorization: string | null;
   /** Caller headers kept on each call: User-Agent and a World ID credential. */
   headers: Record<string, string>;
+  /** This route's public URL, for the sign-up instructions. */
+  publicUrl: string;
   maxCalls: number;
   /** When the command must be done; each call asks the API to finish before it. */
   deadline: number;
@@ -54,8 +59,22 @@ type Endpoint = "search" | "scrape";
 export class FirecrawlClient {
   readonly endpoints: Endpoint[] = [];
   readonly failedEndpoints: Endpoint[] = [];
+  /** The sign-up link once the keyless tier has refused this caller. */
+  private signupUrl: string | null = null;
+  private signupShown = false;
 
   constructor(private readonly caller: FirecrawlCaller) {}
+
+  /** How to get and send an API key, the first time a keyless call is refused. */
+  takeSignupHint(): string | null {
+    if (!this.signupUrl || this.signupShown) return null;
+    this.signupShown = true;
+    return [
+      `Get a free API key: ${this.signupUrl}`,
+      "Then send it with your request, for example:",
+      `  curl ${this.caller.publicUrl} -H 'Authorization: Bearer fc-YOUR_KEY' --data-binary 'firecrawl search "stripe pricing"'`,
+    ].join("\n");
+  }
 
   async post(
     endpoint: Endpoint,
@@ -96,12 +115,16 @@ export class FirecrawlClient {
     const json: any = await res.json().catch(() => ({}));
     if (!res.ok || json?.success === false) {
       this.failedEndpoints.push(endpoint);
+      const message = apiError(json, res.status);
+      if (authorization || !KEYLESS_REFUSALS.includes(res.status)) {
+        throw new Error(message);
+      }
+      // Keyless prompts carry a tracked sign-up link; reuse it when present.
+      this.signupUrl =
+        /https:\/\/\S*firecrawl\.dev\/k\/\S+/.exec(message)?.[0] ?? SIGNUP_URL;
       // Keyless refuses an IPv6 caller with a bare 401.
       const bare = !json?.error || json.error === "Unauthorized";
-      if (!authorization && res.status === 401 && bare) {
-        throw new Error(KEY_NEEDED);
-      }
-      throw new Error(apiError(json, res.status));
+      throw new Error(res.status === 401 && bare ? KEY_NEEDED : message);
     }
     return json;
   }
@@ -642,8 +665,10 @@ export function firecrawlCommand(client: FirecrawlClient) {
       signal: ctx.signal,
       stderr,
     };
+    let stdout = "";
+    let exitCode = 0;
     try {
-      return result(await (name === "search" ? search : scrape)(c, rest), 0);
+      stdout = await (name === "search" ? search : scrape)(c, rest);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof Unsupported) {
@@ -651,7 +676,10 @@ export function firecrawlCommand(client: FirecrawlClient) {
         return result("", 2);
       }
       stderr.push(`Error: ${message}`);
-      return result("", 1);
+      exitCode = 1;
     }
+    const signup = client.takeSignupHint();
+    if (signup) stderr.push("", signup);
+    return result(stdout, exitCode);
   });
 }
