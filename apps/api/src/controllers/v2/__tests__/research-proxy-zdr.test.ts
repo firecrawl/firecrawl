@@ -218,3 +218,30 @@ describe("legacy research mount notice", () => {
     );
   });
 });
+
+describe("upstream Retry-After", () => {
+  it("relays the header of a 503 with its status and body", async () => {
+    const body = { success: false, code: "UNAVAILABLE", error: "Try again" };
+    mocks.fetchResearchUpstream.mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: new Headers({
+        "content-type": "application/json",
+        "retry-after": "1",
+      }),
+      text: async () => JSON.stringify(body),
+    });
+    const res = makeRes();
+
+    routeHandler(createDeveloperRouter(), "/search")(
+      makeReq({ query: "retry with backoff" }, {}),
+      res,
+      vi.fn(),
+    );
+    await flush();
+
+    expect(res.setHeader).toHaveBeenCalledWith("retry-after", "1");
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(body);
+  });
+});
