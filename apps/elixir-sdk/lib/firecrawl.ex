@@ -381,6 +381,8 @@ defmodule Firecrawl do
   @doc """
   Look up a protein's UniProt location, function and GO cellular-component terms.
 
+  The response's `notice` is the UniProt credit and license. Show it with the results.
+
   `GET /search/research/proteins`
   """
   @spec lookup_protein(keyword(), keyword()) :: response()

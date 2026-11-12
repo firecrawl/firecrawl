@@ -730,6 +730,23 @@ class ClientTest < Minitest::Test
     assert_not_requested :post, "#{BASE_URL}/v2/search/developer"
   end
 
+  def test_lookup_protein_sends_protein_organism_and_origin_as_query
+    origin = "ruby-sdk@#{Firecrawl::VERSION}"
+    found = { status: 200, body: JSON.generate(success: true, match: "found"), headers: { "Content-Type" => "application/json" } }
+    with_organism = stub_request(:get, "#{BASE_URL}/v2/search/research/proteins")
+      .with(query: { "protein" => "TP53", "organism" => "human", "origin" => origin })
+      .to_return(found)
+    without_organism = stub_request(:get, "#{BASE_URL}/v2/search/research/proteins")
+      .with(query: { "protein" => "P04637", "origin" => origin })
+      .to_return(found)
+
+    @client.lookup_protein("TP53", organism: "human")
+    @client.lookup_protein("P04637")
+
+    assert_requested with_organism
+    assert_requested without_organism
+  end
+
   # ================================================================
   # AGENT
   # ================================================================
