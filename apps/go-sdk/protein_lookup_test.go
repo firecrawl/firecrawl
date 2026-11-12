@@ -39,7 +39,7 @@ func TestLookupProteinSendsProteinAndOrganism(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseQuery: %v", err)
 	}
-	if query.Get("protein") != "RPUSD3" || query.Get("organism") != "Homo sapiens" {
+	if query.Get("protein") != "RPUSD3" || query.Get("organism") != "Homo sapiens" || query.Get("origin") != "go-sdk@"+Version {
 		t.Errorf("unexpected query: %s", req.query)
 	}
 	if resp.Match != "found" || resp.Protein == nil || resp.Protein.Organism.TaxonID != 9606 {
