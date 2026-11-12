@@ -371,6 +371,34 @@ defmodule Firecrawl do
     Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
   end
 
+  @research_lookup_protein_schema NimbleOptions.new!([
+    organism: [type: :string],
+    protein: [type: :string, required: true]
+  ])
+
+  @research_lookup_protein_key_mapping %{organism: "organism", protein: "protein"}
+
+  @doc """
+  Look up a protein's UniProt location, function and GO cellular-component terms.
+
+  `GET /search/research/proteins`
+  """
+  @spec lookup_protein(keyword(), keyword()) :: response()
+  def lookup_protein(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_lookup_protein_schema) do
+      Req.get(client(opts), url: "/search/research/proteins", params: [{"origin", @sdk_origin} | to_query(params, @research_lookup_protein_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `lookup_protein`. Raises on error.
+  """
+  @spec lookup_protein!(keyword(), keyword()) :: Req.Response.t()
+  def lookup_protein!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_lookup_protein_schema)
+    Req.get!(client(opts), url: "/search/research/proteins", params: [{"origin", @sdk_origin} | to_query(params, @research_lookup_protein_key_mapping)])
+  end
+
   @research_search_github_schema NimbleOptions.new!([
     k: [type: :integer],
     query: [type: :string, required: true]
