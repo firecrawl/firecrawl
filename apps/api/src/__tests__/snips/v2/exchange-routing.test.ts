@@ -323,6 +323,52 @@ describe("Exchange routing", () => {
         buildStubMeta("https://x.com/explore", {}),
       );
 
+      const engines = fallback.map(f => f.engine);
+
+      expect(engines).not.toContain("exchange");
+      expect(engines.length).toBeGreaterThan(0);
+    });
+
+    it("names the option the Exchange declines instead of scraping the login wall", async () => {
+      const meta = buildStubMeta(X_POST_URL, {});
+      meta.internalOptions.zeroDataRetention = true;
+
+      const error = await buildFallbackList(meta).catch(e => e);
+
+      expect(error).toBeInstanceOf(
+        exchange.ThirdPartyDataUnsupportedOptionError,
+      );
+      expect(error.response()).toEqual(
+        new exchange.ThirdPartyDataUnsupportedOptionError(
+          "zero data retention",
+        ).response(),
+      );
+    });
+
+    it("serves a post whose request sets rendering options, which X has no page for", async () => {
+      const meta = buildStubMeta(X_POST_URL, {});
+      meta.options.headers = { "user-agent": "test" };
+      meta.options.waitFor = 1000;
+
+      const fallback = await buildFallbackList(meta);
+
+      expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
+    });
+
+    it("fails closed for a post when the Exchange does not serve X", async () => {
+      exchange.setExchangeProvidersForTest([]);
+
+      await expect(
+        buildFallbackList(buildStubMeta(X_POST_URL, {})),
+      ).resolves.toEqual([]);
+    });
+
+    it("keeps the normal engines for a browser-profile scrape", async () => {
+      const meta = buildStubMeta(X_PROFILE_URL, {});
+      meta.options.profile = { name: "p" };
+
+      const fallback = await buildFallbackList(meta);
+
       expect(fallback.map(f => f.engine)).not.toContain("exchange");
     });
 

@@ -1,5 +1,6 @@
 // The X/Twitter URLs the Exchange's X provider answers: posts and profiles.
-// Scrape sends these to the Exchange for every team (see lib/exchange.ts).
+// Scrape sends these to the Exchange for eligible teams and requests (see
+// lib/exchange.ts and buildFallbackList in scraper/scrapeURL/engines).
 
 const RESERVED_PROFILE_PATHS = new Set([
   "compose",

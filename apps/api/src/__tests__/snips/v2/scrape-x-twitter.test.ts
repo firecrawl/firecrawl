@@ -32,6 +32,24 @@ describe("X/Twitter scrape through the Exchange", () => {
   );
 
   concurrentIf(HAS_EXCHANGE_X)(
+    "returns a post at the Exchange's price",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://x.com/ericciarla/status/2037202150690844778",
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toContain("2037202150690844778");
+      expect(response.markdown).toMatch(/n8n/i);
+      expect(response.metadata.creditsUsed).toBe(5);
+    },
+    scrapeTimeout + 15000,
+  );
+
+  concurrentIf(HAS_EXCHANGE_X)(
     "reports a nonexistent handle as a missing record rather than another account",
     async () => {
       // Letters and digits only, so the handle is a valid X username.

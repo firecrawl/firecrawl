@@ -669,15 +669,16 @@ export async function buildFallbackList(meta: Meta): Promise<
       }
     }
 
-    // X posts and profiles are answered through the Exchange by xAI, which is
-    // outside the US-only guarantee. A profile or lockdown scrape keeps the
-    // normal engines, as it did with Firecrawl's own X engine.
-    if (
+    // X posts and profiles only the Exchange serves, as blocked URLs (LinkedIn
+    // profiles) are: a normal engine gets X's login wall. A profile or lockdown
+    // scrape keeps the normal engines, as it did with Firecrawl's own X engine.
+    const xTwitterPage =
       isXTwitterUrl(url) &&
-      isUsOnly(meta.internalOptions.teamFlags ?? undefined) &&
       meta.options.profile === undefined &&
-      !meta.options.lockdown
-    ) {
+      !meta.options.lockdown;
+
+    // They are answered by xAI, which is outside the US-only guarantee.
+    if (xTwitterPage && isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
       throw new UsOnlyUnavailableError(
         "X/Twitter scraping is not available for teams restricted to US-only processing.",
       );
@@ -687,7 +688,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       url,
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
-      blocked,
+      blocked: blocked || xTwitterPage,
       origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
@@ -720,9 +721,10 @@ export async function buildFallbackList(meta: Meta): Promise<
     // A blocked URL can only have been admitted (by scrapeBlocklistMiddleware
     // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
-    // scrape a blocklisted site. Unblocked URLs whose provider wants
-    // unaccepted terms or rejects an option fall through and scrape normally.
-    if (blocked) {
+    // scrape a blocklisted site. X posts and profiles fail the same way.
+    // Other URLs whose provider wants unaccepted terms or rejects an option
+    // fall through and scrape normally.
+    if (blocked || xTwitterPage) {
       if (exchangeAccess.termsRequired) {
         throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
       }
