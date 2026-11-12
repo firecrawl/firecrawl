@@ -11,6 +11,7 @@ defmodule Firecrawl.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      hex: [cooldown: "3d"],
       package: package(),
       name: "Firecrawl",
       description: "Elixir client for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs on the v2 API. Auto-generated from the OpenAPI spec.",

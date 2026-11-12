@@ -77,3 +77,6 @@ keywords = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.uv]
+exclude-newer = "3 days"
