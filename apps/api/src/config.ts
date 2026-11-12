@@ -269,7 +269,6 @@ const configSchema = z.object({
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   OPENROUTER_API_KEY: z.string().optional(),
-  XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),

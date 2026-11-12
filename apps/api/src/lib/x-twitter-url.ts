@@ -1,5 +1,6 @@
-// Pure URL recognition for the X/Twitter engine, kept apart from the engine so
-// credit estimation can use it without pulling in the scraper and AI SDK.
+// The X/Twitter URLs the Exchange's X provider answers: posts and profiles.
+// Scrape sends these to the Exchange for eligible teams and requests (see
+// lib/exchange.ts and buildFallbackList in scraper/scrapeURL/engines).
 
 const RESERVED_PROFILE_PATHS = new Set([
   "compose",
@@ -17,13 +18,13 @@ const RESERVED_PROFILE_PATHS = new Set([
   "share",
 ]);
 
-export type XTwitterProfileUrl = {
+type XTwitterProfileUrl = {
   kind: "profile";
   handle: string;
   normalizedUrl: string;
 };
 
-export type XTwitterPostUrl = {
+type XTwitterPostUrl = {
   kind: "post";
   handle?: string;
   postId: string;
@@ -32,7 +33,7 @@ export type XTwitterPostUrl = {
 
 type XTwitterUrl = XTwitterProfileUrl | XTwitterPostUrl;
 
-export function parseXTwitterUrl(url: string): XTwitterUrl | null {
+function parseXTwitterUrl(url: string): XTwitterUrl | null {
   let parsed: URL;
   try {
     parsed = new URL(url);

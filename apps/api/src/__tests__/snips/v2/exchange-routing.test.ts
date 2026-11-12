@@ -293,6 +293,97 @@ describe("Exchange routing", () => {
     });
   });
 
+  describe("X/Twitter", () => {
+    const X_PROFILE_URL = "https://x.com/firecrawl";
+    const X_POST_URL =
+      "https://twitter.com/firecrawl/status/2037202150690844778";
+
+    beforeEach(() => {
+      exchange.setExchangeProvidersForTest([
+        {
+          id: "x-com",
+          creditsCost: 5,
+          routes: [{ domains: ["x.com", "twitter.com"], pathPrefixes: ["/"] }],
+        },
+      ]);
+    });
+
+    it("routes posts and profiles to the Exchange for a team outside the beta", async () => {
+      for (const url of [X_PROFILE_URL, X_POST_URL]) {
+        const meta = buildStubMeta(url, {});
+        const fallback = await buildFallbackList(meta);
+
+        expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
+        expect(meta.exchangeProviderId).toBe("x-com");
+      }
+    });
+
+    it("scrapes other X pages normally for a team outside the beta", async () => {
+      const fallback = await buildFallbackList(
+        buildStubMeta("https://x.com/explore", {}),
+      );
+
+      const engines = fallback.map(f => f.engine);
+
+      expect(engines).not.toContain("exchange");
+      expect(engines.length).toBeGreaterThan(0);
+    });
+
+    it("names the option the Exchange declines instead of scraping the login wall", async () => {
+      const meta = buildStubMeta(X_POST_URL, {});
+      meta.internalOptions.zeroDataRetention = true;
+
+      const error = await buildFallbackList(meta).catch(e => e);
+
+      expect(error).toBeInstanceOf(
+        exchange.ThirdPartyDataUnsupportedOptionError,
+      );
+      expect(error.response()).toEqual(
+        new exchange.ThirdPartyDataUnsupportedOptionError(
+          "zero data retention",
+        ).response(),
+      );
+    });
+
+    it("serves a post whose request sets rendering options, which X has no page for", async () => {
+      const meta = buildStubMeta(X_POST_URL, {});
+      meta.options.headers = { "user-agent": "test" };
+      meta.options.waitFor = 1000;
+
+      const fallback = await buildFallbackList(meta);
+
+      expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
+    });
+
+    it("fails closed for a post when the Exchange does not serve X", async () => {
+      exchange.setExchangeProvidersForTest([]);
+
+      await expect(
+        buildFallbackList(buildStubMeta(X_POST_URL, {})),
+      ).resolves.toEqual([]);
+    });
+
+    it("keeps the normal engines for a browser-profile scrape", async () => {
+      const meta = buildStubMeta(X_PROFILE_URL, {});
+      meta.options.profile = { name: "p" };
+
+      const fallback = await buildFallbackList(meta);
+
+      expect(fallback.map(f => f.engine)).not.toContain("exchange");
+    });
+
+    it("refuses a US-only team before reaching the Exchange", async () => {
+      const error = await buildFallbackList(
+        buildStubMeta(X_PROFILE_URL, { usOnly: true }),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.UsOnlyUnavailableError);
+      expect(error.message).toBe(
+        "X/Twitter scraping is not available for teams restricted to US-only processing.",
+      );
+    });
+  });
+
   describe("exchange engine", () => {
     const failure = (code: string, message: string) => ({
       success: false,
