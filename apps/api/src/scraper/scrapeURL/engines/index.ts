@@ -15,6 +15,11 @@ import {
   playwrightMaxReasonableTime,
   scrapeURLWithPlaywright,
 } from "./playwright";
+import {
+  lightBrowserMaxReasonableTime,
+  scrapeURLWithLightpanda,
+  scrapeURLWithMoli,
+} from "./lightbrowser";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import {
   scrapeURLWithWikipedia,
@@ -58,6 +63,8 @@ export type Engine =
   | "fire-engine;tlsclient"
   | "fire-engine;tlsclient;stealth"
   | "playwright"
+  | "lightpanda"
+  | "moli"
   | "fetch"
   | "pdf"
   | "document"
@@ -69,6 +76,10 @@ export type Engine =
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+// Lightweight browser tiers are opt-in and ride on the playwright
+// microservice (it owns the CDP connections), so they need its URL too.
+const useLightpanda = usePlaywright && config.LIGHTPANDA_ENABLED === true;
+const useMoli = usePlaywright && config.MOLI_ENABLED === true;
 const useWikipedia =
   config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
   config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
@@ -88,6 +99,8 @@ const engines: Engine[] = [
         "fire-engine;tlsclient;stealth" as const,
       ]
     : []),
+  ...(useLightpanda ? ["lightpanda" as const] : []),
+  ...(useMoli ? ["moli" as const] : []),
   ...(usePlaywright ? ["playwright" as const] : []),
   "fetch",
   "pdf",
@@ -203,6 +216,8 @@ const engineHandlers: {
   "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
   "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
+  lightpanda: scrapeURLWithLightpanda,
+  moli: scrapeURLWithMoli,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
@@ -229,6 +244,8 @@ const engineMRTs: {
   "fire-engine;tlsclient;stealth": meta =>
     fireEngineMaxReasonableTime(meta, "tlsclient"),
   playwright: playwrightMaxReasonableTime,
+  lightpanda: lightBrowserMaxReasonableTime,
+  moli: lightBrowserMaxReasonableTime,
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
@@ -421,6 +438,59 @@ const engineOptions: {
       disableAdblock: false,
     },
     quality: 20,
+  },
+  // Lightweight browser tiers (opt-in, self-hosted). They only declare the
+  // capabilities the CDP path can actually serve today, so any request
+  // carrying another feature flag is routed past them by the support-score
+  // threshold: screenshots/PDF/actions/branding go straight to Chromium.
+  // Lightpanda has no layout or paint at all; Moli can render on demand,
+  // but the microservice does not return captures yet, so it makes the
+  // same conservative declarations. Qualities sit above fire-engine's
+  // chrome-cdp (50): enabling a tier means "try it before Chromium" for
+  // every request it can serve.
+  lightpanda: {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      image: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: false,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: false,
+    },
+    quality: 60,
+  },
+  moli: {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      image: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: false,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: false,
+    },
+    quality: 55,
   },
   "fire-engine;tlsclient": {
     features: {
