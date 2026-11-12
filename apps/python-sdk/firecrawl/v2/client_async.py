@@ -421,8 +421,8 @@ class AsyncFirecrawlClient:
                 the same results with the index's labels
 
         Returns:
-            GovSearchResponse with ranked results in data.web, and in data.gov
-            when sources includes "gov"
+            GovSearchResponse with ranked results in data.web (None when sources
+            is ["gov"]), and in data.gov when sources includes "gov"
         """
         return await async_gov.gov_search(
             self.async_http_client,

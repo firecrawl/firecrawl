@@ -658,8 +658,8 @@ class FirecrawlClient:
                 the same results with the index's labels
 
         Returns:
-            GovSearchResponse with ranked results in data.web, and in data.gov
-            when sources includes "gov"
+            GovSearchResponse with ranked results in data.web (None when sources
+            is ["gov"]), and in data.gov when sources includes "gov"
         """
         return gov_module.gov_search(
             self.http_client,

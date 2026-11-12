@@ -2558,7 +2558,7 @@ class GovSearchRequest(BaseModel):
     jurisdiction: Optional[str] = None
     court: Optional[str] = None
     court_type: Optional[GovSearchCourtType] = Field(default=None, alias="courtType")
-    cites: Optional[Union[str, List[str]]] = None
+    cites: Optional[Union[str, Annotated[List[str], Field(max_length=32)]]] = None
     domain: Optional[str] = None
     sources: Optional[List[GovSearchSource]] = None
 
