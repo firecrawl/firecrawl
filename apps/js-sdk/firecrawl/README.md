@@ -318,7 +318,7 @@ const related = await app.research.similarPapers('pmid:<id>', {
 
 // Look up a protein's UniProt location, function and GO terms. Cited papers
 // come back as pmid: ids that getPaper accepts. Print `notice` with the
-// results: it is UniProt's CC BY 4.0 credit.
+// results. It is UniProt's CC BY 4.0 credit.
 const protein = await app.research.lookupProtein('RPUSD3', { organism: '9606' });
 if (protein.match === 'found') {
   console.log(protein.protein.subcellularLocation[0]?.text);

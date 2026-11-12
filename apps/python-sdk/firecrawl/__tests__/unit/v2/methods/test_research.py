@@ -291,13 +291,7 @@ class TestClientWiring:
     def test_client_exposes_research_methods(self):
         from firecrawl.v2.client import FirecrawlClient
 
-        for name in (
-            "search_papers",
-            "inspect_paper",
-            "read_paper",
-            "related_papers",
-            "search_github",
-        ):
+        for name in RESEARCH_METHODS:
             assert callable(getattr(FirecrawlClient, name)), name
 
     def test_search_papers_routes_to_the_paper_index(self):
