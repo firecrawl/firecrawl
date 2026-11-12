@@ -19,6 +19,17 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
+import { getScrapeZDR } from "../lib/zdr-helpers";
+
+// Tells Exchange the team is held to zero data retention, so it only lists and runs
+// providers that support it.
+function zeroDataRetentionHeader(
+  flags: Parameters<typeof getScrapeZDR>[0],
+): Record<string, string> {
+  return getScrapeZDR(flags) === "forced"
+    ? { "x-exchange-zero-data-retention": "true" }
+    : {};
+}
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -192,6 +203,7 @@ function exchangeProxy(
           ...(isUsOnly(authedReq.acuc?.flags)
             ? { "x-exchange-us-only": "true" }
             : {}),
+          ...zeroDataRetentionHeader(authedReq.acuc?.flags),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -243,6 +255,7 @@ async function recommendationsController(req: Request, res: Response) {
         ...(isUsOnly(authedReq.acuc?.flags)
           ? { "x-exchange-us-only": "true" }
           : {}),
+        ...zeroDataRetentionHeader(authedReq.acuc?.flags),
       },
       body: JSON.stringify(signals),
       signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
