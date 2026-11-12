@@ -127,6 +127,7 @@
     "jose": "^6.2.12",
     "jsdom": "^29.1.1",
     "jsonrepair": "^3.14.0",
+    "just-bash": "3.6.0",
     "koffi": "^2.9.0",
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",
