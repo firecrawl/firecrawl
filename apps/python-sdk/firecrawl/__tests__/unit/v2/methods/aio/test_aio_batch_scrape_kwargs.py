@@ -115,15 +115,20 @@ async def test_batch_scrape_timeout_still_bounds_the_wait():
 
 
 @pytest.mark.asyncio
-async def test_batch_scrape_forwards_every_scrape_options_field():
+@pytest.mark.parametrize(
+    "method, extra",
+    [("start_batch_scrape", {}), ("batch_scrape", {"poll_interval": 0})],
+)
+async def test_batch_scrape_forwards_every_scrape_options_field(method, extra):
     client = _mock_client()
 
-    await client.start_batch_scrape(
+    await getattr(client, method)(
         ["https://example.com"],
         min_age=1000,
         redact_pii=True,
         domain_tools=True,
         tool_detail="full",
+        **extra,
     )
 
     body = _sent_body(client)
