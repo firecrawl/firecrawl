@@ -34,8 +34,7 @@ setup(
         'websockets',
         'asyncio',
         'nest-asyncio',
-        'pydantic>=2.0',
-        'aiohttp'
+        'pydantic>=2.0'
     ],
     python_requires=">=3.8",
     classifiers=[

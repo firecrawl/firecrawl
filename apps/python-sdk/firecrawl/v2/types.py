@@ -1275,44 +1275,6 @@ class MapDocument(Document):
     description: Optional[str] = None
 
 
-# Crawl params types
-class CrawlParamsRequest(BaseModel):
-    """Request for getting crawl parameters from LLM."""
-
-    url: str
-    prompt: str
-
-
-class CrawlParamsData(BaseModel):
-    """Data returned from crawl params endpoint."""
-
-    include_paths: Optional[List[str]] = None
-    exclude_paths: Optional[List[str]] = None
-    max_discovery_depth: Optional[int] = None
-    sitemap: Optional[Literal["skip", "include", "only"]] = None
-    ignore_query_parameters: bool = False
-    deduplicate_similar_urls: bool = True
-    limit: Optional[int] = None
-    crawl_entire_domain: bool = False
-    allow_external_links: bool = False
-    allow_subdomains: bool = False
-    ignore_robots_txt: bool = False
-    robots_user_agent: Optional[str] = None
-    delay: Optional[int] = None
-    max_concurrency: Optional[int] = None
-    webhook: Optional[Union[str, WebhookConfig]] = None
-    scrape_options: Optional[ScrapeOptions] = None
-    zero_data_retention: bool = False
-    warning: Optional[str] = None
-    integration: Optional[str] = None
-
-
-class CrawlParamsResponse(BaseResponse[CrawlParamsData]):
-    """Response from crawl params endpoint."""
-
-    pass
-
-
 # Batch scrape types
 class BatchScrapeRequest(BaseModel):
     """Request for batch scraping multiple URLs (internal helper only)."""

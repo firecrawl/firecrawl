@@ -29,10 +29,8 @@ from .types import (
     CrawlRequest,
     CrawlResponse,
     CrawlJob,
-    CrawlParamsRequest,
     PDFParser,
     ImageParser,
-    CrawlParamsData,
     WebhookConfig,
     AgentWebhookConfig,
     AgentExchangeOptions,
@@ -1271,19 +1269,6 @@ class FirecrawlClient:
             cancelled, for example because it already completed.
         """
         return crawl_module.cancel_crawl(self.http_client, crawl_id)
-
-    def crawl_params_preview(self, url: str, prompt: str) -> CrawlParamsData:
-        """Derive crawl parameters from natural-language prompt.
-
-        Args:
-            url: Root URL
-            prompt: Instruction describing how to crawl
-
-        Returns:
-            CrawlParamsData with normalized crawl configuration
-        """
-        request = CrawlParamsRequest(url=url, prompt=prompt)
-        return crawl_module.crawl_params_preview(self.http_client, request)
 
     def start_extract(
         self,

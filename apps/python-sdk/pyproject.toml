@@ -15,8 +15,7 @@ dependencies = [
     "python-dotenv",
     "websockets",
     "nest-asyncio",
-    "pydantic>=2.0",
-    "aiohttp"
+    "pydantic>=2.0"
 ]
 authors = [{name = "Firecrawl",email = "nick@mendable.ai"}]
 maintainers = [{name = "Firecrawl",email = "nick@mendable.ai"}]

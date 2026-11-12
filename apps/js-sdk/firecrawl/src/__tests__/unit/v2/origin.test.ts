@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, test, expect } from "vitest";
 import type { AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
-import { Firecrawl } from "../../../index";
 import { getVersion } from "../../../v2/utils/getVersion";
 import { detectCallerPackage } from "../../../utils/callerOrigin";
 
@@ -52,11 +51,6 @@ describe("v2 request origin", () => {
     await client.scrape("https://example.com", { origin: "per-call" } as any);
     await client.scrape("https://example.com", { origin: "mcp-server" } as any);
     expect(bodies.map(b => b.origin)).toEqual(["per-call", "mcp-server"]);
-  });
-
-  test("the unified client forwards the origin option to v1", () => {
-    const app = new Firecrawl({ apiKey: "fc-test", origin: "js-sdk.example@1.0.0" });
-    expect((app.v1 as any).clientOrigin).toBe("js-sdk.example@1.0.0");
   });
 
 });

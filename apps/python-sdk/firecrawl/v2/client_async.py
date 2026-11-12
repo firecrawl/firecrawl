@@ -30,8 +30,6 @@ from .types import (
     AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
-    CrawlParamsRequest,
-    CrawlParamsData,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
     MapOptions,
@@ -617,10 +615,6 @@ class AsyncFirecrawlClient:
             cancelled, for example because it already completed.
         """
         return await async_crawl.cancel_crawl(self.async_http_client, job_id)
-
-    async def crawl_params_preview(self, url: str, prompt: str) -> CrawlParamsData:
-        req = CrawlParamsRequest(url=url, prompt=prompt)
-        return await async_crawl.crawl_params_preview(self.async_http_client, req)
 
     async def get_crawl_errors(self, crawl_id: str) -> CrawlErrorsResponse:
         return await async_crawl.get_crawl_errors(self.async_http_client, crawl_id)

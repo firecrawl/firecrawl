@@ -408,18 +408,7 @@ await watch.start();
 
 ## v1 compatibility
 
-The feature‑frozen v1 is still available under `app.v1` with the original method names.
-
-```js
-import { Firecrawl } from 'firecrawl';
-
-const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
-
-// v1 methods (feature‑frozen)
-const scrapeV1 = await app.v1.scrapeUrl('https://firecrawl.dev', { formats: ['markdown', 'html'] });
-const crawlV1 = await app.v1.crawlUrl('https://firecrawl.dev', { limit: 100 });
-const mapV1 = await app.v1.mapUrl('https://firecrawl.dev');
-```
+Version 5 removes the v1 client: the `app.v1` getter and the `FirecrawlAppV1` export are gone. The v1 method names (`scrapeUrl`, `crawlUrl`, `asyncCrawlUrl`, `checkCrawlStatus`, `checkCrawlErrors`, `mapUrl`, `batchScrapeUrls`, `asyncBatchScrapeUrls`, `checkBatchScrapeStatus`, `checkBatchScrapeErrors`) remain on `Firecrawl` as deprecated aliases that call the v2 API.
 
 ## Error Handling
 
