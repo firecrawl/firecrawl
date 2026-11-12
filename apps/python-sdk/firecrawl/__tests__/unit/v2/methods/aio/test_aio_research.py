@@ -200,13 +200,7 @@ async def test_error_mapping():
 async def test_async_client_exposes_research_methods():
     from firecrawl.v2.client_async import AsyncFirecrawlClient
 
-    for name in (
-        "search_papers",
-        "inspect_paper",
-        "read_paper",
-        "related_papers",
-        "search_github",
-    ):
+    for name in RESEARCH_METHODS:
         assert callable(getattr(AsyncFirecrawlClient, name)), name
 
     client = AsyncFirecrawlClient(api_key="fc-test")

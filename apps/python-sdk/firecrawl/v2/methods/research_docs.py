@@ -3,12 +3,12 @@ Canonical docstrings for the research paper index (``/v2/search/research``).
 
 Single source of truth for the prose that documents ``search_papers``,
 ``inspect_paper``, ``read_paper``, ``related_papers``, ``lookup_protein`` and
-``search_github``. The same six methods are surfaced at six layers: the
-implementation functions in ``research.py`` and ``aio/research.py``, and the
-delegating methods on ``FirecrawlClient``, ``AsyncFirecrawlClient``,
-``Firecrawl`` and ``AsyncFirecrawl``. Every layer keeps a full docstring
-(``help()`` on any of them shows the complete text), but the text lives here
-once, so a correction to
+``search_github``.
+The same six methods are surfaced at six layers — the implementation functions
+in ``research.py`` and ``aio/research.py``, and the delegating methods on
+``FirecrawlClient``, ``AsyncFirecrawlClient``, ``Firecrawl`` and
+``AsyncFirecrawl``. Every layer keeps a full docstring (``help()`` on any of
+them shows the complete text), but the text lives here once, so a correction to
 a factual claim — corpus size and composition, the
 ``search(categories=["research"])`` disambiguation, wire names, Args/Returns —
 is a one-place edit instead of a six-way edit that drifts.

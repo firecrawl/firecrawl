@@ -342,7 +342,7 @@ related = firecrawl.related_papers(
 
 # Look up a protein's UniProt location, function and GO terms. Cited papers
 # come back as pmid: ids that inspect_paper accepts. Print `notice` with the
-# results: it is UniProt's CC BY 4.0 credit.
+# results. It is UniProt's CC BY 4.0 credit.
 protein = firecrawl.lookup_protein("RPUSD3", organism="9606")
 if protein["match"] == "found":
     print(protein["protein"]["subcellularLocation"][0]["text"])
