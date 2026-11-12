@@ -208,6 +208,7 @@ describe("GET /exchange/recommendations", () => {
       "content-type": "application/json",
       "x-exchange-team-id": TEAM_ID,
       "x-request-id": "req-1",
+      "x-exchange-zero-data-retention": "false",
     });
     expect(forwardedBody()).toEqual({
       hosts: [

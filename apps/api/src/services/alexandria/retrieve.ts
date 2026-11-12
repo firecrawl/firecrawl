@@ -309,7 +309,7 @@ export async function retrieveProviders(input: {
       ...(input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
-      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      zeroDataRetention,
       ...(usOnly ? { usOnly } : {}),
       maximumCredits: 0,
       retryConnection: true,
@@ -429,6 +429,7 @@ export async function retrieveProviders(input: {
       input.teamId,
       input.calls,
       input.flags,
+      zeroDataRetention,
       input.orgId,
       input.clientIp,
       input.billingCountry,
@@ -486,7 +487,7 @@ export async function retrieveProviders(input: {
       clientIp: input.clientIp,
       billingCountry: input.billingCountry,
       connectors: input.flags?.exchangeRetrieve === true,
-      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      zeroDataRetention,
       ...(usOnly ? { usOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
@@ -618,7 +619,7 @@ export async function retrieveProviders(input: {
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
-      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      zeroDataRetention,
       ...(usOnly ? { usOnly } : {}),
       maximumCredits,
     }).catch(error => {

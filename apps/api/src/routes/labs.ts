@@ -4,6 +4,7 @@ import { Agent, fetch } from "undici";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
+import { getSearchForcedKind } from "../lib/zdr-helpers";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
@@ -55,6 +56,8 @@ function upstreamHeaders(req: RequestWithAuth<any, any, any>) {
 
   headers["x-labs-search-secret"] = config.LABS_SEARCH_SECRET!;
   headers["x-labs-search-team-id"] = req.auth.team_id;
+  headers["x-labs-search-zero-data-retention"] =
+    getSearchForcedKind(req.acuc?.flags) !== null ? "true" : "false";
   const apiKey = callerApiKey(req);
   if (apiKey) headers["x-labs-search-key"] = apiKey;
 

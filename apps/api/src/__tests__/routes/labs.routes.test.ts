@@ -154,6 +154,27 @@ describe("labs router for a US-only team", () => {
     expect(mocks.fetch.mock.calls[0][0]).toBe("https://labs.test/labs/search");
     expect(mocks.fetch.mock.calls[0][1].headers).toMatchObject({
       "x-labs-search-team-id": "team-1",
+      "x-labs-search-zero-data-retention": "false",
+    });
+  });
+
+  it.each([
+    [{ searchZDR: "forced-zdr" }, "true"],
+    [{ searchZDR: "forced-anon" }, "true"],
+    [{ scrapeZDR: "forced" }, "false"],
+  ])("follows search ZDR only (%o)", async (zdrFlags, expected) => {
+    mocks.flags = { labsSearch: true, ...zdrFlags };
+    mocks.fetch.mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await request(appWithLabs()).post("/labs/search");
+
+    expect(mocks.fetch.mock.calls[0][1].headers).toMatchObject({
+      "x-labs-search-zero-data-retention": expected,
     });
   });
 });

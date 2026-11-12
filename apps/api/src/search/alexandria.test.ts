@@ -31,6 +31,7 @@ const compact = {
   description: tool.description,
 };
 const input = {
+  zeroDataRetention: false,
   teamId: "team",
   queries: ["records"],
   limit: 5,
@@ -104,7 +105,11 @@ it.each([undefined, "compact", "full"] as const)(
           },
     );
     const result = await discoverTools(
-      { ...input, toolDetail, urls: ["https://example.com/records"] },
+      {
+        ...input,
+        toolDetail,
+        urls: ["https://example.com/records"],
+      },
       logger,
     );
     expect(result.items).toHaveLength(1);
@@ -184,7 +189,10 @@ it("retries a failed discovery leg once", async () => {
 it("reports discovery unavailable when every leg fails", async () => {
   request.mockResolvedValue({ status: 503, body: {} });
   const result = await discoverTools(
-    { ...input, urls: ["https://example.com/records"] },
+    {
+      ...input,
+      urls: ["https://example.com/records"],
+    },
     logger,
   );
   expect(request).toHaveBeenCalledTimes(4);
@@ -203,7 +211,10 @@ it("keeps partial results when only one leg fails", async () => {
         },
   );
   const result = await discoverTools(
-    { ...input, urls: ["https://example.com/records"] },
+    {
+      ...input,
+      urls: ["https://example.com/records"],
+    },
     logger,
   );
   expect(result.items).toHaveLength(1);
@@ -230,7 +241,11 @@ it("interleaves results of several queries by rank", async () => {
     };
   });
   const result = await discoverTools(
-    { ...input, toolDetail: "compact", queries: ["first", "second"] },
+    {
+      ...input,
+      toolDetail: "compact",
+      queries: ["first", "second"],
+    },
     logger,
   );
   expect(result.items.map(item => item.capability)).toEqual([
@@ -294,7 +309,11 @@ it("numbers each lookup's Exchange request id from the caller's prefix", async (
     sent: [] as string[],
   };
   await discoverTools(
-    { ...input, queries: ["first", "second"], exchangeRequestIds },
+    {
+      ...input,
+      queries: ["first", "second"],
+      exchangeRequestIds,
+    },
     logger,
   );
   expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([

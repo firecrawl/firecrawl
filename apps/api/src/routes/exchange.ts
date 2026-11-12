@@ -17,6 +17,7 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
+import { getScrapeZDR } from "../lib/zdr-helpers";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -185,6 +186,8 @@ function exchangeProxy(
           ...(isUsOnly(authedReq.acuc?.flags)
             ? { "x-exchange-us-only": "true" }
             : {}),
+          "x-exchange-zero-data-retention":
+            getScrapeZDR(authedReq.acuc?.flags) === "forced" ? "true" : "false",
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -236,6 +239,8 @@ async function recommendationsController(req: Request, res: Response) {
         ...(isUsOnly(authedReq.acuc?.flags)
           ? { "x-exchange-us-only": "true" }
           : {}),
+        "x-exchange-zero-data-retention":
+          getScrapeZDR(authedReq.acuc?.flags) === "forced" ? "true" : "false",
       },
       body: JSON.stringify(signals),
       signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
@@ -276,6 +281,7 @@ async function providerTermsAcceptController(req: Request, res: Response) {
     body: body.data,
     clientIp: authedReq.ip,
     billingCountry: await billingCountryForTeam(authedReq.auth.team_id),
+    zeroDataRetention: getScrapeZDR(authedReq.acuc?.flags) === "forced",
   });
   return res.status(response.status).json(response.body);
 }

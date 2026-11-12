@@ -90,7 +90,11 @@ export function acceptedAfter(
   );
 }
 
-type CallerLocation = { clientIp?: string; billingCountry?: string };
+type CallerLocation = {
+  clientIp?: string;
+  billingCountry?: string;
+  zeroDataRetention: boolean;
+};
 
 // IP is forwarded only when the caller already has it. Billing country is per
 // team, so it can be resolved here when the caller did not supply one.
@@ -98,26 +102,27 @@ async function callerLocation(input: {
   teamId: string;
   clientIp?: string;
   billingCountry?: string;
+  zeroDataRetention: boolean;
 }): Promise<CallerLocation> {
   return {
     clientIp: input.clientIp,
     billingCountry:
       input.billingCountry ?? (await billingCountryForTeam(input.teamId)),
+    zeroDataRetention: input.zeroDataRetention,
   };
 }
 
 export async function acceptedProviders(
   teamId: string,
   orgId: string,
-  timeoutMs = TIMEOUT_MS,
-  location?: CallerLocation,
+  timeoutMs: number,
+  location: CallerLocation,
 ): Promise<Map<string, LedgerAcceptance>> {
   const response = await exchangeRequest({
     teamId,
     path: `/v1/provider-terms/status?organizationId=${encodeURIComponent(orgId)}`,
     timeoutMs,
-    clientIp: location?.clientIp,
-    billingCountry: location?.billingCountry,
+    ...location,
   }).catch(() => undefined);
   const parsed =
     response?.status === 200
@@ -157,6 +162,7 @@ export async function hasLedgerAcceptance(input: {
   clientIp?: string;
   /** Country on the team's billing address, when the caller already has it. */
   billingCountry?: string;
+  zeroDataRetention: boolean;
 }): Promise<boolean> {
   const location = await callerLocation(input);
   const [requirements, ledger] = await Promise.all([
@@ -165,8 +171,7 @@ export async function hasLedgerAcceptance(input: {
       path: "/v1/provider-terms/requirements",
       body: { providers: [input.provider] },
       timeoutMs: input.timeoutMs,
-      clientIp: location.clientIp,
-      billingCountry: location.billingCountry,
+      ...location,
     }).catch(() => undefined),
     acceptedProviders(input.teamId, input.orgId, input.timeoutMs, location),
   ]);
@@ -196,6 +201,7 @@ export async function acceptProviderTerms(input: {
   clientIp?: string;
   /** Country on the team's billing address, when it has one. */
   billingCountry?: string;
+  zeroDataRetention: boolean;
 }): Promise<ExchangeResponse> {
   const { provider, version, digest, agent } = input.body;
   const location = await callerLocation(input);
@@ -204,8 +210,7 @@ export async function acceptProviderTerms(input: {
     path: "/v1/provider-terms/requirements",
     body: { providers: [provider] },
     timeoutMs: TIMEOUT_MS,
-    clientIp: location.clientIp,
-    billingCountry: location.billingCountry,
+    ...location,
   }).catch(() => undefined);
   if (requirements?.status === 404)
     return refusal(404, "Unknown provider.", { code: "unknown_provider" });
@@ -251,8 +256,7 @@ export async function acceptProviderTerms(input: {
       surface: "api",
     },
     timeoutMs: TIMEOUT_MS,
-    clientIp: location.clientIp,
-    billingCountry: location.billingCountry,
+    ...location,
   }).catch(() => undefined);
   const recorded = z
     .object({ id: z.string(), occurred_at: z.string() })

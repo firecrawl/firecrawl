@@ -362,4 +362,19 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
     expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
     expect(upstream().init.headers).not.toHaveProperty("x-exchange-connectors");
   });
+
+  it.each([
+    [{}, "false"],
+    [{ scrapeZDR: "forced" }, "true"],
+    [{ searchZDR: "forced-zdr" }, "false"],
+  ])("says whether scrape ZDR applies (%o)", async (zdrFlags, expected) => {
+    keyResolvesAs(zdrFlags);
+    await request(app)
+      .get("/exchange/enrichment/preferences")
+      .set("authorization", `Bearer ${KEY}`)
+      .set("x-exchange-zero-data-retention", "false");
+    expect(upstream().init.headers).toMatchObject({
+      "x-exchange-zero-data-retention": expected,
+    });
+  });
 });

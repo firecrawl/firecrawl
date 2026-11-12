@@ -39,6 +39,7 @@ export async function authorizeProviders(
   teamId: string,
   calls: ProviderCall[],
   flags: TeamFlags | null | undefined,
+  zeroDataRetention: boolean,
   orgId: string | null = null,
   clientIp?: string,
   billingCountry?: string,
@@ -53,6 +54,7 @@ export async function authorizeProviders(
     timeoutMs,
     clientIp,
     billingCountry,
+    zeroDataRetention,
     retryConnection: true,
   }).catch(error => {
     logger.warn("Provider agreements unavailable", { error, teamId });
@@ -102,6 +104,7 @@ export async function authorizeProviders(
           {
             clientIp,
             billingCountry,
+            zeroDataRetention,
           },
         );
         const accepted = ledger.get(item.provider);
@@ -134,6 +137,7 @@ export async function authorizeProviders(
         {
           clientIp,
           billingCountry,
+          zeroDataRetention,
         },
       );
       const accepted = ledger.get(item.provider);

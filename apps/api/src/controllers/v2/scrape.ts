@@ -766,6 +766,7 @@ export async function scrapeController(
                 teamId: req.auth.team_id,
                 connectors: req.acuc?.flags?.exchangeRetrieve === true,
                 usOnly: isUsOnly(req.acuc?.flags),
+                zeroDataRetention,
                 toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(

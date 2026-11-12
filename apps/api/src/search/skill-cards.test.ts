@@ -34,7 +34,12 @@ it("maps a successful discover response onto short cards", async () => {
   });
 
   const cards = await discoverSkills(
-    { teamId: "team", query: "  records  ", timeoutMs: 9000 },
+    {
+      zeroDataRetention: false,
+      teamId: "team",
+      query: "  records  ",
+      timeoutMs: 9000,
+    },
     logger,
   );
 
@@ -44,6 +49,7 @@ it("maps a successful discover response onto short cards", async () => {
     path: "/v1/discover/skill-cards?q=records&limit=3",
     timeoutMs: 3000,
     usOnly: false,
+    zeroDataRetention: false,
   });
   expect(request.mock.calls[0][0]).not.toHaveProperty("body");
   expect(cards.succeeded).toBe(true);
@@ -84,7 +90,12 @@ it("omits similarity and provider when the match did not include them", async ()
   });
 
   const cards = await discoverSkills(
-    { teamId: "team", query: "records", timeoutMs: 1000 },
+    {
+      zeroDataRetention: false,
+      teamId: "team",
+      query: "records",
+      timeoutMs: 1000,
+    },
     logger,
   );
 
@@ -109,7 +120,12 @@ it("returns no cards when the body is not the skill-card envelope", async () => 
 
   await expect(
     discoverSkills(
-      { teamId: "team", query: "records", timeoutMs: 1000 },
+      {
+        zeroDataRetention: false,
+        teamId: "team",
+        query: "records",
+        timeoutMs: 1000,
+      },
       logger,
     ),
   ).resolves.toEqual({ skills: [], succeeded: false });
@@ -123,7 +139,13 @@ it("forwards usOnly so Exchange can hide non-US providers", async () => {
   });
 
   const found = await discoverSkills(
-    { teamId: "team", query: "records", timeoutMs: 1000, usOnly: true },
+    {
+      zeroDataRetention: false,
+      teamId: "team",
+      query: "records",
+      timeoutMs: 1000,
+      usOnly: true,
+    },
     logger,
   );
 
@@ -144,7 +166,12 @@ it("returns only the first three when Exchange sends more", async () => {
   });
 
   const found = await discoverSkills(
-    { teamId: "team", query: "records", timeoutMs: 1000 },
+    {
+      zeroDataRetention: false,
+      teamId: "team",
+      query: "records",
+      timeoutMs: 1000,
+    },
     logger,
   );
 
@@ -169,7 +196,12 @@ it("drops invalid cards and keeps the valid ones", async () => {
   });
 
   const cards = await discoverSkills(
-    { teamId: "team", query: "records", timeoutMs: 1000 },
+    {
+      zeroDataRetention: false,
+      teamId: "team",
+      query: "records",
+      timeoutMs: 1000,
+    },
     logger,
   );
 
@@ -186,7 +218,12 @@ it.each([400, 500])(
 
     await expect(
       discoverSkills(
-        { teamId: "team", query: "records", timeoutMs: 1000 },
+        {
+          zeroDataRetention: false,
+          teamId: "team",
+          query: "records",
+          timeoutMs: 1000,
+        },
         logger,
       ),
     ).resolves.toEqual({ skills: [], succeeded: false });
@@ -203,7 +240,12 @@ it("returns no cards when the exchange call times out", async () => {
 
   await expect(
     discoverSkills(
-      { teamId: "team", query: "records", timeoutMs: 3000 },
+      {
+        zeroDataRetention: false,
+        teamId: "team",
+        query: "records",
+        timeoutMs: 3000,
+      },
       logger,
     ),
   ).resolves.toEqual({ skills: [], succeeded: false });
@@ -212,11 +254,24 @@ it("returns no cards when the exchange call times out", async () => {
 
 it("returns no cards for an empty or over-long query without calling exchange", async () => {
   await expect(
-    discoverSkills({ teamId: "team", query: "   ", timeoutMs: 1000 }, logger),
+    discoverSkills(
+      {
+        zeroDataRetention: false,
+        teamId: "team",
+        query: "   ",
+        timeoutMs: 1000,
+      },
+      logger,
+    ),
   ).resolves.toEqual({ skills: [], succeeded: false });
   await expect(
     discoverSkills(
-      { teamId: "team", query: "x".repeat(2001), timeoutMs: 1000 },
+      {
+        zeroDataRetention: false,
+        teamId: "team",
+        query: "x".repeat(2001),
+        timeoutMs: 1000,
+      },
       logger,
     ),
   ).resolves.toEqual({ skills: [], succeeded: false });

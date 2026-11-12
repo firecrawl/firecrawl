@@ -10,6 +10,7 @@ import { acceptProviderTerms, hasLedgerAcceptance } from "./terms";
 
 const terms = { key: "shopify", version: "2026-01", digest: "a".repeat(64) };
 const input = {
+  zeroDataRetention: false,
   teamId: "team",
   orgId: "org",
   apiKeyId: "key",
@@ -201,6 +202,7 @@ it("reads the ledger for the caller's country", async () => {
 
   await expect(
     hasLedgerAcceptance({
+      zeroDataRetention: false,
       teamId: "team",
       orgId: "org",
       provider: "peopledatalabs",
@@ -231,6 +233,7 @@ it("resolves the team's billing country when the caller does not pass one", asyn
 
   await expect(
     hasLedgerAcceptance({
+      zeroDataRetention: false,
       teamId: "team",
       orgId: "org",
       provider: "peopledatalabs",
@@ -262,6 +265,7 @@ it("does not treat missing country-scoped terms as accepted", async () => {
 
   await expect(
     hasLedgerAcceptance({
+      zeroDataRetention: false,
       teamId: "team",
       orgId: "org",
       provider: "peopledatalabs",

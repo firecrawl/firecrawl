@@ -225,6 +225,7 @@ export async function executeSearch(
             query,
             timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
             usOnly,
+            zeroDataRetention: Boolean(zeroDataRetention),
           },
           logger,
         ).catch(error => {
@@ -254,6 +255,7 @@ export async function executeSearch(
               teamId,
               connectors: flags?.exchangeRetrieve === true,
               usOnly,
+              zeroDataRetention: Boolean(zeroDataRetention),
               limit,
               queries: wantsTools
                 ? intent.toolQueries
@@ -304,6 +306,7 @@ export async function executeSearch(
             teamId,
             connectors: flags?.exchangeRetrieve === true,
             usOnly,
+            zeroDataRetention: Boolean(zeroDataRetention),
             limit,
             queries: wantsTools ? [query] : undefined,
             urls:

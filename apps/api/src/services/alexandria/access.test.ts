@@ -26,7 +26,7 @@ beforeEach(() => vi.clearAllMocks());
 
 it("refuses a provider the Exchange does not know before any quote or execution", async () => {
   mocks.request.mockResolvedValue({ status: 404, body: { code: "not_found" } });
-  const denied = await authorizeProviders("team", calls, {});
+  const denied = await authorizeProviders("team", calls, {}, false);
   expect(denied?.status).toBe(404);
   expect(denied?.body).toEqual(
     expect.objectContaining({ code: "unknown_provider" }),
@@ -53,7 +53,15 @@ it("forwards caller location when the ledger shows the current agreement", async
         },
   );
   expect(
-    await authorizeProviders("team", calls, {}, "org", "203.0.113.7", "DE"),
+    await authorizeProviders(
+      "team",
+      calls,
+      {},
+      false,
+      "org",
+      "203.0.113.7",
+      "DE",
+    ),
   ).toBeUndefined();
   expect(mocks.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -78,13 +86,17 @@ it("requires the organization to hold the current agreement when terms are requi
       fred: { status: "enabled", termsKey: "fred", termsVersion: "2025-01" },
     },
   };
-  expect((await authorizeProviders("team", calls, stale))?.status).toBe(403);
+  expect((await authorizeProviders("team", calls, stale, false))?.status).toBe(
+    403,
+  );
   const current = {
     organizationDataSourceAccess: {
       fred: { status: "enabled", termsKey: "fred", termsVersion: "2026-01" },
     },
   };
-  expect(await authorizeProviders("team", calls, current)).toBeUndefined();
+  expect(
+    await authorizeProviders("team", calls, current, false),
+  ).toBeUndefined();
 });
 
 it("refuses a disabled provider and fails closed when agreements are unavailable", async () => {
@@ -92,9 +104,13 @@ it("refuses a disabled provider and fails closed when agreements are unavailable
   const disabled = {
     organizationDataSourceAccess: { fred: { status: "disabled" } },
   };
-  expect((await authorizeProviders("team", calls, disabled))?.status).toBe(403);
+  expect(
+    (await authorizeProviders("team", calls, disabled, false))?.status,
+  ).toBe(403);
   mocks.request.mockResolvedValue({ status: 503, body: "down" });
-  expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
+  expect((await authorizeProviders("team", calls, {}, false))?.status).toBe(
+    503,
+  );
 });
 
 it.each([undefined, false])(
@@ -124,7 +140,7 @@ it.each([undefined, false])(
         : { status: 200, body: { providers: [acceptance] } },
     );
     expect(
-      (await authorizeProviders("team", calls, flags, "org"))?.body,
+      (await authorizeProviders("team", calls, flags, false, "org"))?.body,
     ).toMatchObject({ code: "THIRD_PARTY_DATA_TERMS_REQUIRED" });
     acceptance = {
       ...acceptance,
@@ -132,11 +148,11 @@ it.each([undefined, false])(
       acceptedAt: "2026-09-20T12:01:00Z",
     };
     expect(
-      await authorizeProviders("team", calls, flags, "org"),
+      await authorizeProviders("team", calls, flags, false, "org"),
     ).toBeUndefined();
     access.disabledAt = "2026-09-20T12:02:00Z";
     expect(
-      (await authorizeProviders("team", calls, flags, "org"))?.status,
+      (await authorizeProviders("team", calls, flags, false, "org"))?.status,
     ).toBe(403);
   },
 );
@@ -247,6 +263,7 @@ it.each([
           fred: { status, disabledReason, disabledAt },
         },
       },
+      false,
       "org",
     );
     expect(denied?.status).toBe(403);
@@ -316,6 +333,7 @@ it.each([
             },
           },
         },
+        false,
         "org",
       );
       expect(result?.body, side).toMatchObject({
@@ -346,7 +364,9 @@ it("keeps an acceptance of the gating version across a non-material digest chang
           },
         },
   );
-  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+  expect(
+    await authorizeProviders("team", calls, {}, false, "org"),
+  ).toBeUndefined();
   expect(
     await authorizeProviders(
       "team",
@@ -360,6 +380,7 @@ it("keeps an acceptance of the gating version across a non-material digest chang
           },
         },
       },
+      false,
       "org",
     ),
   ).toBeUndefined();
@@ -393,7 +414,9 @@ it("does not discard other acceptances when a timestamp has an unexpected shape"
           },
         },
   );
-  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+  expect(
+    await authorizeProviders("team", calls, {}, false, "org"),
+  ).toBeUndefined();
 });
 
 describe("paid-plan-only capabilities", () => {
@@ -431,7 +454,13 @@ describe("paid-plan-only capabilities", () => {
       requirements(["news/wiims", "news/search"]),
     );
     mocks.team.mockResolvedValue({ is_paid_plan: false });
-    const denied = await authorizeProviders("team", wiim, enabled, "org");
+    const denied = await authorizeProviders(
+      "team",
+      wiim,
+      enabled,
+      false,
+      "org",
+    );
     expect(denied?.status).toBe(403);
     expect(denied?.body).toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
@@ -448,12 +477,12 @@ describe("paid-plan-only capabilities", () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
     mocks.team.mockResolvedValue({ is_paid_plan: true });
     expect(
-      await authorizeProviders("team", wiim, enabled, "org"),
+      await authorizeProviders("team", wiim, enabled, false, "org"),
     ).toBeUndefined();
     mocks.team.mockClear();
     mocks.team.mockResolvedValue({ is_paid_plan: false });
     expect(
-      await authorizeProviders("team", pressReleases, enabled, "org"),
+      await authorizeProviders("team", pressReleases, enabled, false, "org"),
     ).toBeUndefined();
     expect(mocks.team).not.toHaveBeenCalled();
   });
@@ -461,7 +490,13 @@ describe("paid-plan-only capabilities", () => {
   it("refuses a team with no ACUC", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
     mocks.team.mockResolvedValue(null);
-    const denied = await authorizeProviders("team", wiim, enabled, "org");
+    const denied = await authorizeProviders(
+      "team",
+      wiim,
+      enabled,
+      false,
+      "org",
+    );
     expect(denied?.body).toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
     );
@@ -475,20 +510,21 @@ describe("paid-plan-only capabilities", () => {
         "team",
         wiim,
         { ...enabled, bypassCreditChecks: true },
+        false,
         "org",
       ),
     ).toBeUndefined();
     // An Exchange deployed before it published the field: nothing to gate on.
     mocks.request.mockResolvedValue(requirements());
     expect(
-      await authorizeProviders("team", wiim, enabled, "org"),
+      await authorizeProviders("team", wiim, enabled, false, "org"),
     ).toBeUndefined();
   });
 
   it("still requires the agreement first: an unaccepted paid team is refused on terms, not plan", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
     mocks.team.mockResolvedValue({ is_paid_plan: true });
-    const denied = await authorizeProviders("team", wiim, {}, null);
+    const denied = await authorizeProviders("team", wiim, {}, false, null);
     expect(denied?.status).toBe(403);
     expect(denied?.body).not.toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
@@ -500,7 +536,9 @@ it("allows optional Exchange terms without looking up acceptance", async () => {
   const response = requirement(true);
   Object.assign(response.body.providers[0], { exchangeRequired: false });
   mocks.request.mockResolvedValue(response);
-  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+  expect(
+    await authorizeProviders("team", calls, {}, false, "org"),
+  ).toBeUndefined();
   expect(mocks.request).toHaveBeenCalledTimes(1);
 });
 
@@ -523,6 +561,7 @@ it.each(["disabled", "suspended"])(
               },
             },
           },
+          false,
           "org",
         )
       )?.status,
@@ -535,7 +574,9 @@ it("honors a required Exchange override", async () => {
   const response = requirement(false);
   Object.assign(response.body.providers[0], { exchangeRequired: true });
   mocks.request.mockResolvedValue(response);
-  expect((await authorizeProviders("team", calls, {}))?.body).toMatchObject({
+  expect(
+    (await authorizeProviders("team", calls, {}, false))?.body,
+  ).toMatchObject({
     code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
   });
 });

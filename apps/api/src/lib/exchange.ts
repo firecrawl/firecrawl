@@ -433,9 +433,11 @@ function getLedgerAcceptance(input: {
   provider: string;
   terms: ExchangeTerms;
   revocation?: { disabledAt: unknown };
+  zeroDataRetention: boolean;
 }): Promise<boolean> {
   const key = [
     input.teamId,
+    String(input.zeroDataRetention),
     input.orgId,
     input.provider,
     input.terms.key,
@@ -461,6 +463,7 @@ function getLedgerAcceptance(input: {
     provider: input.provider,
     revocation: input.revocation,
     timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
+    zeroDataRetention: input.zeroDataRetention,
   })
     .catch(() => false)
     .then(accepted => {
@@ -513,6 +516,7 @@ async function getProviderAccessDecision(
       provider: provider.id,
       terms: provider.terms,
       revocation: { disabledAt: entry.disabledAt },
+      zeroDataRetention: input.zeroDataRetention === true,
     }))
       ? "allowed"
       : "terms_required";
@@ -534,6 +538,7 @@ async function getProviderAccessDecision(
       orgId,
       provider: provider.id,
       terms: provider.terms,
+      zeroDataRetention: input.zeroDataRetention === true,
     }))
   ) {
     return "allowed";

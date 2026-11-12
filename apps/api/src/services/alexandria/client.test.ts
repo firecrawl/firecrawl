@@ -29,6 +29,7 @@ describe("exchangeRequest", () => {
 
   it("grants the team's own MCP connectors only when asked", async () => {
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -43,6 +44,7 @@ describe("exchangeRequest", () => {
 
   it("sends the client IP only when known", async () => {
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -53,6 +55,7 @@ describe("exchangeRequest", () => {
 
     mocks.fetch.mockClear();
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -63,6 +66,7 @@ describe("exchangeRequest", () => {
 
   it("sends the billing country only when known", async () => {
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -73,6 +77,7 @@ describe("exchangeRequest", () => {
 
     mocks.fetch.mockClear();
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -83,6 +88,7 @@ describe("exchangeRequest", () => {
 
   it("sends no connectors grant by default", async () => {
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
@@ -91,7 +97,7 @@ describe("exchangeRequest", () => {
     expect(headersOf()).not.toHaveProperty("x-exchange-connectors");
   });
 
-  it("asks for zero data retention only when set", async () => {
+  it("always says whether zero data retention applies", async () => {
     await exchangeRequest({
       teamId: "team",
       path: "/v1/retrieve",
@@ -104,16 +110,20 @@ describe("exchangeRequest", () => {
     });
     mocks.fetch.mockClear();
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},
       timeoutMs: 1000,
     });
-    expect(headersOf()).not.toHaveProperty("x-exchange-zero-data-retention");
+    expect(headersOf()).toMatchObject({
+      "x-exchange-zero-data-retention": "false",
+    });
   });
 
   it("sends the deadline as a whole number of milliseconds", async () => {
     await exchangeRequest({
+      zeroDataRetention: false,
       teamId: "team",
       path: "/v1/retrieve",
       body: {},

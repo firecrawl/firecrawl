@@ -69,6 +69,7 @@ export async function discoverSkills(
     timeoutMs: number;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    zeroDataRetention: boolean;
   },
   logger: Logger,
 ): Promise<SkillDiscovery> {
@@ -88,6 +89,7 @@ export async function discoverSkills(
         Math.min(input.timeoutMs, SKILLS_DISCOVERY_TIMEOUT_MS),
       ),
       usOnly: input.usOnly === true,
+      zeroDataRetention: input.zeroDataRetention,
     });
     if (result.status !== 200) {
       logger.warn("Skill discovery unavailable", { status: result.status });
