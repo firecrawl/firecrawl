@@ -84,6 +84,102 @@ pub struct SimilarPapersResponse {
     pub note: Option<String>,
 }
 
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct ProteinLookupResponse {
+    pub success: bool,
+    pub release: String,
+    #[serde(flatten)]
+    pub result: ProteinLookup,
+    pub notice: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(tag = "match", rename_all = "snake_case")]
+pub enum ProteinLookup {
+    Found {
+        protein: Box<ProteinEntry>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Ambiguous {
+        candidates: Vec<ProteinCandidate>,
+        candidate_count: i32,
+    },
+    #[default]
+    NotFound,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProteinEntry {
+    pub accession: String,
+    pub entry_name: String,
+    pub gene: Option<String>,
+    pub synonyms: Vec<String>,
+    pub name: String,
+    pub organism: ProteinOrganism,
+    pub matched_by: String,
+    pub url: String,
+    pub subcellular_location: Vec<ProteinStatement>,
+    pub function: Vec<ProteinStatement>,
+    pub go_cellular_component: Vec<GoTerm>,
+    pub paper_ids: Vec<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProteinCandidate {
+    pub accession: String,
+    pub entry_name: String,
+    pub gene: Option<String>,
+    pub name: String,
+    pub organism: ProteinOrganism,
+    pub matched_by: String,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProteinOrganism {
+    pub taxon_id: i32,
+    pub scientific_name: String,
+    pub common_name: Option<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct ProteinStatement {
+    pub text: String,
+    pub note: bool,
+    pub molecule: Option<String>,
+    pub topology: Option<String>,
+    pub orientation: Option<String>,
+    pub evidence: Vec<ProteinEvidence>,
+}
+
+/// `paper_id` is a `pmid:` paper ID that [`Client::inspect_paper`] and
+/// [`Client::read_paper`] accept.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProteinEvidence {
+    pub kind: String,
+    pub eco: Option<String>,
+    pub paper_id: Option<String>,
+    pub from_protein: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GoTerm {
+    pub id: String,
+    pub term: String,
+    pub code: String,
+    pub assigned_by: String,
+    pub paper_ids: Vec<String>,
+}
+
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -131,6 +227,12 @@ pub struct RelatedPapersOptions {
     pub k: Option<u32>,
     pub rerank: Option<bool>,
     pub anchor: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct LookupProteinOptions {
+    /// NCBI taxon ID, scientific name or UniProt common name (default `9606`).
+    pub organism: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -386,6 +488,36 @@ impl Client {
         self.handle_response(response, "related papers").await
     }
 
+    /// Look up one protein in UniProtKB/Swiss-Prot by accession, entry name,
+    /// gene symbol or protein name.
+    pub async fn lookup_protein(
+        &self,
+        protein: impl AsRef<str>,
+        options: impl Into<Option<LookupProteinOptions>>,
+    ) -> Result<ProteinLookupResponse, FirecrawlError> {
+        let mut query = vec![
+            ("protein".to_string(), protein.as_ref().to_string()),
+            (
+                "origin".to_string(),
+                format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+            ),
+        ];
+        if let Some(organism) = options.into().and_then(|options| options.organism) {
+            push_query(&mut query, "organism", organism);
+        }
+
+        let response = self
+            .client
+            .get(self.url("/search/research/proteins"))
+            .headers(self.prepare_headers(None))
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("lookup protein".to_string(), e))?;
+
+        self.handle_response(response, "lookup protein").await
+    }
+
     /// Search the developer index: public repositories, GitHub issues, merged
     /// pull requests, READMEs and code documentation.
     pub async fn developer_search(
@@ -518,6 +650,116 @@ mod tests {
         );
         assert!(response.repos.unwrap()[0].types.pull_request);
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_lookup_protein_reads_each_match_kind() {
+        let mut server = mockito::Server::new_async().await;
+        let notice = "Protein data from UniProtKB/Swiss-Prot release 2026_04.";
+
+        let found = server
+            .mock("GET", "/v2/search/research/proteins")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("protein".into(), "RPUSD3".into()),
+                mockito::Matcher::UrlEncoded("organism".into(), "Homo sapiens".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "release": "2026_04",
+                    "match": "found",
+                    "protein": {
+                        "accession": "Q6P087",
+                        "entryName": "RUSD3_HUMAN",
+                        "gene": "RPUSD3",
+                        "synonyms": [],
+                        "name": "Mitochondrial mRNA pseudouridine synthase RPUSD3",
+                        "organism": {"taxonId": 9606, "scientificName": "Homo sapiens", "commonName": "Human"},
+                        "matchedBy": "gene",
+                        "url": "https://www.uniprot.org/uniprotkb/Q6P087/entry",
+                        "subcellularLocation": [{
+                            "text": "Mitochondrion matrix",
+                            "note": false,
+                            "evidence": [{"kind": "experimental", "eco": "ECO:0000269", "paperId": "pmid:27974379"}]
+                        }],
+                        "function": [],
+                        "goCellularComponent": [{
+                            "id": "GO:0005759",
+                            "term": "mitochondrial matrix",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": ["pmid:27974379"]
+                        }],
+                        "paperIds": ["pmid:27974379"]
+                    },
+                    "notice": notice
+                })
+                .to_string(),
+            )
+            .create();
+        let ambiguous = server
+            .mock("GET", "/v2/search/research/proteins")
+            .match_query(mockito::Matcher::UrlEncoded("protein".into(), "CD4".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "release": "2026_04",
+                    "match": "ambiguous",
+                    "candidates": [{
+                        "accession": "P01730",
+                        "entryName": "CD4_HUMAN",
+                        "gene": "CD4",
+                        "name": "T-cell surface glycoprotein CD4",
+                        "organism": {"taxonId": 9606, "scientificName": "Homo sapiens"},
+                        "matchedBy": "gene"
+                    }],
+                    "candidateCount": 3,
+                    "notice": notice
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .lookup_protein(
+                "RPUSD3",
+                LookupProteinOptions {
+                    organism: Some("Homo sapiens".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        let ProteinLookup::Found { protein } = response.result else {
+            panic!("expected found, got {:?}", response.result);
+        };
+        assert_eq!(protein.organism.taxon_id, 9606);
+        assert_eq!(
+            protein.subcellular_location[0].evidence[0]
+                .paper_id
+                .as_deref(),
+            Some("pmid:27974379")
+        );
+        assert_eq!(protein.go_cellular_component[0].assigned_by, "FlyBase");
+        assert_eq!(response.notice, notice);
+
+        let response = client.lookup_protein("CD4", None).await.unwrap();
+        let ProteinLookup::Ambiguous {
+            candidates,
+            candidate_count,
+        } = response.result
+        else {
+            panic!("expected ambiguous, got {:?}", response.result);
+        };
+        assert_eq!(candidate_count, 3);
+        assert_eq!(candidates[0].accession, "P01730");
+
+        found.assert();
+        ambiguous.assert();
     }
 
     #[tokio::test]
