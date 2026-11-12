@@ -6,6 +6,8 @@ import type {
   ReadPaperResponse,
   SimilarPapersOptions,
   SimilarPapersResponse,
+  LookupProteinOptions,
+  ProteinLookupResponse,
   SearchGithubOptions,
   GitHubSearchResponse,
 } from "../types";
@@ -214,6 +216,35 @@ export class ResearchClient {
       return res.data;
     } catch (err) {
       return normalizeResearchError(err, "find similar papers");
+    }
+  }
+
+  /**
+   * Look up one protein's curated UniProtKB/Swiss-Prot entry: subcellular
+   * location, function and GO cellular-component terms. Each statement carries
+   * its evidence and, where UniProt cites a paper, a `pmid:<id>` that
+   * `getPaper` accepts.
+   * @param protein A UniProt accession (`Q6P087`), entry name (`RUSD3_HUMAN`),
+   *   gene symbol (`RPUSD3`) or exact protein name.
+   * @param options Optional `organism`, default `9606` (human).
+   */
+  async lookupProtein(
+    protein: string,
+    options: LookupProteinOptions = {},
+  ): Promise<ProteinLookupResponse> {
+    if (!protein || !protein.trim())
+      throw new Error("protein cannot be empty");
+    const params = new URLSearchParams();
+    appendParam(params, "protein", protein);
+    appendParam(params, "organism", options.organism);
+    try {
+      const res = await this.http.get<ProteinLookupResponse>(
+        withQuery(this.http.getOrigin(), `${BASE}/proteins`, params),
+      );
+      if (res.status !== 200) throwForBadResponse(res, "look up protein");
+      return res.data;
+    } catch (err) {
+      return normalizeResearchError(err, "look up protein");
     }
   }
 

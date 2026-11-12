@@ -2,12 +2,13 @@
 Canonical docstrings for the research paper index (``/v2/search/research``).
 
 Single source of truth for the prose that documents ``search_papers``,
-``inspect_paper``, ``read_paper``, ``related_papers`` and ``search_github``.
-The same five methods are surfaced at six layers — the implementation functions
-in ``research.py`` and ``aio/research.py``, and the delegating methods on
-``FirecrawlClient``, ``AsyncFirecrawlClient``, ``Firecrawl`` and
-``AsyncFirecrawl``. Every layer keeps a full docstring (``help()`` on any of
-them shows the complete text), but the text lives here once, so a correction to
+``inspect_paper``, ``read_paper``, ``related_papers``, ``lookup_protein`` and
+``search_github``. The same six methods are surfaced at six layers: the
+implementation functions in ``research.py`` and ``aio/research.py``, and the
+delegating methods on ``FirecrawlClient``, ``AsyncFirecrawlClient``,
+``Firecrawl`` and ``AsyncFirecrawl``. Every layer keeps a full docstring
+(``help()`` on any of them shows the complete text), but the text lives here
+once, so a correction to
 a factual claim — corpus size and composition, the
 ``search(categories=["research"])`` disambiguation, wire names, Args/Returns —
 is a one-place edit instead of a six-way edit that drifts.
@@ -179,6 +180,35 @@ Note:
     (``/v2/search/research/papers/{id}/similar``), different method name.
 """
 
+_LOOKUP_PROTEIN_TEMPLATE = """
+Look up one protein's curated UniProtKB/Swiss-Prot entry.
+
+Returns UniProt's subcellular location, function and GO cellular-component
+terms. Each statement carries an evidence kind and, where UniProt cites a
+paper, a ``pmid:<id>`` paper id that ``inspect_paper`` and ``read_paper``
+accept.
+
+Args:
+    |CLIENT_ARG|
+    protein: One UniProt accession (``Q6P087``, ``Q6P087-2``), entry name
+        (``RUSD3_HUMAN``), gene symbol (``RPUSD3``) or exact protein name.
+    organism: NCBI taxon ID (``"9606"``), scientific name or UniProt common
+        name of the organism in which a gene symbol or protein name is
+        looked up first. The API defaults to ``9606`` (human).
+
+Returns:
+    Raw API ``dict`` with ``success``, ``release``, ``match`` and
+    ``notice``. ``match`` is ``"found"`` with ``protein``, ``"ambiguous"``
+    with up to 10 ``candidates`` and their total ``candidateCount``, or
+    ``"not_found"``. Keys are camelCase and are **not** normalized to
+    snake_case. ``notice`` is UniProt's CC BY 4.0 credit; print it with any
+    results you show to a person.
+
+Example:
+    >>> res = lookup_protein(client, "RPUSD3")
+    >>> res["protein"]["subcellularLocation"][0]["text"]
+"""
+
 _SEARCH_GITHUB_TEMPLATE = """
 Search the **research index** GitHub slice: GitHub issue/PR history and
 repository readmes.
@@ -205,6 +235,8 @@ READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
+LOOKUP_PROTEIN_DOC = _LOOKUP_PROTEIN_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
+AIO_LOOKUP_PROTEIN_DOC = _LOOKUP_PROTEIN_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 
@@ -299,6 +331,27 @@ Note:
     ``research.similarPapers()``.
 """
 
+_CLIENT_LOOKUP_PROTEIN_TEMPLATE = """
+Look up one protein's curated UniProtKB/Swiss-Prot entry.
+
+Returns UniProt's subcellular location, function and GO cellular-component
+terms, with ``pmid:<id>`` paper ids that ``inspect_paper`` accepts.
+
+Args:
+    protein: One UniProt accession (``Q6P087``), entry name
+        (``RUSD3_HUMAN``), gene symbol (``RPUSD3``) or exact protein name.
+    **kwargs: ``organism`` (NCBI taxon ID, scientific name or UniProt
+        common name; the API defaults to ``9606``).
+
+Returns:
+    Raw API ``dict`` with ``success``, ``release``, ``match`` (``found``,
+    ``ambiguous`` or ``not_found``) and ``notice``, UniProt's CC BY 4.0
+    credit. Keys are camelCase, **not** snake_case-normalized.
+
+Example:
+    >>> |AWAIT|firecrawl.lookup_protein("RPUSD3")
+"""
+
 _CLIENT_SEARCH_GITHUB_TEMPLATE = """
 Search the **research index** GitHub slice: issue/PR history and repo
 readmes.
@@ -324,5 +377,7 @@ CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "await ")
+CLIENT_LOOKUP_PROTEIN_DOC = _CLIENT_LOOKUP_PROTEIN_TEMPLATE.replace(_AWAIT, "")
+ASYNC_CLIENT_LOOKUP_PROTEIN_DOC = _CLIENT_LOOKUP_PROTEIN_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "await ")

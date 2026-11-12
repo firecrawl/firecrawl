@@ -223,6 +223,25 @@ class TestRelatedPapers:
         assert qs["intent"] == ["intent"]
 
 
+class TestLookupProtein:
+    """lookup_protein -> GET /v2/search/research/proteins"""
+
+    def test_sends_protein_and_organism(self):
+        client = FakeHttpClient(FakeResponse(200, {"success": True, "match": "not_found"}))
+        research.lookup_protein(client, "RUSD3_HUMAN", organism="Homo sapiens")
+        path, qs = split(client.last_path)
+        assert path == "/v2/search/research/proteins"
+        assert qs["protein"] == ["RUSD3_HUMAN"]
+        assert qs["organism"] == ["Homo sapiens"]
+        assert qs["origin"][0].startswith("python-sdk@")
+
+    def test_omits_organism_when_absent(self):
+        client = FakeHttpClient(FakeResponse(200, {"success": True, "match": "not_found"}))
+        research.lookup_protein(client, "RPUSD3")
+        _, qs = split(client.last_path)
+        assert sorted(qs.keys()) == ["origin", "protein"]
+
+
 class TestSearchGithub:
     """search_github -> GET /v2/search/research/github"""
 
@@ -316,6 +335,7 @@ RESEARCH_METHODS = (
     "inspect_paper",
     "read_paper",
     "related_papers",
+    "lookup_protein",
     "search_github",
 )
 
@@ -326,7 +346,7 @@ class TestUnifiedClientWiring:
     ``Firecrawl`` does not inherit from the v2 client (unlike the JS SDK, where
     ``Firecrawl extends FirecrawlClient``) — it delegates method by method. Any
     method missing from that list is simply absent from the documented surface,
-    so pin all five here.
+    so pin every research method here.
     """
 
     def _client(self, response=None):
@@ -375,6 +395,14 @@ class TestUnifiedClientWiring:
         assert qs["intent"] == ["replication attempts"]
         assert qs["k"] == ["20"]
 
+    def test_lookup_protein_delegates(self):
+        client = self._client(FakeResponse(200, {"success": True, "match": "not_found"}))
+        client.lookup_protein("RPUSD3", organism="10090")
+        path, qs = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/proteins"
+        assert qs["protein"] == ["RPUSD3"]
+        assert qs["organism"] == ["10090"]
+
     def test_search_github_delegates(self):
         client = self._client(FakeResponse(200, {"success": True, "results": []}))
         client.search_github("pysam VCF parsing memory leak", k=3)
@@ -398,9 +426,9 @@ class TestUnifiedClientWiring:
 
 
 class TestDocstringSingleSourceOfTruth:
-    """The five docstrings live once, in ``v2/methods/research_docs.py``.
+    """The research docstrings live once, in ``v2/methods/research_docs.py``.
 
-    Six layers surface the same five methods. Each keeps a full docstring, but
+    Six layers surface the same research methods. Each keeps a full docstring, but
     the prose is applied from the canonical constants, so a correction to a
     factual claim is a one-place edit. These tests fail if a layer forks its
     own copy again.
