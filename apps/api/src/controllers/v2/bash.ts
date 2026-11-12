@@ -77,9 +77,10 @@ Response:
   for stdout, stderr, exitCode, durationMs and truncated. X-Exit-Code is set on every run.
 
 Without an API key, firecrawl runs on the free keyless tier, limited per IP per day.
-For regular use, get a free API key and use Firecrawl directly: the MCP server at
-https://mcp.firecrawl.dev/v2/mcp-oauth, the CLI (npx -y firecrawl-cli@latest init) or the
-REST API at https://api.firecrawl.dev/v2. Docs: https://docs.firecrawl.dev
+For regular use, get a free API key at https://www.firecrawl.dev/signin and use Firecrawl
+directly: the MCP server (https://mcp.firecrawl.dev/v2/mcp-oauth, or https://mcp.firecrawl.dev/v2/mcp
+with Authorization: Bearer fc-YOUR_KEY), the CLI (npx -y firecrawl-cli@latest init) or the
+REST API at https://api.firecrawl.dev/v2. Docs: https://docs.firecrawl.dev/mcp-server
 
 Limits: ${MAX_COMMAND_BYTES} byte commands, ${MAX_OUTPUT_BYTES} bytes of stdout and stderr each,
 ${TIMEOUT_MS / 1000} seconds and ${MAX_FIRECRAWL_CALLS} Firecrawl calls per command. Nothing persists between requests.

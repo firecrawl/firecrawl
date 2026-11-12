@@ -274,6 +274,7 @@ describe("hosted bash route", () => {
     );
     expect(res.text).toContain("https://mcp.firecrawl.dev/v2/mcp-oauth");
     expect(res.text).toContain("npx -y firecrawl-cli@latest init");
+    expect(res.text).toContain("https://api.firecrawl.dev/v2/scrape");
     expect(res.headers["x-exit-code"]).toBe("1");
   });
 
