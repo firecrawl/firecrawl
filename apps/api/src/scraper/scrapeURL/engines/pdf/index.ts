@@ -17,6 +17,7 @@ import {
   EngineUnsuccessfulError,
   UnsupportedFileError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
 } from "../../error";
 import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
@@ -47,6 +48,7 @@ import {
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { isUsOnly } from "../../../../lib/us-only";
+import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
@@ -247,8 +249,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   // US-only teams get GPU parsing only from the PDF service, pinned to US
   // capacity: no diversion to another engine, no serverless fallback, and no
-  // sampling out of the PDF service.
+  // sampling out of the PDF service. Teams restricted to reserved capacity are
+  // routed the same way.
   const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+  const processingRestricted = isProcessingRestricted(
+    meta.internalOptions.teamFlags ?? undefined,
+  );
 
   // The MinerU diversion is deterministic on the scrape id (see
   // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
@@ -634,7 +640,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE));
       const runpodMuUsable =
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes < MAX_FILE_SIZE &&
         !!config.RUNPOD_MU_API_KEY &&
         !!config.RUNPOD_MU_POD_ID;
@@ -682,7 +688,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             config.FIRE_PDF_BASE_URL &&
             fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
             (alwaysFirePdf ||
-              usOnly ||
+              processingRestricted ||
               Math.random() * 100 < config.FIRE_PDF_PERCENT)));
 
       if (useFirePDF) {
@@ -749,7 +755,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 (!includePageMarkdown && !includeBlocks && !pageMarkers) ||
                 error instanceof RemoveFeatureError ||
                 error instanceof AbortManagerThrownError ||
-                error instanceof UsOnlyUnavailableError
+                error instanceof UsOnlyUnavailableError ||
+                error instanceof ReservedCapacityUnavailableError
               ) {
                 throw error;
               }
@@ -798,7 +805,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           if (
             error instanceof RemoveFeatureError ||
             error instanceof AbortManagerThrownError ||
-            error instanceof UsOnlyUnavailableError
+            error instanceof UsOnlyUnavailableError ||
+            error instanceof ReservedCapacityUnavailableError
           ) {
             throw error;
           }
@@ -835,7 +843,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (
         !result &&
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes >= MAX_FILE_SIZE &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
@@ -854,7 +862,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (
         !result &&
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes < MAX_FILE_SIZE &&
         base64Content !== undefined &&
         config.RUNPOD_MU_API_KEY &&
@@ -972,20 +980,34 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
       // Without GPU OCR a scanned document has no text layer to return.
       if (
-        usOnly &&
+        processingRestricted &&
         !skipOCR &&
         (detectedPdfType === "Scanned" ||
           detectedPdfType === "ImageBased" ||
           !result.markdown?.trim())
       ) {
-        meta.logger.warn("US-only PDF needs OCR the PDF service did not run", {
-          method: "scrapePDF",
-          scrape_id: meta.id,
-          pdf_type: detectedPdfType,
-        });
-        throw new UsOnlyUnavailableError(
-          "This PDF needs OCR, which is not available for teams restricted to US-only processing right now. Try again later.",
+        if (usOnly) {
+          meta.logger.warn(
+            "US-only PDF needs OCR the PDF service did not run",
+            {
+              method: "scrapePDF",
+              scrape_id: meta.id,
+              pdf_type: detectedPdfType,
+            },
+          );
+          throw new UsOnlyUnavailableError(
+            "This PDF needs OCR, which is not available for teams restricted to US-only processing right now. Try again later.",
+          );
+        }
+        meta.logger.warn(
+          "PDF restricted to reserved capacity needs OCR the PDF service did not run",
+          {
+            method: "scrapePDF",
+            scrape_id: meta.id,
+            pdf_type: detectedPdfType,
+          },
         );
+        throw new ReservedCapacityUnavailableError();
       }
     }
 

@@ -54,6 +54,19 @@ function hasUnsupportedOr(query: string): boolean {
   return ors > siteOrs;
 }
 
+/**
+ * True when the query uses search syntax: a quoted phrase, a `name:value`
+ * token such as `site:` or `filetype:`, or an OR or `|` between terms. A
+ * routed search sends the query text alone, so it carries none of these.
+ */
+export function usesSearchSyntax(query: string): boolean {
+  if (query.includes('"')) return true;
+  return (
+    /(?:^|[\s(-])[a-z]+:\S/i.test(query) ||
+    /(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/.test(query)
+  );
+}
+
 export function parseQueryOperators(query: string): QueryOperators {
   const operators = emptyOperators();
   for (const match of query.matchAll(OPERATOR_TOKEN)) {

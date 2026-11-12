@@ -2192,6 +2192,9 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // PDF and image parsing runs only on reserved processing capacity. A parse
+  // that cannot be kept there is refused.
+  reservedCapacity?: boolean;
   // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
   // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
   deprecationExtensions?: Record<string, string>;

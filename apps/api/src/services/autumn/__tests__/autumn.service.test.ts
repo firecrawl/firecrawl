@@ -1274,7 +1274,7 @@ describe("firebill requests", () => {
       lockId: "lock-1",
     });
 
-    expect(result).toEqual({ status: "skipped" });
+    expect(result).toEqual({ status: "skipped", reason: "unavailable" });
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
@@ -1290,7 +1290,7 @@ describe("firebill requests", () => {
         value: 10,
         lockId: "lock-1",
       }),
-    ).toEqual({ status: "skipped" });
+    ).toEqual({ status: "skipped", reason: "unavailable" });
 
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     expect(
@@ -1300,7 +1300,7 @@ describe("firebill requests", () => {
         value: 10,
         lockId: "lock-1",
       }),
-    ).toEqual({ status: "skipped" });
+    ).toEqual({ status: "skipped", reason: "unavailable" });
 
     // A firebill-side hold may exist under this lock id; a direct-Autumn
     // retry of the same lock must never be attempted.
@@ -1507,7 +1507,7 @@ describe("firebill requests", () => {
         value: 10,
         lockId: "lock-1",
       }),
-    ).toEqual({ status: "skipped" });
+    ).toEqual({ status: "skipped", reason: "unavailable" });
   });
 
   it("hands the run token back on the finalize as the operation id", async () => {

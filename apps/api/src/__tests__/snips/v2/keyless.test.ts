@@ -20,6 +20,7 @@ import {
   keylessTeamId,
   reserveKeylessCredits,
 } from "../../../lib/keyless";
+import { V1_LIVE } from "../v1/lib";
 
 // The keyless tier is disabled unless both limits are configured. The harness
 // passes the shell env through to the server, so we read the same env here and
@@ -393,7 +394,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(V1_LIVE)(
     "rejects projected multi-credit v1 keyless scrape before scraping (429)",
     async () => {
       await request(TEST_API_URL)
@@ -565,7 +566,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(V1_LIVE)(
     "rejects projected v1 keyless search with scrape options before search (429)",
     async () => {
       await request(TEST_API_URL)

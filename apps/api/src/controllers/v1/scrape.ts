@@ -372,7 +372,8 @@ async function scrapeControllerInner(
 
       if (
         e.code === "unsafe_domain_blocked" ||
-        e.code === "US_ONLY_UNAVAILABLE"
+        e.code === "US_ONLY_UNAVAILABLE" ||
+        e.code === "RESERVED_CAPACITY_UNAVAILABLE"
       ) {
         return res.status(403).json({
           success: false,

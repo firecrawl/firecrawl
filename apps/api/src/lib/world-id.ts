@@ -23,7 +23,11 @@ const MAX_CREDENTIAL_LENGTH = 512;
 const MAX_FUTURE_IAT_SECONDS = 30;
 const MAX_DEVICE_HANDLE_LENGTH = 2_048;
 const SUBJECT_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const ORB_ACR = "https://world.org/oidc/acr/orb-v3";
+// The issuer's advertised `acr_values_supported`: both mean an Orb-verified human.
+const ORB_ACRS = new Set([
+  "https://world.org/oidc/acr/orb",
+  "https://world.org/oidc/acr/orb-face",
+]);
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -304,9 +308,7 @@ const TOKEN_REJECTIONS = [
  * Validates a World ID ID token and returns its subject hash, or null when the
  * token is rejected. Throws when the issuer's keys can't be fetched.
  */
-async function verifyWorldIdIdToken(
-  idToken: string,
-): Promise<string | null> {
+async function verifyWorldIdIdToken(idToken: string): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(idToken, issuerJwks(), {
       issuer: issuer(),
@@ -314,7 +316,11 @@ async function verifyWorldIdIdToken(
       algorithms: ["RS256"],
       requiredClaims: ["sub", "exp", "auth_time"],
     });
-    if (payload.acr !== ORB_ACR || typeof payload.sub !== "string") {
+    if (
+      typeof payload.acr !== "string" ||
+      !ORB_ACRS.has(payload.acr) ||
+      typeof payload.sub !== "string"
+    ) {
       return null;
     }
     return worldIdSubjectHash(issuer(), payload.sub);

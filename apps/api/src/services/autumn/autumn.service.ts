@@ -328,7 +328,7 @@ export class AutumnService {
     const unreachable = (): LockCreditsResult =>
       partnerJobToken
         ? { status: "denied", reason: "gate_unavailable" }
-        : { status: "skipped" };
+        : { status: "skipped", reason: "unavailable" };
 
     try {
       // The hold still lives in Autumn (firebill keeps no lock state), but
