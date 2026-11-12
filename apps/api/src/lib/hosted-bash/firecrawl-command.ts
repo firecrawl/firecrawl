@@ -198,7 +198,6 @@ function parseArgs(args: string[], spec: FlagSpec) {
       continue;
     }
     const raw = match[1] ?? match[2];
-    if (raw === "api-key" || raw === "k") throw new Error(API_KEY_FLAG);
     const name = spec.aliases[raw] ?? raw;
     const shown = match[1] ? `--${raw}` : `-${raw}`;
     if (spec.booleans.includes(name)) {
@@ -505,6 +504,10 @@ export function firecrawlCommand(client: FirecrawlClient) {
     // A bare `help` is only the help command up front: `search help desk` is a query.
     const end = rest.indexOf("--");
     const options = end === -1 ? rest : rest.slice(0, end);
+    if ([name, ...options].some(arg => /^(--api-key|-k)(=|$)/.test(arg))) {
+      stderr.push(`Error: ${API_KEY_FLAG}`);
+      return result("", 1);
+    }
     const asksHelp = options.some(arg => arg === "--help" || arg === "-h");
     if (!name || ["help", "--help", "-h"].includes(name) || asksHelp) {
       return result(FIRECRAWL_HELP, 0);

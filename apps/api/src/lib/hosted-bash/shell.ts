@@ -116,10 +116,9 @@ export async function runShell(
     customCommands: [firecrawlCommand(client)],
     // Callers are anonymous and commands run inside the API process.
     executionLimitProfile: "hardened",
-    // The string and memory caps keep one request from holding the event loop
-    // and hundreds of MB; the deadline counts the wait for the docs list.
+    // The string and memory caps keep one request from holding hundreds of MB.
     executionLimits: {
-      maxExecutionTimeMs: Math.max(1_000, TIMEOUT_MS - (Date.now() - started)),
+      maxExecutionTimeMs: TIMEOUT_MS,
       maxFileSystemBytes: 32 * MIB,
       maxStringLength: MIB,
       maxHeredocSize: MIB,
