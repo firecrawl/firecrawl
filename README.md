@@ -82,7 +82,7 @@ _Pst. Hey, you, join our stargazers :)_
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
 | [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
-| [**Alexandria**](#alexandria) | Give your agent 400+ data providers and specialized indexes (hosted only) |
+| [**Alexandria**](#alexandria) | Give your agent 400+ data providers and specialized indexes (via Firecrawl Cloud) |
 
 ---
 
@@ -320,7 +320,7 @@ See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all
 
 Install it in your agent from [alexandria.firecrawl.dev](https://alexandria.firecrawl.dev), or see the [Alexandria documentation](https://docs.firecrawl.dev/features/alexandria) for CLI, MCP, SDK, and API usage.
 
-> **Note:** Alexandria is only available on hosted Firecrawl ([firecrawl.dev](https://firecrawl.dev)); it is not part of the self-hosted / open-source deployment.
+> **Note:** Alexandria runs on [Firecrawl Cloud](https://firecrawl.dev). [Firecrawl Local](apps/local) can use it once you sign in with `firecrawl-local login`. The self-hosted server does not include it.
 
 ---
 
