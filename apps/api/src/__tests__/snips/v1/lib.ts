@@ -39,6 +39,10 @@ export const EXTRACT_LIVE = Date.now() < EXTRACT_SUNSET;
 export const describeExtract = (cond = true) =>
   describeIf(EXTRACT_LIVE && cond);
 
+// Deep research and llms.txt answer 410 from their own sunsets.
+export const DEEP_RESEARCH_LIVE = Date.now() < sunsetOf("v1_deep_research");
+export const LLMSTXT_LIVE = Date.now() < sunsetOf("v1_llmstxt");
+
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
 export async function scrapeRaw(body: ScrapeRequestInput, identity: Identity) {

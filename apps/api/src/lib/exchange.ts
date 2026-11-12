@@ -6,6 +6,7 @@ import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
+import { isXTwitterUrl } from "./x-twitter-url";
 
 type OrganizationDataSourceAccessRecord = {
   status?: string | null;
@@ -548,8 +549,14 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   }
 
   // Blocked URLs go to the Exchange for every team, since nothing else may
-  // serve them; elsewhere it replaces a normal scrape only for the beta.
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
+  // serve them; elsewhere it replaces a normal scrape only for the beta. X
+  // posts and profiles also go to it for every team: the Exchange's X
+  // provider is what serves them, in place of a Firecrawl X engine.
+  if (
+    input.flags?.[EXCHANGE_BETA_FLAG] !== true &&
+    input.blocked !== true &&
+    !isXTwitterUrl(input.url)
+  ) {
     return false;
   }
 

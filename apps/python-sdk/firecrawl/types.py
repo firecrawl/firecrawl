@@ -70,7 +70,9 @@ from .v2.types import (
     DeveloperSearchSourceStatus,
     DeveloperSearchResponse,
     GovSearchCourtType,
+    GovSearchSource,
     GovSearchRequest,
+    GovSearchResult,
     GovSearchData,
     GovSearchResponse,
     
@@ -174,7 +176,9 @@ __all__ = [
     'DeveloperSearchSourceStatus',
     'DeveloperSearchResponse',
     'GovSearchCourtType',
+    'GovSearchSource',
     'GovSearchRequest',
+    'GovSearchResult',
     'GovSearchData',
     'GovSearchResponse',
     

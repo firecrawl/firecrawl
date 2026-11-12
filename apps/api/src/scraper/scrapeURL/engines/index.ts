@@ -21,11 +21,6 @@ import {
   wikipediaMaxReasonableTime,
   isWikimediaUrl,
 } from "./wikipedia";
-import {
-  scrapeURLWithXTwitter,
-  xTwitterMaxReasonableTime,
-  isXTwitterUrl,
-} from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { useFireEngine } from "./fire-engine/available";
 import { hasFormatOfType } from "../../../lib/format-utils";
@@ -41,8 +36,11 @@ import {
   AgentIndexOnlyError,
   BrandingNotSupportedError,
   NoCachedDataError,
+  UsOnlyUnavailableError,
 } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
+import { isUsOnly } from "../../../lib/us-only";
+import { isXTwitterUrl } from "../../../lib/x-twitter-url";
 import { hasCustomRequestContext } from "../lib/request-context";
 import {
   getExchangeAccessForRequest,
@@ -66,8 +64,7 @@ export type Engine =
   | "image"
   | "index"
   | "index;documents"
-  | "wikipedia"
-  | "x-twitter";
+  | "wikipedia";
 
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
@@ -77,12 +74,8 @@ const useWikipedia =
   config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
   config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
   config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
-const useXTwitter =
-  (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
-  config.USE_DB_AUTHENTICATION === true;
 
 const engines: Engine[] = [
-  ...(useXTwitter ? ["x-twitter" as const] : []),
   ...(useWikipedia ? ["wikipedia" as const] : []),
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
   ...(useFireEngine
@@ -215,7 +208,6 @@ const engineHandlers: {
   document: scrapeDocument,
   image: scrapeImage,
   wikipedia: scrapeURLWithWikipedia,
-  "x-twitter": scrapeURLWithXTwitter,
 };
 
 const engineMRTs: {
@@ -242,7 +234,6 @@ const engineMRTs: {
   document: documentMaxReasonableTime,
   image: imageMaxReasonableTime,
   wikipedia: wikipediaMaxReasonableTime,
-  "x-twitter": xTwitterMaxReasonableTime,
 };
 
 const engineOptions: {
@@ -589,28 +580,6 @@ const engineOptions: {
     },
     quality: 500, // below index (1000) so cache is tried first, above fire-engine (50)
   },
-  "x-twitter": {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: 1500,
-  },
 };
 
 export function shouldUseIndex(meta: Meta) {
@@ -700,11 +669,26 @@ export async function buildFallbackList(meta: Meta): Promise<
       }
     }
 
+    // X posts and profiles only the Exchange serves, as blocked URLs (LinkedIn
+    // profiles) are: a normal engine gets X's login wall. A profile or lockdown
+    // scrape keeps the normal engines, as it did with Firecrawl's own X engine.
+    const xTwitterPage =
+      isXTwitterUrl(url) &&
+      meta.options.profile === undefined &&
+      !meta.options.lockdown;
+
+    // They are answered by xAI, which is outside the US-only guarantee.
+    if (xTwitterPage && isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+      throw new UsOnlyUnavailableError(
+        "X/Twitter scraping is not available for teams restricted to US-only processing.",
+      );
+    }
+
     const exchangeAccess = await getExchangeAccessForRequest({
       url,
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
-      blocked,
+      blocked: blocked || xTwitterPage,
       origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
@@ -737,9 +721,10 @@ export async function buildFallbackList(meta: Meta): Promise<
     // A blocked URL can only have been admitted (by scrapeBlocklistMiddleware
     // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
-    // scrape a blocklisted site. Unblocked URLs whose provider wants
-    // unaccepted terms or rejects an option fall through and scrape normally.
-    if (blocked) {
+    // scrape a blocklisted site. X posts and profiles fail the same way.
+    // Other URLs whose provider wants unaccepted terms or rejects an option
+    // fall through and scrape normally.
+    if (blocked || xTwitterPage) {
       if (exchangeAccess.termsRequired) {
         throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
       }
@@ -954,20 +939,6 @@ export async function buildFallbackList(meta: Meta): Promise<
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
       _engines.splice(wikiIndex, 1);
-    }
-  }
-
-  if (
-    !meta.options.profile &&
-    isXTwitterUrl(meta.url) &&
-    _engines.includes("x-twitter")
-  ) {
-    _engines.length = 0;
-    _engines.push("x-twitter");
-  } else if (!isXTwitterUrl(meta.url)) {
-    const xTwitterIndex = _engines.indexOf("x-twitter");
-    if (xTwitterIndex !== -1) {
-      _engines.splice(xTwitterIndex, 1);
     }
   }
 
