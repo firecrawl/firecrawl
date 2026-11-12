@@ -3,6 +3,7 @@
 These pin that flat scrape options (formats, only_main_content, ...) reach the
 request body, the way they do on the sync client, instead of being dropped.
 """
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -96,10 +97,58 @@ async def test_batch_scrape_page_timeout_sets_per_page_limit():
 async def test_batch_scrape_timeout_still_bounds_the_wait():
     """On the async batch_scrape waiter, timeout stays the whole-batch wait in seconds."""
     client = _mock_client()
+    client.async_http_client.get = AsyncMock(
+        return_value=_response(
+            {"success": True, "status": "scraping", "completed": 0, "total": 1, "data": []}
+        )
+    )
 
-    await client.batch_scrape(["https://example.com"], timeout=180, poll_interval=0)
+    # The outer wait_for keeps a dropped timeout from hanging the suite; its own
+    # TimeoutError has no message, so the match only passes for the SDK's error.
+    with pytest.raises(TimeoutError, match="Batch wait timed out"):
+        await asyncio.wait_for(
+            client.batch_scrape(["https://example.com"], timeout=0.05, poll_interval=0.01),
+            timeout=2,
+        )
 
     assert "timeout" not in _sent_body(client)
+
+
+@pytest.mark.asyncio
+async def test_batch_scrape_forwards_every_scrape_options_field():
+    client = _mock_client()
+
+    await client.start_batch_scrape(
+        ["https://example.com"],
+        min_age=1000,
+        redact_pii=True,
+        domain_tools=True,
+        tool_detail="full",
+    )
+
+    body = _sent_body(client)
+    assert body["minAge"] == 1000
+    assert body["redactPII"] is True
+    assert body["domainTools"] is True
+    assert body["toolDetail"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_batch_level_integration_and_audit_metadata_stay_top_level():
+    from firecrawl.v2.types import AuditMetadata
+
+    client = _mock_client()
+
+    await client.start_batch_scrape(
+        ["https://example.com"],
+        formats=["html"],
+        integration="  zapier ",
+        audit_metadata=AuditMetadata(username="alice"),
+    )
+
+    body = _sent_body(client)
+    assert body["integration"] == "zapier"
+    assert body["auditMetadata"] == {"username": "alice"}
 
 
 @pytest.mark.asyncio

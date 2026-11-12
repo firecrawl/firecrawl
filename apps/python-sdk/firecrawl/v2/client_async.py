@@ -96,8 +96,10 @@ from .watcher_async import AsyncWatcher
 _ABANDONED_CRAWL_CANCEL_TIMEOUT = 10.0
 
 
-# audit_metadata is a top-level batch field that methods.aio.batch reads itself.
-_BATCH_SCRAPE_OPTION_KEYS = _SCRAPE_OPTION_KEYS - {"audit_metadata"}
+# Every ScrapeOptions field, so a newly added one is never silently dropped.
+# audit_metadata and integration are top-level batch fields that
+# methods.aio.batch._prepare sends itself.
+_BATCH_SCRAPE_OPTION_KEYS = frozenset(ScrapeOptions.model_fields) - {"audit_metadata", "integration"}
 
 
 def _fold_batch_scrape_options(kwargs: Dict[str, Any]) -> Dict[str, Any]:
