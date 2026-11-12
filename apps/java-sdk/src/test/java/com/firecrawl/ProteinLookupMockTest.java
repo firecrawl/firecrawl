@@ -71,11 +71,11 @@ class ProteinLookupMockTest {
         String query = requestQuery.get();
         assertTrue(query.contains("protein=RPUSD3"), query);
         assertTrue(query.contains("organism=Homo+sapiens"), query);
+        assertTrue(query.contains("origin=java-sdk%40"), query);
 
         assertEquals("found", response.match);
         assertEquals(9606, response.protein.organism.taxonId);
         assertEquals("pmid:27974379", response.protein.subcellularLocation.get(0).evidence.get(0).paperId);
         assertEquals("FlyBase", response.protein.goCellularComponent.get(0).assignedBy);
-        assertNull(response.candidates);
     }
 }

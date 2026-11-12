@@ -90,6 +90,8 @@ pub struct ProteinLookupResponse {
     pub release: String,
     #[serde(flatten)]
     pub result: ProteinLookup,
+    /// UniProt's credit and CC BY 4.0 license. Show it with any results you
+    /// display to a person.
     pub notice: String,
 }
 
@@ -122,7 +124,7 @@ pub struct ProteinEntry {
     pub url: String,
     pub subcellular_location: Vec<ProteinStatement>,
     pub function: Vec<ProteinStatement>,
-    pub go_cellular_component: Vec<GoTerm>,
+    pub go_cellular_component: Vec<ProteinGoTerm>,
     pub paper_ids: Vec<String>,
 }
 
@@ -172,7 +174,7 @@ pub struct ProteinEvidence {
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct GoTerm {
+pub struct ProteinGoTerm {
     pub id: String,
     pub term: String,
     pub code: String,
@@ -662,6 +664,10 @@ mod tests {
             .match_query(mockito::Matcher::AllOf(vec![
                 mockito::Matcher::UrlEncoded("protein".into(), "RPUSD3".into()),
                 mockito::Matcher::UrlEncoded("organism".into(), "Homo sapiens".into()),
+                mockito::Matcher::UrlEncoded(
+                    "origin".into(),
+                    format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+                ),
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -723,6 +729,24 @@ mod tests {
                 .to_string(),
             )
             .create();
+        let not_found = server
+            .mock("GET", "/v2/search/research/proteins")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "protein".into(),
+                "NOPE1".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "release": "2026_04",
+                    "match": "not_found",
+                    "notice": notice
+                })
+                .to_string(),
+            )
+            .create();
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let response = client
@@ -758,8 +782,17 @@ mod tests {
         assert_eq!(candidate_count, 3);
         assert_eq!(candidates[0].accession, "P01730");
 
+        let response = client.lookup_protein("NOPE1", None).await.unwrap();
+        assert!(
+            matches!(response.result, ProteinLookup::NotFound),
+            "expected not_found, got {:?}",
+            response.result
+        );
+        assert_eq!(response.notice, notice);
+
         found.assert();
         ambiguous.assert();
+        not_found.assert();
     }
 
     #[tokio::test]

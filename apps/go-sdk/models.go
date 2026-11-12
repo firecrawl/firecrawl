@@ -264,7 +264,8 @@ type SimilarPapersResponse struct {
 
 // ProteinLookupResponse is returned by LookupProtein. Match is "found" with
 // Protein set, "ambiguous" with Candidates and CandidateCount set, or
-// "not_found".
+// "not_found". Notice is UniProt's credit and CC BY 4.0 license. Show it with
+// any results you display to a person.
 type ProteinLookupResponse struct {
 	Success        bool               `json:"success"`
 	Release        string             `json:"release"`
@@ -287,7 +288,7 @@ type ProteinEntry struct {
 	URL                 string             `json:"url"`
 	SubcellularLocation []ProteinStatement `json:"subcellularLocation"`
 	Function            []ProteinStatement `json:"function"`
-	GoCellularComponent []GoTerm           `json:"goCellularComponent"`
+	GoCellularComponent []ProteinGoTerm    `json:"goCellularComponent"`
 	PaperIDs            []string           `json:"paperIds"`
 }
 
@@ -327,8 +328,8 @@ type ProteinEvidence struct {
 	FromProtein string `json:"fromProtein,omitempty"`
 }
 
-// GoTerm is a GO cellular component term of a protein entry.
-type GoTerm struct {
+// ProteinGoTerm is a GO cellular component term of a protein entry.
+type ProteinGoTerm struct {
 	ID         string   `json:"id"`
 	Term       string   `json:"term"`
 	Code       string   `json:"code"`

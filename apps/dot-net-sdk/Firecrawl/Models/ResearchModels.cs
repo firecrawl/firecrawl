@@ -104,6 +104,8 @@ public class ProteinLookupResponse
     public ProteinEntry? Protein { get; set; }
     public List<ProteinCandidate>? Candidates { get; set; }
     public int? CandidateCount { get; set; }
+
+    /// <summary>UniProt's credit and CC BY 4.0 license. Show it with any results you display to a person.</summary>
     public string? Notice { get; set; }
 }
 
@@ -119,7 +121,7 @@ public class ProteinEntry
     public string? Url { get; set; }
     public List<ProteinStatement>? SubcellularLocation { get; set; }
     public List<ProteinStatement>? Function { get; set; }
-    public List<GoTerm>? GoCellularComponent { get; set; }
+    public List<ProteinGoTerm>? GoCellularComponent { get; set; }
     public List<string>? PaperIds { get; set; }
 }
 
@@ -162,7 +164,7 @@ public class ProteinEvidence
     public string? FromProtein { get; set; }
 }
 
-public class GoTerm
+public class ProteinGoTerm
 {
     public string? Id { get; set; }
     public string? Term { get; set; }

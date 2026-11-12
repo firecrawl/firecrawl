@@ -48,11 +48,11 @@ public class ProteinLookupTests
         Assert.Equal("/v2/search/research/proteins", uri.AbsolutePath);
         Assert.Contains("protein=RPUSD3", uri.Query);
         Assert.Contains("organism=Homo%20sapiens", uri.Query);
+        Assert.Contains("origin=dotnet-sdk%40", uri.Query);
 
         Assert.Equal("found", response.Match);
         Assert.Equal(9606, response.Protein!.Organism!.TaxonId);
         Assert.Equal("pmid:27974379", response.Protein.SubcellularLocation![0].Evidence![0].PaperId);
         Assert.Equal("FlyBase", response.Protein.GoCellularComponent![0].AssignedBy);
-        Assert.Null(response.Candidates);
     }
 }

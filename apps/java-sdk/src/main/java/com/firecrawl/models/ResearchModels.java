@@ -92,6 +92,7 @@ public final class ResearchModels {
         public List<ProteinCandidate> candidates;
         @JsonProperty("candidateCount")
         public Integer candidateCount;
+        /** UniProt's credit and CC BY 4.0 license. Show it with any results you display to a person. */
         public String notice;
     }
 
@@ -110,7 +111,7 @@ public final class ResearchModels {
         public List<ProteinStatement> subcellularLocation;
         public List<ProteinStatement> function;
         @JsonProperty("goCellularComponent")
-        public List<GoTerm> goCellularComponent;
+        public List<ProteinGoTerm> goCellularComponent;
         @JsonProperty("paperIds")
         public List<String> paperIds;
     }
@@ -154,7 +155,7 @@ public final class ResearchModels {
         public String fromProtein;
     }
 
-    public static class GoTerm {
+    public static class ProteinGoTerm {
         public String id;
         public String term;
         public String code;
