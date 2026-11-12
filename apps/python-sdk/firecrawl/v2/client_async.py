@@ -83,7 +83,6 @@ from .methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
     ASYNC_CLIENT_RELATED_PAPERS_DOC,
-    ASYNC_CLIENT_SEARCH_GITHUB_DOC,
     ASYNC_CLIENT_SEARCH_PAPERS_DOC,
     doc,
 )
@@ -216,10 +215,6 @@ class AsyncFirecrawlClient:
     @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
     async def related_papers(self, paper_id: str, intent: str, **kwargs):
         return await async_research.related_papers(self.async_http_client, paper_id, intent, **kwargs)
-
-    @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
-    async def search_github(self, query: str, **kwargs):
-        return await async_research.search_github(self.async_http_client, query, **kwargs)
 
     async def interact(
         self,

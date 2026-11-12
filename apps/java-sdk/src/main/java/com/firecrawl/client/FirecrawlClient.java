@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.18.9";
+    private static final String SDK_ORIGIN = "java-sdk@1.19.0";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -648,29 +648,6 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated The research index GitHub search endpoint was removed after
-     *             2026-11-03. Use {@link #developerSearch} instead.
-     */
-    @Deprecated
-    public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
-        return searchGitHub(query, null);
-    }
-
-    /**
-     * @deprecated The research index GitHub search endpoint was removed after
-     *             2026-11-03. Use {@link #developerSearch} instead.
-     */
-    @Deprecated
-    public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
-        Objects.requireNonNull(query, "Query is required");
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("query", query);
-        params.put("origin", SDK_ORIGIN);
-        if (options != null) mergeOptions(params, options);
-        return http.get("/v2/search/research/github" + researchQuery(params), ResearchModels.GitHubSearchResponse.class);
-    }
-
-    /**
      * Searches the developer index: public repositories, GitHub issues, merged
      * pull requests, READMEs and code documentation.
      *
@@ -1165,15 +1142,6 @@ public class FirecrawlClient {
 
     public CompletableFuture<ResearchModels.SimilarPapersResponse> relatedPapersAsync(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
         return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
-    }
-
-    /**
-     * @deprecated The research index GitHub search endpoint was removed after
-     *             2026-11-03. Use {@link #developerSearchAsync} instead.
-     */
-    @Deprecated
-    public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
-        return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
     }
 
     public CompletableFuture<ResearchModels.DeveloperSearchResponse> developerSearchAsync(String query, ResearchModels.DeveloperSearchOptions options) {

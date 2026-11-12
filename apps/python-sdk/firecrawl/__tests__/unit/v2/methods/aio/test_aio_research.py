@@ -113,7 +113,7 @@ async def test_inspect_paper_encodes_namespaced_ids(paper_id, expected_path):
     await aio_research.inspect_paper(client, paper_id)
     path, qs = split(client.last_path)
     assert path == expected_path
-    # detail mode carries origin, like the other four research methods
+    # detail mode carries origin, like the other three research methods
     assert sorted(qs.keys()) == ["origin"]
     assert qs["origin"][0].startswith("python-sdk@")
 
@@ -162,16 +162,6 @@ async def test_related_papers_omits_rerank_when_none():
 
 
 @pytest.mark.asyncio
-async def test_search_github_builds_query_string():
-    client = FakeAsyncHttpClient(FakeResponse(200, {"success": True, "results": []}))
-    await aio_research.search_github(client, "milvus hybrid search", k=10)
-    path, qs = split(client.last_path)
-    assert path == "/v2/search/research/github"
-    assert qs["query"] == ["milvus hybrid search"]
-    assert qs["k"] == ["10"]
-
-
-@pytest.mark.asyncio
 async def test_error_mapping():
     client = FakeAsyncHttpClient(FakeResponse(400, {"error": "query is required"}))
     with pytest.raises(BadRequestError) as exc:
@@ -194,7 +184,6 @@ async def test_async_client_exposes_research_methods():
         "inspect_paper",
         "read_paper",
         "related_papers",
-        "search_github",
     ):
         assert callable(getattr(AsyncFirecrawlClient, name)), name
 
@@ -224,7 +213,6 @@ RESEARCH_METHODS = (
     "inspect_paper",
     "read_paper",
     "related_papers",
-    "search_github",
 )
 
 
@@ -240,7 +228,7 @@ def _unified_client(response=None):
 
 
 def test_unified_async_client_exposes_research_methods():
-    """``AsyncFirecrawl`` delegates method by method; pin all five."""
+    """``AsyncFirecrawl`` delegates method by method; pin all four."""
     from firecrawl import AsyncFirecrawl
 
     for name in RESEARCH_METHODS:
@@ -276,11 +264,6 @@ async def test_unified_async_client_delegates_all_research_methods():
     path, qs = split(http.last_path)
     assert path == "/v2/search/research/papers/pmid%3A12345678/similar"
     assert qs["intent"] == ["replication attempts"]
-
-    await client.search_github("pysam VCF parsing memory leak")
-    path, qs = split(http.last_path)
-    assert path == "/v2/search/research/github"
-    assert qs["query"] == ["pysam VCF parsing memory leak"]
 
 
 @pytest.mark.asyncio
