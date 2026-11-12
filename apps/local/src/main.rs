@@ -212,6 +212,10 @@ async fn launch_mcp(engine: Arc<Engine>) -> Result<(), String> {
   command
     .args(["-y", &package])
     .env("FIRECRAWL_API_URL", format!("http://{addr}"))
+    // This process holds the login and signs what it passes on, so the MCP
+    // server should send Alexandria tools here and not refuse them itself.
+    // Versions of the MCP server that do not know the setting ignore it.
+    .env("FIRECRAWL_API_HOLDS_CREDENTIAL", "true")
     .stdin(std::process::Stdio::inherit())
     .stdout(std::process::Stdio::inherit())
     .stderr(std::process::Stdio::inherit());
