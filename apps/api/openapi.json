@@ -6046,6 +6046,19 @@
             }
           },
           {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "description": "Documentation version to search for a library, as `library@version`, such as `react@18`. Send one value for each library: repeat the parameter or separate the values with commas. Returns 400 with the indexed versions when a value names none of them. Cannot be combined with `sources`.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
             "name": "skills",
             "in": "query",
             "required": false,
@@ -6226,6 +6239,14 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 512
+                    }
+                  },
+                  "version": {
+                    "type": "array",
+                    "description": "Documentation version to search for a library, as `library@version`, such as `react@18`. Send one value for each library: repeat the parameter or separate the values with commas. Returns 400 with the indexed versions when a value names none of them. Cannot be combined with `sources`.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
                     }
                   },
                   "skills": {
