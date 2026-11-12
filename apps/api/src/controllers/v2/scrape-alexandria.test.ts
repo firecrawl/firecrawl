@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
   markCalls: vi.fn(),
+  providerToolsBody: vi.fn(),
 }));
 vi.mock("../../lib/alexandria-activity", () => ({
   markAlexandriaActivity: vi.fn(),
@@ -34,11 +35,7 @@ vi.mock("../../lib/key-restriction", () => ({
   checkKeyFormatRestriction: async () => ({ allowed: true }),
 }));
 vi.mock("../../lib/keyless", () => ({
-  keylessProviderToolsBody: () => ({
-    success: false,
-    error: "An API key is required for provider tools.",
-    signup_url: "https://firecrawl.dev/k/token",
-  }),
+  keylessProviderToolsBody: mocks.providerToolsBody,
 }));
 vi.mock("../../lib/agent-interop", () => ({
   isAgentInteropSecretValid: (value: string) => value === "test-secret",
@@ -103,15 +100,25 @@ beforeEach(() => {
 
 it("refuses a keyless caller with its signup link and the auth discovery header", async () => {
   teamId = "preview_keyless_203.0.113.8";
-  const response = await request(app)
-    .post("/v2/scrape")
-    .send({ alexandria: call });
-  expect(response.status).toBe(403);
-  expect(response.body).toEqual({
+  const refusal = {
     success: false,
     error: "An API key is required for provider tools.",
     signup_url: "https://firecrawl.dev/k/token",
-  });
+  };
+  mocks.providerToolsBody.mockReturnValue(refusal);
+  const response = await request(app)
+    .post("/v2/scrape")
+    .set("x-origin", "cli")
+    .send({ alexandria: call });
+  expect(response.status).toBe(403);
+  expect(response.body).toEqual(refusal);
+  expect(mocks.providerToolsBody).toHaveBeenCalledExactlyOnceWith(
+    teamId,
+    expect.objectContaining({
+      body: { alexandria: call },
+      headers: expect.objectContaining({ "x-origin": "cli" }),
+    }),
+  );
   expect(response.headers["www-authenticate"]).toBe(
     'Bearer resource_metadata="https://x/auth"',
   );
