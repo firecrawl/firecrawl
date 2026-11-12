@@ -717,56 +717,6 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
-  // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
-  // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
-  // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
-  // back to the default model for that request.
-  EXTRACTION_PROVIDER_BASE_URL: blankStringAsUnset(z.string().url().optional()),
-  EXTRACTION_PROVIDER_API_KEY: blankStringAsUnset(z.string().optional()),
-  EXTRACTION_PROVIDER_MODEL: blankStringAsUnset(
-    z.string().min(1).default("extraction-v1"),
-  ),
-  EXTRACTION_PROVIDER_ROLLOUT_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  EXTRACTION_PROVIDER_SHADOW_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  // Rollout percentage for schemas with $ref/$defs (the ones the default
-  // path sends to its larger model); unset = same as ROLLOUT_PERCENT.
-  EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: blankStringAsUnset(
-    z.coerce.number().int().min(0).max(100).optional(),
-  ),
-  // A provider answer whose arrays are all empty, for a page long enough to
-  // plausibly hold items, counts as a failure and falls back to the default
-  // model for that request.
-  EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS: z
-    .stringbool()
-    .optional()
-    .default(true),
-  EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
-  // Let any team pick the provider per request (json format `model`); off =
-  // only teams in TEAM_IDS may.
-  EXTRACTION_PROVIDER_REQUEST_OPT_IN: z.stringbool().optional(),
-  EXTRACTION_PROVIDER_MAX_INPUT_BYTES: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(400_000),
-  EXTRACTION_PROVIDER_INPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.07),
-  EXTRACTION_PROVIDER_OUTPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.2),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
@@ -889,22 +839,6 @@ const configSchema = z.object({
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
-  for (const key of [
-    "EXTRACTION_PROVIDER_ROLLOUT_PERCENT",
-    "EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT",
-  ] as const) {
-    const rollout = value[key];
-    if (
-      rollout !== undefined &&
-      rollout + value.EXTRACTION_PROVIDER_SHADOW_PERCENT > 100
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
-        message: `${key} + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100`,
-      });
-    }
-  }
   if (value.GOV_ROUTING_ENABLED && !value.SEARCH_PLATFORM_URL) {
     context.addIssue({
       code: "custom",
