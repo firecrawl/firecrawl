@@ -1,0 +1,23 @@
+apps/api/src/lib/extraction-provider.ts
+  s_55eb374d574d1c::t_8abafe8070c512 66-71
+apps/api/src/config.ts
+  s_55eb374d574d1c::t_8abafe8070c512 880-890
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_55eb374d574d1c::t_e166b75fe146e7 1081-1083
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "647054a1d01a82b2dd893b12c2ba0de915dd6d13",
+  "prompts": {},
+  "sessions": {
+    "s_55eb374d574d1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23d62988-955b-47cc-bd5a-28edb2957b32",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
