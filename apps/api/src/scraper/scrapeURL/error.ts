@@ -25,6 +25,24 @@ export class UsOnlyUnavailableError extends TransportableError {
   }
 }
 
+/** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
+export class ReservedCapacityUnavailableError extends TransportableError {
+  constructor(
+    message = "PDF processing is unavailable for this team's configuration. Please retry later.",
+  ) {
+    super("RESERVED_CAPACITY_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ReservedCapacityUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class NoEnginesLeftError extends TransportableError {
   public fallbackList: Engine[];
 

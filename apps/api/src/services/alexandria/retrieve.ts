@@ -85,6 +85,9 @@ const hash = (value: unknown) =>
 export const exchangeRequestId = (teamId: string, requestId: string) =>
   hash([teamId, requestId]);
 
+const isCatalogueRead = (call: ProviderCall) =>
+  call.provider === "firecrawl" && call.capability === "find-tools";
+
 const unresolved = (chargeId: string) =>
   refusal(
     503,
@@ -101,6 +104,22 @@ const relay = (response: ExchangeResponse): ExchangeResponse => {
     typeof body.code === "string" ? { code: body.code } : {},
   );
 };
+
+/** Whether an Exchange answer accounts for every call of the request within its budget. */
+const receiptMatches = (
+  answer: z.infer<typeof answerSchema>,
+  calls: ProviderCall[],
+  maximumCredits: number,
+) =>
+  answer.results.length === calls.length &&
+  answer.creditsCost <= maximumCredits &&
+  answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
+    answer.creditsCost &&
+  answer.results.every(
+    (item, i) =>
+      (item.provider ?? calls[i].provider) === calls[i].provider &&
+      (item.capability ?? calls[i].capability) === calls[i].capability,
+  );
 
 export async function retrieveProviders(input: {
   teamId: string;
@@ -194,6 +213,7 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
+  const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
     ...(termsOnly
@@ -205,7 +225,7 @@ export async function retrieveProviders(input: {
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
-    deadline: Date.now() + input.timeoutMs,
+    deadline,
     scrapeId: input.scrapeId,
   };
   const write = (next: Retrieval) =>
@@ -267,6 +287,93 @@ export async function retrieveProviders(input: {
     return notExecuted(unresolved(id));
   }
 
+  // A catalogue read is free and idempotent, so once its request id is claimed it skips the
+  // agreement and quote lookups and the credit hold and goes to Exchange with a zero budget.
+  // Exchange quotes against that budget itself and refuses with credit_budget_exceeded should
+  // the read ever carry a price, in which case the full path below runs under the same claim
+  // and deadline. The answer is recorded like any other, so a repeat of the id replays it.
+  const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
+  if (
+    input.calls.every(isCatalogueRead) &&
+    (!firecrawlAccess || firecrawlAccess.status === "enabled")
+  ) {
+    const read = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve",
+      body: { requests: input.calls },
+      timeoutMs: input.timeoutMs,
+      requestId: id,
+      clientIp: input.clientIp,
+      billingCountry: input.billingCountry,
+      connectors: input.flags?.exchangeRetrieve === true,
+      ...(input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(zeroDataRetention ? { zeroDataRetention } : {}),
+      ...(usOnly ? { usOnly } : {}),
+      maximumCredits: 0,
+      retryConnection: true,
+    }).catch(error => {
+      logger.warn("Catalogue read unavailable", { error, chargeId: id });
+      return undefined;
+    });
+    // A read that did not complete releases the id, so the same request can be sent again.
+    const release = async (response: ExchangeResponse) => {
+      await redisRateLimitClient.del(key);
+      return { ...response, executed: true, scrapeId: input.scrapeId };
+    };
+    if (!read || read.status >= 500)
+      return release(
+        refusal(
+          503,
+          "The catalogue read did not complete. Nothing was charged; resend it with the same x-request-id.",
+          { code: "provider_unavailable", retryable: true },
+        ),
+      );
+    const parsed =
+      read.status === 200 ? answerSchema.safeParse(read.body) : undefined;
+    if (parsed?.success && receiptMatches(parsed.data, input.calls, 0)) {
+      const done: ExchangeResponse = { status: 200, body: parsed.data };
+      void reportExchangeUsageBilling({
+        requestId: id,
+        status: billable ? "confirmed" : "void",
+        billingReference: `alexandria:${id}`,
+      });
+      // The answer is delivered even when it cannot be recorded; the id is released instead,
+      // so a repeat runs the read again rather than finding it stranded.
+      await write(
+        zeroDataRetention
+          ? { ...record, phase: "done", responseWithheld: true }
+          : { ...record, phase: "done", response: done },
+      ).catch(async error => {
+        logger.warn("Catalogue read answer was not recorded", {
+          error,
+          chargeId: id,
+        });
+        await redisRateLimitClient.del(key).catch(() => {});
+      });
+      return { ...done, executed: true, scrapeId: input.scrapeId };
+    }
+    const code = (read.body as { code?: unknown } | null)?.code;
+    if (read.status >= 400 && code !== "credit_budget_exceeded")
+      return release(relay(read));
+    if (read.status < 400) {
+      logger.error(
+        "Catalogue read answered with an unexpected status or body",
+        {
+          chargeId: id,
+          status: read.status,
+        },
+      );
+      return release(
+        refusal(
+          502,
+          "The catalogue read returned a malformed answer. Nothing was charged; resend it with the same x-request-id.",
+        ),
+      );
+    }
+  }
+
   const teamFeatureId = featureIdForBillingEndpoint("scrape");
   let featureId = input.hostedMcp
     ? await autumnService.hostedMcpFeatureId(input.teamId, teamFeatureId)
@@ -325,6 +432,7 @@ export async function retrieveProviders(input: {
       input.orgId,
       input.clientIp,
       input.billingCountry,
+      Math.min(10000, remaining()),
     );
     if (denied) return refuse(denied);
 
@@ -374,6 +482,7 @@ export async function retrieveProviders(input: {
       path: "/v1/retrieve/quote",
       body: { requests: input.calls },
       timeoutMs: Math.min(10000, remaining()),
+      retryConnection: true,
       clientIp: input.clientIp,
       billingCountry: input.billingCountry,
       connectors: input.flags?.exchangeRetrieve === true,
@@ -388,6 +497,7 @@ export async function retrieveProviders(input: {
         refusal(
           503,
           "Provider quote is unavailable. No provider was executed.",
+          { code: "precheck_unavailable", retryable: true },
         ),
       );
     if (quote.status !== 200) return refuse(relay(quote));
@@ -444,7 +554,7 @@ export async function retrieveProviders(input: {
             ? refusal(
                 503,
                 "Credit reservation is unavailable. No provider was executed.",
-                { code: "billing_unavailable" },
+                { code: "billing_unavailable", retryable: true },
               )
             : refusal(
                 402,
@@ -457,6 +567,9 @@ export async function retrieveProviders(input: {
           refusal(
             503,
             "Credit reservation is unavailable. No provider was executed.",
+            hold.reason === "unavailable"
+              ? { code: "billing_unavailable", retryable: true }
+              : {},
           ),
         );
       lockId = hold.lockId;
@@ -526,19 +639,7 @@ export async function retrieveProviders(input: {
     const parsed = answerSchema.safeParse(response.body);
     if (!parsed.success) return fail("Alexandria answer was malformed");
     const answer = parsed.data;
-    const receiptMatches =
-      answer.results.length === input.calls.length &&
-      answer.creditsCost <= maximumCredits &&
-      answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
-        answer.creditsCost &&
-      answer.results.every(
-        (item, i) =>
-          (item.provider ?? input.calls[i].provider) ===
-            input.calls[i].provider &&
-          (item.capability ?? input.calls[i].capability) ===
-            input.calls[i].capability,
-      );
-    if (!receiptMatches)
+    if (!receiptMatches(answer, input.calls, maximumCredits))
       return fail("Alexandria receipt did not match the request");
 
     const credits = answer.creditsCost;

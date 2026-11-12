@@ -11,6 +11,7 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { getACUCTeam } from "../../controllers/auth";
+import { logger } from "../../lib/logger";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -41,16 +42,22 @@ export async function authorizeProviders(
   orgId: string | null = null,
   clientIp?: string,
   billingCountry?: string,
+  timeoutMs = 10000,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
+  const deadline = Date.now() + timeoutMs;
   const response = await exchangeRequest({
     teamId,
     path: "/v1/provider-terms/requirements",
     body: { providers },
-    timeoutMs: 10000,
+    timeoutMs,
     clientIp,
     billingCountry,
-  }).catch(() => undefined);
+    retryConnection: true,
+  }).catch(error => {
+    logger.warn("Provider agreements unavailable", { error, teamId });
+    return undefined;
+  });
   if (response?.status === 404)
     return refusal(404, "Unknown provider. No provider was executed.", {
       code: "unknown_provider",
@@ -70,6 +77,7 @@ export async function authorizeProviders(
     return refusal(
       503,
       "Provider agreements are unavailable. No provider was executed.",
+      { code: "precheck_unavailable", retryable: true },
     );
   if (config.USE_DB_AUTHENTICATION !== true) return undefined;
 
@@ -87,10 +95,15 @@ export async function authorizeProviders(
         item.terms &&
         orgId !== null
       ) {
-        ledger ??= await acceptedProviders(teamId, orgId, undefined, {
-          clientIp,
-          billingCountry,
-        });
+        ledger ??= await acceptedProviders(
+          teamId,
+          orgId,
+          Math.max(1, deadline - Date.now()),
+          {
+            clientIp,
+            billingCountry,
+          },
+        );
         const accepted = ledger.get(item.provider);
         if (
           matchesAcceptance(accepted, item.terms) &&
@@ -114,10 +127,15 @@ export async function authorizeProviders(
     )
       continue;
     if (orgId !== null) {
-      ledger ??= await acceptedProviders(teamId, orgId, undefined, {
-        clientIp,
-        billingCountry,
-      });
+      ledger ??= await acceptedProviders(
+        teamId,
+        orgId,
+        Math.max(1, deadline - Date.now()),
+        {
+          clientIp,
+          billingCountry,
+        },
+      );
       const accepted = ledger.get(item.provider);
       if (matchesAcceptance(accepted, item.terms)) continue;
     }

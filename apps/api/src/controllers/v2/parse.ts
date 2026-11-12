@@ -652,7 +652,10 @@ export async function parseController(
             });
           }
 
-          if (e.code === "US_ONLY_UNAVAILABLE") {
+          if (
+            e.code === "US_ONLY_UNAVAILABLE" ||
+            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
+          ) {
             setSpanAttributes(span, {
               "parse.status_code": 403,
             });

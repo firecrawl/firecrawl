@@ -60,6 +60,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
@@ -1060,6 +1061,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
