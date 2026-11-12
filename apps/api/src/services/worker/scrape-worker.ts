@@ -1889,7 +1889,11 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
                 logger.debug("Job succeeded -- putting result in Redis");
                 return result.document;
               }
-            } catch (e) {}
+            } catch (e) {
+              logger.warn("Failed to return completed job document", {
+                error: e,
+              });
+            }
           } else {
             throw (result as any).error;
           }
