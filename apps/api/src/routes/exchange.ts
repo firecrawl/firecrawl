@@ -6,7 +6,9 @@ import {
   acceptProviderTerms,
   acceptTermsSchema,
 } from "../services/alexandria/terms";
+import compression from "compression";
 import express, { Request, Response } from "express";
+import { constants as zlibConstants } from "node:zlib";
 import { Agent, fetch, type Response as UpstreamResponse } from "undici";
 import type { Logger } from "winston";
 import { config } from "../config";
@@ -281,6 +283,18 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 }
 
 export const exchangeRouter = express.Router();
+
+// Compresses buffered bodies larger than one TCP segment. A streamed response
+// has no Content-Length and is left untouched.
+exchangeRouter.use(
+  compression({
+    threshold: 1400,
+    level: 6,
+    brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } },
+    filter: (req, res) =>
+      res.hasHeader("Content-Length") && compression.filter(req, res),
+  }),
+);
 
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
 // the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
