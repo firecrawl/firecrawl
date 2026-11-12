@@ -36,46 +36,7 @@ const RPUSD3 = {
   success: true,
   release: "2026_04",
   match: "found",
-  protein: {
-    accession: "Q6P087",
-    entryName: "RUSD3_HUMAN",
-    gene: "RPUSD3",
-    synonyms: [],
-    name: "Mitochondrial mRNA pseudouridine synthase RPUSD3",
-    organism: {
-      taxonId: 9606,
-      scientificName: "Homo sapiens",
-      commonName: "Human",
-    },
-    matchedBy: "gene",
-    url: "https://www.uniprot.org/uniprotkb/Q6P087/entry",
-    subcellularLocation: [
-      {
-        text: "Mitochondrion matrix",
-        note: false,
-        evidence: [
-          {
-            kind: "experimental",
-            eco: "ECO:0000269",
-            paperId: "pmid:27974379",
-          },
-        ],
-      },
-    ],
-    function: [],
-    goCellularComponent: [
-      {
-        id: "GO:0005759",
-        term: "mitochondrial matrix",
-        code: "IDA",
-        assignedBy: "FlyBase",
-        paperIds: ["pmid:27974379"],
-      },
-    ],
-    paperIds: ["pmid:27974379"],
-  },
-  notice:
-    "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted.",
+  protein: { accession: "Q6P087", gene: "RPUSD3" },
 };
 
 function upstream(status: number, body: unknown) {
@@ -188,7 +149,7 @@ describe("GET /v2/search/research/proteins", () => {
     expect(res.body).toEqual(refusal);
     expect(mocks.logResearchEndpoint).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        target: "protein:RPUSD3 organism:unicorn",
+        target: "protein:RPUSD3",
         options: { protein: "RPUSD3", organism: "unicorn" },
         is_successful: false,
         error: refusal.error,

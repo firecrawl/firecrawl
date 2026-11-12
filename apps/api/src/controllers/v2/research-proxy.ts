@@ -727,10 +727,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           kind: "research_paper_inspect",
           table: "research_paper_inspects",
           action: "lookupProtein",
-          targetHint: params =>
-            params.organism === undefined
-              ? `protein:${params.protein}`
-              : `protein:${params.protein} organism:${params.organism}`,
+          targetHint: params => `protein:${params.protein}`,
           upstreamPath: () => "/v2/research/proteins",
           timeoutMs: PROTEIN_LOOKUP_TIMEOUT_MS,
           billAs: "scrape",

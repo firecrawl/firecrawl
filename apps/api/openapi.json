@@ -5987,32 +5987,18 @@
             "name": "protein",
             "in": "query",
             "required": true,
-            "description": "One protein: a UniProt accession, a UniProt entry name, a gene symbol, or an exact protein name.",
+            "description": "One protein identifier, 1 to 200 characters after trimming: a UniProt accession (`Q6P087`, or `Q6P087-2` for an isoform), an entry name (`RUSD3_HUMAN`), a gene symbol (`RPUSD3`), or an exact protein name (`Mitochondrial mRNA pseudouridine synthase RPUSD3`).",
             "schema": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200
-            },
-            "examples": {
-              "gene": {
-                "summary": "Gene symbol",
-                "value": "RPUSD3"
-              },
-              "accession": {
-                "summary": "UniProt accession",
-                "value": "Q6P087"
-              },
-              "entryName": {
-                "summary": "UniProt entry name",
-                "value": "RUSD3_HUMAN"
-              }
             }
           },
           {
             "name": "organism",
             "in": "query",
             "required": false,
-            "description": "Organism in which a gene symbol or protein name is looked up first: an NCBI taxon ID, a scientific name, or a UniProt common name. A name found only in other organisms returns `ambiguous`. Accessions and entry names ignore it.",
+            "description": "Organism that scopes a gene symbol or protein name: an NCBI taxon id (`9606`), a scientific name (`Homo sapiens`), or a UniProt common name (`Human`), matched without regard to case. Accessions and entry names ignore it.",
             "schema": {
               "type": "string",
               "minLength": 1,
@@ -6022,7 +6008,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The protein's curated annotation, the candidates for an ambiguous identifier, or no match.",
+            "description": "Lookup result. `match` is `found`, `ambiguous`, or `not_found`. A protein that matches no entry is a `200` with `match: \"not_found\"`, not a `404`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6046,106 +6032,184 @@
                     }
                   }
                 },
-                "example": {
-                  "success": true,
-                  "release": "2026_04",
-                  "match": "found",
-                  "protein": {
-                    "accession": "Q6P087",
-                    "entryName": "RUSD3_HUMAN",
-                    "gene": "RPUSD3",
-                    "synonyms": [],
-                    "name": "Mitochondrial mRNA pseudouridine synthase RPUSD3",
-                    "organism": {
-                      "taxonId": 9606,
-                      "scientificName": "Homo sapiens",
-                      "commonName": "Human"
-                    },
-                    "matchedBy": "gene",
-                    "url": "https://www.uniprot.org/uniprotkb/Q6P087/entry",
-                    "subcellularLocation": [
-                      {
-                        "text": "Mitochondrion matrix",
-                        "note": false,
-                        "evidence": [
+                "examples": {
+                  "found": {
+                    "summary": "One entry matched",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "found",
+                      "protein": {
+                        "accession": "Q6P087",
+                        "entryName": "RUSD3_HUMAN",
+                        "gene": "RPUSD3",
+                        "synonyms": [],
+                        "name": "Mitochondrial mRNA pseudouridine synthase RPUSD3",
+                        "organism": {
+                          "taxonId": 9606,
+                          "scientificName": "Homo sapiens",
+                          "commonName": "Human"
+                        },
+                        "matchedBy": "gene",
+                        "url": "https://www.uniprot.org/uniprotkb/Q6P087/entry",
+                        "subcellularLocation": [
                           {
-                            "kind": "experimental",
-                            "eco": "ECO:0000269",
-                            "paperId": "pmid:27974379"
-                          }
-                        ]
-                      },
-                      {
-                        "text": "Localizes to mitochondrial RNA granules, platforms for post-transcriptional RNA modification and ribosome assembly",
-                        "note": true,
-                        "evidence": [
-                          {
-                            "kind": "experimental",
-                            "eco": "ECO:0000269",
-                            "paperId": "pmid:27974379"
+                            "text": "Mitochondrion matrix",
+                            "note": false,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              }
+                            ]
                           },
                           {
-                            "kind": "experimental",
-                            "eco": "ECO:0000269",
-                            "paperId": "pmid:28082677"
+                            "text": "Localizes to mitochondrial RNA granules, platforms for post-transcriptional RNA modification and ribosome assembly",
+                            "note": true,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              },
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:28082677"
+                              }
+                            ]
                           }
-                        ]
-                      }
-                    ],
-                    "function": [
-                      {
-                        "text": "Catalyzes uridine to pseudouridine isomerization (pseudouridylation) of specific mitochondrial mRNAs (mt-mRNAs), a post-transcriptional modification necessary for their translation. Acts at position 390 in COXI mt-mRNA and at position 697-699 in mitochondrial COXIII mt-mRNA (PubMed:27974379). As a component of a functional protein-RNA module, consisting of RCC1L, NGRN, RPUSD3, RPUSD4, TRUB2, FASTKD2 and 16S mitochondrial ribosomal RNA (16S mt-rRNA), controls 16S mt-rRNA abundance and may play a role in mitochondrial ribosome biogenesis (PubMed:27667664)",
-                        "note": false,
-                        "evidence": [
+                        ],
+                        "function": [
                           {
-                            "kind": "experimental",
-                            "eco": "ECO:0000269",
-                            "paperId": "pmid:27667664"
+                            "text": "Catalyzes uridine to pseudouridine isomerization (pseudouridylation) of specific mitochondrial mRNAs (mt-mRNAs), a post-transcriptional modification necessary for their translation. Acts at position 390 in COXI mt-mRNA and at position 697-699 in mitochondrial COXIII mt-mRNA (PubMed:27974379). As a component of a functional protein-RNA module, consisting of RCC1L, NGRN, RPUSD3, RPUSD4, TRUB2, FASTKD2 and 16S mitochondrial ribosomal RNA (16S mt-rRNA), controls 16S mt-rRNA abundance and may play a role in mitochondrial ribosome biogenesis (PubMed:27667664)",
+                            "note": false,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27667664"
+                              },
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              }
+                            ]
+                          }
+                        ],
+                        "goCellularComponent": [
+                          {
+                            "id": "GO:0005759",
+                            "term": "mitochondrial matrix",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": ["pmid:27974379"]
                           },
                           {
-                            "kind": "experimental",
-                            "eco": "ECO:0000269",
-                            "paperId": "pmid:27974379"
+                            "id": "GO:0005739",
+                            "term": "mitochondrion",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": ["pmid:28082677"]
+                          },
+                          {
+                            "id": "GO:0035770",
+                            "term": "ribonucleoprotein granule",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": ["pmid:28082677"]
                           }
+                        ],
+                        "paperIds": [
+                          "pmid:27974379",
+                          "pmid:28082677",
+                          "pmid:27667664"
                         ]
-                      }
-                    ],
-                    "goCellularComponent": [
-                      {
-                        "id": "GO:0005759",
-                        "term": "mitochondrial matrix",
-                        "code": "IDA",
-                        "assignedBy": "FlyBase",
-                        "paperIds": ["pmid:27974379"]
                       },
-                      {
-                        "id": "GO:0005739",
-                        "term": "mitochondrion",
-                        "code": "IDA",
-                        "assignedBy": "FlyBase",
-                        "paperIds": ["pmid:28082677"]
-                      },
-                      {
-                        "id": "GO:0035770",
-                        "term": "ribonucleoprotein granule",
-                        "code": "IDA",
-                        "assignedBy": "FlyBase",
-                        "paperIds": ["pmid:28082677"]
-                      }
-                    ],
-                    "paperIds": [
-                      "pmid:27974379",
-                      "pmid:28082677",
-                      "pmid:27667664"
-                    ]
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
                   },
-                  "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                  "ambiguous": {
+                    "summary": "A gene symbol that names two entries",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "ambiguous",
+                      "candidates": [
+                        {
+                          "accession": "C0HLS1",
+                          "entryName": "OSCRI_HUMAN",
+                          "gene": "SCRIB",
+                          "name": "SCRIB overlapping open reading frame protein",
+                          "organism": {
+                            "taxonId": 9606,
+                            "scientificName": "Homo sapiens",
+                            "commonName": "Human"
+                          },
+                          "matchedBy": "gene"
+                        },
+                        {
+                          "accession": "Q14160",
+                          "entryName": "SCRIB_HUMAN",
+                          "gene": "SCRIB",
+                          "name": "Protein scribble homolog",
+                          "organism": {
+                            "taxonId": 9606,
+                            "scientificName": "Homo sapiens",
+                            "commonName": "Human"
+                          },
+                          "matchedBy": "gene"
+                        }
+                      ],
+                      "candidateCount": 2,
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
+                  },
+                  "notFound": {
+                    "summary": "No entry matched",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "not_found",
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid request"
+            "description": "Invalid request. A `protein` that is missing, empty, or longer than 200 characters, or an empty `organism`, returns `error: \"Invalid query parameters\"` with `details`. An `organism` that matches no organism, or a name shared by more than one taxon, returns `code: \"BAD_REQUEST\"`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "BAD_REQUEST"
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "unknown organism 'unicorn': pass an NCBI taxon ID such as 9606, a scientific name such as Homo sapiens, or a UniProt common name such as Human"
+                    },
+                    "details": {
+                      "type": "array",
+                      "description": "The parameters that failed validation, on an `Invalid query parameters` error.",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Missing or invalid bearer token"
@@ -12238,22 +12302,19 @@
         "properties": {
           "taxonId": {
             "type": "integer",
-            "description": "NCBI taxon ID.",
-            "example": 9606
+            "description": "NCBI taxon id."
           },
           "scientificName": {
-            "type": "string",
-            "example": "Homo sapiens"
+            "type": "string"
           },
           "commonName": {
             "type": "string",
-            "example": "Human"
+            "description": "UniProt common name. Left out when UniProt gives none."
           }
         }
       },
       "ResearchProteinMatchedBy": {
         "type": "string",
-        "description": "Which identifier of the entry the request matched.",
         "enum": [
           "accession",
           "secondary_accession",
@@ -12261,7 +12322,8 @@
           "gene",
           "synonym",
           "name"
-        ]
+        ],
+        "description": "Which identifier matched the entry. `secondary_accession` is an older accession that UniProt keeps on the current entry. An older accession that UniProt kept on several entries after a split returns `ambiguous`. `synonym` is a gene synonym. `name` is a recommended or alternative full protein name."
       },
       "ResearchProteinEvidence": {
         "type": "object",
@@ -12269,7 +12331,6 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "How UniProt supports the statement. `untagged` means UniProt gives no evidence tag.",
             "enum": [
               "experimental",
               "large_scale_experimental",
@@ -12279,21 +12340,20 @@
               "sequence_analysis",
               "imported",
               "untagged"
-            ]
+            ],
+            "description": "Evidence kind, mapped from the ECO code UniProt attaches to the statement."
           },
           "eco": {
             "type": "string",
-            "description": "Evidence and Conclusion Ontology code. Absent when `kind` is `untagged`.",
-            "example": "ECO:0000269"
+            "description": "ECO code, such as `ECO:0000269`. Left out only when `kind` is `untagged`."
           },
           "paperId": {
             "type": "string",
-            "description": "Paper that UniProt cites for the statement. Pass it to the paper endpoints as `id`.",
-            "example": "pmid:27974379"
+            "description": "PubMed paper the evidence cites, such as `pmid:27974379`, in the form `GET /search/research/papers/{id}` accepts."
           },
           "fromProtein": {
             "type": "string",
-            "description": "Accession of the related entry that a `by_similarity` statement comes from."
+            "description": "Accession of the related UniProt entry the statement is inferred from, on `by_similarity` evidence."
           }
         }
       },
@@ -12303,33 +12363,31 @@
         "properties": {
           "text": {
             "type": "string",
-            "description": "Location term, note text or function text, as UniProt writes it."
+            "description": "Location term, note text, or function text, as UniProt writes it."
           },
           "note": {
             "type": "boolean",
-            "description": "True for the free-text note of a location comment."
+            "description": "`true` for the free-text note of a location comment."
           },
           "molecule": {
             "type": "string",
-            "description": "Isoform or chain the statement applies to.",
-            "example": "Isoform 2"
+            "description": "Isoform or chain the statement applies to, such as `Isoform 2`."
           },
           "topology": {
             "type": "string",
-            "description": "How the protein sits in the membrane. Only location statements have it.",
-            "example": "Single-pass type I membrane protein"
+            "description": "Membrane topology, on location statements, such as `Single-pass type I membrane protein`."
           },
           "orientation": {
             "type": "string",
-            "description": "Side of the membrane the protein faces. Only location statements have it.",
-            "example": "Cytoplasmic side"
+            "description": "Membrane orientation, on location statements, such as `Cytoplasmic side`."
           },
           "evidence": {
             "type": "array",
             "minItems": 1,
             "items": {
               "$ref": "#/components/schemas/ResearchProteinEvidence"
-            }
+            },
+            "description": "Evidence for the statement. A statement UniProt leaves without evidence has one item with `kind: \"untagged\"`."
           }
         }
       },
@@ -12339,31 +12397,30 @@
         "properties": {
           "id": {
             "type": "string",
-            "example": "GO:0005759"
+            "description": "GO term id, such as `GO:0005759`."
           },
           "term": {
             "type": "string",
-            "example": "mitochondrial matrix"
+            "description": "GO term name, such as `mitochondrial matrix`."
           },
           "code": {
             "type": "string",
-            "description": "GO evidence code.",
-            "example": "IDA"
+            "description": "GO evidence code, such as `IDA`."
           },
           "assignedBy": {
             "type": "string",
-            "example": "FlyBase"
+            "description": "Database that assigned the term."
           },
           "paperIds": {
             "type": "array",
-            "description": "Papers for the term. Empty when no paper is loaded for it. Only GO terms of human entries have paper IDs.",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "`pmid:` id of each PubMed paper cited for the term. Empty when no paper is loaded for the term. Only GO terms of human entries have paper ids."
           }
         }
       },
-      "ResearchProtein": {
+      "ResearchProteinEntry": {
         "type": "object",
         "required": [
           "accession",
@@ -12381,28 +12438,26 @@
         "properties": {
           "accession": {
             "type": "string",
-            "description": "Primary UniProt accession.",
-            "example": "Q6P087"
+            "description": "Primary UniProt accession, such as `Q6P087`."
           },
           "entryName": {
             "type": "string",
-            "example": "RUSD3_HUMAN"
+            "description": "UniProt entry name, such as `RUSD3_HUMAN`."
           },
           "gene": {
             "type": "string",
-            "description": "Primary gene name. Absent when UniProt gives none.",
-            "example": "RPUSD3"
+            "description": "Primary gene name. Left out when UniProt gives none."
           },
           "synonyms": {
             "type": "array",
-            "description": "Gene synonyms.",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Gene synonyms."
           },
           "name": {
             "type": "string",
-            "description": "Recommended full name."
+            "description": "Recommended full protein name."
           },
           "organism": {
             "$ref": "#/components/schemas/ResearchProteinOrganism"
@@ -12412,33 +12467,36 @@
           },
           "url": {
             "type": "string",
-            "description": "The entry on uniprot.org."
+            "format": "uri",
+            "description": "UniProt page for the entry."
           },
           "subcellularLocation": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResearchProteinStatement"
-            }
+            },
+            "description": "Subcellular location statements, in UniProt order."
           },
           "function": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResearchProteinStatement"
-            }
+            },
+            "description": "Function statements, in UniProt order."
           },
           "goCellularComponent": {
             "type": "array",
-            "description": "GO cellular component terms with experimental evidence.",
             "items": {
               "$ref": "#/components/schemas/ResearchProteinGoTerm"
-            }
+            },
+            "description": "GO cellular-component terms with one of these experimental GO evidence codes: IDA, HDA, IPI, IMP, IEP, EXP, HTP, IGI."
           },
           "paperIds": {
             "type": "array",
-            "description": "Every paper that a statement or GO term of this entry cites, without duplicates.",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Every paper cited in the statements and GO terms, deduplicated."
           }
         }
       },
@@ -12447,16 +12505,19 @@
         "required": ["accession", "entryName", "name", "organism", "matchedBy"],
         "properties": {
           "accession": {
-            "type": "string"
+            "type": "string",
+            "description": "Primary UniProt accession. Pass it as `protein` to look this entry up."
           },
           "entryName": {
             "type": "string"
           },
           "gene": {
-            "type": "string"
+            "type": "string",
+            "description": "Primary gene name. Left out when UniProt gives none."
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Recommended full protein name."
           },
           "organism": {
             "$ref": "#/components/schemas/ResearchProteinOrganism"
@@ -12468,7 +12529,7 @@
       },
       "ResearchProteinFoundResponse": {
         "type": "object",
-        "description": "The identifier names one entry.",
+        "title": "Found",
         "required": ["success", "release", "match", "protein", "notice"],
         "properties": {
           "success": {
@@ -12476,25 +12537,24 @@
           },
           "release": {
             "type": "string",
-            "description": "UniProt release the data comes from.",
-            "example": "2026_04"
+            "description": "UniProt release the lookup reads, such as `2026_04`."
           },
           "match": {
             "type": "string",
             "enum": ["found"]
           },
           "protein": {
-            "$ref": "#/components/schemas/ResearchProtein"
+            "$ref": "#/components/schemas/ResearchProteinEntry"
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and license of the data."
+            "description": "Attribution and license notice for the UniProt data."
           }
         }
       },
       "ResearchProteinAmbiguousResponse": {
         "type": "object",
-        "description": "The identifier names more than one entry, or only entries of another organism. Look up one candidate by its accession.",
+        "title": "Ambiguous",
         "required": [
           "success",
           "release",
@@ -12509,8 +12569,7 @@
           },
           "release": {
             "type": "string",
-            "description": "UniProt release the data comes from.",
-            "example": "2026_04"
+            "description": "UniProt release the lookup reads, such as `2026_04`."
           },
           "match": {
             "type": "string",
@@ -12521,22 +12580,23 @@
             "maxItems": 10,
             "items": {
               "$ref": "#/components/schemas/ResearchProteinCandidate"
-            }
+            },
+            "description": "Up to 10 matching entries, those in the requested organism first, then by accession. Candidates carry no annotation."
           },
           "candidateCount": {
             "type": "integer",
-            "minimum": 0,
-            "description": "Number of matching entries, which can exceed the candidates listed."
+            "minimum": 1,
+            "description": "Full number of matching entries."
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and license of the data."
+            "description": "Attribution and license notice for the UniProt data."
           }
         }
       },
       "ResearchProteinNotFoundResponse": {
         "type": "object",
-        "description": "No entry matches the identifier.",
+        "title": "Not found",
         "required": ["success", "release", "match", "notice"],
         "properties": {
           "success": {
@@ -12544,8 +12604,7 @@
           },
           "release": {
             "type": "string",
-            "description": "UniProt release the data comes from.",
-            "example": "2026_04"
+            "description": "UniProt release the lookup reads, such as `2026_04`."
           },
           "match": {
             "type": "string",
@@ -12553,7 +12612,7 @@
           },
           "notice": {
             "type": "string",
-            "description": "Source, copyright and license of the data."
+            "description": "Attribution and license notice for the UniProt data."
           }
         }
       },
