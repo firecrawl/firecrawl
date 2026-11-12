@@ -132,6 +132,7 @@ module Firecrawl
     end
 
     # Look up a protein's UniProt location, function and GO cellular-component terms.
+    # The response's "notice" is the UniProt credit and license. Show it with the results.
     #
     # @param protein [String] UniProt accession, entry name, gene symbol or protein name
     # @param options [Hash] optional query parameters

@@ -184,6 +184,8 @@ final class FirecrawlClient
     /**
      * Look up a protein's UniProt location, function and GO cellular-component terms.
      *
+     * The response's `notice` is the UniProt credit and license. Show it with the results.
+     *
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
