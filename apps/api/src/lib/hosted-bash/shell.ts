@@ -7,12 +7,13 @@ import {
   type FirecrawlCaller,
 } from "./firecrawl-command";
 
-export const TIMEOUT_MS = 50_000;
+export const TIMEOUT_MS = 30_000;
 export const MAX_OUTPUT_BYTES = 256_000;
 export const MAX_FIRECRAWL_CALLS = 25;
-const MAX_FILESYSTEM_BYTES = 32 * 1024 * 1024;
+const MIB = 1024 * 1024;
 
-// Text tools only: no archives, databases, Python or JavaScript to keep bounded.
+// Text tools only: no archives, databases, Python or JavaScript. bash, sh, awk
+// and xargs still run commands, under the same execution limits.
 const COMMANDS: CommandName[] = [
   "echo",
   "cat",
@@ -59,7 +60,6 @@ const COMMANDS: CommandName[] = [
   "sh",
   "jq",
   "base64",
-  "diff",
   "date",
   "sleep",
   "seq",
@@ -116,9 +116,16 @@ export async function runShell(
     customCommands: [firecrawlCommand(client)],
     // Callers are anonymous and commands run inside the API process.
     executionLimitProfile: "hardened",
+    // The string and memory caps keep one request from holding the event loop
+    // and hundreds of MB; the deadline counts the wait for the docs list.
     executionLimits: {
-      maxExecutionTimeMs: TIMEOUT_MS,
-      maxFileSystemBytes: MAX_FILESYSTEM_BYTES,
+      maxExecutionTimeMs: Math.max(1_000, TIMEOUT_MS - (Date.now() - started)),
+      maxFileSystemBytes: 32 * MIB,
+      maxStringLength: MIB,
+      maxHeredocSize: MIB,
+      maxOutputSize: 2 * MIB,
+      maxLiveBytes: 64 * MIB,
+      maxInputBytes: 32 * MIB,
     },
   });
 

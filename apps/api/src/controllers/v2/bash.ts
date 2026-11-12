@@ -148,8 +148,12 @@ function track(
     ...(run
       ? {
           subcommands: [
-            ...run.command.matchAll(/\bfirecrawl\s+([a-z][\w-]*)/g),
-          ].map(match => (CLI_COMMANDS.has(match[1]) ? match[1] : "other")),
+            ...new Set(
+              [...run.command.matchAll(/\bfirecrawl\s+([a-z][\w-]*)/g)].map(
+                match => (CLI_COMMANDS.has(match[1]) ? match[1] : "other"),
+              ),
+            ),
+          ],
           exit_code: run.result.exitCode,
           duration_ms: run.result.durationMs,
           endpoints: run.result.endpoints,

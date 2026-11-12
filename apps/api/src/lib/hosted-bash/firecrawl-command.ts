@@ -12,6 +12,8 @@ const SCRAPE_FORMATS = [
   "images",
   "summary",
 ];
+const API_KEY_FLAG =
+  "--api-key isn't accepted in the hosted shell. Send your key in the HTTP request's Authorization: Bearer fc-... header instead";
 const KEY_NEEDED =
   "Firecrawl's free tier without an API key isn't available from your network (it needs an IPv4 address). Create a free API key at https://www.firecrawl.dev/signin and send it as Authorization: Bearer fc-...";
 
@@ -66,12 +68,26 @@ export class FirecrawlClient {
       // Keyless refuses an IPv6 caller with a bare 401.
       const bare = !json?.error || json.error === "Unauthorized";
       if (!apiKey && res.status === 401 && bare) throw new Error(KEY_NEEDED);
-      throw new Error(
-        json?.error || `Firecrawl request failed (HTTP ${res.status})`,
-      );
+      throw new Error(apiError(json, res.status));
     }
     return json;
   }
+}
+
+/** The API's error, with the first few validation issues it lists. */
+function apiError(json: any, status: number): string {
+  const message = json?.error || `Firecrawl request failed (HTTP ${status})`;
+  const issues: string[] = Array.isArray(json?.details)
+    ? json.details
+        .slice(0, 3)
+        .filter((d: any) => typeof d?.message === "string")
+        .map((d: any) =>
+          Array.isArray(d.path) && d.path.length
+            ? `${d.path.join(".")}: ${d.message}`
+            : d.message,
+        )
+    : [];
+  return issues.length ? `${message} (${issues.join("; ")})` : message;
 }
 
 export const FIRECRAWL_HELP = `Usage: firecrawl [command] [options]
@@ -182,6 +198,7 @@ function parseArgs(args: string[], spec: FlagSpec) {
       continue;
     }
     const raw = match[1] ?? match[2];
+    if (raw === "api-key" || raw === "k") throw new Error(API_KEY_FLAG);
     const name = spec.aliases[raw] ?? raw;
     const shown = match[1] ? `--${raw}` : `-${raw}`;
     if (spec.booleans.includes(name)) {
@@ -398,9 +415,13 @@ async function scrape(c: Context, args: string[]): Promise<string> {
     SCRAPE_FORMATS.includes(word),
   );
   const urls = [
-    ...positional.filter(word => !SCRAPE_FORMATS.includes(word)),
-    ...(text(flags, "url") ? [text(flags, "url") as string] : []),
-  ].map(url => (/^https?:\/\//i.test(url) ? url : `https://${url}`));
+    ...new Set(
+      [
+        ...positional.filter(word => !SCRAPE_FORMATS.includes(word)),
+        ...(text(flags, "url") ? [text(flags, "url") as string] : []),
+      ].map(url => (/^https?:\/\//i.test(url) ? url : `https://${url}`)),
+    ),
+  ];
   if (!urls.length) {
     throw new Error(
       "Provide a URL to scrape, e.g. firecrawl scrape https://example.com",
@@ -470,7 +491,10 @@ async function scrape(c: Context, args: string[]): Promise<string> {
 
 export function firecrawlCommand(client: FirecrawlClient) {
   return defineCommand("firecrawl", async (argv, ctx) => {
-    const [name, ...rest] = argv;
+    // As in the CLI, `firecrawl <url>` is short for `firecrawl scrape <url>`.
+    const [name, ...rest] = /^https?:\/\//i.test(argv[0] ?? "")
+      ? ["scrape", ...argv]
+      : argv;
     const stderr: string[] = [];
     const result = (stdout: string, exitCode: number) => ({
       stdout,
