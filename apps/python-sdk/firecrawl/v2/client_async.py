@@ -96,6 +96,38 @@ from .watcher_async import AsyncWatcher
 _ABANDONED_CRAWL_CANCEL_TIMEOUT = 10.0
 
 
+# audit_metadata is a top-level batch field that methods.aio.batch reads itself.
+_BATCH_SCRAPE_OPTION_KEYS = _SCRAPE_OPTION_KEYS - {"audit_metadata"}
+
+
+def _fold_batch_scrape_options(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Move flat scrape kwargs into ``options`` so the batch request builder sends them."""
+    kwargs = dict(kwargs)
+    if "wait_timeout" in kwargs:
+        raise TypeError(
+            "AsyncFirecrawl.start_batch_scrape() does not wait for the job, so it takes no "
+            "wait_timeout. To wait, use batch_scrape(..., timeout=<seconds>)."
+        )
+    page_timeout = kwargs.pop("page_timeout", None)
+    if page_timeout is not None:
+        if kwargs.get("timeout") is not None and kwargs["timeout"] != page_timeout:
+            raise ValueError("Pass either timeout or page_timeout, not both with different values")
+        kwargs["timeout"] = page_timeout
+
+    scrape_kwargs = {
+        k: kwargs.pop(k) for k in list(kwargs) if k in _BATCH_SCRAPE_OPTION_KEYS
+    }
+    scrape_kwargs = {k: v for k, v in scrape_kwargs.items() if v is not None}
+    if scrape_kwargs:
+        if kwargs.get("options") is not None:
+            raise ValueError(
+                "Pass scrape options either as options=ScrapeOptions(...) or as keyword "
+                f"arguments, not both (got options and {', '.join(sorted(scrape_kwargs))})"
+            )
+        kwargs["options"] = ScrapeOptions(**scrape_kwargs)
+    return kwargs
+
+
 def _consume_task_outcome(task: "asyncio.Future[Any]") -> None:
     """Mark a finished task's exception as read, so asyncio does not log it."""
     if not task.cancelled():
@@ -772,7 +804,16 @@ class AsyncFirecrawlClient:
         )
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
-        return await async_batch.start_batch_scrape(self.async_http_client, urls, **kwargs)
+        """Start a batch scrape job (non-blocking).
+
+        Accepts the same keyword arguments as the sync ``start_batch_scrape``. Scrape
+        options such as ``formats`` and ``only_main_content`` can be passed flat or as
+        ``options=ScrapeOptions(...)``, but not both. ``timeout`` (or its alias
+        ``page_timeout``) is the per-page scrape limit in milliseconds.
+        """
+        return await async_batch.start_batch_scrape(
+            self.async_http_client, urls, **_fold_batch_scrape_options(kwargs)
+        )
 
     async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> Any:
         start = asyncio.get_event_loop().time()
@@ -785,12 +826,22 @@ class AsyncFirecrawlClient:
             await asyncio.sleep(poll_interval)
 
     async def batch_scrape(self, urls: List[str], **kwargs) -> Any:
-        # waiter wrapper
-        start = await self.start_batch_scrape(urls, **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout")})
-        job_id = start.id
-        poll_interval = kwargs.get("poll_interval", 2)
-        timeout = kwargs.get("timeout")
-        return await self.wait_batch_scrape(job_id, poll_interval=poll_interval, timeout=timeout)
+        """Start a batch scrape job and wait until it finishes.
+
+        Takes the ``start_batch_scrape`` keyword arguments plus ``poll_interval`` and
+        ``timeout``. Unlike the sync client, ``timeout`` here bounds the whole wait, in
+        seconds. Use ``page_timeout`` for the per-page scrape limit in milliseconds.
+        """
+        if "wait_timeout" in kwargs:
+            raise TypeError(
+                "AsyncFirecrawl.batch_scrape() takes no wait_timeout. Unlike the sync client, "
+                "timeout= is the whole-batch wait in seconds here; use page_timeout= for the "
+                "per-page scrape limit in milliseconds."
+            )
+        poll_interval = kwargs.pop("poll_interval", 2)
+        timeout = kwargs.pop("timeout", None)
+        start = await self.start_batch_scrape(urls, **kwargs)
+        return await self.wait_batch_scrape(start.id, poll_interval=poll_interval, timeout=timeout)
 
     async def get_batch_scrape_status(
         self, 

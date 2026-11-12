@@ -32,6 +32,22 @@ async def test_async_batch_wait_minimal(api_key, api_url):
 
 
 @pytest.mark.asyncio
+async def test_async_batch_wait_honors_flat_scrape_options(api_key, api_url):
+    client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
+    job = await client.batch_scrape(
+        ["https://docs.firecrawl.dev"],
+        formats=["html"],
+        page_timeout=60000,
+        poll_interval=1,
+        timeout=120,
+    )
+    assert job.status == "completed"
+    assert job.data
+    assert all(doc.html for doc in job.data)
+    assert all(doc.markdown is None for doc in job.data)
+
+
+@pytest.mark.asyncio
 async def test_async_batch_wait_with_all_params(api_key, api_url):
     client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     json_schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
