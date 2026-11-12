@@ -217,7 +217,7 @@ public class DeveloperSearchOptions
     /// <summary>Passages per result, 1 to 5 (default 1).</summary>
     public int? Passages { get; set; }
 
-    /// <summary>Result kinds: "doc", "issue", "pull_request", "readme" (default all).</summary>
+    /// <summary>Result kinds: "doc", "issue", "pull_request", "readme", "discussion", "release" (default all).</summary>
     public List<string>? Types { get; set; }
 
     /// <summary>GitHub owner/name filters, at most 20.</summary>

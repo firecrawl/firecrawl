@@ -135,7 +135,7 @@ public final class ResearchModels {
         public Integer k;
         /** Passages per result, 1 to 5 (default 1). */
         public Integer passages;
-        /** Result kinds: "doc", "issue", "pull_request", "readme" (default all). */
+        /** Result kinds: "doc", "issue", "pull_request", "readme", "discussion", "release" (default all). */
         public List<String> types;
         /** GitHub owner/name filters, at most 20. */
         public List<String> repos;

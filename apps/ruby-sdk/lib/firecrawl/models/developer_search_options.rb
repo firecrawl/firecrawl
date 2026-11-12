@@ -6,7 +6,7 @@ module Firecrawl
     #
     # - k: total ranked results, 1 to 100 (default 10)
     # - passages: passages per result, 1 to 5 (default 1)
-    # - types: result kinds, any of "doc", "issue", "pull_request", "readme"
+    # - types: result kinds, any of "doc", "issue", "pull_request", "readme", "discussion", "release"
     # - repos: GitHub owner/name filters, at most 20
     # - sources: developer documentation source IDs, at most 20
     # - language: one case-insensitive GitHub Linguist primary language

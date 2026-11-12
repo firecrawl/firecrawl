@@ -320,7 +320,7 @@ type DeveloperSearchOptions struct {
 	K *int `json:"k,omitempty"`
 	// Passages is the number of passages per result, 1 to 5 (default 1).
 	Passages *int `json:"passages,omitempty"`
-	// Types limits result kinds: "doc", "issue", "pull_request", "readme".
+	// Types limits result kinds: "doc", "issue", "pull_request", "readme", "discussion", "release".
 	Types []string `json:"types,omitempty"`
 	// Repos filters by GitHub owner/name, at most 20.
 	Repos []string `json:"repos,omitempty"`
