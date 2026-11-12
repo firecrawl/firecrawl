@@ -65,7 +65,6 @@ export class WebCrawler {
   private baseUrl: string;
   private includes: string[];
   private excludes: string[];
-  private maxCrawledLinks: number;
   private maxCrawledDepth: number;
   private visited: Set<string> = new Set();
   private crawledUrls: Map<string, string> = new Map();
@@ -73,8 +72,6 @@ export class WebCrawler {
   private robotsTxt: string;
   private robotsTxtUrl: string;
   public robots: Robot;
-  private robotsCrawlDelay: number | null = null;
-  private generateImgAltText: boolean;
   private allowBackwardCrawling: boolean;
   private allowExternalContentLinks: boolean;
   private allowSubdomains: boolean;
@@ -98,9 +95,7 @@ export class WebCrawler {
     baseUrl,
     includes,
     excludes,
-    maxCrawledLinks = 10000,
     limit = 10000,
-    generateImgAltText = false,
     maxCrawledDepth = 10,
     allowBackwardCrawling = false,
     allowExternalContentLinks = false,
@@ -121,9 +116,7 @@ export class WebCrawler {
     baseUrl?: string;
     includes?: string[];
     excludes?: string[];
-    maxCrawledLinks?: number;
     limit?: number;
-    generateImgAltText?: boolean;
     maxCrawledDepth?: number;
     allowBackwardCrawling?: boolean;
     allowExternalContentLinks?: boolean;
@@ -148,10 +141,7 @@ export class WebCrawler {
     this.robotsTxt = "";
     this.robotsTxtUrl = `${this.baseUrl}${this.baseUrl.endsWith("/") ? "" : "/"}robots.txt`;
     this.robots = robotsParser(this.robotsTxtUrl, this.robotsTxt);
-    // Deprecated, use limit instead
-    this.maxCrawledLinks = maxCrawledLinks ?? limit;
     this.maxCrawledDepth = maxCrawledDepth ?? 10;
-    this.generateImgAltText = generateImgAltText ?? false;
     this.allowBackwardCrawling = allowBackwardCrawling ?? false;
     this.allowExternalContentLinks = allowExternalContentLinks ?? false;
     this.allowSubdomains = allowSubdomains ?? false;
@@ -545,11 +535,6 @@ export class WebCrawler {
     const checker = createRobotsChecker(this.initialUrl, txt);
     this.robots = checker.robots;
     this.robotsTxtUrl = checker.robotsTxtUrl;
-    const delay = this.robotsUserAgent
-      ? this.robots.getCrawlDelay(this.robotsUserAgent)
-      : this.robots.getCrawlDelay("FireCrawlAgent") ||
-        this.robots.getCrawlDelay("FirecrawlAgent");
-    this.robotsCrawlDelay = delay !== undefined ? delay : null;
 
     const sitemaps = this.robots.getSitemaps();
     this.logger.debug("Imported robots.txt", {
@@ -558,12 +543,7 @@ export class WebCrawler {
       robotsTxtLength: txt.length,
       sitemapsFound: sitemaps.length,
       sitemaps: sitemaps,
-      crawlDelay: this.robotsCrawlDelay,
     });
-  }
-
-  public getRobotsCrawlDelay(): number | null {
-    return this.robotsCrawlDelay;
   }
 
   public async tryGetSitemap(

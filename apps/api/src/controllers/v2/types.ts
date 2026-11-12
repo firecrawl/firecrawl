@@ -2224,10 +2224,8 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
   return {
     includes: x.includePaths,
     excludes: x.excludePaths,
-    maxCrawledLinks: x.limit,
     maxDepth: 9999,
     limit: x.limit,
-    generateImgAltText: false,
     allowBackwardCrawling: x.crawlEntireDomain,
     allowExternalContentLinks: x.allowExternalLinks,
     allowSubdomains: x.allowSubdomains,
