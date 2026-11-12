@@ -1,4 +1,9 @@
-import { getNextMonitorRunAt, validateMonitorCron } from "./cron";
+import { describe, expect, it } from "vitest";
+import {
+  getNextMonitorRunAt,
+  parseMonitorScheduleText,
+  validateMonitorCron,
+} from "./cron";
 
 // Minute-by-minute reference: the previous implementation, kept here so the
 // jump-based search is checked against it over short horizons (it costs one
@@ -162,5 +167,103 @@ describe("validateMonitorCron", () => {
     expect(() => validateMonitorCron("*/4 * * * *")).toThrow(
       "must not run more often than every 5 minutes",
     );
+  });
+});
+
+describe("parseMonitorScheduleText", () => {
+  it("normalizes minute offset to interval phase so runs are not skipped at hour boundary", () => {
+    // Offset that is an exact multiple of the interval (phase 0)
+    expect(parseMonitorScheduleText("every 5 minutes starting at :55")).toBe(
+      "*/5 * * * *",
+    );
+    expect(parseMonitorScheduleText("every 10 minutes starting at :20")).toBe(
+      "*/10 * * * *",
+    );
+    expect(parseMonitorScheduleText("every 30 minutes starting at :0")).toBe(
+      "*/30 * * * *",
+    );
+
+    // Offset with non-zero phase
+    expect(parseMonitorScheduleText("every 30 minutes starting at :45")).toBe(
+      "15-59/30 * * * *",
+    );
+    expect(parseMonitorScheduleText("every 15 minutes starting at :37")).toBe(
+      "7-59/15 * * * *",
+    );
+    expect(parseMonitorScheduleText("every 5 minutes starting at :2")).toBe(
+      "2-59/5 * * * *",
+    );
+    expect(parseMonitorScheduleText("every 5 minutes starting at :57")).toBe(
+      "2-59/5 * * * *",
+    );
+  });
+
+  it("calculates correct consecutive runs across hour boundary for offset minute schedule", () => {
+    const cron = parseMonitorScheduleText("every 5 minutes starting at :55");
+    const from = new Date("2026-10-15T10:55:00Z");
+    const next = getNextMonitorRunAt(cron, from, "UTC");
+    expect(next.toISOString()).toBe("2026-10-15T11:00:00.000Z");
+
+    const second = getNextMonitorRunAt(cron, next, "UTC");
+    expect(second.toISOString()).toBe("2026-10-15T11:05:00.000Z");
+  });
+
+  it("calculates correct consecutive runs for 30-minute interval with :45 offset", () => {
+    const cron = parseMonitorScheduleText("every 30 minutes starting at :45");
+    const from = new Date("2026-10-15T10:45:00Z");
+    const next = getNextMonitorRunAt(cron, from, "UTC");
+    expect(next.toISOString()).toBe("2026-10-15T11:15:00.000Z");
+
+    const second = getNextMonitorRunAt(cron, next, "UTC");
+    expect(second.toISOString()).toBe("2026-10-15T11:45:00.000Z");
+  });
+
+  it("handles non-UTC time zones and daily/hourly phrases correctly", () => {
+    // Kolkata is UTC+5:30, so a schedule anchored at local :07 lands on UTC :37.
+    // Picking an offset that is a whole number of hours (New York) would leave
+    // the same minute sequence in both zones and the assertion could not tell
+    // whether the time zone was consulted at all.
+    const localMinute = (d: Date) =>
+      Number(
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata",
+          minute: "2-digit",
+          hour12: false,
+        }).format(d),
+      );
+
+    // A daily anchor makes the zone decisive: 09:00 in Kolkata is 03:30 UTC,
+    // so an implementation that matched the expression against UTC would fire
+    // at a different instant and the assertion below would fail.
+    const daily = parseMonitorScheduleText("daily at 9:00");
+    expect(getNextMonitorRunAt(daily, new Date("2026-10-15T10:37:00Z"), "Asia/Kolkata").toISOString()).toBe(
+      "2026-10-16T03:30:00.000Z",
+    );
+    expect(getNextMonitorRunAt(daily, new Date("2026-10-15T10:37:00Z"), "UTC").toISOString()).toBe(
+      "2026-10-16T09:00:00.000Z",
+    );
+
+    const cron = parseMonitorScheduleText("every 15 minutes starting at :07");
+    const from = new Date("2026-10-15T10:37:00Z");
+    const next = getNextMonitorRunAt(cron, from, "Asia/Kolkata");
+    expect(next.toISOString()).toBe("2026-10-15T10:52:00.000Z");
+    expect(localMinute(next)).toBe(22);
+
+    // Default hourly and daily parsing unchanged
+    expect(parseMonitorScheduleText("hourly")).toBe("0 * * * *");
+    expect(parseMonitorScheduleText("daily at 9:00 am")).toBe("0 9 * * *");
+    expect(parseMonitorScheduleText("daily at 2:30 pm")).toBe("30 14 * * *");
+  });
+
+  it("rejects invalid intervals and minute values", () => {
+    expect(() => parseMonitorScheduleText("every 0 minutes")).toThrow(
+      "Minute interval must be between 1 and 60",
+    );
+    expect(() => parseMonitorScheduleText("every 7 minutes")).toThrow(
+      "Minute interval must divide evenly into 60",
+    );
+    expect(() =>
+      parseMonitorScheduleText("every 5 minutes starting at :60"),
+    ).toThrow("Schedule start minute must be between 0 and 59");
   });
 });
