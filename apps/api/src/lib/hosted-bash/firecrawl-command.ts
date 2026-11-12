@@ -4,6 +4,21 @@ const ORIGIN = "bash";
 const INTEGRATION = "_firecrawl-bash";
 const INSTALL = "npx -y firecrawl-cli@latest init";
 const SEARCH_SOURCES = ["web", "images", "news"];
+const SEARCH_CATEGORIES = ["research", "pdf", "developer", "gov"];
+// Every format the CLI accepts; the hosted shell serves SCRAPE_FORMATS of them.
+const CLI_FORMATS = [
+  "markdown",
+  "html",
+  "rawHtml",
+  "links",
+  "images",
+  "screenshot",
+  "summary",
+  "changeTracking",
+  "json",
+  "attributes",
+  "branding",
+];
 const SCRAPE_FORMATS = [
   "markdown",
   "html",
@@ -21,9 +36,17 @@ export interface FirecrawlCaller {
   /** This server's own address: calls go through the same routes a REST caller uses. */
   baseUrl: string;
   ip: string | null;
-  apiKey: string | null;
+  /** The caller's Authorization header as sent, so the API parses it as it would directly. */
+  authorization: string | null;
+  /** Caller headers kept on each call: User-Agent and a World ID credential. */
+  headers: Record<string, string>;
   maxCalls: number;
+  /** When the command must be done; each call asks the API to finish before it. */
+  deadline: number;
 }
+
+// Room to read the response and print it before the command's deadline.
+const CALL_MARGIN_MS = 3_000;
 
 type Endpoint = "search" | "scrape";
 
@@ -39,24 +62,32 @@ export class FirecrawlClient {
     body: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<any> {
-    const { baseUrl, ip, apiKey, maxCalls } = this.caller;
+    const { baseUrl, ip, authorization, headers, maxCalls, deadline } =
+      this.caller;
     if (this.endpoints.length >= maxCalls) {
       throw new Error(
         `call limit reached (${maxCalls} Firecrawl calls per command)`,
       );
     }
+    // A call the API is still working on at the deadline would be billed but lost.
+    const timeout = deadline - Date.now() - CALL_MARGIN_MS;
+    if (timeout < 1_000) {
+      throw new Error("not enough time left before the command's deadline");
+    }
     this.endpoints.push(endpoint);
     const res = await fetch(`${baseUrl}/v2/${endpoint}`, {
       method: "POST",
       headers: {
+        ...headers,
         "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        ...(authorization ? { Authorization: authorization } : {}),
         // This request arrives from loopback, a trusted hop under
         // EXPRESS_TRUST_PROXY, so auth and quotas see the caller's IP.
         ...(ip ? { "X-Forwarded-For": ip } : {}),
       },
       body: JSON.stringify({
         ...body,
+        timeout,
         origin: ORIGIN,
         integration: INTEGRATION,
       }),
@@ -67,7 +98,9 @@ export class FirecrawlClient {
       this.failedEndpoints.push(endpoint);
       // Keyless refuses an IPv6 caller with a bare 401.
       const bare = !json?.error || json.error === "Unauthorized";
-      if (!apiKey && res.status === 401 && bare) throw new Error(KEY_NEEDED);
+      if (!authorization && res.status === 401 && bare) {
+        throw new Error(KEY_NEEDED);
+      }
       throw new Error(apiError(json, res.status));
     }
     return json;
@@ -92,14 +125,14 @@ function apiError(json: any, status: number): string {
 
 export const FIRECRAWL_HELP = `Usage: firecrawl [command] [options]
 
-A hosted subset of the Firecrawl CLI. The flags and output match the real CLI
+A hosted subset of the Firecrawl CLI. The flags and output follow the real CLI
 (/docs/sdks/cli.md); install it for everything else: ${INSTALL}
 
 Commands:
   search <query>        Search the web
     --limit <number>              Maximum number of results (default: 5)
     --sources <sources>           Comma-separated sources: web, images, news (default: web)
-    --categories <categories>     Comma-separated categories: github, research, pdf
+    --categories <categories>     Comma-separated categories: ${SEARCH_CATEGORIES.join(", ")}
     --tbs <value>                 Time-based search: qdr:h, qdr:d, qdr:w, qdr:m, qdr:y
     --location <location>         Location for geo-targeting
     --country <code>              ISO country code for geo-targeting
@@ -255,8 +288,7 @@ async function output(c: Context, content: string, path: string | undefined) {
 }
 
 const wantsJson = (flags: Flags, path: string | undefined) =>
-  Boolean(flags.json || flags.pretty) ||
-  Boolean(path?.toLowerCase().endsWith(".json"));
+  Boolean(flags.json) || Boolean(path?.toLowerCase().endsWith(".json"));
 
 const stringify = (flags: Flags, value: unknown) =>
   flags.pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value);
@@ -313,7 +345,8 @@ async function search(c: Context, args: string[]): Promise<string> {
   const { positional, flags } = parseArgs(args, SEARCH_FLAGS);
   const query = positional.join(" ");
   if (!query) throw new Error("missing required argument 'query'");
-  const sources = list(text(flags, "sources")) ?? ["web"];
+  const named = list(text(flags, "sources"))?.map(s => s.toLowerCase());
+  const sources = named?.length ? [...new Set(named)] : ["web"];
   for (const source of sources) {
     if (!SEARCH_SOURCES.includes(source)) {
       throw new Unsupported(
@@ -321,7 +354,19 @@ async function search(c: Context, args: string[]): Promise<string> {
       );
     }
   }
-  const categories = list(text(flags, "categories"));
+  const categories = list(text(flags, "categories"))?.map(c => c.toLowerCase());
+  for (const category of categories ?? []) {
+    if (category === "github") {
+      throw new Error(
+        "The github category was removed. Use --categories developer",
+      );
+    }
+    if (!SEARCH_CATEGORIES.includes(category)) {
+      throw new Error(
+        `Invalid category "${category}". Valid categories are: ${SEARCH_CATEGORIES.join(", ")}`,
+      );
+    }
+  }
   const scrapeFormats = list(text(flags, "scrape-formats")) ?? ["markdown"];
   const optional = (key: string, flag = key) =>
     text(flags, flag) ? { [key]: text(flags, flag) } : {};
@@ -396,6 +441,66 @@ function rawContent(data: any, format: string): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+/** The CLI's parseFormats: comma-separated, any case, in the API's casing. */
+function parseFormats(value: string): string[] {
+  const formats = value
+    .split(",")
+    .map(format => format.trim())
+    .filter(Boolean)
+    .map(format => {
+      const known = CLI_FORMATS.find(
+        name => name.toLowerCase() === format.toLowerCase(),
+      );
+      if (!known) {
+        throw new Error(
+          `Invalid format(s): ${format}. Valid formats are: ${CLI_FORMATS.join(", ")}`,
+        );
+      }
+      return known;
+    });
+  return [...new Set(formats)];
+}
+
+function isFormatList(value: string): boolean {
+  try {
+    return parseFormats(value).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const normalizeUrl = (url: string) =>
+  /^https?:\/\//i.test(url) ? url : `https://${url}`;
+
+/** The CLI's isScrapeUrl: an http(s) URL, or a host with a dot, localhost or an IPv6 literal. */
+function isScrapeUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) {
+    const host = value.split(/[/?#]/, 1)[0];
+    const hostLike =
+      host.includes(".") ||
+      /^localhost(?::\d+)?$/i.test(host) ||
+      host.startsWith("[");
+    if (!hostLike) return false;
+  }
+  try {
+    return Boolean(new URL(normalizeUrl(value)).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** The CLI's isUrl, which decides when `firecrawl <url>` means scrape. */
+function isShorthandUrl(value: string): boolean {
+  if (/^https?:\/\//i.test(value)) return true;
+  return (
+    value.includes(".") &&
+    !value.startsWith("-") &&
+    /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(\/.*)?$/.test(
+      value,
+    )
+  );
+}
+
 function urlToFilename(url: string): string {
   try {
     const parsed = new URL(url);
@@ -409,30 +514,41 @@ function urlToFilename(url: string): string {
 
 async function scrape(c: Context, args: string[]): Promise<string> {
   const { positional, flags } = parseArgs(args, SCRAPE_FLAGS);
-  // The CLI also takes formats as trailing words: `firecrawl scrape example.com markdown`.
-  const positionalFormats = positional.filter(word =>
-    SCRAPE_FORMATS.includes(word),
-  );
-  const urls = [
-    ...new Set(
-      [
-        ...positional.filter(word => !SCRAPE_FORMATS.includes(word)),
-        ...(text(flags, "url") ? [text(flags, "url") as string] : []),
-      ].map(url => (/^https?:\/\//i.test(url) ? url : `https://${url}`)),
-    ),
-  ];
+  // As in the CLI, each word is a URL or formats: `firecrawl scrape example.com markdown,links`.
+  const urls: string[] = [];
+  const positionalFormats: string[] = [];
+  for (const word of [
+    ...positional,
+    ...(text(flags, "url") ? [text(flags, "url") as string] : []),
+  ]) {
+    if (isScrapeUrl(word)) {
+      const url = normalizeUrl(word);
+      if (!urls.includes(url)) urls.push(url);
+    } else if (isFormatList(word))
+      positionalFormats.push(...parseFormats(word));
+    else {
+      throw new Error(
+        `${JSON.stringify(word)} isn't a URL. For a website, use an http(s) URL, for example https://example.com`,
+      );
+    }
+  }
   if (!urls.length) {
     throw new Error(
       "Provide a URL to scrape, e.g. firecrawl scrape https://example.com",
     );
   }
+  if (flags["only-main-content"] && flags["full-page"]) {
+    throw new Error("Use either --only-main-content or --full-page, not both");
+  }
   const formats = positionalFormats.length
-    ? positionalFormats
+    ? [...new Set(positionalFormats)]
     : flags.html
       ? ["html"]
       : flags.summary
         ? ["summary"]
-        : (list(text(flags, "format")) ?? ["markdown"]);
+        : text(flags, "format")
+          ? parseFormats(text(flags, "format") as string)
+          : ["markdown"];
   for (const format of formats) {
     if (!SCRAPE_FORMATS.includes(format)) {
       throw new Unsupported(
@@ -491,7 +607,7 @@ async function scrape(c: Context, args: string[]): Promise<string> {
 export function firecrawlCommand(client: FirecrawlClient) {
   return defineCommand("firecrawl", async (argv, ctx) => {
     // As in the CLI, `firecrawl <url>` is short for `firecrawl scrape <url>`.
-    const [name, ...rest] = /^https?:\/\//i.test(argv[0] ?? "")
+    const [name, ...rest] = isShorthandUrl(argv[0] ?? "")
       ? ["scrape", ...argv]
       : argv;
     const stderr: string[] = [];

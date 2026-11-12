@@ -1,147 +1,140 @@
-import { Bash, type CommandName } from "just-bash";
+import type { InitialFiles } from "just-bash";
+import { fork } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { docsFiles } from "./docs";
-import {
-  FIRECRAWL_HELP,
-  FirecrawlClient,
-  firecrawlCommand,
-  type FirecrawlCaller,
-} from "./firecrawl-command";
+import type { FirecrawlCaller } from "./firecrawl-command";
+import { MAX_FIRECRAWL_CALLS, TIMEOUT_MS } from "./limits";
+import type {
+  ParentMessage,
+  SandboxResult,
+  ShellJob,
+  WorkerMessage,
+} from "./shell-worker";
 
-export const TIMEOUT_MS = 30_000;
-export const MAX_OUTPUT_BYTES = 256_000;
-export const MAX_FIRECRAWL_CALLS = 25;
-const MIB = 1024 * 1024;
+// Compiled, this is shell-worker.js; under tsx or vitest it is the .ts source.
+const WORKER_FILE = join(__dirname, `shell-worker${extname(__filename)}`);
+const MAX_SHELLS = 4;
+const HEAP_MB = 192;
+// Under tsx the transpiler alone holds about 200 MB.
+const MAX_RSS_KB = (WORKER_FILE.endsWith(".ts") ? 576 : 320) * 1024;
+const RSS_POLL_MS = 50;
+const KILL_GRACE_MS = 2_000;
+const DOCS_WAIT_MS = 5_000;
 
-// Text tools only: no archives, databases, Python or JavaScript. bash, sh, awk
-// and xargs still run commands, under the same execution limits.
-const COMMANDS: CommandName[] = [
-  "echo",
-  "cat",
-  "printf",
-  "ls",
-  "mkdir",
-  "touch",
-  "rm",
-  "cp",
-  "mv",
-  "pwd",
-  "head",
-  "tail",
-  "wc",
-  "stat",
-  "grep",
-  "fgrep",
-  "egrep",
-  "rg",
-  "sed",
-  "awk",
-  "sort",
-  "uniq",
-  "comm",
-  "cut",
-  "paste",
-  "tr",
-  "rev",
-  "nl",
-  "fold",
-  "column",
-  "join",
-  "tee",
-  "find",
-  "basename",
-  "dirname",
-  "tree",
-  "du",
-  "env",
-  "xargs",
-  "true",
-  "false",
-  "bash",
-  "sh",
-  "jq",
-  "base64",
-  "date",
-  "sleep",
-  "seq",
-  "expr",
-  "tac",
-  "which",
-  "help",
-];
+let running = 0;
 
-const README = `# Firecrawl bash
+/** Every shell slot on this server is taken. */
+export class ShellBusyError extends Error {}
 
-A stateless virtual shell with a hosted subset of the Firecrawl CLI as \`firecrawl\`.
-Each request starts from this fresh filesystem; nothing persists between requests.
-
-  /README.md   this file
-  /docs/       the live Firecrawl docs (docs.firecrawl.dev) as markdown, fetched when read.
-               Start with /docs/llms.txt, or grep -l -r <term> /docs/features /docs/sdks
-
-${FIRECRAWL_HELP}`;
-
-export interface ShellResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
+export interface ShellResult extends SandboxResult {
   durationMs: number;
-  truncated: boolean;
-  /** Firecrawl endpoints the command called, and the ones that failed. */
-  endpoints: string[];
-  failedEndpoints: string[];
 }
 
-function truncate(text: string): [string, boolean] {
-  const bytes = Buffer.from(text, "utf8");
-  if (bytes.length <= MAX_OUTPUT_BYTES) return [text, false];
-  const kept = bytes.subarray(0, MAX_OUTPUT_BYTES).toString("utf8");
-  return [`${kept}\n[truncated at ${MAX_OUTPUT_BYTES} bytes]\n`, true];
-}
+type Caller = Omit<FirecrawlCaller, "maxCalls" | "deadline">;
 
-/** Run one command in a fresh in-memory shell as the given caller. */
+/**
+ * Runs one command in a fresh shell in its own process, so a command that
+ * spins or runs out of memory only costs that process, killed at the deadline.
+ * A worker thread is not enough: one huge allocation aborts the whole process.
+ */
 export async function runShell(
   command: string,
-  caller: Omit<FirecrawlCaller, "maxCalls">,
+  caller: Caller,
+  signal: AbortSignal,
 ): Promise<ShellResult> {
-  const started = Date.now();
-  const client = new FirecrawlClient({
-    ...caller,
-    maxCalls: MAX_FIRECRAWL_CALLS,
-  });
-  const bash = new Bash({
-    files: { ...(await docsFiles()), "/README.md": README },
-    cwd: "/",
-    env: { HOME: "/", PWD: "/" },
-    commands: COMMANDS,
-    customCommands: [firecrawlCommand(client)],
-    // Callers are anonymous and commands run inside the API process.
-    executionLimitProfile: "hardened",
-    // The string and memory caps keep one request from holding hundreds of MB.
-    executionLimits: {
-      maxExecutionTimeMs: TIMEOUT_MS,
-      maxFileSystemBytes: 32 * MIB,
-      maxStringLength: MIB,
-      maxHeredocSize: MIB,
-      maxOutputSize: 2 * MIB,
-      maxLiveBytes: 64 * MIB,
-      maxInputBytes: 32 * MIB,
-    },
-  });
+  if (running >= MAX_SHELLS) throw new ShellBusyError();
+  running++;
+  try {
+    const started = Date.now();
+    const deadline = started + TIMEOUT_MS;
+    const docs = await Promise.race([
+      docsFiles(),
+      new Promise<InitialFiles>(resolve =>
+        setTimeout(() => resolve({}), DOCS_WAIT_MS).unref(),
+      ),
+    ]);
+    const job: ShellJob = {
+      command,
+      caller: { ...caller, maxCalls: MAX_FIRECRAWL_CALLS, deadline },
+      docs: Object.keys(docs),
+      deadline,
+    };
+    return await new Promise<ShellResult>(resolve => {
+      const child = fork(WORKER_FILE, [], {
+        env: {},
+        execArgv: [
+          `--max-old-space-size=${HEAP_MB}`,
+          ...(WORKER_FILE.endsWith(".ts") ? ["--require", "tsx/cjs"] : []),
+        ],
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+      });
+      let settled = false;
+      const send = (message: ParentMessage) => {
+        if (!settled && child.connected) child.send(message);
+      };
+      const finish = (result: SandboxResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(watch);
+        signal.removeEventListener("abort", onAbort);
+        child.kill("SIGKILL");
+        resolve({ ...result, durationMs: Date.now() - started });
+      };
+      const fail = (exitCode: number, message: string) =>
+        finish({
+          stdout: "",
+          stderr: `bash: ${message}\n`,
+          exitCode,
+          truncated: false,
+          endpoints: [],
+          failedEndpoints: [],
+        });
+      const timer = setTimeout(
+        () =>
+          fail(
+            124,
+            `execution exceeded the ${TIMEOUT_MS / 1000} second deadline`,
+          ),
+        deadline + KILL_GRACE_MS - Date.now(),
+      );
+      const onAbort = () => fail(130, "the request was closed");
+      signal.addEventListener("abort", onAbort);
+      // The heap flag misses large strings, so resident memory is watched too.
+      // Linux only; elsewhere the read fails and the heap flag is the only cap.
+      const watch = setInterval(() => {
+        readFile(`/proc/${child.pid}/status`, "utf8").then(
+          status => {
+            const rss = Number(/VmRSS:\s+(\d+)/.exec(status)?.[1] ?? 0);
+            if (rss > MAX_RSS_KB) fail(1, "memory limit exceeded");
+          },
+          () => {},
+        );
+      }, RSS_POLL_MS);
 
-  const outcome = await bash.exec(command).catch((error: unknown) => ({
-    stdout: "",
-    stderr: `${error instanceof Error ? error.message : String(error)}\n`,
-    exitCode: 1,
-  }));
-  const [stdout, stdoutCut] = truncate(outcome.stdout);
-  const [stderr, stderrCut] = truncate(outcome.stderr);
-  return {
-    stdout,
-    stderr,
-    exitCode: outcome.exitCode,
-    durationMs: Date.now() - started,
-    truncated: stdoutCut || stderrCut,
-    endpoints: client.endpoints,
-    failedEndpoints: client.failedEndpoints,
-  };
+      child.on("message", (message: WorkerMessage) => {
+        if (message.type === "done") return finish(message.result);
+        const read = docs[message.path] as (() => Promise<string>) | undefined;
+        (read ? read() : Promise.reject(new Error("No such file"))).then(
+          text => send({ type: "doc", id: message.id, text }),
+          (error: Error) =>
+            send({ type: "doc", id: message.id, error: error.message }),
+        );
+      });
+      child.on("error", error => fail(1, error.message));
+      // V8 aborts the process when the command outgrows its heap.
+      child.on("exit", (code, killSignal) =>
+        fail(
+          1,
+          killSignal === "SIGABRT" || code === 134
+            ? "memory limit exceeded"
+            : "the shell stopped unexpectedly",
+        ),
+      );
+      send({ type: "job", job });
+    });
+  } finally {
+    running--;
+  }
 }

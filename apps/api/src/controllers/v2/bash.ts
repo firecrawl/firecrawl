@@ -6,17 +6,26 @@ import express, {
   type Response,
 } from "express";
 import { isIPv4 } from "net";
-import { RateLimiterMemory, RateLimiterRes } from "rate-limiter-flexible";
+import {
+  RateLimiterMemory,
+  RateLimiterRedis,
+  RateLimiterRes,
+} from "rate-limiter-flexible";
+import { config } from "../../config";
 import {
   MAX_FIRECRAWL_CALLS,
   MAX_OUTPUT_BYTES,
   TIMEOUT_MS,
+} from "../../lib/hosted-bash/limits";
+import {
+  ShellBusyError,
   runShell,
   type ShellResult,
 } from "../../lib/hosted-bash/shell";
 import { keylessTeamId, keylessTeamUuid } from "../../lib/keyless-team";
 import { logger } from "../../lib/logger";
 import { capturePostHog } from "../../services/posthog-capture";
+import { redisRateLimitClient } from "../../services/rate-limiter";
 
 const ROUTE = "/v2/bash";
 const RUN_EVENT = "bash_command_run";
@@ -78,14 +87,24 @@ ${TIMEOUT_MS / 1000} seconds and ${MAX_FIRECRAWL_CALLS} Firecrawl calls per comm
 }
 
 /**
- * Sheds load from one caller on this replica. The real quota is the keyless
- * tier or the caller's plan, enforced on each Firecrawl call the shell makes.
+ * Commands per IP per minute across every replica. Firecrawl calls also count
+ * against the keyless tier or the caller's plan; commands that make none have
+ * only this limit.
  */
 function createRateLimit(): RequestHandler {
-  const limiter = new RateLimiterMemory({
+  const memory = new RateLimiterMemory({
     points: COMMANDS_PER_MINUTE,
     duration: 60,
   });
+  const limiter = config.REDIS_RATE_LIMIT_URL
+    ? new RateLimiterRedis({
+        storeClient: redisRateLimitClient,
+        keyPrefix: "hosted-bash",
+        points: COMMANDS_PER_MINUTE,
+        duration: 60,
+        insuranceLimiter: memory,
+      })
+    : memory;
   return async (req, res, next) => {
     try {
       await limiter.consume(req.ip ?? "unknown");
@@ -106,15 +125,29 @@ function createRateLimit(): RequestHandler {
 function readCommand(req: Request): string | null | undefined {
   const fromQuery =
     typeof req.query.command === "string" ? req.query.command : undefined;
-  if (typeof req.body !== "string" || !req.body.trim()) return fromQuery;
-  // curl --data-binary labels a raw command as a form, so only JSON is parsed.
-  if (!req.is("application/json")) return req.body;
-  try {
-    const command = JSON.parse(req.body)?.command;
-    return typeof command === "string" ? command : null;
-  } catch {
-    return null;
+  const body = typeof req.body === "string" ? req.body : "";
+  if (!body.trim()) return fromQuery;
+  const json = req.is("application/json");
+  // A JSON object is a request even without its content type; a brace group
+  // like `{ echo a; }` does not parse, so it stays a command.
+  if (json || body.trimStart().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return typeof parsed.command === "string" ? parsed.command : null;
+      }
+    } catch {}
+    if (json) return null;
   }
+  // curl --data-urlencode 'command=...' sends a form; --data-binary also labels
+  // a raw command as a form, so only the command= field is decoded.
+  if (
+    req.is("application/x-www-form-urlencoded") &&
+    body.startsWith("command=")
+  ) {
+    return new URLSearchParams(body).get("command") ?? "";
+  }
+  return body;
 }
 
 /** Where this server answered the request, so the shell can call its routes. */
@@ -137,8 +170,9 @@ function track(
   run?: { command: string; result: ShellResult },
 ) {
   const ip = (req.ip ?? "").replace(/^::ffff:/i, "");
-  // The id keyless_prompt_shown uses, so runs join to prompts and signups.
-  const keylessTeam = isIPv4(ip) ? keylessTeamUuid(keylessTeamId(ip)) : null;
+  // The id keyless_prompt_shown uses, so keyless runs join to prompts and signups.
+  const keylessTeam =
+    !ownKey && isIPv4(ip) ? keylessTeamUuid(keylessTeamId(ip)) : null;
   const event = run ? RUN_EVENT : USAGE_EVENT;
   const properties = {
     keyless_team_id: keylessTeam,
@@ -176,9 +210,8 @@ function track(
 
 async function bashController(req: Request, res: Response) {
   res.setHeader("Cache-Control", "no-store");
-  const sent = readCommand(req);
-  const apiKey =
-    /^Bearer\s+(\S+)$/i.exec(req.get("authorization") ?? "")?.[1] ?? null;
+  const sent = req.method === "HEAD" ? undefined : readCommand(req);
+  const authorization = req.get("authorization")?.trim() || null;
 
   if (sent === null) {
     res
@@ -189,7 +222,7 @@ async function bashController(req: Request, res: Response) {
   }
   const command = sent?.trim();
   if (!command) {
-    track(req, Boolean(apiKey));
+    track(req, Boolean(authorization));
     res
       .type("text/plain")
       .send(usage(`${req.protocol}://${req.get("host")}${ROUTE}`));
@@ -203,12 +236,39 @@ async function bashController(req: Request, res: Response) {
     return;
   }
 
-  const result = await runShell(command, {
-    baseUrl: ownBaseUrl(req),
-    ip: req.ip ?? null,
-    apiKey,
+  const userAgent = req.get("user-agent")?.slice(0, 500);
+  const worldId = req.get("x-firecrawl-world-id");
+  const closed = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) closed.abort();
   });
-  track(req, Boolean(apiKey), { command, result });
+  let result: ShellResult;
+  try {
+    result = await runShell(
+      command,
+      {
+        baseUrl: ownBaseUrl(req),
+        ip: req.ip ?? null,
+        authorization,
+        headers: {
+          ...(userAgent ? { "User-Agent": userAgent } : {}),
+          ...(worldId ? { "X-Firecrawl-World-Id": worldId } : {}),
+        },
+      },
+      closed.signal,
+    );
+  } catch (error) {
+    if (!(error instanceof ShellBusyError)) throw error;
+    res
+      .status(503)
+      .setHeader("Retry-After", "5")
+      .type("text/plain")
+      .send(
+        "Every shell on this server is busy. Try again in a few seconds.\n",
+      );
+    return;
+  }
+  track(req, Boolean(authorization), { command, result });
 
   res.setHeader("X-Exit-Code", String(result.exitCode));
   res.setHeader("X-Duration-Ms", String(result.durationMs));
@@ -221,7 +281,9 @@ async function bashController(req: Request, res: Response) {
   if (result.stderr) {
     body += (body && !body.endsWith("\n") ? "\n" : "") + result.stderr;
   }
-  if (result.exitCode !== 0) body += `[exit ${result.exitCode}]\n`;
+  if (result.exitCode !== 0) {
+    body += `${body && !body.endsWith("\n") ? "\n" : ""}[exit ${result.exitCode}]\n`;
+  }
   res.type("text/plain").send(body);
 }
 
@@ -234,7 +296,7 @@ export function registerHostedBashRoute(
   app: Pick<Application, "get" | "post" | "options">,
 ) {
   const allowCors = cors({
-    exposedHeaders: ["X-Exit-Code", "X-Duration-Ms"],
+    exposedHeaders: ["X-Exit-Code", "X-Duration-Ms", "Retry-After"],
   });
   const rateLimit = createRateLimit();
   app.options(ROUTE, allowCors);
