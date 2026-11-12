@@ -590,6 +590,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,

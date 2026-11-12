@@ -13,6 +13,7 @@ const strictSafeMode: ResolvedSafeMode = {
   disablePlatformSelection: true,
   disableCountrySelection: true,
   disableAutomaticReferrer: true,
+  respectPaywalls: false,
 };
 
 describe("checkPermissions — safe mode", () => {

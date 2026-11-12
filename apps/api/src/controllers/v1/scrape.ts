@@ -406,6 +406,14 @@ async function scrapeControllerInner(
         });
       }
 
+      if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
         return res.status(400).json({
           success: false,

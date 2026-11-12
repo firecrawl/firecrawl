@@ -22,6 +22,7 @@ const strict: ResolvedSafeMode = {
   disablePlatformSelection: true,
   disableCountrySelection: true,
   disableAutomaticReferrer: true,
+  respectPaywalls: false,
 };
 
 // The per-capability controls the allowlist relaxes (everything except the
@@ -148,6 +149,29 @@ describe("resolveSafeMode — org flag on", () => {
       );
       expect(result.safeMode).toEqual({ ...strict, [key]: false });
     }
+  });
+
+  it("lets the org opt into respectPaywalls without touching other defaults", () => {
+    const result = resolveSafeMode(
+      { safeMode: true, safeModeConfig: { respectPaywalls: true } },
+      undefined,
+    );
+    expect(result.safeMode).toEqual({ ...strict, respectPaywalls: true });
+  });
+
+  it("drops respectPaywalls for allowlisted URLs", () => {
+    const result = resolveSafeMode(
+      {
+        safeMode: true,
+        safeModeConfig: {
+          respectPaywalls: true,
+          allowlist: ["docs.example.com"],
+        },
+      },
+      undefined,
+      "https://docs.example.com/x",
+    );
+    expect(result.safeMode!.respectPaywalls).toBe(false);
   });
 
   it("lets the org opt into lockdown", () => {

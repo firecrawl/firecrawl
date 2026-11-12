@@ -13,6 +13,7 @@ const strict: ResolvedSafeMode = {
   disablePlatformSelection: true,
   disableCountrySelection: true,
   disableAutomaticReferrer: true,
+  respectPaywalls: false,
 };
 
 // The safe-mode control -> engine behaviorOverride field it drives. Same
@@ -72,6 +73,7 @@ describe("safeModeParams", () => {
       disablePlatformSelection: false,
       disableCountrySelection: false,
       disableAutomaticReferrer: false,
+      respectPaywalls: false,
     };
     expect(safeModeParams(relaxed)).toEqual({
       behaviorOverrides: {
