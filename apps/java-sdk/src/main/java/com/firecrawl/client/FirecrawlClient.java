@@ -647,6 +647,19 @@ public class FirecrawlClient {
         return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
     }
 
+    public ResearchModels.ProteinLookupResponse lookupProtein(String protein) {
+        return lookupProtein(protein, null);
+    }
+
+    public ResearchModels.ProteinLookupResponse lookupProtein(String protein, ResearchModels.LookupProteinOptions options) {
+        Objects.requireNonNull(protein, "Protein is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("protein", protein);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/proteins" + researchQuery(params), ResearchModels.ProteinLookupResponse.class);
+    }
+
     /**
      * @deprecated The research index GitHub search endpoint was removed after
      *             2026-11-03. Use {@link #developerSearch} instead.
@@ -1165,6 +1178,10 @@ public class FirecrawlClient {
 
     public CompletableFuture<ResearchModels.SimilarPapersResponse> relatedPapersAsync(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
         return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.ProteinLookupResponse> lookupProteinAsync(String protein, ResearchModels.LookupProteinOptions options) {
+        return CompletableFuture.supplyAsync(() -> lookupProtein(protein, options), asyncExecutor);
     }
 
     /**

@@ -92,6 +92,85 @@ public class SimilarPapersResponse
     public string? Note { get; set; }
 }
 
+/// <summary>
+/// <see cref="Match"/> is "found" with <see cref="Protein"/> set, "ambiguous" with
+/// <see cref="Candidates"/> and <see cref="CandidateCount"/> set, or "not_found".
+/// </summary>
+public class ProteinLookupResponse
+{
+    public bool Success { get; set; }
+    public string? Release { get; set; }
+    public string? Match { get; set; }
+    public ProteinEntry? Protein { get; set; }
+    public List<ProteinCandidate>? Candidates { get; set; }
+    public int? CandidateCount { get; set; }
+    public string? Notice { get; set; }
+}
+
+public class ProteinEntry
+{
+    public string? Accession { get; set; }
+    public string? EntryName { get; set; }
+    public string? Gene { get; set; }
+    public List<string>? Synonyms { get; set; }
+    public string? Name { get; set; }
+    public ProteinOrganism? Organism { get; set; }
+    public string? MatchedBy { get; set; }
+    public string? Url { get; set; }
+    public List<ProteinStatement>? SubcellularLocation { get; set; }
+    public List<ProteinStatement>? Function { get; set; }
+    public List<GoTerm>? GoCellularComponent { get; set; }
+    public List<string>? PaperIds { get; set; }
+}
+
+public class ProteinCandidate
+{
+    public string? Accession { get; set; }
+    public string? EntryName { get; set; }
+    public string? Gene { get; set; }
+    public string? Name { get; set; }
+    public ProteinOrganism? Organism { get; set; }
+    public string? MatchedBy { get; set; }
+}
+
+public class ProteinOrganism
+{
+    public int TaxonId { get; set; }
+    public string? ScientificName { get; set; }
+    public string? CommonName { get; set; }
+}
+
+public class ProteinStatement
+{
+    public string? Text { get; set; }
+    public bool Note { get; set; }
+    public string? Molecule { get; set; }
+    public string? Topology { get; set; }
+    public string? Orientation { get; set; }
+    public List<ProteinEvidence>? Evidence { get; set; }
+}
+
+/// <summary>
+/// <see cref="PaperId"/> is a "pmid:" paper ID that <c>InspectPaperAsync</c> and
+/// <c>ReadPaperAsync</c> accept.
+/// </summary>
+public class ProteinEvidence
+{
+    public string? Kind { get; set; }
+    public string? Eco { get; set; }
+    public string? PaperId { get; set; }
+    public string? FromProtein { get; set; }
+}
+
+public class GoTerm
+{
+    public string? Id { get; set; }
+    public string? Term { get; set; }
+    public string? Code { get; set; }
+    public string? AssignedBy { get; set; }
+    public List<string>? PaperIds { get; set; }
+}
+
 public class GitHubSearchItem
 {
     public string? ResultType { get; set; }
@@ -202,6 +281,12 @@ public class RelatedPapersOptions
     public int? K { get; set; }
     public bool? Rerank { get; set; }
     public List<string>? Anchor { get; set; }
+}
+
+public class LookupProteinOptions
+{
+    /// <summary>NCBI taxon ID, scientific name or UniProt common name (default "9606").</summary>
+    public string? Organism { get; set; }
 }
 
 public class SearchGitHubOptions
