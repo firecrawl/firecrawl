@@ -481,7 +481,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     if (
       pipeline.exchange === undefined &&
-      job.data.origin !== "monitor" &&
+      job.data.billing?.endpoint !== "monitor" &&
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&
       doc.metadata.sourceURL !== undefined &&
@@ -1637,6 +1637,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
       zeroDataRetention: job.data.zeroDataRetention ?? false,
+      usOnly: crawler.usOnly,
       location: job.data.location,
       crawlId: job.data.crawl_id,
       logger,

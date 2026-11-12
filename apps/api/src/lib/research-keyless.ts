@@ -10,11 +10,8 @@ function researchKeylessOperation(
 
   const rest = segments.slice(papersIndex + 1);
   if (rest.length === 0) return "search";
-  if (rest.length === 1) {
-    return req.query?.query === undefined ? "inspect" : "read";
-  }
-  if (rest.length === 2 && rest[1] === "similar") return "similar";
-  return null;
+  if (rest.length > 1 && rest.at(-1) === "similar") return "similar";
+  return req.query?.query === undefined ? "inspect" : "read";
 }
 
 export function isResearchKeylessDisabled(req: Request): boolean {

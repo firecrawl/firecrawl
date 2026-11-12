@@ -18,6 +18,8 @@ type ToolDiscovery = {
   usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
+  /** How many leading items the semantic lookup found; the rest matched by domain only. */
+  semanticMatches: number;
 };
 
 type SourceLike = string | { type: string };
@@ -85,6 +87,8 @@ export async function discoverTools(
     connectors?: boolean;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
+    exchangeRequestIds?: { prefix: string; sent: string[] };
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -100,10 +104,15 @@ export async function discoverTools(
     return deadline - Date.now();
   };
   const lookup = async (options: Record<string, unknown>, deadline: number) => {
+    const timeoutMs = remaining(deadline);
+    const ids = input.exchangeRequestIds;
+    const requestId = ids ? `${ids.prefix}:${ids.sent.length + 1}` : undefined;
+    if (requestId) ids?.sent.push(requestId);
     const result = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
-      timeoutMs: remaining(deadline),
+      requestId,
+      timeoutMs,
       maximumCredits: 0,
       connectors: input.connectors === true,
       usOnly: input.usOnly === true,
@@ -311,6 +320,7 @@ export async function discoverTools(
   })();
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
   for (const tool of semanticTools ?? []) merge(tool, "semantic");
+  const semanticMatches = items.size;
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
   return {
     items: [...items.values()].map(tool =>
@@ -322,6 +332,7 @@ export async function discoverTools(
           }
         : tool,
     ),
+    semanticMatches,
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),

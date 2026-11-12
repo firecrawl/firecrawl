@@ -129,6 +129,15 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
+  // When true, a plain web search that the search platform classifies as
+  // government is served through the Government Index. It needs
+  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
+  // The longest a plain web search waits for the routing decision before the
+  // regular web search starts; a decision that takes longer routes nothing.
+  GOV_ROUTING_DECISION_TIMEOUT_MS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(100),
+  ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
@@ -260,7 +269,6 @@ const configSchema = z.object({
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   OPENROUTER_API_KEY: z.string().optional(),
-  XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
@@ -293,11 +301,18 @@ const configSchema = z.object({
     .nonnegative()
     .default(10),
 
-  // Vercel Marketplace integration id (oac_...). When set, Vercel OIDC resource
-  // tokens (iss https://integrations.vercel.com/<id>) are accepted as bearer
-  // credentials. Unset disables the branch. Not a secret.
-  VERCEL_MARKETPLACE_INTEGRATION_ID: emptyStringAsUndefined(
-    z.string().regex(/^oac_[A-Za-z0-9]+$/),
+  // Vercel Marketplace integration id (oac_...). Vercel OIDC resource tokens
+  // (iss https://integrations.vercel.com/<id>) are accepted as bearer
+  // credentials when DB authentication is on. Unset uses Firecrawl's
+  // integration; an empty value disables the branch. Not a secret.
+  VERCEL_MARKETPLACE_INTEGRATION_ID: z.preprocess(
+    value => (value === "" ? null : value),
+    z
+      .string()
+      .regex(/^oac_[A-Za-z0-9]+$/)
+      .nullable()
+      .default("oac_jkJx3wOqOMTpj4TqJJcwA4l8")
+      .transform(value => value ?? undefined),
   ),
 
   // OAuth token introspection
@@ -436,6 +451,17 @@ const configSchema = z.object({
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+  // Rank rewrite-found tools together with raw-query tools by reciprocal rank
+  // fusion (also the alexandriaToolFusion team flag), waiting up to
+  // ALEXANDRIA_TOOL_FUSION_WAIT_MS past the raw lookup for them. On by default;
+  // set to false to append rewrite tools after the raw ranking instead.
+  ALEXANDRIA_TOOL_FUSION: z.stringbool().default(true),
+  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .default(1000),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
@@ -878,6 +904,14 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
         message: `${key} + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100`,
       });
     }
+  }
+  if (value.GOV_ROUTING_ENABLED && !value.SEARCH_PLATFORM_URL) {
+    context.addIssue({
+      code: "custom",
+      path: ["GOV_ROUTING_ENABLED"],
+      message:
+        "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
+    });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
     context.addIssue({

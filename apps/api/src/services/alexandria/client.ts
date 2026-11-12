@@ -8,6 +8,17 @@ const dispatcher = new Agent({
   bodyTimeout: 120_000,
 });
 
+const CONNECTION_ERRORS = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "UND_ERR_SOCKET",
+]);
+
+const connectionFailed = (error: unknown) => {
+  const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof code === "string" && CONNECTION_ERRORS.has(code);
+};
+
 export async function exchangeRequest(input: {
   teamId: string;
   path: string;
@@ -29,15 +40,18 @@ export async function exchangeRequest(input: {
   zeroDataRetention?: boolean;
   /** The team may only be served by US-based providers. */
   usOnly?: boolean;
+  /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
+  retryConnection?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
-  const response = await fetch(base + input.path, {
+  const signal = AbortSignal.timeout(Math.max(1, input.timeoutMs));
+  const init = {
     method: input.body === undefined ? "GET" : "POST",
-    redirect: "manual",
+    redirect: "manual" as const,
     dispatcher,
-    signal: AbortSignal.timeout(Math.max(1, input.timeoutMs)),
+    signal,
     headers: {
       "content-type": "application/json",
       ...(input.resultAuthorization
@@ -76,6 +90,11 @@ export async function exchangeRequest(input: {
           }),
     },
     body: input.body === undefined ? undefined : JSON.stringify(input.body),
+  };
+  const response = await fetch(base + input.path, init).catch(error => {
+    if (!input.retryConnection || signal.aborted || !connectionFailed(error))
+      throw error;
+    return fetch(base + input.path, init);
   });
   // Bound retained provider responses, including bodies without Content-Length.
   const chunks: Uint8Array[] = [];

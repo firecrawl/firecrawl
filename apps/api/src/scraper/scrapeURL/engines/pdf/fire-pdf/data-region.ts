@@ -1,5 +1,8 @@
 import type { Meta } from "../../..";
-import { UsOnlyUnavailableError } from "../../../error";
+import {
+  ReservedCapacityUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../../error";
 import type { FirePdfSourceKind } from "./request-metadata";
 
 /**
@@ -9,6 +12,18 @@ import type { FirePdfSourceKind } from "./request-metadata";
  * failure: a job that finished in the region can still report refused acquires.
  */
 export function firePdfRegionRefused(body: unknown): boolean {
+  return firePdfRestrictionRefused(
+    body,
+    "data_region_refusals",
+    /\[data_region=\w+ refused: /,
+  );
+}
+
+function firePdfRestrictionRefused(
+  body: unknown,
+  refusalsField: string,
+  notePattern: RegExp,
+): boolean {
   let parsed = body;
   if (typeof body === "string") {
     try {
@@ -18,20 +33,30 @@ export function firePdfRegionRefused(body: unknown): boolean {
     }
   }
   if (typeof parsed !== "object" || parsed === null) return false;
-  const { data_region_refusals, error_message } = parsed as Record<
-    string,
-    unknown
-  >;
+  const fields = parsed as Record<string, unknown>;
+  const refusals = fields[refusalsField];
   if (
-    typeof data_region_refusals === "object" &&
-    data_region_refusals !== null &&
-    !Array.isArray(data_region_refusals) &&
-    Object.keys(data_region_refusals).length > 0
+    typeof refusals === "object" &&
+    refusals !== null &&
+    !Array.isArray(refusals) &&
+    Object.keys(refusals).length > 0
   )
     return true;
-  return (
-    typeof error_message === "string" &&
-    /\[data_region=\w+ refused: /.test(error_message)
+  const errorMessage = fields.error_message;
+  return typeof errorMessage === "string" && notePattern.test(errorMessage);
+}
+
+/**
+ * Whether a PDF service failure restricted to reserved capacity says the
+ * capacity it needed there was refused: `reserved_refusals` on a sync error
+ * body, or the refusal note a failed job appends to its `error_message`.
+ * Only call it on a failure.
+ */
+export function firePdfReservedRefused(body: unknown): boolean {
+  return firePdfRestrictionRefused(
+    body,
+    "reserved_refusals",
+    /\[reserved refused: /,
   );
 }
 
@@ -54,4 +79,18 @@ export function firePdfUsOnlyRefusal(
   return new UsOnlyUnavailableError(
     `${feature} is not available for teams restricted to US-only processing right now: ${detail}. Try again later.`,
   );
+}
+
+/** The error a team restricted to reserved capacity gets when the PDF service did not run, or did not confirm running, its document there. */
+export function firePdfReservedCapacityRefusal(
+  meta: Meta,
+  reason: "reserved_unavailable" | "reserved_unconfirmed",
+  sourceKind: FirePdfSourceKind = "pdf",
+): ReservedCapacityUnavailableError {
+  meta.logger.warn("FirePDF could not keep a request on reserved capacity", {
+    scrapeId: meta.id,
+    reason,
+    sourceKind,
+  });
+  return new ReservedCapacityUnavailableError();
 }

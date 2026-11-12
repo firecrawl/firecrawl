@@ -13,6 +13,7 @@ import { createHangarBrowser } from "./hangar";
 async function hangarCreateBody(
   options: BrowserOptions,
   zeroDataRetention = false,
+  usOnly = false,
 ) {
   const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
     Response.json({
@@ -29,6 +30,7 @@ async function hangarCreateBody(
     streamWebView: true,
     recordSession: false,
     zeroDataRetention,
+    usOnly,
   });
   return JSON.parse(fetchMock.mock.calls[0][1].body as string);
 }
@@ -132,6 +134,39 @@ describe("Hangar create body under zero data retention", () => {
     );
     expect(stealth.proxy).toEqual({
       type: "mobile",
+      zero_data_retention: true,
+    });
+  });
+});
+
+describe("Hangar create body for US-only teams", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("always asks for a US exit", async () => {
+    expect(
+      (await hangarCreateBody({ blockAds: true }, false, true)).proxy,
+    ).toEqual({
+      country: "us",
+      type: "basic",
+    });
+    expect(
+      (
+        await hangarCreateBody(
+          browserOptionsFromScrape({ proxy: "stealth" }),
+          false,
+          true,
+        )
+      ).proxy,
+    ).toEqual({ country: "us", type: "mobile" });
+  });
+
+  it("keeps ZDR exits within the US", async () => {
+    const body = await hangarCreateBody({ blockAds: true }, true, true);
+    expect(body.proxy).toEqual({
+      country: "us",
+      type: "basic",
       zero_data_retention: true,
     });
   });

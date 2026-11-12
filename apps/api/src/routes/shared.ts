@@ -30,7 +30,10 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
+import {
+  checkHostedMcpCredits,
+  hostedMcpCreditsRefusal,
+} from "../services/autumn/hosted-mcp-gate";
 import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
 import {
   ThirdPartyDataTermsRequiredError,
@@ -38,8 +41,9 @@ import {
 } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isFreeCatalogueSearch } from "../search/alexandria";
-import { getScrapeZDR } from "../lib/zdr-helpers";
-import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import { wantsGovCategory } from "../search/gov";
+import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
+import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
   isAgentInteropSecretValid,
@@ -131,15 +135,25 @@ export function checkCreditsMiddleware(
         // If verified, fall through to normal credit check (key is now on real account)
       }
 
-      // Catalogue discovery is free; provider execution reserves its own credits.
+      // Catalogue discovery and Government Index results are free; provider
+      // execution reserves its own credits. A gov search still pays to scrape
+      // its results, and for threat scans where threat protection or Safe Mode
+      // can turn them on.
       const sources = (req.body as any)?.sources;
       const categories = (req.body as any)?.categories;
-      const freeCatalogue =
-        req.path === "/search" && isFreeCatalogueSearch(sources, categories);
+      const formats = (req.body as any)?.scrapeOptions?.formats;
+      const freeGovSearch =
+        wantsGovCategory(categories) &&
+        !(Array.isArray(formats) && formats.length > 0) &&
+        getThreatProtection(req.acuc?.flags) === "disabled" &&
+        !getSafeMode(req.acuc?.flags);
+      const freeSearch =
+        req.path === "/search" &&
+        (isFreeCatalogueSearch(sources, categories) || freeGovSearch);
       if (
         (req.path === "/scrape" &&
           (req.body as any)?.alexandria !== undefined) ||
-        freeCatalogue
+        freeSearch
       ) {
         req.account = { remainingCredits: Infinity };
         return next();
@@ -320,7 +334,7 @@ export function checkCreditsMiddleware(
               code: "mcp_credits_exhausted",
               requested_credits: requestedCredits,
               ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`,
+              error: hostedMcpCreditsRefusal(autumnResult.resetsAt),
             });
           }
 

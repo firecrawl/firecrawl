@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   scrapeLog: vi.fn(),
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
+  markCalls: vi.fn(),
+}));
+vi.mock("../../lib/alexandria-activity", () => ({
+  markAlexandriaActivity: vi.fn(),
+  markAlexandriaCalls: mocks.markCalls,
 }));
 vi.mock("../../lib/alexandria-discovery", () => ({
   discoveryForCalls: mocks.discovery,
@@ -17,6 +22,8 @@ vi.mock("../../lib/alexandria-discovery", () => ({
 }));
 vi.mock("../../services/alexandria/retrieve", () => ({
   REQUEST_ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
+  exchangeRequestId: (teamId: string, requestId: string) =>
+    `hashed:${teamId}:${requestId}`,
   retrieveProviders: mocks.retrieve,
 }));
 vi.mock("../../services/logging/log_job", () => ({
@@ -38,6 +45,8 @@ vi.mock("../../config", () => ({
   },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
+import { config } from "../../config";
+import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 
 const call = {
   provider: "fred",
@@ -364,6 +373,42 @@ it("executes with supplied arguments but stores only tool identifiers in activit
   });
 });
 
+it("logs each call's provenance and keeps it out of the response", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      { ...call, provenance: "workflows_programs", creditsCost: 0, data: {} },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call] });
+  expect(response.status).toBe(200);
+  expect(response.body.data.alexandria[0]).not.toHaveProperty("provenance");
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  expect(mocks.scrapeLog.mock.calls[0][0].options.alexandria[0]).toEqual(
+    expect.objectContaining({ provenance: "workflows_programs" }),
+  );
+  const legacy = await request(app).post("/exchange/retrieve").send(call);
+  expect(legacy.status).toBe(200);
+  expect(legacy.body).not.toHaveProperty("provenance");
+});
+
+it("drops an unknown or null provenance instead of failing the call", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      { ...call, provenance: "elsewhere", creditsCost: 0, data: {} },
+      { ...call, provenance: null, creditsCost: 0, data: {} },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call] });
+  expect(response.status).toBe(200);
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+  for (const logged of mocks.scrapeLog.mock.calls[0][0].options.alexandria)
+    expect(logged).not.toHaveProperty("provenance");
+});
+
 it("logs each call's own outcome code and credits in request order", async () => {
   const other = { provider: "sec", capability: "filings/search", options: {} };
   const answer = result([
@@ -620,4 +665,120 @@ it("neither reads nor records discovery under zero data retention", async () => 
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.discovery).not.toHaveBeenCalled();
   expect(mocks.recordDiscovered).not.toHaveBeenCalled();
+});
+
+it("remembers each provider call under its request id for feedback attribution", async () => {
+  const second = { provider: "sec", capability: "filings", options: {} };
+  await request(app)
+    .post("/v2/scrape")
+    .set("x-request-id", "req-1")
+    .send({ alexandria: [call, second] });
+  expect(mocks.markCalls).toHaveBeenCalledExactlyOnceWith("team", [
+    {
+      requestId: "hashed:team:req-1",
+      provider: "fred",
+      capability: "categories/category",
+    },
+    { requestId: "hashed:team:req-1", provider: "sec", capability: "filings" },
+  ]);
+});
+
+it("does not remember calls the Exchange did not execute", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, creditsCost: 0, data: {} }], false),
+  );
+  await request(app).post("/v2/scrape").send({ alexandria: call });
+  expect(mocks.markCalls).not.toHaveBeenCalled();
+});
+
+it.each([
+  [{ alexandria: call, zeroDataRetention: true }, {}],
+  [{ alexandria: call }, { forceZDR: true }],
+])(
+  "does not remember provider calls under zero data retention %#",
+  async (body, teamFlags) => {
+    flags = { exchangeRetrieve: true, ...teamFlags };
+    await request(app).post("/v2/scrape").send(body);
+    expect(mocks.markCalls).not.toHaveBeenCalled();
+  },
+);
+
+describe("feedback tokens", () => {
+  afterEach(() => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      undefined;
+  });
+  beforeEach(() => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      "internal-secret";
+  });
+
+  it("returns a team-bound token per provider call, failed calls included", async () => {
+    const second = { provider: "sec", capability: "filings", options: {} };
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { ...call, creditsCost: 0, data: {} },
+        { error: { code: "provider_error", message: "down" } },
+      ]),
+    );
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-request-id", "req-1")
+      .send({ alexandria: [call, second] });
+    const [first, failed] = response.body.data.alexandria;
+    expect(verifyFeedbackToken(first.feedbackToken, "team")).toMatchObject({
+      requestId: "hashed:team:req-1",
+      provider: "fred",
+      capability: "categories/category",
+    });
+    expect(verifyFeedbackToken(failed.feedbackToken, "team")).toMatchObject({
+      requestId: "hashed:team:req-1",
+      provider: "sec",
+      capability: "filings",
+    });
+    expect(verifyFeedbackToken(first.feedbackToken, "other-team")).toBeNull();
+  });
+
+  it("returns the token on the legacy single-call route, errors included", async () => {
+    const response = await request(app).post("/exchange/retrieve").send(call);
+    expect(response.body.feedbackToken).toEqual(expect.any(String));
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { error: { code: "provider_error", message: "down", status: 502 } },
+      ]),
+    );
+    const failed = await request(app).post("/exchange/retrieve").send(call);
+    expect(failed.status).toBe(502);
+    expect(failed.body).toEqual({
+      success: false,
+      code: "provider_error",
+      error: "down",
+      feedbackToken: expect.any(String),
+    });
+    expect(
+      verifyFeedbackToken(failed.body.feedbackToken, "team"),
+    ).toMatchObject({ provider: "fred", capability: "categories/category" });
+  });
+
+  it.each([
+    [{ alexandria: call, zeroDataRetention: true }, {}],
+    [{ alexandria: call }, { forceZDR: true }],
+  ])(
+    "issues no token under zero data retention %#",
+    async (body, teamFlags) => {
+      flags = { exchangeRetrieve: true, ...teamFlags };
+      const response = await request(app).post("/v2/scrape").send(body);
+      expect(response.status).toBe(200);
+      expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
+    },
+  );
+
+  it("issues no token without a signing key", async () => {
+    (config as { EXCHANGE_INTERNAL_SECRET?: string }).EXCHANGE_INTERNAL_SECRET =
+      undefined;
+    const response = await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: call });
+    expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
+  });
 });

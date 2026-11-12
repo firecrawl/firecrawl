@@ -35,8 +35,8 @@ async function appWithResearchGate(flag: string | undefined) {
   const reached = (_req: express.Request, res: express.Response) =>
     res.status(200).json({ reachedController: true });
   router.get("/papers", reached);
-  router.get("/papers/:id/similar", reached);
-  router.get("/papers/:id", reached);
+  router.get("/papers/*id/similar", reached);
+  router.get("/papers/*id", reached);
 
   app.use(
     "/v2/search/research",
@@ -186,6 +186,8 @@ describe("keyless Research Index requests through the auth middleware", () => {
       "/v2/search/research/papers/2401.00001",
       "/v2/search/research/papers/2401.00001?query=attention",
       "/v2/search/research/papers/2401.00001/similar",
+      "/v2/search/research/papers/doi:10.1101/2025.07.31.667845?query=x",
+      "/v2/search/research/papers/doi:10.1101/2025.07.31.667845/similar",
     ]) {
       const response = await request(app).get(path);
 
