@@ -5,10 +5,10 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -56,8 +56,7 @@ export async function crawlParamsPreviewController(
   // Same rule as a crawl: forced ZDR, the request's own flag, or Safe Mode
   // lockdown. Read before parsing so a rejected body is still covered.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true ||
+    getZdrPolicy(req).scrapeZDR(req.body?.zeroDataRetention) ||
     isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     module: "api/v2",

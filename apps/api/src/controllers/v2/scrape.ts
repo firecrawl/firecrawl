@@ -40,7 +40,6 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
@@ -55,6 +54,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 import { isUsOnly } from "../../lib/us-only";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -69,8 +69,7 @@ export async function scrapeController(
   // lockdown implies ZDR, so fold it in here too — otherwise the rejection
   // paths below would export the target URL on the root span.
   const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true ||
+    getZdrPolicy(req).scrapeZDR(req.body?.zeroDataRetention) ||
     req.body?.lockdown === true ||
     isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
@@ -213,7 +212,7 @@ export async function scrapeController(
       applySafeMode(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        getZdrPolicy(req).scrape === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
       if (req.body.domainTools && zeroDataRetention)

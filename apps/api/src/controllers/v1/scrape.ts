@@ -34,7 +34,6 @@ import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManage
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   withSpan,
   setSpanAttributes,
@@ -52,6 +51,7 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -62,8 +62,7 @@ export async function scrapeController(
   // lockdown implies ZDR, so fold it in here too — otherwise child spans could
   // export target URLs before the inner handler applies lockdown.
   const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true ||
+    getZdrPolicy(req).scrapeZDR(req.body?.zeroDataRetention) ||
     isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
   return withSpan(
@@ -148,7 +147,7 @@ async function scrapeControllerInner(
   }
 
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getZdrPolicy(req).scrape === "forced" ||
     req.body.zeroDataRetention ||
     (safeMode.safeMode?.lockdown ?? false);
 

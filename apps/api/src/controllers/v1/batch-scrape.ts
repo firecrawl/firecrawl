@@ -45,10 +45,10 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -111,7 +111,7 @@ export async function batchScrapeController(
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getZdrPolicy(req).scrape === "forced" ||
     req.body.zeroDataRetention ||
     (safeMode.safeMode?.lockdown ?? false);
 

@@ -35,6 +35,7 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 configDotenv();
 const redis = new Redis(config.REDIS_URL!);
@@ -357,7 +358,7 @@ export async function mapController(
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
 
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (getZdrPolicy(req).scrape === "forced") {
     return res.status(400).json({
       success: false,
       error:

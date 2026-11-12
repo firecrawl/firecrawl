@@ -1,9 +1,9 @@
 import { Response } from "express";
 import { getJob } from "./crawl-status";
 import { logger as _logger } from "../../lib/logger";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function scrapeStatusController(req: any, res: any) {
   const logger = _logger.child({
@@ -12,10 +12,10 @@ export async function scrapeStatusController(req: any, res: any) {
     teamId: req.auth.team_id,
     jobId: req.params.jobId,
     scrapeId: req.params.jobId,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention: getZdrPolicy(req).scrape === "forced",
   });
 
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (getZdrPolicy(req).scrape === "forced") {
     return res.status(400).json({
       success: false,
       error:

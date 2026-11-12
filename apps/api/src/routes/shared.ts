@@ -42,7 +42,7 @@ import {
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isFreeCatalogueSearch } from "../search/alexandria";
 import { wantsGovCategory } from "../search/gov";
-import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
+import { getThreatProtection } from "../lib/zdr-helpers";
 import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
@@ -50,6 +50,7 @@ import {
 } from "../lib/agent-interop";
 import { inferIntegration } from "../lib/infer-integration";
 import { resolveIntegration } from "../utils/integration";
+import { getZdrPolicy, resolveZdrPolicy } from "../lib/zdr-policy";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -448,6 +449,7 @@ export function authMiddleware(
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;
+      req.zdrPolicy = resolveZdrPolicy(chunk?.flags ?? undefined);
       next();
     })().catch(err => next(err));
   };
@@ -549,8 +551,7 @@ function blocklistGate(
     if (options.exchange) {
       // Safe Mode lockdown implies ZDR, which keeps the Exchange out.
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        req.body?.zeroDataRetention === true ||
+        getZdrPolicy(req).scrapeZDR(req.body?.zeroDataRetention) ||
         isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
       const exchangeAccess = await getExchangeAccessForRequestBody({
         body: req.body,

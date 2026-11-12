@@ -15,8 +15,6 @@ import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
 import {
   AGENT_ZDR_DEFAULT_RETENTION_MINUTES,
   getAgentZdrRetentionMinutes,
-  getScrapeZDR,
-  getSearchZDR,
 } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
@@ -32,6 +30,7 @@ import {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,
 } from "./agent-credit-gate";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -44,8 +43,8 @@ export async function agentController(
 
   // An agent run scrapes and searches under ZDR, so it needs both
   // entitlements up front instead of failing on its first inner call.
-  const scrapeZDR = getScrapeZDR(req.acuc?.flags);
-  const searchZDR = getSearchZDR(req.acuc?.flags);
+  const scrapeZDR = getZdrPolicy(req).scrape;
+  const searchZDR = getZdrPolicy(req).search;
   if (
     (req.body.zeroDataRetention === true || scrapeZDR === "forced") &&
     !(

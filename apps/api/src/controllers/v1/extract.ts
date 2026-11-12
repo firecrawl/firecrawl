@@ -24,7 +24,6 @@ import {
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 import { config } from "../../config";
 import {
@@ -39,6 +38,7 @@ import { UnsupportedSiteError } from "../../lib/error";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { isSdkOrigin } from "../../lib/sdk-origin";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
@@ -123,7 +123,7 @@ export async function extractController(
   req.body = extractRequestSchema.parse(req.body);
   const extractId = uuidv7();
 
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (getZdrPolicy(req).scrape === "forced") {
     return res.status(400).json({
       success: false,
       error:
@@ -279,7 +279,7 @@ export async function extractController(
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention: getZdrPolicy(req).scrape === "forced",
   });
 
   await logRequest({
@@ -334,7 +334,7 @@ export async function extractController(
     showLLMUsage: req.body.__experimental_llmUsage,
     showSources: req.body.__experimental_showSources || req.body.showSources,
     showCostTracking: req.body.__experimental_showCostTracking,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention: getZdrPolicy(req).scrape === "forced",
   });
 
   await addExtractJobToQueue(extractId, jobData);

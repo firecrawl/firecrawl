@@ -26,7 +26,6 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
@@ -54,6 +53,7 @@ import {
   PDF_EXTENSIONS,
 } from "../../lib/parse-formats";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -298,9 +298,9 @@ export async function parseController(
 ) {
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer).
-  const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true;
+  const zeroDataRetentionTrace = getZdrPolicy(req).scrapeZDR(
+    req.body?.zeroDataRetention,
+  );
 
   return withSpan(
     "api.parse.request",
@@ -368,7 +368,7 @@ export async function parseController(
       }
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        getZdrPolicy(req).scrape === "forced" ||
         (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = {
         ...(req.body.__agentInterop

@@ -7,7 +7,6 @@ import {
   recordSpanException,
   type Span,
 } from "../../../lib/otel-tracer";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import {
   autumnService,
   featureIdForBillingEndpoint,
@@ -36,6 +35,7 @@ import {
   shouldSkipPersistenceForForcedZdr,
   shouldSkipPersistenceForJobZdr,
 } from "./zdr-persistence";
+import { getZdrPolicy } from "../../../lib/zdr-policy";
 
 const PREVIEW_TEAM_ID = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 const POSTGRES_UNIQUE_VIOLATION = "23505";
@@ -274,12 +274,12 @@ function isForcedZdrTeam(
   options: FeedbackRecordOptions,
 ): boolean {
   if (options.endpoint === "search") {
-    const searchZDR = getSearchZDR(req.acuc?.flags);
+    const searchZDR = getZdrPolicy(req).search;
     return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
   }
 
   if (options.endpoint === "scrape" || options.endpoint === "parse") {
-    return getScrapeZDR(req.acuc?.flags) === "forced";
+    return getZdrPolicy(req).scrape === "forced";
   }
 
   return false;

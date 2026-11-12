@@ -39,7 +39,6 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -60,6 +59,7 @@ import {
   initializeRequestCredits,
   requestCreditsShards,
 } from "../../lib/request-credits-store";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -124,7 +124,7 @@ export async function batchScrapeController(
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getZdrPolicy(req).scrape === "forced" ||
     (req.body.zeroDataRetention ?? false) ||
     (safeMode.safeMode?.lockdown ?? false);
 

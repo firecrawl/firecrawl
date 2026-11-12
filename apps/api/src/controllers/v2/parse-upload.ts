@@ -11,8 +11,8 @@ import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
 import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { reportPipelineError } from "../../lib/redis-pipeline";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -419,7 +419,7 @@ export async function parseUploadUrlController(
         },
       });
     },
-    { zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced" },
+    { zeroDataRetention: getZdrPolicy(req).scrape === "forced" },
   );
 }
 

@@ -13,11 +13,11 @@ import {
 } from "../../../lib/alexandria-feedback-token";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
 import { refundAlexandriaFeedback } from "./alexandria-refund";
+import { getZdrPolicy } from "../../../lib/zdr-policy";
 
 const failure = (
   status: number,
@@ -64,9 +64,9 @@ export async function recordAlexandriaFeedback(
 
   // A session can contain both search and scrape data. Honor either forced
   // retention policy without looking up or recording individual jobs.
-  const searchZdr = getSearchZDR(req.acuc?.flags);
+  const searchZdr = getZdrPolicy(req).search;
   if (
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getZdrPolicy(req).scrape === "forced" ||
     searchZdr === "forced-zdr" ||
     searchZdr === "forced-anon"
   ) {

@@ -27,7 +27,6 @@ import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import {
   withSpan,
   setSpanAttributes,
@@ -73,6 +72,7 @@ import {
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -90,7 +90,7 @@ export async function searchController(
     ? req.body.enterprise
     : [];
   const zeroDataRetentionTrace =
-    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    Boolean(getZdrPolicy(req).searchForcedKind) ||
     enterprise.includes("zdr") ||
     enterprise.includes("anon") ||
     isLockdownZeroDataRetention(
@@ -122,10 +122,10 @@ async function searchControllerInner(
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
-  const searchZDRMode = getSearchZDR(req.acuc?.flags);
+  const searchZDRMode = getZdrPolicy(req).search;
   // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
   // (see getEffectiveSearchForcedKind).
-  const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const flagForcedKind = getZdrPolicy(req).searchForcedKind;
   const teamForcedKind = getEffectiveSearchForcedKind(
     req.acuc?.flags,
     req.body?.scrapeOptions?.safeMode,

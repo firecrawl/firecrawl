@@ -1,6 +1,6 @@
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth } from "../types";
 import type { FeedbackJobRow, FeedbackRecordOptions } from "./internal-types";
+import { getZdrPolicy } from "../../../lib/zdr-policy";
 
 type SearchOptions = {
   enterprise?: unknown;
@@ -23,12 +23,12 @@ export function shouldSkipPersistenceForForcedZdr(
   if (options.skipZdrPersistence === false) return false;
 
   if (options.endpoint === "search") {
-    const searchZDR = getSearchZDR(req.acuc?.flags);
+    const searchZDR = getZdrPolicy(req).search;
     return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
   }
 
   if (options.endpoint === "scrape" || options.endpoint === "parse") {
-    return getScrapeZDR(req.acuc?.flags) === "forced";
+    return getZdrPolicy(req).scrape === "forced";
   }
 
   return false;

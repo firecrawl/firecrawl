@@ -55,12 +55,12 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
 } from "./keyless";
 import { logger as rootLogger } from "./logger";
-import { getScrapeZDR } from "./zdr-helpers";
 import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import { getZdrPolicy } from "./zdr-policy";
 
 const logger = rootLogger;
 
@@ -137,7 +137,7 @@ export function getBrowserZDR(
   session?: BrowserSessionRow,
   inherited = false,
 ): boolean {
-  const mode = getScrapeZDR(req.acuc?.flags);
+  const mode = getZdrPolicy(req).scrape;
   if (
     req.body?.zeroDataRetention === true &&
     mode === "disabled" &&

@@ -37,7 +37,6 @@ import {
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import {
   getSafeMode,
@@ -59,6 +58,7 @@ import {
   browserOptionsFromScrape,
 } from "../../lib/browser-options";
 import { scrapeQueue } from "../../services/worker/nuq-router";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const browserExecuteRequestSchema = z
   .object({
@@ -120,8 +120,7 @@ export async function scrapeInteractController(
 ) {
   try {
     return await withZeroDataRetention(
-      getScrapeZDR(req.acuc?.flags) === "forced" ||
-        req.body?.zeroDataRetention === true,
+      getZdrPolicy(req).scrapeZDR(req.body?.zeroDataRetention),
       () => scrapeInteractInternal(req, res),
     );
   } catch (error) {

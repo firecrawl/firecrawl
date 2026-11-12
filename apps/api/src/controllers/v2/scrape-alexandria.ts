@@ -6,7 +6,6 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -31,6 +30,7 @@ import {
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
 import type { RequestWithAuth } from "./types";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 const FIND_TOOLS_LOGGED_OPTIONS = [
   "query",
@@ -131,9 +131,7 @@ export async function providerScrapeController(
       error: "This endpoint is not enabled for this team.",
     });
   // Exchange refuses capabilities that cannot honour ZDR, per call.
-  const zeroDataRetention =
-    getScrapeZDR(req.acuc.flags) === "forced" ||
-    body.zeroDataRetention === true;
+  const zeroDataRetention = getZdrPolicy(req).scrapeZDR(body.zeroDataRetention);
   if (
     (req as any).agentIndexOnly ||
     ["pending", "blocked"].includes(req.acuc._agentSponsor?.status ?? "")

@@ -30,7 +30,6 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
@@ -39,6 +38,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { getZdrPolicy } from "../../lib/zdr-policy";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -63,7 +63,7 @@ export async function crawlController(
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getZdrPolicy(req).scrape === "forced" ||
     req.body.zeroDataRetention ||
     (safeMode.safeMode?.lockdown ?? false);
 
