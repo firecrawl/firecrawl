@@ -250,7 +250,6 @@ async function bashController(req: Request, res: Response) {
         baseUrl: ownBaseUrl(req),
         ip: req.ip ?? null,
         authorization,
-        publicUrl: `${req.protocol}://${req.get("host")}${ROUTE}`,
         headers: {
           ...(userAgent ? { "User-Agent": userAgent } : {}),
           ...(worldId ? { "X-Firecrawl-World-Id": worldId } : {}),

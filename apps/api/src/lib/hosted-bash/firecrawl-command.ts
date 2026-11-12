@@ -32,6 +32,8 @@ const API_KEY_FLAG =
 const KEY_NEEDED =
   "Firecrawl's free tier without an API key isn't available from your network (it needs an IPv4 address).";
 const SIGNUP_URL = "https://www.firecrawl.dev/signin";
+// Keyless only runs on Firecrawl's cloud, so its refusals always name this URL.
+const PUBLIC_URL = "https://api.firecrawl.dev/v2/bash";
 // Statuses where the keyless tier refused the caller and an API key would help.
 const KEYLESS_REFUSALS = [401, 402, 403, 429];
 
@@ -43,8 +45,6 @@ export interface FirecrawlCaller {
   authorization: string | null;
   /** Caller headers kept on each call: User-Agent and a World ID credential. */
   headers: Record<string, string>;
-  /** This route's public URL, for the sign-up instructions. */
-  publicUrl: string;
   maxCalls: number;
   /** When the command must be done; each call asks the API to finish before it. */
   deadline: number;
@@ -72,7 +72,7 @@ export class FirecrawlClient {
     return [
       `Get a free API key: ${this.signupUrl}`,
       "Then send it with your request, for example:",
-      `  curl ${this.caller.publicUrl} -H 'Authorization: Bearer fc-YOUR_KEY' --data-binary 'firecrawl search "stripe pricing"'`,
+      `  curl ${PUBLIC_URL} -H 'Authorization: Bearer fc-YOUR_KEY' --data-binary 'firecrawl search "stripe pricing"'`,
     ].join("\n");
   }
 
