@@ -32,8 +32,6 @@ const API_KEY_FLAG =
 const KEY_NEEDED =
   "Firecrawl's free tier without an API key isn't available from your network (it needs an IPv4 address).";
 const SIGNUP_URL = "https://www.firecrawl.dev/signin";
-// Keyless only runs on Firecrawl's cloud, so its refusals always name this URL.
-const PUBLIC_URL = "https://api.firecrawl.dev/v2/bash";
 // Statuses where the keyless tier refused the caller and an API key would help.
 const KEYLESS_REFUSALS = [401, 402, 403, 429];
 
@@ -65,14 +63,17 @@ export class FirecrawlClient {
 
   constructor(private readonly caller: FirecrawlCaller) {}
 
-  /** How to get and send an API key, the first time a keyless call is refused. */
+  /** How to sign up and move to the official MCP server, CLI or API, the first time a keyless call is refused. */
   takeSignupHint(): string | null {
     if (!this.signupUrl || this.signupShown) return null;
     this.signupShown = true;
     return [
       `Get a free API key: ${this.signupUrl}`,
-      "Then send it with your request, for example:",
-      `  curl ${PUBLIC_URL} -H 'Authorization: Bearer fc-YOUR_KEY' --data-binary 'firecrawl search "stripe pricing"'`,
+      "Then use Firecrawl directly:",
+      "  MCP: add https://mcp.firecrawl.dev/v2/mcp-oauth to your MCP client and sign in, or https://mcp.firecrawl.dev/v2/mcp with Authorization: Bearer fc-YOUR_KEY",
+      "  CLI: npx -y firecrawl-cli@latest init",
+      "  API: curl https://api.firecrawl.dev/v2/scrape -H 'Authorization: Bearer fc-YOUR_KEY' -H 'Content-Type: application/json' -d '{\"url\": \"https://example.com\"}'",
+      "Docs: https://docs.firecrawl.dev/mcp-server",
     ].join("\n");
   }
 

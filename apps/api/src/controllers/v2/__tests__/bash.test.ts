@@ -272,7 +272,8 @@ describe("hosted bash route", () => {
     expect(res.text).toContain(
       "Get a free API key: https://www.firecrawl.dev/signin",
     );
-    expect(res.text).toContain("-H 'Authorization: Bearer fc-YOUR_KEY'");
+    expect(res.text).toContain("https://mcp.firecrawl.dev/v2/mcp-oauth");
+    expect(res.text).toContain("npx -y firecrawl-cli@latest init");
     expect(res.headers["x-exit-code"]).toBe("1");
   });
 
