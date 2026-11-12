@@ -6,7 +6,7 @@ vi.mock("../../scrapeURL", () => ({
 
 import { scrapeURL } from "../../scrapeURL";
 import { crawlToCrawler } from "../../../lib/crawl-redis";
-import { getLinksFromSitemap } from "../sitemap";
+import { getLinksFromSitemap, sitemapBudget } from "../sitemap";
 import { scrapeSitemap } from "../../crawler/sitemap";
 import { logger } from "../../../lib/logger";
 
@@ -79,7 +79,7 @@ describe("crawl discovery for US-only teams", () => {
       },
       logger,
       "crawl-1",
-      new Set(),
+      sitemapBudget(25),
     );
     expect(vi.mocked(scrapeURL).mock.calls.map(([, url]) => url)).toEqual([
       "https://example.com/sitemap.xml",
@@ -102,7 +102,7 @@ describe("crawl discovery for US-only teams", () => {
       },
       logger,
       "crawl-1",
-      new Set(),
+      sitemapBudget(25),
     );
     await expect(
       scrapeSitemap({
