@@ -5,6 +5,7 @@ import { fire_engine_search } from "./fireEngine";
 import { Logger } from "winston";
 import { ddgSearch } from "./v2/ddgsearch";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import { SearchUnavailableError } from "../lib/error";
 
 export async function search({
   query,
@@ -82,6 +83,7 @@ export async function search({
       ) || []
     );
   } catch (error) {
+    if (error instanceof SearchUnavailableError) throw error;
     logger.error(`Error in search function`, { error });
     return [];
   }

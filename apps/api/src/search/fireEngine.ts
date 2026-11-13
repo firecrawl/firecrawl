@@ -1,7 +1,11 @@
 import { config } from "../config";
 import { SearchResult } from "../../src/lib/entities";
 import { logger } from "../lib/logger";
-import { executeWithRetry, attemptRequest } from "../lib/retry-utils";
+import {
+  executeWithRetry,
+  attemptRequest,
+  requestSearchBackend,
+} from "../lib/retry-utils";
 import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 
 function hasResults(results: unknown): results is SearchResult[] {
@@ -40,13 +44,8 @@ export async function fire_engine_search(
   const url = `${config.FIRE_ENGINE_BETA_URL}/search`;
   const data = JSON.stringify(payload);
 
-  const result = await executeWithRetry<SearchResult[]>(
-    () => attemptRequest<SearchResult[]>(url, data, abort),
-    hasResults,
-    abort,
-  );
-
-  return result ?? [];
+  const result = await requestSearchBackend<unknown>(url, data, abort);
+  return Array.isArray(result) ? result : [];
 }
 
 export async function fireEngineMap(

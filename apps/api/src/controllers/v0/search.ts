@@ -19,7 +19,7 @@ import {
   toLegacyDocument,
 } from "../v1/types";
 import { fromV0Combo } from "../v2/types";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, SearchUnavailableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { defaultOrigin } from "../../lib/default-values";
 import { getSearchZDR } from "../../lib/zdr-helpers";
@@ -344,6 +344,10 @@ export async function searchController(req: Request, res: Response) {
     }
     if (error instanceof UsOnlyUnavailableError) {
       return res.status(403).json({ code: error.code, error: error.message });
+    }
+    if (error instanceof SearchUnavailableError) {
+      logger.warn("Search unavailable", { version: "v0" });
+      return res.status(503).json({ code: error.code, error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", { error });

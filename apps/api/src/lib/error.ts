@@ -48,6 +48,7 @@ export type ErrorCodes =
   | "CRAWL_DENIAL"
   | "UNSUPPORTED_SITE"
   | "MAP_FAILED"
+  | "SEARCH_UNAVAILABLE"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
   | "CATEGORY_REMOVED"
@@ -320,6 +321,24 @@ export class MapFailedError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MapFailedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+/** Search could not be served, as opposed to answering with no results. */
+export class SearchUnavailableError extends TransportableError {
+  constructor(
+    message = "Search is temporarily unavailable. Please try again shortly.",
+  ) {
+    super("SEARCH_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SearchUnavailableError(data.message);
     x.stack = data.stack;
     return x;
   }

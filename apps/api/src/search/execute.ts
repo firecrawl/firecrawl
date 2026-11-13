@@ -20,6 +20,7 @@ import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { search } from "./v2";
 import {
   SearchV2Response,
+  SearchV2BackendResponse,
   SearchResultType,
   SearchResultCountsBySource,
   SearchResultCategoriesBySource,
@@ -118,6 +119,8 @@ interface SearchContext {
 interface SearchExecuteResult {
   /** Parts of the search a US-only team could not be served. */
   usOnlyWarning?: string;
+  /** Requested result types that could not be retrieved. */
+  failedTypesWarning?: string;
   toolsWarning?: string;
   /** The tools were added automatically, not requested. */
   toolsAuto?: boolean;
@@ -429,11 +432,12 @@ export async function executeSearch(
   // Routed results take the regular web search's place as the web results, so
   // threat protection, safe search, categories, highlights, scraping and
   // billing treat them as a web search's.
-  const searchResponse: SearchV2Response = routedResults
-    ? { web: routedResults }
-    : webSearchPromise === null || indexResultsPromise !== null
-      ? ({} as SearchV2Response)
-      : ((await webSearchPromise) as SearchV2Response);
+  const { failedTypes, ...searchResponse }: SearchV2BackendResponse =
+    routedResults
+      ? { web: routedResults }
+      : webSearchPromise === null || indexResultsPromise !== null
+        ? {}
+        : await webSearchPromise;
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
   >(
@@ -869,6 +873,11 @@ export async function executeSearch(
     response: searchResponse,
     ...(usOnlyWarnings.length > 0
       ? { usOnlyWarning: usOnlyWarnings.join(" ") }
+      : {}),
+    ...(failedTypes?.length
+      ? {
+          failedTypesWarning: `Some results could not be retrieved (${failedTypes.join(", ")}). Retry the request to get them.`,
+        }
       : {}),
     toolsWarning,
     toolsUnavailable,
