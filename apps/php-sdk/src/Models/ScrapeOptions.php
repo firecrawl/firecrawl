@@ -13,6 +13,7 @@ final class ScrapeOptions
      * @param list<string>|null            $excludeTags
      * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null $actions
+     * @param array{name: string, saveChanges?: bool}|null $profile Name and optional saveChanges flag.
      * @param AuditMetadata|null           $auditMetadata
      */
     private function __construct(
@@ -37,11 +38,15 @@ final class ScrapeOptions
         private readonly ?bool $lockdown = null,
         private readonly ?bool $checkPromptInjection = null,
         private readonly ?string $integration = null,
-        /** @var array<string, string>|null */
+        /** @var array{name: string, saveChanges?: bool}|null */
         private readonly ?array $profile = null,
         private readonly ?bool $changeTracking = null,
-        private readonly ?bool $redactPII = null,
+        private readonly bool|RedactPIIOptions|null $redactPII = null,
         private readonly ?AuditMetadata $auditMetadata = null,
+        private readonly ?bool $fastMode = null,
+        private readonly ?string $useMock = null,
+        private readonly ?bool $onlyCleanContent = null,
+        private readonly ?bool $safeMode = null,
     ) {}
 
     /**
@@ -51,11 +56,13 @@ final class ScrapeOptions
      * @param list<string>|null                             $excludeTags
      * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null               $actions
-     * @param array<string, string>|null                    $profile
+     * @param array{name: string, saveChanges?: bool}|null   $profile Name and optional saveChanges flag.
      * @param AuditMetadata|null                            $auditMetadata
      * @param bool|null                                     $checkPromptInjection Scans the page content for prompt
      *     injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape
      *     with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole page.
+     * @param bool|RedactPIIOptions|null                     $redactPII Pass true to redact all entity kinds with API
+     *     defaults, or a RedactPIIOptions to pick mode, entities and replacement style.
      */
     public static function with(
         ?array $formats = null,
@@ -80,9 +87,13 @@ final class ScrapeOptions
         ?int $minAge = null,
         ?array $profile = null,
         ?bool $changeTracking = null,
-        ?bool $redactPII = null,
+        bool|RedactPIIOptions|null $redactPII = null,
         ?AuditMetadata $auditMetadata = null,
         ?bool $checkPromptInjection = null,
+        ?bool $fastMode = null,
+        ?string $useMock = null,
+        ?bool $onlyCleanContent = null,
+        ?bool $safeMode = null,
     ): self {
         return new self(
             $formats, $headers, $includeTags, $excludeTags, $onlyMainContent,
@@ -90,6 +101,7 @@ final class ScrapeOptions
             $skipTlsVerification, $removeBase64Images, $blockAds, $proxy,
             $maxAge, $minAge, $storeInCache, $lockdown, $checkPromptInjection,
             $integration, $profile, $changeTracking, $redactPII, $auditMetadata,
+            $fastMode, $useMock, $onlyCleanContent, $safeMode,
         );
     }
 
@@ -152,8 +164,14 @@ final class ScrapeOptions
             'checkPromptInjection' => $this->checkPromptInjection,
             'integration' => $this->integration,
             'profile' => $this->profile,
-            'redactPII' => $this->redactPII,
+            'redactPII' => $this->redactPII instanceof RedactPIIOptions
+                ? $this->redactPII->toArray()
+                : $this->redactPII,
             'auditMetadata' => $this->auditMetadata?->toArray(),
+            'fastMode' => $this->fastMode,
+            'useMock' => $this->useMock,
+            'onlyCleanContent' => $this->onlyCleanContent,
+            'safeMode' => $this->safeMode,
         ];
 
         foreach ($fields as $key => $value) {
@@ -209,7 +227,7 @@ final class ScrapeOptions
         return $this->mobile;
     }
 
-    public function getRedactPII(): ?bool
+    public function getRedactPII(): bool|RedactPIIOptions|null
     {
         return $this->redactPII;
     }
@@ -281,7 +299,7 @@ final class ScrapeOptions
         return $this->minAge;
     }
 
-    /** @return array<string, string>|null */
+    /** @return array{name: string, saveChanges?: bool}|null */
     public function getProfile(): ?array
     {
         return $this->profile;
@@ -295,5 +313,25 @@ final class ScrapeOptions
     public function getAuditMetadata(): ?AuditMetadata
     {
         return $this->auditMetadata;
+    }
+
+    public function getFastMode(): ?bool
+    {
+        return $this->fastMode;
+    }
+
+    public function getUseMock(): ?string
+    {
+        return $this->useMock;
+    }
+
+    public function getOnlyCleanContent(): ?bool
+    {
+        return $this->onlyCleanContent;
+    }
+
+    public function getSafeMode(): ?bool
+    {
+        return $this->safeMode;
     }
 }
