@@ -5,7 +5,8 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { externalRequestId } from "../lib/external-request-id";
 import { logger as rootLogger } from "../lib/logger";
 import { requestOrigin } from "../lib/request-origin";
-import { getEffectiveSearchForcedKind } from "../lib/safe-mode";
+import { getEffectiveSearchForcedKind, getSafeMode } from "../lib/safe-mode";
+import { getScrapeZDR } from "../lib/zdr-helpers";
 import { logRequest } from "../services/logging/log_job";
 import { resolveIntegration } from "../utils/integration";
 import { wrap } from "./shared";
@@ -18,7 +19,7 @@ function freshFeedError(res: Response, status: number, error: string) {
 }
 
 function requireFreshFeedFlag(req: Request, res: Response, next: NextFunction) {
-  if (!(req as RequestWithAuth<any, any, any>).acuc?.flags?.freshFeed) {
+  if ((req as RequestWithAuth<any, any, any>).acuc?.flags?.freshFeed !== true) {
     return freshFeedError(
       res,
       403,
@@ -40,8 +41,17 @@ function eventCount(body: Buffer): number {
 function freshFeedController(upstreamBase: string) {
   return async (req: Request, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
+    const flags = authedReq.acuc?.flags;
+    if (getSafeMode(flags)) {
+      return freshFeedError(
+        res,
+        403,
+        "Safe Mode is enabled for your organization, which does not support this endpoint.",
+      );
+    }
     const zeroDataRetention =
-      getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
+      getEffectiveSearchForcedKind(flags, undefined) !== null ||
+      getScrapeZDR(flags) === "forced";
 
     const started = Date.now();
     const jobId = uuidv7();
@@ -65,7 +75,7 @@ function freshFeedController(upstreamBase: string) {
       team_id: authedReq.auth.team_id,
       origin: requestOrigin({}, req),
       integration: resolveIntegration(undefined, req) ?? null,
-      target_hint: target,
+      target_hint: UPSTREAM_PATH,
       zeroDataRetention,
       api_key_id: authedReq.acuc?.api_key_id ?? null,
     });

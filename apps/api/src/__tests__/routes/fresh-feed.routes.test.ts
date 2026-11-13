@@ -114,6 +114,30 @@ describe("GET /v2/fresh-vertical-feed/local/latest", () => {
     expect(upstream.requests).toEqual([]);
   });
 
+  it("refuses a team whose flag is not the boolean true", async () => {
+    mocks.flags = { freshFeed: "false" };
+
+    const response = await latest("?after=0");
+
+    expect(response.status).toBe(403);
+    expect(upstream.requests).toEqual([]);
+  });
+
+  it("refuses a Safe Mode organization before the feed is called", async () => {
+    mocks.flags = { freshFeed: true, safeMode: true };
+
+    const response = await latest("?after=0");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      success: false,
+      error:
+        "Safe Mode is enabled for your organization, which does not support this endpoint.",
+    });
+    expect(upstream.requests).toEqual([]);
+    expect(mocks.logRequest).not.toHaveBeenCalled();
+  });
+
   it("returns the feed's 400 unchanged", async () => {
     upstream.status = 400;
     upstream.body = '{"error":  "unknown parameter: colour"}';
@@ -163,17 +187,19 @@ describe("GET /v2/fresh-vertical-feed/local/latest", () => {
   it.each([
     [{ freshFeed: true }, false],
     [{ freshFeed: true, searchZDR: "forced-zdr" }, true],
+    [{ freshFeed: true, scrapeZDR: "forced" }, true],
   ])(
-    "logs a fresh_feed request for flags %j with zeroDataRetention %s",
+    "logs a fresh_feed request without the query for flags %j with zeroDataRetention %s",
     async (flags, zeroDataRetention) => {
       mocks.flags = flags;
 
-      await latest("?after=3");
+      await latest("?after=3&host=example.org");
 
       expect(mocks.logRequest).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           kind: "fresh_feed",
           team_id: "team-1",
+          target_hint: "/fresh-vertical-feed/local/latest",
           zeroDataRetention,
         }),
       );
