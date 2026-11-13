@@ -124,6 +124,43 @@ describe("ZDR cleaner", () => {
     );
   });
 
+  it("bounds concurrent blob deletes and still removes every blob", async () => {
+    const ids = Array.from({ length: 500 }, (_, i) => `blob-${i}`);
+    mockChildren(ids);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    removeJobFromGCS.mockImplementation(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      inFlight--;
+    });
+
+    await cleanZdrRequest("request-large");
+
+    expect(maxInFlight).toBeLessThanOrEqual(50);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(new Set(removeJobFromGCS.mock.calls.map(([id]) => id))).toEqual(
+      new Set(ids),
+    );
+    expect(removeJobFromGCS).toHaveBeenCalledTimes(ids.length);
+  });
+
+  it("keeps deleting after a failure and reports every failed blob", async () => {
+    const ids = Array.from({ length: 200 }, (_, i) => `blob-${i}`);
+    mockChildren(ids);
+    removeJobFromGCS.mockImplementation(async id => {
+      if (id === "blob-0" || id === "blob-199") {
+        throw new Error("GCS unavailable");
+      }
+    });
+
+    await expect(cleanZdrRequest("request-partial")).rejects.toThrow(
+      "Failed to remove 2 blobs for ZDR request request-partial",
+    );
+    expect(removeJobFromGCS).toHaveBeenCalledTimes(ids.length);
+  });
+
   it("fails a queued request when ClickHouse is not configured", async () => {
     client.current = null;
 
