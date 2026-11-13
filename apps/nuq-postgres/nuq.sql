@@ -270,10 +270,8 @@ CREATE INDEX IF NOT EXISTS nuq_group_crawl_completed_expires_at_idx ON nuq.group
 CREATE INDEX IF NOT EXISTS idx_queue_scrape_backlog_group_id ON nuq.queue_scrape_backlog (group_id);
 
 SELECT cron.schedule('nuq_group_crawl_finished', '15 seconds', $$
-  WITH finished_groups AS (
-    UPDATE nuq.group_crawl
-    SET status = 'completed'::nuq.group_status,
-        expires_at = now() + MAKE_INTERVAL(secs => nuq.group_crawl.ttl / 1000)
+  WITH candidates AS MATERIALIZED (
+    SELECT id, xmin AS version FROM nuq.group_crawl
     WHERE status = 'active'::nuq.group_status
       AND NOT EXISTS (
         SELECT 1 FROM nuq.queue_scrape
@@ -284,7 +282,13 @@ SELECT cron.schedule('nuq_group_crawl_finished', '15 seconds', $$
         SELECT 1 FROM nuq.queue_scrape_backlog
         WHERE nuq.queue_scrape_backlog.group_id = nuq.group_crawl.id
       )
-    RETURNING id, owner_id
+  ), finished_groups AS (
+    UPDATE nuq.group_crawl g
+    SET status = 'completed'::nuq.group_status,
+        expires_at = now() + MAKE_INTERVAL(secs => g.ttl / 1000)
+    FROM candidates c
+    WHERE g.id = c.id AND g.xmin = c.version
+    RETURNING g.id, g.owner_id
   )
   INSERT INTO nuq.queue_crawl_finished (data, owner_id, group_id)
   SELECT '{}'::jsonb, finished_groups.owner_id, finished_groups.id
