@@ -31,7 +31,7 @@ describe("getBigtableTable", () => {
     vi.clearAllMocks();
     vi.resetModules();
     mutableConfig.BIGTABLE_INSTANCE_ID = "instance";
-    ({ getBigtableTable } = await import("./bigtable-client"));
+    ({ getBigtableTable } = await import("./bigtable-client.js"));
   });
 
   it("records a span only the first time a table is resolved", async () => {
