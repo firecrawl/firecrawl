@@ -1,5 +1,6 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
 import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
@@ -2209,6 +2210,7 @@ interface RequestWithMaybeACUC<
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  zdrPolicy?: ZDRPolicy;
 }
 
 export interface RequestWithAuth<
