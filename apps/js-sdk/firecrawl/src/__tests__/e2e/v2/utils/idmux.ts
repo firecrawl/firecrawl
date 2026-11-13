@@ -14,6 +14,16 @@ export type Identity = {
 
 let cachedIdentity: Identity | null = null;
 
+// The base per-minute limits (2/min for crawl and extract) make the suites wait
+// out the window between calls. CI identities get room so they don't.
+const CI_RATE_LIMIT_OVERRIDES = {
+  crawl: 60,
+  extract: 60,
+  scrape: 120,
+  search: 120,
+  map: 120,
+};
+
 export function getApiUrl(): string {
   return process.env.TEST_URL ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev";
 }
@@ -37,6 +47,7 @@ export async function getIdentity(req: IdmuxRequest = {}): Promise<Identity> {
     refName: process.env.GITHUB_REF_NAME ?? "local",
     runNumber: Number.isFinite(runNumber) ? runNumber : 0,
     concurrency: req.concurrency ?? 100,
+    flags: { rateLimitOverrides: CI_RATE_LIMIT_OVERRIDES },
     ...req,
   };
 
