@@ -268,7 +268,13 @@ describe("hosted bash route", () => {
       json: { success: false, error: "You've hit the keyless limit." },
     });
     const res = await run("firecrawl search anything");
-    expect(res.text).toBe("Error: You've hit the keyless limit.\n[exit 1]\n");
+    expect(res.text).toMatch(/^Error: You've hit the keyless limit\.\n/);
+    expect(res.text).toContain(
+      "Get a free API key: https://www.firecrawl.dev/signin",
+    );
+    expect(res.text).toContain("https://mcp.firecrawl.dev/v2/mcp-oauth");
+    expect(res.text).toContain("npx -y firecrawl-cli@latest init");
+    expect(res.text).toContain("https://api.firecrawl.dev/v2/scrape");
     expect(res.headers["x-exit-code"]).toBe("1");
   });
 
@@ -278,7 +284,7 @@ describe("hosted bash route", () => {
       json: { success: false, error: "Unauthorized" },
     });
     const res = await run("firecrawl scrape https://example.com");
-    expect(res.text).toContain("Create a free API key at");
+    expect(res.text).toContain("Get a free API key:");
     expect(res.headers["x-exit-code"]).toBe("1");
   });
 
