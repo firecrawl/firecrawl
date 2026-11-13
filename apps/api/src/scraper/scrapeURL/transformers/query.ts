@@ -23,7 +23,7 @@ function escapePromptTags(text: string): string {
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 const DIRECT_QUOTE_MODEL = {
