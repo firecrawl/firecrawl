@@ -42,6 +42,7 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   exchange: 100,
   // Catalogue reads only; no paid tool runs behind them.
   exchangeDiscover: 10000,
+  freshFeed: 100,
 };
 
 /**

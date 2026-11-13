@@ -432,7 +432,8 @@ type LoggedRequest = {
     | "research_paper_read"
     | "research_related_papers"
     | "code_search"
-    | "gov_search";
+    | "gov_search"
+    | "fresh_feed";
   api_version: string;
   team_id: string;
   origin?: string;
