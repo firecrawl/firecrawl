@@ -700,6 +700,29 @@ export class PromptInjectionDetectedError extends TransportableError {
   }
 }
 
+export class PaywalledContentError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_PAYWALLED_CONTENT",
+      message ??
+        "The page is marked as paywalled (schema.org isAccessibleForFree is false), so Safe Mode refused the scrape.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PaywalledContentError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class JsonExtractionContentTooLargeError extends TransportableError {
   constructor(message?: string) {
     super(

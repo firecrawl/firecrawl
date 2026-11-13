@@ -1376,6 +1376,7 @@ export type TeamFlags = {
     disablePlatformSelection?: boolean;
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
+    respectPaywalls?: boolean;
     allowlist?: string[];
   };
   siemLogging?: boolean;

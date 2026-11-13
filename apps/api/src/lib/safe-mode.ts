@@ -88,6 +88,7 @@ export type ResolvedSafeMode = {
   disablePlatformSelection: boolean;
   disableCountrySelection: boolean;
   disableAutomaticReferrer: boolean;
+  respectPaywalls: boolean;
 };
 
 const SAFE_MODE_DEFAULTS: ResolvedSafeMode = {
@@ -102,6 +103,7 @@ const SAFE_MODE_DEFAULTS: ResolvedSafeMode = {
   disablePlatformSelection: true,
   disableCountrySelection: true,
   disableAutomaticReferrer: true,
+  respectPaywalls: false,
 };
 
 export function getSafeMode(flags: TeamFlags | null | undefined): boolean {
@@ -224,6 +226,8 @@ export function resolveSafeMode(
     disableAutomaticReferrer:
       config?.disableAutomaticReferrer ??
       SAFE_MODE_DEFAULTS.disableAutomaticReferrer,
+    respectPaywalls:
+      config?.respectPaywalls ?? SAFE_MODE_DEFAULTS.respectPaywalls,
   };
 
   if (url && isSafeModeAllowlisted(url, config?.allowlist)) {
@@ -240,6 +244,7 @@ export function resolveSafeMode(
         disablePlatformSelection: false,
         disableCountrySelection: false,
         disableAutomaticReferrer: false,
+        respectPaywalls: false,
       },
     };
   }
