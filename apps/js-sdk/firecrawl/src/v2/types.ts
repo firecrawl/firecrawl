@@ -2294,6 +2294,8 @@ export interface BrowserDeleteResponse {
 export interface ScrapeExecuteRequest {
   code?: string;
   prompt?: string;
+  /** Fallback URL used when the original scrape's replay context is unavailable. */
+  url?: string;
   language?: "python" | "node" | "bash";
   timeout?: number;
   origin?: string;
