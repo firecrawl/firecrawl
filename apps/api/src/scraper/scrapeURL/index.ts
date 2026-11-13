@@ -1,6 +1,11 @@
 import { Logger } from "winston";
 import { config } from "../../config";
 import {
+  assertSafeOutboundDestination,
+  assertSafeOutboundUrl,
+  InsecureConnectionError,
+} from "../../lib/outbound-url";
+import {
   withSpan,
   setSpanAttributes,
   recordSpanException,
@@ -1297,6 +1302,41 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
+      // Includes discovered URLs and queued jobs that bypass request schemas.
+      // Remote engines must also enforce this policy at connection time.
+      try {
+        assertSafeOutboundUrl(url, config.ALLOW_LOCAL_WEBHOOKS === true);
+        await assertSafeOutboundDestination(
+          rewriteUrl(url) ?? url,
+          config.ALLOW_LOCAL_WEBHOOKS === true,
+        );
+      } catch (error) {
+        const unsafeDestination = error instanceof InsecureConnectionError;
+        _logger[unsafeDestination ? "warn" : "debug"](
+          "Scrape destination validation failed",
+          {
+            scrapeId: id,
+            url: stripUrlUserinfo(url),
+            error,
+            unsafeDestination,
+          },
+        );
+        setSpanAttributes(span, {
+          "scrape.success": false,
+          "scrape.blocked_by_destination_policy": unsafeDestination,
+          "scrape.error_type": unsafeDestination
+            ? "InsecureConnectionError"
+            : "DNSResolutionError",
+        });
+        return {
+          success: false,
+          error:
+            error instanceof InsecureConnectionError
+              ? error
+              : new DNSResolutionError(new URL(url).hostname),
+        };
+      }
+
       // Safe Mode: the universal enforcement choke point. The controller
       // pre-resolves safe mode for a single scrape, but jobs that carry only
       // team flags (crawl children, search / extract URLs, allowlisted single

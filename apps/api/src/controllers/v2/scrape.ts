@@ -557,7 +557,10 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "UNSUPPORTED_SITE") {
+          if (
+            e.code === "UNSUPPORTED_SITE" ||
+            e.code === "SCRAPE_UNSAFE_DESTINATION"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
