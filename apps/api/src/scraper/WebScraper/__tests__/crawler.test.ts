@@ -4,19 +4,39 @@ import { WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
 
+const { mockGetLinksFromSitemap, mockRedisExpire, mockRedisSadd } = vi.hoisted(
+  () => ({
+    mockGetLinksFromSitemap: vi.fn(),
+    mockRedisExpire: vi.fn(),
+    mockRedisSadd: vi.fn(),
+  }),
+);
+
 vi.mock("axios");
 vi.mock("robots-parser");
+vi.mock("../sitemap", () => ({
+  getLinksFromSitemap: mockGetLinksFromSitemap,
+}));
+vi.mock("../../../services/redis", () => ({
+  redisEvictConnection: {
+    expire: mockRedisExpire,
+    pipeline: vi.fn(),
+    sadd: mockRedisSadd,
+  },
+}));
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
+  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
 
   let maxCrawledDepth: number;
 
   beforeEach(() => {
+    mockGetLinksFromSitemap.mockReset().mockResolvedValue(1);
+    mockRedisExpire.mockReset().mockResolvedValue(1);
+    mockRedisSadd.mockReset().mockResolvedValue(1);
+
     // Setup default mocks
     mockAxios.get.mockImplementation(url => {
       if (url.includes("robots.txt")) {
@@ -35,6 +55,38 @@ describe("WebCrawler", () => {
       getSitemaps: vi.fn().mockReturnValue([]),
       getPreferredHost: vi.fn().mockReturnValue("example.com"),
     });
+  });
+
+  it("fetches robots.txt sitemap URLs as provided", async () => {
+    const initialUrl = "https://www.kirkland.com";
+    const robotsSitemapUrl = "https://www.kirkland.com/sitemap";
+
+    mockRobotsParser.mockReturnValue({
+      isAllowed: vi.fn().mockReturnValue(true),
+      isDisallowed: vi.fn().mockReturnValue(false),
+      getMatchingLineNumber: vi.fn().mockReturnValue(0),
+      getCrawlDelay: vi.fn().mockReturnValue(0),
+      getSitemaps: vi.fn().mockReturnValue([robotsSitemapUrl]),
+      getPreferredHost: vi.fn().mockReturnValue("example.com"),
+    });
+
+    crawler = new WebCrawler({
+      jobId: "TEST",
+      initialUrl,
+      includes: [],
+      excludes: [],
+      limit: 10,
+      maxCrawledDepth: 10,
+    });
+
+    await crawler.tryGetSitemap(vi.fn(), true, true, 1000);
+
+    const requestedSitemaps = mockGetLinksFromSitemap.mock.calls.map(
+      ([options]) => options.sitemapUrl,
+    );
+    expect(requestedSitemaps).toContain(`${initialUrl}/sitemap.xml`);
+    expect(requestedSitemaps).toContain(robotsSitemapUrl);
+    expect(requestedSitemaps).not.toContain(`${robotsSitemapUrl}/sitemap.xml`);
   });
 
   it("should respect the limit parameter by not returning more links than specified", async () => {
