@@ -9,6 +9,14 @@ const mockKeylessLimitBody = vi.fn().mockResolvedValue({
   error: "keyless limit reached",
   reason: "credits",
 });
+const providerToolsRefusal = {
+  success: false,
+  error: "An API key is required for provider tools.",
+  signup_url: "https://firecrawl.dev/k/token",
+};
+const mockKeylessProviderToolsBody = vi.fn(
+  (..._args: any[]) => providerToolsRefusal,
+);
 const mockProjectSearchTotalCredits = vi.fn(() => 0);
 
 vi.mock("../../../services/logging/log_job", () => ({
@@ -31,6 +39,8 @@ vi.mock("../../../lib/keyless", () => ({
   KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
   adjustKeylessCredits: vi.fn().mockResolvedValue(undefined),
   keylessLimitBody: (...args: any[]) => mockKeylessLimitBody(...args),
+  keylessProviderToolsBody: (...args: any[]) =>
+    mockKeylessProviderToolsBody(...args),
   logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
   reserveKeylessCredits: (...args: any[]) => mockReserveKeylessCredits(...args),
 }));
@@ -533,6 +543,11 @@ describe("skill discovery source", () => {
       keyless,
     );
     expect(keyless.status).toHaveBeenCalledWith(403);
+    expect(keyless.json).toHaveBeenCalledWith(providerToolsRefusal);
+    expect(mockKeylessProviderToolsBody).toHaveBeenCalledWith(
+      "preview_keyless_203.0.113.8",
+      expect.objectContaining({ body: expect.any(Object) }),
+    );
 
     const zdr = makeRes();
     await searchController(

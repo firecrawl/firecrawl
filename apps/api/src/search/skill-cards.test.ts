@@ -44,6 +44,7 @@ it("maps a successful discover response onto short cards", async () => {
     path: "/v1/discover/skill-cards?q=records&limit=3",
     timeoutMs: 3000,
     usOnly: false,
+    zeroDataRetention: false,
   });
   expect(request.mock.calls[0][0]).not.toHaveProperty("body");
   expect(cards.succeeded).toBe(true);
@@ -129,6 +130,25 @@ it("forwards usOnly so Exchange can hide non-US providers", async () => {
 
   expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
   expect(found).toEqual({ skills: [], succeeded: true });
+});
+
+it("forwards zero data retention so Exchange can hide providers without it", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { query: "records", skills: [] },
+  });
+
+  await discoverSkills(
+    {
+      teamId: "team",
+      query: "records",
+      timeoutMs: 1000,
+      zeroDataRetention: true,
+    },
+    logger,
+  );
+
+  expect(request.mock.calls[0][0]).toMatchObject({ zeroDataRetention: true });
 });
 
 it("returns only the first three when Exchange sends more", async () => {

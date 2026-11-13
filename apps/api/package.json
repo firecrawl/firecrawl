@@ -48,6 +48,7 @@
   "devDependencies": {
     "@types/amqplib": "^0.10.7",
     "@types/body-parser": "^1.19.2",
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.13",
     "@types/culori": "^4.0.1",
     "@types/escape-html": "^1.0.4",
@@ -106,6 +107,7 @@
     "bullmq": "^5.56.7",
     "cacheable-lookup": "^6.1.0",
     "cheerio": "^1.0.0-rc.12",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "culori": "^4.0.2",
     "diff": "^8.0.3",
@@ -125,6 +127,7 @@
     "jose": "^6.2.12",
     "jsdom": "^29.1.1",
     "jsonrepair": "^3.14.0",
+    "just-bash": "3.6.0",
     "koffi": "^2.9.0",
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",

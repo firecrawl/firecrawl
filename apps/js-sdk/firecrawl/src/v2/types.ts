@@ -856,15 +856,36 @@ export interface GovSearchOptions {
   court?: string;
   /** Keep only pages from one type of court. */
   courtType?: GovSearchCourtType;
-  /** Keep only pages that cite one law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". */
-  cites?: string;
+  /** Keep only pages that cite a law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". A list of up to 32 keeps pages citing any of them. */
+  cites?: string | string[];
   /** Keep only pages from one site, such as "irs.gov". */
   domain?: string;
+  /** Result groups to return: `web` (the default) and `gov`, the same results with the index's labels. */
+  sources?: GovSearchSource[];
+}
+
+export type GovSearchSource = "web" | "gov";
+
+/** A Government Index result with the index's labels; a label the index does not have is absent. */
+export interface GovSearchResult extends SearchResultWeb {
+  /** "us" for federal, or "us-" plus a two-letter state or territory code. */
+  jurisdiction?: string;
+  /** CourtListener court id, such as "scotus" or "ca9". */
+  court?: string;
+  courtType?: GovSearchCourtType;
+  /** Citation ids of the laws and cases the page cites. */
+  cites?: string[];
+  /** Citation ids other pages cite this page by; pass one as `cites` to find them. */
+  citedAs?: string[];
+  lang?: string;
+  /** Crawl time in Unix milliseconds. */
+  updatedAt?: number;
 }
 
 export interface GovSearchResponse {
   success: boolean;
-  data: { web: SearchResultWeb[] };
+  /** `web` is present unless `sources` leaves it out; `gov` is present when `sources` includes it. */
+  data: { web?: SearchResultWeb[]; gov?: GovSearchResult[] };
 }
 
 export interface SearchResultWeb {
