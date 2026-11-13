@@ -1,8 +1,14 @@
 import compression from "compression";
 import express, { NextFunction, Request, Response } from "express";
+import { pipeline } from "node:stream/promises";
+import { request, type Dispatcher } from "undici";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { externalRequestId } from "../lib/external-request-id";
+import {
+  getRoutePattern,
+  httpRequestDurationSeconds,
+} from "../lib/http-metrics";
 import { logger as rootLogger } from "../lib/logger";
 import { requestOrigin } from "../lib/request-origin";
 import { getEffectiveSearchForcedKind } from "../lib/safe-mode";
@@ -12,13 +18,19 @@ import { wrap } from "./shared";
 
 const TIMEOUT_MS = 30_000;
 const UPSTREAM_PATH = "/fresh-vertical-feed/local/latest";
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "content-encoding",
+  "content-length",
+  "vary",
+];
 
 function freshFeedError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
 }
 
 function requireFreshFeedFlag(req: Request, res: Response, next: NextFunction) {
-  if (!(req as RequestWithAuth<any, any, any>).acuc?.flags?.freshFeed) {
+  if ((req as RequestWithAuth<any, any, any>).acuc?.flags?.freshFeed !== true) {
     return freshFeedError(
       res,
       403,
@@ -28,22 +40,17 @@ function requireFreshFeedFlag(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function eventCount(body: Buffer): number {
-  try {
-    const events = JSON.parse(body.toString()).events;
-    return Array.isArray(events) ? events.length : 0;
-  } catch {
-    return 0;
-  }
+function rejectHead(_req: Request, res: Response) {
+  res.status(405).set("Allow", "GET").end();
 }
 
-function freshFeedController(upstreamBase: string) {
+function freshFeedController(upstreamBase: string, timeoutMs: number) {
   return async (req: Request, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
     const zeroDataRetention =
       getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
 
-    const started = Date.now();
+    const started: number = (req as any).requestTiming?.startTime ?? Date.now();
     const jobId = uuidv7();
     const logger = rootLogger.child({
       module: "api/fresh-feed",
@@ -56,6 +63,9 @@ function freshFeedController(upstreamBase: string) {
     const target =
       UPSTREAM_PATH +
       (queryStart === -1 ? "" : req.originalUrl.slice(queryStart));
+
+    const callerGone = new AbortController();
+    res.on("close", () => callerGone.abort());
 
     await logRequest({
       id: jobId,
@@ -70,50 +80,82 @@ function freshFeedController(upstreamBase: string) {
       api_key_id: authedReq.acuc?.api_key_id ?? null,
     });
 
+    let upstream: Dispatcher.ResponseData;
     try {
-      const upstream = await fetch(upstreamBase + target, {
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+      // fetch always decodes the body; request hands back the feed's bytes as sent.
+      upstream = await request(upstreamBase + target, {
+        headers: { "accept-encoding": req.headers["accept-encoding"] },
+        headersTimeout: timeoutMs,
+        bodyTimeout: timeoutMs,
+        signal: callerGone.signal,
       });
-
-      if (upstream.status !== 200 && upstream.status !== 400) {
-        await upstream.body?.cancel();
-        logger.error("Fresh feed upstream error", {
-          status: upstream.status,
-          seconds: (Date.now() - started) / 1000,
-        });
-        return freshFeedError(res, 502, "The request could not be completed.");
-      }
-
-      const body = Buffer.from(await upstream.arrayBuffer());
-      const events = upstream.status === 200 ? eventCount(body) : 0;
-
-      logger.info("Fresh feed request", {
-        status: upstream.status,
-        events,
-        seconds: (Date.now() - started) / 1000,
-      });
-
-      const contentType = upstream.headers.get("content-type");
-      if (contentType) res.setHeader("content-type", contentType);
-      return res.status(upstream.status).send(body);
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "TimeoutError") {
+      if (callerGone.signal.aborted) return;
+      if ((error as { code?: unknown })?.code === "UND_ERR_HEADERS_TIMEOUT") {
         logger.error("Fresh feed timed out");
         return freshFeedError(res, 504, "The request timed out.");
       }
       logger.error("Fresh feed proxy error", { error });
       return freshFeedError(res, 502, "The request could not be completed.");
     }
+
+    if (![200, 400, 406].includes(upstream.statusCode)) {
+      upstream.body.dump().catch(() => {});
+      logger.error("Fresh feed upstream error", {
+        status: upstream.statusCode,
+        seconds: (Date.now() - started) / 1000,
+      });
+      if (upstream.statusCode === 500 || upstream.statusCode === 503) {
+        res.setHeader("Retry-After", "5");
+        return freshFeedError(
+          res,
+          503,
+          "The feed is temporarily unavailable. Retry the same request.",
+        );
+      }
+      return freshFeedError(res, 502, "The request could not be completed.");
+    }
+
+    res.status(upstream.statusCode);
+    for (const h of FORWARDED_RESPONSE_HEADERS) {
+      const value = upstream.headers[h];
+      if (value) res.setHeader(h, value);
+    }
+
+    let bytes = 0;
+    upstream.body.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+    });
+    const outcome = () => ({
+      status: upstream.statusCode,
+      contentEncoding: upstream.headers["content-encoding"],
+      bytes,
+      seconds: (Date.now() - started) / 1000,
+    });
+
+    try {
+      await pipeline(upstream.body, res);
+      logger.info("Fresh feed request", outcome());
+    } catch (error: unknown) {
+      logger.warn("Fresh feed stream failed", { error, ...outcome() });
+    }
+    httpRequestDurationSeconds
+      .labels("v2", req.method, getRoutePattern(req), String(res.statusCode))
+      .observe((Date.now() - started) / 1000);
   };
 }
 
-export function createFreshFeedRouter(upstreamUrl: string) {
+export function createFreshFeedRouter(
+  upstreamUrl: string,
+  timeoutMs = TIMEOUT_MS,
+) {
   const router = express.Router();
+  router.head("/local/latest", rejectHead);
   router.get(
     "/local/latest",
     requireFreshFeedFlag,
     compression(),
-    wrap(freshFeedController(upstreamUrl.replace(/\/+$/, ""))),
+    wrap(freshFeedController(upstreamUrl.replace(/\/+$/, ""), timeoutMs)),
   );
   return router;
 }
