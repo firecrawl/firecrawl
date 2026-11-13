@@ -40,12 +40,13 @@ beforeEach(() => {
   warn.mockClear();
 });
 
-it("attributes a call to the latest search and find-tools jobs that showed it", async () => {
+it("attributes a call to the latest search, find-tools and read-skill jobs that showed it", async () => {
   const sponsors = { provider: "particle", capability: "advertising/sponsors" };
   recordDiscoveredTools("team", "search", "search-1", [sponsors]);
   recordDiscoveredTools("team", "find_tools", "scrape-1", [sponsors]);
   recordDiscoveredTools("team", "find_tools", "scrape-2", [sponsors]);
-  await vi.waitFor(() => expect(store.size).toBe(2));
+  recordDiscoveredTools("team", "read_skill", "scrape-3", [sponsors]);
+  await vi.waitFor(() => expect(store.size).toBe(3));
   for (const key of store.keys()) {
     expect(expiries.get(key)).toEqual(["EX", 3600]);
   }
@@ -57,6 +58,7 @@ it("attributes a call to the latest search and find-tools jobs that showed it", 
   expect(found).toEqual({
     search: { id: "search-1", secondsBefore: expect.any(Number) },
     find_tools: { id: "scrape-2", secondsBefore: expect.any(Number) },
+    read_skill: { id: "scrape-3", secondsBefore: expect.any(Number) },
   });
   expect(missing).toEqual({});
 });
