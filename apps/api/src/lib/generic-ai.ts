@@ -30,9 +30,11 @@ const vertexAuthOptions = config.VERTEX_CREDENTIALS
   ? {
       credentials: JSON.parse(atob(config.VERTEX_CREDENTIALS)),
     }
-  : {
-      keyFile: "./gke-key.json",
-    };
+  : config.VERTEX_USE_ADC
+    ? undefined
+    : {
+        keyFile: "./gke-key.json",
+      };
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
