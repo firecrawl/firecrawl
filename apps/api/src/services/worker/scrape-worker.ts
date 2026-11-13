@@ -841,7 +841,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   setSpanAttributes(span, {
                     "crawl.id": crawlId,
                     "crawl.team_id": sc.team_id,
-                    "crawl.links_discovered": discoveredLinks.length,
+                    "crawl.links_discovered": links.links.length,
+                    "crawl.links_allowed": discoveredLinks.length,
                     "crawl.links_checked": checked,
                     "crawl.links_queued": queued,
                     "crawl.limit_reached": limitReached,

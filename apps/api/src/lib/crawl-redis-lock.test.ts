@@ -1,16 +1,21 @@
 import { vi } from "vitest";
 
-const { scard, exec, pipeline, withSpan } = vi.hoisted(() => {
+const { scard, exec, srem, pipeline, withSpan } = vi.hoisted(() => {
   const exec = vi.fn();
+  const srem = vi.fn();
   const chain = {
     sadd: vi.fn(() => chain),
     expire: vi.fn(() => chain),
-    srem: vi.fn(() => chain),
+    srem: (...args: unknown[]) => {
+      srem(...args);
+      return chain;
+    },
     exec,
   };
   return {
     scard: vi.fn(),
     exec,
+    srem,
     pipeline: vi.fn(() => chain),
     withSpan: vi.fn(
       async (_name: string, fn: (span: any) => any) => await fn({}),
@@ -93,5 +98,102 @@ describe("tryLockURL", () => {
 
     await tryLockURL("crawl", crawl(), "https://example.com/a");
     expect(withSpan).not.toHaveBeenCalled();
+  });
+});
+
+describe("tryLockURL when Redis misbehaves", () => {
+  const ok = [
+    [null, 1],
+    [null, 1],
+  ];
+  const silentLogger = { error: vi.fn() } as any;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries a command error in the lock pipeline and keeps the lock", async () => {
+    exec
+      .mockResolvedValueOnce([
+        [null, 1],
+        [new Error("expire failed"), null],
+      ])
+      .mockResolvedValueOnce([
+        [null, 0],
+        [null, 1],
+      ])
+      .mockResolvedValueOnce(ok);
+
+    const result = tryLockURL(
+      "crawl",
+      crawl(),
+      "https://example.com/a",
+      silentLogger,
+    );
+    await vi.runAllTimersAsync();
+
+    // The retry reads SADD=0, but the first attempt had already added it.
+    expect(await result).toBe("locked");
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(silentLogger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws once the lock pipeline has been rejected three times", async () => {
+    exec.mockRejectedValue(new Error("connection lost"));
+
+    const result = tryLockURL(
+      "crawl",
+      crawl(),
+      "https://example.com/a",
+      silentLogger,
+    );
+    const assertion = expect(result).rejects.toThrow(
+      "URL lock pipeline failed after retries",
+    );
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(srem).not.toHaveBeenCalled();
+  });
+
+  it("rolls the lock back when the unique-URL bookkeeping keeps failing", async () => {
+    exec
+      .mockResolvedValueOnce(ok)
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce([
+        [new Error("sadd failed"), null],
+        [null, 1],
+      ])
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce(ok);
+
+    const result = tryLockURL(
+      "crawl",
+      crawl(),
+      "https://example.com/a",
+      silentLogger,
+    );
+    const assertion = expect(result).rejects.toThrow(
+      "Unique URL lock pipeline failed after retries",
+    );
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    // One lock attempt, three bookkeeping attempts, one rollback.
+    expect(exec).toHaveBeenCalledTimes(5);
+    expect(srem).toHaveBeenCalledWith(
+      "crawl:crawl:visited",
+      "https://example.com/a",
+    );
+    expect(srem).toHaveBeenCalledWith(
+      "crawl:crawl:visited_unique",
+      "https://example.com/a",
+    );
   });
 });

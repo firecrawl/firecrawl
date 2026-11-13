@@ -3,16 +3,24 @@ import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 let clientPromise: Promise<Bigtable> | null = null;
-const tables = new Map<string, Table>();
+const tables = new Map<string, Promise<Table>>();
 
-export async function getBigtableTable(tableId: string): Promise<Table> {
+export function getBigtableTable(tableId: string): Promise<Table> {
   // Every Bigtable read and write resolves its table first, and all but the
-  // first call per table find it here. Only that first call gets a span.
-  const cached = tables.get(tableId);
-  if (cached) {
-    return cached;
+  // first call per table find it here. Only that first call gets a span;
+  // callers that arrive while it is in flight share it.
+  let table = tables.get(tableId);
+  if (!table) {
+    table = resolveBigtableTable(tableId).catch(error => {
+      tables.delete(tableId);
+      throw error;
+    });
+    tables.set(tableId, table);
   }
+  return table;
+}
 
+async function resolveBigtableTable(tableId: string): Promise<Table> {
   return withSpan("bigtable.table.resolve", async span => {
     setSpanAttributes(span, {
       "db.system": "bigtable",
@@ -40,11 +48,6 @@ export async function getBigtableTable(tableId: string): Promise<Table> {
     );
     const client = await clientPromise;
 
-    let table = tables.get(tableId);
-    if (!table) {
-      table = client.instance(config.BIGTABLE_INSTANCE_ID).table(tableId);
-      tables.set(tableId, table);
-    }
-    return table;
+    return client.instance(config.BIGTABLE_INSTANCE_ID).table(tableId);
   });
 }
