@@ -44,6 +44,19 @@ const JP2 = Buffer.concat([
   Buffer.alloc(64),
 ]);
 
+// The same PDF as a server echoes it back from a multipart upload: a
+// boundary line and part headers ahead of the %PDF header, and a closing
+// boundary after %%EOF. Every PDF reader skips the wrapper.
+const MULTIPART_PDF = Buffer.concat([
+  Buffer.from(
+    "------------------------------1234567890\r\n" +
+      'Content-Disposition: form-data; name="file"; filename="file.pdf"\r\n' +
+      "Content-Type: application/pdf\r\n\r\n",
+  ),
+  PDF,
+  Buffer.from("\r\n------------------------------1234567890--\r\n"),
+]);
+
 const DOWNLOAD_URL = "https://example.com/collection/items/42/download";
 
 /** A chrome-cdp (or tlsclient binary) response: the file was captured. */
@@ -322,6 +335,95 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
   it("does nothing without a fire-engine response to sniff", async () => {
     await expect(
       specialtyScrapeCheck(logger, { "content-type": "text/html" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    "multipart/form-data; boundary=----------------------------1234567890",
+    "application/octet-stream",
+    "text/html; charset=utf-8",
+  ])(
+    "hands a PDF wrapped in leading bytes and served as %s to the pdf engine",
+    async contentType => {
+      const gate = ocrGate();
+      const handoff = await expectHandoff(
+        specialtyScrapeCheck(
+          logger,
+          { "content-type": contentType },
+          download(MULTIPART_PDF),
+          undefined,
+          undefined,
+          gate,
+        ),
+      );
+
+      expect(handoff.featureFlags).toEqual(["pdf"]);
+      // The wrapper is handed over as served; the pdf engine strips it
+      // once the file is on disk.
+      expect(await readFile(handoff.pdfPrefetch!.filePath)).toEqual(
+        MULTIPART_PDF,
+      );
+      expect(gate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("recognizes a wrapped PDF that fire-engine returned inline as text", async () => {
+    const handoff = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "multipart/form-data; boundary=x" },
+        inline(MULTIPART_PDF.toString("latin1")),
+      ),
+    );
+    expect(handoff.featureFlags).toEqual(["pdf"]);
+    expect(handoff.pdfPrefetch).toBeNull();
+  });
+
+  it("recognizes a header-less wrapped download by its bytes", async () => {
+    const handoff = await expectHandoff(
+      specialtyScrapeCheck(logger, undefined, download(MULTIPART_PDF)),
+    );
+    expect(handoff.featureFlags).toEqual(["pdf"]);
+  });
+
+  it("does not sniff a page that merely mentions the PDF magic", async () => {
+    const page =
+      "<!DOCTYPE html><html><body><p>%PDF-1.4 files start with %PDF</p></body></html>";
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/plain" },
+        inline(page),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(Buffer.from(page)),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("only looks for the PDF header within the sniff window", async () => {
+    // A page that merely mentions the header further down is still a page.
+    const page =
+      "<!DOCTYPE html><html><head><title>t</title></head><body>" +
+      "<p>filler</p>".repeat(100) +
+      "<pre>%PDF-1.4</pre></body></html>";
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/html; charset=utf-8" },
+        inline(page),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(Buffer.from(page)),
+      ),
     ).resolves.toBeUndefined();
   });
 });
