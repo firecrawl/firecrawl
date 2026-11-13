@@ -1,0 +1,26 @@
+apps/api/src/services/worker/scrape-worker.ts
+  s_ebed3335e17158::t_7c1ffe9c4d7128 844-845
+apps/api/src/lib/bigtable-client.test.ts
+  s_ebed3335e17158::t_7c1ffe9c4d7128 3,13-16,20,28-36,48-60,62,64,69-81
+apps/api/src/lib/crawl-redis-lock.test.ts
+  s_ebed3335e17158::t_7c1ffe9c4d7128 3,5,9-12,18,103-198
+  s_ebed3335e17158::t_3b61e481961cfd 199
+apps/api/src/lib/bigtable-client.ts
+  s_ebed3335e17158::t_7c1ffe9c4d7128 6,8,10-18,20-21,23,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "50bea1397e7028f168a8112a99bb1f23d48fbc87",
+  "prompts": {},
+  "sessions": {
+    "s_ebed3335e17158": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51673b54-d6f0-4ca1-b756-22f5f909ee70",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
