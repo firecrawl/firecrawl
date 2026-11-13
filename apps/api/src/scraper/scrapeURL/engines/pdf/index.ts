@@ -51,6 +51,7 @@ import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
 import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
+import { shouldRetryFirePdf } from "./fire-pdf/retry";
 import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
@@ -648,6 +649,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             crawl_id: meta.internalOptions.crawlId,
           });
         }
+        let syncRetried = false;
         try {
           const firePdfMeta = {
             ...meta,
@@ -687,6 +689,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                   team_id: meta.internalOptions.teamId,
                 },
               );
+              syncRetried = true;
               result = await scrapePDFWithFirePDF(
                 {
                   ...firePdfMeta,
@@ -728,33 +731,80 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           ) {
             throw error;
           }
-          if (forceFirePDF) {
-            meta.logger.error("FirePDF failed (forced, no fallback)", {
-              method: "scrapePDF/firePDF",
-              error,
-            });
-            throw error;
+          let failure: unknown = error;
+          if (
+            !syncRetried &&
+            shouldRetryFirePdf(error, meta.abort.scrapeTimeout())
+          ) {
+            meta.logger.warn(
+              "FirePDF failed with a transient error -- retrying synchronously",
+              {
+                method: "scrapePDF/firePDFRetry",
+                event: "fire_pdf_retry",
+                error,
+                scrape_id: meta.id,
+                team_id: meta.internalOptions.teamId,
+              },
+            );
+            try {
+              result = await scrapePDFWithFirePDF(
+                {
+                  ...meta,
+                  logger: meta.logger.child({
+                    method: "scrapePDF/firePDFRetry",
+                  }),
+                },
+                base64Content,
+                maxPages,
+                effectivePageCount,
+                mode,
+                includePageMarkdown,
+                includeBlocks,
+                pageMarkers,
+              );
+              effectivePageCount = reconcilePageCountWithFirePdf(
+                effectivePageCount,
+                result,
+              );
+            } catch (retryError) {
+              if (
+                retryError instanceof RemoveFeatureError ||
+                retryError instanceof AbortManagerThrownError
+              ) {
+                throw retryError;
+              }
+              failure = retryError;
+            }
           }
-          meta.logger.warn("FirePDF failed -- falling back to pdf-parse", {
-            method: "scrapePDF/firePDF",
-            error,
-            event: "pdf_engine_fallback",
-            scrape_id: meta.id,
-            team_id: meta.internalOptions.teamId,
-            from_engine: "firepdf",
-            to_engine: "pdf-parse",
-            // Coerce both to strings defensively — if someone throws a
-            // non-Error (e.g. a plain object or primitive), `.name` /
-            // `.message` could be undefined or non-string, and `.slice` would
-            // throw inside the fallback logger, masking the original failure.
-            error_class:
-              (error as { name?: unknown })?.name != null
-                ? String((error as { name?: unknown }).name)
-                : undefined,
-            error_message: String(
-              (error as { message?: unknown })?.message ?? "",
-            ).slice(0, 500),
-          });
+          if (!result) {
+            if (forceFirePDF) {
+              meta.logger.error("FirePDF failed (forced, no fallback)", {
+                method: "scrapePDF/firePDF",
+                error: failure,
+              });
+              throw failure;
+            }
+            meta.logger.warn("FirePDF failed -- falling back to pdf-parse", {
+              method: "scrapePDF/firePDF",
+              error: failure,
+              event: "pdf_engine_fallback",
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+              from_engine: "firepdf",
+              to_engine: "pdf-parse",
+              // Coerce both to strings defensively — if someone throws a
+              // non-Error (e.g. a plain object or primitive), `.name` /
+              // `.message` could be undefined or non-string, and `.slice` would
+              // throw inside the fallback logger, masking the original failure.
+              error_class:
+                (failure as { name?: unknown })?.name != null
+                  ? String((failure as { name?: unknown }).name)
+                  : undefined,
+              error_message: String(
+                (failure as { message?: unknown })?.message ?? "",
+              ).slice(0, 500),
+            });
+          }
         }
       }
     }
