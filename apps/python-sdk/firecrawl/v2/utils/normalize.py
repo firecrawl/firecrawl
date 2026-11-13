@@ -3,7 +3,7 @@ Normalization helpers for v2 API payloads to avoid relying on Pydantic aliases.
 """
 
 from typing import Any, Dict, List
-from ..types import DocumentMetadata
+from ..types import Document, DocumentMetadata
 
 
 def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
@@ -124,3 +124,17 @@ def _map_search_result_keys(result: Dict[str, Any], result_type: str) -> Dict[st
         out[snake] = v
 
     return out
+
+
+def is_scraped_search_result(item: Dict[str, Any]) -> bool:
+    # The API includes metadata for every scraped result, including empty
+    # output and failures. Keep recognizing older content-only payloads too.
+    return any(
+        key in Document.model_fields or key in ("rawHtml", "changeTracking")
+        for key in item
+    )
+
+
+def normalize_search_document_input(item: Dict[str, Any]) -> Dict[str, Any]:
+    # Image/news fields coexist with scraped content in search responses.
+    return normalize_document_input(_map_search_result_keys(item, "images"))
