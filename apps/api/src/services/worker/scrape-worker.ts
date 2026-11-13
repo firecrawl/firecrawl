@@ -24,6 +24,7 @@ import {
   getCrawl,
   lockURL,
   lockURLsIndividually,
+  tryLockURL,
   normalizeURL,
   saveCrawl,
   setCrawlError,
@@ -752,69 +753,102 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
-            for (const link of discoveredLinks) {
-              if (await lockURL(job.data.crawl_id, sc, link)) {
-                // This seems to work really welel
-                const jobPriority = await getJobPriority({
-                  team_id: sc.team_id,
-                  acuc: crawlACUC,
-                  basePriority: job.data.crawl_id ? 20 : 10,
-                });
-                const jobId = uuidv7();
+            if (discoveredLinks.length > 0) {
+              const crawlId = job.data.crawl_id;
+              // One span for the whole batch: a span per link is most of a
+              // crawl's trace and says nothing a count does not.
+              await withSpan(
+                "crawl.enqueue_discovered_links",
+                async span => {
+                  let checked = 0;
+                  let queued = 0;
+                  let limitReached = false;
 
-                logger.debug(
-                  "Determined job priority " +
-                    jobPriority +
-                    " for URL " +
-                    JSON.stringify(link),
-                  { jobPriority, url: link },
-                );
+                  for (const link of discoveredLinks) {
+                    const lock = await tryLockURL(crawlId, sc, link);
+                    checked++;
 
-                await addScrapeJob(
-                  {
-                    url: link,
-                    mode: "single_urls",
-                    team_id: sc.team_id,
-                    scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
-                    internalOptions: sc.internalOptions,
-                    crawlerOptions: {
-                      ...sc.crawlerOptions,
-                      currentDiscoveryDepth:
-                        (job.data.crawlerOptions?.currentDiscoveryDepth ?? 0) +
-                        1,
-                    },
-                    origin: job.data.origin,
-                    integration: job.data.integration,
-                    crawl_id: job.data.crawl_id,
-                    requestId: job.data.requestId,
-                    billing: job.data.billing,
-                    webhook: job.data.webhook,
-                    v1: job.data.v1,
-                    zeroDataRetention: job.data.zeroDataRetention,
-                    apiKeyId: job.data.apiKeyId,
-                    monitoring: job.data.monitoring
-                      ? {
-                          ...job.data.monitoring,
-                          source: "discovered" as const,
-                        }
-                      : undefined,
-                  },
-                  jobId,
-                  jobPriority,
-                );
+                    if (lock === "limit_reached") {
+                      // The crawl is full and its visited count only grows,
+                      // so none of the remaining links can be locked either.
+                      limitReached = true;
+                      break;
+                    }
 
-                await addCrawlJob(job.data.crawl_id, jobId, logger);
-                logger.debug("Added job for URL " + JSON.stringify(link), {
-                  jobPriority,
-                  url: link,
-                  newJobId: jobId,
-                });
-              } else {
-                // TODO: removed this, ok? too many 'not useful' logs (?) Mogery!
-                // logger.debug("Could not lock URL " + JSON.stringify(link), {
-                //   url: link,
-                // });
-              }
+                    if (lock === "locked") {
+                      queued++;
+                      // This seems to work really welel
+                      const jobPriority = await getJobPriority({
+                        team_id: sc.team_id,
+                        acuc: crawlACUC,
+                        basePriority: job.data.crawl_id ? 20 : 10,
+                      });
+                      const jobId = uuidv7();
+
+                      logger.debug(
+                        "Determined job priority " +
+                          jobPriority +
+                          " for URL " +
+                          JSON.stringify(link),
+                        { jobPriority, url: link },
+                      );
+
+                      await addScrapeJob(
+                        {
+                          url: link,
+                          mode: "single_urls",
+                          team_id: sc.team_id,
+                          scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
+                          internalOptions: sc.internalOptions,
+                          crawlerOptions: {
+                            ...sc.crawlerOptions,
+                            currentDiscoveryDepth:
+                              (job.data.crawlerOptions?.currentDiscoveryDepth ??
+                                0) + 1,
+                          },
+                          origin: job.data.origin,
+                          integration: job.data.integration,
+                          crawl_id: job.data.crawl_id,
+                          requestId: job.data.requestId,
+                          billing: job.data.billing,
+                          webhook: job.data.webhook,
+                          v1: job.data.v1,
+                          zeroDataRetention: job.data.zeroDataRetention,
+                          apiKeyId: job.data.apiKeyId,
+                          monitoring: job.data.monitoring
+                            ? {
+                                ...job.data.monitoring,
+                                source: "discovered" as const,
+                              }
+                            : undefined,
+                        },
+                        jobId,
+                        jobPriority,
+                      );
+
+                      await addCrawlJob(crawlId, jobId, logger);
+                      logger.debug(
+                        "Added job for URL " + JSON.stringify(link),
+                        {
+                          jobPriority,
+                          url: link,
+                          newJobId: jobId,
+                        },
+                      );
+                    }
+                  }
+
+                  setSpanAttributes(span, {
+                    "crawl.id": crawlId,
+                    "crawl.team_id": sc.team_id,
+                    "crawl.links_discovered": discoveredLinks.length,
+                    "crawl.links_checked": checked,
+                    "crawl.links_queued": queued,
+                    "crawl.limit_reached": limitReached,
+                  });
+                },
+                { zeroDataRetention: sc.zeroDataRetention },
+              );
             }
           }
 

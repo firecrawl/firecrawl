@@ -6,12 +6,18 @@ let clientPromise: Promise<Bigtable> | null = null;
 const tables = new Map<string, Table>();
 
 export async function getBigtableTable(tableId: string): Promise<Table> {
+  // Every Bigtable read and write resolves its table first, and all but the
+  // first call per table find it here. Only that first call gets a span.
+  const cached = tables.get(tableId);
+  if (cached) {
+    return cached;
+  }
+
   return withSpan("bigtable.table.resolve", async span => {
     setSpanAttributes(span, {
       "db.system": "bigtable",
       "bigtable.table": tableId,
       "bigtable.client.cached": clientPromise !== null,
-      "bigtable.table.cached": tables.has(tableId),
     });
     if (!config.BIGTABLE_INSTANCE_ID) {
       throw new Error("BIGTABLE_INSTANCE_ID is not configured");
