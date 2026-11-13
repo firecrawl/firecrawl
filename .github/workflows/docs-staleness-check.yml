@@ -1,0 +1,800 @@
+name: Docs Staleness Check
+
+# Checks every pull request for documentation this change makes wrong, and opens a
+# draft PR against firecrawl/firecrawl-docs when it finds any.
+#
+# This workflow uses `pull_request_target` rather than `pull_request` on purpose.
+# firecrawl/firecrawl is public, and a `pull_request` run triggered by a fork PR gets
+# no secrets, which would mean the check silently never runs for outside contributors.
+#
+# SECURITY, READ BEFORE EDITING:
+# `pull_request_target` runs with repository secrets in the context of the BASE branch.
+# This workflow must NEVER check out or execute code from the PR head. There is no `ref:`
+# on the checkout, no pnpm install, no build, and no test step. The pull request's content
+# reaches this workflow only as diff TEXT fetched through the GitHub API. Adding a
+# checkout of the head ref, or any step that runs code from the PR, hands repository
+# secrets to arbitrary contributors. Do not do it.
+#
+# The PR title, body, and diff are fed to an LLM, so they are a prompt-injection surface.
+# The containment is the job split, and it is structural rather than advisory:
+#
+#   1. The agent holds NO write-capable credential. The `review` job is `contents: read`
+#      plus `pull-requests: read`, and that read-only token is the only GitHub credential
+#      in the agent's environment. On a public repo it grants nothing an anonymous user
+#      does not already have.
+#   2. The agent does not publish anything. It edits a local clone and writes a verdict
+#      file. The `publish` job, which holds the GitHub App token, runs afterwards with no
+#      model in the loop, and nothing the agent writes can change what it does. The `flag`
+#      job is the same shape: it only comments, and it holds no App token.
+#   3. The App token is scoped to firecrawl-docs ONLY, and it exists only in the `publish`
+#      job. Adding `firecrawl` to its repositories, or moving it into the `review` job,
+#      removes the whole point of the split.
+#   4. Fork PRs reach the agent only on a maintainer's `docs-check` LABEL EVENT, so the
+#      vouch is tied to the content that was reviewed rather than to the PR forever.
+#   5. The generated prompt fences all contributor-authored text with a per-run nonce.
+#
+# Separate from injection, there is a disclosure rule: a feature existing in the code is not
+# permission to document it. Gated, flagged, allowlisted, beta or preview labelled, and
+# admin-only surfaces are not public, and publishing them announces something the company
+# deliberately has not. The prompt carries that as a hard rule, and the
+# `gated-not-documented` verdict plus the `flag` job are how a withheld surface reaches a
+# human instead of a docs site.
+#
+# What is NOT a containment mechanism: the `--allowedTools` list. It is kept minimal and
+# matched to what the prompt actually asks for, but `Bash(git:*)` alone can reach the
+# network, so the list would not stop a determined injection from exfiltrating. It is
+# hygiene. Point 1 is the control. Do not add a write token back on the strength of the
+# tool list being short.
+
+on:
+  pull_request_target:
+    # `labeled` is what starts a run on a fork PR. `ready_for_review` is here because a PR
+    # opened as a draft and later marked ready would otherwise wait for the next push.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    branches:
+      - main
+
+# No workflow-level grant. Each job takes the minimum it needs, and the job that runs the
+# agent takes nothing that can write. No `id-token` anywhere: nothing here uses OIDC, and
+# granting it would let a compromised run exchange the workflow identity for a token with
+# `contents: write` on this repository, which is exactly what this design refuses.
+permissions: {}
+
+concurrency:
+  group: docs-staleness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job A: scan, then run the agent with no credentials it could abuse.
+  # Produces a patch and a verdict. Publishes nothing.
+  # ---------------------------------------------------------------------------
+  review:
+    # The fork gate is a security control, not a convenience.
+    #
+    # Same-repo PRs run on push-shaped events: a branch on this repo can only be pushed by
+    # someone who already has write access, so their content is vouched for by definition.
+    #
+    # Fork PRs are drive-by content from anyone on the internet, so they run ONLY on the
+    # `labeled` event itself, and only for `docs-check`. Keying on the EVENT rather than on
+    # "the PR carries the label" is deliberate: if a labelled fork PR also ran on
+    # `synchronize`, a contributor could get vouched for one diff and then push a
+    # completely different one. With this gate, every fork run is a maintainer looking at
+    # the diff and applying the label again. That also means the actor on a fork run is the
+    # maintainer, not the fork author.
+    #
+    # Same-repo PRs deliberately do NOT run on `labeled`, so unrelated label churn on a
+    # maintainer's own PR does not re-run the job. Their pushes already trigger it.
+    if: >-
+      ${{ github.event.pull_request.draft == false
+        && !endsWith(github.actor, '[bot]')
+        && !endsWith(github.event.pull_request.user.login, '[bot]')
+        && (
+             (github.event.pull_request.head.repo.full_name == github.repository
+               && github.event.action != 'labeled')
+             || (github.event.pull_request.head.repo.full_name != github.repository
+               && github.event.action == 'labeled'
+               && github.event.label.name == 'docs-check')
+           ) }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+
+    # SECURITY: read only. Both of these are needed by the scan and the checkout, and
+    # neither can write. This is the token the agent gets.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      has_candidate: ${{ steps.scan.outputs.has_candidate }}
+      docs_changed: ${{ steps.collect.outputs.docs_changed }}
+      # One of the three accepted verdict tokens, normalized and whitelisted by the assert
+      # step below, so downstream `if:` expressions can key on it safely.
+      verdict: ${{ steps.assert.outputs.verdict }}
+
+    steps:
+      # SECURITY: no `ref:`. This checks out the base branch, never the PR head.
+      - name: Checkout base branch
+        uses: actions/checkout@v5
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      # Reads this PR from the API with the job's own read-only token. No `gh` here on
+      # purpose: the scan is plain `fetch`, so this job needs nothing but node.
+      - name: Scan pull request for docs staleness candidates
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node .github/scripts/docs-staleness-scan.mjs
+
+      - name: Skip when no docs-relevant files changed
+        if: ${{ steps.scan.outputs.has_candidate != 'true' }}
+        run: |
+          echo "PR #${{ github.event.pull_request.number }} changed nothing docs-relevant; skipping Claude."
+          echo "Staying silent: no comment and no docs PR."
+
+      # AFTER the scan, and gated on it. Running this first would turn every non-draft PR
+      # to main red the moment this workflow merges, including the large majority that
+      # exit at the scan with nothing to do. The App credentials are checked in the
+      # publish job, which is the only job that has any use for them.
+      - name: Verify Anthropic API key is present
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        env:
+          DOCS_SYNC_CLAUDE_ANTHROPIC_API_KEY: ${{ secrets.DOCS_SYNC_CLAUDE_ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DOCS_SYNC_CLAUDE_ANTHROPIC_API_KEY}" ]; then
+            echo "::error::DOCS_SYNC_CLAUDE_ANTHROPIC_API_KEY is not set for this repository."
+            echo "This PR changed docs-relevant files, so the review cannot run without it."
+            echo "Create it as a repository or organization secret. It is namespaced per workflow,"
+            echo "matching the existing NPM_AUDIT_CLAUDE_* convention."
+            exit 1
+          fi
+
+          echo "Anthropic API key is present."
+
+      # Consumes the scan's diff_path output. When the scan says it wrote a filtered diff,
+      # that file must exist before we pay for a Claude run that is told to read it. An
+      # empty diff_path is normal: GitHub answers 406 for oversized diffs and the scan
+      # degrades to a file-list-only prompt.
+      - name: Verify filtered diff
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        env:
+          DIFF_PATH: ${{ steps.scan.outputs.diff_path }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DIFF_PATH}" ]; then
+            echo "No filtered diff for this PR; Claude gets a file-list-only prompt."
+            echo "- Filtered diff: not available (GitHub declined to render it)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ ! -s "${DIFF_PATH}" ]; then
+            echo "::error::The scan reported a filtered diff at ${DIFF_PATH} but that file is missing or empty."
+            exit 1
+          fi
+
+          DIFF_BYTES="$(wc -c < "${DIFF_PATH}" | tr -d ' ')"
+          DIFF_LINES="$(wc -l < "${DIFF_PATH}" | tr -d ' ')"
+          echo "Filtered diff: ${DIFF_PATH} (${DIFF_BYTES} bytes, ${DIFF_LINES} lines)."
+          echo "- Filtered diff: \`${DIFF_PATH}\` (${DIFF_BYTES} bytes, ${DIFF_LINES} lines)" >> "$GITHUB_STEP_SUMMARY"
+
+      # SECURITY, the load-bearing step. Note what is NOT here: no `env:` block, and no
+      # App token anywhere in this job. The action overwrites GITHUB_TOKEN and GH_TOKEN in
+      # the agent's environment with whatever `setupGitHubToken()` returns
+      # (src/entrypoints/run.ts at the pinned SHA), so a token set in a step `env:` would
+      # be discarded anyway. The only credential the agent sees is this job's read-only
+      # GITHUB_TOKEN, passed below as the `github_token` INPUT.
+      #
+      # Passing that input matters for a second reason: without it the action falls back to
+      # an OIDC exchange for an App token with `contents: write` on THIS repo, which needs
+      # `id-token: write` and would hand the agent exactly the credential this design
+      # withholds.
+      - name: Run Claude docs staleness review
+        id: claude
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # v1
+        with:
+          anthropic_api_key: ${{ secrets.DOCS_SYNC_CLAUDE_ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.scan.outputs.prompt }}
+          # The action runs an actor write-permission check on pull_request events
+          # (`pull_request_target` normalizes to `pull_request`, which is an entity event),
+          # and that check calls repos.getCollaboratorPermissionLevel, an endpoint GitHub
+          # documents as requiring write, maintain, or admin privileges. A `contents: read`
+          # token does not have them, and no GITHUB_TOKEN permission key grants them
+          # without also granting write, which is the one thing this job must not have.
+          # So the check is bypassed here, and the job `if:` above is what actually
+          # enforces it: same-repo PRs come from people with push access, and fork PRs need
+          # a maintainer to apply the label on the event itself. Setting this also makes
+          # the action scrub Anthropic and Actions secrets from subprocess environments.
+          allowed_non_write_users: "*"
+          # Derived from what the prompt actually tells the agent to do, and nothing else:
+          # read and edit files, clone the public docs repo with git, list and cat files,
+          # write the verdict. No `Bash(gh:*)` and no `Bash(curl:*)`, because it neither
+          # opens PRs nor fetches URLs any more. No `Bash(node:*)`: an interpreter is a
+          # general-purpose HTTP client, so allowing it while banning curl was theatre. No
+          # `WebFetch`: nothing in the prompt needs to read a web page, and it takes a
+          # URL with no domain allowlist, so a path segment is an exfiltration channel.
+          # `--add-dir` because the docs clone and the verdict file live under the runner
+          # temp directory, not in the checkout. Read-only work would not need it; the
+          # edits and the verdict write do.
+          claude_args: |
+            --max-turns 40
+            --add-dir ${{ runner.temp }}
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Bash(git:*),Bash(ls:*),Bash(cat:*)"
+
+      # Turns the agent's working copy into a patch. Deterministic, no token, no model.
+      # This is also where the rules the prompt states are actually enforced: the agent is
+      # told not to touch localized files or `.github/`, and here we check rather than
+      # trust.
+      - name: Collect docs edits
+        id: collect
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        env:
+          DOCS_DIR: ${{ steps.scan.outputs.docs_dir }}
+          VERDICT_PATH: ${{ steps.scan.outputs.verdict_path }}
+          MAX_PATCH_BYTES: "2097152"
+        run: |
+          set -euo pipefail
+
+          STAGE="${RUNNER_TEMP}/docs-sync-artifact"
+          rm -rf "${STAGE}"
+          mkdir -p "${STAGE}"
+
+          if [ -n "${VERDICT_PATH}" ] && [ -r "${VERDICT_PATH}" ]; then
+            cp "${VERDICT_PATH}" "${STAGE}/verdict.txt"
+          fi
+
+          if [ -z "${DOCS_DIR}" ] || [ ! -d "${DOCS_DIR}/.git" ]; then
+            echo "No docs clone at ${DOCS_DIR:-(unset)}, so there is nothing to publish."
+            echo "docs_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The commit the agent cloned. The publish job rebuilds the branch from exactly
+          # this commit, so the patch can never fail to apply because docs main moved.
+          BASE_SHA=""
+          for REF in refs/remotes/origin/HEAD refs/remotes/origin/main; do
+            if FOUND="$(git -C "${DOCS_DIR}" rev-parse --verify --quiet "${REF}")"; then
+              BASE_SHA="${FOUND}"
+              break
+            fi
+          done
+
+          if [ -z "${BASE_SHA}" ]; then
+            echo "::error::The docs clone at ${DOCS_DIR} has no origin/HEAD and no origin/main."
+            echo "It was cloned from somewhere unexpected, or its refs were rewritten. Refusing to"
+            echo "publish anything out of it."
+            exit 1
+          fi
+
+          # `add -A` then diff against the docs base picks up new files, deletions, and any
+          # commits the agent made despite being told not to, all in one patch.
+          git -C "${DOCS_DIR}" add -A
+          git -C "${DOCS_DIR}" diff --binary --cached "${BASE_SHA}" -- > "${STAGE}/docs.patch"
+          git -C "${DOCS_DIR}" diff --cached --name-only --no-renames "${BASE_SHA}" -- > "${STAGE}/files.txt"
+
+          if [ ! -s "${STAGE}/docs.patch" ]; then
+            echo "The docs clone has no changes; the agent read the docs and edited nothing."
+            echo "docs_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PATCH_BYTES="$(wc -c < "${STAGE}/docs.patch" | tr -d ' ')"
+          if [ "${PATCH_BYTES}" -gt "${MAX_PATCH_BYTES}" ]; then
+            echo "::error::The docs patch is ${PATCH_BYTES} bytes, over the ${MAX_PATCH_BYTES} byte cap."
+            echo "A docs staleness fix is a handful of edited pages. Something went wrong, and this"
+            echo "is not getting pushed unreviewed."
+            exit 1
+          fi
+
+          # Paths the prompt forbids. Enforced here so an injected or confused agent cannot
+          # land a workflow file or clobber pipeline-managed translations in the docs repo.
+          if grep -E '^(\.github/|(es|fr|ja|pt-BR|zh)/|snippets/(es|fr|ja|pt-BR|zh)/|\.locadex/|gt\.config\.json$|gt-lock\.json$)' "${STAGE}/files.txt" > "${RUNNER_TEMP}/forbidden.txt"; then
+            echo "::error::The docs patch touches paths this automation is not allowed to change:"
+            cat "${RUNNER_TEMP}/forbidden.txt"
+            echo "Localized files are pipeline-managed and .github/ is workflow code. Refusing to publish."
+            exit 1
+          fi
+
+          printf '%s' "${BASE_SHA}" > "${STAGE}/base-sha.txt"
+
+          echo "Docs base commit: ${BASE_SHA}"
+          echo "Patch: ${PATCH_BYTES} bytes, touching:"
+          cat "${STAGE}/files.txt"
+          echo "docs_changed=true" >> "$GITHUB_OUTPUT"
+
+          {
+            printf -- '- Docs files edited:\n'
+            sed -e 's/^/  - `/' -e 's/$/`/' "${STAGE}/files.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Turns a silent no-op into a red run. An agent that reads 30 files, writes nothing,
+      # and exits leaves no trace otherwise, which is how a firecrawl-web workflow burned a
+      # run while reporting green. "No docs change needed" is a legitimate and common
+      # outcome, so this does not key on whether a docs PR exists; it keys on whether
+      # Claude recorded a deliberate conclusion AND on whether that conclusion matches what
+      # is actually in the working copy.
+      #
+      # Three verdicts pass. `gated-not-documented` means the change did touch documentable
+      # behavior but the surface looks non-public (org or team flag, experiment, allowlist,
+      # beta or preview label, admin-only route), so nothing was written on purpose. That is
+      # a deliberate conclusion, not a no-op, and the `flag` job reports it to a human.
+      - name: Assert Claude reached a real conclusion
+        id: assert
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        env:
+          VERDICT_PATH: ${{ steps.scan.outputs.verdict_path }}
+          DOCS_CHANGED: ${{ steps.collect.outputs.docs_changed }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VERDICT_PATH}" ] || [ ! -r "${VERDICT_PATH}" ]; then
+            echo "::error::Claude wrote no verdict file at ${VERDICT_PATH:-(unset)}, so this run did nothing verifiable."
+            echo "Writing that file is the final step of the prompt, in every branch of it,"
+            echo "including the 'docs are already correct' branch. A missing verdict means the"
+            echo "run ended early, or the work was handed to a background agent that got killed"
+            echo "when the turn ended. Either way it is a silent no-op and must not pass."
+            echo "Docs working copy changed: ${DOCS_CHANGED:-unknown}."
+            exit 1
+          fi
+
+          # Tolerant on purpose: a trailing period, a stray backtick, or shouted case is a
+          # formatting slip, not a different conclusion, and it must not turn a delivered
+          # docs fix into a red job. Everything outside [a-z-] is dropped.
+          VERDICT="$(sed -n '1p' "${VERDICT_PATH}" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z-]//g')"
+          # sed, not `tail | head`: the piped form takes SIGPIPE and exits 141 under
+          # `pipefail` with no message at all once the detail exceeds one pipe buffer.
+          DETAIL="$(sed -n '2,4p' "${VERDICT_PATH}")"
+
+          case "${VERDICT}" in
+            no-change-needed)
+              if [ "${DOCS_CHANGED}" = "true" ]; then
+                echo "::error::Claude reported no-change-needed but left edits in the docs working copy."
+                echo "Those edits would be published as a docs PR that contradicts the verdict, or"
+                echo "dropped silently. Neither is acceptable, so this run fails instead."
+                echo "Verdict detail was: ${DETAIL}"
+                exit 1
+              fi
+              echo "Claude concluded the docs are already correct: ${DETAIL}"
+              {
+                printf -- '- Verdict: no docs change needed\n'
+                printf -- '- Reason: %s\n' "${DETAIL}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            gated-not-documented)
+              if [ "${DOCS_CHANGED}" = "true" ]; then
+                echo "::error::Claude reported gated-not-documented but left edits in the docs working copy."
+                echo "Those two statements cannot both be true. If a pull request needs a real docs fix"
+                echo "somewhere AND has a gated surface being withheld, the verdict is docs-change-needed"
+                echo "with the withheld surface described in the detail lines."
+                echo "Verdict detail was: ${DETAIL}"
+                exit 1
+              fi
+              echo "Claude withheld documentation for a surface that looks non-public: ${DETAIL}"
+              {
+                printf -- '- Verdict: gated surface, deliberately not documented\n'
+                printf -- '- Gap: %s\n' "${DETAIL}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            docs-change-needed)
+              if [ "${DOCS_CHANGED}" != "true" ]; then
+                echo "::error::Claude reported docs-change-needed but the docs working copy is unchanged."
+                echo "The fix it described does not exist anywhere, so there is nothing to publish."
+                echo "Verdict detail was: ${DETAIL}"
+                exit 1
+              fi
+              echo "Docs edits ready to publish: ${DETAIL}"
+              {
+                printf -- '- Verdict: docs change needed\n'
+                printf -- '- Detail: %s\n' "${DETAIL}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Unrecognized verdict '${VERDICT}' in ${VERDICT_PATH}. Expected 'no-change-needed', 'docs-change-needed', or 'gated-not-documented' on the first line."
+              echo "A verdict file this job cannot parse proves nothing about what the run did."
+              exit 1
+              ;;
+          esac
+
+          # Only a token the case above accepted can reach this line.
+          echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+
+      # The patch and the verdict, not the whole clone: a few KB instead of a repo, the
+      # exact bytes that get applied are visible in the log above, and the publish job
+      # rebuilds the tree itself from a commit it fetches. Named per run so a re-run cannot
+      # collide with the artifact of the attempt it is replacing.
+      #
+      # Uploaded whenever the scan found a candidate, not only when there is a patch,
+      # because the `flag` job needs the verdict text to report a withheld gated surface.
+      - name: Upload docs patch and verdict
+        if: ${{ steps.scan.outputs.has_candidate == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-sync-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/docs-sync-artifact
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Job B: publish. No model, no agent output executed, App token lives only here.
+  # Runs only when job A produced a real patch, so the App token is never minted for a
+  # PR that had nothing to say.
+  # ---------------------------------------------------------------------------
+  publish:
+    needs: review
+    if: ${{ needs.review.outputs.has_candidate == 'true' && needs.review.outputs.docs_changed == 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+
+    # `pull-requests: write` is for the comment on the originating PR, and that is all this
+    # token is used for. Everything touching firecrawl-docs uses the App token below.
+    # No `contents:` grant: this job never checks out firecrawl.
+    permissions:
+      pull-requests: write
+
+    # Only contexts allowed in a job-level `env:` are used here. `runner.temp` is not one
+    # of them, so the steps below build paths from $RUNNER_TEMP instead.
+    env:
+      DOCS_REPO: firecrawl/firecrawl-docs
+      DOCS_BRANCH: claude/docs-sync/pr-${{ github.event.pull_request.number }}
+      SOURCE_REF: ${{ github.repository }}#${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Verify gh CLI is available
+        run: |
+          set -euo pipefail
+
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::The GitHub CLI (gh) is not on PATH for this runner image."
+            echo "This job needs gh to open the docs PR and to comment on this one. If gh were"
+            echo "missing and those steps degraded to a warning, the docs branch would get pushed"
+            echo "and nobody would ever be told about it. Failing here instead."
+            exit 1
+          fi
+
+          echo "Found gh at $(command -v gh)."
+          gh --version
+
+      - name: Verify required secrets
+        env:
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_APP_ID}" ] || [ -z "${GH_APP_PRIVATE_KEY}" ]; then
+            echo "::error::GH_APP_ID and/or GH_APP_PRIVATE_KEY are not set for this repository."
+            echo "This workflow deliberately has NO fallback to github.token. A PR opened with the"
+            echo "default token is authored by github-actions[bot], and PRs authored by that bot do"
+            echo "not trigger required CI, so they can never merge. That is exactly why the"
+            echo "agent-markdown pipeline in firecrawl-web has never landed a PR. Add the GitHub App"
+            echo "credentials (they are already used by firecrawl/spring) instead of falling back."
+            exit 1
+          fi
+
+          echo "GitHub App credentials are present."
+
+      - name: Download docs patch
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-sync-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/docs-sync
+
+      # SECURITY: firecrawl-docs ONLY, and only in this job. This token is never in the
+      # same job as the agent. Adding `firecrawl` here would turn a prompt injection two
+      # jobs upstream into a write on this repository.
+      - name: Mint GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: firecrawl
+          repositories: firecrawl-docs
+
+      # Rebuilds the tree from the exact commit the agent cloned, applies the patch, and
+      # pushes. Building from that commit rather than from current main is what makes
+      # `git apply` deterministic: the patch cannot fail to apply because docs main moved
+      # while the review was running.
+      - name: Push docs branch
+        id: push
+        env:
+          DOCS_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          STAGE="${RUNNER_TEMP}/docs-sync"
+          PATCH="${STAGE}/docs.patch"
+          BASE_SHA_FILE="${STAGE}/base-sha.txt"
+
+          if [ ! -s "${PATCH}" ] || [ ! -s "${BASE_SHA_FILE}" ]; then
+            echo "::error::The artifact from the review job is missing docs.patch or base-sha.txt."
+            exit 1
+          fi
+
+          BASE_SHA="$(tr -d '[:space:]' < "${BASE_SHA_FILE}")"
+          WORK="${RUNNER_TEMP}/docs-publish"
+          rm -rf "${WORK}"
+          mkdir -p "${WORK}"
+
+          # Credentials go in a per-command header, never in the remote URL and never in
+          # .git/config, so no token can end up in a log line or in a pushed artifact.
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${DOCS_TOKEN}" | base64 -w0)"
+
+          git -C "${WORK}" init -q
+          git -C "${WORK}" remote add origin "https://github.com/${DOCS_REPO}.git"
+          git -C "${WORK}" -c http.extraheader="${AUTH_HEADER}" fetch -q --depth 1 origin "${BASE_SHA}"
+          git -C "${WORK}" checkout -q -b "${DOCS_BRANCH}" FETCH_HEAD
+          git -C "${WORK}" apply --index --whitespace=nowarn "${PATCH}"
+          git -C "${WORK}" \
+            -c user.name="firecrawl-docs-sync" \
+            -c user.email="firecrawl-docs-sync@users.noreply.github.com" \
+            commit -q -m "docs: sync with ${SOURCE_REF}"
+
+          NEW_TREE="$(git -C "${WORK}" rev-parse 'HEAD^{tree}')"
+
+          REMOTE_LINE="$(git -C "${WORK}" -c http.extraheader="${AUTH_HEADER}" ls-remote --heads origin "${DOCS_BRANCH}" || true)"
+          REMOTE_SHA="$(printf '%s\n' "${REMOTE_LINE}" | awk 'NR == 1 { print $1 }')"
+
+          if [ -z "${REMOTE_SHA}" ]; then
+            git -C "${WORK}" -c http.extraheader="${AUTH_HEADER}" push -q origin "HEAD:refs/heads/${DOCS_BRANCH}"
+            echo "Created ${DOCS_BRANCH} on ${DOCS_REPO}."
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git -C "${WORK}" -c http.extraheader="${AUTH_HEADER}" fetch -q --depth 1 origin "${REMOTE_SHA}"
+          OLD_TREE="$(git -C "${WORK}" rev-parse "${REMOTE_SHA}^{tree}")"
+
+          if [ "${OLD_TREE}" = "${NEW_TREE}" ]; then
+            echo "${DOCS_BRANCH} already has exactly this content; not pushing an empty rewrite."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The sync branch is machine-owned and regenerated from the docs base on every
+          # run, so this rewrites it. `--force-with-lease` pins the rewrite to the head we
+          # just inspected: if someone pushed to the branch in between, the push fails
+          # loudly instead of eating their commit.
+          git -C "${WORK}" -c http.extraheader="${AUTH_HEADER}" push -q --force-with-lease="refs/heads/${DOCS_BRANCH}:${REMOTE_SHA}" \
+            origin "HEAD:refs/heads/${DOCS_BRANCH}"
+          echo "Updated ${DOCS_BRANCH} on ${DOCS_REPO}."
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the docs pull request
+        id: docs_pr
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+          BRANCH_PUSHED: ${{ steps.push.outputs.pushed }}
+        run: |
+          set -euo pipefail
+
+          STAGE="${RUNNER_TEMP}/docs-sync"
+          BODY_FILE="${RUNNER_TEMP}/docs-pr-body.md"
+
+          {
+            printf -- '<!-- docs-staleness-source: %s -->\n\n' "${SOURCE_REF}"
+            printf -- 'Proposed by the docs staleness check on %s\n\n' "${SOURCE_URL}"
+            printf -- 'That pull request changes behavior this documentation describes. The edits here\n'
+            printf -- 'are the minimum fix. Review them alongside %s and merge when it lands. If they\n' "${SOURCE_REF}"
+            printf -- 'are wrong, close this and nothing else happens.\n\n'
+            printf -- '### What the review found\n\n'
+            if [ -s "${STAGE}/verdict.txt" ]; then
+              sed -n '2,40p' "${STAGE}/verdict.txt"
+            else
+              printf -- '(no detail recorded)\n'
+            fi
+            printf -- '\n### Files changed\n\n'
+            sed -e 's/^/- `/' -e 's/$/`/' "${STAGE}/files.txt"
+            printf -- '\nThis branch is regenerated on every push to %s. Do not hand-edit it.\n' "${SOURCE_REF}"
+          } > "${BODY_FILE}"
+
+          EXISTING_NUMBER="$(gh pr list --repo "${DOCS_REPO}" --head "${DOCS_BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          PR_URL="$(gh pr list --repo "${DOCS_REPO}" --head "${DOCS_BRANCH}" --state open --json url --jq '.[0].url // empty')"
+
+          if [ -n "${EXISTING_NUMBER}" ]; then
+            gh pr edit "${EXISTING_NUMBER}" --repo "${DOCS_REPO}" --body-file "${BODY_FILE}" >/dev/null
+            echo "Updated existing docs PR #${EXISTING_NUMBER}."
+          else
+            # A create failure must not abort the step: the branch is already pushed, so we
+            # have to reach the "is there a PR or not" check below and fail there with the
+            # message that says what to do. `gh pr create` also fails when a PR already
+            # exists that the list above somehow missed, which the re-list then resolves.
+            CREATE_RC=0
+            CREATE_OUT="$(gh pr create --repo "${DOCS_REPO}" --draft \
+              --base main \
+              --head "${DOCS_BRANCH}" \
+              --title "docs: sync with ${SOURCE_REF}" \
+              --body-file "${BODY_FILE}" 2>&1)" || CREATE_RC=$?
+            printf '%s\n' "${CREATE_OUT}"
+
+            if [ "${CREATE_RC}" -ne 0 ]; then
+              echo "::warning::gh pr create exited ${CREATE_RC}; re-checking whether an open docs PR exists for ${DOCS_BRANCH}."
+            fi
+
+            PR_URL="$(printf '%s\n' "${CREATE_OUT}" | grep -Eo 'https://[^[:space:]]+/pull/[0-9]+' | tail -n 1 || true)"
+
+            if [ -z "${PR_URL}" ]; then
+              PR_URL="$(gh pr list --repo "${DOCS_REPO}" --head "${DOCS_BRANCH}" --state open --json url --jq '.[0].url // empty')"
+            fi
+          fi
+
+          if [ -z "${PR_URL}" ]; then
+            echo "::error::The docs branch ${DOCS_BRANCH} is pushed to ${DOCS_REPO} but no open pull request could be resolved for it."
+            echo "That is the one outcome this workflow refuses to allow: a docs fix exists and"
+            echo "nobody gets told. Open the PR by hand from that branch, or delete it."
+            exit 1
+          fi
+
+          echo "Docs PR: ${PR_URL}"
+          echo "url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          {
+            printf -- '- Docs PR: %s\n' "${PR_URL}"
+            printf -- '- Docs branch: `%s` (pushed this run: %s)\n' "${DOCS_BRANCH}" "${BRANCH_PUSHED}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # github.token, not the App token. Commenting needs only this job's own
+      # `pull-requests: write`, and the App token is deliberately docs-only. The usual
+      # reason to avoid github.token, that it does not trigger CI on what it creates, does
+      # not apply to a comment. A failure here is fatal rather than a warning: the docs PR
+      # exists at this point, so a swallowed failure is precisely the "delivered and nobody
+      # told" outcome. The URL is already in the step summary above, so it is never lost.
+      - name: Comment on originating pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DOCS_PR_URL: ${{ steps.docs_pr.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          STAGE="${RUNNER_TEMP}/docs-sync"
+          MARKER="<!-- docs-staleness-check: ${REPOSITORY}#${PR_NUMBER} -->"
+          BODY_FILE="${RUNNER_TEMP}/pr-comment.md"
+
+          {
+            printf '%s\n\n' "$MARKER"
+            printf '### Docs staleness check\n\n'
+            printf 'This change looks like it makes documentation on docs.firecrawl.dev out of date.\n'
+            printf 'A draft docs PR with the proposed fix is open here:\n\n'
+            printf '%s\n\n' "$DOCS_PR_URL"
+            printf 'Review it alongside this PR and merge it when this one lands. If the docs PR is\n'
+            printf 'wrong, close it and nothing else happens.\n'
+            # The review's own words. Carried here as well as into the docs PR body because
+            # this is where a note about a surface it deliberately did NOT document gets
+            # seen by someone who can decide.
+            if [ -s "${STAGE}/verdict.txt" ]; then
+              printf '\n**What the review found**\n\n'
+              sed -n '2,20p' "${STAGE}/verdict.txt"
+              printf '\n'
+            fi
+          } > "$BODY_FILE"
+
+          EXISTING_ID="$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body != null and (.body | contains(\"docs-staleness-check: ${REPOSITORY}#${PR_NUMBER}\")))) | .[0].id // empty" 2>/dev/null || true)"
+
+          if [ -n "$EXISTING_ID" ]; then
+            if ! gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${EXISTING_ID}" \
+              -F "body=@${BODY_FILE}" >/dev/null; then
+              echo "::error::Could not update comment ${EXISTING_ID} on ${REPOSITORY}#${PR_NUMBER}."
+              echo "The docs PR at ${DOCS_PR_URL} exists and this run cannot confirm anyone was told."
+              exit 1
+            fi
+            echo "Updated existing docs staleness comment ${EXISTING_ID}."
+            exit 0
+          fi
+
+          if ! gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -F "body=@${BODY_FILE}" >/dev/null; then
+            echo "::error::Could not comment on ${REPOSITORY}#${PR_NUMBER}."
+            echo "The docs PR at ${DOCS_PR_URL} exists and this run cannot confirm anyone was told."
+            exit 1
+          fi
+
+          echo "Posted docs staleness comment on ${REPOSITORY}#${PR_NUMBER}."
+
+  # ---------------------------------------------------------------------------
+  # Job C: report a gap. Runs when the review found documentable behavior but
+  # deliberately documented nothing because the surface looks non-public. Nothing is pushed
+  # anywhere; the whole point is to put the decision in front of a human instead of either
+  # publishing a hidden feature or dropping the observation on the floor.
+  # ---------------------------------------------------------------------------
+  flag:
+    needs: review
+    if: ${{ needs.review.outputs.verdict == 'gated-not-documented' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+
+    # Commenting only. No App token in this job, and nothing here can write to firecrawl-docs.
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Verify gh CLI is available
+        run: |
+          set -euo pipefail
+
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::The GitHub CLI (gh) is not on PATH for this runner image."
+            echo "This job exists to tell a human about a docs gap. Without gh it cannot, and a"
+            echo "silent skip here is the same failure as documenting the feature by accident."
+            exit 1
+          fi
+
+          echo "Found gh at $(command -v gh)."
+
+      - name: Download verdict
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-sync-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/docs-sync
+
+      - name: Comment the withheld docs gap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          STAGE="${RUNNER_TEMP}/docs-sync"
+          MARKER="<!-- docs-staleness-gap: ${REPOSITORY}#${PR_NUMBER} -->"
+          BODY_FILE="${RUNNER_TEMP}/gap-comment.md"
+
+          if [ ! -s "${STAGE}/verdict.txt" ]; then
+            echo "::error::The review job reported a withheld gated surface but its verdict file did not reach this job."
+            echo "There is nothing to tell anyone, which defeats the point of this job."
+            exit 1
+          fi
+
+          # A separate marker from the docs-PR comment, so the two are independent and each
+          # stays idempotent across the `synchronize` events that fire on every push.
+          {
+            printf '%s\n\n' "$MARKER"
+            printf '### Docs staleness check: nothing documented on purpose\n\n'
+            printf 'This change touches behavior that would normally be documented, but the surface\n'
+            printf 'looks non-public: gated behind an org, account, or team flag, behind an experiment\n'
+            printf 'or allowlist, labelled beta or preview, or reachable only from an internal route.\n'
+            printf 'No documentation was written and no docs PR was opened.\n\n'
+            printf '**What the review saw**\n\n'
+            sed -n '2,30p' "${STAGE}/verdict.txt"
+            printf '\n'
+            printf 'If this feature is in fact public, say so and it can be documented. If it is meant\n'
+            printf 'to stay unannounced, no action is needed. A missing docs section is a small gap;\n'
+            printf 'documenting a hidden feature cannot be undone.\n'
+          } > "$BODY_FILE"
+
+          EXISTING_ID="$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body != null and (.body | contains(\"docs-staleness-gap: ${REPOSITORY}#${PR_NUMBER}\")))) | .[0].id // empty" 2>/dev/null || true)"
+
+          if [ -n "$EXISTING_ID" ]; then
+            if ! gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${EXISTING_ID}" \
+              -F "body=@${BODY_FILE}" >/dev/null; then
+              echo "::error::Could not update the docs gap comment ${EXISTING_ID} on ${REPOSITORY}#${PR_NUMBER}."
+              echo "The withheld surface is described in this job's log and step summary."
+              exit 1
+            fi
+            echo "Updated existing docs gap comment ${EXISTING_ID}."
+          elif ! gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -F "body=@${BODY_FILE}" >/dev/null; then
+            echo "::error::Could not comment the docs gap on ${REPOSITORY}#${PR_NUMBER}."
+            echo "The withheld surface is described in this job's log and step summary."
+            exit 1
+          else
+            echo "Posted docs gap comment on ${REPOSITORY}#${PR_NUMBER}."
+          fi
+
+          {
+            printf -- '- Outcome: documentable behavior found, deliberately not documented\n'
+            printf -- '- Reported on: %s#%s\n' "${REPOSITORY}" "${PR_NUMBER}"
+          } >> "$GITHUB_STEP_SUMMARY"
