@@ -486,6 +486,19 @@ def crawl(
     )
 
 
+def _normalize_preview_scrape_options(options: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate preview scrape option names before Pydantic validation."""
+    field_mappings = {
+        "includeTags": "include_tags",
+        "excludeTags": "exclude_tags",
+        "onlyMainContent": "only_main_content",
+        "waitFor": "wait_for",
+        "skipTlsVerification": "skip_tls_verification",
+        "removeBase64Images": "remove_base64_images",
+    }
+    return {field_mappings.get(key, key): value for key, value in options.items()}
+
+
 def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> CrawlParamsData:
     """
     Get crawl parameters from LLM based on URL and prompt.
@@ -559,20 +572,8 @@ def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> Cra
                 if camel_case == "scrapeOptions" and params_data[camel_case] is not None:
                     # Handle nested scrapeOptions conversion
                     scrape_opts_data = params_data[camel_case]
-                    converted_scrape_opts = {}
-                    scrape_field_mappings = {
-                        "includeTags": "include_tags",
-                        "excludeTags": "exclude_tags",
-                        "onlyMainContent": "only_main_content",
-                        "waitFor": "wait_for",
-                        "skipTlsVerification": "skip_tls_verification",
-                        "removeBase64Images": "remove_base64_images"
-                    }
-                    
-                    for scrape_camel, scrape_snake in scrape_field_mappings.items():
-                        if scrape_camel in scrape_opts_data:
-                            converted_scrape_opts[scrape_snake] = scrape_opts_data[scrape_camel]
-                    
+                    converted_scrape_opts = _normalize_preview_scrape_options(scrape_opts_data)
+
                     # Handle formats field - if it's a list, convert to ScrapeFormats
                     if "formats" in scrape_opts_data:
                         formats_data = scrape_opts_data["formats"]
@@ -582,11 +583,6 @@ def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> Cra
                             converted_scrape_opts["formats"] = ScrapeFormats(formats=formats_data)
                         else:
                             converted_scrape_opts["formats"] = formats_data
-                    
-                    # Add fields that don't need conversion
-                    for key, value in scrape_opts_data.items():
-                        if key not in scrape_field_mappings and key != "formats":
-                            converted_scrape_opts[key] = value
                     
                     converted_params[snake_case] = converted_scrape_opts
                 else:
