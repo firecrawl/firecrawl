@@ -36,7 +36,10 @@ const emptyOperators = (): QueryOperators => ({
 });
 
 function normalizeSite(value: string): string {
-  const site = value.replace(/^[a-z]+:\/\//, "").replace(/\/+$/, "");
+  const site = value
+    .replace(/^[a-z]+:\/\//, "")
+    .replace(/^\.+/, "")
+    .replace(/\/+$/, "");
   const slash = site.indexOf("/");
   const host = slash === -1 ? site : site.slice(0, slash);
   return (
