@@ -47,8 +47,8 @@ rules below.
 
 - If you already have the URL, use [firecrawl-build-scrape](../firecrawl-build-scrape/SKILL.md).
 - If the result page then requires clicks or form interaction, escalate to [firecrawl-build-interact](../firecrawl-build-interact/SKILL.md).
-- If the feature searches **published research papers** — biomedical, clinical, and life-science literature (PubMed, bioRxiv, medRxiv) or arXiv preprints — `/search` is the wrong surface. Use the research paper index instead: [firecrawl-research-index](../firecrawl-research-index/SKILL.md). Passing `categories: ["research"]` to `/search` does **not** query that index; it filters an ordinary web search to research-affiliated websites (the list includes PubMed, bioRxiv, medRxiv, arXiv, and publisher sites) and returns page results from them — no abstract search, related-paper expansion, or full-text passages.
-- If the feature answers developer questions from issues, pull requests, READMEs, or documentation pages, use the developer index instead: [firecrawl-developer-index](../firecrawl-developer-index/SKILL.md). The same caveat applies to `categories: ["developer"]`.
+- If the feature searches **published research papers** — biomedical, clinical, and life-science literature (PubMed, bioRxiv, medRxiv) or arXiv preprints — `/search` is the wrong surface. Use the research paper index instead: [firecrawl-research-index](https://github.com/firecrawl/skills/tree/main/skills/core/firecrawl-research-index). Passing `categories: ["research"]` to `/search` does **not** query that index; it filters an ordinary web search to research-affiliated websites (the list includes PubMed, bioRxiv, medRxiv, arXiv, and publisher sites) and returns page results from them — no abstract search, related-paper expansion, or full-text passages.
+- If the feature answers developer questions from issues, pull requests, READMEs, or documentation pages, use the developer index instead: [firecrawl-developer-index](https://github.com/firecrawl/skills/tree/main/skills/core/firecrawl-developer-index). The same caveat applies to `categories: ["developer"]`.
 
 ## Implementation Notes
 
@@ -72,5 +72,5 @@ Read the source-of-truth page for your project language before writing integrati
 - [firecrawl-build](../firecrawl-build/SKILL.md)
 - [firecrawl-build-scrape](../firecrawl-build-scrape/SKILL.md)
 - [firecrawl-build-interact](../firecrawl-build-interact/SKILL.md)
-- [firecrawl-research-index](../firecrawl-research-index/SKILL.md)
-- [firecrawl-developer-index](../firecrawl-developer-index/SKILL.md)
+- [firecrawl-research-index](https://github.com/firecrawl/skills/tree/main/skills/core/firecrawl-research-index)
+- [firecrawl-developer-index](https://github.com/firecrawl/skills/tree/main/skills/core/firecrawl-developer-index)
