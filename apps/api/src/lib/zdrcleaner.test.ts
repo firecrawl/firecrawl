@@ -43,7 +43,7 @@ vi.mock("./logger", () => {
 });
 vi.mock("./otel-tracer", () => ({ withSpan, setSpanAttributes }));
 
-import { cleanZdrRequest } from "./zdrcleaner";
+import { cleanZdrJob, cleanZdrRequest } from "./zdrcleaner";
 import { logger } from "./logger";
 
 function mockChildren(ids: string[]) {
@@ -140,5 +140,43 @@ describe("ZDR cleaner", () => {
       "ClickHouse unavailable",
     );
     expect(removeJobFromGCS).not.toHaveBeenCalled();
+  });
+});
+
+describe("ZDR cleanup job dispatch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client.current = { query };
+    removeJobFromGCS.mockResolvedValue(undefined);
+    spans.length = 0;
+  });
+
+  it("deletes a per-blob job's blob without reading ClickHouse", async () => {
+    await cleanZdrJob({ blobId: "blob-1" });
+
+    expect(removeJobFromGCS.mock.calls.map(([id]) => id)).toEqual(["blob-1"]);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("propagates a per-blob delete failure so the job is retried", async () => {
+    removeJobFromGCS.mockRejectedValueOnce(new Error("GCS unavailable"));
+
+    await expect(cleanZdrJob({ blobId: "blob-2" })).rejects.toThrow(
+      "GCS unavailable",
+    );
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("still resolves a request-level job's blobs from ClickHouse", async () => {
+    mockChildren(["scrape-blob"]);
+
+    await cleanZdrJob({ requestId: "request-5" });
+
+    expect(query.mock.calls[0][0]).toMatchObject({
+      query_params: { requestId: "request-5" },
+    });
+    expect(removeJobFromGCS.mock.calls.map(([id]) => id)).toEqual([
+      "scrape-blob",
+    ]);
   });
 });
