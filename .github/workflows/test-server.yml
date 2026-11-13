@@ -195,6 +195,11 @@ jobs:
         run: pnpm exec playwright install chromium
         working-directory: ./apps/playwright-service-ts
 
+      - name: Run Playwright media routing regression
+        if: matrix.engine == 'playwright' && matrix.proxy == 'no-proxy'
+        run: pnpm test:media
+        working-directory: ./apps/playwright-service-ts
+
       - name: Cache Playwright
         if: matrix.engine == 'playwright' && steps.pw_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
