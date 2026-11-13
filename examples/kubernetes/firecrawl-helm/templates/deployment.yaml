@@ -24,7 +24,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=6144", "dist/src/index.js" ]
+          args: [ '--max-old-space-size={{ include "firecrawl.nodeHeapSize" (tuple .Values "api" 6144) }}', "dist/src/index.js" ]
           ports:
             - containerPort: {{ .Values.service.api.port }}
           env:
