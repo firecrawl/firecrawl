@@ -1,5 +1,6 @@
 import { robustFetch } from "../../../lib/fetch";
 import {
+  noTextPagesProcessed,
   reconcilePageCountWithFirePdf,
   scrapePDFWithFirePDF,
 } from "../firePDF";
@@ -190,6 +191,36 @@ describe("reconcilePageCountWithFirePdf", () => {
     // skip when the field is *missing*, not when it's zero.
     expect(reconcilePageCountWithFirePdf(0, { pagesProcessed: 0 })).toBe(0);
     expect(reconcilePageCountWithFirePdf(5, { pagesProcessed: 0 })).toBe(5);
+  });
+});
+
+describe("noTextPagesProcessed", () => {
+  it("returns the processed page count for a text-free result", () => {
+    expect(noTextPagesProcessed({ markdown: "", pagesProcessed: 1 })).toBe(1);
+    expect(noTextPagesProcessed({ markdown: " \n ", pagesProcessed: 3 })).toBe(
+      3,
+    );
+  });
+
+  it("does not treat a result with zero processed pages as a no-text document", () => {
+    expect(
+      noTextPagesProcessed({ markdown: "", pagesProcessed: 0 }),
+    ).toBeUndefined();
+  });
+
+  it("does not treat a result without a reported page count as a no-text document", () => {
+    expect(noTextPagesProcessed({ markdown: "" })).toBeUndefined();
+    expect(
+      noTextPagesProcessed({ markdown: "", pagesProcessed: undefined }),
+    ).toBeUndefined();
+  });
+
+  it("ignores results that contain text, and missing results", () => {
+    expect(
+      noTextPagesProcessed({ markdown: "hello", pagesProcessed: 2 }),
+    ).toBeUndefined();
+    expect(noTextPagesProcessed(null)).toBeUndefined();
+    expect(noTextPagesProcessed(undefined)).toBeUndefined();
   });
 });
 

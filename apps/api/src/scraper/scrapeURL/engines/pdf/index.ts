@@ -51,7 +51,11 @@ import { isUsOnly } from "../../../../lib/us-only";
 import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { useFireEngine } from "../fire-engine/available";
-import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
+import {
+  noTextPagesProcessed,
+  reconcilePageCountWithFirePdf,
+  scrapePDFWithFirePDF,
+} from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
   byReferenceReachableForRequest,
@@ -954,6 +958,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
+    const noTextPages = noTextPagesProcessed(result);
+
     // Final fallback to PdfParse (skipped when Fire PDF is forced).
     if (!result && !forceFirePDF) {
       result = await scrapePDFWithParsePDF(
@@ -1016,6 +1022,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       statusCode: response.status,
       html: result?.html ?? "",
       markdown: result?.markdown ?? "",
+      ...(noTextPages !== undefined ? { parsedEmpty: true } : {}),
       ...(includePageMarkdown && result?.pageMarkdown
         ? {
             pages: result.pageMarkdown.map(page => ({
@@ -1028,7 +1035,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         ? { blocks: toPublicBlocks(result.blocks) }
         : {}),
       pdfMetadata: {
-        numPages: effectivePageCount,
+        numPages: noTextPages ?? effectivePageCount,
         totalPages: totalPageCount,
         title: metadataTitle,
       },
