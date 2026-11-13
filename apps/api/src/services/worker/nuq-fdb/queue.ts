@@ -55,6 +55,7 @@ import {
   GroupJobIndexValue,
 } from "./ops";
 import { NuqFdbGroupOps } from "./groups";
+import { GroupNotActiveError } from "../nuq-group-error";
 
 const DATA_CHUNK_BYTES = 90 * 1024;
 // FoundationDB caps transactions at 10,000,000 bytes of affected data. Keep
@@ -101,6 +102,7 @@ export type NuQFdbJobOptions = {
   listenable?: boolean;
   ownerId?: string;
   groupId?: string;
+  requireActiveGroup?: boolean;
   // when set, the job bypasses both concurrency gates (kickoff jobs)
   bypassGate?: boolean;
   // backlog timeout: if the job is still waiting for a slot at this time, it
@@ -458,6 +460,15 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       let granted = 0;
       let keyGranted = 0;
       const crawlAcquired = new Map<string, number>();
+
+      for (const job of jobs) {
+        if (
+          job.options.requireActiveGroup &&
+          groupMetas.get(job.options.groupId!)?.s !== "active"
+        ) {
+          throw new GroupNotActiveError(job.options.groupId!);
+        }
+      }
 
       for (const j of jobs) {
         const gid = j.options.groupId;
