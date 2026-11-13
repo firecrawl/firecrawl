@@ -244,6 +244,22 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     expect(res.body.success).toBe(false);
   });
 
+  it("rejects a protein lookup without a protein", async () => {
+    const identity = await idmux({
+      name: "research/protein lookup rejects missing protein",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/search/research/proteins",
+      { organism: "9606" },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
   it("logs research origin from X-Origin and integration from query", async () => {
     if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
