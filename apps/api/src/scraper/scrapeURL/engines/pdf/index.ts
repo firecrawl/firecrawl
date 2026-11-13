@@ -60,6 +60,13 @@ import {
 } from "./fire-pdf/by-reference";
 import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
 import {
+  extractTextLayerLocally,
+  isUsOnlyCapacityFailure,
+  usOnlyTextLayerFallbackEligible,
+  usOnlyTextLayerReserveMs,
+  withUsOnlyTextLayerReserve,
+} from "./fire-pdf/us-only-text-layer";
+import {
   decideFirePdfAsyncRoute,
   firePdfFeaturesLabel,
   recordFirePdfRoute,
@@ -691,6 +698,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               processingRestricted ||
               Math.random() * 100 < config.FIRE_PDF_PERCENT)));
 
+      // A US-only text PDF in auto mode falls back to its text layer when the
+      // PDF service has no US capacity for it (fire-pdf/us-only-text-layer.ts).
+      const usOnlyTextLayer = usOnlyTextLayerFallbackEligible({
+        usOnly,
+        mode,
+        forceFirePDF,
+        detectedPdfType,
+      });
+      let usOnlyTextLayerFallback = false;
+
       if (useFirePDF) {
         // Async is a server-controlled cohort within traffic already selected
         // for FirePDF. ZDR and short-deadline requests are always kept out.
@@ -730,9 +747,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             crawl_id: meta.internalOptions.crawlId,
           });
         }
+        // Keep part of the budget back from the PDF service, so a request it
+        // holds to the deadline still leaves time for the text-layer fallback.
+        const usOnlyReserveMs = usOnlyTextLayer
+          ? usOnlyTextLayerReserveMs(meta.abort.scrapeTimeout())
+          : undefined;
+        const usOnlyReserve =
+          usOnlyReserveMs !== undefined
+            ? withUsOnlyTextLayerReserve(meta, usOnlyReserveMs)
+            : undefined;
         try {
           const firePdfMeta = {
-            ...meta,
+            ...(usOnlyReserve?.meta ?? meta),
             logger: meta.logger.child({
               method: useAsync ? "scrapePDF/firePDFAsync" : "scrapePDF/firePDF",
             }),
@@ -802,42 +828,75 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             result,
           );
         } catch (error) {
-          if (
-            error instanceof RemoveFeatureError ||
-            error instanceof AbortManagerThrownError ||
-            error instanceof UsOnlyUnavailableError ||
-            error instanceof ReservedCapacityUnavailableError
-          ) {
-            throw error;
-          }
-          if (forceFirePDF) {
-            meta.logger.error("FirePDF failed (forced, no fallback)", {
+          if (usOnlyTextLayer && isUsOnlyCapacityFailure(error, meta)) {
+            usOnlyTextLayerFallback = true;
+            meta.logger.warn(
+              "FirePDF has no US capacity for a US-only text PDF -- falling back to its text layer",
+              {
+                method: "scrapePDF/firePDF",
+                event: "us_only_text_layer_fallback",
+                scrape_id: meta.id,
+                team_id: meta.internalOptions.teamId,
+                reason:
+                  error instanceof UsOnlyUnavailableError
+                    ? error.firePdfReason
+                    : "reserve_reached",
+              },
+            );
+          } else {
+            if (
+              error instanceof RemoveFeatureError ||
+              error instanceof AbortManagerThrownError ||
+              error instanceof UsOnlyUnavailableError ||
+              error instanceof ReservedCapacityUnavailableError
+            ) {
+              throw error;
+            }
+            if (forceFirePDF) {
+              meta.logger.error("FirePDF failed (forced, no fallback)", {
+                method: "scrapePDF/firePDF",
+                error,
+              });
+              throw error;
+            }
+            meta.logger.warn("FirePDF failed -- falling back to MinerU", {
               method: "scrapePDF/firePDF",
               error,
+              event: "pdf_engine_fallback",
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+              from_engine: "firepdf",
+              to_engine: "mineru",
+              // Coerce both to strings defensively — if someone throws a
+              // non-Error (e.g. a plain object or primitive), `.name` /
+              // `.message` could be undefined or non-string, and `.slice` would
+              // throw inside the fallback logger, masking the original failure.
+              error_class:
+                (error as { name?: unknown })?.name != null
+                  ? String((error as { name?: unknown }).name)
+                  : undefined,
+              error_message: String(
+                (error as { message?: unknown })?.message ?? "",
+              ).slice(0, 500),
             });
-            throw error;
           }
-          meta.logger.warn("FirePDF failed -- falling back to MinerU", {
-            method: "scrapePDF/firePDF",
-            error,
-            event: "pdf_engine_fallback",
-            scrape_id: meta.id,
-            team_id: meta.internalOptions.teamId,
-            from_engine: "firepdf",
-            to_engine: "mineru",
-            // Coerce both to strings defensively — if someone throws a
-            // non-Error (e.g. a plain object or primitive), `.name` /
-            // `.message` could be undefined or non-string, and `.slice` would
-            // throw inside the fallback logger, masking the original failure.
-            error_class:
-              (error as { name?: unknown })?.name != null
-                ? String((error as { name?: unknown }).name)
-                : undefined,
-            error_message: String(
-              (error as { message?: unknown })?.message ?? "",
-            ).slice(0, 500),
-          });
+        } finally {
+          usOnlyReserve?.dispose();
         }
+      }
+
+      if (usOnlyTextLayerFallback && !result) {
+        result = await extractTextLayerLocally(
+          {
+            ...meta,
+            logger: meta.logger.child({
+              method: "scrapePDF/usOnlyTextLayer",
+            }),
+          },
+          tempFilePath,
+          maxPages ?? undefined,
+        );
+        // null: the final pdf-parse fallback below reads the text layer.
       }
 
       if (

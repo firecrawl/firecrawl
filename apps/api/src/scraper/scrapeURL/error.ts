@@ -11,6 +11,13 @@ export class EngineError extends Error {
 
 /** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
 export class UsOnlyUnavailableError extends TransportableError {
+  /**
+   * Set when the PDF service raised it: it refused for lack of US capacity
+   * (`region_unavailable`) or answered without confirming US processing
+   * (`region_unconfirmed`). In-process only; not serialized.
+   */
+  public firePdfReason?: "region_unavailable" | "region_unconfirmed";
+
   constructor(message: string) {
     super("US_ONLY_UNAVAILABLE", message);
   }

@@ -76,9 +76,11 @@ export function firePdfUsOnlyRefusal(
     reason === "region_unconfirmed"
       ? "the PDF service did not confirm US-only processing"
       : "no US capacity could take this document";
-  return new UsOnlyUnavailableError(
+  const error = new UsOnlyUnavailableError(
     `${feature} is not available for teams restricted to US-only processing right now: ${detail}. Try again later.`,
   );
+  error.firePdfReason = reason;
+  return error;
 }
 
 /** The error a team restricted to reserved capacity gets when the PDF service did not run, or did not confirm running, its document there. */
