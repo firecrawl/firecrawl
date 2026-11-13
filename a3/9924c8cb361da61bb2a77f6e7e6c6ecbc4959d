@@ -1,0 +1,30 @@
+apps/api/src/lib/bigtable-client.test.ts
+  s_ebed3335e17158::t_6ce622f559d980 1-45
+apps/api/src/lib/crawl-redis-lock.test.ts
+  s_ebed3335e17158::t_6ce622f559d980 1-97
+apps/api/src/lib/crawl-redis.ts
+  s_ebed3335e17158::t_9c7de77e2d2b44 9-13,717,724-725,727-770,772-794,796-802,804-810,815-821,846-854,856,858-861,863,866,876,885-887,889,891-892
+  s_ebed3335e17158::t_e105f32509c8a9 716
+apps/api/src/lib/bigtable-client.ts
+  s_ebed3335e17158::t_1287408ecce94e 9-15
+apps/api/src/services/worker/scrape-worker.ts
+  s_ebed3335e17158::t_ea5e2ff6e09447 27,780-799,801-807,809-828,830-832,836-837
+  s_ebed3335e17158::t_1548c9de7d10f7 757,768,829,842
+  s_ebed3335e17158::t_513007e9de054b 756,758-767,769-779,800,808,833-835,838-841,843-851
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a39924c8cb361da61bb2a77f6e7e6c6ecbc4959d",
+  "prompts": {},
+  "sessions": {
+    "s_ebed3335e17158": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51673b54-d6f0-4ca1-b756-22f5f909ee70",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
