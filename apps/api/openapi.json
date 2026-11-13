@@ -8915,7 +8915,7 @@
                       "type": "string",
                       "enum": ["fast", "auto", "ocr"],
                       "default": "auto",
-                      "description": "PDF parsing mode. \"fast\": text-only extraction. \"auto\": text-first with OCR fallback. \"ocr\": OCR on every page."
+                      "description": "PDF parsing mode. \"fast\": text-only extraction. \"auto\": text-first with OCR fallback. \"ocr\": runs layout analysis on every page, including pages that would otherwise be read straight from embedded text. Text regions with a usable text layer still use that text; image-only pages are OCR'd in both auto and ocr."
                     },
                     "maxPages": {
                       "type": "integer",
@@ -9096,7 +9096,7 @@
                       "type": "string",
                       "enum": ["fast", "auto", "ocr"],
                       "default": "auto",
-                      "description": "PDF parsing mode. \"fast\": text-based extraction only (embedded text, fastest). \"auto\" (default): attempts fast extraction first, falls back to OCR if needed. \"ocr\": forces OCR parsing on every page."
+                      "description": "PDF parsing mode. \"fast\": text-based extraction only (embedded text, fastest). \"auto\" (default): attempts fast extraction first, falls back to OCR if needed. \"ocr\": runs layout analysis on every page, including pages that would otherwise be read straight from embedded text. Text regions with a usable text layer still use that text; image-only pages are OCR'd in both auto and ocr."
                     },
                     "maxPages": {
                       "type": "integer",
