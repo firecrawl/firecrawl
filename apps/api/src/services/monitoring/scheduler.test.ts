@@ -1,7 +1,12 @@
 import type { MockedFunction } from "vitest";
 import { getACUCTeam } from "../../controllers/auth";
+import type { TeamFlags } from "../../controllers/v2/types";
 import { addMonitorCheckJob } from "./queue";
-import { enqueueDueMonitorChecks, MONITOR_ZDR_PAUSED_ERROR } from "./scheduler";
+import {
+  enqueueDueMonitorChecks,
+  MONITOR_ZDR_PAUSED_ERROR,
+  monitorRefusedForZdr,
+} from "./scheduler";
 import { isMonitorCheckStale } from "./stale";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -84,6 +89,43 @@ const mockUpdateMonitorScheduleAfterRun =
   >;
 const mockGetACUCTeam = getACUCTeam as MockedFunction<typeof getACUCTeam>;
 const mockUpdateMonitor = updateMonitor as MockedFunction<typeof updateMonitor>;
+
+describe("monitorRefusedForZdr", () => {
+  const scrape = [{ type: "scrape" }];
+  const search = [{ type: "scrape" }, { type: "search" }];
+
+  it.each<[string, TeamFlags | undefined, { type: string }[], boolean]>([
+    ["no ZDR flags", undefined, search, false],
+    ["scrapeZDR forced, scrape targets", { scrapeZDR: "forced" }, scrape, true],
+    ["searchZDR forced, search target", { searchZDR: "forced" }, search, true],
+    [
+      "searchZDR forced-zdr, search target",
+      { searchZDR: "forced-zdr" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-anon, search target",
+      { searchZDR: "forced-anon" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-zdr, scrape targets only",
+      { searchZDR: "forced-zdr" },
+      scrape,
+      false,
+    ],
+    [
+      "searchZDR allowed, search target",
+      { searchZDR: "allowed" },
+      search,
+      false,
+    ],
+  ])("%s", (_label, flags, targets, refused) => {
+    expect(monitorRefusedForZdr(flags, targets)).toBe(refused);
+  });
+});
 
 describe("monitoring scheduler", () => {
   const monitor = {
@@ -202,6 +244,54 @@ describe("monitoring scheduler", () => {
     );
     expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
     expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
+  it("pauses a search monitor whose team requires zero data retention for search", async () => {
+    const searchMonitor = {
+      ...monitor,
+      targets: [{ id: "t-1", type: "search" }],
+    } as any;
+    mockClaimDueMonitors.mockResolvedValue([searchMonitor]);
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-zdr" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(0);
+
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor: searchMonitor,
+      trigger: "scheduled",
+      scheduledFor: searchMonitor.next_run_at,
+      status: "failed",
+    });
+    expect(mockUpdateMonitor).toHaveBeenCalledWith({
+      teamId: searchMonitor.team_id,
+      monitorId: searchMonitor.id,
+      input: { status: "paused" },
+    });
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps running a scrape monitor when only search requires zero data retention", async () => {
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-anon" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(1);
+
+    expect(mockUpdateMonitor).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith(
+      {
+        monitorId: monitor.id,
+        checkId: check.id,
+        teamId: monitor.team_id,
+      },
+      { search: false },
+    );
   });
 
   it("fails and clears a dispatched check when enqueueing fails", async () => {
