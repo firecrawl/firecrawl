@@ -262,6 +262,81 @@ type SimilarPapersResponse struct {
 	Note      *string       `json:"note,omitempty"`
 }
 
+// ProteinLookupResponse is returned by LookupProtein. Match is "found" with
+// Protein set, "ambiguous" with Candidates and CandidateCount set, or
+// "not_found". Notice is UniProt's credit and CC BY 4.0 license. Show it with
+// any results you display to a person.
+type ProteinLookupResponse struct {
+	Success        bool               `json:"success"`
+	Release        string             `json:"release"`
+	Match          string             `json:"match"`
+	Protein        *ProteinEntry      `json:"protein,omitempty"`
+	Candidates     []ProteinCandidate `json:"candidates,omitempty"`
+	CandidateCount *int               `json:"candidateCount,omitempty"`
+	Notice         string             `json:"notice"`
+}
+
+// ProteinEntry is a reviewed UniProtKB/Swiss-Prot entry.
+type ProteinEntry struct {
+	Accession           string             `json:"accession"`
+	EntryName           string             `json:"entryName"`
+	Gene                string             `json:"gene,omitempty"`
+	Synonyms            []string           `json:"synonyms"`
+	Name                string             `json:"name"`
+	Organism            ProteinOrganism    `json:"organism"`
+	MatchedBy           string             `json:"matchedBy"`
+	URL                 string             `json:"url"`
+	SubcellularLocation []ProteinStatement `json:"subcellularLocation"`
+	Function            []ProteinStatement `json:"function"`
+	GoCellularComponent []ProteinGoTerm    `json:"goCellularComponent"`
+	PaperIDs            []string           `json:"paperIds"`
+}
+
+// ProteinCandidate is one entry an ambiguous protein lookup matched.
+type ProteinCandidate struct {
+	Accession string          `json:"accession"`
+	EntryName string          `json:"entryName"`
+	Gene      string          `json:"gene,omitempty"`
+	Name      string          `json:"name"`
+	Organism  ProteinOrganism `json:"organism"`
+	MatchedBy string          `json:"matchedBy"`
+}
+
+// ProteinOrganism is the organism of a protein entry.
+type ProteinOrganism struct {
+	TaxonID        int    `json:"taxonId"`
+	ScientificName string `json:"scientificName"`
+	CommonName     string `json:"commonName,omitempty"`
+}
+
+// ProteinStatement is one curated subcellular location or function statement.
+type ProteinStatement struct {
+	Text        string            `json:"text"`
+	Note        bool              `json:"note"`
+	Molecule    string            `json:"molecule,omitempty"`
+	Topology    string            `json:"topology,omitempty"`
+	Orientation string            `json:"orientation,omitempty"`
+	Evidence    []ProteinEvidence `json:"evidence"`
+}
+
+// ProteinEvidence is the evidence behind a protein statement. PaperID is a
+// "pmid:" paper ID that InspectPaper and ReadPaper accept.
+type ProteinEvidence struct {
+	Kind        string `json:"kind"`
+	ECO         string `json:"eco,omitempty"`
+	PaperID     string `json:"paperId,omitempty"`
+	FromProtein string `json:"fromProtein,omitempty"`
+}
+
+// ProteinGoTerm is a GO cellular component term of a protein entry.
+type ProteinGoTerm struct {
+	ID         string   `json:"id"`
+	Term       string   `json:"term"`
+	Code       string   `json:"code"`
+	AssignedBy string   `json:"assignedBy"`
+	PaperIDs   []string `json:"paperIds"`
+}
+
 // GitHubSearchItem represents a GitHub research search result.
 type GitHubSearchItem struct {
 	ResultType   string                 `json:"resultType,omitempty"`
@@ -307,6 +382,13 @@ type RelatedPapersOptions struct {
 	K      *int     `json:"k,omitempty"`
 	Rerank *bool    `json:"rerank,omitempty"`
 	Anchor []string `json:"anchor,omitempty"`
+}
+
+// LookupProteinOptions configures LookupProtein.
+type LookupProteinOptions struct {
+	// Organism is an NCBI taxon ID, scientific name or UniProt common name
+	// (default "9606").
+	Organism string `json:"organism,omitempty"`
 }
 
 // SearchGitHubOptions configures SearchGitHub.
