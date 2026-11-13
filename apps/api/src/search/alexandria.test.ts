@@ -277,7 +277,18 @@ it("reports the tools the Exchange hid from a US-only team", async () => {
 it("asks Exchange for zero-data-retention providers only, on every leg", async () => {
   request.mockImplementation(async args =>
     args.path === "/v1/skills/resolve"
-      ? { status: 200, body: { skills: [] } }
+      ? {
+          status: 200,
+          body: {
+            skills: [
+              {
+                id: "sample",
+                matchedDomains: ["example.com"],
+                domainCapabilities: { "example.com": ["records/search"] },
+              },
+            ],
+          },
+        }
       : {
           status: 200,
           body: { success: true, creditsCost: 0, data: { items: [tool] } },
@@ -291,10 +302,9 @@ it("asks Exchange for zero-data-retention providers only, on every leg", async (
     },
     logger,
   );
-  const paths = request.mock.calls.map(([args]) => args.path);
-  expect(paths).toEqual(
-    expect.arrayContaining(["/v1/retrieve", "/v1/skills/resolve"]),
-  );
+  // The semantic lookup, the domain resolve, and the domain tool lookup.
+  const paths = request.mock.calls.map(([args]) => args.path).sort();
+  expect(paths).toEqual(["/v1/retrieve", "/v1/retrieve", "/v1/skills/resolve"]);
   for (const [args] of request.mock.calls)
     expect(args).toMatchObject({ zeroDataRetention: true });
 });
