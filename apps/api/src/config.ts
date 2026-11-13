@@ -466,6 +466,8 @@ const configSchema = z.object({
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Teams whose API key may call POST /v2/datasets/orders/:id/settle.
+  DATASETS_BUILDER_TEAM_IDS: delimitedList(",").optional(),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),

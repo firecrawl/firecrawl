@@ -124,6 +124,11 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+import {
+  createDatasetOrderController,
+  getDatasetOrderController,
+  settleDatasetOrderController,
+} from "../controllers/v2/dataset-orders";
 
 // Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
 // in controllers/auth.ts); /v1 routes do not.
@@ -729,6 +734,25 @@ v2Router.post(
   "/support/docs-search",
   authMiddleware(RateLimiterMode.SupportDocsSearch),
   wrap(supportProxyController),
+);
+
+// Dataset orders: buying a slice holds its credits, and the hold is captured
+// once the files are built or released when they are not. Settle is the
+// builder's nudge; the controller admits only builder teams.
+v2Router.post(
+  "/datasets/orders",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(createDatasetOrderController),
+);
+v2Router.get(
+  "/datasets/orders/:id",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(getDatasetOrderController),
+);
+v2Router.post(
+  "/datasets/orders/:id/settle",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(settleDatasetOrderController),
 );
 
 // Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.

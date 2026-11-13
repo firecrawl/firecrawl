@@ -6951,6 +6951,209 @@
           }
         }
       }
+    },
+    "/datasets/orders": {
+      "post": {
+        "summary": "Order a slice of a dataset",
+        "description": "Places an order for a slice of a published dataset: a filter over its rows, a choice of columns, a row cap and a file format. The credits the order can cost are held when it is placed. Once the files are built, the credits for the rows delivered are charged and the rest of the hold is released. If the files cannot be built, the whole hold is released. An order for a whole snapshot needs no build: it is normally charged and delivered in the same request. An order the team already has for the same spec is returned instead of placing another.",
+        "operationId": "createDatasetOrder",
+        "tags": ["Datasets"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-idempotency-key",
+            "in": "header",
+            "required": false,
+            "description": "A key that identifies this order. A repeat with the same key returns the same order instead of placing another. Generated when omitted.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order, with its credits held, or the order the team already has",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/DatasetOrder"
+                        },
+                        "existing": {
+                          "type": "boolean",
+                          "description": "Whether the order existed before this request. Nothing new is held for an existing order."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The order spec or `maxCredits` is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "The team does not have the credits the order holds (`insufficient_credits`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The team is not enabled for dataset orders (`orders_not_enabled`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The dataset or snapshot is not one that can be ordered (`unknown_dataset`, `unknown_snapshot`). A snapshot published only for testing is never sold.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order would hold more than `maxCredits` (`price_changed`, with `holdCredits`), or the idempotency key was already used for another spec",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The team has too many open orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The credits could not be held, so no order was queued (`billing_unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/datasets/orders/{orderId}": {
+      "get": {
+        "summary": "Get a dataset order",
+        "description": "Returns one of the team's dataset orders, and its files once the order is delivered.",
+        "operationId": "getDatasetOrder",
+        "tags": ["Datasets"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the dataset order",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order and its files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/DatasetOrder"
+                        },
+                        "files": {
+                          "type": "array",
+                          "description": "The delivered files. Empty until the order is delivered, and after its access has expired.",
+                          "items": {
+                            "$ref": "#/components/schemas/DatasetOrderFile"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The team has no such order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOrderError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -12699,6 +12902,286 @@
             }
           }
         }
+      },
+      "DatasetOrderSpec": {
+        "type": "object",
+        "required": ["dataset", "snapshotId"],
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "The slug of a published dataset"
+          },
+          "snapshotId": {
+            "type": "string",
+            "description": "The ID of the dataset's published snapshot"
+          },
+          "filters": {
+            "type": "object",
+            "description": "Which rows to keep. An omitted filter keeps every row.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "First publication month to keep, inclusive, as `YYYY-MM`",
+                "example": "2020-01"
+              },
+              "to": {
+                "type": "string",
+                "description": "Last publication month to keep, inclusive, as `YYYY-MM`",
+                "example": "2024-12"
+              },
+              "undated": {
+                "type": "boolean",
+                "description": "Whether to keep rows without a publication date"
+              },
+              "types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Document types to keep"
+              },
+              "places": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Jurisdictions to keep"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Sources to keep"
+              },
+              "formats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Document formats to keep"
+              },
+              "languages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Languages to keep"
+              },
+              "minTokens": {
+                "type": "integer",
+                "description": "Smallest token count to keep, inclusive"
+              },
+              "maxTokens": {
+                "type": "integer",
+                "description": "Largest token count to keep, inclusive"
+              }
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The columns to deliver. `doc_id` is always included. All columns when omitted."
+          },
+          "maxRows": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The most rows to deliver. When more rows match, the first by `doc_id` are delivered."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["parquet", "jsonl"],
+            "default": "parquet",
+            "description": "The file format. `jsonl` files are gzip-compressed."
+          }
+        }
+      },
+      "DatasetOrderRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DatasetOrderSpec"
+          },
+          {
+            "type": "object",
+            "required": ["maxCredits"],
+            "properties": {
+              "maxCredits": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "The most credits the order may hold. The order is refused with `price_changed` when it would hold more."
+              }
+            }
+          }
+        ]
+      },
+      "DatasetOrderStatus": {
+        "type": "string",
+        "enum": [
+          "pending_hold",
+          "queued",
+          "building",
+          "built",
+          "delivered",
+          "refused",
+          "failed",
+          "cancelled",
+          "expired"
+        ],
+        "description": "`pending_hold` until the credits are held, then `queued`, `building` and `built` while the files are prepared, and `delivered` once they are charged and served. An order for a whole snapshot goes straight from `pending_hold` to `built`. `refused` when the credits could not be held; `failed`, `cancelled` and `expired` end an order without a charge."
+      },
+      "DatasetOrderHoldState": {
+        "type": "string",
+        "enum": ["none", "held", "captured", "released"],
+        "description": "`held` while the order's credits are reserved, `captured` once the delivered rows are charged, `released` when the hold was given back."
+      },
+      "DatasetOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dataset": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/DatasetOrderSpec"
+          },
+          "specKey": {
+            "type": "string",
+            "description": "A hash of the order's spec. Two orders for the same slice share it."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["parquet", "jsonl"]
+          },
+          "status": {
+            "$ref": "#/components/schemas/DatasetOrderStatus"
+          },
+          "holdState": {
+            "$ref": "#/components/schemas/DatasetOrderHoldState"
+          },
+          "unitCredits": {
+            "type": "integer",
+            "description": "Credits per delivered row"
+          },
+          "holdRows": {
+            "type": "integer",
+            "description": "The most rows the order can deliver"
+          },
+          "holdCredits": {
+            "type": "integer",
+            "description": "The credits held for the order: `holdRows` times `unitCredits`"
+          },
+          "holdExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the hold lapses by itself"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Rows delivered, once the files are built",
+            "nullable": true
+          },
+          "bytes": {
+            "type": "integer",
+            "description": "Size of the delivered files, once they are built",
+            "nullable": true
+          },
+          "credits": {
+            "type": "integer",
+            "description": "Credits charged for the delivered rows, never more than `holdCredits`",
+            "nullable": true
+          },
+          "failure": {
+            "type": "object",
+            "description": "Why a refused, failed or expired order ended",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "accessExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Until when the delivered files are served. `null` for an order for a whole snapshot, whose files are kept as long as the snapshot is.",
+            "nullable": true
+          },
+          "location": {
+            "type": "object",
+            "description": "Where the order's files are stored, once they exist. Each file's `path` is relative to `prefix`.",
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string"
+              }
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DatasetOrderFile": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The file's path, relative to the order's `location.prefix`",
+            "example": "data/part-00000.parquet"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer"
+          }
+        }
+      },
+      "DatasetOrderError": {
+        "type": "object",
+        "description": "A refused dataset order request. Some codes carry extra fields, such as `holdCredits` on `price_changed`.",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "code": {
+            "type": "string",
+            "example": "insufficient_credits"
+          },
+          "error": {
+            "type": "string",
+            "description": "What went wrong, in words"
+          }
+        },
+        "additionalProperties": true
       }
     }
   },
