@@ -35,6 +35,7 @@ def _prepare_agent_request(
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     location: Optional[Dict[str, str]] = None,
     zero_data_retention: Optional[bool] = None,
+    safe: Optional[bool] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -84,6 +85,8 @@ def _prepare_agent_request(
         body["location"] = {"country": location["country"]}
     if zero_data_retention is not None:
         body["zeroDataRetention"] = zero_data_retention
+    if safe is not None:
+        body["safe"] = safe
     return body
 
 
@@ -115,6 +118,7 @@ def start_agent(
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     location: Optional[Dict[str, str]] = None,
     zero_data_retention: Optional[bool] = None,
+    safe: Optional[bool] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -133,6 +137,7 @@ def start_agent(
         exchange=exchange,
         location=location,
         zero_data_retention=zero_data_retention,
+        safe=safe,
     )
     resp = client.post("/v2/agent", body)
     if not resp.ok:
@@ -214,6 +219,7 @@ def agent(
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     location: Optional[Dict[str, str]] = None,
     zero_data_retention: Optional[bool] = None,
+    safe: Optional[bool] = None,
 ) -> AgentResponse:
     started = start_agent(
         client,
@@ -233,6 +239,7 @@ def agent(
         exchange=exchange,
         location=location,
         zero_data_retention=zero_data_retention,
+        safe=safe,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

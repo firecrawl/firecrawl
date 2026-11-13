@@ -1622,6 +1622,7 @@ class FirecrawlClient:
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
         location: Optional[Dict[str, str]] = None,
         zero_data_retention: Optional[bool] = None,
+        safe: Optional[bool] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -1645,6 +1646,7 @@ class FirecrawlClient:
                 from it, and search results are localized to it without changing
                 where requests come from. The agent cannot change it.
             zero_data_retention: Run the agent with zero data retention (requires the team to have ZDR enabled)
+            safe: Set the agent search filter; None omits the option. A follow-up may retain the thread's prior setting.
         Returns:
             Response payload with job id/status (poll with get_agent_status)
         """
@@ -1666,6 +1668,7 @@ class FirecrawlClient:
             exchange=exchange,
             location=location,
             zero_data_retention=zero_data_retention,
+            safe=safe,
         )
 
     def agent(
@@ -1689,6 +1692,7 @@ class FirecrawlClient:
         exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
         location: Optional[Dict[str, str]] = None,
         zero_data_retention: Optional[bool] = None,
+        safe: Optional[bool] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -1714,6 +1718,7 @@ class FirecrawlClient:
                 from it, and search results are localized to it without changing
                 where requests come from. The agent cannot change it.
             zero_data_retention: Run the agent with zero data retention (requires the team to have ZDR enabled)
+            safe: Set the agent search filter; None omits the option. A follow-up may retain the thread's prior setting.
         Returns:
             Final agent response when completed
         """
@@ -1737,6 +1742,7 @@ class FirecrawlClient:
             exchange=exchange,
             location=location,
             zero_data_retention=zero_data_retention,
+            safe=safe,
         )
 
     def get_agent_status(self, job_id: str):
