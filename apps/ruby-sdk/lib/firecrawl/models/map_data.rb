@@ -6,9 +6,11 @@ module Firecrawl
     # The v2 API may return links as either plain URL strings or objects
     # with url, title, and description fields. This class normalises both.
     class MapData
-      attr_reader :links
+      attr_reader :id, :links, :warning
 
       def initialize(data)
+        @id = data["id"]
+        @warning = data["warning"]
         raw_links = data["links"] || []
         @links = raw_links.map do |item|
           if item.is_a?(Hash)
