@@ -73,4 +73,34 @@ describe("executeTransformers", () => {
     expect(document.markdown).toBe("# Example Person");
     expect(document.json).toEqual({ name: "Example Person" });
   });
+
+  it("passes a text/markdown body through untouched when no markdown is set", async () => {
+    // Index cache hits return only the stored raw body, with no markdown.
+    const rawBody =
+      "# Pricing\n\n### Free\n\n**Price**: $0\n\n- 500 credits\n- [Docs](https://docs.firecrawl.dev/some_path)\n";
+
+    const document = await executeTransformers(
+      {
+        url: "https://www.firecrawl.dev/pricing.md",
+        options: {
+          formats: [{ type: "markdown" }],
+          onlyMainContent: true,
+        },
+        internalOptions: {},
+        logger: logger(),
+      } as any,
+      {
+        rawHtml: rawBody,
+        metadata: {
+          sourceURL: "https://www.firecrawl.dev/pricing.md",
+          url: "https://www.firecrawl.dev/pricing.md",
+          statusCode: 200,
+          contentType: "text/markdown; charset=utf-8",
+        },
+      } as any,
+    );
+
+    expect(document.markdown).toBe(rawBody);
+    expect(document.markdown).not.toContain("\\");
+  });
 });
