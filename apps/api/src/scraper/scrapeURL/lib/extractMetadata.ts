@@ -89,10 +89,12 @@ export async function extractMetadata(
       soup('link[rel*="icon"]').first().attr("href") ||
       undefined;
     if (faviconLink) {
-      const baseUrl = new URL(meta.rewrittenUrl ?? meta.url).origin;
-      favicon = faviconLink.startsWith("http")
-        ? faviconLink
-        : `${baseUrl}${faviconLink}`;
+      try {
+        favicon = new URL(faviconLink, meta.rewrittenUrl ?? meta.url).href;
+      } catch {
+        // If URL resolution fails, fall back to the raw value
+        favicon = faviconLink;
+      }
     }
 
     // Assuming the language is part of the URL as per the regex pattern
