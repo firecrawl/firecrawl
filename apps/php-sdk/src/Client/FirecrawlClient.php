@@ -182,6 +182,22 @@ final class FirecrawlClient
     }
 
     /**
+     * Look up a protein's UniProt location, function and GO cellular-component terms.
+     *
+     * The response's `notice` is the UniProt credit and license. Show it with the results.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function lookupProtein(string $protein, array $options = []): array
+    {
+        return $this->http->get('/v2/search/research/proteins' . $this->queryArray(array_merge(
+            ['protein' => $protein, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+            $options,
+        )));
+    }
+
+    /**
      * Search GitHub research content.
      *
      * @deprecated The research index GitHub search endpoint was removed after
