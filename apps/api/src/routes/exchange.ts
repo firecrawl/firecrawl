@@ -2,6 +2,7 @@ import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { billingCountryForTeam } from "../lib/billing-country";
 import { orgIdFromAcuc } from "../lib/team-org";
+import { getSearchForcedKind } from "../lib/zdr-helpers";
 import {
   acceptProviderTerms,
   acceptTermsSchema,
@@ -150,6 +151,7 @@ function exchangeProxy(
   options: {
     requiresRetrieveFlag?: boolean;
     opensFeedbackWindow?: boolean;
+    refusesZeroDataRetention?: boolean;
   } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
@@ -163,6 +165,17 @@ function exchangeProxy(
       path: req.path,
       teamId: authedReq.auth.team_id,
     });
+
+    if (
+      options.refusesZeroDataRetention &&
+      getSearchForcedKind(authedReq.acuc?.flags) !== null
+    ) {
+      return exchangeError(
+        res,
+        403,
+        "Provider discovery does not support zero data retention.",
+      );
+    }
 
     const base = upstreamBase();
     if (!base) {
@@ -325,6 +338,8 @@ exchangeRouter.use(
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
 // the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
 // Dashboard and publisher routes below stay on the flat Labs limit.
+// It sends the caller's query to services that do not honour zero data
+// retention, so teams whose search requires it are refused.
 exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.ExchangeDiscover, {
@@ -334,6 +349,7 @@ exchangeRouter.get(
     exchangeProxy(DISCOVER_TIMEOUT_MS, {
       requiresRetrieveFlag: false,
       opensFeedbackWindow: true,
+      refusesZeroDataRetention: true,
     }),
   ),
 );
