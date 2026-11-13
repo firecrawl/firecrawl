@@ -236,8 +236,8 @@ describeV1()("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
-    "rejects actions when fire-engine is not configured",
+  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && !HAS_PLAYWRIGHT)(
+    "rejects actions when no browser engine is configured",
     async () => {
       const raw = await scrapeRaw(
         {
