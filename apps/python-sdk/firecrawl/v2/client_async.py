@@ -784,12 +784,22 @@ class AsyncFirecrawlClient:
     async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> Any:
         start = asyncio.get_event_loop().time()
         while True:
+            # Stop before another status request once the deadline has been reached.
+            if timeout and (asyncio.get_event_loop().time() - start) >= timeout:
+                raise TimeoutError("Batch wait timed out")
             status = await async_batch.get_batch_scrape_status(self.async_http_client, job_id)
             if status.status in ["completed", "failed", "cancelled"]:
                 return status
-            if timeout and (asyncio.get_event_loop().time() - start) > timeout:
+            # A status call that itself used up the budget must not sleep further.
+            if timeout and (asyncio.get_event_loop().time() - start) >= timeout:
                 raise TimeoutError("Batch wait timed out")
-            await asyncio.sleep(poll_interval)
+            # Clamp the poll sleep to the time still left. A full poll_interval
+            # would run past a shorter wait budget.
+            if timeout:
+                remaining = timeout - (asyncio.get_event_loop().time() - start)
+                await asyncio.sleep(min(poll_interval, remaining))
+            else:
+                await asyncio.sleep(poll_interval)
 
     async def batch_scrape(self, urls: List[str], **kwargs) -> Any:
         # waiter wrapper
