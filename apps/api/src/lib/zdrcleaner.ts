@@ -4,6 +4,7 @@ import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
+import type { ZdrCleanupJob } from "./zdr-queue";
 
 export async function sendZdrHeartbeat() {
   if (config.ZDRCLEANER_HEARTBEAT_URL) {
@@ -11,18 +12,35 @@ export async function sendZdrHeartbeat() {
   }
 }
 
+// A request can resolve to a very large number of blobs; issuing every delete
+// at once exhausts the worker's memory.
+const BLOB_DELETE_CONCURRENCY = 50;
+
 async function removeBlobs(blobIds: string[]): Promise<unknown[]> {
   const logger = _logger.child({
     module: "zdrcleaner",
     method: "removeBlobs",
     zeroDataRetention: true,
   });
-  const results = await Promise.allSettled(
-    blobIds.map(blobId => removeJobFromGCS(blobId, logger)),
+  const errors: unknown[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < blobIds.length) {
+      const blobId = blobIds[next++];
+      try {
+        await removeJobFromGCS(blobId, logger);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(BLOB_DELETE_CONCURRENCY, blobIds.length) },
+      worker,
+    ),
   );
-  return results.flatMap(result =>
-    result.status === "rejected" ? [result.reason] : [],
-  );
+  return errors;
 }
 
 /**
@@ -86,4 +104,12 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
     }
     setSpanAttributes(span, { "zdr.cleanup.outcome": "completed" });
   });
+}
+
+export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
+  if ("blobId" in job) {
+    await removeJobFromGCS(job.blobId);
+    return;
+  }
+  await cleanZdrRequest(job.requestId);
 }

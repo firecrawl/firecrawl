@@ -33,6 +33,12 @@ export { scrapeTimeout, indexCooldown, Identity, idmux };
 export const V1_LIVE = Date.now() < sunsetOf("v1_scrape");
 export const describeV1 = (cond = true) => describeIf(V1_LIVE && cond);
 
+// From the extract sunset /v1/extract answers 410 instead of extracting.
+export const EXTRACT_SUNSET = sunsetOf("v1_extract");
+export const EXTRACT_LIVE = Date.now() < EXTRACT_SUNSET;
+export const describeExtract = (cond = true) =>
+  describeIf(EXTRACT_LIVE && cond);
+
 // Deep research and llms.txt answer 410 from their own sunsets.
 export const DEEP_RESEARCH_LIVE = Date.now() < sunsetOf("v1_deep_research");
 export const LLMSTXT_LIVE = Date.now() < sunsetOf("v1_llmstxt");

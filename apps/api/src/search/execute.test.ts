@@ -292,6 +292,39 @@ describe("executeSearch tool intent", () => {
     expect(result.toolsWarning).toBe("2 tools hidden");
   });
 
+  it.each([
+    [{ scrapeZDR: "forced" }, true],
+    [{ forceZDR: true }, true],
+    [{ scrapeZDR: "allowed" }, false],
+    [{}, false],
+  ])(
+    "asks tool and skill discovery for zero-data-retention providers by team flags (%o)",
+    async (flags, zeroDataRetention) => {
+      mocks.search.mockResolvedValue({ web: [webResult] });
+      mocks.discoverTools.mockResolvedValue({ items: [] });
+      await executeSearch(
+        {
+          ...options([]),
+          sources: [
+            { type: "web" },
+            { type: "alexandria" },
+            { type: "skills" },
+          ],
+        },
+        { ...context, flags } as any,
+        logger,
+      );
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ zeroDataRetention }),
+        logger,
+      );
+      expect(mocks.discoverSkills).toHaveBeenCalledWith(
+        expect.objectContaining({ zeroDataRetention }),
+        logger,
+      );
+    },
+  );
+
   it("leaves a default search alone when the query does not need tools", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     mocks.inferToolIntent.mockResolvedValue({

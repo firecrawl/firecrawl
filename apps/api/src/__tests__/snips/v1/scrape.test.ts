@@ -24,6 +24,7 @@ import {
   scrapeRaw,
   extract,
   describeV1,
+  EXTRACT_LIVE,
   V1_LIVE,
 } from "./lib";
 import crypto from "crypto";
@@ -1626,7 +1627,9 @@ describeV1()("Scrape tests", () => {
       scrapeTimeout,
     );
 
-    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    itIf(
+      EXTRACT_LIVE && (TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE)),
+    )(
       "should normalize extract request with additionalProperties in schema",
       async () => {
         const identity = await idmux({ name: "schema-validation-test" });
