@@ -144,6 +144,7 @@ const configSchema = z.object({
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
+  FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
