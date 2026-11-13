@@ -158,6 +158,9 @@ describe("ZDR cleaner", () => {
     await expect(cleanZdrRequest("request-partial")).rejects.toThrow(
       "Failed to remove 2 blobs for ZDR request request-partial",
     );
+    expect(new Set(removeJobFromGCS.mock.calls.map(([id]) => id))).toEqual(
+      new Set(ids),
+    );
     expect(removeJobFromGCS).toHaveBeenCalledTimes(ids.length);
   });
 
