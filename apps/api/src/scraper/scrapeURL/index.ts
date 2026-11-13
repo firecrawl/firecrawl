@@ -60,8 +60,8 @@ import {
   ProxySelectionError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
-  XTwitterConfigurationError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
@@ -1031,12 +1031,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 continue;
               }
             }
-            if (error.engine === "x-twitter") {
-              meta.logger.warn("X/Twitter scrape failed fatally.", {
-                error: error.error,
-              });
-              throw error.error;
-            } else if (error.error instanceof EngineError) {
+            if (error.error instanceof EngineError) {
               meta.logger.warn(
                 "Engine " + error.engine + " could not scrape the page.",
                 {
@@ -1079,8 +1074,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError ||
               error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {

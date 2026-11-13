@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { deepResearch, idmux, Identity } from "./lib";
+import { DEEP_RESEARCH_LIVE, deepResearch, idmux, Identity } from "./lib";
 import { describeIf, HAS_AI, TEST_PRODUCTION } from "../lib";
 
 let identity: Identity;
@@ -12,7 +12,11 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describeIf(TEST_PRODUCTION || HAS_AI)("Deep Research", () => {
+const describeDeepResearch = describeIf(
+  (TEST_PRODUCTION || HAS_AI) && DEEP_RESEARCH_LIVE,
+);
+
+describeDeepResearch("Deep Research", () => {
   it("successfully completes a basic research query", async () => {
     const query = "What is artificial intelligence?";
 

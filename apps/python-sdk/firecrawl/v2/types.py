@@ -2545,6 +2545,8 @@ GovSearchCourtType = Literal[
     "state-attorney-general",
 ]
 
+GovSearchSource = Literal["web", "gov"]
+
 
 class GovSearchRequest(BaseModel):
     """Request for the Government Index search endpoint."""
@@ -2556,12 +2558,28 @@ class GovSearchRequest(BaseModel):
     jurisdiction: Optional[str] = None
     court: Optional[str] = None
     court_type: Optional[GovSearchCourtType] = Field(default=None, alias="courtType")
-    cites: Optional[str] = None
+    cites: Optional[Union[str, Annotated[List[str], Field(max_length=32)]]] = None
     domain: Optional[str] = None
+    sources: Optional[List[GovSearchSource]] = None
+
+
+class GovSearchResult(SearchResultWeb):
+    """A Government Index result with the index's labels; a label the index does not have is None."""
+
+    model_config = {"populate_by_name": True}
+
+    jurisdiction: Optional[str] = None
+    court: Optional[str] = None
+    court_type: Optional[str] = Field(default=None, alias="courtType")
+    cites: Optional[List[str]] = None
+    cited_as: Optional[List[str]] = Field(default=None, alias="citedAs")
+    lang: Optional[str] = None
+    updated_at: Optional[int] = Field(default=None, alias="updatedAt")
 
 
 class GovSearchData(BaseModel):
-    web: List[SearchResultWeb]
+    web: Optional[List[SearchResultWeb]] = None
+    gov: Optional[List[GovSearchResult]] = None
 
 
 class GovSearchResponse(BaseModel):
