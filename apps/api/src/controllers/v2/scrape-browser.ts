@@ -26,6 +26,7 @@ import { browserCreateRequestSchema, browserError } from "./browser";
 import {
   buildReplayContextFromScrape,
   estimateReplayTimeoutSeconds,
+  describeReplayFailure,
   buildReplayScript,
 } from "../../lib/scrape-interact/scrape-replay";
 import {
@@ -514,11 +515,20 @@ async function createSessionForScrape(
           language: "node",
           timeout: estimateReplayTimeoutSeconds(replayContext),
         });
-        if (replay.exitCode !== 0 || replay.killed)
+        if (replay.exitCode !== 0 || replay.killed) {
+          // The error text can contain selectors or page content, so nothing is
+          // logged for ZDR scrapes (the logger would drop it anyway).
+          if (!zeroDataRetention) {
+            logger.warn(
+              "Scrape replay failed while initializing browser session",
+              { scrapeId, ...describeReplayFailure(replay) },
+            );
+          }
           throw new HangarError(
             409,
             "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
           );
+        }
         await selectBrowserAgentTab(browserId);
       },
     });

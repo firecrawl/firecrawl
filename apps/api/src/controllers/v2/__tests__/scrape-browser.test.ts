@@ -704,6 +704,124 @@ describe("scrapeInteractController", () => {
     expect(createHangarBrowser).not.toHaveBeenCalled();
   });
 
+  describe("replay failure diagnostics", () => {
+    const createdBrowser = {
+      id: "br_session",
+      status: "running",
+      created_at: 100,
+      ended_at: null,
+      max_expires_at: 700,
+      cdp_url: "wss://hangar.example/cdp",
+      recording: false,
+    };
+
+    const interactAfterFailedReplay = async (
+      replay: { exitCode: number; killed: boolean; stderr: string },
+      zeroDataRetention = false,
+    ) => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        zeroDataRetention,
+        replay: {
+          targetUrl: "https://example.com",
+          waitForMs: 0,
+          actions: [{ type: "click", selector: "#patient-record-4412" }],
+        },
+      } as any);
+      vi.mocked(createHangarBrowser).mockResolvedValue(createdBrowser as any);
+      vi.mocked(stopHangarBrowser).mockResolvedValue({} as any);
+      vi.mocked(executeHangarBrowser).mockResolvedValue({
+        stdout: "",
+        result: "",
+        ...replay,
+      });
+      const res = buildRes();
+      await scrapeInteractController(
+        {
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('ok')" },
+          headers: {},
+          auth: { team_id: "team-123" },
+          acuc: {},
+        } as any,
+        res,
+      );
+      return res;
+    };
+
+    // Returns the metadata object of the replay failure log line.
+    const replayFailureLog = () =>
+      (vi.mocked(logger.warn).mock.calls as unknown[][]).find(([message]) =>
+        String(message).includes("replay"),
+      )?.[1];
+
+    it("keeps the 409 response and tears the browser down", async () => {
+      const res = await interactAfterFailedReplay({
+        exitCode: 1,
+        killed: false,
+        stderr: "Error: Replay action #1 (click): Timeout 30000ms exceeded.",
+      });
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error:
+          "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
+      });
+      expect(stopHangarBrowser).toHaveBeenCalledWith("br_session");
+      expect(insertBrowserSession).not.toHaveBeenCalled();
+    });
+
+    it("logs which replay step failed and why", async () => {
+      await interactAfterFailedReplay({
+        exitCode: 1,
+        killed: false,
+        stderr: "Error: Replay action #1 (click): Timeout 30000ms exceeded.",
+      });
+      expect(replayFailureLog()).toEqual(
+        expect.objectContaining({
+          scrapeId: "scrape-123",
+          exitCode: 1,
+          killed: false,
+          step: "Replay action #1 (click)",
+          detail: expect.stringContaining("Timeout 30000ms exceeded"),
+        }),
+      );
+    });
+
+    it("logs when the replay was killed by its time budget", async () => {
+      await interactAfterFailedReplay({
+        exitCode: 137,
+        killed: true,
+        stderr: "",
+      });
+      expect(replayFailureLog()).toEqual(
+        expect.objectContaining({ killed: true, exitCode: 137 }),
+      );
+    });
+
+    it("logs nothing about the replay failure for a ZDR scrape", async () => {
+      const res = await interactAfterFailedReplay(
+        {
+          exitCode: 1,
+          killed: false,
+          stderr:
+            "Error: Replay action #1 (click): selector #patient-record-4412 not found",
+        },
+        true,
+      );
+      expect(replayFailureLog()).toBeUndefined();
+      // The client still gets the same 409.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
+        "patient-record",
+      );
+    });
+  });
+
   it.each([
     browserExecuteController,
     browserDeleteController,
