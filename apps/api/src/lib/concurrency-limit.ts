@@ -3,6 +3,7 @@ import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
+import { normalizeOwnerId } from "./owner-id";
 export { QueueFullError } from "./queue-full-error";
 export {
   getTeamQueueLimit,
@@ -30,8 +31,8 @@ import { reportPipelineError } from "./redis-pipeline";
 export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 const constructKey = constructConcurrencyLimitKey;
-const constructQueueKey = (team_id: string) =>
-  "concurrency-limit-queue:" + team_id;
+export const constructQueueKey = (team_id: string) =>
+  "concurrency-limit-queue:" + (normalizeOwnerId(team_id) ?? team_id);
 
 const constructJobKey = (jobId: string) => "cq-job:" + jobId;
 
@@ -229,34 +230,54 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   const queueKey = constructQueueKey(teamId);
   const redis = getRedisConnection();
   const now = Date.now();
+  const BATCH_SIZE = 50;
+  let offset = 0;
 
-  // Jobs we popped but can't run due to crawl concurrency limits.
-  // We'll re-add them at the end so other callers can try them later.
-  const crawlBlocked: { member: string; score: number; jobData: string }[] = [];
+  while (true) {
+    // Inspect candidates in batches without removing crawl-blocked jobs.
+    // Crawl-blocked jobs remain in Redis so that pod crashes / scale-downs
+    // do not strand them from Redis.
+    const results = await redis.zrange(
+      queueKey,
+      offset,
+      offset + BATCH_SIZE - 1,
+      "WITHSCORES",
+    );
+    if (!results || results.length === 0) return null;
 
-  try {
-    while (true) {
-      // ZPOPMIN atomically removes and returns the lowest-scored member.
-      // No two workers can ever get the same entry.
-      const result = await redis.zpopmin(queueKey);
-      if (!result || result.length === 0) return null;
+    let scannedInBatch = 0;
+    let claimedOrAdvanced = false;
 
-      const [member, scoreStr] = result as [string, string];
-      const score = parseFloat(scoreStr);
+    for (let i = 0; i < results.length; i += 2) {
+      scannedInBatch++;
+      const member = results[i];
+      const score = parseFloat(results[i + 1]);
 
       // Expired entry - discard
       if (score < now) {
+        await redis.zrem(queueKey, member);
         await redis.del(constructJobKey(member));
-        continue;
+        claimedOrAdvanced = true;
+        break;
       }
 
       const jobData = await redis.get(constructJobKey(member));
       if (jobData === null) {
-        // Job key TTL expired - orphaned sorted set entry, already removed by zpopmin
-        continue;
+        // Job key TTL expired - orphaned sorted set entry
+        await redis.zrem(queueKey, member);
+        claimedOrAdvanced = true;
+        break;
       }
 
-      const job: ConcurrencyLimitedJob = JSON.parse(jobData);
+      let job: ConcurrencyLimitedJob;
+      try {
+        job = JSON.parse(jobData);
+      } catch {
+        await redis.zrem(queueKey, member);
+        await redis.del(constructJobKey(member));
+        claimedOrAdvanced = true;
+        break;
+      }
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
@@ -280,14 +301,22 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
             await getCrawlConcurrencyLimitActiveJobs(job.data.crawl_id)
           ).length;
           if (currentActiveConcurrency >= maxCrawlConcurrency) {
-            // Crawl is at its limit - hold this job aside to re-add later
-            crawlBlocked.push({ member, score, jobData });
+            // Crawl is at its limit - leave it in Redis and evaluate next candidate
+            offset++;
             continue;
           }
         }
       }
 
-      // We got a valid, eligible job
+      // Atomically claim the eligible job
+      const removed = await redis.zrem(queueKey, member);
+      if (removed === 0) {
+        // Another worker claimed it concurrently, retry from current offset
+        claimedOrAdvanced = true;
+        break;
+      }
+
+      // We successfully claimed this job
       await redis.del(constructJobKey(member));
       logger.debug("Removed job from concurrency limit queue", {
         teamId,
@@ -296,14 +325,16 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       });
       return { job, timeout: Infinity };
     }
-  } finally {
-    // Re-add crawl-blocked jobs so they can be picked up later
-    if (crawlBlocked.length > 0) {
-      const zaddArgs: (string | number)[] = [];
-      for (const { member, score } of crawlBlocked) {
-        zaddArgs.push(score, member);
+
+    if (!claimedOrAdvanced) {
+      // If we scanned all candidates in this batch and all were crawl-blocked,
+      // and the batch returned fewer than BATCH_SIZE items, we reached the end of the queue.
+      if (
+        results.length < BATCH_SIZE * 2 &&
+        scannedInBatch === results.length / 2
+      ) {
+        return null;
       }
-      await redis.zadd(queueKey, ...zaddArgs);
     }
   }
 }

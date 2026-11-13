@@ -1,4 +1,5 @@
 import { getRedisConnection } from "../services/queue-service";
+import { normalizeOwnerId } from "./owner-id";
 
 // Redis primitives of the concurrency limiter, split out of
 // concurrency-limit.ts so light consumers (the NuQ dual-backend router) can
@@ -17,7 +18,7 @@ export function getTeamQueueLimit(concurrencyLimit: number): number {
 export const MAX_BACKLOG_TIMEOUT_MS = 172800000; // 48h
 
 export const constructConcurrencyLimitKey = (team_id: string) =>
-  "concurrency-limiter:" + team_id;
+  "concurrency-limiter:" + (normalizeOwnerId(team_id) ?? team_id);
 
 export async function getConcurrencyLimitActiveJobsCount(
   team_id: string,

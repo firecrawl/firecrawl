@@ -3,8 +3,11 @@ import { validate as isUUID } from "uuid";
 import { getRedisConnection } from "../services/queue-service";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 import { type ScrapeJobData } from "../types";
+import { normalizeOwnerId } from "./owner-id";
 import {
+  constructQueueKey,
   getConcurrencyLimitActiveJobs,
+  getCrawlConcurrencyLimitActiveJobs,
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
@@ -13,7 +16,7 @@ import {
   removeConcurrencyLimitActiveJob,
   removeCrawlConcurrencyLimitActiveJob,
 } from "./concurrency-limit";
-import { getCrawl } from "./crawl-redis";
+import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
@@ -61,22 +64,30 @@ async function requeueJob(
 
 async function getQueuedJobIDs(teamId: string): Promise<Set<string>> {
   const queuedJobIDs = new Set<string>();
-  let cursor = "0";
+  const keysToScan = new Set<string>();
+  keysToScan.add(constructQueueKey(teamId));
+  keysToScan.add(`concurrency-limit-queue:${teamId}`);
+  if (teamId === normalizeOwnerId("bypass")) {
+    keysToScan.add("concurrency-limit-queue:bypass");
+  }
 
-  do {
-    const [nextCursor, results] = await getRedisConnection().zscan(
-      `concurrency-limit-queue:${teamId}`,
-      cursor,
-      "COUNT",
-      100,
-    );
-    cursor = nextCursor;
+  for (const key of keysToScan) {
+    let cursor = "0";
+    do {
+      const [nextCursor, results] = await getRedisConnection().zscan(
+        key,
+        cursor,
+        "COUNT",
+        100,
+      );
+      cursor = nextCursor;
 
-    // zscan returns [member1, score1, member2, score2, ...]
-    for (let i = 0; i < results.length; i += 2) {
-      queuedJobIDs.add(results[i]);
-    }
-  } while (cursor !== "0");
+      // zscan returns [member1, score1, member2, score2, ...]
+      for (let i = 0; i < results.length; i += 2) {
+        queuedJobIDs.add(results[i]);
+      }
+    } while (cursor !== "0");
+  }
 
   return queuedJobIDs;
 }
@@ -131,6 +142,9 @@ async function reconcileTeam(
     }
   }
 
+  const crawlCache = new Map<string, StoredCrawl | null>();
+  const activeCrawlCounts = new Map<string, number>();
+
   const jobsToStart: typeof jobsToRecover = [];
   const jobsToQueue: typeof jobsToRecover = [];
 
@@ -139,10 +153,45 @@ async function reconcileTeam(
     const teamLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
     const activeCount = isExtract ? activeExtractCount : activeCrawlCount;
 
-    if (activeCount < teamLimit) {
+    let crawlLimitBlocked = false;
+    if (job.data.crawl_id) {
+      let sc = crawlCache.get(job.data.crawl_id);
+      if (sc === undefined) {
+        sc = await getCrawl(job.data.crawl_id);
+        crawlCache.set(job.data.crawl_id, sc);
+      }
+
+      const maxBatchConcurrency =
+        sc === null
+          ? null
+          : typeof sc.crawlerOptions?.delay === "number" &&
+              sc.crawlerOptions.delay > 0
+            ? 1
+            : (sc.maxConcurrency ?? null);
+
+      if (maxBatchConcurrency !== null) {
+        let currentCrawlActive = activeCrawlCounts.get(job.data.crawl_id);
+        if (currentCrawlActive === undefined) {
+          currentCrawlActive = (
+            await getCrawlConcurrencyLimitActiveJobs(job.data.crawl_id)
+          ).length;
+          activeCrawlCounts.set(job.data.crawl_id, currentCrawlActive);
+        }
+
+        if (currentCrawlActive >= maxBatchConcurrency) {
+          crawlLimitBlocked = true;
+        }
+      }
+    }
+
+    if (!crawlLimitBlocked && activeCount < teamLimit) {
       jobsToStart.push(job);
       if (isExtract) activeExtractCount++;
       else activeCrawlCount++;
+      if (job.data.crawl_id) {
+        const curr = activeCrawlCounts.get(job.data.crawl_id) ?? 0;
+        activeCrawlCounts.set(job.data.crawl_id, curr + 1);
+      }
     } else {
       jobsToQueue.push(job);
     }
@@ -315,7 +364,7 @@ export async function reconcileConcurrencyQueue(
 
   let ownerIds: string[];
   if (options.teamId) {
-    ownerIds = [options.teamId];
+    ownerIds = [normalizeOwnerId(options.teamId) ?? options.teamId];
   } else {
     const backlogOwners = (
       await scrapeQueue.getBackloggedOwnerIDs(logger)
@@ -325,7 +374,11 @@ export async function reconcileConcurrencyQueue(
     );
     const queueOwners = queueKeys
       .map(k => k.replace("concurrency-limit-queue:", ""))
-      .filter(id => id.length > 0 && isUUID(id));
+      .map(id => normalizeOwnerId(id) ?? id)
+      .filter(
+        (id): id is string =>
+          typeof id === "string" && id.length > 0 && isUUID(id),
+      );
     ownerIds = [...new Set([...backlogOwners, ...queueOwners])];
   }
 
