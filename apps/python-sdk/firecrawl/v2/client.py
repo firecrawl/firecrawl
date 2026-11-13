@@ -1443,6 +1443,7 @@ class FirecrawlClient:
         max_concurrency: Optional[int] = None,
         zero_data_retention: Optional[bool] = None,
         integration: Optional[str] = None,
+        origin: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ):
         """Start a batch scrape job over multiple URLs (non-blocking).
@@ -1478,6 +1479,7 @@ class FirecrawlClient:
             max_concurrency: Max concurrent scrapes
             zero_data_retention: Delete data after 24 hours
             integration: Integration tag/name
+            origin: Optional request origin tag
             idempotency_key: Header used to deduplicate starts
 
         Returns:
@@ -1520,6 +1522,7 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             zero_data_retention=zero_data_retention,
             integration=integration,
+            origin=origin,
             audit_metadata=audit_metadata,
             idempotency_key=idempotency_key,
         )
@@ -1984,6 +1987,7 @@ class FirecrawlClient:
         max_concurrency: Optional[int] = None,
         zero_data_retention: Optional[bool] = None,
         integration: Optional[str] = None,
+        origin: Optional[str] = None,
         idempotency_key: Optional[str] = None,
         poll_interval: int = 2,
         wait_timeout: Optional[int] = None,
@@ -2028,6 +2032,7 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             zero_data_retention=zero_data_retention,
             integration=integration,
+            origin=origin,
             audit_metadata=audit_metadata,
             idempotency_key=idempotency_key,
             poll_interval=poll_interval,

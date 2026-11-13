@@ -1325,6 +1325,7 @@ class BatchScrapeRequest(BaseModel):
     max_concurrency: Optional[int] = None
     zero_data_retention: Optional[bool] = None
     integration: Optional[str] = None
+    origin: Optional[str] = None
 
 
 class BatchScrapeResponse(BaseModel):
