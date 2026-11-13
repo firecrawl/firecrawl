@@ -1,4 +1,5 @@
-import { SearchV2Response, SearchResultType } from "../../lib/entities";
+import { SearchV2BackendResponse, SearchResultType } from "../../lib/entities";
+import { SearchUnavailableError } from "../../lib/error";
 import { config } from "../../config";
 import { fire_engine_search_v2 } from "./fireEngine-v2";
 import { searxng_search } from "./searxng";
@@ -46,7 +47,7 @@ export async function search({
   includeDomains?: string[];
   excludeDomains?: string[];
   usOnly?: boolean;
-}): Promise<SearchV2Response> {
+}): Promise<SearchV2BackendResponse> {
   // The fallback backends below take no US-only routing.
   if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
     throw new UsOnlyUnavailableError(
@@ -105,6 +106,7 @@ export async function search({
     // Fallback to empty response
     return {};
   } catch (error) {
+    if (error instanceof SearchUnavailableError) throw error;
     logger.error(`Error in search function`, { error });
     return {};
   }

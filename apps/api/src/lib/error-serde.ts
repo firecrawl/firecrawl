@@ -7,6 +7,7 @@ import {
   MapTimeoutError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
+  SearchUnavailableError,
   SitemapError,
   TransportableError,
   UnknownError,
@@ -99,6 +100,7 @@ const errorMap: Record<ErrorCodes, any> = {
   US_ONLY_UNAVAILABLE: UsOnlyUnavailableError,
   RESERVED_CAPACITY_UNAVAILABLE: ReservedCapacityUnavailableError,
   MAP_FAILED: MapFailedError,
+  SEARCH_UNAVAILABLE: SearchUnavailableError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
 
