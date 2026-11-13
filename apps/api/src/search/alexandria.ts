@@ -87,6 +87,8 @@ export async function discoverTools(
     connectors?: boolean;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    /** The team is held to zero data retention: only providers that support it are returned. */
+    zeroDataRetention?: boolean;
     /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
     exchangeRequestIds?: { prefix: string; sent: string[] };
   },
@@ -116,6 +118,7 @@ export async function discoverTools(
       maximumCredits: 0,
       connectors: input.connectors === true,
       usOnly: input.usOnly === true,
+      zeroDataRetention: input.zeroDataRetention === true,
       body: {
         provider: "firecrawl",
         capability: "find-tools",
@@ -245,6 +248,7 @@ export async function discoverTools(
           timeoutMs: remaining(deadline),
           connectors: input.connectors === true,
           usOnly: input.usOnly === true,
+          zeroDataRetention: input.zeroDataRetention === true,
         });
         if (result.status !== 200)
           throw new Error("Domain discovery unavailable");
