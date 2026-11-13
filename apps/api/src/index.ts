@@ -25,10 +25,9 @@ import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
+import { ErrorResponse } from "./controllers/v1/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
-import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
@@ -36,7 +35,7 @@ import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { registerHostedBashRoute } from "./controllers/v2/bash";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
+import { unhandledErrorHandler } from "./lib/unhandled-error-handler";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
@@ -331,55 +330,6 @@ app.use(
   },
 );
 
-app.use(
-  (
-    err: unknown,
-    req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
-    res: Response<ErrorResponse>,
-    next: NextFunction,
-  ) => {
-    if (
-      err instanceof SyntaxError &&
-      "status" in err &&
-      err.status === 400 &&
-      "body" in err
-    ) {
-      return res.status(400).json({
-        success: false,
-        code: "BAD_REQUEST_INVALID_JSON",
-        error: "Bad request, malformed JSON",
-      });
-    }
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "status" in err &&
-      (err as { status?: number }).status === 413
-    ) {
-      return res.status(413).json({
-        success: false,
-        error: "Request body is too large",
-      });
-    }
-
-    const id = uuidv7();
-
-    logger.error(
-      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
-      {
-        error: err,
-        errorId: id,
-        path: req.path,
-        teamId: req.acuc?.team_id,
-        team_id: req.acuc?.team_id,
-      },
-    );
-    res.status(500).json({
-      success: false,
-      code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
-    });
-  },
-);
+app.use(unhandledErrorHandler);
 
 logger.info(`Worker ${process.pid} started`);

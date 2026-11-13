@@ -29,7 +29,10 @@ import {
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
+import {
+  EXPECTED_ERROR,
+  isZeroDataRetentionActive,
+} from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
@@ -104,6 +107,8 @@ const getModelLimits = (model: string) => {
 
 export class LLMRefusalError extends Error {
   public refusal: string;
+  // The model declined; surfaced to the caller, nothing for us to fix.
+  [EXPECTED_ERROR] = true;
 
   constructor(refusal: string) {
     super("LLM refused to extract the website's content");
