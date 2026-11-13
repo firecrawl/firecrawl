@@ -31,7 +31,7 @@ napi-derive = { version = "3", default-features = false, features = ["noop"] }
 # Pinned to the commit in Cargo.lock so `cargo update` cannot change the
 # cleaning rules. Move it together with apps/api/native. The version is what
 # a published crate depends on, since crates.io does not take git sources.
-nodesig = { version = "1.0.0", git = "https://github.com/firecrawl/nodesig", rev = "e8b53c385b37ab06c2c65a21f433deca9ba00f56" }
+nodesig = { version = "2.0.0", git = "https://github.com/firecrawl/nodesig", rev = "ddb516867fd82e1eb9beb5f8f176a829fd032492" }
 kuchikiki = "0.8.9-speedreader"
 lol_html = "2.6.0"
 psl = "2.1.140"
