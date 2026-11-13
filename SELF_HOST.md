@@ -49,6 +49,34 @@ backend. Only the API is published to the host by default, on port `3002`.
 Self-hosting gives you source and infrastructure control. You also own
 security, availability, capacity, upgrades, data retention, and compliance.
 
+## Search backend
+
+Without Fire-engine, search falls back to the endpoint in
+`SEARXNG_ENDPOINT` when one is set, and to DuckDuckGo otherwise. Any
+SearXNG-compatible instance works; the API only needs its `/search` JSON
+endpoint.
+
+### RustXNG
+
+[RustXNG](https://github.com/sahenjp/RustXNG) is a SearXNG-compatible
+metasearch engine packaged as a single Rust binary (AGPL-3.0-or-later, run
+here as a separate service). The root Compose file ships it as an opt-in
+service:
+
+1. Set `SEARXNG_ENDPOINT=http://rustxng:8888` in the root `.env`.
+2. Start the stack with the profile enabled:
+   `docker compose --profile rustxng up`.
+
+`SEARXNG_ENGINES` and `SEARXNG_CATEGORIES` apply to it exactly as they do
+to a SearXNG instance. The service's port is not published to the host;
+it is reachable over the shared `backend` network, and the API container
+is its intended consumer.
+
+Known limitation: current RustXNG releases ignore the `language` search
+parameter that the API forwards, so language-scoped searches can return
+default-language results until the upstream fix ships. Engine, category,
+paging, and safe-search parameters are honored.
+
 ## Before production
 
 - **If the API will leave a trusted network,** add a complete authentication

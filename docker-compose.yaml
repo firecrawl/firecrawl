@@ -225,6 +225,26 @@ services:
       - backend
     restart: "no"
 
+  # RustXNG search backend (optional). A SearXNG-compatible metasearch
+  # engine in a single Rust binary; the API talks to it through the existing
+  # SEARXNG_ENDPOINT variable, so no Firecrawl code changes are involved.
+  # Enable with:  docker compose --profile rustxng up
+  # and set SEARXNG_ENDPOINT=http://rustxng:8888 in the root .env.
+  # The port is not published to the host; the service is reachable over
+  # the shared backend network, and the API is the intended consumer.
+  rustxng:
+    image: ghcr.io/sahenjp/rustxng:0.26.0
+    profiles:
+      - rustxng
+    networks:
+      - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
 networks:
   backend:
     driver: bridge
