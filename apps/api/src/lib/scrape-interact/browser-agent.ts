@@ -158,12 +158,15 @@ async function execInBrowser(
   });
 }
 
-async function getCurrentUrl(browserId: string): Promise<string> {
+async function getCurrentUrl(
+  browserId: string,
+  timeout: number = SNAPSHOT_TIMEOUT,
+): Promise<string> {
   try {
     const result = await execInBrowser(
       browserId,
       "agent-browser get url",
-      SNAPSHOT_TIMEOUT,
+      timeout,
     );
     return (result.stdout || result.result || "").trim();
   } catch {
@@ -171,12 +174,15 @@ async function getCurrentUrl(browserId: string): Promise<string> {
   }
 }
 
-async function takeSnapshot(browserId: string): Promise<string> {
+async function takeSnapshot(
+  browserId: string,
+  timeout: number = SNAPSHOT_TIMEOUT,
+): Promise<string> {
   try {
     const result = await execInBrowser(
       browserId,
       "agent-browser snapshot -i",
-      SNAPSHOT_TIMEOUT,
+      timeout,
     );
     return (result.stdout || result.result || "").slice(0, SNAPSHOT_MAX_CHARS);
   } catch {
@@ -185,7 +191,17 @@ async function takeSnapshot(browserId: string): Promise<string> {
 }
 
 /** Align the CLI with the replay's page without discarding the user's other tabs. */
-export async function selectBrowserAgentTab(browserId: string): Promise<void> {
+export async function selectBrowserAgentTab(
+  browserId: string,
+  deadlineMs?: number,
+): Promise<void> {
+  // Without a deadline each execution keeps its original 10s cap; with one,
+  // each execution gets at most the remaining budget, so tab re-selection
+  // cannot outrun the caller's timeout.
+  const timeoutFor = () =>
+    deadlineMs === undefined
+      ? 10
+      : Math.min(10, Math.max(1, Math.ceil((deadlineMs - Date.now()) / 1000)));
   const target = await executeHangarBrowser(browserId, {
     code: `await (async () => {
       for (const candidate of [page, ...context.pages().filter(p => p !== page)]) {
@@ -202,7 +218,7 @@ export async function selectBrowserAgentTab(browserId: string): Promise<void> {
       } finally { await cdp.detach(); }
     })()`,
     language: "node",
-    timeout: 10,
+    timeout: timeoutFor(),
   });
   const targetId = (target.stdout || target.result || "").trim();
   if (
@@ -214,7 +230,7 @@ export async function selectBrowserAgentTab(browserId: string): Promise<void> {
   const selected = await execInBrowser(
     browserId,
     `agent-browser tab ${targetId}`,
-    10,
+    timeoutFor(),
   );
   if (selected.exitCode !== 0 || selected.killed)
     throw new Error("Could not select the replay browser tab.");
@@ -270,6 +286,16 @@ export async function executePromptViaBrowserAgent(
   logger: typeof _logger,
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
+  // The request timeout bounds the whole prompt execution, not each browser
+  // command: the endpoint documents it as "Execution timeout in seconds"
+  // and the SDKs abort around it, while stepTimeout × MAX_STEPS could
+  // otherwise stretch a single call far past the documented budget.
+  const deadlineMs = Date.now() + stepTimeout * 1000;
+  // Seconds left on the budget, floored at 1s so a browser command can
+  // still run when only a fraction of a second remains.
+  const remainingSecs = () =>
+    Math.max(1, Math.ceil((deadlineMs - Date.now()) / 1000));
+
   const zeroDataRetention = trace?.zeroDataRetention === true;
   const untraced = isUntraced(trace);
   const model = getBrowserAgentModel(trace);
@@ -280,11 +306,11 @@ export async function executePromptViaBrowserAgent(
   debugLog.add(`Prompt:  ${prompt}\n`);
   logger.info("Agent debug log", { path: debugLog.getPath() });
 
-  await selectBrowserAgentTab(browserId);
+  await selectBrowserAgentTab(browserId, deadlineMs);
 
   const [initialSnapshot, initialUrl] = await Promise.all([
-    takeSnapshot(browserId),
-    getCurrentUrl(browserId),
+    takeSnapshot(browserId, Math.min(SNAPSHOT_TIMEOUT, remainingSecs())),
+    getCurrentUrl(browserId, Math.min(SNAPSHOT_TIMEOUT, remainingSecs())),
   ]);
 
   debugLog.add(`URL: ${initialUrl}`);
@@ -317,11 +343,24 @@ export async function executePromptViaBrowserAgent(
         return { error: msg };
       }
 
+      const remainingMs = deadlineMs - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error(`Prompt execution timed out after ${stepTimeout}s.`);
+      }
+
       try {
-        const result = await execInBrowser(browserId, code, stepTimeout);
+        const result = await execInBrowser(
+          browserId,
+          code,
+          Math.min(stepTimeout, remainingSecs()),
+        );
         const output = (result.stdout || result.result || "").trim();
 
-        await selectBrowserAgentTab(browserId);
+        // Re-align the tab only while the budget lasts: past the deadline
+        // re-selection would just add two executions the timeout bounds.
+        if (deadlineMs - Date.now() > 0) {
+          await selectBrowserAgentTab(browserId, deadlineMs);
+        }
 
         const elapsed = Date.now() - start;
 
@@ -386,12 +425,22 @@ export async function executePromptViaBrowserAgent(
     : undefined;
 
   try {
+    // A slow browser can spend the whole budget on the setup probes; report
+    // the timeout instead of handing the model a 1ms abort signal.
+    if (Date.now() >= deadlineMs) {
+      const expired = new Error(
+        `Prompt execution timed out after ${stepTimeout}s.`,
+      );
+      expired.name = "TimeoutError";
+      throw expired;
+    }
     // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
     // is enabled globally. Use the same provider as ZDR JSON extraction.
     const generate = untraced ? untracedGenerateText : generateText;
     const result = await generate({
       model,
       experimental_telemetry: { isEnabled: false },
+      abortSignal: AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())),
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -459,7 +508,15 @@ export async function executePromptViaBrowserAgent(
       killed: false,
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    // AbortSignal.timeout rejects with a "TimeoutError" DOMException.
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" || err.name === "TimeoutError");
+    const msg = isTimeout
+      ? `Prompt execution timed out after ${stepTimeout}s.`
+      : err instanceof Error
+        ? err.message
+        : String(err);
     logger.error("Agent failed", { error: err });
     debugLog.add(`\n=== END: error — ${msg} ===\n`);
     await debugLog.flush();
