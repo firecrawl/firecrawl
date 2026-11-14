@@ -77,6 +77,34 @@ const providerScrapeSchema = z.strictObject({
   __agentInterop: agentInteropSchema.optional(),
 });
 
+/**
+ * POST /v2/alexandria/:provider/*capability: the capability in the path and its options as the
+ * body, answered exactly as POST /v2/alexandria. Zero data retention and the timeout are headers,
+ * so the body stays the provider's own and an option named like one of them cannot be mistaken.
+ */
+export function alexandriaPathController(
+  req: RequestWithAuth<any, any, any>,
+  res: Response,
+) {
+  const zeroDataRetention = req.get("x-zero-data-retention");
+  const timeout = req.get("x-timeout-ms");
+  req.body = {
+    provider: String(req.params.provider),
+    capability: ([] as string[]).concat(req.params.capability).join("/"),
+    options: req.body ?? {},
+    // Anything but true or false, or a whole number of milliseconds, is left for the schema to refuse.
+    ...(zeroDataRetention === undefined
+      ? {}
+      : {
+          zeroDataRetention:
+            { true: true, false: false }[zeroDataRetention] ??
+            zeroDataRetention,
+        }),
+    ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
+  };
+  return providerScrapeController(req, res, true);
+}
+
 export async function providerScrapeController(
   req: RequestWithAuth<any, any, any>,
   res: Response,
@@ -84,6 +112,7 @@ export async function providerScrapeController(
 ) {
   const legacyZeroDataRetention = {
     zeroDataRetention: z.boolean().optional(),
+    timeout: z.number().int().positive().optional(),
     __agentInterop: agentInteropSchema.optional(),
   };
   const legacyBody = legacy
@@ -96,9 +125,10 @@ export async function providerScrapeController(
     : null;
   const body = providerScrapeSchema.parse(
     legacyBody
-      ? (({ zeroDataRetention, __agentInterop, ...rest }) => ({
+      ? (({ zeroDataRetention, timeout, __agentInterop, ...rest }) => ({
           alexandria: "requests" in rest ? rest.requests : [rest],
           zeroDataRetention,
+          timeout,
           __agentInterop,
         }))(legacyBody)
       : req.body,

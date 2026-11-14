@@ -9,7 +9,10 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
-import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
+import {
+  alexandriaPathController,
+  providerScrapeController,
+} from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   keylessWorldIdDeviceController,
@@ -283,6 +286,13 @@ v2Router.post(
   "/alexandria",
   authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
   wrap((req, res) => providerScrapeController(req as any, res, true)),
+);
+
+// The capability in the path, its options as the body.
+v2Router.post(
+  "/alexandria/:provider/*capability",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  wrap((req, res) => alexandriaPathController(req as any, res)),
 );
 
 v2Router.get(

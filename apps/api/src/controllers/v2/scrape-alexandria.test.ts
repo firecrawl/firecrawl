@@ -44,7 +44,10 @@ vi.mock("../../config", () => ({
     USE_DB_AUTHENTICATION: true,
   },
 }));
-import { providerScrapeController } from "./scrape-alexandria";
+import {
+  alexandriaPathController,
+  providerScrapeController,
+} from "./scrape-alexandria";
 import { config } from "../../config";
 import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 
@@ -70,6 +73,9 @@ app.use((req, _res, next) => {
 app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
+);
+app.post("/v2/alexandria/:provider/*capability", (req, res) =>
+  alexandriaPathController(req as any, res),
 );
 const result = (results: unknown[], executed = true) => ({
   status: 200,
@@ -507,6 +513,79 @@ it("accepts zero data retention in the body and forwards it", async () => {
       expect.objectContaining({ zeroDataRetention: true }),
     ),
   );
+});
+
+describe("the capability in the path", () => {
+  const path = "/v2/alexandria/fred/categories/category";
+
+  it("runs the capability the path names with the body as its options", async () => {
+    const response = await request(app).post(path).send({ category_id: 32991 });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calls: [{ ...call, options: { category_id: 32991 } }],
+        timeoutMs: 120_000,
+      }),
+    );
+    // Answered as the flat route answers: one result, not the Scrape envelope.
+    const flat = await request(app).post("/exchange/retrieve").send(call);
+    expect(Object.keys(response.body)).toEqual(Object.keys(flat.body));
+  });
+
+  it("runs with no body when the capability needs no options", async () => {
+    const response = await request(app).post(path);
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ calls: [call] }),
+    );
+  });
+
+  it("keeps an option named like a request field as the provider's own", async () => {
+    await request(app).post(path).send({ timeout: 5, zeroDataRetention: true });
+    const [arg] = mocks.retrieve.mock.calls[0];
+    expect(arg.calls[0].options).toEqual({
+      timeout: 5,
+      zeroDataRetention: true,
+    });
+    expect(arg.timeoutMs).toBe(120_000);
+    expect(arg.zeroDataRetention).toBeFalsy();
+  });
+
+  it("takes zero data retention and the timeout from headers", async () => {
+    const response = await request(app)
+      .post(path)
+      .set("x-zero-data-retention", "true")
+      .set("x-timeout-ms", "60000")
+      .send({});
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ zeroDataRetention: true, timeoutMs: 60_000 }),
+    );
+  });
+
+  it("refuses a header it cannot read instead of falling back to the default", async () => {
+    for (const [name, value] of [
+      ["x-timeout-ms", "soon"],
+      ["x-timeout-ms", "0"],
+      ["x-zero-data-retention", "yes"],
+    ]) {
+      const response = await request(app).post(path).set(name, value).send({});
+      expect(response.status, `${name}: ${value}`).toBeGreaterThanOrEqual(400);
+    }
+    expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+});
+
+it("accepts a timeout on both legacy request shapes", async () => {
+  await request(app)
+    .post("/exchange/retrieve")
+    .send({ ...call, timeout: 30_000 });
+  await request(app)
+    .post("/exchange/retrieve")
+    .send({ requests: [call], timeout: 30_000 });
+  expect(mocks.retrieve).toHaveBeenCalledTimes(2);
+  for (const [arg] of mocks.retrieve.mock.calls)
+    expect(arg).toMatchObject({ calls: [call], timeoutMs: 30_000 });
 });
 
 it("accepts zero data retention on both legacy request shapes", async () => {
