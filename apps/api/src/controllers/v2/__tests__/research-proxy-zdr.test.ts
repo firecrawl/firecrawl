@@ -188,6 +188,25 @@ describe("paper search sort", () => {
   });
 });
 
+describe("developer search version", () => {
+  it("forwards version upstream", async () => {
+    await callRoute(
+      createDeveloperRouter(),
+      "/search",
+      { query: "effect cleanup", version: "react@18" },
+      {},
+    );
+
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v2/code/search",
+        params: expect.objectContaining({ version: ["react@18"] }),
+        queryKeys: expect.arrayContaining(["version"]),
+      }),
+    );
+  });
+});
+
 describe("legacy research mount notice", () => {
   function logNotice(flags: Record<string, unknown>) {
     const req = makeReq({ query: "private research query" }, flags);
