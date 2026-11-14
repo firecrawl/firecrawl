@@ -2393,6 +2393,13 @@
                     "description": "Sitemap mode when mapping. If you set it to `skip`, the sitemap won't be used to find URLs. If you set it to `only`, only URLs that are in the sitemap will be returned. By default (`include`), the sitemap and other methods will be used together to find URLs.",
                     "default": "include"
                   },
+                  "sitemapMaxFiles": {
+                    "type": "integer",
+                    "description": "Maximum number of sitemap files to inspect. Defaults to 25; self-hosted deployments can change the server default with SITEMAP_MAX_FILES.",
+                    "default": 25,
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
                   "includeSubdomains": {
                     "type": "boolean",
                     "description": "Include subdomains of the website",

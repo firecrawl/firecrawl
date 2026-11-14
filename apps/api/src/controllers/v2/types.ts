@@ -1467,6 +1467,12 @@ const mapRequestSchemaBase = crawlerOptions
     search: z.string().optional(),
     sitemap: z.enum(["only", "include", "skip"]).prefault("include"),
     limit: z.number().min(1).max(MAX_MAP_LIMIT).prefault(5000),
+    sitemapMaxFiles: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .prefault(config.SITEMAP_MAX_FILES),
     timeout: z.number().positive().finite().optional(),
     useMock: z.string().optional(),
     filterByPath: z.boolean().prefault(true),
