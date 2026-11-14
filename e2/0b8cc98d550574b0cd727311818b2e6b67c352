@@ -1,0 +1,19 @@
+apps/api/src/lib/bigtable-client.test.ts
+  s_ebed3335e17158::t_878efbf7e90ba9 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e20b8cc98d550574b0cd727311818b2e6b67c352",
+  "prompts": {},
+  "sessions": {
+    "s_ebed3335e17158": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51673b54-d6f0-4ca1-b756-22f5f909ee70",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
