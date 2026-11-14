@@ -6,6 +6,7 @@ import { fetch, Response, FormData, Agent } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "dns";
 import { AbortManagerThrownError } from "./abortManager";
+import { buildHeadersWithUserAgent } from "./user-agent";
 
 type RobustFetchParams<Schema extends z.Schema<any>> = {
   url: string;
@@ -180,7 +181,7 @@ export async function robustFetch<
                   "Content-Type": "application/json",
                 }
               : {}),
-          ...(headers !== undefined ? headers : {}),
+          ...buildHeadersWithUserAgent(headers),
         },
         signal: abort,
         dispatcher: useCacheableLookup ? robustAgent : robustAgentNoLookup,
