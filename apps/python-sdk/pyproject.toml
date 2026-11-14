@@ -12,9 +12,7 @@ dependencies = [
     "requests",
     "httpx",
     "certifi>=2026.10.19",
-    "python-dotenv",
     "websockets",
-    "nest-asyncio",
     "pydantic>=2.0",
     "aiohttp"
 ]
@@ -74,6 +72,9 @@ keywords = [
 "Documentation" = "https://docs.firecrawl.dev"
 "Source" = "https://github.com/firecrawl/firecrawl"
 "Tracker" = "https://github.com/firecrawl/firecrawl/issues"
+
+[project.optional-dependencies]
+dev = ["python-dotenv"]
 
 [tool.setuptools.packages.find]
 where = ["."]
