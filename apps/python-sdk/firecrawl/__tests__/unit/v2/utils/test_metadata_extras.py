@@ -5,6 +5,19 @@ from firecrawl.v2.utils.normalize import normalize_document_input
 
 
 class TestDocumentMetadataExtras:
+    def test_branding_normalization_does_not_mutate_raw_response(self):
+        branding = {"colorScheme": "dark", "logo": "https://example.com/logo.png"}
+        raw = {"markdown": "# Body", "branding": branding}
+
+        normalized = normalize_document_input(raw)
+
+        assert normalized["branding"] == {
+            "color_scheme": "dark",
+            "logo": "https://example.com/logo.png",
+        }
+        assert raw["branding"] is branding
+        assert branding == {"colorScheme": "dark", "logo": "https://example.com/logo.png"}
+
     def test_metadata_extras_preserved_in_metadata_dict(self):
         raw = {
             "markdown": "# Hello",
