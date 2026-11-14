@@ -1,4 +1,7 @@
 import pytest
+from pydantic import BaseModel, Field
+
+from firecrawl import Firecrawl
 from firecrawl.v2.types import ScrapeOptions, Viewport, ScreenshotAction
 from firecrawl.v2.methods.scrape import (
     _prepare_scrape_request,
@@ -35,6 +38,95 @@ class _FakeClient:
     def delete(self, endpoint):
         self.last_delete = endpoint
         return self.delete_response
+
+
+@pytest.fixture
+def capture_scrape_schema(monkeypatch):
+    def capture(schema):
+        payloads = []
+
+        def fake_post(url, *, json, **kwargs):
+            payloads.append(json)
+            return _FakeResponse(200, {"success": True, "data": {}})
+
+        monkeypatch.setattr("requests.post", fake_post)
+        Firecrawl(api_key="test").scrape(
+            "https://example.com", formats=[{"type": "json", "schema": schema}]
+        )
+        return payloads[0]["formats"][0]["schema"]
+
+    return capture
+
+
+def test_scrape_keeps_pydantic_field_annotations_next_to_refs(capture_scrape_schema):
+    class Product(BaseModel):
+        name: str
+
+    class Results(BaseModel):
+        promoted: Product = Field(
+            title="Promoted product", description="Product from the paid promotion"
+        )
+        organic: Product = Field(description="Product from the organic results")
+
+    schema = capture_scrape_schema(Results.model_json_schema())
+    promoted = schema["properties"]["promoted"]
+    organic = schema["properties"]["organic"]
+    assert promoted["title"] == "Promoted product"
+    assert promoted["description"] == "Product from the paid promotion"
+    assert organic["description"] == "Product from the organic results"
+    assert "$defs" not in schema
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "#/$defs/Parent/properties/name",
+        "#/$defs/parent~1name",
+        "#/$defs/parent%20name",
+    ],
+)
+def test_scrape_does_not_misread_json_pointer_targets(capture_scrape_schema, ref):
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": ref}},
+        "$defs": {
+            "Parent": {"type": "object", "properties": {"name": {"type": "string"}}},
+            "name": {"type": "number"},
+            "parent/name": {"type": "string"},
+            "parent~1name": {"type": "number"},
+            "parent name": {"type": "string"},
+            "parent%20name": {"type": "number"},
+        },
+    }
+    assert capture_scrape_schema(schema) == schema
+
+
+def test_scrape_keeps_assertions_next_to_root_ref(capture_scrape_schema):
+    schema = {
+        "$ref": "#/$defs/Result",
+        "required": ["price"],
+        "$defs": {
+            "Result": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "price": {"type": "number"},
+                },
+                "required": ["name"],
+            },
+        },
+    }
+    assert capture_scrape_schema(schema) == schema
+
+
+def test_scrape_still_inlines_simple_refs(capture_scrape_schema):
+    schema = {
+        "$ref": "#/$defs/Result",
+        "$defs": {
+            "Result": {"type": "object", "properties": {"name": {"type": "string"}}},
+        },
+    }
+    assert capture_scrape_schema(schema) == schema["$defs"]["Result"]
 
 
 class TestScrapeRequestPreparation:
