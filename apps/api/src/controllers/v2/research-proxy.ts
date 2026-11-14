@@ -60,7 +60,11 @@ const RESEARCH_INDEX_KINDS = new Set<ResearchRequestKind>([
 ]);
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "x-request-id",
+  "retry-after",
+];
 
 const multiString = z
   .union([z.string(), z.array(z.string())])
