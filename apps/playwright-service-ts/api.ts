@@ -156,7 +156,17 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  mobile?: boolean;
 }
+
+// Default mobile UA used when the caller asks for a mobile render but didn't
+// pass a mobile UA of its own. A desktop UA alongside isMobile makes the page
+// serve its desktop layout, defeating the point of mobile emulation.
+const MOBILE_USER_AGENT =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+const isMobileUserAgent = (ua?: string): boolean =>
+  !!ua && /Mobi|iPhone|iPod|Android/i.test(ua);
 
 let browser: Browser;
 
@@ -178,12 +188,19 @@ const initializeBrowser = async () => {
 const createContext = async (
   skipTlsVerification: boolean = false,
   userAgentOverride?: string,
+  mobile: boolean = false,
 ): Promise<{
   context: BrowserContext;
   securityState: ContextSecurityState;
 }> => {
-  const userAgent = userAgentOverride || new UserAgent().toString();
-  const viewport = { width: 1280, height: 800 };
+  const userAgent = mobile
+    ? isMobileUserAgent(userAgentOverride)
+      ? userAgentOverride!
+      : MOBILE_USER_AGENT
+    : userAgentOverride || new UserAgent().toString();
+  const viewport = mobile
+    ? { width: 390, height: 844 }
+    : { width: 1280, height: 800 };
   const securityState: ContextSecurityState = {
     blockedNavigationRequestUrl: null,
   };
@@ -193,6 +210,9 @@ const createContext = async (
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
     serviceWorkers: 'block',
+    ...(mobile
+      ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 }
+      : {}),
   };
 
   contextOptions.proxy = {
@@ -357,6 +377,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     headers,
     check_selector,
     skip_tls_verification = false,
+    mobile = false,
   }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
@@ -366,6 +387,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   console.log(`Headers: ${headers ? JSON.stringify(headers) : 'None'}`);
   console.log(`Check Selector: ${check_selector ? check_selector : 'None'}`);
   console.log(`Skip TLS Verification: ${skip_tls_verification}`);
+  console.log(`Mobile: ${mobile}`);
   console.log(`==================================================`);
 
   if (!url) {
@@ -418,6 +440,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     const contextBundle = await createContext(
       skip_tls_verification,
       userAgentOverride,
+      mobile,
     );
     requestContext = contextBundle.context;
     securityState = contextBundle.securityState;
