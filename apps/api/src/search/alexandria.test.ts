@@ -211,6 +211,154 @@ it("keeps partial results when only one leg fails", async () => {
   expect(result.unavailable).toBeUndefined();
 });
 
+describe("domain discovery", () => {
+  const toolsOf = (provider: string, count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      ...tool,
+      provider,
+      capability: `records/${i}`,
+    }));
+  const answer = (items: unknown[]) => ({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items } },
+  });
+  const resolve = (skills: unknown[]) => ({ status: 200, body: { skills } });
+  const lookups = () =>
+    request.mock.calls
+      .filter(([args]) => args.path === "/v1/retrieve")
+      .map(([args]) => (args.body as any).options);
+
+  it("ranks a matched provider's tools by the query", async () => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? resolve([{ id: "big", matchedDomains: ["big.example"] }])
+        : answer(toolsOf("big", 2)),
+    );
+    await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        rankQuery: "podcast sponsors",
+        urls: ["https://big.example/a"],
+      },
+      logger,
+    );
+    expect(lookups()).toEqual([
+      expect.objectContaining({
+        providers: ["big"],
+        query: "podcast sponsors",
+      }),
+    ]);
+  });
+
+  it("falls back to the provider listing when nothing ranks", async () => {
+    request.mockImplementation(async args => {
+      if (args.path === "/v1/skills/resolve")
+        return resolve([{ id: "big", matchedDomains: ["big.example"] }]);
+      const options = (args.body as any).options;
+      return answer(options.query ? [] : toolsOf("big", 2));
+    });
+    const result = await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        rankQuery: "nothing relevant",
+        urls: ["https://big.example/a"],
+      },
+      logger,
+    );
+    expect(lookups()).toHaveLength(2);
+    expect(lookups()[1]).not.toHaveProperty("query");
+    expect(result.items).toHaveLength(2);
+  });
+
+  it("keeps URL-mapped capabilities instead of ranking", async () => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? resolve([
+            {
+              id: "big",
+              matchedDomains: ["big.example"],
+              domainCapabilities: { "big.example": ["records/0"] },
+            },
+          ])
+        : answer(toolsOf("big", 1)),
+    );
+    await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        rankQuery: "records",
+        urls: ["https://big.example/a"],
+      },
+      logger,
+    );
+    expect(lookups()).toEqual([
+      expect.not.objectContaining({ query: expect.anything() }),
+    ]);
+    expect(lookups()[0]).toMatchObject({ capabilities: ["records/0"] });
+  });
+
+  it("shares domain slots across matched providers", async () => {
+    request.mockImplementation(async args => {
+      if (args.path === "/v1/skills/resolve")
+        return resolve([
+          { id: "big", matchedDomains: ["big.example"] },
+          { id: "small", matchedDomains: ["small.example"] },
+        ]);
+      const [provider] = (args.body as any).options.providers;
+      return answer(toolsOf(provider, provider === "big" ? 5 : 2));
+    });
+    const result = await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        limit: 4,
+        toolDetail: "compact",
+        urls: ["https://big.example/a", "https://small.example/b"],
+      },
+      logger,
+    );
+    expect(
+      result.items.map(item => `${item.provider}/${item.capability}`),
+    ).toEqual([
+      "big/records/0",
+      "small/records/0",
+      "big/records/1",
+      "small/records/1",
+    ]);
+  });
+  it("keeps other providers when one provider's lookup fails", async () => {
+    request.mockImplementation(async args => {
+      if (args.path === "/v1/skills/resolve")
+        return resolve([
+          { id: "broken", matchedDomains: ["broken.example"] },
+          { id: "small", matchedDomains: ["small.example"] },
+        ]);
+      const [provider] = (args.body as any).options.providers;
+      return provider === "broken"
+        ? { status: 503, body: {} }
+        : answer(toolsOf(provider, 1));
+    });
+    const result = await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        toolDetail: "compact",
+        urls: ["https://broken.example/a", "https://small.example/b"],
+      },
+      logger,
+    );
+    expect(result.items.map(item => item.provider)).toEqual(["small"]);
+    expect(result.warning).toBeTruthy();
+    expect(result.unavailable).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Domain tool discovery unavailable",
+      expect.objectContaining({ attempt: 2 }),
+    );
+  });
+});
+
 it("interleaves results of several queries by rank", async () => {
   const named = (capability: string) => ({ ...tool, capability });
   request.mockImplementation(async args => {

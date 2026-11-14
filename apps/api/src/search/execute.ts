@@ -313,6 +313,7 @@ export async function executeSearch(
             zeroDataRetention: toolsZeroDataRetention,
             limit,
             queries: wantsTools ? [query] : undefined,
+            rankQuery: query,
             urls:
               options.domainTools === false
                 ? []
