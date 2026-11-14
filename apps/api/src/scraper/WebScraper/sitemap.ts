@@ -1,5 +1,6 @@
 import { parseStringPromise } from "xml2js";
-import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
+import { Semaphore } from "async-mutex";
+import { WebCrawler, SITEMAP_MAX_IN_FLIGHT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
@@ -20,6 +21,22 @@ import {
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
 import { useIndex } from "../../services";
+
+export type SitemapBudget = {
+  hit: Set<string>;
+  maxFiles: number;
+  capped: boolean;
+  fetchSlots: Semaphore;
+};
+
+export function sitemapBudget(maxFiles: number): SitemapBudget {
+  return {
+    hit: new Set(),
+    maxFiles,
+    capped: false,
+    fetchSlots: new Semaphore(SITEMAP_MAX_IN_FLIGHT),
+  };
+}
 
 export async function getLinksFromSitemap(
   {
@@ -43,134 +60,140 @@ export async function getLinksFromSitemap(
   },
   logger: Logger,
   crawlId: string,
-  sitemapsHit: Set<string>,
+  budget: SitemapBudget,
   abort?: AbortSignal,
   mock?: string,
 ): Promise<number> {
-  if (sitemapsHit.size >= SITEMAP_LIMIT) {
-    return 0;
-  }
-
-  if (sitemapsHit.has(sitemapUrl)) {
+  if (budget.hit.has(sitemapUrl)) {
     logger.warn("This sitemap has already been hit.", { sitemapUrl });
     return 0;
   }
 
-  sitemapsHit.add(sitemapUrl);
+  if (budget.hit.size >= budget.maxFiles) {
+    budget.capped = true;
+    return 0;
+  }
+
+  budget.hit.add(sitemapUrl);
 
   try {
     let content = "";
 
-    const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
-    if (isGzip) {
-      try {
-        const { buffer } = await fetchFileToBuffer(
-          sitemapUrl,
-          false,
-          { headers, signal: abort },
-          MAX_GUNZIPPED_FILE_SIZE,
-        );
-        const decompressed = await gunzipBounded(buffer);
-        content = decompressed.toString("utf-8");
-      } catch (error) {
-        logger.error("Failed to download/decompress gzip sitemap", {
-          sitemapUrl,
-          error,
-        });
-        return 0;
-      }
-    } else {
-      try {
-        const shouldPrioritizeFireEngine =
-          location && mode === "fire-engine" && useFireEngine;
-
-        const forceEngine: Engine[] = [
-          ...(maxAge > 0 && useIndex ? ["index" as const] : []),
-          ...(shouldPrioritizeFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-          "fetch",
-          ...(!shouldPrioritizeFireEngine &&
-          mode === "fire-engine" &&
-          useFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-        ];
-
-        const response = await scrapeURL(
-          "sitemap;" + crawlId,
-          sitemapUrl,
-          scrapeOptions.parse({
-            formats: ["rawHtml"],
-            useMock: mock,
-            maxAge,
-            ...(location ? { location } : {}),
-            ...(headers ? { headers } : {}),
-          }),
-          {
-            forceEngine,
-            v0DisableJsDom: true,
-            orgId: null,
-            externalAbort: abort
-              ? {
-                  signal: abort,
-                  tier: "external",
-                  throwable() {
-                    return new Error("Sitemap fetch aborted");
-                  },
-                }
-              : undefined,
-            teamId: "sitemap",
-            zeroDataRetention,
-            ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
-          },
-          new CostTracking(),
-        );
-
-        if (
-          response.success &&
-          response.document.metadata.statusCode >= 200 &&
-          response.document.metadata.statusCode < 300
-        ) {
-          content = response.document.rawHtml!;
-        } else {
-          if (
-            response.success &&
-            response.document.metadata.statusCode === 404
-          ) {
-            logger.warn("Sitemap not found", { sitemapUrl }); // should probably index 404 sitemaps
-            return 0;
-          }
-
-          logger.error(`Request failed for sitemap fetch`, {
-            method: "getLinksFromSitemap",
-            mode,
+    const [, release] = await budget.fetchSlots.acquire();
+    try {
+      const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
+      if (isGzip) {
+        try {
+          const { buffer } = await fetchFileToBuffer(
             sitemapUrl,
-            error: response.success
-              ? response.document.metadata.statusCode
-              : response.error,
-          });
-          return 0;
-        }
-      } catch (error) {
-        if (error instanceof ScrapeJobTimeoutError) {
-          throw error;
-        } else {
-          logger.error(`Request failed for sitemap fetch`, {
-            method: "getLinksFromSitemap",
-            mode,
+            false,
+            { headers, signal: abort },
+            MAX_GUNZIPPED_FILE_SIZE,
+          );
+          const decompressed = await gunzipBounded(buffer);
+          content = decompressed.toString("utf-8");
+        } catch (error) {
+          logger.error("Failed to download/decompress gzip sitemap", {
             sitemapUrl,
             error,
           });
           return 0;
         }
+      } else {
+        try {
+          const shouldPrioritizeFireEngine =
+            location && mode === "fire-engine" && useFireEngine;
+
+          const forceEngine: Engine[] = [
+            ...(maxAge > 0 && useIndex ? ["index" as const] : []),
+            ...(shouldPrioritizeFireEngine
+              ? [
+                  "fire-engine;tlsclient" as const,
+                  "fire-engine;tlsclient;stealth" as const,
+                ]
+              : []),
+            "fetch",
+            ...(!shouldPrioritizeFireEngine &&
+            mode === "fire-engine" &&
+            useFireEngine
+              ? [
+                  "fire-engine;tlsclient" as const,
+                  "fire-engine;tlsclient;stealth" as const,
+                ]
+              : []),
+          ];
+
+          const response = await scrapeURL(
+            "sitemap;" + crawlId,
+            sitemapUrl,
+            scrapeOptions.parse({
+              formats: ["rawHtml"],
+              useMock: mock,
+              maxAge,
+              ...(location ? { location } : {}),
+              ...(headers ? { headers } : {}),
+            }),
+            {
+              forceEngine,
+              v0DisableJsDom: true,
+              orgId: null,
+              externalAbort: abort
+                ? {
+                    signal: abort,
+                    tier: "external",
+                    throwable() {
+                      return new Error("Sitemap fetch aborted");
+                    },
+                  }
+                : undefined,
+              teamId: "sitemap",
+              zeroDataRetention,
+              ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
+            },
+            new CostTracking(),
+          );
+
+          if (
+            response.success &&
+            response.document.metadata.statusCode >= 200 &&
+            response.document.metadata.statusCode < 300
+          ) {
+            content = response.document.rawHtml!;
+          } else {
+            if (
+              response.success &&
+              response.document.metadata.statusCode === 404
+            ) {
+              logger.warn("Sitemap not found", { sitemapUrl }); // should probably index 404 sitemaps
+              return 0;
+            }
+
+            logger.error(`Request failed for sitemap fetch`, {
+              method: "getLinksFromSitemap",
+              mode,
+              sitemapUrl,
+              error: response.success
+                ? response.document.metadata.statusCode
+                : response.error,
+            });
+            return 0;
+          }
+        } catch (error) {
+          if (error instanceof ScrapeJobTimeoutError) {
+            throw error;
+          } else {
+            logger.error(`Request failed for sitemap fetch`, {
+              method: "getLinksFromSitemap",
+              mode,
+              sitemapUrl,
+              error,
+            });
+            return 0;
+          }
+        }
       }
+    } finally {
+      release();
     }
 
     let instructions: SitemapProcessingResult;
@@ -223,7 +246,7 @@ export async function getLinksFromSitemap(
             },
             logger,
             crawlId,
-            sitemapsHit,
+            budget,
             abort,
             mock,
           ),
@@ -257,7 +280,7 @@ export async function getLinksFromSitemap(
               },
               logger,
               crawlId,
-              sitemapsHit,
+              budget,
               abort,
               mock,
             ),
@@ -307,7 +330,7 @@ export async function getLinksFromSitemap(
               },
               logger,
               crawlId,
-              sitemapsHit,
+              budget,
               abort,
               mock,
             ),

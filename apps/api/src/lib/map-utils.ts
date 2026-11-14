@@ -25,6 +25,11 @@ import {
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
+import {
+  MAP_SITEMAP_ONLY_LIMIT,
+  type SitemapTruncation,
+} from "../scraper/WebScraper/crawler";
+import { MapTimeoutError } from "./error";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 100;
@@ -34,6 +39,7 @@ export interface MapResult {
   job_id: string;
   time_taken: number;
   mapResults: MapDocument[];
+  sitemapTruncation?: SitemapTruncation;
 }
 
 function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
@@ -79,6 +85,18 @@ export async function queryIndex(
   } else {
     return await queryIndexAtSplitLevelWithMeta(url, limit);
   }
+}
+
+// Ends before the controller's 408 timer so a slow sitemap returns partial
+// results instead of none.
+function sitemapOnlyTimeout(
+  timeout: number | undefined,
+  startTime: number,
+): number {
+  if (timeout === undefined) {
+    return 30000;
+  }
+  return Math.max(0, timeout * 0.9 - (Date.now() - startTime));
 }
 
 export async function getMapResults({
@@ -173,6 +191,8 @@ export async function getMapResults({
     // Robots.txt fetch failed, continue without it
   }
 
+  let sitemapTruncation: SitemapTruncation | undefined;
+
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemap === "only") {
     const sitemap = await crawler.tryGetSitemap(
@@ -185,11 +205,26 @@ export async function getMapResults({
       },
       true,
       true,
-      crawlerOptions.timeout ?? 30000,
+      sitemapOnlyTimeout(crawlerOptions.timeout, functionStartTime),
       abort,
       crawlerOptions.useMock,
       ignoreCache ? 0 : undefined,
+      {
+        maxFiles: MAP_SITEMAP_ONLY_LIMIT,
+        stopAfter: 2 * limit,
+        onTruncated: reason => {
+          sitemapTruncation = reason;
+        },
+      },
     );
+
+    if (
+      sitemap === 0 &&
+      sitemapTruncation === "timeout" &&
+      crawlerOptions.timeout !== undefined
+    ) {
+      throw new MapTimeoutError();
+    }
 
     if (sitemap > 0) {
       mapResults = mapResults
@@ -383,6 +418,7 @@ export async function getMapResults({
     mapResults,
     job_id: id,
     time_taken: totalTimeMs,
+    sitemapTruncation,
   };
 }
 
