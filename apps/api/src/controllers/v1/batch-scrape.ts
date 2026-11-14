@@ -225,6 +225,34 @@ export async function batchScrapeController(
     })),
   );
 
+  // An append that cannot be accepted has to be refused before anything below
+  // charges for it. Threat scanning bills the URLs it rejected, so a check that
+  // ran afterwards would take a scan fee for an append that never happens and
+  // would answer 403 instead of the 409 the batch status calls for.
+  if (req.body.appendToId) {
+    if (!appendTarget) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    const appendGroup = await crawlGroup.getGroup(req.body.appendToId);
+    if (!appendGroup) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (appendGroup.status !== "active" || appendTarget.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${appendTarget.cancelled ? "cancelled" : appendGroup.status}". Please start a new batch without appendToId.`,
+      });
+    }
+  }
+
   // Threat protection: reject/report blocked URLs at enqueue time so they
   // never consume scrape slots (mirrors the isUrlBlocked handling above).
   if (threatProtection.policy) {
@@ -353,42 +381,40 @@ export async function batchScrapeController(
     scrapeOptions.maxAge = undefined;
   }
 
-  const sc: StoredCrawl = appendTarget
-    ? appendTarget
-    : {
-        crawlerOptions: null,
-        scrapeOptions,
-        internalOptions: {
-          ...internalOptions,
-          disableSmartWaitCache: true,
-          teamId: req.auth.team_id,
-          orgId: req.acuc?.org_id ?? null,
-          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
-            ? true
-            : false,
-          zeroDataRetention,
-          agentIndexOnly: (req as any).agentIndexOnly ?? false,
-          threatProtection: threatProtection.policy ?? undefined,
-          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
-          teamFlags: req.acuc?.flags ?? null,
-          safeModeBypassed: safeMode.bypassed === true,
-        }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
-        team_id: req.auth.team_id,
-        createdAt: Date.now(),
-        maxConcurrency: req.body.maxConcurrency,
-        zeroDataRetention,
-        v1: true,
-        webhook: req.body.webhook,
-        origin: req.body.origin,
-      };
+  const sc: StoredCrawl = appendTarget ?? {
+    crawlerOptions: null,
+    scrapeOptions,
+    internalOptions: {
+      ...internalOptions,
+      disableSmartWaitCache: true,
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+      zeroDataRetention,
+      agentIndexOnly: (req as any).agentIndexOnly ?? false,
+      threatProtection: threatProtection.policy ?? undefined,
+      // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+      teamFlags: req.acuc?.flags ?? null,
+      safeModeBypassed: safeMode.bypassed === true,
+    }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
+    team_id: req.auth.team_id,
+    createdAt: Date.now(),
+    maxConcurrency: req.body.maxConcurrency,
+    zeroDataRetention,
+    v1: true,
+    webhook: req.body.webhook,
+    origin: req.body.origin,
+  };
 
-  if (req.body.appendToId && sc.internalOptions) {
-    sc.internalOptions.bypassBilling = false;
-    // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
-    // current policy, not whatever was stored when the batch was created.
-    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
-    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
-    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+  if (req.body.appendToId) {
+    if (sc?.internalOptions) {
+      sc.internalOptions.bypassBilling = false;
+      // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
+      // current policy, not whatever was stored when the batch was created.
+      sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+      sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+      sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+    }
   }
 
   if (!req.body.appendToId) {

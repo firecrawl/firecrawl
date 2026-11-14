@@ -297,6 +297,34 @@ export async function batchScrapeController(
   // whole request is rejected. Any URL that slips through (e.g. via a
   // redirect) is still blocked in the scrape pipeline and its job document
   // gets the unsafe_domain_blocked error.
+  // An append that cannot be accepted has to be refused before anything below
+  // charges for it. Threat scanning bills the URLs it rejected, so a check that
+  // ran afterwards would take a scan fee for an append that never happens and
+  // would answer 403 instead of the 409 the batch status calls for.
+  if (req.body.appendToId) {
+    if (!appendTarget) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    const appendGroup = await crawlGroup.getGroup(req.body.appendToId);
+    if (!appendGroup) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (appendGroup.status !== "active" || appendTarget.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${appendTarget.cancelled ? "cancelled" : appendGroup.status}". Please start a new batch without appendToId.`,
+      });
+    }
+  }
+
   if (threatProtection.policy) {
     const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       urls,
@@ -442,36 +470,32 @@ export async function batchScrapeController(
     });
   }
 
-  const sc: StoredCrawl = appendTarget
-    ? appendTarget
-    : {
-        crawlerOptions: null,
-        scrapeOptions: req.body,
-        internalOptions: {
-          disableSmartWaitCache: true,
-          teamId: req.auth.team_id,
-          orgId: req.acuc?.org_id ?? null,
-          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
-            ? true
-            : false,
-          zeroDataRetention,
-          bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
-          agentIndexOnly: (req as any).agentIndexOnly ?? false,
-          threatProtection: threatProtection.policy ?? undefined,
-          // Safe Mode rides the batch payload so each URL resolves it per-URL
-          // at the scrapeURL backstop.
-          teamFlags: req.acuc?.flags ?? null,
-          safeModeBypassed: safeMode.bypassed === true,
-        }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
-        team_id: req.auth.team_id,
-        createdAt: Date.now(),
-        maxConcurrency: req.body.maxConcurrency,
-        zeroDataRetention,
-        v1: true,
-        webhook: req.body.webhook,
-        requestId: req.body.__agentInterop?.requestId ?? undefined,
-        origin: req.body.origin,
-      };
+  const sc: StoredCrawl = appendTarget ?? {
+    crawlerOptions: null,
+    scrapeOptions: req.body,
+    internalOptions: {
+      disableSmartWaitCache: true,
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+      zeroDataRetention,
+      bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
+      agentIndexOnly: (req as any).agentIndexOnly ?? false,
+      threatProtection: threatProtection.policy ?? undefined,
+      // Safe Mode rides the batch payload so each URL resolves it per-URL
+      // at the scrapeURL backstop.
+      teamFlags: req.acuc?.flags ?? null,
+      safeModeBypassed: safeMode.bypassed === true,
+    }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
+    team_id: req.auth.team_id,
+    createdAt: Date.now(),
+    maxConcurrency: req.body.maxConcurrency,
+    zeroDataRetention,
+    v1: true,
+    webhook: req.body.webhook,
+    requestId: req.body.__agentInterop?.requestId ?? undefined,
+    origin: req.body.origin,
+  };
 
   if (req.body.appendToId) {
     sc.internalOptions.bypassBilling = !(
