@@ -7,7 +7,8 @@
     "start": "node dist/api.js",
     "build": "tsc",
     "dev": "tsx api.ts",
-    "test": "node --import tsx --test --test-force-exit helpers/*.spec.ts"
+    "test": "node --import tsx --test --test-force-exit helpers/*.spec.ts",
+    "test:browser-lifecycle": "tsx test/browser_lifecycle.test.ts"
   },
   "keywords": [],
   "author": "Jeff Pereira",
