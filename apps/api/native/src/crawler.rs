@@ -136,8 +136,9 @@ const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 #[inline]
 fn is_file(path: &str) -> bool {
   if let Some(dot_pos) = path.rfind('.') {
-    let extension = &path[dot_pos..];
-    FILE_EXT_SET.contains(extension)
+    // Extensions are case-insensitive (photo.JPG), as in isFile() in crawler.ts.
+    let extension = path[dot_pos..].to_ascii_lowercase();
+    FILE_EXT_SET.contains(extension.as_str())
   } else {
     false
   }
@@ -1362,6 +1363,9 @@ mod tests {
     assert!(is_file("style.css"));
     assert!(!is_file("page"));
     assert!(!is_file("directory/"));
+    assert!(is_file("/photos/IMG_0042.JPG"));
+    assert!(is_file("/assets/App.Js"));
+    assert!(is_file("/brochure.PPTX"));
   }
 
   fn filter_url_call(href: &str, url: &str, base_url: &str) -> FilterUrlCall {
