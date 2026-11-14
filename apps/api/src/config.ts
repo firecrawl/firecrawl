@@ -589,6 +589,9 @@ const configSchema = z.object({
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Share of scrapes (by scrape id) that download a cut-off PDF handoff
+  // again directly. 0 disables the re-download; truncation is still logged.
+  PDF_TRUNCATED_REFETCH_PERCENT: z.coerce.number().min(0).max(100).default(0),
   // Separate cohort for crawl/batch-originated scrapes (any scrape
   // carrying a crawlId): no caller waits on one specific document, so
   // these can ramp onto the async lane ahead of interactive traffic.

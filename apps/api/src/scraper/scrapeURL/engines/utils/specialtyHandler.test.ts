@@ -319,6 +319,36 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     expect(docx.documentPrefetch?.contentType).toBeUndefined();
   });
 
+  it("marks an inline PDF handoff with the body length the response declared", async () => {
+    const declared = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/pdf" },
+        download(PDF, {
+          responseHeaders: {
+            "Content-Type": "application/pdf",
+            "Content-Length": "123456",
+          },
+        }),
+      ),
+    );
+    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123456 });
+
+    const encoded = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/pdf" },
+        download(PDF, {
+          responseHeaders: {
+            "content-length": "999",
+            "content-encoding": "gzip",
+          },
+        }),
+      ),
+    );
+    expect(encoded.pdfPrefetch?.handoff).toEqual({ contentLength: undefined });
+  });
+
   it("does nothing without a fire-engine response to sniff", async () => {
     await expect(
       specialtyScrapeCheck(logger, { "content-type": "text/html" }),
