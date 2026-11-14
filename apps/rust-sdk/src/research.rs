@@ -165,7 +165,7 @@ pub struct DeveloperSearchOptions {
     pub k: Option<u32>,
     /// Passages per result, 1 to 5 (default 1).
     pub passages: Option<u32>,
-    /// Result kinds: `doc`, `issue`, `pull_request`, `readme` (default all).
+    /// Result kinds: `doc`, `issue`, `pull_request`, `readme`, `discussion`, `release` (default all).
     pub types: Option<Vec<String>>,
     /// GitHub `owner/name` filters, at most 20.
     pub repos: Option<Vec<String>>,

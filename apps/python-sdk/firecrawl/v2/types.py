@@ -2462,7 +2462,7 @@ class Location(BaseModel):
     languages: Optional[List[str]] = None
 
 
-DeveloperSearchType = Literal["doc", "issue", "pull_request", "readme"]
+DeveloperSearchType = Literal["doc", "issue", "pull_request", "readme", "discussion", "release"]
 
 
 class DeveloperSearchRequest(BaseModel):
@@ -2471,7 +2471,7 @@ class DeveloperSearchRequest(BaseModel):
     query: str
     k: Optional[int] = Field(default=None, ge=1, le=100)
     passages: Optional[int] = Field(default=None, ge=1, le=5)
-    types: Optional[List[DeveloperSearchType]] = Field(default=None, max_length=4)
+    types: Optional[List[DeveloperSearchType]] = Field(default=None, max_length=6)
     repos: Optional[List[str]] = Field(default=None, max_length=20)
     sources: Optional[List[str]] = Field(default=None, max_length=20)
     language: Optional[str] = None

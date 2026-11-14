@@ -764,7 +764,13 @@ export interface PaginationConfig {
   maxWaitTime?: number;
 }
 
-export type DeveloperSearchType = "doc" | "issue" | "pull_request" | "readme";
+export type DeveloperSearchType =
+  | "doc"
+  | "issue"
+  | "pull_request"
+  | "readme"
+  | "discussion"
+  | "release";
 
 export interface DeveloperSearchOptions {
   /** Total ranked results, 1–100 (default 10). */

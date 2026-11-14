@@ -411,7 +411,7 @@ defmodule Firecrawl do
     query: [type: :string, required: true, doc: "Natural-language question or search phrase. Must not be blank."],
     k: [type: :integer, doc: "Total ranked results, 1 to 100 (default 10)."],
     passages: [type: :integer, doc: "Passages per result, 1 to 5 (default 1)."],
-    types: [type: {:list, :string}, doc: "Result kinds: `doc`, `issue`, `pull_request`, `readme` (default all)."],
+    types: [type: {:list, :string}, doc: "Result kinds: `doc`, `issue`, `pull_request`, `readme`, `discussion`, `release` (default all)."],
     repos: [type: {:list, :string}, doc: "GitHub `owner/name` filters, at most 20."],
     sources: [type: {:list, :string}, doc: "Developer documentation source ids, at most 20."],
     language: [type: :string, doc: "One case-insensitive GitHub Linguist primary language."],
@@ -1106,7 +1106,7 @@ defmodule Firecrawl do
   @developer_search_query_schema NimbleOptions.new!([
     query: [type: :string, required: true, doc: "Natural-language question or search phrase."],
     k: [type: :integer, doc: "Number of ranked results to return."],
-    types: [type: {:list, :string}, doc: "Result kinds to search. Defaults to all four. Accepts a repeated parameter (`types=issue&types=pull_request`) or one comma-separated value (`types=issue,pull_request`)."],
+    types: [type: {:list, :string}, doc: "Result kinds to search. Defaults to every kind. Accepts a repeated parameter (`types=issue&types=pull_request`) or one comma-separated value (`types=issue,pull_request`)."],
     repos: [type: {:list, :string}, doc: "Repository slugs to scope the repository half of the index to, such as `firecrawl/firecrawl`. Applies to the `issue`, `pull_request`, and `readme` types only. Sent together with `sources`, the two halves are combined rather than intersected, so matching results come back from either. Returns 400 when no repository type is in `types`, reporting that `repos` cannot match any requested type and that you should add repository types or drop `repos`."],
     sources: [type: {:list, :string}, doc: "Documentation source ids to scope the documentation half to, at most 20. Applies to the `doc` type only. Not a fixed enum: ids reflect the documentation sites in the index and the set grows over time, so confirm an id resolves by sending it and reading the `sources` array on the response. Returns 400 with `sources cannot match any requested type; add doc or drop sources` when `doc` is not in `types`."],
     skills: [type: {:or, [{:in, [:only]}, :string]}, doc: "Set to `only` to limit the search to indexed agent-skill files."],
