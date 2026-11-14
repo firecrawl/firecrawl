@@ -52,6 +52,7 @@ import {
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { hasCustomRequestContext } from "../../lib/request-context";
+import { isSoftErrorPage } from "../../lib/softErrorPage";
 import { isReservedCapacity } from "../../../../lib/reserved-capacity";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
@@ -94,7 +95,8 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    !hasCustomRequestContext(meta.options);
+    !hasCustomRequestContext(meta.options) &&
+    !isSoftErrorPage(meta.rewrittenUrl ?? meta.url, document.rawHtml);
 
   if (!shouldCache) {
     return document;
@@ -541,6 +543,17 @@ export async function scrapeURLWithIndex(
     }
     logLookup("warn", "hit", { gcsMiss: true, indexDocumentId: id });
     throw new EngineError("Document not found in GCS");
+  }
+
+  if (isSoftErrorPage(meta.rewrittenUrl ?? meta.url, doc.html)) {
+    logLookup("debug", "hit", { softErrorPage: true });
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
+    throw new IndexMissError();
   }
 
   // Check if the cached content is a PDF base64 (starts with JVBERi)
