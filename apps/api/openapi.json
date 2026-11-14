@@ -6389,12 +6389,19 @@
             "name": "cites",
             "in": "query",
             "required": false,
-            "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+            "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them. Repeat the parameter to pass more than one.",
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "example": "42 U.S.C. § 1983"
-            }
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 32,
+              "example": ["42 U.S.C. § 1983"]
+            },
+            "style": "form",
+            "explode": true
           },
           {
             "name": "domain",
@@ -6406,11 +6413,28 @@
               "minLength": 1,
               "example": "irs.gov"
             }
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": false,
+            "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`. Repeat the parameter to return both.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["web", "gov"]
+              },
+              "minItems": 1,
+              "default": ["web"]
+            },
+            "style": "form",
+            "explode": true
           }
         ],
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6509,9 +6533,22 @@
                     "description": "Keep only pages from one type of court."
                   },
                   "cites": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 32
+                      }
+                    ],
+                    "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them.",
                     "example": "42 U.S.C. § 1983"
                   },
                   "domain": {
@@ -6519,6 +6556,24 @@
                     "minLength": 1,
                     "description": "Keep only pages from one site, such as `irs.gov`.",
                     "example": "irs.gov"
+                  },
+                  "sources": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "enum": ["web", "gov"]
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": ["web", "gov"]
+                        },
+                        "minItems": 1
+                      }
+                    ],
+                    "default": ["web"],
+                    "description": "Result groups to return, as one name or a list. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`."
                   }
                 }
               },
@@ -6531,7 +6586,7 @@
         },
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12168,6 +12223,65 @@
                       "description": "1-based rank in the result list."
                     }
                   }
+                }
+              },
+              "gov": {
+                "type": "array",
+                "description": "Present when `sources` includes `gov`. The same results as `web`, in the same order, with the index's labels.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Matched snippet from the source document."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "1-based rank in the result list."
+                    },
+                    "jurisdiction": {
+                      "type": "string",
+                      "description": "Jurisdiction label: `us` for federal, or `us-` plus a two-letter state or territory code. Absent when the index has no label."
+                    },
+                    "court": {
+                      "type": "string",
+                      "description": "CourtListener court id, such as `scotus` or `ca9`. Absent when the index has no label."
+                    },
+                    "courtType": {
+                      "type": "string",
+                      "description": "Type of court, one of the `courtType` filter values. Absent when the index has no label."
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids of the laws and cases the page cites. Absent when none are known."
+                    },
+                    "citedAs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids other pages cite this page by. Pass one as `cites` to find the pages citing it. Absent when none are known."
+                    },
+                    "lang": {
+                      "type": "string",
+                      "description": "Language code of the page, such as `en`. Absent when unknown."
+                    },
+                    "updatedAt": {
+                      "type": "integer",
+                      "description": "When the page was crawled into the index, in Unix milliseconds. Omitted for results that were never crawled into the index."
+                    }
+                  },
+                  "required": ["url", "title", "description", "position"]
                 }
               }
             }

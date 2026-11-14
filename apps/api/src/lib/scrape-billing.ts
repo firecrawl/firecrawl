@@ -16,7 +16,6 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 const creditsPerPDFPage = 1;
 const unblockedDomainCostBonus = 4;
-const xTwitterCostBonus = 29;
 const jsonCostBonus = 4;
 const redactPIICostBonus = 4;
 // Each additional PDF page also gets redacted through fire-privacy, so
@@ -227,10 +226,6 @@ export async function calculateCreditsToBeBilled(
 
   if (hasFormatOfType(options.formats, "video") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
-  }
-
-  if (document.metadata?.postprocessorsUsed?.includes("x-twitter")) {
-    creditsToBeBilled += xTwitterCostBonus;
   }
 
   if (internalOptions.zeroDataRetention && !options.lockdown) {

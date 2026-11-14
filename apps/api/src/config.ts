@@ -129,12 +129,22 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
+  // When true, a plain web search that the search platform classifies as
+  // government is served through the Government Index. It needs
+  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
+  // The longest a plain web search waits for the routing decision before the
+  // regular web search starts; a decision that takes longer routes nothing.
+  GOV_ROUTING_DECISION_TIMEOUT_MS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(100),
+  ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
+  FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -260,7 +270,6 @@ const configSchema = z.object({
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   OPENROUTER_API_KEY: z.string().optional(),
-  XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
@@ -387,6 +396,8 @@ const configSchema = z.object({
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
+  // Publishes with ambient credentials when PUBSUB_CREDENTIALS is unset.
+  PUBSUB_PROJECT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
   // Prepended to every log topic name. Production leaves it unset and
   // publishes to `<table>`; staging sets `staging-` so its rows land in the
   // `staging-<table>` topics and the staging ClickHouse database instead of
@@ -709,59 +720,11 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
-  // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
-  // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
-  // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
-  // back to the default model for that request.
-  EXTRACTION_PROVIDER_BASE_URL: blankStringAsUnset(z.string().url().optional()),
-  EXTRACTION_PROVIDER_API_KEY: blankStringAsUnset(z.string().optional()),
-  EXTRACTION_PROVIDER_MODEL: blankStringAsUnset(
-    z.string().min(1).default("extraction-v1"),
-  ),
-  EXTRACTION_PROVIDER_ROLLOUT_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  EXTRACTION_PROVIDER_SHADOW_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  // Rollout percentage for schemas with $ref/$defs (the ones the default
-  // path sends to its larger model); unset = same as ROLLOUT_PERCENT.
-  EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT: blankStringAsUnset(
-    z.coerce.number().int().min(0).max(100).optional(),
-  ),
-  // A provider answer whose arrays are all empty, for a page long enough to
-  // plausibly hold items, counts as a failure and falls back to the default
-  // model for that request.
-  EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS: z
-    .stringbool()
-    .optional()
-    .default(true),
-  EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
-  // Let any team pick the provider per request (json format `model`); off =
-  // only teams in TEAM_IDS may.
-  EXTRACTION_PROVIDER_REQUEST_OPT_IN: z.stringbool().optional(),
-  EXTRACTION_PROVIDER_MAX_INPUT_BYTES: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(400_000),
-  EXTRACTION_PROVIDER_INPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.07),
-  EXTRACTION_PROVIDER_OUTPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.2),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
+  VERTEX_USE_ADC: z.stringbool().default(false),
 
   // LangSmith (tracing for interact agent)
   LANGSMITH_API_KEY: z.string().optional(),
@@ -881,21 +844,13 @@ const configSchema = z.object({
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
-  for (const key of [
-    "EXTRACTION_PROVIDER_ROLLOUT_PERCENT",
-    "EXTRACTION_PROVIDER_REF_SCHEMA_ROLLOUT_PERCENT",
-  ] as const) {
-    const rollout = value[key];
-    if (
-      rollout !== undefined &&
-      rollout + value.EXTRACTION_PROVIDER_SHADOW_PERCENT > 100
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
-        message: `${key} + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100`,
-      });
-    }
+  if (value.GOV_ROUTING_ENABLED && !value.SEARCH_PLATFORM_URL) {
+    context.addIssue({
+      code: "custom",
+      path: ["GOV_ROUTING_ENABLED"],
+      message:
+        "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
+    });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
     context.addIssue({

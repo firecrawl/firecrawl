@@ -4,6 +4,7 @@ import {
   crawl,
   crawlOngoing,
   crawlStart,
+  describeV1,
   Identity,
   idmux,
   scrapeTimeout,
@@ -12,7 +13,6 @@ import request from "supertest";
 import { it, expect } from "vitest";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
-  describeIf,
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
@@ -27,7 +27,7 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("UUID validation", () => {
+describeV1()("UUID validation", () => {
   it.concurrent("rejects malformed UUIDs for crawl status", async () => {
     const response = await request(TEST_API_URL)
       .get("/v1/crawl/not-a-uuid")
@@ -55,7 +55,7 @@ describe("UUID validation", () => {
   });
 });
 
-describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
+describeV1(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   const base = TEST_SUITE_WEBSITE;
   const baseUrl = new URL(base);
   const baseDomain = baseUrl.hostname;

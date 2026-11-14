@@ -28,6 +28,7 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   checkKeylessEligibility,
   keylessLimitBody,
+  keylessProviderToolsBody,
   keylessSignupUrlForIp,
   keylessTeamId,
   keylessTeamUuid,
@@ -157,6 +158,46 @@ describe("keyless limit prompt", () => {
     expect(keylessSignupUrlForIp("unknown", "api", "limit")).toEqual({
       url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
     });
+  });
+});
+
+describe("keyless provider tools prompt", () => {
+  it("puts the caller's own link in the refusal and reports it", () => {
+    const body = keylessProviderToolsBody("preview_keyless_203.0.113.8", {
+      body: { origin: "cli" },
+    });
+
+    expect(decoded(body.signup_url)).toEqual({
+      ipv4: IP,
+      surface: "cli",
+      reason: "account_only_tool",
+    });
+    expect(body).toEqual({
+      success: false,
+      error: expect.stringMatching(
+        /^An API key is required for provider tools\. /,
+      ),
+      signup_url: body.signup_url,
+    });
+    expect(body.error).toContain(`${body.signup_url}\n`);
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({ surface: "cli", reason: "account_only_tool", httpStatus: 403 }),
+    );
+  });
+
+  it("gives a World ID caller the regular signup link and reports nothing", () => {
+    const body = keylessProviderToolsBody(
+      `preview_keyless_wid_${"h".repeat(43)}`,
+      {
+        body: {},
+      },
+    );
+
+    expect(body.signup_url).toBe(
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+    );
+    expect(body.error).toContain(`${body.signup_url}\n`);
+    expect(trackKeylessPromptShown).not.toHaveBeenCalled();
   });
 });
 

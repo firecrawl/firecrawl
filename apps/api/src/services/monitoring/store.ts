@@ -16,13 +16,11 @@ import {
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
-import { config } from "../../config";
 import {
   getPDFMaxPages,
   liftCheckPromptInjection,
   shouldParsePDF,
 } from "../../controllers/v2/types";
-import { isXTwitterUrl } from "../../scraper/scrapeURL/engines/x-twitter/url";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -60,14 +58,12 @@ const DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE = 7;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
 const REMOVED_PAGE_CREDITS = 0;
-const X_TWITTER_POSTPROCESSOR_CREDIT_BONUS = 29;
 const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
 const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
 
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
   numPages?: unknown;
-  postprocessorsUsed?: unknown;
 };
 
 function formatType(format: unknown): string | null {
@@ -179,37 +175,13 @@ function estimateSearchTargetCredits(
   );
 }
 
-/**
- * The x-twitter engine's surcharge, which billing adds per page (see
- * fallbackBaseCreditsForPage). Left out of the estimate, a judged one-URL X
- * monitor reserves 2 credits and costs 31, and an account with a few credits
- * left passes every hold and is never charged.
- */
-function xTwitterSurcharge(
-  url: string,
-  options: MonitorTarget["scrapeOptions"],
-): number {
-  // Mirrors the engine router (scrapeURL/engines/index.ts): the engine exists
-  // only with an xAI key or DB auth, lockdown serves from the index alone, and
-  // a browser profile routes around it.
-  const engineEnabled =
-    (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
-    config.USE_DB_AUTHENTICATION === true;
-  if (!engineEnabled || options?.lockdown || options?.profile) return 0;
-  return isXTwitterUrl(url) ? X_TWITTER_POSTPROCESSOR_CREDIT_BONUS : 0;
-}
-
 function estimateTargetBaseCredits(
   target: MonitorTarget,
   judgeEnabled: boolean = false,
 ): number {
   const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
   if (target.type === "scrape") {
-    return target.urls.reduce(
-      (sum, url) =>
-        sum + creditsPerPage + xTwitterSurcharge(url, target.scrapeOptions),
-      0,
-    );
+    return target.urls.length * creditsPerPage;
   }
   if (target.type === "search") {
     return estimateSearchTargetCredits(target, judgeEnabled);
@@ -340,13 +312,6 @@ export function calculateMonitorCheckActualCreditsFromPages(
       metadata.numPages > 1
     ) {
       credits += metadata.numPages - 1;
-    }
-
-    if (
-      Array.isArray(metadata?.postprocessorsUsed) &&
-      metadata.postprocessorsUsed.includes("x-twitter")
-    ) {
-      credits += X_TWITTER_POSTPROCESSOR_CREDIT_BONUS;
     }
 
     return credits;

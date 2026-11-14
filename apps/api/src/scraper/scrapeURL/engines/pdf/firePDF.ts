@@ -7,6 +7,7 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
 import { isUsOnly, US_DATA_REGION } from "../../../../lib/us-only";
+import { isReservedCapacity } from "../../../../lib/reserved-capacity";
 import {
   maybeSaveResult,
   provenanceFromResponse,
@@ -20,6 +21,8 @@ import {
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
 import {
+  firePdfReservedRefused,
+  firePdfReservedCapacityRefusal,
   firePdfRegionRefused,
   firePdfUsOnlyRefusal,
 } from "./fire-pdf/data-region";
@@ -113,6 +116,9 @@ export async function scrapePDFWithFirePDF(
 
   const zdr = meta.internalOptions.zeroDataRetention === true;
   const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+  const reservedCapacity = isReservedCapacity(
+    meta.internalOptions.teamFlags ?? undefined,
+  );
   const pdfSha256 = createPdfCacheKey(base64Content);
   const tableFormat = firePdfTableFormat(meta);
 
@@ -164,6 +170,7 @@ export async function scrapePDFWithFirePDF(
       training_capture: buildFirePdfTrainingCapture(meta),
       ...deadlineFields,
       ...(usOnly && { data_region: US_DATA_REGION }),
+      ...(reservedCapacity && { reserved: true }),
     },
     logger,
     schema: z.object({
@@ -185,18 +192,22 @@ export async function scrapePDFWithFirePDF(
       // option — older builds ignore unknown request fields and omit it.
       page_markers: z.literal(true).optional(),
       data_region_applied: z.unknown().optional(),
+      reserved_applied: z.unknown().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
   }).catch(error => {
-    if (
-      usOnly &&
-      firePdfRegionRefused(
-        (error as { cause?: { response?: { body?: unknown } } })?.cause
-          ?.response?.body,
-      )
-    ) {
+    const body = (error as { cause?: { response?: { body?: unknown } } })?.cause
+      ?.response?.body;
+    if (usOnly && firePdfRegionRefused(body)) {
       throw firePdfUsOnlyRefusal(meta, "region_unavailable", sourceKind);
+    }
+    if (reservedCapacity && firePdfReservedRefused(body)) {
+      throw firePdfReservedCapacityRefusal(
+        meta,
+        "reserved_unavailable",
+        sourceKind,
+      );
     }
     throw error;
   });
@@ -204,6 +215,15 @@ export async function scrapePDFWithFirePDF(
   // have come from GPU capacity outside the US.
   if (usOnly && resp.data_region_applied !== US_DATA_REGION) {
     throw firePdfUsOnlyRefusal(meta, "region_unconfirmed", sourceKind);
+  }
+  // Likewise, without the reserved echo the result may have come from other
+  // capacity.
+  if (reservedCapacity && resp.reserved_applied !== true) {
+    throw firePdfReservedCapacityRefusal(
+      meta,
+      "reserved_unconfirmed",
+      sourceKind,
+    );
   }
 
   const durationMs = Date.now() - startedAt;

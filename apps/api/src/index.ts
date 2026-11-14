@@ -34,6 +34,7 @@ import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
+import { registerHostedBashRoute } from "./controllers/v2/bash";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -91,6 +92,7 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
+registerHostedBashRoute(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));

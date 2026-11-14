@@ -23,6 +23,9 @@ import {
   Identity,
   scrapeRaw,
   extract,
+  describeV1,
+  EXTRACT_LIVE,
+  V1_LIVE,
 } from "./lib";
 import crypto from "crypto";
 
@@ -37,7 +40,7 @@ beforeAll(async () => {
     credits: 1000000,
   });
 
-  if (TEST_PRODUCTION) {
+  if (TEST_PRODUCTION && V1_LIVE) {
     await scrape(
       {
         url: CHANGE_TRACKING_TEST_URL,
@@ -48,7 +51,7 @@ beforeAll(async () => {
   }
 }, 10000 + scrapeTimeout);
 
-describe("Scrape tests", () => {
+describeV1()("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -1624,7 +1627,9 @@ describe("Scrape tests", () => {
       scrapeTimeout,
     );
 
-    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    itIf(
+      EXTRACT_LIVE && (TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE)),
+    )(
       "should normalize extract request with additionalProperties in schema",
       async () => {
         const identity = await idmux({ name: "schema-validation-test" });
