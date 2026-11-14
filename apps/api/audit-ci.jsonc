@@ -1,5 +1,12 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
-    "allowlist": []
+    "allowlist": [
+        // GHSA-gcqx-w48m-w2h4: deepmerge prototype poisoning via html-to-text (resend dep chain)
+        // Patched version (>=4.3.2) not yet published by upstream. No exploit reachability:
+        // deepmerge is used only for merging app-controlled options in html-to-text/react-email,
+        // not for processing untrusted external input. Severity: low.
+        // Re-evaluate after deepmerge@4.3.2 is released (expected: 2027-01-01). Owner: platform.
+        "GHSA-gcqx-w48m-w2h4"
+    ]
 }
