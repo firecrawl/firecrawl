@@ -1032,10 +1032,15 @@ class CrawlRequest(BaseModel):
 
 
 class CrawlResponse(BaseModel):
-    """Information about a crawl job."""
+    """Information about a crawl job.
+
+    The two option fields are set only when the crawl was started with a prompt.
+    """
 
     id: str
     url: str
+    prompt_generated_options: Optional[Dict[str, Any]] = None
+    final_crawler_options: Optional[Dict[str, Any]] = None
 
 
 class CrawlJob(BaseModel):
