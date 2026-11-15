@@ -2,11 +2,14 @@ import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { billingCountryForTeam } from "../lib/billing-country";
 import { orgIdFromAcuc } from "../lib/team-org";
+import { getSearchForcedKind } from "../lib/zdr-helpers";
 import {
   acceptProviderTerms,
   acceptTermsSchema,
 } from "../services/alexandria/terms";
+import compression from "compression";
 import express, { Request, Response } from "express";
+import { constants as zlibConstants } from "node:zlib";
 import { Agent, fetch, type Response as UpstreamResponse } from "undici";
 import type { Logger } from "winston";
 import { config } from "../config";
@@ -17,6 +20,17 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
+import { getScrapeZDR } from "../lib/zdr-helpers";
+
+// Tells Exchange the team is held to zero data retention, so it only lists and runs
+// providers that support it.
+function zeroDataRetentionHeader(
+  flags: Parameters<typeof getScrapeZDR>[0],
+): Record<string, string> {
+  return getScrapeZDR(flags) === "forced"
+    ? { "x-exchange-zero-data-retention": "true" }
+    : {};
+}
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -28,6 +42,7 @@ const INGEST_TIMEOUT_MS = 50_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+const NO_TRANSFORM = /(?:^|,)\s*no-transform\s*(?:,|$)/i;
 const FORWARDED_PATH_ROOTS = new Set([
   "analytics",
   "applications",
@@ -77,6 +92,10 @@ function sendUpstream(res: Response, upstream: UpstreamResponse, text: string) {
   for (const h of FORWARDED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(h);
     if (value) res.setHeader(h, value);
+  }
+  // An upstream opt-out from transformation is the only cache directive kept.
+  if (NO_TRANSFORM.test(upstream.headers.get("cache-control") ?? "")) {
+    res.setHeader("Cache-Control", "no-transform");
   }
 
   let body: unknown;
@@ -132,6 +151,7 @@ function exchangeProxy(
   options: {
     requiresRetrieveFlag?: boolean;
     opensFeedbackWindow?: boolean;
+    refusesZeroDataRetention?: boolean;
   } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
@@ -145,6 +165,17 @@ function exchangeProxy(
       path: req.path,
       teamId: authedReq.auth.team_id,
     });
+
+    if (
+      options.refusesZeroDataRetention &&
+      getSearchForcedKind(authedReq.acuc?.flags) !== null
+    ) {
+      return exchangeError(
+        res,
+        403,
+        "Provider discovery does not support zero data retention.",
+      );
+    }
 
     const base = upstreamBase();
     if (!base) {
@@ -185,6 +216,7 @@ function exchangeProxy(
           ...(isUsOnly(authedReq.acuc?.flags)
             ? { "x-exchange-us-only": "true" }
             : {}),
+          ...zeroDataRetentionHeader(authedReq.acuc?.flags),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -236,6 +268,7 @@ async function recommendationsController(req: Request, res: Response) {
         ...(isUsOnly(authedReq.acuc?.flags)
           ? { "x-exchange-us-only": "true" }
           : {}),
+        ...zeroDataRetentionHeader(authedReq.acuc?.flags),
       },
       body: JSON.stringify(signals),
       signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
@@ -282,9 +315,31 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 
 export const exchangeRouter = express.Router();
 
+// Compresses responses that declare a Content-Length larger than one TCP
+// segment, as res.json and res.send do. A response without that header, or
+// with Cache-Control: no-transform, is not compressed.
+exchangeRouter.use(
+  compression({
+    threshold: 1400,
+    level: 6,
+    brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } },
+    filter: (req, res) => {
+      // Express strips Content-Length from a 304, which still has to carry the
+      // Vary of the 200 it stands for.
+      if (res.statusCode === 304) {
+        res.vary("Accept-Encoding");
+        return false;
+      }
+      return res.hasHeader("Content-Length") && compression.filter(req, res);
+    },
+  }),
+);
+
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
 // the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
 // Dashboard and publisher routes below stay on the flat Labs limit.
+// It sends the caller's query to services that do not honour zero data
+// retention, so teams whose search requires it are refused.
 exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.ExchangeDiscover, {
@@ -294,6 +349,7 @@ exchangeRouter.get(
     exchangeProxy(DISCOVER_TIMEOUT_MS, {
       requiresRetrieveFlag: false,
       opensFeedbackWindow: true,
+      refusesZeroDataRetention: true,
     }),
   ),
 );

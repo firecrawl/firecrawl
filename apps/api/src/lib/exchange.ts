@@ -6,6 +6,7 @@ import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
+import { isXTwitterUrl } from "./x-twitter-url";
 
 type OrganizationDataSourceAccessRecord = {
   status?: string | null;
@@ -548,8 +549,14 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   }
 
   // Blocked URLs go to the Exchange for every team, since nothing else may
-  // serve them; elsewhere it replaces a normal scrape only for the beta.
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
+  // serve them; elsewhere it replaces a normal scrape only for the beta. X
+  // posts and profiles also go to it for every team: the Exchange's X
+  // provider is what serves them, in place of a Firecrawl X engine.
+  if (
+    input.flags?.[EXCHANGE_BETA_FLAG] !== true &&
+    input.blocked !== true &&
+    !isXTwitterUrl(input.url)
+  ) {
     return false;
   }
 
@@ -921,7 +928,17 @@ export type ExchangeToolFeedback = {
   }[];
 };
 
-/** Forwards an Alexandria feedback rating to the Exchange. Never throws; failures are logged. */
+const toolFeedbackResponseSchema = z.object({
+  outcome: z.enum([
+    "duplicate",
+    "counted",
+    "window",
+    "unattributed",
+    "publisher",
+  ]),
+});
+
+/** Forwards an Alexandria feedback rating to the Exchange and logs its outcome. Never throws. */
 export async function forwardExchangeToolFeedback(
   input: ExchangeToolFeedback,
 ): Promise<void> {
@@ -946,7 +963,20 @@ export async function forwardExchangeToolFeedback(
         ...context,
         statusCode: response.status,
       });
+      return;
     }
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const outcome = toolFeedbackResponseSchema.safeParse(parsed);
+    rootLogger.info("Exchange tool feedback recorded", {
+      ...context,
+      attribution: input.attribution,
+      calls: input.calls.length,
+      outcome: outcome.success ? outcome.data.outcome : "unknown",
+    });
   } catch (error) {
     rootLogger.warn("Exchange tool feedback errored", { ...context, error });
   }

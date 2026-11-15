@@ -52,6 +52,7 @@ import {
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { hasCustomRequestContext } from "../../lib/request-context";
+import { isReservedCapacity } from "../../../../lib/reserved-capacity";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -585,6 +586,19 @@ export async function scrapeURLWithIndex(
     !(await meta.imageOcrEnabled())
   ) {
     logLookup("debug", "hit", { imageMismatch: "cached_ocr_not_requested" });
+    throw new IndexMissError();
+  }
+
+  // A parsed PDF or OCR'd image may have been produced on other capacity, so
+  // a team restricted to reserved capacity parses it afresh. Raw PDF
+  // bytes were never parsed and are still served.
+  if (
+    isReservedCapacity(meta.internalOptions.teamFlags ?? undefined) &&
+    !isCachedPdfBase64 &&
+    (doc.contentType === "application/pdf" ||
+      doc.contentType?.startsWith("image/"))
+  ) {
+    logLookup("debug", "hit", { reservedCapacityMismatch: true });
     throw new IndexMissError();
   }
 

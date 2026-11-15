@@ -3,6 +3,7 @@ type McpActionLogConfigInput = {
   MCP_ACTION_LOG_WRITES_ENABLED?: boolean;
   MCP_ACTION_LOG_SECRET?: string;
   PUBSUB_CREDENTIALS?: string;
+  PUBSUB_PROJECT_ID?: string;
   USE_DB_AUTHENTICATION?: boolean;
 };
 
@@ -42,7 +43,8 @@ export function getMcpActionLogConfigErrors(config: McpActionLogConfigInput) {
   }
   if (
     config.MCP_ACTION_LOG_WRITES_ENABLED === true &&
-    !config.PUBSUB_CREDENTIALS?.trim()
+    !config.PUBSUB_CREDENTIALS?.trim() &&
+    !config.PUBSUB_PROJECT_ID?.trim()
   ) {
     errors.push({
       path: "PUBSUB_CREDENTIALS",

@@ -9,6 +9,7 @@ import {
   Identity,
   crawlStart,
   extractRaw,
+  EXTRACT_LIVE,
   map,
   browserCreateRaw,
 } from "./lib";
@@ -182,7 +183,7 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
     scrapeTimeout,
   );
 
-  itIf(!HAS_US_OPENAI)(
+  itIf(EXTRACT_LIVE && !HAS_US_OPENAI)(
     "refuses extract without a US route",
     async () => {
       const response = await extractRaw(

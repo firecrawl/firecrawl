@@ -27,7 +27,7 @@ const SNAPSHOT_MAX_CHARS = 40_000;
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 // ---------------------------------------------------------------------------

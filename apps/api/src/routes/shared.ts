@@ -30,7 +30,10 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
+import {
+  checkHostedMcpCredits,
+  hostedMcpCreditsRefusal,
+} from "../services/autumn/hosted-mcp-gate";
 import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
 import {
   ThirdPartyDataTermsRequiredError,
@@ -331,7 +334,7 @@ export function checkCreditsMiddleware(
               code: "mcp_credits_exhausted",
               requested_credits: requestedCredits,
               ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`,
+              error: hostedMcpCreditsRefusal(autumnResult.resetsAt),
             });
           }
 

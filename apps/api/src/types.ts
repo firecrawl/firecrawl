@@ -163,6 +163,7 @@ export enum RateLimiterMode {
   Labs = "labs",
   Exchange = "exchange",
   ExchangeDiscover = "exchangeDiscover",
+  FreshFeed = "freshFeed",
 }
 
 export type AuthResponse =

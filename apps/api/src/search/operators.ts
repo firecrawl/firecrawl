@@ -48,12 +48,23 @@ function normalizeSite(value: string): string {
 function hasUnsupportedOr(query: string): boolean {
   const unquoted = query.replace(/"[^"]*"/g, " ");
   const ors = unquoted.match(/(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/g)?.length ?? 0;
-  // Only positive site: filters on both sides are representable as a union
-  // of structured includeDomains. A negated filter changes OR semantics.
   const siteOrs =
-    unquoted.match(/(?<![^\s(])site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=\(*site:)/gi)?.length ??
+    unquoted.match(/site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=\(*site:)/gi)?.length ??
     0;
   return ors > siteOrs;
+}
+
+/**
+ * True when the query uses search syntax: a quoted phrase, a `name:value`
+ * token such as `site:` or `filetype:`, or an OR or `|` between terms. A
+ * routed search sends the query text alone, so it carries none of these.
+ */
+export function usesSearchSyntax(query: string): boolean {
+  if (query.includes('"')) return true;
+  return (
+    /(?:^|[\s(-])[a-z]+:\S/i.test(query) ||
+    /(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/.test(query)
+  );
 }
 
 export function parseQueryOperators(query: string): QueryOperators {
@@ -81,11 +92,6 @@ export function parseQueryOperators(query: string): QueryOperators {
   return operators;
 }
 
-
-/**
- * Removes site operators from a query when the provider accepts equivalent
- * structured includeDomains/excludeDomains fields.
- */
 export function stripSiteOperators(query: string): string {
   if (hasUnsupportedOr(query)) return query;
 

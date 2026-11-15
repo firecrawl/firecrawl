@@ -34,6 +34,7 @@ import {
   reserveBrowserPromptCredits,
 } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
+import { autumnService } from "../../../services/autumn/autumn.service";
 import { getModel } from "../../../lib/generic-ai";
 import { generateText } from "ai";
 import * as langsmith from "../../../lib/scrape-interact/langsmith";
@@ -106,6 +107,7 @@ vi.mock("../../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
   updateKeylessBrowserCredits: vi.fn(async () => true),
   adjustKeylessCredits: vi.fn(async () => {}),
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "Keyless limit reached.",
 }));
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
@@ -170,8 +172,10 @@ vi.mock("../../../services/logging/log_job", () => ({
 
 vi.mock("../../../services/autumn/autumn.service", () => ({
   DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
+  CREDITS_FEATURE_ID: "CREDITS",
   autumnService: {
     checkCredits: vi.fn(async () => ({ allowed: true })),
+    hostedMcpFeatureId: vi.fn(async () => "MCP_CREDITS"),
   },
 }));
 
@@ -665,6 +669,39 @@ describe("scrapeInteractController", () => {
         cdp_interactive_path: created.control_url,
       }),
     );
+  });
+
+  it("returns the hosted MCP refusal code when the session can't be created", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+      status: "completed",
+      requestId: "scrape-123",
+      completedAtMs: Date.now(),
+      creditsBilled: 1,
+      replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+    } as any);
+    vi.mocked(autumnService.checkCredits).mockResolvedValue({
+      allowed: false,
+    } as any);
+    const res = buildRes();
+    await scrapeInteractController(
+      {
+        params: { jobId: "scrape-123" },
+        body: { prompt: "click the button" },
+        headers: {},
+        auth: { team_id: "team-123", hostedMcp: true },
+        acuc: { org_id: "org-123" },
+      } as any,
+      res,
+    );
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: "mcp_credits_exhausted",
+      }),
+    );
+    expect(createHangarBrowser).not.toHaveBeenCalled();
   });
 
   it.each([

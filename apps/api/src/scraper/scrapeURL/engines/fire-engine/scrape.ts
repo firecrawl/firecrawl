@@ -49,7 +49,7 @@ export type FireEngineScrapeRequestCommon = {
   // skipDnsCheck?: boolean; // unused, default: false
 
   priority?: number; // default: 1
-  // team_id?: string; // unused
+  team_id?: string;
   logRequest?: boolean; // default: true
   instantReturn?: boolean; // default: false
   geolocation?: { country?: string; languages?: string[] };

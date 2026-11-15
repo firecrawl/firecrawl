@@ -132,15 +132,30 @@ const JUDGE_ATTEMPT_TIMEOUT_MS = 30_000;
 const JUDGE_MAX_ATTEMPTS = 3;
 const JUDGE_BACKOFF_MS = [300, 800];
 const JUDGE_FUNCTION_ID = "judgeChange";
+const JUDGE_VALIDATION_RETRY_FUNCTION_ID = "judgeChangeValidationRetry";
+// One logical retry. Each logical call still uses JUDGE_MAX_ATTEMPTS provider tries.
+const JUDGE_VALIDATION_RETRIES = 1;
+const VALIDATION_FAILURE = "meaningful_without_changes";
+
+const VALIDATION_RETRY_NOTE = `The previous JSON verdict was invalid: "meaningful" was true, but no valid meaningfulChanges remained. Return one JSON object only, using the same MONITOR GOAL and PAGE DIFF / FIELD DIFFS above.
+- If something matching the goal changed, set meaningful to true and include at least one valid meaningfulChanges entry with verbatim before/after evidence from the diff.
+- If nothing matching the goal changed, set meaningful to false and set meaningfulChanges to [].
+The meaningful boolean and meaningfulChanges must agree. Do not add prose outside the JSON.`;
 
 function judgeTelemetry(
   labels: LlmUsageLabels | undefined,
   zeroDataRetention: boolean | undefined,
+  functionId: string,
 ) {
   return {
     isEnabled: !(zeroDataRetention || isZeroDataRetentionActive()),
-    functionId: `monitor/${JUDGE_FUNCTION_ID}`,
-    metadata: monitorTelemetryMetadata("monitor_judge", labels),
+    functionId: `monitor/${functionId}`,
+    metadata: monitorTelemetryMetadata(
+      functionId === JUDGE_FUNCTION_ID
+        ? "monitor_judge"
+        : "monitor_judge_validation_retry",
+      labels,
+    ),
   };
 }
 
@@ -149,7 +164,9 @@ async function callGemini(args: {
   labels?: LlmUsageLabels;
   zeroDataRetention?: boolean;
   teamFlags?: TeamFlags | null;
+  functionId?: string;
 }): Promise<{ text: string }> {
+  const functionId = args.functionId ?? JUDGE_FUNCTION_ID;
   const judgeModel = withUsageTelemetry(
     googleModel(JUDGE_MODEL_NAME, {
       teamFlags: args.teamFlags,
@@ -174,8 +191,9 @@ async function callGemini(args: {
         experimental_telemetry: judgeTelemetry(
           args.labels,
           args.zeroDataRetention,
+          functionId,
         ),
-        ...googleProviderOptions(JUDGE_FUNCTION_ID, args.labels),
+        ...googleProviderOptions(functionId, args.labels),
       });
       return { text: result.text?.trim() ?? "" };
     } catch (error) {
@@ -189,6 +207,114 @@ async function callGemini(args: {
     }
   }
   throw lastError;
+}
+
+type ParsedJudgeText = {
+  judgment: JudgmentResult;
+  // Explicit meaningful=true whose change list is empty after sanitization.
+  contradictory: boolean;
+  // Unparseable or invalid JSON. Already a fail-open judgment.
+  fallback: boolean;
+};
+
+function parseJudgeText(
+  text: string,
+  logger: Logger,
+  options: { includeResponsePeek: boolean },
+): ParsedJudgeText {
+  const peek = options.includeResponsePeek
+    ? (value: string) => value.slice(0, 200)
+    : undefined;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    logger.warn("Judge returned unparseable response", {
+      ...(peek ? { textPeek: peek(text) } : {}),
+    });
+    return {
+      contradictory: false,
+      fallback: true,
+      judgment: {
+        meaningful: true,
+        confidence: "low",
+        reason: "Judge response unparseable — defaulting to meaningful.",
+        meaningfulChanges: [],
+      },
+    };
+  }
+
+  let parsed: Partial<JudgmentResult>;
+  try {
+    parsed = JSON.parse(match[0]) as Partial<JudgmentResult>;
+  } catch (parseError) {
+    logger.warn("Judge JSON parse failed — defaulting to meaningful", {
+      ...(peek
+        ? {
+            textPeek: peek(match[0]),
+            parseError:
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError),
+          }
+        : {}),
+    });
+    return {
+      contradictory: false,
+      fallback: true,
+      judgment: {
+        meaningful: true,
+        confidence: "low",
+        reason: "Judge response not valid JSON — defaulting to meaningful.",
+        meaningfulChanges: [],
+      },
+    };
+  }
+
+  // A stored boolean does not narrow `parsed.meaningful` under strictNullChecks,
+  // so resolve the three cases explicitly. Missing or non-boolean stays the
+  // existing fail-open true and is not a validation retry.
+  const parsedMeaningful = parsed.meaningful;
+  const meaningfulExplicit =
+    parsedMeaningful === true || parsedMeaningful === false;
+  const meaningful: boolean =
+    parsedMeaningful === true
+      ? true
+      : parsedMeaningful === false
+        ? false
+        : true;
+  const meaningfulChanges = sanitizeMeaningfulChanges(
+    parsed.meaningfulChanges,
+    meaningful,
+  );
+  return {
+    contradictory:
+      meaningful === true &&
+      meaningfulChanges.length === 0 &&
+      meaningfulExplicit,
+    fallback: false,
+    judgment: {
+      meaningful,
+      confidence:
+        parsed.confidence === "high" ||
+        parsed.confidence === "medium" ||
+        parsed.confidence === "low"
+          ? parsed.confidence
+          : "low",
+      reason:
+        typeof parsed.reason === "string" && parsed.reason.length > 0
+          ? parsed.reason
+          : "No reason provided.",
+      meaningfulChanges,
+    },
+  };
+}
+
+function failOpenAfterCallError(error: unknown): JudgmentResult {
+  return {
+    meaningful: true,
+    confidence: "low",
+    reason: `Judge call failed — defaulting to meaningful. (${error instanceof Error ? error.message : "unknown"})`,
+    meaningfulChanges: [],
+  };
 }
 
 export async function judgeChange(
@@ -230,72 +356,53 @@ export async function judgeChange(
     };
   }
   const userBlock = parts.join("\n\n");
+  const callArgs = { labels, zeroDataRetention, teamFlags };
 
   try {
-    const { text } = await callGemini({
-      userBlock,
-      labels,
-      zeroDataRetention,
-      teamFlags,
-    });
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      logger.warn("Judge returned unparseable response", {
-        textPeek: text.slice(0, 200),
+    const { text } = await callGemini({ userBlock, ...callArgs });
+    let outcome = parseJudgeText(text, logger, { includeResponsePeek: true });
+
+    // Not noise: an explicit true verdict with no surviving changes is invalid.
+    // Ask once for a consistent verdict, keeping the original goal and diff.
+    // Reason text is never used to flip the boolean.
+    let validationRetriesLeft = JUDGE_VALIDATION_RETRIES;
+    while (outcome.contradictory && validationRetriesLeft > 0) {
+      validationRetriesLeft -= 1;
+      logger.warn("Judge validation failed; retrying once", {
+        validation: VALIDATION_FAILURE,
       });
-      return {
-        meaningful: true,
-        confidence: "low",
-        reason: "Judge response unparseable — defaulting to meaningful.",
-        meaningfulChanges: [],
-      };
+      try {
+        const retry = await callGemini({
+          ...callArgs,
+          userBlock: `${userBlock}\n\n${VALIDATION_RETRY_NOTE}`,
+          functionId: JUDGE_VALIDATION_RETRY_FUNCTION_ID,
+        });
+        outcome = parseJudgeText(retry.text, logger, {
+          includeResponsePeek: false,
+        });
+      } catch (error) {
+        if (error instanceof UsOnlyUnavailableError) throw error;
+        logger.warn("Judge validation retry failed; failing open", {
+          validation: VALIDATION_FAILURE,
+          errorName: error instanceof Error ? error.name : "unknown",
+        });
+        return failOpenAfterCallError(error);
+      }
     }
 
-    let parsed: Partial<JudgmentResult>;
-    try {
-      parsed = JSON.parse(match[0]) as Partial<JudgmentResult>;
-    } catch (parseError) {
-      logger.warn("Judge JSON parse failed — defaulting to meaningful", {
-        textPeek: match[0].slice(0, 200),
-        parseError:
-          parseError instanceof Error ? parseError.message : String(parseError),
+    if (
+      outcome.contradictory ||
+      (outcome.fallback && validationRetriesLeft < JUDGE_VALIDATION_RETRIES)
+    ) {
+      logger.warn("Judge validation retry was still invalid; failing open", {
+        validation: VALIDATION_FAILURE,
+        outcome: outcome.contradictory ? "contradictory" : "unparseable",
       });
-      return {
-        meaningful: true,
-        confidence: "low",
-        reason: "Judge response not valid JSON — defaulting to meaningful.",
-        meaningfulChanges: [],
-      };
     }
-    const meaningful =
-      parsed.meaningful === true || parsed.meaningful === false
-        ? parsed.meaningful
-        : true;
-    return {
-      meaningful,
-      confidence:
-        parsed.confidence === "high" ||
-        parsed.confidence === "medium" ||
-        parsed.confidence === "low"
-          ? parsed.confidence
-          : "low",
-      reason:
-        typeof parsed.reason === "string" && parsed.reason.length > 0
-          ? parsed.reason
-          : "No reason provided.",
-      meaningfulChanges: sanitizeMeaningfulChanges(
-        parsed.meaningfulChanges,
-        meaningful,
-      ),
-    };
+    return outcome.judgment;
   } catch (error) {
     if (error instanceof UsOnlyUnavailableError) throw error;
     logger.error("Judge call failed", { error });
-    return {
-      meaningful: true,
-      confidence: "low",
-      reason: `Judge call failed — defaulting to meaningful. (${error instanceof Error ? error.message : "unknown"})`,
-      meaningfulChanges: [],
-    };
+    return failOpenAfterCallError(error);
   }
 }

@@ -4,7 +4,6 @@ import {
   parseQueryOperators,
   planOperatorQuery,
   siteHostnames,
-  stripSiteOperators,
 } from "./operators";
 
 describe("parseQueryOperators", () => {

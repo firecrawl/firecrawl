@@ -34,6 +34,7 @@ import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
+import { registerHostedBashRoute } from "./controllers/v2/bash";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -43,7 +44,10 @@ import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
-import { shutdownPubSubLogging } from "./services/logging/log_job";
+import {
+  drainZdrRequestLogs,
+  shutdownPubSubLogging,
+} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
 
 const { createBullBoard } = require("@bull-board/api");
@@ -88,6 +92,7 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
+registerHostedBashRoute(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
@@ -242,6 +247,7 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
+      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {

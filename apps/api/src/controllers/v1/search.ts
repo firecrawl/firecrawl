@@ -28,7 +28,7 @@ import {
   resolveSafeMode,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   DocumentWithCostTracking,
   scrapeSearchResults,
@@ -213,6 +213,21 @@ export async function searchController(
         success: false,
         code: "US_ONLY_UNAVAILABLE",
         error: usOnlyLocationError,
+      });
+    }
+
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+            req.body.scrapeOptions?.geolocation?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
       });
     }
 
