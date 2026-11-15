@@ -76,6 +76,7 @@ const providerScrapeSchema = z.strictObject({
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
   zeroDataRetention: z.boolean().optional(),
+  maxCredits: z.number().int().nonnegative().safe().optional(),
   __agentInterop: agentInteropSchema.optional(),
 });
 
@@ -189,6 +190,7 @@ export async function providerScrapeController(
       clientIp: req.ip,
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
+      ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
