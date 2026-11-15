@@ -9,6 +9,7 @@ import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
+import { isUsOnly } from "./us-only";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -1060,6 +1061,7 @@ export function crawlToCrawler(
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention:
       (getScrapeZDR(teamFlags) === "forced" || sc.zeroDataRetention) ?? false,
+    usOnly: isUsOnly(sc.internalOptions?.teamFlags) || isUsOnly(teamFlags),
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,

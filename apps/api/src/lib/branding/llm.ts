@@ -143,7 +143,10 @@ export async function enhanceBrandingWithLLM(
     promptLength > 8000;
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
-  const model = getModel(modelName);
+  const model = getModel(modelName, undefined, {
+    teamFlags: input.teamFlags,
+    feature: "Branding format",
+  });
   // getModel honors a MODEL_NAME override; record the model that actually ran.
   const modelId =
     (typeof model === "string" ? model : model.modelId) || modelName;

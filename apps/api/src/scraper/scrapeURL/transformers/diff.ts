@@ -5,6 +5,7 @@ import { generateCompletions } from "./llmExtract";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import { createMarkdownChangeDiff } from "../../../lib/change-tracking-diff";
+import { UsOnlyUnavailableError } from "../error";
 
 async function extractDataWithSchema(
   content: string,
@@ -39,9 +40,11 @@ async function extractDataWithSchema(
         functionId: "deriveDiff/extractDataWithSchema",
         scrapeId: meta.id,
       },
+      teamFlags: meta.internalOptions.teamFlags,
     });
     return { extract };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) throw error;
     meta.logger.error("Error extracting data with schema", { error });
     return null;
   }
@@ -209,16 +212,22 @@ export async function deriveDiff(
                 functionId: "deriveDiff",
                 scrapeId: meta.id,
               },
+              teamFlags: meta.internalOptions.teamFlags,
             });
 
             document.changeTracking.json = extract;
           }
         } catch (error) {
-          meta.logger.error("Error generating structured diff with LLM", {
-            error,
-          });
+          const usOnly = error instanceof UsOnlyUnavailableError;
+          if (!usOnly) {
+            meta.logger.error("Error generating structured diff with LLM", {
+              error,
+            });
+          }
           document.warning =
-            "Structured diff generation failed." +
+            (usOnly
+              ? "Change tracking JSON mode is not available for teams restricted to US-only processing."
+              : "Structured diff generation failed.") +
             (document.warning ? ` ${document.warning}` : "");
         }
       }

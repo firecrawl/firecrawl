@@ -5,13 +5,19 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
+import { issueFeedbackToken } from "../../lib/alexandria-feedback-token";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
-import { markAlexandriaActivity } from "../../lib/alexandria-activity";
+import {
+  markAlexandriaActivity,
+  markAlexandriaCalls,
+} from "../../lib/alexandria-activity";
 import {
   discoveryForCalls,
   recordDiscoveredTools,
@@ -23,6 +29,7 @@ import {
 } from "../../services/alexandria/contracts";
 import {
   REQUEST_ID_PATTERN,
+  exchangeRequestId,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
 import type { RequestWithAuth } from "./types";
@@ -114,10 +121,10 @@ export async function providerScrapeController(
     res.setHeader("x-request-id", requestId);
 
   if (req.auth.team_id.startsWith("preview_keyless_")) {
-    return res.status(403).json({
-      success: false,
-      error: "An API key is required for provider tools.",
-    });
+    applyAgentAuthDiscoveryHeader(res);
+    return res
+      .status(403)
+      .json(keylessProviderToolsBody(req.auth.team_id, req));
   }
 
   if (!req.acuc)
@@ -195,6 +202,16 @@ export async function providerScrapeController(
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
   markAlexandriaActivity(req.auth.team_id);
+  const usageRequestId = exchangeRequestId(req.auth.team_id, requestId);
+  if (result.executed && !zeroDataRetention)
+    markAlexandriaCalls(
+      req.auth.team_id,
+      body.alexandria.map(({ provider, capability }) => ({
+        requestId: usageRequestId,
+        provider,
+        capability,
+      })),
+    );
   if (result.executed && !body.__agentInterop) {
     const apiKeyId = req.acuc.api_key_id ?? null;
     const served = answerSchema.safeParse(result.body);
@@ -270,6 +287,9 @@ export async function providerScrapeController(
                 ? {
                     code: served.data.results[i].error?.code ?? null,
                     creditsCost: served.data.results[i].creditsCost ?? 0,
+                    ...(served.data.results[i].provenance
+                      ? { provenance: served.data.results[i].provenance }
+                      : {}),
                   }
                 : {}),
               ...(isFindTools({ provider, capability })
@@ -325,13 +345,39 @@ export async function providerScrapeController(
       retryAfterSeconds?: unknown;
     } | null;
     if (
-      refused?.code === "index_daily_limit" &&
+      (refused?.code === "index_daily_limit" ||
+        refused?.code === "index_rate_limit") &&
       typeof refused.retryAfterSeconds === "number"
     )
       res.setHeader("Retry-After", String(refused.retryAfterSeconds));
     return res.status(result.status).json(result.body);
   }
-  const answer = answerSchema.parse(result.body);
+  const exchangeAnswer = answerSchema.parse(result.body);
+  const parsed = {
+    ...exchangeAnswer,
+    results: exchangeAnswer.results.map(
+      ({ provenance: _provenance, ...item }) => item,
+    ),
+  };
+  const answer = zeroDataRetention
+    ? parsed
+    : {
+        ...parsed,
+        results: parsed.results.map((item, i) => {
+          const provider = item.provider ?? body.alexandria[i]?.provider;
+          const capability = item.capability ?? body.alexandria[i]?.capability;
+          const feedbackToken =
+            provider && capability
+              ? issueFeedbackToken({
+                  requestId: usageRequestId,
+                  teamId: req.auth.team_id,
+                  provider,
+                  capability,
+                })
+              : undefined;
+          return feedbackToken ? { ...item, feedbackToken } : item;
+        }),
+      };
   if (legacy) {
     if (legacyBody && "requests" in legacyBody) return res.json(answer);
     const first = answer.results[0];
@@ -341,6 +387,7 @@ export async function providerScrapeController(
         success: false,
         code: first.error.code,
         error: first.error.message,
+        ...(first.feedbackToken ? { feedbackToken: first.feedbackToken } : {}),
       });
     }
     return res.json({ success: true, ...first });

@@ -18,11 +18,14 @@ from .types import (
     DeveloperSearchResponse,
     DeveloperSearchType,
     GovSearchCourtType,
+    GovSearchSource,
     GovSearchResponse,
     SourceOption,
     CategoryOption,
     FindToolsData,
     AlexandriaCall,
+    AlexandriaFeedbackRequest,
+    AlexandriaFeedbackResponse,
     AlexandriaScrapeData,
     CrawlRequest,
     CrawlResponse,
@@ -81,6 +84,7 @@ from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .methods import monitor as monitor_module
 from .methods import research as research_module
+from .methods import feedback as feedback_module
 from .methods.research_docs import (
     CLIENT_INSPECT_PAPER_DOC,
     CLIENT_READ_PAPER_DOC,
@@ -294,6 +298,20 @@ class FirecrawlClient:
             self.http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
+    def alexandria_feedback(
+        self, request: Union[AlexandriaFeedbackRequest, Dict[str, Any]]
+    ) -> AlexandriaFeedbackResponse:
+        """
+        Rate Alexandria calls.
+
+        Pass the ``feedback_token`` of each call result in ``tokens`` (session rating,
+        at most 20, newest last) or ``call_ratings`` (per-call ratings, at most 20).
+
+        Returns:
+            AlexandriaFeedbackResponse, including rejected_tokens when some tokens failed verification
+        """
+        return feedback_module.alexandria_feedback(self.http_client, request)
+
     def find_tools(self, **options) -> FindToolsData:
         """Explore providers and contracts without executing discovered tools.
 
@@ -312,12 +330,18 @@ class FirecrawlClient:
                 code=item.error.code,
                 charge_id=item.error.charge_id,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**item.data, feedback_token=item.feedback_token)
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)
-    def search_papers(self, query: str, **kwargs):
-        return research_module.search_papers(self.http_client, query, **kwargs)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return research_module.search_papers(self.http_client, query, sort=sort, **kwargs)
 
     @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):
@@ -604,8 +628,9 @@ class FirecrawlClient:
         jurisdiction: Optional[str] = None,
         court: Optional[str] = None,
         court_type: Optional[GovSearchCourtType] = None,
-        cites: Optional[str] = None,
+        cites: Optional[Union[str, List[str]]] = None,
         domain: Optional[str] = None,
+        sources: Optional[List[GovSearchSource]] = None,
     ) -> GovSearchResponse:
         """
         Search the Government Index of US primary law and regulatory material.
@@ -624,13 +649,17 @@ class FirecrawlClient:
                 id, such as "scotus", "ca9" or "nysd"
             court_type: Keep only pages from one type of court, such as
                 "federal-appellate" or "state-supreme"
-            cites: Keep only pages that cite one law or case, as a printed
+            cites: Keep only pages that cite a law or case, as a printed
                 citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a
-                citation id such as "us:usc:42:1983"
+                citation id such as "us:usc:42:1983"; a list of up to 32
+                keeps pages citing any of them
             domain: Keep only pages from one site, such as "irs.gov"
+            sources: Result groups to return: "web" (the default) and "gov",
+                the same results with the index's labels
 
         Returns:
-            GovSearchResponse with ranked results in data.web
+            GovSearchResponse with ranked results in data.web (None when sources
+            is ["gov"]), and in data.gov when sources includes "gov"
         """
         return gov_module.gov_search(
             self.http_client,
@@ -641,6 +670,7 @@ class FirecrawlClient:
             court_type=court_type,
             cites=cites,
             domain=domain,
+            sources=sources,
         )
     
     def crawl(

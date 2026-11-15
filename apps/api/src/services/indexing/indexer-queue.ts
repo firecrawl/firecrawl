@@ -257,12 +257,19 @@ class IndexerQueue {
       this.reconnectTimer = null;
     }
     if (this.connectPromise) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
           this.connectPromise,
-          new Promise(resolve => setTimeout(resolve, CONNECT_TIMEOUT)),
+          new Promise<void>(resolve => {
+            timer = setTimeout(resolve, CONNECT_TIMEOUT);
+            timer.unref?.();
+          }),
         ]);
-      } catch {}
+      } catch {
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     }
 
     try {

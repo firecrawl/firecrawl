@@ -18,7 +18,10 @@ import {
   CostLimitExceededError,
   CostTracking,
 } from "../../../lib/cost-tracking";
-import { JsonExtractionContentTooLargeError } from "../error";
+import {
+  JsonExtractionContentTooLargeError,
+  UsOnlyUnavailableError,
+} from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
@@ -315,6 +318,7 @@ export async function extractData({
           : "extractData",
       },
       extractOptions.zeroDataRetention,
+      extractOptions.teamFlags,
     );
     schema = genRes.extract;
   }
@@ -415,7 +419,10 @@ export async function extractData({
     warning = completion.warning;
     totalUsage = completion.totalUsage;
   } catch (error) {
-    if (error instanceof CostLimitExceededError) {
+    if (
+      error instanceof CostLimitExceededError ||
+      error instanceof UsOnlyUnavailableError
+    ) {
       throw error;
     }
 
@@ -526,6 +533,7 @@ export async function extractData({
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata: { ...metadata, scrapeId, extractId },
               zeroDataRetention: !!extractOptions.zeroDataRetention,
+              teamFlags: extractOptions.teamFlags,
               limiter: guardLimiter,
             });
             if (!scannedFully) {
@@ -536,8 +544,12 @@ export async function extractData({
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,
-            model: getModel("gpt-4o-mini", "openai"),
-            retryModel: getModel("gpt-4.1", "openai"),
+            model: getModel("gpt-4o-mini", "openai", {
+              teamFlags: extractOptions.teamFlags,
+            }),
+            retryModel: getModel("gpt-4.1", "openai", {
+              teamFlags: extractOptions.teamFlags,
+            }),
             costTrackingOptions: {
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata: {

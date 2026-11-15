@@ -4,6 +4,7 @@ import {
   Document,
   ExtractOptions,
   ExtractOptionsInput,
+  TeamFlags,
   TokenUsage,
 } from "../../../controllers/v1/types";
 import { Logger } from "winston";
@@ -179,10 +180,12 @@ export async function generateCompletions_F0({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o-mini"),
+  teamFlags,
+  model = getModel("gpt-4o-mini", undefined, { teamFlags, feature: "Extract" }),
   mode = "object",
   metadata,
 }: {
+  teamFlags?: TeamFlags | null;
   model?: LanguageModel;
   modelName?: string;
   logger: Logger;
@@ -510,8 +513,12 @@ function removeDefaultProperty_F0(schema: any): any {
 export async function generateSchemaFromPrompt_F0(
   prompt: string,
   metadata: { teamId: string; functionId?: string; extractId?: string },
+  teamFlags?: TeamFlags | null,
 ): Promise<any> {
-  const model = getModel("gpt-4o-mini");
+  const model = getModel("gpt-4o-mini", undefined, {
+    teamFlags,
+    feature: "Extract",
+  });
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
 

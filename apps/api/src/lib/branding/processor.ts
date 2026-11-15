@@ -9,6 +9,7 @@ import {
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
+import { displayFamily, genericFamily, renderedFamily } from "./font-names";
 import { parse, rgb, formatHex } from "culori";
 
 // Export for testing
@@ -352,15 +353,18 @@ function pickBorderRadius(radii: (number | null)[]): string {
   return Math.round(med) + "px";
 }
 
-// Infer fonts list from stacks
+// The fonts the page renders, most used first: one family per stack, the
+// one it actually shows. Counting every entry of every stack made the
+// fallbacks of a system stack ("Segoe UI", "Roboto") and the hashed aliases
+// a site builder serves a face under look like the page's main fonts.
 function inferFontsList(
   fontStacks: string[][],
 ): Array<{ family: string; count: number }> {
   const freq: Record<string, number> = {};
   for (const stack of fontStacks) {
-    for (const f of stack) {
-      if (f) freq[f] = (freq[f] || 0) + 1;
-    }
+    const rendered = renderedFamily(stack);
+    const f = rendered ? displayFamily(rendered) : undefined;
+    if (f) freq[f] = (freq[f] || 0) + 1;
   }
 
   return Object.keys(freq)
@@ -389,13 +393,19 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     pageBackground,
   );
 
-  // Typography
+  // Typography: the family each stack renders, or what it is set in when
+  // that is the system font or a generic ("-apple-system, …" is system-ui).
+  const familyOf = (stack: string[]) => {
+    const rendered = renderedFamily(stack);
+    return rendered ? displayFamily(rendered) : genericFamily(stack);
+  };
   const typography = {
     fontFamilies: {
-      primary: raw.typography.stacks.body[0] || "system-ui, sans-serif",
+      primary:
+        familyOf(raw.typography.stacks.body) || "system-ui, sans-serif",
       heading:
-        raw.typography.stacks.heading[0] ||
-        raw.typography.stacks.body[0] ||
+        familyOf(raw.typography.stacks.heading) ||
+        familyOf(raw.typography.stacks.body) ||
         "system-ui, sans-serif",
     },
     fontStacks: raw.typography.stacks,
@@ -409,12 +419,23 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
     ...raw.cssData.radii,
   ]);
 
-  // Fonts list (all font stacks flattened)
-  const allFontStacks = [
-    ...Object.values(raw.typography.stacks).flat(),
-    ...raw.snapshots.map(s => s.typography.fontStack).flat(),
+  // Fonts list: the page's measured stacks and every sampled element's. A
+  // page that names no brand face is reported as set in its system or
+  // generic font rather than with no font at all.
+  const measuredStacks = [
+    ...Object.values(raw.typography.stacks),
+    ...raw.snapshots.map(s => s.typography.fontStack),
   ];
-  const fontsList = inferFontsList([allFontStacks]);
+  let fontsList = inferFontsList(measuredStacks);
+  if (fontsList.length === 0) {
+    for (const stack of measuredStacks) {
+      const generic = genericFamily(stack);
+      if (generic) {
+        fontsList = [{ family: generic, count: 1 }];
+        break;
+      }
+    }
+  }
 
   // Images
   const images = {

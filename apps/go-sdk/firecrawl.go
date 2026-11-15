@@ -675,6 +675,9 @@ func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPap
 		if opts.To != "" {
 			values.Set("to", opts.To)
 		}
+		if opts.Sort != "" {
+			values.Set("sort", opts.Sort)
+		}
 	}
 
 	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())
@@ -767,8 +770,8 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 
 // SearchGitHub searches GitHub research content.
 //
-// Deprecated: stops responding after 2026-11-03. Use DeveloperSearch, which
-// does not carry over the score breakdown or the web fallback results.
+// Deprecated: the research index GitHub search endpoint was removed after
+// 2026-11-03. Use DeveloperSearch instead.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}

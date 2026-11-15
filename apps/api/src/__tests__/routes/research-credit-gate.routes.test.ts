@@ -73,7 +73,6 @@ beforeEach(() => {
 describe.each([
   ["developer search", "/v2/search/developer?query=x"],
   ["legacy developer search", "/v2/developer/search?query=x"],
-  ["GitHub research search", "/v2/search/research/github?query=x"],
 ])("%s credit gate", (_name, path) => {
   it("refuses with 402 when the team can't cover a search", async () => {
     checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });

@@ -3,6 +3,7 @@ import { config } from "../../config";
 import { BrandingProfile } from "../../types/branding";
 import { enhanceBrandingWithLLM } from "./llm";
 import { CostLimitExceededError } from "../cost-tracking";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { Meta } from "../../scraper/scrapeURL";
 import { Document } from "../../controllers/v2/types";
 import { BrandingScriptReturn, ButtonSnapshot } from "./types";
@@ -446,7 +447,10 @@ export async function brandingTransformer(
       types: inputSnapshots.map((i: any) => i.type).slice(0, 10),
     });
   } catch (error) {
-    if (error instanceof CostLimitExceededError) {
+    if (
+      error instanceof CostLimitExceededError ||
+      error instanceof UsOnlyUnavailableError
+    ) {
       throw error;
     }
 

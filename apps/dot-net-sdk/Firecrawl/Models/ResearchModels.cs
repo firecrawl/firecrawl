@@ -17,6 +17,13 @@ public class PaperResult
     public double? Score { get; set; }
     public int? Year { get; set; }
     public List<string>? Authors { get; set; }
+
+    [JsonPropertyName("createdDate")]
+    public string? CreatedDate { get; set; }
+
+    [JsonPropertyName("updateDate")]
+    public string? UpdateDate { get; set; }
+
     public string? Venue { get; set; }
     public string? Url { get; set; }
     public Dictionary<string, object>? Signals { get; set; }
@@ -175,6 +182,13 @@ public class SearchPapersOptions
     public List<string>? Categories { get; set; }
     public string? From { get; set; }
     public string? To { get; set; }
+
+    /// <summary>
+    /// "relevance" is the default. "date_desc" returns the newest of the most relevant
+    /// matches, newest first by created date. It does not list every paper in a date
+    /// range. Set <see cref="From"/> and optionally <see cref="To"/> to filter dates.
+    /// </summary>
+    public string? Sort { get; set; }
 }
 
 public class ReadPaperOptions

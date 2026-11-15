@@ -76,11 +76,49 @@ export const api_keys = pgTable(
     agent_provisioned: boolean("agent_provisioned").default(false),
     // API-key-scoped concurrency limit; null = key inherits the team limit only
     concurrency: integer("concurrency"),
+    credit_limit: integer("credit_limit"),
+    credit_limit_interval: text("credit_limit_interval"),
   },
   table => [
     // Target of key_restriction_config's composite FK, which pins a
     // restriction row's team_id to the key's actual team.
     unique("api_keys_id_team_id_key").on(table.id, table.team_id),
+  ],
+);
+
+// Vercel Marketplace installations (icfg_...) and the resources provisioned
+// under them. Written by the integration webhooks outside this service; the
+// API only reads them, to resolve a Vercel OIDC resource token to the key
+// issued for that resource.
+const vercel_marketplace_installations = pgTable(
+  "vercel_marketplace_installations",
+  {
+    installation_id: text("installation_id").primaryKey(),
+    team_id: uuid("team_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+);
+
+export const vercel_marketplace_resources = pgTable(
+  "vercel_marketplace_resources",
+  {
+    installation_id: text("installation_id")
+      .notNull()
+      .references(() => vercel_marketplace_installations.installation_id, {
+        onDelete: "cascade",
+      }),
+    resource_id: text("resource_id").notNull(),
+    api_key_id: bigintNum("api_key_id").references(() => api_keys.id, {
+      onDelete: "set null",
+    }),
+    team_id: uuid("team_id"),
+    resource_name: text("resource_name"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.installation_id, table.resource_id] }),
   ],
 );
 
@@ -564,6 +602,35 @@ export const alexandria_feedback_capabilities = pgTable(
     check(
       "alexandria_feedback_capabilities_requested_functionality_check",
       sql`${table.issue} <> 'new_capability_request' OR ${table.requested_functionality} IS NOT NULL`,
+    ),
+  ],
+);
+
+export const alexandria_feedback_calls = pgTable(
+  "alexandria_feedback_calls",
+  {
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    request_id: text("request_id").notNull(),
+    provider: text("provider"),
+    capability: text("capability"),
+    rating: text("rating"),
+    attribution: text("attribution").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.feedback_id, table.position] }),
+    index("alexandria_feedback_calls_request_id_idx").on(table.request_id),
+    check(
+      "alexandria_feedback_calls_attribution_check",
+      sql`${table.attribution} IN ('token', 'window')`,
+    ),
+    check(
+      "alexandria_feedback_calls_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
     ),
   ],
 );

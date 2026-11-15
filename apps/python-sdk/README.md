@@ -228,7 +228,8 @@ results = firecrawl.search(
 )
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer and gov
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -242,6 +243,10 @@ results = firecrawl.search("nanopore basecalling accuracy", categories=["researc
 > results. To search papers themselves, use `search_papers` below.
 
 ### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
 
 Use `developer_search` for the dedicated developer index and its complete
 filter and response contract. Generic `search(categories=["developer"])`
@@ -335,14 +340,6 @@ related = firecrawl.related_papers(
     k=20,
 )
 ```
-
-> **`search_github` is deprecated.** The research index GitHub endpoint stops
-> responding after 2026-11-03. Use `developer_search` instead: it searches
-> GitHub issues, pull requests and readmes plus curated documentation sources,
-> returns matched passages, and adds filters for repo, language, license and
-> stars. It does not carry over the `scores` breakdown or the
-> `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 > **Response keys are camelCase.** Unlike the rest of the SDK, the research
 > methods return the raw JSON body as a `dict` — they are not parsed into typed
@@ -491,3 +488,28 @@ execute a selected tool, or pass a list of up to ten calls. Check each item's
 `error` before using `data`. Results and execution exceptions expose `request_id`;
 reuse it with the identical payload when retrying. Automatic retries retain it.
 The same methods are available with `await` on `AsyncFirecrawl`.
+
+Each Alexandria call result can carry an opaque `feedback_token`, valid for 24 hours. It
+is absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandria_feedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `call_ratings` (at most 20) rate individual calls. The response includes
+`rejected_tokens` when some tokens failed verification.
+
+```python
+from firecrawl import collect_feedback_tokens
+
+scraped = firecrawl.scrape(alexandria={
+    "provider": "particle",
+    "capability": "podcasts/episodes/search",
+    "options": {"semantic_search": "AI agents"},
+})
+first_token = scraped.alexandria[0].feedback_token
+response = firecrawl.alexandria_feedback({
+    "rating": "partial",
+    "requested_website": {"url": "https://example.com", "requested_functionality": "Find episodes"},
+    "rationale": "Found the episodes but the dates were missing",
+    "tokens": collect_feedback_tokens(scraped.alexandria),
+    "call_ratings": [{"token": first_token, "rating": "bad"}] if first_token else None,
+})
+print(response.rejected_tokens or 0)
+```

@@ -9,23 +9,35 @@ export class EngineError extends Error {
   }
 }
 
-export class XTwitterConfigurationError extends TransportableError {
-  constructor() {
-    super(
-      "SCRAPE_X_TWITTER_CONFIGURATION_ERROR",
-      "X/Twitter scraping requires XAI_API_KEY to be configured.",
-    );
-  }
-
-  serialize() {
-    return super.serialize();
+/** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
+export class UsOnlyUnavailableError extends TransportableError {
+  constructor(message: string) {
+    super("US_ONLY_UNAVAILABLE", message);
   }
 
   static deserialize(
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new XTwitterConfigurationError();
+    const x = new UsOnlyUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+/** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
+export class ReservedCapacityUnavailableError extends TransportableError {
+  constructor(
+    message = "PDF processing is unavailable for this team's configuration. Please retry later.",
+  ) {
+    super("RESERVED_CAPACITY_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ReservedCapacityUnavailableError(data.message);
     x.stack = data.stack;
     return x;
   }

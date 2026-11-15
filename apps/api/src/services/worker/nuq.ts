@@ -185,7 +185,19 @@ export class NuQ<JobData = any, JobReturnValue = any> {
       let channel: amqp.Channel | null = null;
       try {
         connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+        connection.on("error", err => {
+          logger.error("NuQ listener connection error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
         channel = await connection.createChannel();
+        channel.on("error", err => {
+          logger.error("NuQ listener channel error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
         await channel.prefetch(5);
         const queue = await channel.assertQueue(
           this.queueName + ".listen." + this.listenChannelId,
@@ -223,20 +235,7 @@ export class NuQ<JobData = any, JobReturnValue = any> {
           }
         };
 
-        channel.on("error", err => {
-          logger.error("NuQ listener channel error", {
-            module: "nuq/rabbitmq",
-            err,
-          });
-        });
         channel.on("close", onClose);
-
-        connection.on("error", err => {
-          logger.error("NuQ listener connection error", {
-            module: "nuq/rabbitmq",
-            err,
-          });
-        });
         connection.on("close", onClose);
 
         this.listener = {
@@ -423,7 +422,19 @@ export class NuQ<JobData = any, JobReturnValue = any> {
           let channel: amqp.Channel | null = null;
           try {
             connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+            connection.on("error", err => {
+              logger.error("NuQ sender connection error", {
+                module: "nuq/rabbitmq",
+                err,
+              });
+            });
             channel = await connection.createChannel();
+            channel.on("error", err => {
+              logger.error("NuQ sender channel error", {
+                module: "nuq/rabbitmq",
+                err,
+              });
+            });
             await channel.assertQueue(this.queueName + ".prefetch", {
               durable: true,
               arguments: {
@@ -454,25 +465,11 @@ export class NuQ<JobData = any, JobReturnValue = any> {
               this.sender = null;
             });
 
-            channel.on("error", err => {
-              logger.error("NuQ sender channel error", {
-                module: "nuq/rabbitmq",
-                err,
-              });
-            });
-
             connection.on("close", () => {
               logger.info("NuQ sender connection closed", {
                 module: "nuq/rabbitmq",
               });
               this.sender = null;
-            });
-
-            connection.on("error", err => {
-              logger.error("NuQ sender connection error", {
-                module: "nuq/rabbitmq",
-                err,
-              });
             });
           } catch (err) {
             if (channel) {
@@ -1658,21 +1655,21 @@ export class NuQ<JobData = any, JobReturnValue = any> {
       clearTimeout(this.listenerReconnectTimeout);
       this.listenerReconnectTimeout = null;
     }
-    if (this.listenerPromise) {
+    for (const pending of [this.listenerPromise, this.senderPromise]) {
+      if (!pending) continue;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          this.listenerPromise,
-          new Promise(resolve => setTimeout(resolve, 5000)),
+          pending,
+          new Promise<void>(resolve => {
+            timer = setTimeout(resolve, 5000);
+            timer.unref?.();
+          }),
         ]);
-      } catch {}
-    }
-    if (this.senderPromise) {
-      try {
-        await Promise.race([
-          this.senderPromise,
-          new Promise(resolve => setTimeout(resolve, 5000)),
-        ]);
-      } catch {}
+      } catch {
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     }
     this.listens = {};
     if (this.listener) {

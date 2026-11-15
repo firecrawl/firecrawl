@@ -6,7 +6,10 @@ import { logger as rootLogger } from "../../lib/logger";
 import {
   fetchGovUpstream,
   fetchResearchUpstream,
+  usOnlySkippedWarning,
+  usOnlyUpstreamRefusal,
 } from "../../lib/research-upstream";
+import { isUsOnly } from "../../lib/us-only";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import {
   indexDailyLimitRefusal,
@@ -26,13 +29,12 @@ import type {
 import type { RequestWithAuth } from "../v1/types";
 import { checkCreditsMiddleware, wrap } from "../../routes/shared";
 import { SEARCH_CREDITS_FEATURE_ID } from "../../services/autumn/autumn.service";
-import { deprecationMiddleware } from "../../lib/deprecations";
 import { integrationSchema, resolveIntegration } from "../../utils/integration";
 import { requestOrigin } from "../../lib/request-origin";
 
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
-// Billed developer and GitHub searches are refused up front when the team
-// can't cover the smallest search charge, the same gate /v2/search applies.
+// Billed developer searches are refused up front when the team can't cover
+// the smallest search charge, the same gate /v2/search applies.
 const searchCreditGate = () =>
   checkCreditsMiddleware(
     SEARCH_CREDITS_PER_TEN_RESULTS,
@@ -46,11 +48,10 @@ const GOV_SEARCH_TIMEOUT_MS = 15_000;
 const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
-const GITHUB_SEARCH_TIMEOUT_MS = 12_000;
 const PAPER_READ_TIMEOUT_MS = 120_000;
 
 // The paper endpoints, all served by the Research Index and limited by its
-// daily budget. GitHub search is billed per search and stays outside it.
+// daily budget.
 const RESEARCH_INDEX_KINDS = new Set<ResearchRequestKind>([
   "research_paper_search",
   "research_related_papers",
@@ -89,6 +90,7 @@ const searchPapersSchema = z.strictObject({
   categories: multiString,
   from: dateSchema,
   to: dateSchema,
+  sort: z.enum(["relevance", "date_desc"]).optional(),
   ...commonQuery,
 });
 
@@ -112,12 +114,6 @@ const similarPapersSchema = z.strictObject({
     .optional()
     .transform(value => (value === undefined ? undefined : value === "true")),
   anchor: multiString,
-  ...commonQuery,
-});
-
-const githubSearchSchema = z.strictObject({
-  query: z.string().min(1),
-  k: kSchema(100),
   ...commonQuery,
 });
 
@@ -165,6 +161,12 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
+const govSource = z.enum(["web", "gov"]);
+
+const govCite = z.string().trim().min(1);
+
+const govCites = z.array(govCite).min(1).max(32);
+
 const govSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
@@ -193,8 +195,31 @@ const govSearchSchema = z.strictObject({
       "state-attorney-general",
     ])
     .optional(),
-  cites: z.string().trim().min(1).optional(),
+  cites: z
+    .unknown()
+    .transform((value, ctx) => {
+      const parsed = (Array.isArray(value) ? govCites : govCite).safeParse(
+        value,
+      );
+      if (!parsed.success) {
+        ctx.issues.push(
+          ...parsed.error.issues.map(
+            issue => ({ ...issue, input: value }) as z.core.$ZodRawIssue,
+          ),
+        );
+        return z.NEVER;
+      }
+      const cites = [...new Set([parsed.data].flat())];
+      return cites.length === 1 ? cites[0] : cites;
+    })
+    .optional(),
   domain: z.string().trim().min(1).optional(),
+  sources: z
+    .union([govSource, z.array(govSource).min(1)])
+    .optional()
+    .transform(value =>
+      value === undefined ? undefined : [...new Set([value].flat())],
+    ),
   ...commonQuery,
 });
 
@@ -271,9 +296,30 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
   return object as T;
 }
 
+const GOV_RESULT_KEYS: Record<string, string> = {
+  court_type: "courtType",
+  cited_as: "citedAs",
+  updated_at: "updatedAt",
+};
+
+function camelCaseGovResults(body: any) {
+  const gov = body?.data?.gov;
+  if (!Array.isArray(gov)) return body;
+  body.data.gov = gov.map(item =>
+    Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [
+        GOV_RESULT_KEYS[key] ?? key,
+        value,
+      ]),
+    ),
+  );
+  return body;
+}
+
 function resultCount(body: any): number {
   if (Array.isArray(body?.results)) return body.results.length;
-  return Array.isArray(body?.data?.web) ? body.data.web.length : 0;
+  const group = body?.data?.web ?? body?.data?.gov;
+  return Array.isArray(group) ? group.length : 0;
 }
 
 function creditsFor(
@@ -281,8 +327,8 @@ function creditsFor(
   body: any,
   req: RequestWithAuth<any, any, any>,
 ) {
-  // The Research Index and the Government Index are free. GitHub search and
-  // developer/code search remain billable.
+  // The Research Index and the Government Index are free. Developer/code
+  // search remains billable.
   if (config.kind === "gov_search" || RESEARCH_INDEX_KINDS.has(config.kind))
     return 0;
 
@@ -332,6 +378,7 @@ async function fetchForRequest(
   }
   headers["firecrawl-team-id"] = req.auth.team_id;
   headers["firecrawl-zero-data-retention"] = String(zeroDataRetention);
+  if (isUsOnly(req.acuc?.flags)) headers["firecrawl-us-only"] = "true";
 
   if ("fetchUpstream" in endpoint) {
     return endpoint.fetchUpstream(params, headers);
@@ -450,6 +497,20 @@ function createResearchController(
         if (value) res.setHeader(h, value);
       }
 
+      if (isUsOnly(authedReq.acuc?.flags) && upstream.status === 403) {
+        const refusal = await usOnlyUpstreamRefusal(
+          upstream,
+          "This endpoint is not available for teams restricted to US-only processing.",
+        );
+        error = refusal.message;
+        res.setHeader("content-type", "application/json");
+        return res.status(403).json({
+          success: false,
+          code: "US_ONLY_UNAVAILABLE",
+          error: refusal.message,
+        });
+      }
+
       const text = await upstream.text();
       try {
         responseBody = text ? JSON.parse(text) : null;
@@ -497,10 +558,23 @@ function createResearchController(
       if (responseBody === null || typeof responseBody === "string") {
         return res.status(statusCode).send(responseBody ?? "");
       }
-      const response =
-        options.legacy && upstream.ok
+      const response = !upstream.ok
+        ? responseBody
+        : options.legacy
           ? addLegacySnakeCaseAliases(responseBody)
-          : responseBody;
+          : endpoint.kind === "gov_search"
+            ? camelCaseGovResults(responseBody)
+            : responseBody;
+      const usOnlyWarning =
+        upstream.ok && isUsOnly(authedReq.acuc?.flags)
+          ? usOnlySkippedWarning(upstream.headers)
+          : undefined;
+      if (usOnlyWarning && !Array.isArray(response)) {
+        response.warning =
+          typeof response.warning === "string" && response.warning.length > 0
+            ? `${response.warning} ${usOnlyWarning}`
+            : usOnlyWarning;
+      }
       return res.status(statusCode).json(response);
     } catch (err: unknown) {
       if (isResearchTimeoutError(err)) {
@@ -547,6 +621,10 @@ function createResearchController(
   };
 }
 
+function paperId(req: Request) {
+  return (req.params.id as string[]).filter(Boolean).join("/");
+}
+
 export function createResearchRouter(options: { legacy?: boolean } = {}) {
   const router = express.Router();
 
@@ -572,7 +650,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
     wrap(
       createResearchController(
         searchPapersSchema,
-        ["query", "k", "authors", "categories", "from", "to"],
+        ["query", "k", "authors", "categories", "from", "to", "sort"],
         {
           kind: "research_paper_search",
           table: "research_paper_searches",
@@ -588,7 +666,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   );
 
   router.get(
-    "/papers/:id/similar",
+    "/papers/*id/similar",
     wrap(
       createResearchController(
         similarPapersSchema,
@@ -598,9 +676,9 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           table: "research_related_papers",
           action: "similarPapers",
           targetHint: (params, req) =>
-            `${req.params.id}: ${String(params.intent)}`,
+            `${paperId(req)}: ${String(params.intent)}`,
           upstreamPath: (_params, req) =>
-            `/v2/research/papers/${encodeURIComponent(req.params.id)}/similar`,
+            `/v2/research/papers/${encodeURIComponent(paperId(req))}/similar`,
           timeoutMs: SIMILAR_PAPERS_TIMEOUT_MS,
           billAs: "search",
         },
@@ -610,7 +688,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   );
 
   router.get(
-    "/papers/:id",
+    "/papers/*id",
     wrap(async (req: Request, res: Response) => {
       const authedReq = req as RequestWithAuth<any, any, any>;
       const parsed = paperSchema.safeParse(req.query);
@@ -622,9 +700,9 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           kind: isRead ? "research_paper_read" : "research_paper_inspect",
           table: isRead ? "research_paper_reads" : "research_paper_inspects",
           action: isRead ? "readPaper" : "inspectPaper",
-          targetHint: (_params, request) => request.params.id,
+          targetHint: (_params, request) => paperId(request),
           upstreamPath: (_params, request) =>
-            `/v2/research/papers/${encodeURIComponent(request.params.id)}`,
+            `/v2/research/papers/${encodeURIComponent(paperId(request))}`,
           timeoutMs: isRead ? PAPER_READ_TIMEOUT_MS : PAPER_INSPECT_TIMEOUT_MS,
           billAs: "scrape",
         },
@@ -632,29 +710,6 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       );
       return controller(authedReq, res);
     }),
-  );
-
-  // On the route, not the mounts, so the paper routes stay undeprecated.
-  router.get(
-    "/github",
-    deprecationMiddleware("v2_research_github_search"),
-    searchCreditGate(),
-    wrap(
-      createResearchController(
-        githubSearchSchema,
-        ["query", "k"],
-        {
-          kind: "research_github_search",
-          table: "research_github_searches",
-          action: "searchGithub",
-          targetHint: params => String(params.query),
-          upstreamPath: () => "/v2/research/github",
-          timeoutMs: GITHUB_SEARCH_TIMEOUT_MS,
-          billAs: "search",
-        },
-        options,
-      ),
-    ),
   );
 
   return router;
@@ -710,6 +765,7 @@ export function createGovRouter() {
           courtType: params.courtType,
           cites: params.cites,
           domain: params.domain,
+          sources: params.sources,
           headers,
           timeoutMs: GOV_SEARCH_TIMEOUT_MS,
         }),

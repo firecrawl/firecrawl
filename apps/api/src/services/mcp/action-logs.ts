@@ -18,7 +18,23 @@ const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
 const SECRET_PATTERN =
   /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
+// After any secret key, a leading auth scheme (Basic, Bearer, Token, ...) is
+// consumed with its credential so no part of "password=>Basic <b64>" survives.
+const DETAIL_SECRET_PAIR = new RegExp(
+  "(\\b(?:[A-Za-z0-9]*[_.-]?)(?:api[_-]?key|apikey|key|access[_-]?token|accesstoken|auth[_-]?token|token|client[_-]?secret|secret|password|passwd|passcode|pwd|auth|authorization|signature|sig|credentials?|session[_-]?id|sessionid|otp|nonce|verifier|cookie|jwt|(?:auth|oauth|authorization|verification|confirmation|reset|access|one[_-]?time)[_-]?code)[\"']?)(\\s*(?:=>|[=:])\\s*)(?:\"[^\"]*\"|'[^']*'|(?:(?:(?<=authorization[\"']?\\s*(?:=>|[=:])\\s*)[A-Za-z]+|Basic|Bearer|Token|Digest|Bot|ApiKey|Negotiate|NTLM)\\s+)?[^\\s&#\"',;]+)",
+  "gi",
+);
+// A Basic credential is base64 of "user:password"; only one that decodes
+// to a colon pair is redacted, so prose such as "Basic research" is kept.
+const DETAIL_BASIC_AUTH = /\bBasic\s+([A-Za-z0-9+/]{2,}={0,2})/gi;
+const DETAIL_QUERY_PAIR = /([?&][^\s=&#?]+=)[^\s&#]+/g;
+const DETAIL_URL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
+const DETAIL_TOKEN_RUN = /[A-Za-z0-9]{16,}/g;
+const DETAIL_TOKEN_PATH =
+  /^(?:s|share|shared|invite|invitation|reset|reset[_-]?password|password[_-]?reset|verify|verification|confirm|confirmation|activate|magic|magic[_-]?link|token|auth|login|unsubscribe|callback|otp)$/i;
 const OBJECTIVE_MAX_LENGTH = 1000;
+const ERROR_MESSAGE_MAX_LENGTH = 300;
+const TARGET_MAX_LENGTH = 512;
 const ERROR_CODE_PATTERN = /^(?=.{2,64}$)[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const MCP_CLIENT_SOURCES = ["client_info", "user_agent", "oauth"] as const;
 const RATE_LIMIT_RETRY_OUTCOMES = [
@@ -51,6 +67,8 @@ const ALLOWED_FIELDS = new Set([
   "client_version",
   "error_class",
   "error_code",
+  "error_message",
+  "target",
   "resource",
   "objective",
   "api_job_id",
@@ -125,16 +143,95 @@ function errorCode(value: unknown) {
   return value;
 }
 
-function objective(value: unknown) {
+function tokenLikeSegment(segment: string) {
+  return (segment.match(DETAIL_TOKEN_RUN) ?? []).some(
+    run => /\d/.test(run) && /[A-Za-z]/.test(run),
+  );
+}
+
+/**
+ * Keeps a URL's scheme, host and plain path: userinfo, every query value, the
+ * fragment and token-like path segments become [redacted].
+ */
+function scrubbedUrl(url: string) {
+  const hashAt = url.indexOf("#");
+  const fragment =
+    hashAt === -1 || hashAt === url.length - 1 ? "" : "#[redacted]";
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const queryAt = beforeHash.indexOf("?");
+  const base = queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt);
+  const query =
+    queryAt === -1
+      ? ""
+      : "?" +
+        beforeHash
+          .slice(queryAt + 1)
+          .split("&")
+          .map(pair => {
+            const eq = pair.indexOf("=");
+            if (eq === -1) return pair && "[redacted]";
+            return eq === pair.length - 1
+              ? pair
+              : pair.slice(0, eq + 1) + "[redacted]";
+          })
+          .join("&");
+  const match = /^([^:]+:\/\/)([^/]*)(.*)$/.exec(base);
+  if (!match) return base + query + fragment;
+  const [, scheme, authority, path] = match;
+  const host = authority.includes("@")
+    ? "[redacted]" + authority.slice(authority.lastIndexOf("@"))
+    : authority;
+  const segments = path.split("/");
+  const scrubbedPath = segments
+    .map((segment, i) =>
+      tokenLikeSegment(segment) ||
+      (i > 0 && DETAIL_TOKEN_PATH.test(segments[i - 1]))
+        ? "[redacted]"
+        : segment,
+    )
+    .join("/");
+  return scheme + host + scrubbedPath + query + fragment;
+}
+
+/**
+ * Error messages and targets also lose URL userinfo, query values, fragments,
+ * token-like path segments, bare query-string values, secret=value pairs
+ * (keys bare or quoted, as in JSON or Python and Ruby dicts) and Basic
+ * credentials.
+ */
+function scrubbedDetail(text: string) {
+  return text
+    .replace(SECRET_PATTERN_ALL, "[redacted]")
+    .replace(DETAIL_URL, scrubbedUrl)
+    .replace(DETAIL_QUERY_PAIR, "$1[redacted]")
+    .replace(DETAIL_BASIC_AUTH, (match, token: string) =>
+      Buffer.from(token, "base64").toString("latin1").includes(":")
+        ? "[redacted]"
+        : match,
+    )
+    .replace(DETAIL_SECRET_PAIR, "$1$2[redacted]");
+}
+
+/**
+ * Free text from the call (objective, error message, target URL):
+ * control characters become spaces, secret-like values become [redacted],
+ * and the result is cut to `max` characters rather than rejected.
+ */
+function redactedText(
+  value: unknown,
+  field: string,
+  max: number,
+  scrub: (text: string) => string = text => text,
+) {
   if (value == null) return null;
-  if (typeof value !== "string") invalid("objective must be a string");
-  const normalized = value
-    .slice(0, OBJECTIVE_MAX_LENGTH * 4)
-    .replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ")
+  if (typeof value !== "string") invalid(`${field} must be a string`);
+  const normalized = scrub(
+    value.slice(0, max * 4).replace(/[\u0000-\u001F\u007F-\u009F]+/g, " "),
+  )
     .replace(SECRET_PATTERN_ALL, "[redacted]")
     .replace(/\beyJ[A-Za-z0-9_.-]*$/, "[redacted]")
     .trim()
-    .slice(0, OBJECTIVE_MAX_LENGTH)
+    .slice(0, max)
     .replace(/[\uD800-\uDBFF]$/, "")
     .trim();
   return normalized || null;
@@ -211,6 +308,8 @@ type McpActionLogInput = {
   client_version: string | null;
   error_class: string | null;
   error_code: string | null;
+  error_message: string | null;
+  target: string | null;
   resource: string;
   objective: string | null;
   api_job_id: string | null;
@@ -311,8 +410,24 @@ export function normalizeMcpActionLogInput(
     client_version: text(payload.client_version, "client_version"),
     error_class: text(payload.error_class, "error_class"),
     error_code: errorCode(payload.error_code),
+    error_message: redactedText(
+      payload.error_message,
+      "error_message",
+      ERROR_MESSAGE_MAX_LENGTH,
+      scrubbedDetail,
+    ),
+    target: redactedText(
+      payload.target,
+      "target",
+      TARGET_MAX_LENGTH,
+      scrubbedDetail,
+    ),
     resource,
-    objective: objective(payload.objective),
+    objective: redactedText(
+      payload.objective,
+      "objective",
+      OBJECTIVE_MAX_LENGTH,
+    ),
     api_job_id: text(payload.api_job_id, "api_job_id"),
     mcp_origin: text(payload.mcp_origin, "mcp_origin"),
     mcp_client: text(payload.mcp_client, "mcp_client"),
@@ -481,8 +596,8 @@ export async function listMcpActionLogs(
   let rows: McpActionLogRow[];
   try {
     const result = await clickhouseClient.query({
-      // The explicit column list is the team-readable contract: objective and
-      // api_job_id stay out of it. Filters name `log.` columns because the
+      // The explicit column list is the team-readable contract: objective,
+      // api_job_id, error_message and target stay out of it. Filters name `log.` columns because the
       // formatted created_at alias would otherwise shadow the stored value.
       query: `SELECT id, user_id, toString(log.api_key_id) AS api_key_id, oauth_client_id, auth_type, tool_name, status, request_id, client_name, client_version, error_class, resource, formatDateTime(log.created_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS created_at FROM mcp_action_logs AS log FINAL WHERE log.team_id = {teamId: UUID} AND log.created_at > now64(9) - INTERVAL ${RETENTION_DAYS} DAY${cursor ? " AND (log.created_at, log.id) < (parseDateTime64BestEffort({before: String}, 9), {beforeId: UUID})" : ""} ORDER BY log.created_at DESC, log.id DESC LIMIT {limit: UInt32}`,
       query_params: {

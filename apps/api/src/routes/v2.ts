@@ -3,12 +3,10 @@ import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
+import { createFreshFeedRouter } from "./fresh-feed";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import {
-  researchCategoryNoticeMiddleware,
-  searchController,
-} from "../controllers/v2/search";
+import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -60,7 +58,10 @@ import {
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
@@ -206,7 +207,6 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
-  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, {
     allowKeyless: true,
     allowAgentManagedKey: true,
@@ -671,7 +671,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Browser, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   countryCheck,
-  checkCreditsMiddleware(2),
+  checkCreditsMiddleware(2, undefined, { mcpCredits: true }),
   wrap(browserCreateController),
 );
 
@@ -732,6 +732,12 @@ v2Router.post(
   wrap(supportProxyController),
 );
 
+// Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.
+v2Router.get(
+  ["/search/research/github", "/research/github"],
+  removedEndpointHandler("v2_research_github_search"),
+);
+
 if (config.RESEARCH_PROXY_URL) {
   v2Router.use(
     "/search/research",
@@ -770,5 +776,13 @@ if (config.SEARCH_PLATFORM_URL) {
       allowKeyless: true,
     }),
     createGovRouter(),
+  );
+}
+
+if (config.FRESH_FEED_URL) {
+  v2Router.use(
+    "/fresh-vertical-feed",
+    authMiddleware(RateLimiterMode.FreshFeed),
+    createFreshFeedRouter(config.FRESH_FEED_URL),
   );
 }

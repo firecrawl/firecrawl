@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.18.7";
+    private static final String SDK_ORIGIN = "java-sdk@1.18.9";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -648,9 +648,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearch} instead.
      */
     @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
@@ -658,9 +657,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearch} instead.
      */
     @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
@@ -1170,9 +1168,8 @@ public class FirecrawlClient {
     }
 
     /**
-     * @deprecated Stops responding after 2026-11-03. Use {@link #developerSearch},
-     *             which does not carry over the score breakdown or the web
-     *             fallback results.
+     * @deprecated The research index GitHub search endpoint was removed after
+     *             2026-11-03. Use {@link #developerSearchAsync} instead.
      */
     @Deprecated
     public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {

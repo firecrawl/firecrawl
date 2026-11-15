@@ -47,8 +47,6 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     logger,
     options.query,
   );
-  const llmService = new ResearchLLMService(logger);
-
   const acuc = await getACUCTeam(teamId);
 
   const checkTimeLimit = () => {
@@ -64,6 +62,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
   };
 
   try {
+    const llmService = new ResearchLLMService(logger, acuc?.flags);
     while (!state.hasReachedMaxDepth() && urlsAnalyzed < maxUrls) {
       logger.debug("[Deep Research] Current depth:", state.getCurrentDepth());
       logger.debug("[Deep Research] URL analysis count:", {

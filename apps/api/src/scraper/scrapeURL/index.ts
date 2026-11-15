@@ -59,10 +59,15 @@ import {
   ProxySelectionError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
-  XTwitterConfigurationError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
+import {
+  inWaterfallExperimentArm,
+  waterfallExperimentFor,
+} from "./waterfallExperiments";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { shouldCheckRobots } from "./shouldCheckRobots";
@@ -126,6 +131,7 @@ import {
   SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { loadFirstScreen } from "../../lib/branding/jev";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
@@ -602,6 +608,7 @@ async function buildMetaObject(
 export type InternalOptions = {
   teamId: string;
   crawlId?: string;
+  origin?: string;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
@@ -985,12 +992,32 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
-            if (error.engine === "x-twitter") {
-              meta.logger.warn("X/Twitter scrape failed fatally.", {
+            const nextEngine = remainingEngines[0]?.engine;
+            const experiment = waterfallExperimentFor(
+              error.engine,
+              error.error,
+              nextEngine,
+            );
+            if (experiment) {
+              const testArm = inWaterfallExperimentArm(meta.id, experiment);
+              meta.logger.info("Waterfall experiment decision", {
+                experiment,
+                arm: testArm ? "test" : "control",
+                engine: error.engine,
+                nextEngine,
                 error: error.error,
               });
-              throw error.error;
-            } else if (error.error instanceof EngineError) {
+              if (testArm) {
+                enginePromises = enginePromises.filter(
+                  x => x.engine !== error.engine,
+                );
+                if (enginePromises.length === 0) {
+                  break;
+                }
+                continue;
+              }
+            }
+            if (error.error instanceof EngineError) {
               meta.logger.warn(
                 "Engine " + error.engine + " could not scrape the page.",
                 {
@@ -1033,7 +1060,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
@@ -1180,6 +1208,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     let document: Document = {
       markdown: engineResult.markdown,
+      warning: engineResult.warning,
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
@@ -1328,10 +1357,21 @@ export async function scrapeURL(
         }
       }
 
-      // ZDR always verifies TLS, for every engine. Explicit false also wins over
-      // the skip-by-default in applyScrapeOptionsDefaults.
+      // ZDR always verifies TLS, for every engine, even when the request asks
+      // to skip verification.
       if (internalOptions.zeroDataRetention) {
         options.skipTlsVerification = false;
+      }
+
+      const usOnlyLocationError = usOnlyLocationRefusal(
+        internalOptions.teamFlags ?? undefined,
+        options.location?.country,
+      );
+      if (usOnlyLocationError) {
+        return {
+          success: false,
+          error: new UsOnlyUnavailableError(usOnlyLocationError),
+        };
       }
 
       const meta = await buildMetaObject(
@@ -1434,7 +1474,9 @@ export async function scrapeURL(
                       url: urlToCheck,
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
+                      usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
                       location: options.location,
+                      skipTlsVerification: options.skipTlsVerification,
                     },
                     id,
                     meta.logger,

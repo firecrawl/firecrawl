@@ -205,6 +205,108 @@ describe("MCP action log contract", () => {
     );
   });
 
+  it("stores an optional error message and target, redacted and capped", () => {
+    expect(input()).toMatchObject({ error_message: null, target: null });
+    expect(
+      input({
+        status: "error",
+        error_message: "Request failed with status code 408: Scrape timed out",
+        target: "https://example.com/pricing",
+      }),
+    ).toMatchObject({
+      error_message: "Request failed with status code 408: Scrape timed out",
+      target: "https://example.com/pricing",
+    });
+    expect(input({ error_message: "", target: "  " })).toMatchObject({
+      error_message: null,
+      target: null,
+    });
+    expect(
+      input({ error_message: "Unauthorized:\nBearer abc.def for fc-123abc" })
+        .error_message,
+    ).toBe("Unauthorized: [redacted] for [redacted]");
+    expect(
+      input({ target: "https://example.com/?key=fc-123abc&page=2" }).target,
+    ).toBe("https://example.com/?key=[redacted]&page=[redacted]");
+    expect(
+      input({
+        target:
+          "https://user:pw@example.com/oauth/callback?code=c0de&state=s7ate&flag#access_token=t",
+      }).target,
+    ).toBe(
+      "https://[redacted]@example.com/oauth/callback?code=[redacted]&state=[redacted]&[redacted]#[redacted]",
+    );
+    expect(
+      input({
+        target:
+          "https://files.example.com/scl/fi/k8sj2h4l9q0w1e3r5t7y/report.pdf?dl=0",
+      }).target,
+    ).toBe(
+      "https://files.example.com/scl/fi/[redacted]/report.pdf?dl=[redacted]",
+    );
+    expect(
+      input({ target: "https://example.com/reset-password/abc" }).target,
+    ).toBe("https://example.com/reset-password/[redacted]");
+    expect(
+      input({ target: "https://example.com/blog/how-to-build-an-api-in-2024" })
+        .target,
+    ).toBe("https://example.com/blog/how-to-build-an-api-in-2024");
+    expect(
+      input({
+        error_message:
+          "Authorization: Basic dXNlcjpwYXNz; otp=123456 resetToken: r3s3t verification_code=99 bad ?code=abc&state=def",
+      }).error_message,
+    ).toBe(
+      "Authorization: [redacted]; otp=[redacted] resetToken: [redacted] verification_code=[redacted] bad ?code=[redacted]&state=[redacted]",
+    );
+    expect(input({ error_message: "Status code: 500" }).error_message).toBe(
+      "Status code: 500",
+    );
+    expect(
+      input({
+        error_message:
+          "{'password': 'hunter2', 'api_key': 'abc123secret'} {'Authorization': 'Basic dXNlcjpwYXNz'} {\"token\"=>\"t0k\"}",
+      }).error_message,
+    ).toBe(
+      "{'password': [redacted], 'api_key': [redacted]} {'Authorization': [redacted]} {\"token\"=>[redacted]}",
+    );
+    expect(
+      input({ error_message: "401 for Basic dXNlcjpwYXNz on Basic research" })
+        .error_message,
+    ).toBe("401 for [redacted] on Basic research");
+    expect(
+      input({
+        error_message: "password=>Basic dXNlcjpwYXNz cred: Basic dXNlcjpwYXNz",
+      }).error_message,
+    ).toBe("password=>[redacted] cred: [redacted]");
+    expect(input({ error_message: "401 for Basic YTo=" }).error_message).toBe(
+      "401 for [redacted]",
+    );
+    for (const [message, expected] of [
+      ["password=Basic dXNlcjpwYXNz", "password=[redacted]"],
+      ["x-auth: Basic dXNlcjpwYXNz", "x-auth: [redacted]"],
+      ["password=Basic c2VjcmV0dG9rZW4", "password=[redacted]"],
+      ["auth_token: Token abc123tok", "auth_token: [redacted]"],
+      ["secret=Bearer abc123tok", "secret=[redacted]"],
+      ["password=hunter2 Basic research", "password=[redacted] Basic research"],
+    ]) {
+      expect(input({ error_message: message }).error_message).toBe(expected);
+    }
+    expect(input({ error_message: "x".repeat(400) }).error_message).toBe(
+      "x".repeat(300),
+    );
+    expect(input({ target: "q".repeat(600) }).target).toBe("q".repeat(512));
+    expect(input({ target: `${"q".repeat(511)}\u{1F600}` }).target).toBe(
+      "q".repeat(511),
+    );
+    expect(() => input({ error_message: 500 })).toThrow(
+      "error_message must be a string",
+    );
+    expect(() => input({ target: ["https://example.com"] })).toThrow(
+      "target must be a string",
+    );
+  });
+
   it("stores an optional coarse error code and rejects anything but snake_case", () => {
     expect(input().error_code).toBeNull();
     expect(
@@ -517,6 +619,8 @@ describe("MCP action log contract", () => {
           objective: "Find the refund policy",
           api_job_id: REQUEST_ID,
           error_code: "rate_limited",
+          error_message: "Rate limit exceeded",
+          target: "https://example.com/pricing",
           user_agent: "Claude/1.0",
           mcp_origin: "mcp-ua-codex-cli-rs",
           mcp_client: "codex-cli-rs",
@@ -541,6 +645,8 @@ describe("MCP action log contract", () => {
       objective: "Find the refund policy",
       api_job_id: REQUEST_ID,
       error_code: "rate_limited",
+      error_message: "Rate limit exceeded",
+      target: "https://example.com/pricing",
       mcp_origin: "mcp-ua-codex-cli-rs",
       mcp_client: "codex-cli-rs",
       mcp_client_source: "user_agent",
@@ -651,7 +757,7 @@ describe("MCP action log contract", () => {
     expect(complete.nextCursor).toBeNull();
   });
 
-  it("never selects the objective or API job ID for the team-readable list", async () => {
+  it("never selects call content or the API job ID for the team-readable list", async () => {
     ch.client = { query: vi.fn().mockResolvedValue({ json: async () => [] }) };
     await listMcpActionLogs(TEAM_ID);
     const sql = ch.client.query.mock.calls[0][0].query as string;
@@ -659,6 +765,8 @@ describe("MCP action log contract", () => {
     expect(columns).toContain("tool_name");
     expect(columns).not.toContain("objective");
     expect(columns).not.toContain("api_job_id");
+    expect(columns).not.toContain("error_message");
+    expect(columns).not.toMatch(/\btarget\b/);
   });
 
   it("reports storage as unavailable when the read fails", async () => {

@@ -14,6 +14,8 @@ import {
 } from "./diff";
 import { judgeChange } from "./judgeChange";
 import type { LlmUsageLabels } from "./search/tuning";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 type MonitorPageDiffStatus = "same" | "new" | "changed" | "error";
 
@@ -69,6 +71,7 @@ export async function computeAndPersistPageDiff(params: {
   formats: unknown;
   goal?: string | null;
   extractionPrompt?: string | null;
+  teamFlags?: TeamFlags | null;
 }): Promise<MonitorPageDiffResult> {
   const {
     teamId,
@@ -81,6 +84,7 @@ export async function computeAndPersistPageDiff(params: {
     formats,
     goal,
     extractionPrompt,
+    teamFlags,
   } = params;
 
   const wantsJson = formatsRequestJsonExtraction(formats);
@@ -174,6 +178,7 @@ export async function computeAndPersistPageDiff(params: {
               }
             : undefined,
           labels: { teamId, monitorId, monitorCheckId: checkId },
+          teamFlags,
         })
       : undefined;
     return {
@@ -238,6 +243,7 @@ export async function computeAndPersistPageDiff(params: {
           diffText: diff.text,
         },
         labels: { teamId, monitorId, monitorCheckId: checkId },
+        teamFlags,
       })
     : undefined;
   return {
@@ -258,6 +264,7 @@ async function runJudge(args: {
     diffText?: string;
   };
   labels: LlmUsageLabels;
+  teamFlags?: TeamFlags | null;
 }): Promise<Judgment | undefined> {
   try {
     return await judgeChange({
@@ -270,8 +277,11 @@ async function runJudge(args: {
       // Monitors are refused for zero data retention teams and their scrapes
       // run with ZDR off, so the judge call is traced like them.
       zeroDataRetention: false,
+      teamFlags: args.teamFlags,
     });
   } catch (error) {
+    // Surfaces as the page's error rather than a page with no judgment.
+    if (error instanceof UsOnlyUnavailableError) throw error;
     rootLogger.error("Judge call failed", { error });
     return undefined;
   }

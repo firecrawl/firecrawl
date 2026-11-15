@@ -11,7 +11,12 @@ import { formatHex, hsl, parse, wcagContrast } from "culori";
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
 import { getTypeSafeClient } from "../typesafe";
-import { APITimeoutError, Image, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APIError,
+  APITimeoutError,
+  Image,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 import {
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
@@ -23,6 +28,13 @@ import {
   JevScreenshotOutcome,
 } from "./metrics";
 import { sampled } from "../rollout";
+import {
+  GENERIC_FONTS,
+  knownFamily,
+  normalizeVendorName,
+  renderedFamily,
+  titleCase,
+} from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -65,6 +77,20 @@ let breakerOpenUntil = 0;
 
 function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
+}
+
+/**
+ * TypeSafe turning the image away: a 529 (it sheds load on the image lane
+ * first, text calls keep answering) or a 5xx whose message names the image,
+ * such as "503 Image processing is unavailable". A plain 5xx or a timeout
+ * is a failure of the call itself and is handled as before.
+ */
+function isImageRejection(error: unknown): error is APIError {
+  return (
+    error instanceof APIError &&
+    (error.status === 529 ||
+      (error.status >= 500 && /\bimage/i.test(error.message)))
+  );
 }
 
 function recordJevFailure(input: BrandingLLMInput): void {
@@ -220,24 +246,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-const GENERIC_FONTS = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "-apple-system",
-  "blinkmacsystemfont",
-  "inherit",
-  "initial",
-  "emoji",
-  "math",
-]);
 
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
@@ -294,15 +302,23 @@ const splitCamelCase = (name: string) =>
     .join(" ");
 
 export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack ("system-ui, sans-serif") reports its first family.
-  let name = raw
-    .split(",")[0]
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name || /^var\(/i.test(name)) return undefined;
+  // A whole stack reports the family it renders: past hashed aliases, none
+  // for a system stack ("-apple-system, BlinkMacSystemFont, Segoe UI").
+  let name = renderedFamily(raw.split(",")) ?? "";
+  if (!name) return undefined;
   if (/fallback/i.test(name)) return undefined;
   // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
   name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
+  // Vendor spellings and build suffixes: "orig_libre_baskerville",
+  // "helvetica-w01-roman", "inter-variable-web".
+  name = normalizeVendorName(name);
+  // A name that is only a weight ("Regular", "semibold") is not a family.
+  if (FONT_WEIGHT.test(name)) return undefined;
+  // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
+  const glued = name.match(
+    /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
+  );
+  if (glued) name = knownFamily(glued[1]) ?? glued[1];
   // "Roboto_Black": the weight goes before underscores turn into spaces.
   while (DELIMITED_WEIGHT_SUFFIX.test(name))
     name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
@@ -317,10 +333,10 @@ export function cleanFontFamily(raw: string): string | undefined {
   while (FONT_WEIGHT_SUFFIX.test(name))
     name = name.replace(FONT_WEIGHT_SUFFIX, "");
   name = splitCamelCase(name);
+  // A known family can only be matched once its weight is gone.
+  name = knownFamily(name) ?? name;
   if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
+  if (name === name.toLowerCase()) name = titleCase(name);
   return name;
 }
 
@@ -340,7 +356,8 @@ function typographyRole(
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    const raw = Array.isArray(value) ? value[0] : value;
+    // A stack names the family it renders, not its first entry.
+    const raw = Array.isArray(value) ? renderedFamily(value) : value;
     const cleaned = raw ? cleanFontFamily(raw) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
@@ -1231,24 +1248,24 @@ export async function enhanceBrandingWithJev(
   let request: JevRequest;
   let response: JevResponse;
   let called = false;
-  try {
-    request = buildJevRequest(input, screenshot);
-    response = await withSpan(
+  let imageRetried = false;
+  const callJev = (req: JevRequest) =>
+    withSpan(
       "typesafe.systemone",
       async span => {
         called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
-            state: request.state,
-            questions: request.questions,
-            ...(request.assets ? { assets: request.assets } : {}),
+            state: req.state,
+            questions: req.questions,
+            ...(req.assets ? { assets: req.assets } : {}),
           },
           {
             timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
             retry: JEV_RETRY,
             // Image input is opt-in per request.
-            ...(request.assets
+            ...(req.assets
               ? { headers: { "TypeSafe-Danger-Zone-Images": "true" } }
               : {}),
           },
@@ -1267,8 +1284,8 @@ export async function enhanceBrandingWithJev(
         zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
-          "branding.jev.questions": Object.keys(request.questions).length,
-          "branding.jev.screenshot": !!screenshot,
+          "branding.jev.questions": Object.keys(req.questions).length,
+          "branding.jev.screenshot": !!req.assets,
           "branding.jev.screenshot_outcome": firstScreen.outcome,
           ...(firstScreen.bytes !== undefined
             ? { "branding.jev.screenshot_bytes": firstScreen.bytes }
@@ -1276,11 +1293,39 @@ export async function enhanceBrandingWithJev(
           ...(firstScreen.outcome !== "none"
             ? { "branding.jev.screenshot_load_ms": firstScreen.loadMs }
             : {}),
+          ...(imageRetried ? { "branding.jev.image_retry": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
+  try {
+    request = buildJevRequest(input, screenshot);
+    try {
+      response = await callJev(request);
+    } catch (error) {
+      if (!called || !screenshot || !isImageRejection(error)) throw error;
+      error satisfies APIError;
+      // TypeSafe's image lane is the part that is overloaded (its text calls
+      // keep answering), so ask again from the text alone. Jev without the
+      // first screen is still a far better answer per dollar than the LLM
+      // fallback, and a refused image says nothing about Jev's health, so
+      // it doesn't count toward the breaker.
+      count("image_rejected");
+      // A warning with a fixed message and the vendor's status, so a log
+      // metric can count refusals and page us before the fallback bill does.
+      input.logger.warn("TypeSafe refused the first screen", {
+        vendor: "typesafe",
+        status: error.status,
+        error: error.message,
+        elapsedMs: Date.now() - started,
+        ...screenshotLog,
+      });
+      imageRetried = true;
+      called = false;
+      request = buildJevRequest(input, undefined);
+      response = await callJev(request);
+    }
   } catch (error) {
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
@@ -1301,6 +1346,7 @@ export async function enhanceBrandingWithJev(
       error,
       elapsedMs: Date.now() - started,
       ...screenshotLog,
+      ...(imageRetried ? { imageRetried } : {}),
     });
     return null;
   }
@@ -1342,6 +1388,7 @@ export async function enhanceBrandingWithJev(
     questions: Object.keys(request.questions).length,
     logoConfidence: result.logoConfidence,
     ...screenshotLog,
+    ...(imageRetried ? { imageRetried } : {}),
   });
   return result;
 }

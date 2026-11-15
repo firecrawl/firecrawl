@@ -21,10 +21,13 @@ from .types import (
     DeveloperSearchResponse,
     DeveloperSearchType,
     GovSearchCourtType,
+    GovSearchSource,
     GovSearchResponse,
     SourceOption,
     FindToolsData,
     AlexandriaCall,
+    AlexandriaFeedbackRequest,
+    AlexandriaFeedbackResponse,
     AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
@@ -76,6 +79,7 @@ from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 from .methods.aio import research as async_research  # type: ignore[attr-defined]
+from .methods.aio import feedback as async_feedback  # type: ignore[attr-defined]
 from .methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
@@ -163,6 +167,12 @@ class AsyncFirecrawlClient:
             self.async_http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
+    async def alexandria_feedback(
+        self, request: Union[AlexandriaFeedbackRequest, Dict[str, Any]]
+    ) -> AlexandriaFeedbackResponse:
+        """Rate Alexandria calls. See FirecrawlClient.alexandria_feedback."""
+        return await async_feedback.alexandria_feedback(self.async_http_client, request)
+
     async def find_tools(self, **options) -> FindToolsData:
         """Explore providers and contracts without executing discovered tools.
 
@@ -181,12 +191,20 @@ class AsyncFirecrawlClient:
                 code=item.error.code,
                 charge_id=item.error.charge_id,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**item.data, feedback_token=item.feedback_token)
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
-    async def search_papers(self, query: str, **kwargs):
-        return await async_research.search_papers(self.async_http_client, query, **kwargs)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await async_research.search_papers(
+            self.async_http_client, query, sort=sort, **kwargs
+        )
 
     @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):
@@ -373,8 +391,9 @@ class AsyncFirecrawlClient:
         jurisdiction: Optional[str] = None,
         court: Optional[str] = None,
         court_type: Optional[GovSearchCourtType] = None,
-        cites: Optional[str] = None,
+        cites: Optional[Union[str, List[str]]] = None,
         domain: Optional[str] = None,
+        sources: Optional[List[GovSearchSource]] = None,
     ) -> GovSearchResponse:
         """
         Search the Government Index of US primary law and regulatory material.
@@ -393,13 +412,17 @@ class AsyncFirecrawlClient:
                 id, such as "scotus", "ca9" or "nysd"
             court_type: Keep only pages from one type of court, such as
                 "federal-appellate" or "state-supreme"
-            cites: Keep only pages that cite one law or case, as a printed
+            cites: Keep only pages that cite a law or case, as a printed
                 citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a
-                citation id such as "us:usc:42:1983"
+                citation id such as "us:usc:42:1983"; a list of up to 32
+                keeps pages citing any of them
             domain: Keep only pages from one site, such as "irs.gov"
+            sources: Result groups to return: "web" (the default) and "gov",
+                the same results with the index's labels
 
         Returns:
-            GovSearchResponse with ranked results in data.web
+            GovSearchResponse with ranked results in data.web (None when sources
+            is ["gov"]), and in data.gov when sources includes "gov"
         """
         return await async_gov.gov_search(
             self.async_http_client,
@@ -410,6 +433,7 @@ class AsyncFirecrawlClient:
             court_type=court_type,
             cites=cites,
             domain=domain,
+            sources=sources,
         )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:

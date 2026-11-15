@@ -80,7 +80,8 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
 {:ok, response} = Firecrawl.search_and_scrape(query: "firecrawl web scraping")
 
 # Search the developer index: public repositories, GitHub issues, merged pull
-# requests, READMEs and code documentation. Replaces the deprecated search_github.
+# requests, READMEs and code documentation. It replaces the research index GitHub
+# search, which was removed after 2026-11-03.
 {:ok, %Firecrawl.DeveloperSearch{results: results}} = Firecrawl.search_developer(
   query: "retry an http request with exponential backoff",
   repos: ["square/okhttp"],

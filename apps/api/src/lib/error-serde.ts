@@ -41,7 +41,8 @@ import {
   MediaAccessDeniedError,
   PromptInjectionDetectedError,
   JsonExtractionContentTooLargeError,
-  XTwitterConfigurationError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -95,7 +96,8 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
   SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
-  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
+  US_ONLY_UNAVAILABLE: UsOnlyUnavailableError,
+  RESERVED_CAPACITY_UNAVAILABLE: ReservedCapacityUnavailableError,
   MAP_FAILED: MapFailedError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
@@ -103,6 +105,7 @@ const errorMap: Record<ErrorCodes, any> = {
   // Zod errors
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
+  CATEGORY_REMOVED: null,
   INDEX_DAILY_LIMIT: null,
   TOOL_DISCOVERY_UNAVAILABLE: null,
   PARSE_UNSUPPORTED_OPTIONS: null,

@@ -28,6 +28,7 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -43,7 +44,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -51,6 +56,14 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
+import {
+  looksLikeJwt,
+  VercelJwksUnavailableError,
+} from "../lib/vercel-marketplace-oidc";
+import {
+  resolveVercelOidcToken,
+  type VercelOidcResolution,
+} from "../services/vercel-marketplace-oidc";
 import {
   autumnService,
   DEFAULT_TEAM_LIMITS,
@@ -504,6 +517,21 @@ export async function getACUCTeam(
   }
 }
 
+/**
+ * The flags of the team behind a request's plain API key, read without rate
+ * limiting or the other auth checks. Null without a known API key.
+ */
+export async function getApiKeyTeamFlags(req: {
+  headers: { authorization?: string };
+}): Promise<TeamFlags | null> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const normalizedApi = parseApi(token);
+  if (!normalizedApiIsUuid(normalizedApi)) return null;
+  const chunk = await getACUC(normalizedApi);
+  return chunk?.flags ?? null;
+}
+
 export async function clearACUC(api_key: string): Promise<void> {
   // Clear both purpose-qualified keys and the legacy unqualified keys during
   // rollout so credential-purpose isolation cannot leave stale auth entries.
@@ -773,6 +801,31 @@ async function handleKeylessAuth(
     };
   }
 
+  if (modeLabel === "gov" || modeLabel === "research") {
+    const perMinute = await consumeIndexRateLimit(
+      modeLabel,
+      teamId,
+      1,
+      undefined,
+      1,
+    );
+    if (!perMinute.ok) {
+      keylessAuthTotal.inc({ mode, outcome: "index_rate_limit" });
+      logger.warn("Keyless request blocked", {
+        ...baseLog,
+        blocked: true,
+        reason: "index_rate_limit",
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      });
+      return {
+        success: false,
+        error: perMinute.error,
+        status: 429,
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      };
+    }
+  }
+
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
   keylessAuthTotal.inc({ mode, outcome: "allowed" });
 
@@ -1028,6 +1081,71 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      chunk,
+      mode,
+      minRateMultiplier,
+    );
+  } else if (
+    config.USE_DB_AUTHENTICATION === true &&
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID &&
+    looksLikeJwt(token)
+  ) {
+    // Vercel Marketplace OIDC resource token. It resolves to the API key issued
+    // for the resource, so per-key behavior and billing stay on the key path.
+    let resolution: VercelOidcResolution;
+    try {
+      resolution = await resolveVercelOidcToken(
+        token,
+        config.VERCEL_MARKETPLACE_INTEGRATION_ID,
+      );
+    } catch (error) {
+      if (error instanceof VercelJwksUnavailableError) {
+        return {
+          success: false,
+          error: "Vercel authentication is temporarily unavailable",
+          status: 503,
+        };
+      }
+      throw error;
+    }
+    if (!resolution.ok) {
+      return denied(req, "invalid_vercel_oidc_token", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+
+    chunk = await getACUC(
+      resolution.apiKey,
+      false,
+      true,
+      RateLimiterMode.Scrape,
+      "general",
+    );
+    if (chunk === null) {
+      return denied(req, "unknown_key", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+    if (chunk.team_id !== resolution.teamId) {
+      return denied(
+        req,
+        "vercel_oidc_team_mismatch",
+        {
+          success: false,
+          error: "Unauthorized: Invalid token",
+          status: 401,
+        },
+        chunk,
+      );
+    }
+
+    teamId = chunk.team_id;
+    subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
       chunk,
       mode,

@@ -14,7 +14,6 @@ import { ScrapeJobData } from "../../types";
 import { includesFormat } from "../../lib/format-utils";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
-import { ExistingCreditsLockError } from "../autumn/types";
 import { getBillingQueue } from "../queue-service";
 import {
   crawlToCrawler,
@@ -77,6 +76,7 @@ import { monitorTelemetryMetadata } from "./search/tuning";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import {
@@ -888,6 +888,7 @@ async function runMonitorSearchTarget(params: {
     knownPages,
     knownEvents,
     zeroDataRetention: false,
+    usOnly: isUsOnly(teamFlags),
     logger: logger.child({
       monitorId: monitor.id,
       checkId: check.id,
@@ -1249,7 +1250,6 @@ export async function processMonitorCheckJob(
       );
     }
   } catch (error) {
-    if (error instanceof ExistingCreditsLockError) throw error;
     // Atomically flip running -> failed. Returns null when the check already
     // reached a terminal status — i.e. the reconciler finalized it (completed,
     // billed, lock confirmed) before this late catch ran. In that case we must

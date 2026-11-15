@@ -28,6 +28,7 @@ export async function startWebScraperPipeline({
     internalOptions: {
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
+      origin: job.data.origin,
       ...job.data.internalOptions,
       // In-flight jobs enqueued before orgId existed may omit it.
       orgId: job.data.internalOptions?.orgId ?? null,
