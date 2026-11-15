@@ -478,7 +478,13 @@
                             }
                           }
                         ],
-                        "description": "Execute one or more catalogued provider tools instead of scraping a URL. Cannot be combined with `url`, `formats`, or other scrape options (400); the only allowed sibling keys are `timeout`, `origin`, and `integration`. Use the `x-request-id` request header as a client-chosen idempotency key (1 to 128 characters of letters, digits, `.`, `_`, `:`, `-`) — it is echoed back, and a completed request with the same key replays its original response and `scrape_id` instead of re-executing. To browse the catalogue and read tool contracts for free, call Find Tools: set `provider` to `firecrawl`, `capability` to `find-tools`, and `options` to a `FindToolsOptions` object. The result `data` is a `FindToolsData` page."
+                        "description": "Execute one or more catalogued provider tools instead of scraping a URL. Cannot be combined with `url`, `formats`, or other scrape options (400); the only allowed sibling keys are `timeout`, `origin`, `integration`, and `maxCredits`. Use the `x-request-id` request header as a client-chosen idempotency key (1 to 128 characters of letters, digits, `.`, `_`, `:`, `-`) — it is echoed back, and a completed request with the same key replays its original response and `scrape_id` instead of re-executing. To browse the catalogue and read tool contracts for free, call Find Tools: set `provider` to `firecrawl`, `capability` to `find-tools`, and `options` to a `FindToolsOptions` object. The result `data` is a `FindToolsData` page."
+                      },
+                      "maxCredits": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "The most credits this request may use. Applies only to `alexandria` requests. The request is quoted first; when the quote's maximum is above `maxCredits`, it is refused with 402 `max_credits_exceeded` (the body includes `maximumCredits`) before any credits are held or any provider is executed. It caps only this request's quoted credits: requests a provider tool makes on its own that are billed separately, such as the child requests of an orchestrating tool, are not counted against it. A refused request frees its `x-request-id`, so it can be retried with the same key and a higher cap. A completed request replayed with the same `x-request-id` returns its original response; a different `maxCredits` on the replay is not applied."
                       },
                       "domainTools": {
                         "type": "boolean",
@@ -567,7 +573,7 @@
             }
           },
           "402": {
-            "description": "Payment required. Also returned as `insufficient_credits` when the team lacks the credits to execute an `alexandria` request; in that case nothing is executed.",
+            "description": "Payment required. Also returned as `insufficient_credits` when the team lacks the credits to execute an `alexandria` request, and as `max_credits_exceeded` when an `alexandria` request's quote is above `maxCredits`; in both cases nothing is executed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -587,6 +593,10 @@
                     },
                     "chargeId": {
                       "type": "string"
+                    },
+                    "maximumCredits": {
+                      "type": "integer",
+                      "description": "With `max_credits_exceeded`: the most credits the request was quoted to need."
                     }
                   }
                 }
