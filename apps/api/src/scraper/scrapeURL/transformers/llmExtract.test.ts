@@ -402,7 +402,7 @@ describe("performLLMExtract source HTTP failures", () => {
       expect(result.json).toBeNull();
       expect(result.warning).toContain(`source returned HTTP ${statusCode}`);
       expect(result.warning).toContain("Existing source warning.");
-      expect(result.metadata).toEqual(document.metadata);
+    expect(result.metadata).toEqual({ statusCode, error: "Source unavailable" });
       expect(result.markdown).toBe("Not Found");
       expect(extractData).not.toHaveBeenCalled();
     },
