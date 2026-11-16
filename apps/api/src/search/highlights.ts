@@ -54,20 +54,48 @@ export function searchHighlightsMode(options: {
 // this many more-recent error entries, in which case we surface the newest one.
 const ERROR_COUNT_TO_REGISTER = 3;
 
-// Highlights are optional, so lookups over this cap are skipped like an index miss.
+// Highlights are optional: a lookup that gets no slot in time is skipped like a miss.
 const MAX_CONCURRENT_INDEX_LOOKUPS = 3;
+const INDEX_LOOKUP_SLOT_WAIT_MS = 1000;
 let inFlightIndexLookups = 0;
+const indexLookupWaiters: (() => void)[] = [];
+
+function acquireIndexLookupSlot(): Promise<boolean> {
+  if (inFlightIndexLookups < MAX_CONCURRENT_INDEX_LOOKUPS) {
+    inFlightIndexLookups++;
+    return Promise.resolve(true);
+  }
+  return new Promise(resolve => {
+    const grant = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      indexLookupWaiters.splice(indexLookupWaiters.indexOf(grant), 1);
+      resolve(false);
+    }, INDEX_LOOKUP_SLOT_WAIT_MS);
+    indexLookupWaiters.push(grant);
+  });
+}
+
+function releaseIndexLookupSlot() {
+  const next = indexLookupWaiters.shift();
+  if (next) {
+    next();
+  } else {
+    inFlightIndexLookups--;
+  }
+}
 
 async function getIndexObjectForURL(
   url: string,
   logger: Logger,
   logUrl = true,
 ): Promise<{ name: string; createdAt: string | null } | null> {
-  if (!useIndex || inFlightIndexLookups >= MAX_CONCURRENT_INDEX_LOOKUPS) {
+  if (!useIndex || !(await acquireIndexLookupSlot())) {
     return null;
   }
 
-  inFlightIndexLookups++;
   try {
     const normalizedURL = normalizeURLForIndex(url);
     const urlHash = hashURL(normalizedURL);
@@ -111,7 +139,7 @@ async function getIndexObjectForURL(
     });
     return null;
   } finally {
-    inFlightIndexLookups--;
+    releaseIndexLookupSlot();
   }
 }
 

@@ -181,38 +181,69 @@ describe("runIndexedSearchHighlights", () => {
     });
   });
 
-  it("skips index lookups over the per-process concurrency cap", async () => {
-    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(new Map());
-    const response = {
-      web: Array.from({ length: 5 }, (_, i) => ({
-        url: `https://result-${i}.test`,
-        description: "fallback",
-      })),
-    } as any;
+  describe("index lookup limiter", () => {
     const options = {
       mode: "apply" as const,
       requestId: "request-1",
       teamId: "team-1",
     };
+    const webResponse = (count: number) =>
+      ({
+        web: Array.from({ length: count }, (_, i) => ({
+          url: `https://result-${i}.test`,
+          description: "fallback",
+        })),
+      }) as any;
+    const holdLookups = (count: number) => {
+      const releases: (() => void)[] = [];
+      for (let i = 0; i < count; i++) {
+        vi.mocked(indexGetRecent5).mockImplementationOnce(
+          () => new Promise<any>(resolve => releases.push(() => resolve([]))),
+        );
+      }
+      return releases;
+    };
 
-    const capped = await runIndexedSearchHighlights(
-      response,
-      "query",
-      logger,
-      options,
-    );
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    expect(indexGetRecent5).toHaveBeenCalledTimes(3);
-    expect(capped).toMatchObject({ attempted: 5, indexHits: 3 });
+    it("hands a freed slot to the next waiting lookup", async () => {
+      vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(new Map());
+      const releases = holdLookups(3);
 
-    const afterRelease = await runIndexedSearchHighlights(
-      { web: response.web.slice(0, 3) } as any,
-      "query",
-      logger,
-      options,
-    );
+      const run = runIndexedSearchHighlights(
+        webResponse(4),
+        "query",
+        logger,
+        options,
+      );
+      await vi.waitFor(() => expect(indexGetRecent5).toHaveBeenCalledTimes(3));
 
-    expect(afterRelease).toMatchObject({ attempted: 3, indexHits: 3 });
+      releases[0]();
+      await vi.waitFor(() => expect(indexGetRecent5).toHaveBeenCalledTimes(4));
+
+      releases.slice(1).forEach(release => release());
+      expect(await run).toMatchObject({ attempted: 4, indexHits: 1 });
+    });
+
+    it("skips a lookup that waits more than 1s for a slot", async () => {
+      vi.useFakeTimers();
+      vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(new Map());
+      const releases = holdLookups(3);
+
+      const run = runIndexedSearchHighlights(
+        webResponse(4),
+        "query",
+        logger,
+        options,
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(indexGetRecent5).toHaveBeenCalledTimes(3);
+      releases.forEach(release => release());
+
+      expect(await run).toMatchObject({ attempted: 4, indexHits: 0 });
+    });
   });
 });
 
