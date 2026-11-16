@@ -27,8 +27,59 @@ export async function mixSchemaObjects(
         schema.properties[key].type === "array" &&
         Array.isArray(multiResult[key])
       ) {
-        // If the property is an array, flatten the arrays from multiResult
-        result[key] = multiResult[key].flat();
+        // Preserve nested array values; flatten only scalar/object chunk wrappers.
+        const items = schema.properties[key].items;
+        // Check type constraints throughout intersections before declaring rank.
+        // Full schema validation remains the caller's responsibility.
+        const permitsArrayType = (item: any): boolean => {
+          if (item === true) return true;
+          if (!item || typeof item !== "object" || Array.isArray(item))
+            return false;
+          if (
+            item.type !== undefined &&
+            item.type !== "array" &&
+            !(Array.isArray(item.type) && item.type.includes("array"))
+          )
+            return false;
+          if (Object.hasOwn(item, "const") && !Array.isArray(item.const))
+            return false;
+          if (
+            Array.isArray(item.enum) &&
+            !item.enum.some((value: any) => Array.isArray(value))
+          )
+            return false;
+          return (
+            [item.anyOf, item.oneOf].every(
+              branches =>
+                !Array.isArray(branches) || branches.some(permitsArrayType),
+            ) &&
+            (!Array.isArray(item.allOf) || item.allOf.every(permitsArrayType))
+          );
+        };
+        const allowsArrayValues = (item: any): boolean => {
+          if (
+            !item ||
+            typeof item !== "object" ||
+            Array.isArray(item) ||
+            !permitsArrayType(item)
+          )
+            return false;
+          return (
+            item.type !== undefined ||
+            item.items !== undefined ||
+            Array.isArray(item.const) ||
+            (Array.isArray(item.enum) &&
+              item.enum.some((value: any) => Array.isArray(value))) ||
+            [item.anyOf, item.oneOf, item.allOf].some(
+              branches =>
+                Array.isArray(branches) && branches.some(allowsArrayValues),
+            )
+          );
+        };
+        const nested = Array.isArray(items)
+          ? items.some(allowsArrayValues)
+          : allowsArrayValues(items);
+        result[key] = nested ? [...multiResult[key]] : multiResult[key].flat();
       } else if (singleResult.hasOwnProperty(key)) {
         result[key] = singleResult[key];
       } else if (multiResult.hasOwnProperty(key)) {
