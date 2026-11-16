@@ -89,7 +89,7 @@ const usVertexModels = new Set([
 ]);
 
 const usInferenceGeo: LanguageModelMiddleware = {
-  specificationVersion: "v3",
+  specificationVersion: "v4",
   transformParams: async ({ params }) => ({
     ...params,
     providerOptions: {
