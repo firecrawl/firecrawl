@@ -121,6 +121,16 @@ describe("deserializeTransportableError", () => {
       ["a string payload", 'SOME_CODE|"nope"'],
       ["a null payload", "SOME_CODE|null"],
       ["a truncated payload", 'SOME_CODE|{"message":"cut of'],
+      ["a code with a class and no payload", "SCRAPE_TIMEOUT"],
+      [
+        "a code with a class and a payload that is not JSON",
+        "UNKNOWN_ERROR|oops",
+      ],
+      [
+        "a code with a class and a truncated payload",
+        'SCRAPE_TIMEOUT|{"message":"cut of',
+      ],
+      ["a code with a class and a null payload", "SCRAPE_TIMEOUT|null"],
     ])("returns null for %s", (_name, data) => {
       expect(deserializeTransportableError(data)).toBeNull();
     });

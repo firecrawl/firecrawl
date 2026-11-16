@@ -30,6 +30,7 @@ describe.each([
   ["v2", v2CrawlErrorsController],
 ])("%s crawl errors", (_version, crawlErrorsController) => {
   const siteError = new SiteError("ERR_CONNECTION_RESET");
+  const truncated = serializeTransportableError(siteError).slice(0, 60);
 
   beforeEach(() => {
     mocks.getCrawl.mockResolvedValue({ team_id: "team-1" });
@@ -52,6 +53,11 @@ describe.each([
         id: "job-plain",
         data: { url: "https://plain.example/" },
         failedReason: "Job stalled",
+      },
+      {
+        id: "job-truncated",
+        data: { url: "https://truncated.example/" },
+        failedReason: truncated,
       },
       {
         id: "job-raced",
@@ -114,6 +120,16 @@ describe.each([
     expect(plain).not.toHaveProperty("code");
   });
 
+  it("lists a serialized error that was cut short as it is", async () => {
+    const { errors } = await listErrors();
+
+    expect(errors.find((e: any) => e.id === "job-truncated")).toEqual({
+      id: "job-truncated",
+      url: "https://truncated.example/",
+      error: truncated,
+    });
+  });
+
   it("leaves raced redirects out", async () => {
     const { errors } = await listErrors();
 
@@ -121,6 +137,7 @@ describe.each([
       "job-known",
       "job-no-class",
       "job-plain",
+      "job-truncated",
     ]);
   });
 });

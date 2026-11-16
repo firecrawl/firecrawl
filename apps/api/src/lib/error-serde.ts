@@ -141,12 +141,7 @@ export function deserializeTransportableError(
   data: string,
 ): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
   const [code, ...serialized] = data.split("|");
-  const x = Object.hasOwn(errorMap, code) ? errorMap[code] : null;
-  if (x) {
-    return x.deserialize(code, JSON.parse(serialized.join("|")));
-  }
-
-  if (serialized.length === 0 || !/^\S+$/.test(code)) {
+  if (serialized.length === 0) {
     return null;
   }
   let payload: unknown;
@@ -158,8 +153,14 @@ export function deserializeTransportableError(
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
+
+  const x = Object.hasOwn(errorMap, code) ? errorMap[code] : null;
+  if (x) {
+    return x.deserialize(code, payload);
+  }
+
   const { message, stack, cause } = payload as Record<string, unknown>;
-  if (typeof message !== "string") {
+  if (!/^\S+$/.test(code) || typeof message !== "string") {
     return null;
   }
   return TransportableError.deserialize(code as ErrorCodes, {
