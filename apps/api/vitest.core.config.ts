@@ -147,5 +147,10 @@ const outsideCoreSuite = [
 
 export default mergeConfig(
   baseConfig,
-  defineConfig({ test: { exclude: outsideCoreSuite } }),
+  defineConfig({
+    test: {
+      exclude: outsideCoreSuite,
+      setupFiles: ["./vitest.core.setup.ts"],
+    },
+  }),
 );
