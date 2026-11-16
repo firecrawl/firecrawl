@@ -287,9 +287,6 @@ importers:
       robots-parser:
         specifier: ^3.0.1
         version: 3.0.1
-      stripe:
-        specifier: ^16.1.0
-        version: 16.1.0
       systeminformation:
         specifier: ^5.33.17
         version: 5.33.17
@@ -4420,10 +4417,6 @@ packages:
   strip-json-comments@5.0.3:
     resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
     engines: {node: '>=14.16'}
-
-  stripe@16.1.0:
-    resolution: {integrity: sha512-syeEEd112om/waJ5gOQ+SaYi+setuidQ4ZIPiQREF4yJeegXhn2HKy6C0JYm7uhVQKfMAvuZ22dIRsnoDv7AMw==}
-    engines: {node: '>=12.*'}
 
   strnum@2.5.1:
     resolution: {integrity: sha512-UM4nTLWzQiDBseVxUGxN0wJzIk0UU89Qi7pKXz9qISo+lhviJikTuikBsK/oFRlpvYHvSdz0TVoLyQ+sEpYwxA==}
@@ -8627,11 +8620,6 @@ snapshots:
     optional: true
 
   strip-json-comments@5.0.3: {}
-
-  stripe@16.1.0:
-    dependencies:
-      '@types/node': 24.10.1
-      qs: 6.16.1
 
   strnum@2.5.1:
     dependencies:
