@@ -63,6 +63,10 @@ export type ErrorCodes =
   | "thread_expired"
   | "threads_disabled"
   | "exchange_not_enabled"
+  // GET /v2/agent/:jobId. The job id is unknown, or the status service
+  // could not be read and the caller should retry.
+  | "agent_not_found"
+  | "agent_status_unavailable"
   // Agent zero data retention. Lowercase to match the agent service's codes.
   | "zdr_threads_unsupported"
   | "zdr_expired"
