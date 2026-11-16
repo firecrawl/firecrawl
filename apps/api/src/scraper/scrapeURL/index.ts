@@ -63,6 +63,7 @@ import {
   UsOnlyUnavailableError,
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
+  PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import {
@@ -134,6 +135,7 @@ import {
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { loadFirstScreen } from "../../lib/branding/jev";
+import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -1218,6 +1220,14 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       }
     }
 
+    // Throws before the transformers, so a blocked page is never indexed.
+    if (
+      meta.internalOptions.safeMode?.respectPaywalls &&
+      isPaywalledByJsonLd(engineResult.html)
+    ) {
+      throw new PaywalledContentError();
+    }
+
     let document: Document = {
       markdown: engineResult.markdown,
       warning: engineResult.warning,
@@ -2018,6 +2028,9 @@ export async function scrapeURL(
               rule: error.decision.rule,
             },
           );
+        } else if (error instanceof PaywalledContentError) {
+          errorType = "PaywalledContentError";
+          meta.logger.warn("scrapeURL: Paywalled page refused by Safe Mode");
         } else if (error instanceof AbortManagerThrownError) {
           errorType = "AbortManagerThrownError";
           throw error.inner;
