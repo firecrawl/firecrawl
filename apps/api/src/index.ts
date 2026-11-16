@@ -32,6 +32,7 @@ import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
+import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { registerHostedBashRoute } from "./controllers/v2/bash";
@@ -155,6 +156,7 @@ app.use("/v1", v1Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
 app.use("/exchange", exchangeRouter);
+app.use(exchangeInternalRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;

@@ -478,6 +478,12 @@ const configSchema = z.object({
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  EXCHANGE_CREDIT_GRANTS_ENABLED: z.stringbool().default(false),
+  EXCHANGE_CREDIT_GRANT_MAX_CREDITS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10000),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
