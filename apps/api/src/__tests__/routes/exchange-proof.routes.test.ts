@@ -185,6 +185,20 @@ describe("proof link routes", () => {
       expect(response.text).toBe("<p>Gone</p>");
     });
 
+    it("answers 502 instead of passing an upstream redirect on", async () => {
+      mocks.upstreamFetch.mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://internal.test/elsewhere" },
+        }),
+      );
+
+      const response = await request(app).get(`/exchange/proof/${TOKEN}`);
+
+      expect(response.status).toBe(502);
+      expect(response.headers.location).toBeUndefined();
+    });
+
     it("omits the secret header when none is configured", async () => {
       config.EXCHANGE_INTERNAL_SECRET = undefined as never;
 
@@ -319,6 +333,23 @@ describe("proof link routes", () => {
 
       expect(response.status).toBe(404);
       expect(mocks.upstreamFetch).not.toHaveBeenCalled();
+    });
+
+    it("answers 502 instead of passing an upstream redirect on", async () => {
+      mocks.upstreamFetch.mockResolvedValue(
+        new Response(null, {
+          status: 307,
+          headers: { location: "https://internal.test/elsewhere" },
+        }),
+      );
+
+      const response = await request(app)
+        .post(`/exchange/proof/${TOKEN}/photos`)
+        .set("content-type", "image/png")
+        .send(PNG);
+
+      expect(response.status).toBe(502);
+      expect(response.headers.location).toBeUndefined();
     });
 
     it("answers 503 when no Exchange URL is configured", async () => {

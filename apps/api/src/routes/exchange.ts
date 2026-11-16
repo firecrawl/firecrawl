@@ -353,6 +353,8 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 const proofLogger = (route: string) =>
   rootLogger.child({ module: "api/exchange", route });
 
+// Fails closed: any limiter error answers 429 rather than reaching the global error
+// handler, which logs the request path.
 function proofRateLimit(keyPrefix: string): RequestHandler {
   const memory = new RateLimiterMemory({
     points: PROOF_REQUESTS_PER_WINDOW,
@@ -372,6 +374,11 @@ function proofRateLimit(keyPrefix: string): RequestHandler {
       await limiter.consume(req.ip ?? "unknown");
       next();
     } catch (rejection) {
+      if (!(rejection instanceof RateLimiterRes)) {
+        proofLogger(keyPrefix).error("Proof rate limiter failed", {
+          error: rejection,
+        });
+      }
       const seconds =
         rejection instanceof RateLimiterRes
           ? Math.max(1, Math.ceil(rejection.msBeforeNext / 1000))
@@ -423,6 +430,10 @@ async function proofPageController(req: Request, res: Response) {
       signal: AbortSignal.timeout(PROOF_PAGE_TIMEOUT_MS),
       dispatcher: proofPageDispatcher,
     });
+    if (upstream.status >= 300 && upstream.status < 400) {
+      logger.warn("Proof page upstream redirect", { status: upstream.status });
+      return exchangeError(res, 502, "The request could not be completed.");
+    }
     const body = Buffer.from(await upstream.arrayBuffer());
     for (const h of PROOF_PAGE_RESPONSE_HEADERS) {
       const value = upstream.headers.get(h);
@@ -494,6 +505,12 @@ async function proofUploadController(req: Request, res: Response) {
         dispatcher: proofUploadDispatcher,
       },
     );
+    if (upstream.status >= 300 && upstream.status < 400) {
+      logger.warn("Proof upload upstream redirect", {
+        status: upstream.status,
+      });
+      return exchangeError(res, 502, "The request could not be completed.");
+    }
     if (upstream.status >= 500) {
       logger.warn("Proof upload upstream error", { status: upstream.status });
     }
