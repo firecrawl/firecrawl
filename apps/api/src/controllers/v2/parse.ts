@@ -213,6 +213,19 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
   return null;
 }
 
+export function getParseOptionWarning(
+  reqBody: Pick<ParseRequest, "file" | "formats">,
+): string | null {
+  if (
+    reqBody.file.kind === "pdf" &&
+    hasFormatOfType(reqBody.formats, "images")
+  ) {
+    return 'The images format does not extract images from PDF files, so images will be empty. Figures and charts are returned as text in markdown. To locate figures, use parsers: [{ "type": "pdf", "blocks": true }] for figure bounding boxes.';
+  }
+
+  return null;
+}
+
 export function parseMultipartPayloadMiddleware(
   req: Request,
   res: Response,
@@ -704,6 +717,13 @@ export async function parseController(
         if (doc && doc.rawHtml) {
           delete doc.rawHtml;
         }
+      }
+
+      const optionWarning = getParseOptionWarning(req.body);
+      if (doc && optionWarning) {
+        doc.warning = doc.warning
+          ? `${doc.warning} ${optionWarning}`
+          : optionWarning;
       }
 
       if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {

@@ -607,6 +607,35 @@ describe("/v2/parse", () => {
       },
       scrapeTimeout * 2,
     );
+
+    it(
+      "warns that the images format does not apply to PDF uploads",
+      async () => {
+        expect(pdfFixture).not.toBeNull();
+
+        const result = await parse(
+          {
+            options: {
+              formats: ["markdown", "images"],
+              parsers: ["pdf"],
+            },
+            file: {
+              content: pdfFixture!,
+              filename: "upload.pdf",
+              contentType: "application/pdf",
+            },
+          },
+          identity,
+        );
+
+        expect(result.markdown).toContain("PDF Test File");
+        expect(result.images).toEqual([]);
+        expect(result.warning).toContain(
+          "does not extract images from PDF files",
+        );
+      },
+      scrapeTimeout * 2,
+    );
   });
 
   describeIf(ALLOW_TEST_SUITE_WEBSITE && !!config.FIRE_PDF_BASE_URL)(
