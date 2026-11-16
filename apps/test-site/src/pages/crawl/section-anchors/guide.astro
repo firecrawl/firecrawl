@@ -1,0 +1,26 @@
+---
+// Fixture for crawling through section anchors: reached only through the
+// section links on the index page, and links back to it through one too.
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Guide — Section Anchors Crawl Fixture</title>
+	</head>
+	<body>
+		<main>
+			<h1>Guide</h1>
+			<section id="install">
+				<h2>Install</h2>
+				<p>Install the package.</p>
+			</section>
+			<section id="usage">
+				<h2>Usage</h2>
+				<p>Use the package.</p>
+			</section>
+			<a href="/crawl/section-anchors#overview">Back to the overview</a>
+		</main>
+	</body>
+</html>

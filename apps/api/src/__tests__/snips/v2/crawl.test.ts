@@ -24,6 +24,7 @@ import {
   MAX_PATH_PATTERNS,
   MAX_TOTAL_PATH_PATTERNS,
 } from "../../../lib/crawl-regex";
+import type { Document } from "../../../controllers/v2/types";
 import { describe, it, expect } from "vitest";
 
 let identity: Identity;
@@ -194,6 +195,65 @@ describe("Crawl tests", () => {
     },
     10 * scrapeTimeout,
   );
+
+  // The test site's /crawl/section-anchors/guide is linked only as guide#install
+  // and guide#usage. The sitemap lists it, so these crawls skip the sitemap.
+  describe("section anchors", () => {
+    const root = `${TEST_SUITE_WEBSITE}/crawl/section-anchors`;
+    const crawledPaths = (pages: Document[]) =>
+      pages
+        .map(page => new URL(page.metadata.url ?? page.metadata.sourceURL!))
+        .map(url => url.pathname.replace(/\/$/, ""))
+        .sort();
+
+    concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+      "crawls a page linked only through section anchors, once",
+      async () => {
+        const res = await crawl(
+          { url: root, sitemap: "skip", limit: 10 },
+          identity,
+        );
+
+        expect(crawledPaths(res.data)).toEqual([
+          "/crawl/section-anchors",
+          "/crawl/section-anchors/guide",
+        ]);
+        for (const page of res.data) {
+          expect(new URL(page.metadata.sourceURL!).hash).toBe("");
+        }
+      },
+      3 * scrapeTimeout,
+    );
+
+    concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+      "crawls from a start URL that has a section anchor",
+      async () => {
+        const res = await crawl(
+          { url: `${root}#overview`, sitemap: "skip", limit: 10 },
+          identity,
+        );
+
+        expect(crawledPaths(res.data)).toEqual([
+          "/crawl/section-anchors",
+          "/crawl/section-anchors/guide",
+        ]);
+      },
+      3 * scrapeTimeout,
+    );
+
+    concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+      "does not crawl an excluded page through its section anchors",
+      async () => {
+        const res = await crawl(
+          { url: root, sitemap: "skip", excludePaths: ["/guide$"], limit: 10 },
+          identity,
+        );
+
+        expect(crawledPaths(res.data)).toEqual(["/crawl/section-anchors"]);
+      },
+      3 * scrapeTimeout,
+    );
+  });
 
   it.concurrent(
     "rejects path patterns that are too expensive to compile",
