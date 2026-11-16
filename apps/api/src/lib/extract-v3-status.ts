@@ -156,7 +156,13 @@ export async function getExtractV3AgentStatus(
     try {
       text = await response.text();
     } catch (error) {
-      if (isRequestTimeout(error)) {
+      // The status is already known. Only a retryable status needs the body
+      // ignored in favor of a 503; a 404 or 410 must keep its own response,
+      // and a timeout has already spent this attempt's wait.
+      if (
+        isRequestTimeout(error) &&
+        RETRYABLE_UPSTREAM_STATUS.has(response.status)
+      ) {
         logger.warn("Agent status service error body timed out", {
           error,
           jobId: id,

@@ -116,6 +116,8 @@ const errorMap: Record<ErrorCodes, any> = {
   thread_expired: null,
   threads_disabled: null,
   exchange_not_enabled: null,
+  agent_not_found: null,
+  agent_status_unavailable: null,
 
   // Agent zero data retention rejections are API-level too.
   zdr_threads_unsupported: null,

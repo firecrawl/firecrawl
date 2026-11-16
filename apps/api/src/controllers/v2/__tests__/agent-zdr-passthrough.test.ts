@@ -190,6 +190,28 @@ describe("agent passthroughs for zero data retention runs", () => {
     },
   );
 
+  it("keeps a 404 when the error body times out", async () => {
+    const response = new globalThis.Response("", { status: 404 });
+    vi.spyOn(response, "text").mockRejectedValue(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    vi.mocked(fetch).mockResolvedValue(response as any);
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "agent_not_found",
+      error: "Agent job not found",
+    });
+  });
+
   it("returns 404 when the agent service has no such job", async () => {
     upstream(404, { error: "Extract not found" });
     const res = makeRes();
