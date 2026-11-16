@@ -4,7 +4,6 @@
 .env
 *.csv
 dump.rdb
-/mongo-data
 apps/js-sdk/node_modules/
 
 apps/api/.env.local
