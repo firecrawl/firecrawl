@@ -225,6 +225,7 @@ export async function retrieveProviders(input: {
       : [input.calls, billable]),
     ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
     ...(usOnly ? [{ usOnly }] : []),
+    ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
