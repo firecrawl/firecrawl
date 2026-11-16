@@ -9,7 +9,6 @@ import {
 } from "./types";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
 import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
-import { logger } from "../../lib/logger";
 import {
   agentStatusUnavailable,
   ExtractV3AgentStatusError,
@@ -84,13 +83,9 @@ export async function agentStatusController(
   // would tell the caller the run does not exist. 503 is retryable.
   let access: Awaited<ReturnType<typeof getAgentJobAccess>>;
   try {
-    access = await getAgentJobAccess(req.params.jobId);
-  } catch (error) {
-    logger.warn("Agent status job lookup failed", {
-      error,
-      jobId: req.params.jobId,
-      teamId: req.auth.team_id,
-    });
+    access = await getAgentJobAccess(req.params.jobId, req.auth.team_id);
+  } catch {
+    // resolveOperationalJobAccess already logged the read, including teamId.
     return sendAgentStatusError(res, agentStatusUnavailable());
   }
 

@@ -132,6 +132,27 @@ describe("agent passthroughs for zero data retention runs", () => {
     });
   });
 
+  it("does not retry when reading the status body times out", async () => {
+    const response = new globalThis.Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    vi.spyOn(response, "json").mockRejectedValue(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    vi.mocked(fetch).mockResolvedValue(response as any);
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+  });
+
   it("does not retry a status lookup that already timed out", async () => {
     vi.mocked(fetch).mockRejectedValue(
       new DOMException(

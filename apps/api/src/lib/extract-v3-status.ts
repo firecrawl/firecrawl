@@ -132,7 +132,12 @@ export async function getExtractV3AgentStatus(
           attempt,
         });
         lastUnavailable = agentStatusUnavailable();
-        if (attempt === AGENT_STATUS_ATTEMPTS) throw lastUnavailable;
+        // A timeout while reading the body has already used this attempt's
+        // wait. Starting another request would hold the caller for a second
+        // full timeout.
+        if (isRequestTimeout(error) || attempt === AGENT_STATUS_ATTEMPTS) {
+          throw lastUnavailable;
+        }
         continue;
       }
       if (!isAgentStatusBody(body)) {
@@ -147,7 +152,20 @@ export async function getExtractV3AgentStatus(
       return body;
     }
 
-    const text = await response.text().catch(() => "");
+    let text = "";
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (isRequestTimeout(error)) {
+        logger.warn("Agent status service error body timed out", {
+          error,
+          jobId: id,
+          attempt,
+          status: response.status,
+        });
+        throw agentStatusUnavailable();
+      }
+    }
     if (response.status === 404) {
       throw agentJobNotFound();
     }
