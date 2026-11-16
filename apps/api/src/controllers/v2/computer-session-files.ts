@@ -13,6 +13,7 @@ import { z } from "zod";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getRedisConnection } from "../../services/queue-service";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 import type { RequestWithAuth } from "./types";
 
@@ -52,8 +53,6 @@ export type ComputerSessionFileStore = {
     options?: { metadata?: Record<string, string>; ifVersion?: string },
   ): Promise<string>;
   read(objectPath: string): Promise<StoredFile | null>;
-  /** The metadata of every object whose path starts with `prefix`. */
-  list(prefix: string): Promise<Record<string, string>[]>;
 };
 
 export class VersionMismatchError extends Error {}
@@ -116,10 +115,6 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
           bucket.file(objectPath, { generation }).createReadStream(),
       };
     },
-    async list(prefix) {
-      const [files] = await bucket.getFiles({ prefix });
-      return files.map(file => stringValues(file.metadata.metadata));
-    },
   };
 }
 
@@ -128,6 +123,37 @@ type SessionRequest = RequestWithAuth<{ sessionId: string }, any, any>;
 const refuse = (res: Response, status: number, error: string) => {
   res.status(status).json({ success: false, error });
 };
+
+const liveSessionsKey = (teamId: string) => `computer-sessions:${teamId}`;
+
+/**
+ * Counts a new session against the team's live ones in one atomic step, so
+ * concurrent creations cannot pass the limit together. False at the limit.
+ */
+async function reserveSession(
+  teamId: string,
+  sessionId: string,
+  expiresAt: number,
+): Promise<boolean> {
+  const reserved = await getRedisConnection().eval(
+    `
+      redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", ARGV[1])
+      if redis.call("ZCARD", KEYS[1]) >= tonumber(ARGV[2]) then
+        return 0
+      end
+      redis.call("ZADD", KEYS[1], ARGV[4], ARGV[3])
+      redis.call("PEXPIREAT", KEYS[1], ARGV[4])
+      return 1
+    `,
+    1,
+    liveSessionsKey(teamId),
+    Date.now(),
+    MAX_LIVE_SESSIONS,
+    sessionId,
+    expiresAt,
+  );
+  return Number(reserved) === 1;
+}
 
 /** Written so that a session or link with no expiry recorded is never live. */
 const isLive = (metadata: Record<string, string>) =>
@@ -259,20 +285,32 @@ export function computerSessionFileControllers(
     async createSession(req: RequestWithAuth<{}, any, any>, res: Response) {
       const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
-      const live = (await store.list(teamPrefix(teamId))).filter(isLive);
-      if (live.length >= MAX_LIVE_SESSIONS) {
+      const id = crypto.randomUUID();
+      const expiresAt = Date.now() + SESSION_SECONDS * 1000;
+      if (!(await reserveSession(teamId, id, expiresAt))) {
         return refuse(
           res,
           429,
           `This team already has ${MAX_LIVE_SESSIONS} live sessions. Wait for one to expire.`,
         );
       }
-      const id = crypto.randomUUID();
-      const expiresAt = Date.now() + SESSION_SECONDS * 1000;
-      await store.write(teamPrefix(teamId) + id, Readable.from([]), {
-        metadata: { expiresAt: String(expiresAt) },
-        ifVersion: "0",
-      });
+      try {
+        await store.write(teamPrefix(teamId) + id, Readable.from([]), {
+          metadata: { expiresAt: String(expiresAt) },
+          ifVersion: "0",
+        });
+      } catch (error) {
+        // A session that was never stored gives its place back. One that
+        // cannot be given back frees itself when it would have expired.
+        await getRedisConnection()
+          .zrem(liveSessionsKey(teamId), id)
+          .catch(release =>
+            logger.warn("Failed to release a computer session slot", {
+              error: release,
+            }),
+          );
+        throw error;
+      }
       logger.info("Computer session created", { teamId, sessionId: id });
       res.status(200).json({
         success: true,

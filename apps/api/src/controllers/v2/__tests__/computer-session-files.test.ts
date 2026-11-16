@@ -1,4 +1,33 @@
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
+// Stands in for Redis: the reservation script drops expired members, refuses
+// at the limit and otherwise adds the session.
+const { liveSessions } = vi.hoisted(() => ({
+  liveSessions: new Map<string, Map<string, number>>(),
+}));
+vi.mock("../../../services/queue-service", () => ({
+  getRedisConnection: () => ({
+    eval: async (
+      _script: string,
+      _keys: number,
+      key: string,
+      now: number,
+      limit: number,
+      id: string,
+      expiresAt: number,
+    ) => {
+      const live = liveSessions.get(key) ?? new Map<string, number>();
+      liveSessions.set(key, live);
+      for (const [member, score] of live) {
+        if (score <= now) live.delete(member);
+      }
+      if (live.size >= limit) return 0;
+      live.set(id, expiresAt);
+      return 1;
+    },
+    zrem: async (key: string, id: string) =>
+      liveSessions.get(key)?.delete(id) ? 1 : 0,
+  }),
+}));
 vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   return { logger: { ...log, child: () => log } };
@@ -27,9 +56,11 @@ const objects = new Map<
   string,
   { bytes: Buffer; version: number; metadata: Record<string, string> }
 >();
+let storageDown = false;
 const store: ComputerSessionFileStore = {
   async write(objectPath, body, { metadata = {}, ifVersion } = {}) {
     const bytes = Buffer.concat(await body.toArray());
+    if (storageDown) throw new Error("storage is down");
     const stored = objects.get(objectPath);
     if (ifVersion !== undefined && ifVersion !== String(stored?.version ?? 0)) {
       throw new VersionMismatchError();
@@ -47,11 +78,6 @@ const store: ComputerSessionFileStore = {
       metadata: stored.metadata,
       stream: () => Readable.from([stored.bytes]),
     };
-  },
-  async list(prefix) {
-    return [...objects]
-      .filter(([objectPath]) => objectPath.startsWith(prefix))
-      .map(([, stored]) => stored.metadata);
   },
 };
 
@@ -106,6 +132,8 @@ afterAll(() => {
 });
 beforeEach(() => {
   objects.clear();
+  liveSessions.clear();
+  storageDown = false;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -162,12 +190,11 @@ const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
     req.write("x");
   });
 const seed = (team: string, count: number, expiresAt: number) => {
+  const key = `computer-sessions:${team}`;
+  const live = liveSessions.get(key) ?? new Map<string, number>();
+  liveSessions.set(key, live);
   for (let index = 0; index < count; index++) {
-    objects.set(`workspaces/${team}/seed-${expiresAt}-${index}`, {
-      bytes: Buffer.alloc(0),
-      version: 1,
-      metadata: { expiresAt: String(expiresAt) },
-    });
+    live.set(`seed-${expiresAt}-${index}`, expiresAt);
   }
 };
 
@@ -194,6 +221,22 @@ describe("sessions", () => {
     expect((await create()).status).toBe(200);
     expect((await create()).status).toBe(429);
     expect((await create("team-b")).status).toBe(200);
+  });
+
+  it("admits only up to the limit when creations arrive together", async () => {
+    seed("team-a", MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
+    const statuses = await Promise.all(
+      Array.from({ length: 10 }, async () => (await create()).status),
+    );
+    expect(statuses.filter(status => status === 200)).toHaveLength(3);
+    expect(statuses.filter(status => status === 429)).toHaveLength(7);
+  });
+
+  it("gives the place back when the session cannot be stored", async () => {
+    storageDown = true;
+    expect((await create()).status).toBe(500);
+    expect(liveSessions.get("computer-sessions:team-a")?.size).toBe(0);
+    expect(objects.size).toBe(0);
   });
 
   it.each([
