@@ -232,3 +232,35 @@ describe("performQuery freeform", () => {
     );
   });
 });
+
+describe("performQuery directQuote", () => {
+  it("warns when no line of the page answers the query", async () => {
+    respond("[]");
+    const document: any = { markdown: page(3), metadata: {} };
+
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what is the price?", mode: "directQuote" },
+      ]),
+      document,
+    );
+
+    expect(document.answer).toBe("");
+    expect(document.warning).toBe("Nothing on the page answers the query.");
+  });
+
+  it("adds no warning when lines answer the query", async () => {
+    respond("[1]");
+    const document: any = { markdown: page(3), metadata: {} };
+
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what does line 1 say?", mode: "directQuote" },
+      ]),
+      document,
+    );
+
+    expect(document.answer).toContain("Line number 1");
+    expect(document.warning).toBeUndefined();
+  });
+});
