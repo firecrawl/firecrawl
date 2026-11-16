@@ -91,4 +91,16 @@ describe("isPaywalledByJsonLd", () => {
       ),
     ).toBe(true);
   });
+
+  it("finds Unicode-escaped property names", () => {
+    expect(
+      isPaywalledByJsonLd(page('{"\\u0069sAccessibleForFree":"False"}')),
+    ).toBe(true);
+  });
+
+  it("finds the marker nested deeper than any fixed cap", () => {
+    let node: unknown = { isAccessibleForFree: false };
+    for (let i = 0; i < 200; i++) node = { child: node };
+    expect(isPaywalledByJsonLd(page(JSON.stringify(node)))).toBe(true);
+  });
 });
