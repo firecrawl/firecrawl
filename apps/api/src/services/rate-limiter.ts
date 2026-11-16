@@ -28,7 +28,6 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   extractStatus: 25000,
   crawlStatus: 25000,
   extractAgentPreview: 10,
-  scrapeAgentPreview: 10,
   browser: 2,
   browserExecute: 1000,
   browserReplay: 500,

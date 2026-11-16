@@ -620,7 +620,6 @@ export type InternalOptions = {
   v0CrawlOnlyUrls?: boolean;
   v0DisableJsDom?: boolean;
   disableSmartWaitCache?: boolean; // Passed along to fire-engine
-  isBackgroundIndex?: boolean;
   externalAbort?: AbortInstance;
   urlInvisibleInCurrentCrawl?: boolean;
   unnormalizedSourceURL?: string;
