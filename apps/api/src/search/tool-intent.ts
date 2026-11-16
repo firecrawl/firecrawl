@@ -210,6 +210,8 @@ async function infer(text: string, logger: Logger): Promise<Inferred> {
     prompt: `<${tag}>\n${text.slice(0, 2000)}\n</${tag}>`,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
+    // A forced tool call answers faster than native structured output here.
+    providerOptions: { anthropic: { structuredOutputMode: "jsonTool" } },
     telemetry: aiTelemetry({
       isEnabled: true,
       recordInputs: false,
