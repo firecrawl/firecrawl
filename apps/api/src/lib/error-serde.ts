@@ -133,13 +133,38 @@ export function serializeTransportableError(error: TransportableError) {
   return `${error.code}|${JSON.stringify(error.serialize())}`;
 }
 
+/**
+ * Returns null when `data` is not a serialized error; callers also pass plain
+ * error messages. A code with no class here gives a plain TransportableError.
+ */
 export function deserializeTransportableError(
   data: string,
 ): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
   const [code, ...serialized] = data.split("|");
-  const x = errorMap[code];
-  if (!x) {
+  const x = Object.hasOwn(errorMap, code) ? errorMap[code] : null;
+  if (x) {
+    return x.deserialize(code, JSON.parse(serialized.join("|")));
+  }
+
+  if (serialized.length === 0 || !/^\S+$/.test(code)) {
     return null;
   }
-  return x.deserialize(code, JSON.parse(serialized.join("|")));
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serialized.join("|"));
+  } catch {
+    return null;
+  }
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const { message, stack, cause } = payload as Record<string, unknown>;
+  if (typeof message !== "string") {
+    return null;
+  }
+  return TransportableError.deserialize(code as ErrorCodes, {
+    message,
+    stack: typeof stack === "string" ? stack : undefined,
+    cause,
+  });
 }

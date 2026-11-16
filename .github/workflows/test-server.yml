@@ -442,6 +442,15 @@ jobs:
         run: pnpm exec vitest run src/__tests__/routes/country-check.routes.test.ts --reporter=default
         working-directory: apps/api
 
+      - name: Run error transport regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/error-serde.test.ts
+          src/controllers/v2/__tests__/crawl-errors.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site
