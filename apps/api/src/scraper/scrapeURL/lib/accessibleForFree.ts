@@ -13,7 +13,7 @@ function containsPaywallMarker(root: unknown): boolean {
     const node = stack.pop();
     if (node === null || typeof node !== "object") continue;
     if (Array.isArray(node)) {
-      stack.push(...node);
+      for (const child of node) stack.push(child);
       continue;
     }
     for (const [key, value] of Object.entries(node)) {
