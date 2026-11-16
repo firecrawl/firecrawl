@@ -482,3 +482,128 @@ describe("performLLMExtract empty-result handling", () => {
     );
   });
 });
+
+describe("performLLMExtract JSON model selection", () => {
+  beforeEach(() => {
+    (extractData as Mock).mockClear();
+  });
+
+  function extractDataArgs() {
+    const calls = (extractData as Mock).mock.calls;
+    expect(calls).toHaveLength(1);
+    return calls[0][0];
+  }
+
+  function makeJsonMetaWithSchema(schema: any) {
+    return {
+      options: { formats: [{ type: "json", schema }] },
+      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
+      logger: {
+        child: vi.fn(() => ({
+          info: vi.fn(),
+          debug: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        })),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+      costTracking: {},
+      id: "test-id",
+      url: "https://example.com",
+    } as any;
+  }
+
+  const moneySchema = {
+    type: "object",
+    properties: {
+      amount: { type: "number" },
+      currency: { type: "string" },
+    },
+    required: ["amount", "currency"],
+    additionalProperties: false,
+  };
+
+  // What Pydantic's model_json_schema() returns for a nested model, and what
+  // the v1 Python SDK sends as is.
+  const bookWithDefs = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      price: { $ref: "#/$defs/Money" },
+    },
+    required: ["title", "price"],
+    additionalProperties: false,
+    $defs: { Money: moneySchema },
+  };
+
+  // The same schema written inline, which is also what extractData sends to
+  // the model after inlining resolvable refs.
+  const bookInlined = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      price: moneySchema,
+    },
+    required: ["title", "price"],
+    additionalProperties: false,
+  };
+
+  // A comment that holds comments: the $ref survives inlining.
+  const recursiveComments = {
+    type: "object",
+    properties: {
+      body: { type: "string" },
+      replies: { type: "array", items: { $ref: "#/$defs/Comment" } },
+    },
+    required: ["body"],
+    $defs: {
+      Comment: {
+        type: "object",
+        properties: {
+          body: { type: "string" },
+          replies: { type: "array", items: { $ref: "#/$defs/Comment" } },
+        },
+        required: ["body"],
+      },
+    },
+  };
+
+  it("routes a non-recursive $defs schema to the non-recursive model", async () => {
+    await performLLMExtract(makeJsonMetaWithSchema(bookWithDefs), {
+      markdown: "# page",
+      metadata: {},
+    } as any);
+
+    expect(extractDataArgs().extractOptions.model.modelId).toBe("gpt-4o-mini");
+  });
+
+  it("routes the same schema written inline identically", async () => {
+    await performLLMExtract(makeJsonMetaWithSchema(bookInlined), {
+      markdown: "# page",
+      metadata: {},
+    } as any);
+
+    expect(extractDataArgs().extractOptions.model.modelId).toBe("gpt-4o-mini");
+  });
+
+  it("routes a schema with only unused $defs to the non-recursive model", async () => {
+    await performLLMExtract(
+      makeJsonMetaWithSchema({ ...bookInlined, $defs: { Money: moneySchema } }),
+      { markdown: "# page", metadata: {} } as any,
+    );
+
+    expect(extractDataArgs().extractOptions.model.modelId).toBe("gpt-4o-mini");
+  });
+
+  it("keeps the larger model for a schema that still holds a $ref after inlining", async () => {
+    await performLLMExtract(makeJsonMetaWithSchema(recursiveComments), {
+      markdown: "# page",
+      metadata: {},
+    } as any);
+
+    expect(extractDataArgs().extractOptions.model.modelId).toBe("gpt-4.1");
+  });
+});
