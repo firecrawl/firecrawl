@@ -9,6 +9,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -117,6 +118,17 @@ export async function providerScrapeController(
         .status(403)
         .json({ success: false, error: "Invalid agent interop." });
   }
+  // Trusted internal marker for zero-priced provider lines: honoured only with
+  // the proxy secret and never for `fco_` tokens, otherwise ignored.
+  const token = req.get("authorization")?.split(" ")[1];
+  const ultrasearch =
+    req.get("x-firecrawl-ultrasearch") === "true" &&
+    !!token &&
+    !token.startsWith("fco_") &&
+    timingSafeSecretEqual(
+      req.get("x-firecrawl-keyless-secret"),
+      config.KEYLESS_PROXY_SECRET,
+    );
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
@@ -191,6 +203,7 @@ export async function providerScrapeController(
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
       ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
+      ...(ultrasearch ? { ultrasearch } : {}),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -281,6 +294,7 @@ export async function providerScrapeController(
         target,
         team_id: req.auth.team_id,
         options: {
+          ...(ultrasearch ? { ultrasearch } : {}),
           alexandria: body.alexandria.map(
             ({ provider, capability, options }, i) => ({
               provider,

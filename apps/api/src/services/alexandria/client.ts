@@ -46,6 +46,8 @@ export async function exchangeRequest(input: {
   alexandriaVerified?: boolean;
   /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
   retryConnection?: boolean;
+  /** Trusted internal marker for zero-priced provider lines, sent with the internal secret so Exchange can verify it. */
+  ultrasearch?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
@@ -85,6 +87,12 @@ export async function exchangeRequest(input: {
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
       ...(input.alexandriaVerified
         ? { "x-exchange-alexandria-verified": "true" }
+        : {}),
+      ...(input.ultrasearch && config.EXCHANGE_INTERNAL_SECRET
+        ? {
+            "x-exchange-ultrasearch": "true",
+            "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+          }
         : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
