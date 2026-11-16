@@ -3,6 +3,7 @@ Shared validation functions for Firecrawl v2 API.
 """
 
 from typing import Optional, Dict, Any, List
+from urllib.parse import unquote
 from ..types import ScrapeOptions, ScrapeFormats
 
 
@@ -265,11 +266,43 @@ def resolve_refs(obj: Any, defs: Dict[str, Any], visited: Optional[set] = None, 
     try:
         if isinstance(obj, dict):
             if "$ref" in obj and isinstance(obj["$ref"], str):
-                ref_path = obj["$ref"].split("/")
-                if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
-                    def_name = ref_path[-1]
-                    if def_name in defs:
-                        return resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
+                reference = obj["$ref"]
+                if reference.startswith("#/"):
+                    # Resolve the complete local JSON Pointer. Looking up only
+                    # the final segment can select an unrelated top-level def
+                    # when the pointer targets a nested property.
+                    pointer = unquote(reference[2:]).split("/")
+                    if pointer and pointer[0] == "$defs":
+                        target: Any = defs
+                        for token in pointer[1:]:
+                            token = token.replace("~1", "/").replace("~0", "~")
+                            if isinstance(target, dict) and token in target:
+                                target = target[token]
+                            elif isinstance(target, list) and token.isdigit():
+                                index = int(token)
+                                if index >= len(target):
+                                    target = None
+                                    break
+                                target = target[index]
+                            else:
+                                target = None
+                                break
+
+                        if isinstance(target, dict):
+                            resolved = resolve_refs(
+                                dict(target), defs, visited, depth + 1
+                            )
+                            if isinstance(resolved, dict):
+                                # JSON Schema keywords alongside $ref still
+                                # apply to the referenced schema. In
+                                # particular, Pydantic puts field-specific
+                                # title/description annotations here.
+                                for key, value in obj.items():
+                                    if key != "$ref":
+                                        resolved[key] = resolve_refs(
+                                            value, defs, visited, depth + 1
+                                        )
+                                return resolved
                 return obj
             
             resolved = {}

@@ -278,6 +278,64 @@ class TestResolveRefs(unittest.TestCase):
         result = resolve_refs(None, {})
         self.assertIsNone(result)
 
+    def test_resolve_nested_json_pointer_without_using_only_final_segment(self):
+        """Resolve every JSON Pointer segment instead of matching its final name."""
+        schema = {
+            "type": "object",
+            "properties": {"product": {"$ref": "#/$defs/Product"}},
+        }
+        defs = {
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "unit_price": {"type": "number"},
+                    "price": {
+                        "$ref": "#/$defs/Product/properties/unit_price"
+                    },
+                },
+            },
+            # This same-named top-level definition must not shadow the nested
+            # Product.properties.unit_price target.
+            "unit_price": {"type": "string"},
+        }
+
+        result = resolve_refs(schema, defs)
+
+        self.assertEqual(
+            result["properties"]["product"]["properties"]["price"]["type"],
+            "number",
+        )
+
+    def test_validate_json_format_preserves_local_ref_annotations(self):
+        """Keep field-specific Pydantic descriptions when resolving shared refs."""
+        from pydantic import BaseModel, Field
+
+        class Product(BaseModel):
+            name: str
+
+        class Results(BaseModel):
+            promoted: Product = Field(
+                title="Promoted product", description="Only the sponsored product"
+            )
+            organic: Product = Field(
+                title="Organic product", description="Only the first unpaid product"
+            )
+
+        result = _validate_json_format(
+            {"type": "json", "schema": Results.model_json_schema()}
+        )
+        properties = result["schema"]["properties"]
+
+        self.assertEqual(
+            properties["promoted"]["description"], "Only the sponsored product"
+        )
+        self.assertEqual(
+            properties["organic"]["description"], "Only the first unpaid product"
+        )
+        self.assertEqual(properties["promoted"]["title"], "Promoted product")
+        self.assertEqual(properties["organic"]["title"], "Organic product")
+        self.assertEqual(properties["promoted"]["properties"]["name"]["type"], "string")
+
 
 class TestNormalizeSchemaForOpenAI(unittest.TestCase):
     """Tests for normalize_schema_for_openai function."""
