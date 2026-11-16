@@ -27,9 +27,7 @@ vi.mock("../../autumn/autumn.service", () => ({
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
 
-vi.mock("../../notification/email_notification", () => ({
-  sendNotification: vi.fn(),
-}));
+vi.mock("../../notification/email_notification", () => ({}));
 vi.mock("../../redis", () => ({
   getValue: vi.fn(),
   setValue: vi.fn(),

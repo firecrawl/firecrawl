@@ -154,9 +154,6 @@ export function getModel(
   provider: Provider = defaultProvider,
   options?: ModelOptions,
 ) {
-  if (name === "gemini-2.5-pro") {
-    name = "gemini-2.5-pro";
-  }
   const modelName = options?.ignoreModelOverride
     ? name
     : config.MODEL_NAME || name;
@@ -170,19 +167,4 @@ export function getModel(
     return withUsageTelemetry(providerList.openai.chat(modelName));
   }
   return withUsageTelemetry(providerList[provider](modelName));
-}
-
-export function getEmbeddingModel(
-  name: string,
-  provider: Provider = defaultProvider,
-  options?: Pick<ModelOptions, "teamFlags" | "feature">,
-) {
-  const modelName = config.MODEL_EMBEDDING_NAME || name;
-  if (isUsOnly(options?.teamFlags ?? undefined)) {
-    if (provider !== "openai" || !usOpenAI) {
-      throw usOnlyUnavailable(options?.feature);
-    }
-    return usOpenAI.embedding(modelName);
-  }
-  return providerList[provider].embedding(modelName);
 }
