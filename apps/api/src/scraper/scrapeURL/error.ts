@@ -273,6 +273,37 @@ export class SiteRestrictionError extends TransportableError {
   }
 }
 
+// Fire Engine failed the scrape on a site block that it marked as not worth
+// retrying on another exit or tier: an instant-block rule with
+// retryWithStealth false, such as a sign-in wall a site shows every signed-out
+// visitor. The other engines get the same page, so the waterfall ends the
+// scrape on it with the usual NoEnginesLeftError instead of trying them.
+// Internal only; it never reaches the API response.
+export class SiteBlockNoRetryError extends Error {
+  constructor(public fireEngineError: string) {
+    super(
+      `Fire Engine reported a site block that a retry does not get past: ${fireEngineError}`,
+    );
+  }
+}
+
+// Whether a failed Fire Engine job is such a block. Fire Engine sends
+// retryWithStealth only when true, so "no retry" is site_protection without it,
+// limited to instant-block failures: other site_protection failures that skip
+// the stealth retry (a challenge solver at capacity, say) still go through the
+// waterfall.
+export function isNoRetrySiteBlock(
+  failed: { failureReason?: "site_protection"; retryWithStealth?: boolean },
+  error: unknown,
+): error is string {
+  return (
+    failed.failureReason === "site_protection" &&
+    !failed.retryWithStealth &&
+    typeof error === "string" &&
+    error.includes("instant-block:")
+  );
+}
+
 export class ActionError extends TransportableError {
   constructor(public errorCode: string) {
     super(

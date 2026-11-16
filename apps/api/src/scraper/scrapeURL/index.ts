@@ -42,6 +42,7 @@ import {
   RemoveFeatureError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -904,7 +905,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     const remainingEngines = [...fallbackList];
     let enginePromises: EngineBundlePromise[] = [];
-    const enginesAttempted: string[] = [];
+    const enginesAttempted: Engine[] = [];
 
     meta.abort.throwIfAborted();
 
@@ -992,6 +993,17 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
+            if (error.error instanceof SiteBlockNoRetryError) {
+              // Another engine or exit doesn't get past it either (the engine
+              // has logged the block); end the scrape the usual way instead of
+              // trying them, and stop the engines still racing.
+              snipeAbortController.abort();
+              setSpanAttributes(span, {
+                "engine.no_engines_left": true,
+                "engine.engines_attempted": enginesAttempted.join(","),
+              });
+              throw new NoEnginesLeftError(enginesAttempted);
+            }
             const nextEngine = remainingEngines[0]?.engine;
             const experiment = waterfallExperimentFor(
               error.engine,
