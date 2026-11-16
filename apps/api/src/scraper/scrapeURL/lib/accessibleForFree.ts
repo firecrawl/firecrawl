@@ -36,10 +36,12 @@ export function isPaywalledByJsonLd(html: string | undefined): boolean {
   return $('script[type="application/ld+json" i]')
     .toArray()
     .some(el => {
+      let parsed: unknown;
       try {
-        return containsPaywallMarker(JSON.parse($(el).text()));
+        parsed = JSON.parse($(el).text());
       } catch {
         return false;
       }
+      return containsPaywallMarker(parsed);
     });
 }
