@@ -13,7 +13,7 @@ import type {
 } from "../types";
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { throwForBadResponse } from "../utils/errorHandler";
+import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 
 const BASE = "/v2/search/research";
 
@@ -57,12 +57,7 @@ function normalizeResearchError(err: any, action: string): never {
       const message = body.detail || body.title;
       throw new SdkError(message, status, body.code ?? body.type, body);
     }
-    throw new SdkError(
-      err.message || `Request failed while trying to ${action}`,
-      status,
-      err.code,
-      body,
-    );
+    return normalizeAxiosError(err, action);
   }
   throw err;
 }
