@@ -81,6 +81,7 @@
     "@ai-sdk/openai": "4.0.118",
     "@ai-sdk/otel": "^1.0.173",
     "@ai-sdk/xai": "^5.0.46",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",
     "@clickhouse/client": "^1.8.1",

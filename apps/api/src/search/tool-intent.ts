@@ -29,7 +29,9 @@ export type ToolIntent = {
 };
 
 const modelsConfigured = () =>
-  config.ANTHROPIC_API_KEY !== undefined &&
+  (config.ANTHROPIC_API_KEY !== undefined ||
+    (config.ANTHROPIC_FEDERATION_RULE_ID !== undefined &&
+      config.ANTHROPIC_ORGANIZATION_ID !== undefined)) &&
   config.TYPESAFE_API_KEY !== undefined;
 
 export const queryInferenceEnabled = modelsConfigured;

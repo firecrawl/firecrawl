@@ -2,7 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
 import { config } from "../config";
 import { createOllama } from "ollama-ai-provider-v2";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic as keyedAnthropic } from "@ai-sdk/anthropic";
 import { groq } from "@ai-sdk/groq";
 import { google } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -10,6 +10,7 @@ import { fireworks } from "@ai-sdk/fireworks";
 import { deepinfra } from "@ai-sdk/deepinfra";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import { createFederatedAnthropic } from "./anthropic-federation";
 import type { TeamFlags } from "../controllers/v2/types";
 import { isUsOnly } from "./us-only";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
@@ -36,6 +37,17 @@ const vertexAuthOptions = config.VERTEX_CREDENTIALS
         keyFile: "./gke-key.json",
       };
 
+// An API key wins while it is set, so federation can be rolled out next to it.
+const anthropic =
+  !config.ANTHROPIC_API_KEY &&
+  config.ANTHROPIC_FEDERATION_RULE_ID &&
+  config.ANTHROPIC_ORGANIZATION_ID
+    ? createFederatedAnthropic(
+        config.ANTHROPIC_FEDERATION_RULE_ID,
+        config.ANTHROPIC_ORGANIZATION_ID,
+      )
+    : keyedAnthropic;
+
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
@@ -44,7 +56,7 @@ const providerList: Record<Provider, any> = {
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,
   }),
-  anthropic, //ANTHROPIC_API_KEY
+  anthropic, //ANTHROPIC_API_KEY or workload identity federation
   groq, //GROQ_API_KEY
   google, //GOOGLE_GENERATIVE_AI_API_KEY
   openrouter: createOpenRouter({
