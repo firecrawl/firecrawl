@@ -35,6 +35,7 @@ vi.mock("./highlight-model", () => ({
 }));
 
 import { generateHighlightsIndexedBatch } from "./highlight-model";
+import { indexGetRecent5 } from "../db/rpc";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import {
@@ -178,6 +179,40 @@ describe("runIndexedSearchHighlights", () => {
       replaced: 0,
       succeeded: false,
     });
+  });
+
+  it("skips index lookups over the per-process concurrency cap", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(new Map());
+    const response = {
+      web: Array.from({ length: 5 }, (_, i) => ({
+        url: `https://result-${i}.test`,
+        description: "fallback",
+      })),
+    } as any;
+    const options = {
+      mode: "apply" as const,
+      requestId: "request-1",
+      teamId: "team-1",
+    };
+
+    const capped = await runIndexedSearchHighlights(
+      response,
+      "query",
+      logger,
+      options,
+    );
+
+    expect(indexGetRecent5).toHaveBeenCalledTimes(3);
+    expect(capped).toMatchObject({ attempted: 5, indexHits: 3 });
+
+    const afterRelease = await runIndexedSearchHighlights(
+      { web: response.web.slice(0, 3) } as any,
+      "query",
+      logger,
+      options,
+    );
+
+    expect(afterRelease).toMatchObject({ attempted: 3, indexHits: 3 });
   });
 });
 

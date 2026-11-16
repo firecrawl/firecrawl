@@ -54,15 +54,20 @@ export function searchHighlightsMode(options: {
 // this many more-recent error entries, in which case we surface the newest one.
 const ERROR_COUNT_TO_REGISTER = 3;
 
+// Highlights are optional, so lookups over this cap are skipped like an index miss.
+const MAX_CONCURRENT_INDEX_LOOKUPS = 3;
+let inFlightIndexLookups = 0;
+
 async function getIndexObjectForURL(
   url: string,
   logger: Logger,
   logUrl = true,
 ): Promise<{ name: string; createdAt: string | null } | null> {
-  if (!useIndex) {
+  if (!useIndex || inFlightIndexLookups >= MAX_CONCURRENT_INDEX_LOOKUPS) {
     return null;
   }
 
+  inFlightIndexLookups++;
   try {
     const normalizedURL = normalizeURLForIndex(url);
     const urlHash = hashURL(normalizedURL);
@@ -105,6 +110,8 @@ async function getIndexObjectForURL(
       ...(logUrl ? { url } : {}),
     });
     return null;
+  } finally {
+    inFlightIndexLookups--;
   }
 }
 
