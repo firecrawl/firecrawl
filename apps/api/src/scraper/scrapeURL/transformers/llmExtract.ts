@@ -33,6 +33,7 @@ import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -520,13 +521,13 @@ export async function generateCompletions({
               strictJsonSchema: true,
             },
           },
-          experimental_telemetry: {
+          telemetry: aiTelemetry({
             isEnabled: !zeroDataRetention,
             functionId: metadata.functionId
               ? metadata.functionId + "/generateText"
               : "generateText",
             metadata: telemetryMetadata(metadata),
-          },
+          }),
         });
 
         costTrackingOptions.costTracking.addCall({
@@ -600,13 +601,13 @@ export async function generateCompletions({
                   strictJsonSchema: true,
                 },
               },
-              experimental_telemetry: {
+              telemetry: aiTelemetry({
                 isEnabled: !zeroDataRetention,
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
                   : "generateText",
                 metadata: telemetryMetadata(metadata),
-              },
+              }),
             });
 
             extract = result.text;
@@ -741,13 +742,13 @@ export async function generateCompletions({
                 strictJsonSchema: true,
               },
             },
-            experimental_telemetry: {
+            telemetry: aiTelemetry({
               isEnabled: !zeroDataRetention,
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
                 : "repairText",
               metadata: telemetryMetadata(metadata),
-            },
+            }),
           });
 
           costTrackingOptions.costTracking.addCall({
@@ -810,11 +811,11 @@ export async function generateCompletions({
           logger.error("LLM extraction failed without schema", { error });
         },
       }),
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
         metadata: telemetryMetadata(metadata),
-      },
+      }),
       ...(modelId.startsWith("gpt-5")
         ? {
             temperature: 1,

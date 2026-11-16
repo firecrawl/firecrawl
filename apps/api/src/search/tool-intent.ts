@@ -9,6 +9,7 @@ import { getModel } from "../lib/generic-ai";
 import { getTypeSafeClient } from "../lib/typesafe";
 import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { aiTelemetry } from "../lib/ai-telemetry";
 
 const MODEL = "claude-haiku-5-5";
 const INFERENCE_TIMEOUT_MS = 2500;
@@ -209,12 +210,12 @@ async function infer(text: string, logger: Logger): Promise<Inferred> {
     prompt: `<${tag}>\n${text.slice(0, 2000)}\n</${tag}>`,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
-    experimental_telemetry: {
+    telemetry: aiTelemetry({
       isEnabled: true,
       recordInputs: false,
       recordOutputs: false,
       functionId: "inferToolIntent",
-    },
+    }),
   });
   const inferred = clean(object);
   redisRateLimitClient

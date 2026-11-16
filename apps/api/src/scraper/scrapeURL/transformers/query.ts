@@ -13,6 +13,7 @@ import {
   parseMarkdownToSentences,
   assembleAnswer,
 } from "../../../lib/highlight-spans";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
@@ -199,7 +200,7 @@ ${escapePromptTags(indexedLines)}
       model,
       system: querySystemPrompt,
       prompt: queryPrompt,
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: true,
         functionId:
           purpose === "highlights"
@@ -210,7 +211,7 @@ ${escapePromptTags(indexedLines)}
           teamId: meta.internalOptions.teamId ?? "",
           feature: "query",
         },
-      },
+      }),
     });
 
     const elapsed = Date.now() - start;
@@ -329,7 +330,7 @@ ${escapePromptTags(fitted.text)}
         system: querySystemPrompt,
         prompt: queryPrompt,
         providerOptions: FREEFORM_PROVIDER_OPTIONS,
-        experimental_telemetry: {
+        telemetry: aiTelemetry({
           isEnabled: true,
           functionId: "performQuery/freeform",
           metadata: {
@@ -337,7 +338,7 @@ ${escapePromptTags(fitted.text)}
             teamId: meta.internalOptions.teamId ?? "",
             feature: "query",
           },
-        },
+        }),
       });
 
       const elapsed = Date.now() - start;
