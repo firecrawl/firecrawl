@@ -147,6 +147,8 @@ export async function retrieveProviders(input: {
   rateLimitMultiplier: number;
   /** The most the caller allows: a quote above it is refused before anything is held or run. */
   maxCredits?: number;
+  /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
+  ultrasearch?: boolean;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -217,6 +219,7 @@ export async function retrieveProviders(input: {
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
+  const ultrasearch = input.ultrasearch === true;
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -226,6 +229,7 @@ export async function retrieveProviders(input: {
     ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
     ...(usOnly ? [{ usOnly }] : []),
     ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
+    ...(ultrasearch ? [{ ultrasearch }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -439,6 +443,7 @@ export async function retrieveProviders(input: {
       input.clientIp,
       input.billingCountry,
       Math.min(10000, remaining()),
+      ultrasearch,
     );
     if (denied) return refuse(denied);
 
@@ -495,6 +500,7 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(ultrasearch ? { ultrasearch } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -640,6 +646,7 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(ultrasearch ? { ultrasearch } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
