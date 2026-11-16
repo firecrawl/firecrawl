@@ -144,6 +144,8 @@ export async function retrieveProviders(input: {
   billingCountry?: string;
   /** The team's Autumn rate-limit multiplier, which sizes its index budgets. */
   rateLimitMultiplier: number;
+  /** The most the caller allows: a quote above it is refused before anything is held or run. */
+  maxCredits?: number;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -509,6 +511,15 @@ export async function retrieveProviders(input: {
         refusal(502, "Provider quote was malformed. No provider was executed."),
       );
     maximumCredits = parsedQuote.data.maximumCredits;
+    // Execution is bound to this quote (Exchange refuses above it), so the caller's cap binds too.
+    if (input.maxCredits !== undefined && maximumCredits > input.maxCredits)
+      return refuse(
+        refusal(
+          402,
+          `This request needs up to ${maximumCredits} credits, above maxCredits ${input.maxCredits}. No provider was executed.`,
+          { code: "max_credits_exceeded", maximumCredits },
+        ),
+      );
 
     if (billable && maximumCredits > 0) {
       if (!config.USE_DB_AUTHENTICATION)
