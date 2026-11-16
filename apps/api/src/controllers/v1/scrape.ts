@@ -450,7 +450,11 @@ async function scrapeControllerInner(
       }
 
       if (e instanceof ScrapeProfileError) {
-        return res.status(e.httpStatus()).json({
+        const statusCode = e.httpStatus();
+        setSpanAttributes(span, {
+          "scrape.status_code": statusCode,
+        });
+        return res.status(statusCode).json({
           success: false,
           code: e.code,
           error: e.message,

@@ -21,6 +21,22 @@
       "url": "<fire-engine>/scrape",
       "method": "POST",
       "body": {
+        "url": "https://example.com/profile-bad",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"<!DOCTYPE html><html><body><p>typed-fallback-should-not-run</p></body></html>\",\"url\":\"https://example.com/profile-bad\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"}}"
+    }
+  },
+  {
+    "time": 3,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
         "url": "https://example.com/profile-legacy",
         "engine": "chrome-cdp"
       }
@@ -32,7 +48,23 @@
     }
   },
   {
-    "time": 3,
+    "time": 4,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/profile-legacy",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"<!DOCTYPE html><html><body><p>fallback-page-marker</p></body></html>\",\"url\":\"https://example.com/profile-legacy\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"}}"
+    }
+  },
+  {
+    "time": 5,
     "options": {
       "url": "<fire-engine>/scrape",
       "method": "POST",
@@ -48,7 +80,7 @@
     }
   },
   {
-    "time": 4,
+    "time": 6,
     "options": {
       "url": "<fire-engine>/scrape/profile-job",
       "method": "GET"
@@ -60,7 +92,7 @@
     }
   },
   {
-    "time": 5,
+    "time": 7,
     "options": {
       "url": "<fire-engine>/scrape/profile-job",
       "method": "DELETE"
@@ -69,6 +101,22 @@
       "status": 200,
       "headers": {},
       "body": "{}"
+    }
+  },
+  {
+    "time": 8,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/profile-polled",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"<!DOCTYPE html><html><body><p>polled-fallback-should-not-run</p></body></html>\",\"url\":\"https://example.com/profile-polled\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"}}"
     }
   }
 ]

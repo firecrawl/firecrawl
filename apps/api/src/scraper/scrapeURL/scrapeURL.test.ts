@@ -11,7 +11,6 @@ import { CostTracking } from "../../lib/cost-tracking";
 import {
   AgentIndexOnlyError,
   NoCachedDataError,
-  NoEnginesLeftError,
   ScrapeProfileError,
 } from "./error";
 
@@ -656,7 +655,12 @@ describe("Standalone scrapeURL tests", () => {
     }
   }, 30000);
 
-  it("stops the engine waterfall on a typed saved-profile failure", async () => {
+  const profileEngines = [
+    "fire-engine;chrome-cdp",
+    "fire-engine(retry);chrome-cdp",
+  ] as const;
+
+  it("does not waterfall a typed saved-profile failure to the next engine", async () => {
     const out = await scrapeURL(
       "test:profile-failed",
       "https://example.com/profile-bad",
@@ -665,7 +669,7 @@ describe("Standalone scrapeURL tests", () => {
         profile: { name: "login" },
       }),
       {
-        forceEngine: "fire-engine;chrome-cdp",
+        forceEngine: [...profileEngines],
         teamId: "test",
         orgId: null,
       },
@@ -686,7 +690,7 @@ describe("Standalone scrapeURL tests", () => {
     }
   });
 
-  it("stops the engine waterfall when a polled job reports a profile failure", async () => {
+  it("does not waterfall a polled saved-profile failure to the next engine", async () => {
     const out = await scrapeURL(
       "test:profile-polled",
       "https://example.com/profile-polled",
@@ -695,7 +699,7 @@ describe("Standalone scrapeURL tests", () => {
         profile: { name: "login" },
       }),
       {
-        forceEngine: "fire-engine;chrome-cdp",
+        forceEngine: [...profileEngines],
         teamId: "test",
         orgId: null,
       },
@@ -717,7 +721,7 @@ describe("Standalone scrapeURL tests", () => {
     }
   });
 
-  it("keeps an untyped profile failure on the all-engines path", async () => {
+  it("waterfalls an untyped profile failure to the next engine", async () => {
     const out = await scrapeURL(
       "test:profile-legacy",
       "https://example.com/profile-legacy",
@@ -726,16 +730,16 @@ describe("Standalone scrapeURL tests", () => {
         profile: { name: "login" },
       }),
       {
-        forceEngine: "fire-engine;chrome-cdp",
+        forceEngine: [...profileEngines],
         teamId: "test",
         orgId: null,
       },
       new CostTracking(),
     );
 
-    expect(out.success).toBe(false);
-    if (!out.success) {
-      expect(out.error).toBeInstanceOf(NoEnginesLeftError);
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.document.markdown).toContain("fallback-page-marker");
     }
   });
 });
