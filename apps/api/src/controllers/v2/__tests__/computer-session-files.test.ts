@@ -1,33 +1,14 @@
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
-// Stands in for Redis: the reservation script drops expired members, refuses
-// at the limit and otherwise adds the session.
-const { liveSessions } = vi.hoisted(() => ({
-  liveSessions: new Map<string, Map<string, number>>(),
-}));
-vi.mock("../../../services/queue-service", () => ({
-  getRedisConnection: () => ({
-    eval: async (
-      _script: string,
-      _keys: number,
-      key: string,
-      now: number,
-      limit: number,
-      id: string,
-      expiresAt: number,
-    ) => {
-      const live = liveSessions.get(key) ?? new Map<string, number>();
-      liveSessions.set(key, live);
-      for (const [member, score] of live) {
-        if (score <= now) live.delete(member);
-      }
-      if (live.size >= limit) return 0;
-      live.set(id, expiresAt);
-      return 1;
-    },
-    zrem: async (key: string, id: string) =>
-      liveSessions.get(key)?.delete(id) ? 1 : 0,
-  }),
-}));
+// The live-session count runs on a real Redis, so these tests exercise the
+// reservation script itself. CI provides one; locally it is REDIS_URL or
+// localhost.
+vi.mock("../../../services/queue-service", async () => {
+  const { Redis } = await import("ioredis");
+  const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
+    maxRetriesPerRequest: 1,
+  });
+  return { getRedisConnection: () => redis };
+});
 vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   return { logger: { ...log, child: () => log } };
@@ -39,6 +20,7 @@ import { Readable } from "node:stream";
 import express from "express";
 import request from "supertest";
 import { config } from "../../../config";
+import { getRedisConnection } from "../../../services/queue-service";
 import {
   MAX_FILE_BYTES,
   MAX_LIVE_SESSIONS,
@@ -122,17 +104,24 @@ app.get(
 app.post(`${SESSIONS}/:sessionId/links`, auth, run(controllers.createLink));
 app.get("/v2/computer/files/:token{/:filename}", run(controllers.download));
 
+const redis = getRedisConnection();
+const liveSessionsOf = (team: string) => `computer-sessions:${team}`;
+const forgetLiveSessions = () =>
+  redis.del(liveSessionsOf("team-a"), liveSessionsOf("team-b"));
+
 let server: http.Server;
 beforeAll(() => {
   server = app.listen(0);
 });
-afterAll(() => {
+afterAll(async () => {
   server.closeAllConnections();
   server.close();
+  await forgetLiveSessions();
+  await redis.quit();
 });
-beforeEach(() => {
+beforeEach(async () => {
   objects.clear();
-  liveSessions.clear();
+  await forgetLiveSessions();
   storageDown = false;
 });
 afterEach(() => {
@@ -189,14 +178,14 @@ const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
     req.on("error", reject);
     req.write("x");
   });
-const seed = (team: string, count: number, expiresAt: number) => {
-  const key = `computer-sessions:${team}`;
-  const live = liveSessions.get(key) ?? new Map<string, number>();
-  liveSessions.set(key, live);
-  for (let index = 0; index < count; index++) {
-    live.set(`seed-${expiresAt}-${index}`, expiresAt);
-  }
-};
+const seed = (team: string, count: number, expiresAt: number) =>
+  redis.zadd(
+    liveSessionsOf(team),
+    ...Array.from({ length: count }, (_, index) => [
+      expiresAt,
+      `seed-${expiresAt}-${index}`,
+    ]).flat(),
+  );
 
 describe("sessions", () => {
   it("creates a session the API names, empty and live for a day", async () => {
@@ -208,6 +197,12 @@ describe("sessions", () => {
     expect(lifetimeMs).toBeGreaterThan(DAY_MS - 60_000);
     expect(lifetimeMs).toBeLessThanOrEqual(DAY_MS);
     expect([...objects.keys()]).toEqual([`workspaces/team-a/${id}`]);
+    // The count holds the session until it ends, and then forgets the team.
+    const endsAt = new Date(expiresAt).getTime();
+    expect(await redis.zscore(liveSessionsOf("team-a"), id)).toBe(
+      String(endsAt),
+    );
+    expect(await redis.pexpiretime(liveSessionsOf("team-a"))).toBe(endsAt);
 
     const res = await read("team-a", id);
     expect(res.status).toBe(200);
@@ -216,15 +211,15 @@ describe("sessions", () => {
   });
 
   it("refuses a new session once the team has the limit of live ones", async () => {
-    seed("team-a", MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
-    seed("team-a", 5, Date.now() - 1);
+    await seed("team-a", MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
+    await seed("team-a", 5, Date.now() - 1);
     expect((await create()).status).toBe(200);
     expect((await create()).status).toBe(429);
     expect((await create("team-b")).status).toBe(200);
   });
 
   it("admits only up to the limit when creations arrive together", async () => {
-    seed("team-a", MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
+    await seed("team-a", MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
     const statuses = await Promise.all(
       Array.from({ length: 10 }, async () => (await create()).status),
     );
@@ -235,7 +230,7 @@ describe("sessions", () => {
   it("gives the place back when the session cannot be stored", async () => {
     storageDown = true;
     expect((await create()).status).toBe(500);
-    expect(liveSessions.get("computer-sessions:team-a")?.size).toBe(0);
+    expect(await redis.zcard(liveSessionsOf("team-a"))).toBe(0);
     expect(objects.size).toBe(0);
   });
 
