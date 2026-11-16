@@ -2001,6 +2001,11 @@ export async function scrapeURL(
         } else if (error instanceof ProxySelectionError) {
           errorType = "ProxySelectionError";
           meta.logger.warn("scrapeURL: Proxy selection error", { error });
+        } else if (error instanceof ScrapeProfileError) {
+          errorType = "ScrapeProfileError";
+          meta.logger.warn("scrapeURL: Saved profile could not be used", {
+            error,
+          });
         } else if (error instanceof DNSResolutionError) {
           errorType = "DNSResolutionError";
           meta.logger.warn("scrapeURL: DNS resolution error", { error });
