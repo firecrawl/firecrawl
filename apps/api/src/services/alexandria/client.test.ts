@@ -110,6 +110,26 @@ describe("exchangeRequest", () => {
     );
   });
 
+  it("marks the team Alexandria Verified only when set", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      alexandriaVerified: true,
+    });
+    expect(headersOf()["x-exchange-alexandria-verified"]).toBe("true");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-alexandria-verified");
+  });
+
   it("sends no connectors grant by default", async () => {
     await exchangeRequest({
       teamId: "team",

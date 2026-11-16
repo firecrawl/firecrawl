@@ -2183,6 +2183,9 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Alexandria Verified: the dashboard's Verified pages open, and Exchange
+  // providers marked verifiedOnly (Yelp) execute. Org flag, overridable per team.
+  alexandriaVerified?: boolean;
   // PDF and image parsing runs only on reserved processing capacity. A parse
   // that cannot be kept there is refused.
   reservedCapacity?: boolean;

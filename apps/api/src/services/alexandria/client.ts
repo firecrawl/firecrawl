@@ -42,6 +42,8 @@ export async function exchangeRequest(input: {
   zeroDataRetention?: boolean;
   /** The team may only be served by US-based providers. */
   usOnly?: boolean;
+  /** The team carries the Alexandria Verified flag, so Exchange runs its verifiedOnly providers. */
+  alexandriaVerified?: boolean;
   /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
   retryConnection?: boolean;
 }): Promise<ExchangeResponse> {
@@ -81,6 +83,9 @@ export async function exchangeRequest(input: {
         ? { "x-exchange-zero-data-retention": "true" }
         : {}),
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
+      ...(input.alexandriaVerified
+        ? { "x-exchange-alexandria-verified": "true" }
+        : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}

@@ -25,6 +25,7 @@ import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import { isUsOnly } from "../../lib/us-only";
+import { isAlexandriaVerified } from "../../lib/alexandria-verified";
 import {
   answerSchema,
   refusal,
@@ -215,6 +216,7 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
+  const alexandriaVerified = isAlexandriaVerified(input.flags);
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -313,6 +315,7 @@ export async function retrieveProviders(input: {
         : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
@@ -490,6 +493,7 @@ export async function retrieveProviders(input: {
       connectors: input.flags?.exchangeRetrieve === true,
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -634,6 +638,7 @@ export async function retrieveProviders(input: {
       ...(input.orgId ? { billingOrganizationId: input.orgId } : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
