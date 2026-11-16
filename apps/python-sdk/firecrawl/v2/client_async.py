@@ -650,6 +650,7 @@ class AsyncFirecrawlClient:
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
+        location: Optional[Location] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
     ) -> MapData:
@@ -661,9 +662,10 @@ class AsyncFirecrawlClient:
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
             integration=integration,
+            location=location,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
-        ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, integration, timeout, threat_protection, audit_metadata]) else None
+        ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, integration, timeout, location, threat_protection, audit_metadata]) else None
         return await async_map.map(self.async_http_client, url, options)
 
     async def create_monitor(
