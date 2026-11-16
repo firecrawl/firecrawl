@@ -3308,9 +3308,51 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
                     "error": {
                       "type": "string",
                       "example": "Agent job not found"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "agent_not_found",
+                      "description": "Set when the agent service reports that it has no such job. Omitted when this API has no access row for the id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Agent status is temporarily unavailable. Retry the request. Sent with a Retry-After header when the job lookup or the agent service cannot be reached, including when the agent service answers 503.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the status request.",
+                "schema": {
+                  "type": "integer",
+                  "example": 2
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "agent_status_unavailable"
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Agent status is temporarily unavailable. Retry the request."
                     }
                   }
                 }
