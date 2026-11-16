@@ -20,6 +20,7 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
+import { alexandriaVerifiedHeader } from "../lib/alexandria-verified";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 
 // Tells Exchange the team is held to zero data retention, so it only lists and runs
@@ -217,6 +218,7 @@ function exchangeProxy(
             ? { "x-exchange-us-only": "true" }
             : {}),
           ...zeroDataRetentionHeader(authedReq.acuc?.flags),
+          ...alexandriaVerifiedHeader(authedReq.acuc?.flags),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),

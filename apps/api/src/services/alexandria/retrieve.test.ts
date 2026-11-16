@@ -800,6 +800,32 @@ it("keeps and replays the response without zero data retention", async () => {
   });
 });
 
+it("forwards Alexandria Verified to quote and execution", async () => {
+  await run({ flags: { alexandriaVerified: true } });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded)
+    expect(request.alexandriaVerified).toBe(true);
+});
+
+it.each([
+  ["losing", { alexandriaVerified: true }, {}],
+  ["gaining", {}, { alexandriaVerified: true }],
+])(
+  "refuses the same x-request-id after %s Alexandria Verified, rather than replaying",
+  async (_case, before, after) => {
+    await run({ flags: before });
+    const other = await run({ flags: after });
+    expect(other.status).toBe(409);
+    expect(other.body).toEqual(
+      expect.objectContaining({ code: "duplicate_request" }),
+    );
+    expect(executions()).toHaveLength(1);
+  },
+);
+
 it("refuses the same x-request-id with a different zero data retention setting", async () => {
   await run();
   const other = await run({ zeroDataRetention: true });
