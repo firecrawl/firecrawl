@@ -28,6 +28,7 @@ import {
   UnsupportedFileError,
   FEPageLoadFailed,
   ProxySelectionError,
+  ScrapeProfileError,
 } from "../../error";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
@@ -165,6 +166,7 @@ async function performFireEngineScrape<
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
             error instanceof ProxySelectionError ||
+            error instanceof ScrapeProfileError ||
             error instanceof AddFeatureError
           ) {
             fireEngineDelete(

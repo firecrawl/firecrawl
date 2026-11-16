@@ -1,0 +1,74 @@
+[
+  {
+    "time": 1,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/profile-bad",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 500,
+      "headers": {},
+      "body": "{\"error\":\"Failed to scrape the content, err: Error: Profile load failed because the saved profile snapshot is invalid. The profile may need to be re-saved.\",\"errorData\":{\"code\":\"PROFILE_FAILED\",\"message\":\"Failed to scrape the content, err: Error: Profile load failed because the saved profile snapshot is invalid. The profile may need to be re-saved.\",\"details\":{\"step\":\"load\",\"reason\":\"INVALID_SNAPSHOT\"}}}"
+    }
+  },
+  {
+    "time": 2,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/profile-legacy",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 500,
+      "headers": {},
+      "body": "{\"error\":\"Profile read failed (500)\"}"
+    }
+  },
+  {
+    "time": 3,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/profile-polled",
+        "engine": "chrome-cdp"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"jobId\":\"profile-job\",\"processing\":true}"
+    }
+  },
+  {
+    "time": 4,
+    "options": {
+      "url": "<fire-engine>/scrape/profile-job",
+      "method": "GET"
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"jobId\":\"profile-job\",\"state\":\"failed\",\"processing\":false,\"error\":\"Failed to scrape the content, err: Error: Profile load failed because profile storage was unavailable. Retry the scrape.\",\"errorData\":{\"code\":\"PROFILE_FAILED\",\"message\":\"Failed to scrape the content, err: Error: Profile load failed because profile storage was unavailable. Retry the scrape.\",\"details\":{\"step\":\"load\",\"reason\":\"UNAVAILABLE\",\"statusCode\":503}}}"
+    }
+  },
+  {
+    "time": 5,
+    "options": {
+      "url": "<fire-engine>/scrape/profile-job",
+      "method": "DELETE"
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{}"
+    }
+  }
+]

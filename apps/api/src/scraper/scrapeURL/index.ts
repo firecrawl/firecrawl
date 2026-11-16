@@ -58,6 +58,7 @@ import {
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
   ProxySelectionError,
+  ScrapeProfileError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   UsOnlyUnavailableError,
@@ -1070,6 +1071,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof DocumentFetchProxyError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
+              error.error instanceof ScrapeProfileError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof UsOnlyUnavailableError ||
@@ -1999,6 +2001,13 @@ export async function scrapeURL(
         } else if (error instanceof ProxySelectionError) {
           errorType = "ProxySelectionError";
           meta.logger.warn("scrapeURL: Proxy selection error", { error });
+        } else if (error instanceof ScrapeProfileError) {
+          errorType = "ScrapeProfileError";
+          meta.logger.warn("scrapeURL: Saved profile could not be used", {
+            error,
+            step: error.step,
+            reason: error.reason,
+          });
         } else if (error instanceof DNSResolutionError) {
           errorType = "DNSResolutionError";
           meta.logger.warn("scrapeURL: DNS resolution error", { error });

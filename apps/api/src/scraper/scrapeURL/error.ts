@@ -225,6 +225,98 @@ export class SiteError extends TransportableError {
   }
 }
 
+function scrapeProfileMessage(
+  step: string,
+  reason: string,
+  statusCode: number | undefined,
+): string {
+  if (reason === "NOT_CONFIGURED") {
+    return "Profile load failed because profile storage is not configured.";
+  }
+  if (reason === "UNAVAILABLE") {
+    return "Profile load failed because profile storage was unavailable. Retry the scrape.";
+  }
+  if (step === "load") {
+    switch (reason) {
+      case "HTTP_STATUS":
+        return typeof statusCode === "number"
+          ? `Profile load failed (HTTP ${statusCode}). The profile may need to be re-saved.`
+          : "Profile load failed. The profile may need to be re-saved.";
+      case "TOO_LARGE":
+        return "Profile load failed because the saved profile exceeds 16 MiB. The profile may need to be re-saved.";
+      case "INVALID_JSON":
+        return "Profile load failed because the saved profile is not valid JSON. The profile may need to be re-saved.";
+      case "INVALID_SNAPSHOT":
+        return "Profile load failed because the saved profile snapshot is invalid. The profile may need to be re-saved.";
+      case "INVALID_REFERENCE":
+        return "Profile load failed because the profile reference is invalid.";
+    }
+    return "Profile load failed. The profile may need to be re-saved.";
+  }
+  if (step === "restore") {
+    switch (reason) {
+      case "COOKIES":
+        return "Profile restore failed while applying cookies. The profile may need to be re-saved.";
+      case "ORIGIN":
+        return "Profile restore failed while restoring an origin. The profile may need to be re-saved.";
+      case "STORAGE":
+        return "Profile restore failed while restoring storage. The profile may need to be re-saved.";
+      case "TIMEOUT":
+        return "Profile restore failed because it timed out. The profile may need to be re-saved.";
+      case "CDP":
+        return "Profile restore failed while preparing the browser. The profile may need to be re-saved.";
+    }
+    return "Profile restore failed. The profile may need to be re-saved.";
+  }
+  return "The saved profile could not be used. The profile may need to be re-saved.";
+}
+
+/**
+ * A saved scrape profile could not be loaded or restored. Fire-engine reports
+ * this as `errorData.code === "PROFILE_FAILED"` (fire-engine#830). Older
+ * workers omit `errorData`; those stay ordinary engine failures.
+ *
+ * `httpStatus` is 503 when profile storage was unavailable (retry the scrape),
+ * 500 when workers are missing profile storage configuration, and 422 when the
+ * saved snapshot itself cannot be used.
+ */
+export class ScrapeProfileError extends TransportableError {
+  constructor(
+    public readonly step: string,
+    public readonly reason: string,
+    public readonly statusCode?: number,
+  ) {
+    super(
+      "SCRAPE_PROFILE_ERROR",
+      scrapeProfileMessage(step, reason, statusCode),
+    );
+  }
+
+  httpStatus(): 422 | 500 | 503 {
+    if (this.reason === "UNAVAILABLE") return 503;
+    if (this.reason === "NOT_CONFIGURED") return 500;
+    return 422;
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      step: this.step,
+      reason: this.reason,
+      ...(this.statusCode !== undefined ? { statusCode: this.statusCode } : {}),
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ScrapeProfileError(data.step, data.reason, data.statusCode);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ProxySelectionError extends TransportableError {
   constructor() {
     super(

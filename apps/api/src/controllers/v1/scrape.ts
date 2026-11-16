@@ -14,6 +14,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import { ScrapeProfileError } from "../../scraper/scrapeURL/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -442,6 +443,14 @@ async function scrapeControllerInner(
         e.code === "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"
       ) {
         return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e instanceof ScrapeProfileError) {
+        return res.status(e.httpStatus()).json({
           success: false,
           code: e.code,
           error: e.message,

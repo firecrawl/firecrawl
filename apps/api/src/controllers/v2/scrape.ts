@@ -19,6 +19,7 @@ import {
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import { ScrapeProfileError } from "../../scraper/scrapeURL/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -641,6 +642,18 @@ export async function scrapeController(
               "scrape.status_code": 400,
             });
             return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e instanceof ScrapeProfileError) {
+            const statusCode = e.httpStatus();
+            setSpanAttributes(span, {
+              "scrape.status_code": statusCode,
+            });
+            return res.status(statusCode).json({
               success: false,
               code: e.code,
               error: e.message,

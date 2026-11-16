@@ -8,7 +8,12 @@ import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
-import { AgentIndexOnlyError, NoCachedDataError } from "./error";
+import {
+  AgentIndexOnlyError,
+  NoCachedDataError,
+  NoEnginesLeftError,
+  ScrapeProfileError,
+} from "./error";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
@@ -650,4 +655,87 @@ describe("Standalone scrapeURL tests", () => {
       expect(out.document.metadata.error).toBeUndefined();
     }
   }, 30000);
+
+  it("stops the engine waterfall on a typed saved-profile failure", async () => {
+    const out = await scrapeURL(
+      "test:profile-failed",
+      "https://example.com/profile-bad",
+      scrapeOptions.parse({
+        useMock: "profile-failed",
+        profile: { name: "login" },
+      }),
+      {
+        forceEngine: "fire-engine;chrome-cdp",
+        teamId: "test",
+        orgId: null,
+      },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(ScrapeProfileError);
+      expect(out.error).toMatchObject({
+        step: "load",
+        reason: "INVALID_SNAPSHOT",
+      });
+      expect((out.error as ScrapeProfileError).httpStatus()).toBe(422);
+      expect((out.error as ScrapeProfileError).message).toContain(
+        "may need to be re-saved",
+      );
+    }
+  });
+
+  it("stops the engine waterfall when a polled job reports a profile failure", async () => {
+    const out = await scrapeURL(
+      "test:profile-polled",
+      "https://example.com/profile-polled",
+      scrapeOptions.parse({
+        useMock: "profile-failed",
+        profile: { name: "login" },
+      }),
+      {
+        forceEngine: "fire-engine;chrome-cdp",
+        teamId: "test",
+        orgId: null,
+      },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(ScrapeProfileError);
+      expect(out.error).toMatchObject({
+        step: "load",
+        reason: "UNAVAILABLE",
+        statusCode: 503,
+      });
+      expect((out.error as ScrapeProfileError).httpStatus()).toBe(503);
+      expect((out.error as ScrapeProfileError).message).toContain(
+        "Retry the scrape",
+      );
+    }
+  });
+
+  it("keeps an untyped profile failure on the all-engines path", async () => {
+    const out = await scrapeURL(
+      "test:profile-legacy",
+      "https://example.com/profile-legacy",
+      scrapeOptions.parse({
+        useMock: "profile-failed",
+        profile: { name: "login" },
+      }),
+      {
+        forceEngine: "fire-engine;chrome-cdp",
+        teamId: "test",
+        orgId: null,
+      },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(NoEnginesLeftError);
+    }
+  });
 });
