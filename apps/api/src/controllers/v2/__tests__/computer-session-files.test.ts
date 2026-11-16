@@ -313,10 +313,12 @@ describe("configuration", () => {
   const original = {
     bucket: config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME,
     url: config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL,
+    redis: config.REDIS_RATE_LIMIT_URL,
   };
   afterAll(() => {
     config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = original.bucket;
     config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = original.url;
+    config.REDIS_RATE_LIMIT_URL = original.redis;
   });
 
   it.each([
@@ -327,5 +329,31 @@ describe("configuration", () => {
     config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = bucket;
     config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = url;
     expect(configuredComputerSessionFiles()).toBeNull();
+  });
+
+  it("has every handler, and a download limit per IP, with both set", async () => {
+    config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = "bucket";
+    config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = "https://files.test";
+    // The limiter counts in memory, so the test needs no Redis.
+    config.REDIS_RATE_LIMIT_URL = undefined;
+    const handlers = configuredComputerSessionFiles();
+    expect(Object.keys(handlers ?? {}).sort()).toEqual([
+      "createLink",
+      "download",
+      "downloadRateLimit",
+      "readWorkspace",
+      "saveWorkspace",
+    ]);
+
+    const limited = express();
+    limited.get("/", handlers!.downloadRateLimit, (_req, res) => {
+      res.sendStatus(204);
+    });
+    for (let call = 0; call < 60; call++) {
+      expect((await request(limited).get("/")).status).toBe(204);
+    }
+    const refused = await request(limited).get("/");
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
   });
 });

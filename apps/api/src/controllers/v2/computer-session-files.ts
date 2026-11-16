@@ -77,9 +77,13 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
         }
         throw error;
       }
-      return String(
-        file.metadata.generation ?? (await file.getMetadata())[0].generation,
-      );
+      // The upload's own response, so the version is the one this call wrote
+      // even when another save lands right after it.
+      const { generation } = file.metadata;
+      if (generation === undefined) {
+        throw new Error("The upload response did not name a generation.");
+      }
+      return String(generation);
     },
     async read(objectPath) {
       let stored;
@@ -89,10 +93,10 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
         if (error instanceof ApiError && error.code === 404) return null;
         throw error;
       }
-      const generation = Number(stored.generation);
+      const generation = String(stored.generation);
       return {
         sizeBytes: Number(stored.size),
-        version: String(generation),
+        version: generation,
         metadata: Object.fromEntries(
           Object.entries(stored.metadata ?? {}).map(([key, value]) => [
             key,
