@@ -629,6 +629,9 @@ export async function retrieveProviders(input: {
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
+      // The organization this call bills against, so Exchange can attribute a paid read.
+      // Separate from termsIdentity and outside the fingerprint: it grants nothing.
+      ...(input.orgId ? { billingOrganizationId: input.orgId } : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       maximumCredits,

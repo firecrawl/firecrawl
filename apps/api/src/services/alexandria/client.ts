@@ -28,6 +28,8 @@ export async function exchangeRequest(input: {
   maximumCredits?: number;
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
+  /** The organization a provider call bills against, so Exchange can attribute a paid read. Grants nothing. */
+  billingOrganizationId?: string;
   /** Caller's IP as the API sees it; Exchange resolves what it needs from it. */
   clientIp?: string;
   /** Country on the team's billing address, when it has one. */
@@ -62,6 +64,11 @@ export async function exchangeRequest(input: {
         ? {
             "x-exchange-organization-id": input.termsIdentity.organizationId,
             "x-exchange-api-key-id": input.termsIdentity.apiKeyId,
+          }
+        : {}),
+      ...(input.billingOrganizationId
+        ? {
+            "x-exchange-billing-organization-id": input.billingOrganizationId,
           }
         : {}),
       "x-exchange-extended-catalog-access": "true",
