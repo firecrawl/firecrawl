@@ -278,7 +278,14 @@ def resolve_refs(obj: Any, defs: Dict[str, Any], visited: Optional[set] = None, 
                             token = token.replace("~1", "/").replace("~0", "~")
                             if isinstance(target, dict) and token in target:
                                 target = target[token]
-                            elif isinstance(target, list) and token.isdigit():
+                            elif isinstance(target, list) and (
+                                token == "0"
+                                or (
+                                    token
+                                    and token[0] in "123456789"
+                                    and all(char in "0123456789" for char in token[1:])
+                                )
+                            ):
                                 index = int(token)
                                 if index >= len(target):
                                     target = None
@@ -289,19 +296,41 @@ def resolve_refs(obj: Any, defs: Dict[str, Any], visited: Optional[set] = None, 
                                 break
 
                         if isinstance(target, dict):
+                            annotation_keywords = {
+                                "$comment",
+                                "title",
+                                "description",
+                                "default",
+                                "deprecated",
+                                "readOnly",
+                                "writeOnly",
+                                "examples",
+                            }
+                            sibling_annotations = {
+                                key: value
+                                for key, value in obj.items()
+                                if key != "$ref" and key in annotation_keywords
+                            }
+                            has_validation_siblings = any(
+                                key != "$ref" and key not in annotation_keywords
+                                for key in obj
+                            )
+
+                            # Keep the reference and its validation siblings at
+                            # the same schema location. Moving them into an
+                            # allOf branch can change keywords such as
+                            # additionalProperties, which depend on sibling
+                            # properties. The caller preserves the original
+                            # schema and $defs when a reference remains.
+                            if has_validation_siblings:
+                                return obj
+
                             resolved = resolve_refs(
                                 dict(target), defs, visited, depth + 1
                             )
                             if isinstance(resolved, dict):
-                                # JSON Schema keywords alongside $ref still
-                                # apply to the referenced schema. In
-                                # particular, Pydantic puts field-specific
-                                # title/description annotations here.
-                                for key, value in obj.items():
-                                    if key != "$ref":
-                                        resolved[key] = resolve_refs(
-                                            value, defs, visited, depth + 1
-                                        )
+                                # Local annotations override target metadata.
+                                resolved.update(sibling_annotations)
                                 return resolved
                 return obj
             
