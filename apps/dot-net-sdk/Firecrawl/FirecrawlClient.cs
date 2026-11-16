@@ -625,6 +625,27 @@ public class FirecrawlClient
     }
 
     /// <summary>
+    /// Looks up one protein in UniProtKB/Swiss-Prot by accession, entry name,
+    /// gene symbol or protein name.
+    /// </summary>
+    public async Task<ProteinLookupResponse> LookupProteinAsync(
+        string protein,
+        LookupProteinOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(protein);
+
+        return await _http.GetAsync<ProteinLookupResponse>(
+            "/v2/search/research/proteins" + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["protein"] = protein,
+                ["origin"] = SdkOrigin,
+                ["organism"] = options?.Organism
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Searches GitHub research content.
     /// </summary>
     [Obsolete("The research index GitHub search endpoint was removed after 2026-11-03. Use DeveloperSearchAsync instead.")]

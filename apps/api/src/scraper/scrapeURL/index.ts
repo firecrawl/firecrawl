@@ -42,6 +42,7 @@ import {
   RemoveFeatureError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -59,9 +60,10 @@ import {
   ProxySelectionError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
-  XTwitterConfigurationError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
+  PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import {
@@ -133,6 +135,7 @@ import {
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { loadFirstScreen } from "../../lib/branding/jev";
+import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -904,7 +907,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     const remainingEngines = [...fallbackList];
     let enginePromises: EngineBundlePromise[] = [];
-    const enginesAttempted: string[] = [];
+    const enginesAttempted: Engine[] = [];
 
     meta.abort.throwIfAborted();
 
@@ -992,6 +995,17 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
+            if (error.error instanceof SiteBlockNoRetryError) {
+              // Another engine or exit doesn't get past it either (the engine
+              // has logged the block); end the scrape the usual way instead of
+              // trying them, and stop the engines still racing.
+              snipeAbortController.abort();
+              setSpanAttributes(span, {
+                "engine.no_engines_left": true,
+                "engine.engines_attempted": enginesAttempted.join(","),
+              });
+              throw new NoEnginesLeftError(enginesAttempted);
+            }
             const nextEngine = remainingEngines[0]?.engine;
             const experiment = waterfallExperimentFor(
               error.engine,
@@ -1017,12 +1031,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 continue;
               }
             }
-            if (error.engine === "x-twitter") {
-              meta.logger.warn("X/Twitter scrape failed fatally.", {
-                error: error.error,
-              });
-              throw error.error;
-            } else if (error.error instanceof EngineError) {
+            if (error.error instanceof EngineError) {
               meta.logger.warn(
                 "Engine " + error.engine + " could not scrape the page.",
                 {
@@ -1065,8 +1074,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError ||
               error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
@@ -1209,6 +1218,14 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           );
         }
       }
+    }
+
+    // Throws before the transformers, so a blocked page is never indexed.
+    if (
+      meta.internalOptions.safeMode?.respectPaywalls &&
+      isPaywalledByJsonLd(engineResult.html)
+    ) {
+      throw new PaywalledContentError();
     }
 
     let document: Document = {
@@ -2011,6 +2028,9 @@ export async function scrapeURL(
               rule: error.decision.rule,
             },
           );
+        } else if (error instanceof PaywalledContentError) {
+          errorType = "PaywalledContentError";
+          meta.logger.warn("scrapeURL: Paywalled page refused by Safe Mode");
         } else if (error instanceof AbortManagerThrownError) {
           errorType = "AbortManagerThrownError";
           throw error.inner;

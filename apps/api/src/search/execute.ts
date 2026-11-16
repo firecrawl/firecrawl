@@ -65,6 +65,7 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
+import { getScrapeZDR } from "../lib/zdr-helpers";
 
 interface SearchOptions {
   query: string;
@@ -207,6 +208,9 @@ export async function executeSearch(
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
+  // A team held to zero data retention for scrapes still gets tools, but only from providers
+  // that support it. Read from team flags only, never from the request.
+  const toolsZeroDataRetention = getScrapeZDR(flags) === "forced";
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
@@ -225,6 +229,7 @@ export async function executeSearch(
             query,
             timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
             usOnly,
+            zeroDataRetention: toolsZeroDataRetention,
           },
           logger,
         ).catch(error => {
@@ -254,6 +259,7 @@ export async function executeSearch(
               teamId,
               connectors: flags?.exchangeRetrieve === true,
               usOnly,
+              zeroDataRetention: toolsZeroDataRetention,
               limit,
               queries: wantsTools
                 ? intent.toolQueries
@@ -304,6 +310,7 @@ export async function executeSearch(
             teamId,
             connectors: flags?.exchangeRetrieve === true,
             usOnly,
+            zeroDataRetention: toolsZeroDataRetention,
             limit,
             queries: wantsTools ? [query] : undefined,
             urls:

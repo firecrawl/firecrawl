@@ -9,6 +9,7 @@ import { getModel } from "../lib/generic-ai";
 import { getTypeSafeClient } from "../lib/typesafe";
 import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { aiTelemetry } from "../lib/ai-telemetry";
 
 const MODEL = "claude-haiku-5-5";
 const INFERENCE_TIMEOUT_MS = 2500;
@@ -28,7 +29,9 @@ export type ToolIntent = {
 };
 
 const modelsConfigured = () =>
-  config.ANTHROPIC_API_KEY !== undefined &&
+  (config.ANTHROPIC_API_KEY !== undefined ||
+    (config.ANTHROPIC_FEDERATION_RULE_ID !== undefined &&
+      config.ANTHROPIC_ORGANIZATION_ID !== undefined)) &&
   config.TYPESAFE_API_KEY !== undefined;
 
 export const queryInferenceEnabled = modelsConfigured;
@@ -209,12 +212,14 @@ async function infer(text: string, logger: Logger): Promise<Inferred> {
     prompt: `<${tag}>\n${text.slice(0, 2000)}\n</${tag}>`,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
-    experimental_telemetry: {
+    // A forced tool call answers faster than native structured output here.
+    providerOptions: { anthropic: { structuredOutputMode: "jsonTool" } },
+    telemetry: aiTelemetry({
       isEnabled: true,
       recordInputs: false,
       recordOutputs: false,
       functionId: "inferToolIntent",
-    },
+    }),
   });
   const inferred = clean(object);
   redisRateLimitClient

@@ -147,7 +147,7 @@ function makeRes() {
 
 function telemetryOfCalls() {
   return (generateObject as Mock).mock.calls.map(
-    ([options]) => options.experimental_telemetry,
+    ([options]) => options.telemetry,
   );
 }
 

@@ -1,0 +1,72 @@
+[package]
+name = "firecrawl-local"
+version = "0.1.0"
+edition = "2021"
+description = "Firecrawl Local: scrape, crawl and map on your own machine from one binary, with a hand-off to Firecrawl cloud."
+license = "AGPL-3.0"
+repository = "https://github.com/firecrawl/firecrawl"
+homepage = "https://www.firecrawl.dev"
+readme = "README.md"
+keywords = ["scraping", "crawler", "markdown", "mcp", "firecrawl"]
+categories = ["command-line-utilities", "web-programming"]
+# Listed by hand so the vendored copy in src/native, which git ignores, is
+# part of a published crate.
+include = ["src/**/*", "build.rs", "README.md"]
+
+[lib]
+name = "firecrawl_local"
+path = "src/lib.rs"
+
+[[bin]]
+name = "firecrawl-local"
+path = "src/main.rs"
+
+[dependencies]
+# --- shared with apps/api/native -------------------------------------------
+# The HTML cleaning, link, metadata and crawl-filter code is compiled straight
+# from apps/api/native/src (see src/lib.rs), so local and cloud output stay the
+# same. `noop` turns the N-API macros into plain Rust so no Node is needed.
+napi = { version = "3", default-features = false, features = ["noop", "napi4", "serde-json", "tokio_rt"] }
+napi-derive = { version = "3", default-features = false, features = ["noop"] }
+# Pinned to the commit in Cargo.lock so `cargo update` cannot change the
+# cleaning rules. Move it together with apps/api/native. The version is what
+# a published crate depends on, since crates.io does not take git sources.
+nodesig = { version = "1.0.0", git = "https://github.com/firecrawl/nodesig", rev = "b8ebc4a710810dbc36e189d9a0df87b877702b3c" }
+kuchikiki = "0.8.2"
+lol_html = "2.6.0"
+psl = "2.1.140"
+regex = "1.11.2"
+roxmltree = "0.20.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
+strsim = "0.11"
+texting_robots = "0.2.2"
+url = "2.5.7"
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net", "time", "sync", "fs", "io-util", "io-std", "process", "signal"] }
+
+# --- engine -----------------------------------------------------------------
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "brotli", "zstd", "deflate", "charset", "json", "stream"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+clap = { version = "4", features = ["derive", "env"] }
+futures = "0.3"
+bytes = "1"
+encoding_rs = "0.8"
+once_cell = "1"
+uuid = { version = "1", features = ["v4"] }
+chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"] }
+base64 = "0.22"
+anydoc = "0.2.2"
+pdf-inspector = "1.21.0"
+chrono = "0.4"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+tinyvec = ">=1.12, <1.13"
+mimalloc = "0.1.52"
+libmimalloc-sys = { version = "0.1.49", features = ["extended"] }
+sha2 = "0.10"
+getrandom = "0.3"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+opt-level = 3

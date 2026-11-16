@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { deprecationMiddleware } from "../../lib/deprecations";
+import { deprecationMiddleware, sunsetOf } from "../../lib/deprecations";
 
 // Pre-existing deprecation entries and their replacements. Pinned so the
 // github entry cannot change anyone else's wire output. All shipped in #3469
@@ -140,10 +140,17 @@ describe("deep-research and llmstxt entries", () => {
     },
   } as const;
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   for (const key of Object.keys(CASES) as (keyof typeof CASES)[]) {
     const { replacement, docs } = CASES[key];
 
     it(`${key} links its migration guide and replacement`, async () => {
+      // Just before the entry's sunset, so the route still serves.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(sunsetOf(key) - 1);
       const app = express();
       app.get("/probe", deprecationMiddleware(key), (_req, res) => {
         res.status(200).json({ success: true });
@@ -151,7 +158,7 @@ describe("deep-research and llmstxt entries", () => {
       const res = await request(app).get("/probe");
 
       expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
-      expect(res.headers["sunset"]).toBe("Thu, 10 Dec 2026 15:00:00 GMT");
+      expect(res.headers["sunset"]).toBe(new Date(sunsetOf(key)).toUTCString());
       const links = [`<${docs}>; rel="deprecation"`];
       if (replacement) links.push(`<${replacement}>; rel="successor-version"`);
       expect(res.headers["link"]).toBe(links.join(", "));

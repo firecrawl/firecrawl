@@ -12,6 +12,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessProviderToolsBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -182,10 +183,10 @@ async function searchControllerInner(
       (wantsTools || wantsSkills || req.body.domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
     ) {
-      return res.status(403).json({
-        success: false,
-        error: "An API key is required for provider tools.",
-      });
+      applyAgentAuthDiscoveryHeader(res);
+      return res
+        .status(403)
+        .json(keylessProviderToolsBody(req.auth.team_id, req));
     }
     if ((wantsTools || wantsSkills) && !req.body.query.trim())
       return res.status(400).json({

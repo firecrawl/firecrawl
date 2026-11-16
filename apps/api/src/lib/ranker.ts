@@ -1,6 +1,7 @@
 import { embed } from "ai";
 import { configDotenv } from "dotenv";
 import { getEmbeddingModel } from "./generic-ai";
+import { aiTelemetry } from "./ai-telemetry";
 
 configDotenv();
 
@@ -11,7 +12,7 @@ async function getEmbedding(
   const { embedding } = await embed({
     model: getEmbeddingModel("text-embedding-3-small"),
     value: text,
-    experimental_telemetry: {
+    telemetry: aiTelemetry({
       isEnabled: true,
       metadata: {
         ...(metadata.extractId
@@ -22,7 +23,7 @@ async function getEmbedding(
           : {}),
         teamId: metadata.teamId,
       },
-    },
+    }),
   });
 
   return embedding;

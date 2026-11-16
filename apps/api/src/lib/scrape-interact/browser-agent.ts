@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { tool, stepCountIs, generateText as untracedGenerateText } from "ai";
+import { tool, isStepCount, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
@@ -27,7 +27,7 @@ const SNAPSHOT_MAX_CHARS = 40_000;
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 // ---------------------------------------------------------------------------
@@ -439,7 +439,7 @@ export async function executePromptViaBrowserAgent(
     const generate = untraced ? untracedGenerateText : generateText;
     const result = await generate({
       model,
-      experimental_telemetry: { isEnabled: false },
+      telemetry: { isEnabled: false },
       abortSignal: AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())),
       system: SYSTEM_PROMPT,
       messages: [
@@ -454,7 +454,7 @@ export async function executePromptViaBrowserAgent(
         },
       ],
       tools: { browser: browserTool },
-      stopWhen: stepCountIs(MAX_STEPS),
+      stopWhen: isStepCount(MAX_STEPS),
       temperature: zeroDataRetention ? undefined : 0,
       // LangSmith's provider-options object is recognized by wrapAISDK but
       // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
@@ -465,6 +465,7 @@ export async function executePromptViaBrowserAgent(
               openai: {
                 store: false,
                 reasoningEffort: "medium",
+                reasoningSummary: null,
               },
             },
           }
@@ -488,7 +489,7 @@ export async function executePromptViaBrowserAgent(
           ],
         };
       },
-      onStepFinish: ({ text, toolCalls }) => {
+      onStepEnd: ({ text, toolCalls }) => {
         if (toolCalls?.length) {
           debugLog.add(`[Step: ${toolCalls.length} tool call(s)]`);
         }
