@@ -21,6 +21,7 @@ import {
   isNoRetrySiteBlock,
   UnsupportedFileError,
 } from "../../error";
+import { scrapeProfileErrorFromFireEngine } from "./profileFailure";
 import { Meta } from "../..";
 import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
 import { isUsOnly } from "../../../../lib/us-only";
@@ -295,6 +296,8 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    const profileError = scrapeProfileErrorFromFireEngine(status);
+    if (profileError) throw profileError;
     if (
       failedParse.data.failureReason === "site_protection" &&
       meta.internalOptions.safeMode?.disableSiteHandling

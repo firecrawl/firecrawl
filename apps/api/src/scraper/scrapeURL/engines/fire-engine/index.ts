@@ -29,6 +29,7 @@ import {
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
+import { ScrapeProfileError } from "./profileFailure";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
@@ -165,6 +166,7 @@ async function performFireEngineScrape<
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
             error instanceof ProxySelectionError ||
+            error instanceof ScrapeProfileError ||
             error instanceof AddFeatureError
           ) {
             fireEngineDelete(

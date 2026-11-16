@@ -16,6 +16,7 @@ import {
   SiteBlockNoRetryError,
   isNoRetrySiteBlock,
 } from "../../error";
+import { scrapeProfileErrorFromFireEngine } from "./profileFailure";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
@@ -193,6 +194,8 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
+    const profileError = scrapeProfileErrorFromFireEngine(status);
+    if (profileError) throw profileError;
     if (
       failedParse.data.failureReason === "site_protection" &&
       meta.internalOptions.safeMode?.disableSiteHandling

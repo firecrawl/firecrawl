@@ -19,6 +19,7 @@ import {
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import { ScrapeProfileError } from "../../scraper/scrapeURL/engines/fire-engine/profileFailure";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -476,6 +477,11 @@ export async function scrapeController(
           "scrape.error_type":
             e instanceof TransportableError ? e.code : "unknown",
         });
+
+        if (e instanceof ScrapeProfileError) {
+          setSpanAttributes(span, { "scrape.status_code": 422 });
+          return res.status(422).json({ success: false, error: e.message });
+        }
 
         if (e instanceof TransportableError) {
           if (!timeoutErr) {

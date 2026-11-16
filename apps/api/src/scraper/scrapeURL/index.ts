@@ -64,6 +64,7 @@ import {
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "./error";
+import { ScrapeProfileError } from "./engines/fire-engine/profileFailure";
 import { ScrapeRetryTracker } from "./retryTracker";
 import {
   inWaterfallExperimentArm,
@@ -1070,6 +1071,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof DocumentFetchProxyError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
+              error.error instanceof ScrapeProfileError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof UsOnlyUnavailableError ||
