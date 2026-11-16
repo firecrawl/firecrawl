@@ -453,6 +453,15 @@ const configSchema = z.object({
   // tool lookup, and add tools to default searches (also the alexandriaAutoTools
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Workload identity federation, used when ANTHROPIC_API_KEY is unset: the
+  // pod's Google identity is exchanged for short-lived Anthropic tokens.
+  ANTHROPIC_FEDERATION_RULE_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
+  ANTHROPIC_ORGANIZATION_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  ANTHROPIC_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
   // Rank rewrite-found tools together with raw-query tools by reciprocal rank
   // fusion (also the alexandriaToolFusion team flag), waiting up to
