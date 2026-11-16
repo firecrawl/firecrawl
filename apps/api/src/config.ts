@@ -393,6 +393,13 @@ const configSchema = z.object({
   PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
+  // Files of hosted MCP shell sessions. The routes that store and serve them
+  // exist only when both are set; the base URL is the public address download
+  // links are built on.
+  GCS_COMPUTER_SESSION_FILES_BUCKET_NAME: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
+  COMPUTER_SESSION_FILES_PUBLIC_BASE_URL: emptyStringAsUndefined(z.url()),
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
