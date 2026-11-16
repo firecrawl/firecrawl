@@ -432,6 +432,7 @@ async function proofPageController(req: Request, res: Response) {
     });
     if (upstream.status >= 300 && upstream.status < 400) {
       logger.warn("Proof page upstream redirect", { status: upstream.status });
+      await upstream.body?.cancel();
       return exchangeError(res, 502, "The request could not be completed.");
     }
     const body = Buffer.from(await upstream.arrayBuffer());
@@ -509,6 +510,7 @@ async function proofUploadController(req: Request, res: Response) {
       logger.warn("Proof upload upstream redirect", {
         status: upstream.status,
       });
+      await upstream.body?.cancel();
       return exchangeError(res, 502, "The request could not be completed.");
     }
     if (upstream.status >= 500) {
