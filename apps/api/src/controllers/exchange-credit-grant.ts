@@ -24,6 +24,18 @@ const creditGrantSchema = z.object({
 });
 
 /**
+ * Whether this deployment can grant: the flag, the shared secret, and database
+ * authentication, without which no team resolves to an organization.
+ */
+export function exchangeCreditGrantsConfigured(): boolean {
+  return (
+    config.EXCHANGE_CREDIT_GRANTS_ENABLED &&
+    Boolean(config.EXCHANGE_INTERNAL_SECRET) &&
+    config.USE_DB_AUTHENTICATION === true
+  );
+}
+
+/**
  * Adds credits to a team's balance on behalf of the Exchange service, which
  * authenticates with the shared secret. A 400 or 422 is final for that grant.
  * A 503 is safe to retry with the same grantId: the idempotency key makes
@@ -33,12 +45,9 @@ export async function exchangeCreditGrantController(
   req: Request,
   res: Response,
 ) {
-  // Checked before the secret, so a deployment with grants off answers
+  // Checked before the secret, so a deployment that cannot grant answers
   // exactly like an unknown route.
-  if (
-    !config.EXCHANGE_CREDIT_GRANTS_ENABLED ||
-    !config.EXCHANGE_INTERNAL_SECRET
-  ) {
+  if (!exchangeCreditGrantsConfigured()) {
     return notFoundHandler(req, res, () => {});
   }
 
@@ -116,7 +125,9 @@ export async function exchangeCreditGrantController(
     value: credits,
     featureId: CREDITS_FEATURE_ID,
     idempotencyKey: `fc:grant:exchange:${grantId}`,
-    properties: { source: "exchange_grant", kind, grantId },
+    // refundCredits stamps its own `source`, so the origin goes under a
+    // name it keeps.
+    properties: { grantSource: "exchange", kind, grantId },
   });
   if (!confirmed) {
     return answer(503, "billing_unconfirmed", {

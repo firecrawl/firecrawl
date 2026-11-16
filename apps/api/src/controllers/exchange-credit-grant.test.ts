@@ -59,7 +59,6 @@ beforeEach(() => {
   config.EXCHANGE_CREDIT_GRANTS_ENABLED = true;
   config.EXCHANGE_INTERNAL_SECRET = SECRET;
   config.EXCHANGE_CREDIT_GRANT_MAX_CREDITS = 100;
-  // orgIdFromAcuc answers null without it.
   config.USE_DB_AUTHENTICATION = true;
   mocks.getACUCTeam.mockResolvedValue({ org_id: "org-1" });
   mocks.refundCredits.mockResolvedValue(true);
@@ -76,6 +75,10 @@ it.each([
   [
     "the secret is unset",
     () => (config.EXCHANGE_INTERNAL_SECRET = undefined as never),
+  ],
+  [
+    "database authentication is off",
+    () => (config.USE_DB_AUTHENTICATION = false),
   ],
 ])("answers like an unknown route when %s", async (_name, turnOff) => {
   turnOff();
@@ -182,7 +185,7 @@ it("grants once against the team's own org and answers 200", async () => {
     featureId: "CREDITS",
     idempotencyKey: `fc:grant:exchange:${grant.grantId}`,
     properties: {
-      source: "exchange_grant",
+      grantSource: "exchange",
       kind: "reward_refund",
       grantId: grant.grantId,
     },
