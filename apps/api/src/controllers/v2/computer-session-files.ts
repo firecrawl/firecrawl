@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { PassThrough, type Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Request, RequestHandler, Response } from "express";
 import { ApiError, Storage } from "@google-cloud/storage";
@@ -21,7 +21,13 @@ export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const LINK_DEFAULT_SECONDS = 15 * 60;
 const LINK_MAX_SECONDS = 60 * 60;
 const DOWNLOADS_PER_MINUTE = 60;
-const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+// A session ends a day after it is created, however much it is used, so it
+// never becomes long-term storage.
+const SESSION_SECONDS = 24 * 60 * 60;
+export const MAX_LIVE_SESSIONS = 100;
+// The UUID a new session is given.
+const SESSION_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // 32 random bytes in base64url.
 const LINK_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -46,9 +52,16 @@ export type ComputerSessionFileStore = {
     options?: { metadata?: Record<string, string>; ifVersion?: string },
   ): Promise<string>;
   read(objectPath: string): Promise<StoredFile | null>;
+  /** The metadata of every object whose path starts with `prefix`. */
+  list(prefix: string): Promise<Record<string, string>[]>;
 };
 
 export class VersionMismatchError extends Error {}
+
+const stringValues = (metadata: object | undefined) =>
+  Object.fromEntries(
+    Object.entries(metadata ?? {}).map(([key, value]) => [key, String(value)]),
+  );
 
 function gcsStore(bucketName: string): ComputerSessionFileStore {
   const bucket = new Storage({
@@ -97,16 +110,15 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
       return {
         sizeBytes: Number(stored.size),
         version: generation,
-        metadata: Object.fromEntries(
-          Object.entries(stored.metadata ?? {}).map(([key, value]) => [
-            key,
-            String(value),
-          ]),
-        ),
+        metadata: stringValues(stored.metadata),
         // Pinned to the version just read, so the bytes match the size sent.
         stream: () =>
           bucket.file(objectPath, { generation }).createReadStream(),
       };
+    },
+    async list(prefix) {
+      const [files] = await bucket.getFiles({ prefix });
+      return files.map(file => stringValues(file.metadata.metadata));
     },
   };
 }
@@ -117,10 +129,17 @@ const refuse = (res: Response, status: number, error: string) => {
   res.status(status).json({ success: false, error });
 };
 
+/** Written so that a session or link with no expiry recorded is never live. */
+const isLive = (metadata: Record<string, string>) =>
+  Date.now() < Number(metadata.expiresAt);
+
 /** The caller's team, or null once a refusal has been sent. */
-function sessionTeam(req: SessionRequest, res: Response): string | null {
-  // A workspace holds what a hosted MCP shell wrote, so only the hosted MCP
-  // stores and reads one. A plain API key cannot use this as file hosting.
+function hostedMcpTeam(
+  req: RequestWithAuth<any, any, any>,
+  res: Response,
+): string | null {
+  // A session holds what a hosted MCP shell wrote, so only the hosted MCP
+  // creates and uses one. A plain API key cannot use this as file hosting.
   if (!req.auth.hostedMcp) {
     refuse(
       res,
@@ -134,14 +153,6 @@ function sessionTeam(req: SessionRequest, res: Response): string | null {
       res,
       403,
       "Session files are not available with zero data retention.",
-    );
-    return null;
-  }
-  if (!SESSION_ID.test(req.params.sessionId)) {
-    refuse(
-      res,
-      400,
-      "The session id may hold letters, digits, - and _, up to 128 characters.",
     );
     return null;
   }
@@ -175,11 +186,14 @@ function declaredSize(req: Request, res: Response): number | null {
 function bodyOf(req: Request, res: Response): Readable {
   const body = new PassThrough();
   req.pipe(body);
-  req.once("close", () => {
+  const closed = () => {
     if (!req.complete) {
       body.destroy(new Error("The request ended before its body did."));
     }
-  });
+  };
+  // The caller may have gone while the session was being looked up.
+  if (req.closed) closed();
+  else req.once("close", closed);
   // A failed write can leave part of the body unread, so the connection is
   // not reused after it.
   body.once("error", () => {
@@ -200,8 +214,10 @@ async function send(res: Response, file: StoredFile) {
   }
 }
 
-const workspacePath = (teamId: string, sessionId: string) =>
-  `workspaces/${encodeURIComponent(teamId)}/${sessionId}`;
+// A session is one object: its workspace, empty until the first save, with
+// the session's expiry in its metadata.
+const teamPrefix = (teamId: string) =>
+  `workspaces/${encodeURIComponent(teamId)}/`;
 
 const linkSchema = z.object({
   filename: z.string().min(1).max(255),
@@ -217,10 +233,56 @@ export function computerSessionFileControllers(
   store: ComputerSessionFileStore,
   publicBaseUrl: string,
 ) {
+  /**
+   * The team's live session the request names, or null once a refusal has been
+   * sent. An id the API did not issue, another team's id and an expired
+   * session all answer the same.
+   */
+  async function liveSession(
+    req: SessionRequest,
+    res: Response,
+    teamId: string,
+  ) {
+    const objectPath = teamPrefix(teamId) + req.params.sessionId;
+    const workspace = SESSION_ID.test(req.params.sessionId)
+      ? await store.read(objectPath)
+      : null;
+    if (!workspace || !isLive(workspace.metadata)) {
+      refuse(res, 404, "Session not found or expired. Create a new session.");
+      return null;
+    }
+    return { objectPath, workspace };
+  }
+
   return {
+    /** Starts a session: an id only this team can use, and an empty workspace. */
+    async createSession(req: RequestWithAuth<{}, any, any>, res: Response) {
+      const teamId = hostedMcpTeam(req, res);
+      if (teamId === null) return;
+      const live = (await store.list(teamPrefix(teamId))).filter(isLive);
+      if (live.length >= MAX_LIVE_SESSIONS) {
+        return refuse(
+          res,
+          429,
+          `This team already has ${MAX_LIVE_SESSIONS} live sessions. Wait for one to expire.`,
+        );
+      }
+      const id = crypto.randomUUID();
+      const expiresAt = Date.now() + SESSION_SECONDS * 1000;
+      await store.write(teamPrefix(teamId) + id, Readable.from([]), {
+        metadata: { expiresAt: String(expiresAt) },
+        ifVersion: "0",
+      });
+      logger.info("Computer session created", { teamId, sessionId: id });
+      res.status(200).json({
+        success: true,
+        data: { id, expiresAt: new Date(expiresAt).toISOString() },
+      });
+    },
+
     /** Stores the session's workspace, replacing the one saved before. */
     async saveWorkspace(req: SessionRequest, res: Response) {
-      const teamId = sessionTeam(req, res);
+      const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
       const sizeBytes = declaredSize(req, res);
       if (sizeBytes === null) return;
@@ -231,13 +293,16 @@ export function computerSessionFileControllers(
         return refuse(res, 400, "If-Match takes the version a read returned.");
       }
 
+      const session = await liveSession(req, res, teamId);
+      if (!session) return;
+
       let version: string;
       try {
-        version = await store.write(
-          workspacePath(teamId, req.params.sessionId),
-          bodyOf(req, res),
-          { ifVersion },
-        );
+        // The save keeps the expiry the session was created with.
+        version = await store.write(session.objectPath, bodyOf(req, res), {
+          metadata: session.workspace.metadata,
+          ifVersion,
+        });
       } catch (error) {
         if (!(error instanceof VersionMismatchError)) throw error;
         return refuse(
@@ -251,21 +316,17 @@ export function computerSessionFileControllers(
     },
 
     async readWorkspace(req: SessionRequest, res: Response) {
-      const teamId = sessionTeam(req, res);
+      const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
-      const file = await store.read(
-        workspacePath(teamId, req.params.sessionId),
-      );
-      if (!file) {
-        return refuse(res, 404, "No workspace is saved for this session.");
-      }
-      res.setHeader("ETag", `"${file.version}"`);
-      await send(res, file);
+      const session = await liveSession(req, res, teamId);
+      if (!session) return;
+      res.setHeader("ETag", `"${session.workspace.version}"`);
+      await send(res, session.workspace);
     },
 
     /** Stores the file in the body and returns a link anyone can download it from until it expires. */
     async createLink(req: SessionRequest, res: Response) {
-      const teamId = sessionTeam(req, res);
+      const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
       const query = linkSchema.safeParse(req.query);
       if (!query.success) {
@@ -277,6 +338,7 @@ export function computerSessionFileControllers(
       }
       const sizeBytes = declaredSize(req, res);
       if (sizeBytes === null) return;
+      if (!(await liveSession(req, res, teamId))) return;
 
       const filename =
         path
@@ -317,8 +379,7 @@ export function computerSessionFileControllers(
         ? await store.read(`links/${req.params.token}`)
         : null;
       if (!file) return refuse(res, 404, "Download link not found.");
-      // Written so that a file with no expiry recorded is never served.
-      if (!(Date.now() < Number(file.metadata.expiresAt))) {
+      if (!isLive(file.metadata)) {
         return refuse(res, 410, "This download link has expired.");
       }
       logger.info("Computer session link downloaded", {

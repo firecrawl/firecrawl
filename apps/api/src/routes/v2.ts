@@ -260,6 +260,11 @@ v2Router.put(
 // configures them, so the paths otherwise answer like an unknown route.
 const computerSessionFiles = configuredComputerSessionFiles();
 if (computerSessionFiles) {
+  v2Router.post(
+    "/computer/sessions",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.createSession),
+  );
   v2Router.put(
     "/computer/sessions/:sessionId/workspace",
     authMiddleware(RateLimiterMode.Account),

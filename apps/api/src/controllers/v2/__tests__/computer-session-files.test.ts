@@ -12,11 +12,16 @@ import request from "supertest";
 import { config } from "../../../config";
 import {
   MAX_FILE_BYTES,
+  MAX_LIVE_SESSIONS,
   VersionMismatchError,
   computerSessionFileControllers,
   configuredComputerSessionFiles,
   type ComputerSessionFileStore,
 } from "../computer-session-files";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UNISSUED = "00000000-0000-4000-8000-000000000000";
 
 const objects = new Map<
   string,
@@ -42,6 +47,11 @@ const store: ComputerSessionFileStore = {
       metadata: stored.metadata,
       stream: () => Readable.from([stored.bytes]),
     };
+  },
+  async list(prefix) {
+    return [...objects]
+      .filter(([objectPath]) => objectPath.startsWith(prefix))
+      .map(([, stored]) => stored.metadata);
   },
 };
 
@@ -69,24 +79,21 @@ const run =
     controller(req, res).catch(next);
   };
 
-const WORKSPACE = "/v2/computer/sessions/session-1/workspace";
-const LINKS = "/v2/computer/sessions/session-1/links";
+const SESSIONS = "/v2/computer/sessions";
+const workspaceOf = (id: string) => `${SESSIONS}/${id}/workspace`;
 const app = express();
+app.post(SESSIONS, auth, run(controllers.createSession));
 app.put(
-  "/v2/computer/sessions/:sessionId/workspace",
+  `${SESSIONS}/:sessionId/workspace`,
   auth,
   run(controllers.saveWorkspace),
 );
 app.get(
-  "/v2/computer/sessions/:sessionId/workspace",
+  `${SESSIONS}/:sessionId/workspace`,
   auth,
   run(controllers.readWorkspace),
 );
-app.post(
-  "/v2/computer/sessions/:sessionId/links",
-  auth,
-  run(controllers.createLink),
-);
+app.post(`${SESSIONS}/:sessionId/links`, auth, run(controllers.createLink));
 app.get("/v2/computer/files/:token{/:filename}", run(controllers.download));
 
 let server: http.Server;
@@ -104,17 +111,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const save = (team: string, bytes: string, path = WORKSPACE) =>
+const create = (team = "team-a") =>
+  request(server).post(SESSIONS).set("x-test-team", team);
+const createId = async (team = "team-a") =>
+  (await create(team)).body.data.id as string;
+const save = (team: string, id: string, bytes: string) =>
   request(server)
-    .put(path)
+    .put(workspaceOf(id))
     .set("x-test-team", team)
     .type("application/octet-stream")
     .send(Buffer.from(bytes));
-const read = (team: string) =>
-  request(server).get(WORKSPACE).set("x-test-team", team).responseType("blob");
-const link = (bytes: string, query: Record<string, string | number>) =>
+const read = (team: string, id: string) =>
   request(server)
-    .post(LINKS)
+    .get(workspaceOf(id))
+    .set("x-test-team", team)
+    .responseType("blob");
+const link = (
+  id: string,
+  bytes: string,
+  query: Record<string, string | number>,
+) =>
+  request(server)
+    .post(`${SESSIONS}/${id}/links`)
     .query(query)
     .set("x-test-team", "team-a")
     .type("application/octet-stream")
@@ -122,13 +140,13 @@ const link = (bytes: string, query: Record<string, string | number>) =>
 const download = (url: string) =>
   request(server).get(new URL(url).pathname).responseType("blob");
 /** The status of a save that only declares its body, so no test sends one over the limit. */
-const declare = (headers: http.OutgoingHttpHeaders) =>
+const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
   new Promise<number>((resolve, reject) => {
     const req = http.request(
       {
         port: (server.address() as AddressInfo).port,
         method: "PUT",
-        path: WORKSPACE,
+        path: workspaceOf(id),
         headers: {
           "x-test-team": "team-a",
           "content-type": "application/octet-stream",
@@ -143,103 +161,143 @@ const declare = (headers: http.OutgoingHttpHeaders) =>
     req.on("error", reject);
     req.write("x");
   });
+const seed = (team: string, count: number, expiresAt: number) => {
+  for (let index = 0; index < count; index++) {
+    objects.set(`workspaces/${team}/seed-${expiresAt}-${index}`, {
+      bytes: Buffer.alloc(0),
+      version: 1,
+      metadata: { expiresAt: String(expiresAt) },
+    });
+  }
+};
 
-describe("workspace", () => {
-  it("reads back the bytes it saved", async () => {
-    const saved = await save("team-a", "files");
-    expect(saved.status).toBe(200);
-    expect(saved.body.data).toEqual({ sizeBytes: 5, version: "1" });
+describe("sessions", () => {
+  it("creates a session the API names, empty and live for a day", async () => {
+    const created = await create();
+    expect(created.status).toBe(200);
+    const { id, expiresAt } = created.body.data;
+    expect(id).toMatch(UUID);
+    const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
+    expect(lifetimeMs).toBeGreaterThan(DAY_MS - 60_000);
+    expect(lifetimeMs).toBeLessThanOrEqual(DAY_MS);
+    expect([...objects.keys()]).toEqual([`workspaces/team-a/${id}`]);
 
-    const res = await read("team-a");
+    const res = await read("team-a", id);
     expect(res.status).toBe(200);
-    expect(res.headers.etag).toBe('"1"');
-    expect(res.body.toString()).toBe("files");
+    expect(res.headers["content-length"]).toBe("0");
+    expect(res.body.length).toBe(0);
   });
 
-  it("keeps one team's session from another team using the same session id", async () => {
-    await save("team-a", "a-files");
-    expect((await read("team-b")).status).toBe(404);
+  it("refuses a new session once the team has the limit of live ones", async () => {
+    seed("team-a", MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
+    seed("team-a", 5, Date.now() - 1);
+    expect((await create()).status).toBe(200);
+    expect((await create()).status).toBe(429);
+    expect((await create("team-b")).status).toBe(200);
+  });
 
-    await save("team-b", "b-files");
-    expect((await read("team-a")).body.toString()).toBe("a-files");
-    expect((await read("team-b")).body.toString()).toBe("b-files");
+  it.each([
+    ["an id the API did not issue", async () => UNISSUED],
+    ["an id of another shape", async () => "a.b"],
+    ["a path out of the team's own sessions", async () => "..%2Fteam-b%2Fx"],
+    ["another team's session", () => createId("team-b")],
+    [
+      "an expired session",
+      async () => {
+        const id = await createId();
+        vi.spyOn(Date, "now").mockReturnValue(Date.now() + DAY_MS + 1);
+        return id;
+      },
+    ],
+  ])("finds no session for %s on any route", async (_name, sessionId) => {
+    const id = await sessionId();
+    const before = new Map(objects);
+    expect((await save("team-a", id, "files")).status).toBe(404);
+    expect((await read("team-a", id)).status).toBe(404);
+    expect((await link(id, "data", { filename: "a.txt" })).status).toBe(404);
+    expect(objects).toEqual(before);
   });
 
   it.each([
     ["a caller that is not the hosted MCP", { "x-test-direct": "1" }],
     ["a zero data retention team", { "x-test-zdr": "1" }],
   ])("refuses %s on every session route", async (_name, headers) => {
-    await save("team-a", "files");
+    const id = await createId();
+    const before = new Map(objects);
+    const bytes = Buffer.from("x");
     const calls = [
+      request(server).post(SESSIONS),
       request(server)
-        .put(WORKSPACE)
+        .put(workspaceOf(id))
         .type("application/octet-stream")
-        .send(Buffer.from("x")),
-      request(server).get(WORKSPACE),
+        .send(bytes),
+      request(server).get(workspaceOf(id)),
       request(server)
-        .post(LINKS)
+        .post(`${SESSIONS}/${id}/links`)
         .query({ filename: "a.txt" })
         .type("application/octet-stream")
-        .send(Buffer.from("x")),
+        .send(bytes),
     ];
     for (const call of calls) {
       const res = await call.set("x-test-team", "team-a").set(headers);
       expect(res.status).toBe(403);
     }
-    expect([...objects.keys()]).toEqual(["workspaces/team-a/session-1"]);
-    expect(objects.get("workspaces/team-a/session-1")?.bytes.toString()).toBe(
-      "files",
-    );
+    expect(objects).toEqual(before);
+  });
+});
+
+describe("workspace", () => {
+  it("reads back the bytes it saved, and keeps the session's expiry", async () => {
+    const id = await createId();
+    const { expiresAt } = objects.get(`workspaces/team-a/${id}`)!.metadata;
+    const saved = await save("team-a", id, "files");
+    expect(saved.status).toBe(200);
+    expect(saved.body.data).toEqual({ sizeBytes: 5, version: "2" });
+
+    const res = await read("team-a", id);
+    expect(res.status).toBe(200);
+    expect(res.headers.etag).toBe('"2"');
+    expect(res.body.toString()).toBe("files");
+    expect(objects.get(`workspaces/team-a/${id}`)!.metadata).toEqual({
+      expiresAt,
+    });
   });
 
-  it.each(["a.b", "..%2Fteam-b%2Fsession-1", "x".repeat(129)])(
-    "refuses the session id %s",
-    async sessionId => {
-      const res = await save(
-        "team-a",
-        "files",
-        `/v2/computer/sessions/${sessionId}/workspace`,
-      );
-      expect(res.status).toBe(400);
-      expect(objects.size).toBe(0);
-    },
-  );
-
   it("refuses a body over the limit, or of unknown size, before reading it", async () => {
-    expect(await declare({ "content-length": MAX_FILE_BYTES + 1 })).toBe(413);
-    expect(await declare({})).toBe(411);
+    const id = await createId();
+    expect(await declare(id, { "content-length": MAX_FILE_BYTES + 1 })).toBe(
+      413,
+    );
+    expect(await declare(id, {})).toBe(411);
     expect(
-      await declare({
+      await declare(id, {
         "content-length": 1,
         "content-type": "application/json",
       }),
     ).toBe(415);
-    expect(objects.size).toBe(0);
+    expect(objects.get(`workspaces/team-a/${id}`)!.version).toBe(1);
   });
 
   it("saves over a version only when If-Match names the stored one", async () => {
-    expect((await save("team-a", "one").set("If-Match", '"0"')).status).toBe(
-      200,
-    );
-    expect((await save("team-a", "lost").set("If-Match", '"0"')).status).toBe(
-      412,
-    );
+    const id = await createId();
     expect(
-      (await save("team-a", "two").set("If-Match", '"1"')).body.data.version,
+      (await save("team-a", id, "one").set("If-Match", '"1"')).body.data
+        .version,
     ).toBe("2");
-    expect((await save("team-a", "lost").set("If-Match", '"1"')).status).toBe(
-      412,
-    );
     expect(
-      (await save("team-a", "lost").set("If-Match", "latest")).status,
+      (await save("team-a", id, "lost").set("If-Match", '"1"')).status,
+    ).toBe(412);
+    expect(
+      (await save("team-a", id, "lost").set("If-Match", "latest")).status,
     ).toBe(400);
-    expect((await read("team-a")).body.toString()).toBe("two");
+    expect((await save("team-a", id, "two")).body.data.version).toBe("3");
+    expect((await read("team-a", id)).body.toString()).toBe("two");
   });
 });
 
 describe("download links", () => {
   it("serves the file to anyone holding the link, as a download", async () => {
-    const created = await link("a,b\n1,2\n", {
+    const created = await link(await createId(), "a,b\n1,2\n", {
       filename: "../../quarterly report.csv",
     });
     expect(created.status).toBe(200);
@@ -265,7 +323,7 @@ describe("download links", () => {
   });
 
   it("stops serving a link once it expires", async () => {
-    const created = await link("data", {
+    const created = await link(await createId(), "data", {
       filename: "a.txt",
       expiresInSeconds: 60,
     });
@@ -287,10 +345,11 @@ describe("download links", () => {
   });
 
   it("finds nothing for an unknown token or a workspace path", async () => {
-    await save("team-a", "files");
+    const id = await createId();
+    await save("team-a", id, "files");
     for (const token of [
       "u".repeat(43),
-      "workspaces%2Fteam-a%2Fsession-1",
+      `workspaces%2Fteam-a%2F${id}`,
       "short",
     ]) {
       expect(
@@ -304,8 +363,9 @@ describe("download links", () => {
     ["a lifetime over an hour", { filename: "a.txt", expiresInSeconds: 3601 }],
     ["a lifetime under a minute", { filename: "a.txt", expiresInSeconds: 5 }],
   ])("refuses a link with %s", async (_name, query) => {
-    expect((await link("data", query)).status).toBe(400);
-    expect(objects.size).toBe(0);
+    const id = await createId();
+    expect((await link(id, "data", query)).status).toBe(400);
+    expect([...objects.keys()]).toEqual([`workspaces/team-a/${id}`]);
   });
 });
 
@@ -339,6 +399,7 @@ describe("configuration", () => {
     const handlers = configuredComputerSessionFiles();
     expect(Object.keys(handlers ?? {}).sort()).toEqual([
       "createLink",
+      "createSession",
       "download",
       "downloadRateLimit",
       "readWorkspace",
