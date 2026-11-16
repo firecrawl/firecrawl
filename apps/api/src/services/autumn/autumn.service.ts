@@ -45,6 +45,18 @@ function billingEntityId(
 }
 
 /**
+ * Properties sent with every charge, hold, check and refund. `teamId` is set
+ * here so an event names its team even when it carries no entity (MCP credits),
+ * and is written last so a caller cannot drop or misstate it.
+ */
+function eventProperties(
+  properties: Record<string, unknown> | undefined,
+  teamId: string,
+): Record<string, unknown> {
+  return { ...properties, teamId };
+}
+
+/**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
  * null when it's absent or not a sane finite value. These balances feed
  * directly into rate-limit and concurrency controls, so NaN, Infinity, and
@@ -231,7 +243,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId) ?? "",
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
       });
       if (result.status === "unavailable") return null;
       return {
@@ -345,7 +357,7 @@ export class AutumnService {
         // is what makes firebill lock-table-free); default to an hour, the
         // monitor runner's convention, when the caller sets none.
         expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
-        properties,
+        properties: eventProperties(properties, teamId),
         partnerJobToken,
       });
       if (result.status === "locked") {
@@ -422,7 +434,9 @@ export class AutumnService {
       lockId,
       action,
       overrideValue,
-      properties,
+      // A settle sends its own properties, so it names the team too when the
+      // caller passes one.
+      properties: team ? eventProperties(properties, team.teamId) : properties,
       externalRequestId,
       customerId,
       featureId: customerId ? featureId : null,
@@ -454,7 +468,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
         idempotencyKey,
         externalRequestId,
         durableRetry,
@@ -543,7 +557,10 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value: -value,
-        properties: { ...properties, source: "autumn_refund" },
+        properties: eventProperties(
+          { ...properties, source: "autumn_refund" },
+          teamId,
+        ),
         idempotencyKey,
         externalRequestId,
         durableRetry,
