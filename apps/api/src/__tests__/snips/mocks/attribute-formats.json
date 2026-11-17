@@ -1,0 +1,42 @@
+[
+  {
+    "time": 1782920000000,
+    "options": {
+      "url": "https://example.com/attribute-fixture",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://example.com/attribute-fixture",
+      "body": "<!doctype html><html><head><title>Attribute Fixture</title></head><body><main><h1>Attribute Fixture</h1><article class=\"athing\" id=\"item-1\" data-testid=\"story-card\" data-view-component=\"true\">First story</article><article class=\"athing\" id=\"item-2\" data-testid=\"story-card-secondary\" data-view-component=\"true\">Second story</article><a class=\"athing\" id=\"item-link\" data-testid=\"story-link\" href=\"/story\">Story link</a></main></body></html>",
+      "status": 200,
+      "headers": [["content-type", "text/html; charset=utf-8"]]
+    }
+  },
+  {
+    "time": 1782920000001,
+    "options": {
+      "url": "http://localhost:3003/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/attribute-fixture",
+        "wait_after_load": 0,
+        "timeout": 90000,
+        "skip_tls_verification": false
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 3
+    },
+    "result": {
+      "status": 200,
+      "headers": [["content-type", "application/json"]],
+      "body": "{\"content\":\"<!doctype html><html><head><title>Attribute Fixture</title></head><body><main><h1>Attribute Fixture</h1><article class=\\\"athing\\\" id=\\\"item-1\\\" data-testid=\\\"story-card\\\" data-view-component=\\\"true\\\">First story</article><article class=\\\"athing\\\" id=\\\"item-2\\\" data-testid=\\\"story-card-secondary\\\" data-view-component=\\\"true\\\">Second story</article><a class=\\\"athing\\\" id=\\\"item-link\\\" data-testid=\\\"story-link\\\" href=\\\"/story\\\">Story link</a></main></body></html>\",\"pageStatusCode\":200,\"contentType\":\"text/html; charset=utf-8\"}"
+    }
+  }
+]
