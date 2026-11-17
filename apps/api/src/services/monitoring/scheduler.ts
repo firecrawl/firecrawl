@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { getACUCTeam } from "../../controllers/auth";
 import { logger as _logger } from "../../lib/logger";
-import { getScrapeZDR, getSearchForcedKind } from "../../lib/zdr-helpers";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { addMonitorCheckJob } from "./queue";
 import {
@@ -36,14 +37,14 @@ export function monitorIsSearch(monitor: MonitorRow): boolean {
   return (monitor.targets ?? []).some(target => target.type === "search");
 }
 
-/** Monitors run without zero data retention, so a team that requires it for scrape, or for search when a target is a search, cannot run one. */
+/** Monitors run without zero data retention, so a team that requires it for scrape, or for search (including Safe Mode lockdown) when a target is a search, cannot run one. */
 export function monitorRefusedForZdr(
   flags: TeamFlags | undefined,
   targets: { type: string }[],
 ): boolean {
   return (
     getScrapeZDR(flags) === "forced" ||
-    (getSearchForcedKind(flags) !== null &&
+    (getEffectiveSearchForcedKind(flags, undefined) !== null &&
       targets.some(target => target.type === "search"))
   );
 }
