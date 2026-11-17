@@ -19,6 +19,40 @@ nuqPool.on("error", err =>
   logger.error("Error in NuQ idle client", { err, module: "nuq" }),
 );
 
+async function withPrefetchDnsRetry<T>(
+  query: () => Promise<T>,
+  _logger: Logger,
+): Promise<T> {
+  const delays = [1000, 2000, 4000, 8000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await query();
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException | null;
+      // Name resolution fails before SQL is submitted. Other connection errors
+      // may occur after a claim committed and must not replay the UPDATE.
+      if (
+        failure?.syscall !== "getaddrinfo" ||
+        !["ENOTFOUND", "EAI_AGAIN"].includes(failure.code ?? "") ||
+        attempt >= delays.length
+      ) {
+        throw error;
+      }
+      _logger.warn(
+        "PostgreSQL name resolution failed during NuQ prefetch; retrying",
+        {
+          module: "nuq",
+          method: "prefetchJobs",
+          code: failure.code,
+          retry: attempt + 1,
+          delayMs: delays[attempt],
+        },
+      );
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+    }
+  }
+}
+
 export type NuQJobStatus =
   | "queued"
   | "active"
@@ -1285,11 +1319,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
     const start = Date.now();
     try {
       const jobs = (
-        await nuqPool.query(
-          `
+        await withPrefetchDnsRetry(
+          () =>
+            nuqPool.query(
+              `
             WITH next AS (SELECT id FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 500)
             UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
           `,
+            ),
+          _logger,
         )
       ).rows.map(row => this.rowToJob(row)!);
 
