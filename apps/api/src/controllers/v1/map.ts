@@ -112,7 +112,7 @@ export async function getMapResults({
   // the team's search zero data retention.
   const zeroDataRetention =
     getScrapeZDR(flags) === "forced" ||
-    getSearchForcedKind(flags) === "zdr" ||
+    getSearchForcedKind(flags) !== null ||
     indexOnly;
 
   const sc: StoredCrawl = {

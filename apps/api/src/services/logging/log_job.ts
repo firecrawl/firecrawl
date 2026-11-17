@@ -1282,7 +1282,9 @@ async function logExtractInternal(extract: LoggedExtract) {
       status: extract.is_successful ? "completed" : "failed",
       completedAtMs: Date.now(),
       creditsBilled: extract.credits_cost,
-      ...(extract.error ? { error: extract.error } : {}),
+      ...(extract.error && !extract.zeroDataRetention
+        ? { error: extract.error }
+        : {}),
     });
   } catch (error) {
     logger.error("Failed to write extract state to Bigtable", { error });

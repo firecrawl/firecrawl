@@ -153,7 +153,7 @@ export async function getMapResults({
   // The site search is a query sent to a search provider, so it also follows
   // the team's search zero data retention.
   const searchZeroDataRetention =
-    zeroDataRetention || getSearchForcedKind(flags) === "zdr";
+    zeroDataRetention || getSearchForcedKind(flags) !== null;
 
   const sc: StoredCrawl = {
     originUrl: url,
