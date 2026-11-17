@@ -284,11 +284,14 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       await elapse(id, 14 * HOUR_MS);
       expect((await read(TEAM_A, id)).status).toBe(404);
 
+      // The next session starts by the real clock, as the first did.
+      now.mockRestore();
       const busy = (await create()).body.data.id;
       const began = new Date((await storedSession(busy)).created_at).getTime();
+      const later = vi.spyOn(Date, "now");
       let last;
       for (let hour = 20; hour < 7 * 24; hour += 20) {
-        now.mockReturnValue(began + hour * HOUR_MS);
+        later.mockReturnValue(began + hour * HOUR_MS);
         last = await save(TEAM_A, busy, "files");
         expect(last.status).toBe(200);
       }
