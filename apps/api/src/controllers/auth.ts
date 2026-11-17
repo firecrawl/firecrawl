@@ -28,6 +28,7 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { KEYLESS_PLAN_CLASS } from "../lib/team-plan-class";
 import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
@@ -78,7 +79,8 @@ const ACUC_TTL_SECONDS = 600;
 const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
 // When Autumn can't answer, fail open rather than throttle or gate real teams
 // on the low defaults. Generous but bounded: the concurrency queue cap still
-// applies.
+// applies. The plan class is the exception and fails closed: these limits
+// carry none, so nothing is stated about a team whose plan could not be read.
 const FAIL_OPEN_LIMITS: TeamLimits = {
   concurrency_limit: 200,
   rate_limit_multiplier: 2500,
@@ -347,6 +349,7 @@ async function getACUC(
       concurrency_limit: limits.concurrency_limit,
       rate_limit_multiplier: limits.rate_limit_multiplier,
       is_paid_plan: limits.is_paid_plan,
+      plan_class: limits.plan_class,
     };
   } else {
     return null;
@@ -833,11 +836,17 @@ async function handleKeylessAuth(
   // are skipped automatically; mockPreviewACUC supplies concurrency 2 + credits.
   // Actual credits consumed are charged to the IP's daily budget after the
   // request completes (see chargeKeylessCredits).
+  // The plan class is set here and not in mockPreviewACUC, which also builds
+  // the chunk of every other preview team: only a request that came through
+  // the keyless checks above is stated as keyless.
   return {
     success: true,
     team_id: teamId,
     org_id: null,
-    chunk: mockPreviewACUC(teamId, false),
+    chunk: {
+      ...mockPreviewACUC(teamId, false),
+      plan_class: KEYLESS_PLAN_CLASS,
+    },
   };
 }
 

@@ -7,7 +7,7 @@ import {
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
-import { getScrapeZDR } from "./zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
 import {
   checkAndUpdateURLForMap,
@@ -99,6 +99,7 @@ export async function getMapResults({
   headers,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
   id: providedId,
+  zeroDataRetention: requestZeroDataRetention = false,
 }: {
   url: string;
   search?: string;
@@ -120,6 +121,8 @@ export async function getMapResults({
   headers?: Record<string, string>;
   maxFireEngineResults?: number;
   id?: string;
+  /** The calling request's own zero data retention, on top of the team's. */
+  zeroDataRetention?: boolean;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -145,7 +148,12 @@ export async function getMapResults({
   let mapResults: MapDocument[] = [];
   // Lockdown (index-only) is cache-only, which implies zero data retention —
   // and must never write its empty live-search result into the shared cache.
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
+  const zeroDataRetention =
+    requestZeroDataRetention || getScrapeZDR(flags) === "forced" || indexOnly;
+  // The site search is a query sent to a search provider, so it also follows
+  // the team's search zero data retention.
+  const searchZeroDataRetention =
+    zeroDataRetention || getSearchForcedKind(flags) === "zdr";
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -232,7 +240,7 @@ export async function getMapResults({
           numResults: resultsPerPage,
           page,
           usOnly,
-          zeroDataRetention,
+          zeroDataRetention: searchZeroDataRetention,
         },
         abort,
       );
@@ -262,7 +270,7 @@ export async function getMapResults({
       fetchAllPages(),
     ]);
 
-    if (!zeroDataRetention) {
+    if (!searchZeroDataRetention) {
       await redisEvictConnection.set(
         cacheKey,
         JSON.stringify(searchResults),
@@ -398,6 +406,7 @@ export async function buildPromptWithWebsiteStructure({
   allowExternalLinks = false,
   useIndex = true,
   maxFireEngineResults = 500,
+  zeroDataRetention = false,
 }: {
   basePrompt: string;
   url: string;
@@ -410,6 +419,7 @@ export async function buildPromptWithWebsiteStructure({
   allowExternalLinks?: boolean;
   useIndex?: boolean;
   maxFireEngineResults?: number;
+  zeroDataRetention?: boolean;
 }): Promise<{ prompt: string; websiteUrls: string[] }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
@@ -425,6 +435,7 @@ export async function buildPromptWithWebsiteStructure({
       filterByPath: false,
       useIndex,
       maxFireEngineResults,
+      zeroDataRetention,
     });
 
     const websiteUrls = mapResult.mapResults.map(doc => doc.url);

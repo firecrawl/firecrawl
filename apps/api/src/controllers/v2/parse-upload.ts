@@ -13,6 +13,7 @@ import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { reportPipelineError } from "../../lib/redis-pipeline";
+import { enqueueZdrCleanupJob } from "../../lib/zdr-queue";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -375,6 +376,15 @@ export async function parseUploadUrlController(
           )
         ) {
           return;
+        }
+
+        if (config.USE_DB_AUTHENTICATION === true) {
+          try {
+            await enqueueZdrCleanupJob({ parseUploadPath: objectPath });
+          } catch (error) {
+            await releaseRejectedUploadRef(refPayload);
+            throw error;
+          }
         }
 
         return res.status(200).json({
