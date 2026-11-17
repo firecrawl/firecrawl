@@ -734,6 +734,9 @@ describe("serializeThrownError", () => {
       "writes a field that JSON cannot write",
       () => ({ message: "Sitemap fetch failed", pages: 10n }),
     ],
+    ["writes nothing", () => undefined],
+    ["writes something that is not an object", () => "Sitemap fetch failed"],
+    ["writes an object without a message", () => ({ pages: 10 })],
   ])(
     "sends an error that %s as UNKNOWN_ERROR with its message",
     (_, serialize) => {

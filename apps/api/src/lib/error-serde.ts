@@ -141,14 +141,25 @@ function shortened(text: string) {
  * its cause, and then gets every other text it carries shortened, until it
  * fits.
  *
- * An error that still does not fit, or that cannot write itself, goes out as
- * UNKNOWN_ERROR with its message and its stack, so that what is written here
- * can always be read back.
+ * An error that still does not fit, or that does not write itself as a reader
+ * takes it, goes out as UNKNOWN_ERROR with its message and its stack, so that
+ * what is written here can always be read back.
  */
 export function serializeThrownError(error: unknown) {
   const thrown = isTransportableError(error) ? error : new UnknownError(error);
-  const fits = (serialized: string) =>
-    Buffer.byteLength(serialized, "utf8") <= MAX_SERIALIZED_ERROR_BYTES;
+  // What the queue keeps whole and a reader takes: within the limit, and after
+  // the code a JSON object with a message.
+  const crosses = (serialized: string) => {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
+      return false;
+    }
+    try {
+      const written = JSON.parse(serialized.slice(serialized.indexOf("|") + 1));
+      return typeof written?.message === "string";
+    } catch {
+      return false;
+    }
+  };
 
   try {
     let payload = thrown.serialize();
@@ -164,7 +175,7 @@ export function serializeThrownError(error: unknown) {
       payload = { ...payload, cause: undefined };
       serialized = write(payload);
     }
-    if (fits(serialized)) {
+    if (crosses(serialized)) {
       return serialized;
     }
 
@@ -185,12 +196,12 @@ export function serializeThrownError(error: unknown) {
       },
     ]) {
       serialized = write(shorter);
-      if (fits(serialized)) {
+      if (crosses(serialized)) {
         return serialized;
       }
     }
   } catch {
-    // `serialize()` threw, or a field other than the cause cannot be written.
+    // `serialize()` threw, or what it returned cannot be written.
   }
 
   // This always fits: it holds two shortened texts and a fixed sentence, and a
