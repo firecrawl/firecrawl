@@ -12,6 +12,7 @@ import {
   RateLimiterRes,
 } from "rate-limiter-flexible";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import IORedis from "ioredis";
 import { z } from "zod";
 import { config } from "../../config";
 import { db } from "../../db/connection";
@@ -38,6 +39,9 @@ const SESSION_MAX = sql`interval '7 days'`;
 export const MAX_LIVE_SESSIONS = 100;
 const SESSION_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// 16 random bytes in base64url.
+const LINK_TOKEN = /^[A-Za-z0-9_-]{22}$/;
+const LINK_KEY = "computer-session-link:";
 
 const logger = _logger.child({ module: "computer-session-files" });
 
@@ -51,6 +55,12 @@ export type ComputerSessionFileStore = {
     filename: string,
     expiresAt: number,
   ): Promise<string>;
+};
+
+/** The signed URL each short link redirects to, kept until the link ends. */
+export type LinkTargets = {
+  set(token: string, url: string, expiresAt: number): Promise<unknown>;
+  get(token: string): Promise<string | null>;
 };
 
 export function gcsStore(bucketName: string): ComputerSessionFileStore {
@@ -221,6 +231,11 @@ function bodyOf(req: Request, res: Response): Readable {
   return body;
 }
 
+// The hosted MCP may reach the API on an internal address.
+const publicBaseUrl = (req: Request) =>
+  config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL?.replace(/\/$/, "") ??
+  `${req.protocol}://${req.host}`;
+
 const linkSchema = z.object({
   filename: z.string().min(1).max(255),
   expiresInSeconds: z.coerce
@@ -235,6 +250,7 @@ export function computerSessionFileControllers(
   store: ComputerSessionFileStore,
   /** Counts the mebibytes of each team's links. */
   linkLimit: RateLimiterAbstract,
+  linkTargets: LinkTargets,
 ) {
   /**
    * The team's live session the request names, or null once a refusal has been
@@ -350,7 +366,10 @@ export function computerSessionFileControllers(
       }
     },
 
-    /** Stores the file in the body and returns a signed URL for it. */
+    /**
+     * Stores the file in the body and returns a short link to it. A signed
+     * URL is about a thousand characters, which is a lot for an agent to copy.
+     */
     async createLink(req: SessionRequest, res: Response) {
       const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
@@ -386,13 +405,18 @@ export function computerSessionFileControllers(
           .replace(/^\.+/, "") || "download";
       const linkId = crypto.randomUUID();
       const objectPath = `links/${linkId}/${filename}`;
+      // The token alone opens the link, so it is not logged.
+      const token = crypto.randomBytes(16).toString("base64url");
       let expiresAt: number;
-      let url: string;
       try {
         await store.write(objectPath, bodyOf(req, res));
         // Counted from the end of the upload.
         expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
-        url = await store.downloadUrl(objectPath, filename, expiresAt);
+        await linkTargets.set(
+          token,
+          await store.downloadUrl(objectPath, filename, expiresAt),
+          expiresAt,
+        );
       } catch (error) {
         await Promise.allSettled([
           linkLimit.reward(teamId, mebibytes),
@@ -409,8 +433,21 @@ export function computerSessionFileControllers(
       });
       res.status(200).json({
         success: true,
-        data: { url, expiresAt: iso(expiresAt), sizeBytes },
+        data: {
+          url: `${publicBaseUrl(req)}/v2/computer/links/${token}`,
+          expiresAt: iso(expiresAt),
+          sizeBytes,
+        },
       });
+    },
+
+    /** Redirects a short link to the signed URL it stands for. */
+    async openLink(req: Request<{ token: string }>, res: Response) {
+      const url = LINK_TOKEN.test(req.params.token)
+        ? await linkTargets.get(req.params.token)
+        : null;
+      if (!url) return refuse(res, 404, "Download link not found or expired.");
+      res.redirect(302, url);
     },
   };
 }
@@ -421,6 +458,9 @@ export function configuredComputerSessionFiles() {
   if (!bucket) return null;
   const hour = { points: LINK_MEBIBYTES_PER_HOUR, duration: 60 * 60 };
   const memory = new RateLimiterMemory(hour);
+  // Its own connection: the queue's never fails a command while Redis is
+  // away, and the rate limit Redis may evict a key before its link ends.
+  const redis = new IORedis(config.REDIS_URL!, { lazyConnect: true });
   return computerSessionFileControllers(
     gcsStore(bucket),
     // Counted across every replica, or in this process without Redis.
@@ -432,5 +472,10 @@ export function configuredComputerSessionFiles() {
           insuranceLimiter: memory,
         })
       : memory,
+    {
+      set: (token, url, expiresAt) =>
+        redis.set(LINK_KEY + token, url, "PX", expiresAt - Date.now()),
+      get: token => redis.get(LINK_KEY + token),
+    },
   );
 }

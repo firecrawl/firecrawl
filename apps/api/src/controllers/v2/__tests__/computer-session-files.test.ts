@@ -84,7 +84,11 @@ const linkLimit = new RateLimiterMemory({
   points: LINKS_PER_HOUR,
   duration: 60 * 60,
 });
-const controllers = computerSessionFileControllers(store, linkLimit);
+const linkTargets = new Map<string, string>();
+const controllers = computerSessionFileControllers(store, linkLimit, {
+  set: async (token, url) => linkTargets.set(token, url),
+  get: async token => linkTargets.get(token) ?? null,
+});
 // Stands in for authMiddleware: the team, the hosted MCP mark and the team
 // flags come from test headers.
 const auth: express.RequestHandler = (req, _res, next) => {
@@ -120,6 +124,7 @@ app.get(
   run(controllers.readWorkspace),
 );
 app.post(`${SESSIONS}/:sessionId/links`, auth, run(controllers.createLink));
+app.get("/v2/computer/links/:token", run(controllers.openLink));
 
 const sessions = schema.computer_sessions;
 const forgetSessions = () =>
@@ -452,7 +457,11 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(lifetimeMs).toBeGreaterThan(14 * 60 * 1000);
       expect(lifetimeMs).toBeLessThanOrEqual(15 * 60 * 1000);
 
-      const signed = new URL(url);
+      // The short link redirects to the URL signed for the file.
+      expect(url).toMatch(/\/v2\/computer\/links\/[A-Za-z0-9_-]{22}$/);
+      const opened = await request(server).get(new URL(url).pathname);
+      expect(opened.status).toBe(302);
+      const signed = new URL(opened.headers.location);
       const objectPath = decodeURIComponent(signed.pathname.slice(1));
       expect(objectPath).toMatch(
         /^links\/[0-9a-f-]{36}\/quarterly_report\.csv$/,
@@ -545,6 +554,7 @@ describe("configuration", () => {
     expect(Object.keys(configuredComputerSessionFiles() ?? {}).sort()).toEqual([
       "createLink",
       "createSession",
+      "openLink",
       "readWorkspace",
       "saveWorkspace",
     ]);

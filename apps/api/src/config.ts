@@ -406,6 +406,9 @@ const configSchema = z.object({
   GCS_COMPUTER_SESSION_FILES_BUCKET_NAME: emptyStringAsUndefined(
     z.string().trim().min(1),
   ),
+  // The public address download links are built on. Defaults to the address
+  // the request came in on.
+  COMPUTER_SESSION_FILES_PUBLIC_BASE_URL: emptyStringAsUndefined(z.url()),
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),

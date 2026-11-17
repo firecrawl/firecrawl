@@ -280,6 +280,7 @@ if (computerSessionFiles) {
     authMiddleware(RateLimiterMode.Account),
     wrap(computerSessionFiles.createLink),
   );
+  v2Router.get("/computer/links/:token", wrap(computerSessionFiles.openLink));
 }
 
 v2Router.post(
