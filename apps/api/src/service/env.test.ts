@@ -205,6 +205,18 @@ describe("the service and the environment", () => {
     expect(Object.keys(described)).toEqual(["mail", "queue"]);
   });
 
+  it("describe() returns a copy that does not change what a later call lists", () => {
+    vi.stubEnv("MAIL_HOST", "mail.test");
+    env.defineEnv("mail", mail());
+    const service = build(worker());
+
+    service.describe().env.mail.push("MAIL_EXTRA");
+
+    expect(service.describe().env).toEqual({
+      mail: ["MAIL_HOST", "MAIL_PORT", "MAIL_SECURE"],
+    });
+  });
+
   it("run() starts no role and installs nothing while an owner has a problem", () => {
     vi.stubEnv("MAIL_HOST", undefined);
     env.defineEnv("mail", mail());

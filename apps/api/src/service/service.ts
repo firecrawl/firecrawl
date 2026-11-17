@@ -179,6 +179,10 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * far, installs the service, then runs the role. The returned promise settles
  * when the role's own start does.
  *
+ * The check comes before the role runs. A role that loads its code only when
+ * it runs can define an owner then, and that owner is checked where it is
+ * defined.
+ *
  * An unknown role, a second install, an environment with a problem and a role
  * that throws while it loads are thrown from this call and not turned into a
  * rejection, so a process that cannot start fails the way a main module that

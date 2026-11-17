@@ -73,9 +73,9 @@ export function assertEnv(): void {
   if (problems.length > 0) throw new Error(report(problems));
 }
 
-/** The variables each owner declares. */
+/** The variables each owner declares. Each call returns a copy. */
 export function describeEnv(): Record<string, string[]> {
   return Object.fromEntries(
-    [...owners].map(([owner, { keys }]) => [owner, keys]),
+    [...owners].map(([owner, { keys }]) => [owner, [...keys]]),
   );
 }
