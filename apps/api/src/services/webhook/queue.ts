@@ -88,7 +88,10 @@ class WebhookQueue {
     });
   }
 
-  async publish(message: WebhookQueueMessage): Promise<void> {
+  async publish(
+    message: WebhookQueueMessage,
+    options: { expirationMs?: number } = {},
+  ): Promise<void> {
     await this.connect();
 
     if (!this.channel) throw new Error("Channel not available");
@@ -98,6 +101,9 @@ class WebhookQueue {
     const canSendMore = this.channel.sendToQueue(WEBHOOK_QUEUE_NAME, buffer, {
       persistent: true,
       contentType: "application/json",
+      ...(options.expirationMs !== undefined && {
+        expiration: String(options.expirationMs),
+      }),
     });
 
     if (!canSendMore) {

@@ -20,6 +20,8 @@ import { randomUUID } from "crypto";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+// Outlasts the dispatcher's full retry ladder (1m + 5m + 15m plus attempt timeouts).
+const ZDR_WEBHOOK_MESSAGE_TTL_MS = 30 * 60 * 1000;
 
 type WebhookSendResult = {
   attempted: boolean;
@@ -46,16 +48,23 @@ export function webhookEventMatchesFilter(
   );
 }
 
+type WebhookSenderContext = {
+  teamId: string;
+  jobId: string;
+  v0: boolean;
+  zeroDataRetention?: boolean;
+};
+
 export class WebhookSender {
   private config: WebhookConfig;
   private secret?: string;
-  private context: { teamId: string; jobId: string; v0: boolean };
+  private context: WebhookSenderContext;
   private logger: any;
 
   constructor(
     config: WebhookConfig,
     secret: string | undefined,
-    context: { teamId: string; jobId: string; v0: boolean },
+    context: WebhookSenderContext,
   ) {
     this.config = config;
     this.secret = secret;
@@ -140,7 +149,11 @@ export class WebhookSender {
       };
 
       try {
-        await webhookQueue.publish(queueMessage);
+        await webhookQueue.publish(queueMessage, {
+          expirationMs: this.context.zeroDataRetention
+            ? ZDR_WEBHOOK_MESSAGE_TTL_MS
+            : undefined,
+        });
         this.logger.info("Webhook queued for delivery", {
           webhookUrl: this.config.url,
           event: payload.type,
