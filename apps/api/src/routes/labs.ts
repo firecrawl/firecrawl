@@ -5,7 +5,6 @@ import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
 import { getEffectiveSearchForcedKind } from "../lib/safe-mode";
-import { getScrapeZDR } from "../lib/zdr-helpers";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
@@ -109,10 +108,8 @@ async function labsProxyController(req: Request, res: Response) {
   }
 
   // Labs Search keeps queries and indexed sources in a hosted service with no zero data retention mode.
-  const flags = authedReq.acuc?.flags;
   if (
-    getScrapeZDR(flags) === "forced" ||
-    getEffectiveSearchForcedKind(flags, undefined) !== null
+    getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) === "zdr"
   ) {
     return labsError(
       res,

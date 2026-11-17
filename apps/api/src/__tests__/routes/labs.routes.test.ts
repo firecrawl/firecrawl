@@ -168,10 +168,8 @@ describe("labs router under zero data retention", () => {
 
   it.each([
     { forceZDR: true },
-    { scrapeZDR: "forced" },
     { searchZDR: "forced" },
     { searchZDR: "forced-zdr" },
-    { searchZDR: "forced-anon" },
     { safeMode: true, safeModeConfig: { lockdown: true } },
   ])("refuses a team with %o without calling the labs service", async zdr => {
     mocks.flags = { labsSearch: true, ...zdr };
@@ -182,6 +180,24 @@ describe("labs router under zero data retention", () => {
     expect(response.body).toEqual({ success: false, error: ZDR_TEAM_ERROR });
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
+
+  it.each([{ scrapeZDR: "forced" }, { searchZDR: "forced-anon" }])(
+    "proxies for a team with %o",
+    async flags => {
+      mocks.flags = { labsSearch: true, ...flags };
+      mocks.fetch.mockResolvedValue(
+        new Response(JSON.stringify({ success: true, results: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      const response = await request(appWithLabs()).post("/labs/search");
+
+      expect(response.status).toBe(200);
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each(LABS_ROUTES)(
     "refuses %s for a forced zero data retention team",
