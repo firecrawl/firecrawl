@@ -32,14 +32,14 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
 import { alexandriaVerifiedHeader } from "../lib/alexandria-verified";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 
 // Tells Exchange the team is held to zero data retention, so it only lists and runs
 // providers that support it.
 function zeroDataRetentionHeader(
-  flags: Parameters<typeof getScrapeZDR>[0],
+  flags: Parameters<typeof isAlexandriaZDRForced>[0],
 ): Record<string, string> {
-  return getScrapeZDR(flags) === "forced"
+  return isAlexandriaZDRForced(flags)
     ? { "x-exchange-zero-data-retention": "true" }
     : {};
 }

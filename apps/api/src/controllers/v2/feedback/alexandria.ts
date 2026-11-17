@@ -13,7 +13,7 @@ import {
 } from "../../../lib/alexandria-feedback-token";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
+import { getSearchZDR, isAlexandriaZDRForced } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
@@ -66,7 +66,7 @@ export async function recordAlexandriaFeedback(
   // retention policy without looking up or recording individual jobs.
   const searchZdr = getSearchZDR(req.acuc?.flags);
   if (
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    isAlexandriaZDRForced(req.acuc?.flags) ||
     searchZdr === "forced-zdr" ||
     searchZdr === "forced-anon"
   ) {
