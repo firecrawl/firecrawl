@@ -33,7 +33,8 @@ export interface BaseRequestContext {
 /**
  * The one value that travels with a request: on `req.ctx`, on the payload of
  * every job the request creates and on its crawl record. It is set once, when
- * the request is accepted.
+ * the request is accepted. Work the service starts by itself has one too, set
+ * once when that work starts.
  *
  * It crosses the queue, so it is plain JSON: a key holding `undefined` is gone
  * on the other side. Code that copies it copies it whole, keys it does not
