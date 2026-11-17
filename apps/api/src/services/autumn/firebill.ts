@@ -74,8 +74,9 @@ type ConnectionTrace = {
   connectMs?: number;
 };
 
-// undici publishes these synchronously from the request that opens the
-// socket, so the store is the firebill call that caused it.
+// With no connection cap and no pipelining, the pool opens a socket only for
+// a request that has none free, and undici publishes these from inside that
+// request's dispatch: the store is the firebill call that will use the socket.
 const connectionTraces = new AsyncLocalStorage<ConnectionTrace>();
 subscribe("undici:client:beforeConnect", () => {
   const trace = connectionTraces.getStore();
