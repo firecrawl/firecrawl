@@ -27,6 +27,7 @@ import {
   buildReplayContextFromScrape,
   estimateReplayTimeoutSeconds,
   buildReplayScript,
+  replayFailureReason,
 } from "../../lib/scrape-interact/scrape-replay";
 import {
   executePromptViaBrowserAgent,
@@ -514,11 +515,15 @@ async function createSessionForScrape(
           language: "node",
           timeout: estimateReplayTimeoutSeconds(replayContext),
         });
-        if (replay.exitCode !== 0 || replay.killed)
+        if (replay.exitCode !== 0 || replay.killed) {
+          const reason = replay.killed
+            ? "replay timed out"
+            : replayFailureReason(replay.stderr);
           throw new HangarError(
             409,
-            "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
+            `Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.${reason ? ` Replay failed at: ${reason}` : ""}`,
           );
+        }
         await selectBrowserAgentTab(browserId);
       },
     });
