@@ -3,6 +3,16 @@
   "version": "1.0.0",
   "description": "",
   "main": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/service/index.ts",
+      "default": "./dist/src/service/index.js"
+    },
+    "./testing": {
+      "types": "./src/service/testing.ts",
+      "default": "./dist/src/service/testing.js"
+    }
+  },
   "scripts": {
     "start": "tsc && node dist/src/harness.js --start-built",
     "dev": "tsx src/harness.ts --start",
