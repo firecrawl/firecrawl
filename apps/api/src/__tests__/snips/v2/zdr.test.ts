@@ -13,6 +13,8 @@ import {
   extract,
   extractRaw,
   EXTRACT_LIVE,
+  map,
+  expectMapToSucceed,
   Identity,
 } from "./lib";
 import {
@@ -572,6 +574,45 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           .set("Authorization", `Bearer ${identity.apiKey}`)
           .set("Content-Type", "application/json")
           .send({ url: TEST_SUITE_WEBSITE, zeroDataRetention: true });
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body.success).toBe(false);
+      }, 30000);
+    });
+
+    describe("map for a team that forces zero data retention on search", () => {
+      let identity: Identity;
+
+      beforeAll(async () => {
+        identity = await idmux({
+          name: "zdr/search-routing/map-search-zdr",
+          credits: 10000,
+          flags: { searchZDR: "forced-zdr" },
+        });
+      }, 10000);
+
+      it("finds links through the site search alone", async () => {
+        const res = await map(
+          {
+            url: "https://firecrawl.dev",
+            sitemap: "skip",
+            useIndex: false,
+            ignoreCache: true,
+          },
+          identity,
+        );
+
+        expectMapToSucceed(res);
+      }, 60000);
+
+      it("rejects zero data retention set on the request, which map takes from the team", async () => {
+        const res = await map(
+          {
+            url: "https://firecrawl.dev",
+            zeroDataRetention: true,
+          } as any,
+          identity,
+        );
 
         expect(res.statusCode).toBe(400);
         expect(res.body.success).toBe(false);

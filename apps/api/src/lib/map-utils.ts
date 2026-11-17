@@ -7,7 +7,7 @@ import {
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
-import { getScrapeZDR } from "./zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
 import {
   checkAndUpdateURLForMap,
@@ -150,6 +150,10 @@ export async function getMapResults({
   // and must never write its empty live-search result into the shared cache.
   const zeroDataRetention =
     requestZeroDataRetention || getScrapeZDR(flags) === "forced" || indexOnly;
+  // The site search is a query sent to a search provider, so it also follows
+  // the team's search zero data retention.
+  const searchZeroDataRetention =
+    zeroDataRetention || getSearchForcedKind(flags) === "zdr";
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -236,7 +240,7 @@ export async function getMapResults({
           numResults: resultsPerPage,
           page,
           usOnly,
-          zeroDataRetention,
+          zeroDataRetention: searchZeroDataRetention,
         },
         abort,
       );
@@ -266,7 +270,7 @@ export async function getMapResults({
       fetchAllPages(),
     ]);
 
-    if (!zeroDataRetention) {
+    if (!searchZeroDataRetention) {
       await redisEvictConnection.set(
         cacheKey,
         JSON.stringify(searchResults),
