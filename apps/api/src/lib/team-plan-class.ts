@@ -125,18 +125,17 @@ export function planClassOf(
 }
 
 /**
- * Whether staff have put the team under negotiated terms: a contract on file,
- * contract billing, an enterprise pilot that has not ended, or a data-handling
- * term (zero data retention on search, scrape or provider tools, US-only
- * processing, a restricting DPA, a training restriction, Safe Mode). Anything
- * unreadable counts as a term.
+ * Whether staff have put the team under negotiated terms: a signed contract,
+ * an enterprise pilot that has not ended, or a data-handling term (zero data
+ * retention on search, scrape or provider tools, US-only processing, a
+ * restricting DPA, a training restriction, Safe Mode). Anything unreadable
+ * counts as a term.
  */
 function hasNegotiatedTerms(flags: TeamFlags, now: number): boolean {
   if (!flags) return false;
   const pilot = flags.enterprisePilot;
   const pilotEnd = Date.parse(pilot?.endDate ?? "");
   return (
-    (flags.contractOnFile ?? false) !== false ||
     (flags.signedContract ?? false) !== false ||
     (pilot != null && !(pilotEnd <= now)) ||
     getSearchZDR(flags) !== "disabled" ||
