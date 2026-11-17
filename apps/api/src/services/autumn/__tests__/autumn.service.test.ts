@@ -640,6 +640,7 @@ describe("getTeamLimits", () => {
       concurrency_limit: 7,
       rate_limit_multiplier: 25,
       is_paid_plan: true,
+      plan_class: "self_serve",
     });
     expect(mockEntityGet).toHaveBeenCalledWith({
       customerId: "org-1",
@@ -690,6 +691,61 @@ describe("getTeamLimits", () => {
     const limits = await makeService().getTeamLimits("team-1", "org-1");
 
     expect(limits.is_paid_plan).toBe(expected);
+  });
+
+  it.each([
+    ["the free plan", [subscription("free")], "free"],
+    [
+      "free plus the pay-as-you-go add-on",
+      [subscription("free"), subscription("pay_as_you_go", { addOn: true })],
+      "free",
+    ],
+    ["a pricing-page plan", [subscription("standard")], "self_serve"],
+    ["an enterprise plan", [subscription("enterprise_10m")], "contract"],
+    [
+      "a plan id this build cannot name",
+      [subscription("plan_from_2031")],
+      "contract",
+    ],
+    [
+      "a pricing-page plan with a negotiated one scheduled",
+      [
+        subscription("growth"),
+        subscription("enterprise_10m", { status: "scheduled" }),
+      ],
+      "contract",
+    ],
+    [
+      "only an add-on",
+      [subscription("credit_pack_1k", { addOn: true })],
+      undefined,
+    ],
+    ["no subscriptions", [], undefined],
+  ])("plan_class for %s is %s", async (_case, subscriptions, expected) => {
+    mockCustomerGet.mockResolvedValue({ subscriptions });
+
+    const limits = await makeService().getTeamLimits("team-1", "org-1");
+
+    expect(limits.plan_class).toBe(expected);
+  });
+
+  it("gives no plan class when the customer is missing (404)", async () => {
+    mockCustomerGet.mockRejectedValue({ statusCode: 404 });
+
+    const limits = await makeService().getTeamLimits("team-1", "org-1");
+
+    expect(limits.plan_class).toBeUndefined();
+  });
+
+  it("gives no plan class for a preview team or without an Autumn client", async () => {
+    expect(
+      (await makeService().getTeamLimits("preview_x", "org-1")).plan_class,
+    ).toBeUndefined();
+
+    state.autumnClientRef = null;
+    expect(
+      (await makeService().getTeamLimits("team-1", "org-1")).plan_class,
+    ).toBeUndefined();
   });
 
   it.each([

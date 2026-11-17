@@ -5,6 +5,7 @@ import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { autumnClient } from "./client";
+import { planClassOf, type TeamPlanClass } from "../../lib/team-plan-class";
 import {
   firebillFinalize,
   firebillLock,
@@ -86,6 +87,8 @@ export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  /** The org's plan class from planClassOf; absent when that yields none. */
+  plan_class?: TeamPlanClass;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
@@ -490,8 +493,9 @@ export class AutumnService {
    * The team's limits from one uncached Autumn entity read, and its plan from
    * a customer read made in parallel (the ACUC caches both). An entity 404
    * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
-   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
-   * when Autumn errors or the team has no org.
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Its plan
+   * class comes from the same subscriptions (planClassOf), and a customer 404
+   * gives none. Throws when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
@@ -531,6 +535,7 @@ export class AutumnService {
           !subscription.addOn &&
           !FREE_PLAN_IDS.has(subscription.planId),
       ),
+      plan_class: planClassOf(customer?.subscriptions ?? []),
     };
   }
 
