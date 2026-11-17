@@ -3,7 +3,7 @@ import { once } from "node:events";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { Request, RequestHandler, Response } from "express";
+import type { Request, Response } from "express";
 import { ApiError, Storage } from "@google-cloud/storage";
 import {
   type RateLimiterAbstract,
@@ -26,7 +26,6 @@ import type { RequestWithAuth } from "./types";
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const LINK_DEFAULT_SECONDS = 15 * 60;
 const LINK_MAX_SECONDS = 60 * 60;
-const DOWNLOADS_PER_MINUTE = 60;
 const MEBIBYTE = 1024 * 1024;
 // What a team's links may hold in an hour. Each link counts in whole
 // mebibytes, so this is also the most links a team can make in an hour.
@@ -43,15 +42,12 @@ export const MAX_LIVE_SESSIONS = 100;
 // The UUID a new session is given.
 const SESSION_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// 32 random bytes in base64url.
-const LINK_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 const logger = _logger.child({ module: "computer-session-files" });
 
 type StoredFile = {
   sizeBytes: number;
   version: string;
-  metadata: Record<string, string>;
   /**
    * This version's bytes, once the first of them is there to send. Throws
    * VersionReplacedError when the version is no longer stored.
@@ -68,29 +64,33 @@ export type ComputerSessionFileStore = {
   write(
     objectPath: string,
     body: Readable,
-    options?: { metadata?: Record<string, string>; ifVersion?: string },
+    options?: { ifVersion?: string },
   ): Promise<string>;
   read(objectPath: string): Promise<StoredFile | null>;
   /** Removes the object, if it is stored. */
   delete(objectPath: string): Promise<void>;
+  /**
+   * A URL that downloads the object as `filename`, for anyone who holds it,
+   * until `expiresAt`.
+   */
+  downloadUrl(
+    objectPath: string,
+    filename: string,
+    expiresAt: number,
+  ): Promise<string>;
 };
 
 export class VersionMismatchError extends Error {}
 export class VersionReplacedError extends Error {}
 
-const stringValues = (metadata: object | undefined) =>
-  Object.fromEntries(
-    Object.entries(metadata ?? {}).map(([key, value]) => [key, String(value)]),
-  );
-
-function gcsStore(bucketName: string): ComputerSessionFileStore {
+export function gcsStore(bucketName: string): ComputerSessionFileStore {
   const bucket = new Storage({
     credentials: config.GCS_CREDENTIALS
       ? JSON.parse(atob(config.GCS_CREDENTIALS))
       : undefined,
   }).bucket(bucketName);
   return {
-    async write(objectPath, body, { metadata, ifVersion } = {}) {
+    async write(objectPath, body, { ifVersion } = {}) {
       const file = bucket.file(objectPath);
       try {
         await pipeline(
@@ -98,7 +98,6 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
           file.createWriteStream({
             resumable: false,
             contentType: "application/octet-stream",
-            metadata: { metadata },
             ...(ifVersion === undefined
               ? {}
               : { preconditionOpts: { ifGenerationMatch: ifVersion } }),
@@ -130,7 +129,6 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
       return {
         sizeBytes: Number(stored.size),
         version: generation,
-        metadata: stringValues(stored.metadata),
         async open() {
           // Pinned to the version just read, so the bytes match the size sent.
           const body = bucket
@@ -150,6 +148,18 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
     },
     async delete(objectPath) {
       await bucket.file(objectPath).delete({ ignoreNotFound: true });
+    },
+    async downloadUrl(objectPath, filename, expiresAt) {
+      const [url] = await bucket.file(objectPath).getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: expiresAt,
+        // The file is whatever a shell produced, so a browser only ever saves
+        // it. Both are signed with the URL, so its holder cannot change them.
+        responseDisposition: `attachment; filename="${filename}"`,
+        responseType: "application/octet-stream",
+      });
+      return url;
     },
   };
 }
@@ -213,10 +223,6 @@ async function insertSession(
     return ended.map(session => session.id);
   });
 }
-
-/** Written so that a link with no expiry recorded is never live. */
-const isLive = (metadata: Record<string, string>) =>
-  Date.now() < Number(metadata.expiresAt);
 
 /** The caller's team, or null once a refusal has been sent. */
 function hostedMcpTeam(
@@ -293,10 +299,6 @@ function bodyOf(req: Request, res: Response): Readable {
   return body;
 }
 
-// A storage error names the object it was about, and a link's object is named
-// by its token, so a failed read is logged by its code alone.
-const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
-
 async function send(res: Response, file: StoredFile, body: Readable) {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Length", String(file.sizeBytes));
@@ -305,9 +307,7 @@ async function send(res: Response, file: StoredFile, body: Readable) {
     await pipeline(body, res);
   } catch (error) {
     // The headers are out, so there is no error response left to send.
-    logger.warn("Computer session file stream ended early", {
-      code: codeOf(error),
-    });
+    logger.warn("Computer session file stream ended early", { error });
   }
 }
 
@@ -327,7 +327,6 @@ const teamPrefix = (teamId: string) =>
 const EMPTY_WORKSPACE: StoredFile = {
   sizeBytes: 0,
   version: "0",
-  metadata: {},
   open: async () => Readable.from([]),
 };
 
@@ -343,7 +342,6 @@ const linkSchema = z.object({
 
 export function computerSessionFileControllers(
   store: ComputerSessionFileStore,
-  publicBaseUrl: string,
   /** Counts the mebibytes of each team's links. */
   linkLimit: RateLimiterAbstract,
 ) {
@@ -516,7 +514,10 @@ export function computerSessionFileControllers(
       }
     },
 
-    /** Stores the file in the body and returns a link anyone can download it from until it expires. */
+    /**
+     * Stores the file in the body and returns a link anyone can download it
+     * from until it expires.
+     */
     async createLink(req: SessionRequest, res: Response) {
       const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
@@ -546,139 +547,57 @@ export function computerSessionFileControllers(
           .basename(query.data.filename)
           .replace(/[^a-zA-Z0-9._-]/g, "_")
           .replace(/^\.+/, "") || "download";
-      // The token is the only way to the file. It names the stored object, and
-      // no log line carries it.
-      const token = crypto.randomBytes(32).toString("base64url");
-      const expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
+      // The signature is the only way to the file, so its object only needs a
+      // name no other link has.
+      const linkId = crypto.randomUUID();
+      const objectPath = `links/${linkId}/${filename}`;
+      let expiresAt: number;
+      let url: string;
       try {
-        await store.write(`links/${token}`, bodyOf(req, res), {
-          metadata: {
-            teamId,
-            sessionId: req.params.sessionId,
-            filename,
-            expiresAt: String(expiresAt),
-          },
-        });
+        await store.write(objectPath, bodyOf(req, res));
+        // Counted from the end of the upload, so a slow one takes none of the
+        // link's time.
+        expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
+        url = await store.downloadUrl(objectPath, filename, expiresAt);
       } catch (error) {
-        // Nothing was stored, so nothing counts against the team's hour.
+        // No link came of it, so nothing counts against the team's hour.
         await linkLimit.reward(teamId, mebibytes).catch(() => {});
         throw error;
       }
       logger.info("Computer session link created", {
         teamId,
         sessionId: req.params.sessionId,
+        linkId,
         sizeBytes,
         expiresInSeconds: query.data.expiresInSeconds,
       });
       res.status(200).json({
         success: true,
-        data: {
-          url: `${publicBaseUrl.replace(/\/$/, "")}/v2/computer/files/${token}/${filename}`,
-          expiresAt: new Date(expiresAt).toISOString(),
-          sizeBytes,
-        },
+        data: { url, expiresAt: iso(expiresAt), sizeBytes },
       });
     },
-
-    /** Serves a link's file to whoever holds the link. */
-    async download(req: Request<{ token: string }>, res: Response) {
-      let file: StoredFile | null;
-      let body: Readable;
-      try {
-        file = LINK_TOKEN.test(req.params.token)
-          ? await store.read(`links/${req.params.token}`)
-          : null;
-        if (!file) return refuse(res, 404, "Download link not found.");
-        if (!isLive(file.metadata)) {
-          return refuse(res, 410, "This download link has expired.");
-        }
-        body = await file.open();
-      } catch (error) {
-        // Answered here and not thrown: the handler that logs a thrown error
-        // logs the request's path with it, and the path holds the token.
-        logger.error("Computer session link could not be read", {
-          code: codeOf(error),
-        });
-        return refuse(res, 503, "The file could not be read. Try again.");
-      }
-      logger.info("Computer session link downloaded", {
-        teamId: file.metadata.teamId,
-        sessionId: file.metadata.sessionId,
-        sizeBytes: file.sizeBytes,
-      });
-      // The file is whatever a shell produced, so a browser only ever saves it.
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${file.metadata.filename}"`,
-      );
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
-      await send(res, file, body);
-    },
-  };
-}
-
-/** A limit counted across every replica, or in this process without Redis. */
-function limiter(
-  keyPrefix: string,
-  points: number,
-  duration: number,
-): RateLimiterAbstract {
-  const memory = new RateLimiterMemory({ points, duration });
-  return config.REDIS_RATE_LIMIT_URL
-    ? new RateLimiterRedis({
-        storeClient: redisRateLimitClient,
-        keyPrefix,
-        points,
-        duration,
-        insuranceLimiter: memory,
-      })
-    : memory;
-}
-
-/** Downloads per IP per minute; the download route has no other caller identity. */
-function downloadRateLimit(): RequestHandler {
-  const downloads = limiter(
-    "computer-session-download",
-    DOWNLOADS_PER_MINUTE,
-    60,
-  );
-  return async (req, res, next) => {
-    try {
-      await downloads.consume(req.ip ?? "unknown");
-    } catch (rejection) {
-      if (tooMany(res, rejection, "Too many downloads.")) return;
-      // Answered here for the same reason a failed download is.
-      logger.error("Computer session download limit failed", {
-        error: rejection,
-      });
-      return refuse(res, 503, "Downloads are unavailable. Try again.");
-    }
-    next();
   };
 }
 
 /**
- * The session file handlers, or null on a deployment that does not name both
- * the bucket and the public address its links use.
+ * The session file handlers, or null on a deployment that names no bucket for
+ * them.
  */
 export function configuredComputerSessionFiles() {
   const bucket = config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME;
-  const publicBaseUrl = config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL;
-  if (!bucket || !publicBaseUrl) {
-    if (bucket || publicBaseUrl) {
-      logger.warn(
-        "Session files need both GCS_COMPUTER_SESSION_FILES_BUCKET_NAME and COMPUTER_SESSION_FILES_PUBLIC_BASE_URL; the routes are disabled.",
-      );
-    }
-    return null;
-  }
-  return {
-    ...computerSessionFileControllers(
-      gcsStore(bucket),
-      publicBaseUrl,
-      limiter("computer-session-link-mebibytes", LINK_MEBIBYTES_PER_HOUR, 3600),
-    ),
-    downloadRateLimit: downloadRateLimit(),
-  };
+  if (!bucket) return null;
+  const hour = { points: LINK_MEBIBYTES_PER_HOUR, duration: 60 * 60 };
+  const memory = new RateLimiterMemory(hour);
+  return computerSessionFileControllers(
+    gcsStore(bucket),
+    // Counted across every replica, or in this process without Redis.
+    config.REDIS_RATE_LIMIT_URL
+      ? new RateLimiterRedis({
+          ...hour,
+          storeClient: redisRateLimitClient,
+          keyPrefix: "computer-session-link-mebibytes",
+          insuranceLimiter: memory,
+        })
+      : memory,
+  );
 }

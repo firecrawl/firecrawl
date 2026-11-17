@@ -280,13 +280,6 @@ if (computerSessionFiles) {
     authMiddleware(RateLimiterMode.Account),
     wrap(computerSessionFiles.createLink),
   );
-  // The filename is there for whoever reads the link; the token alone finds
-  // the file.
-  v2Router.get(
-    "/computer/files/:token{/:filename}",
-    computerSessionFiles.downloadRateLimit,
-    wrap(computerSessionFiles.download),
-  );
 }
 
 v2Router.post(

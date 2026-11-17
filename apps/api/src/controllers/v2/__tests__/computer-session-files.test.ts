@@ -14,6 +14,7 @@ vi.mock("../../../lib/logger", () => {
   return { logger: { ...log, child: () => log } };
 });
 
+import { generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
@@ -24,7 +25,6 @@ import request from "supertest";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
-import { logger } from "../../../lib/logger";
 import {
   MAX_FILE_BYTES,
   MAX_LIVE_SESSIONS,
@@ -32,6 +32,7 @@ import {
   VersionReplacedError,
   computerSessionFileControllers,
   configuredComputerSessionFiles,
+  gcsStore,
   type ComputerSessionFileStore,
 } from "../computer-session-files";
 
@@ -43,19 +44,16 @@ const TEAM_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UNISSUED = "00000000-0000-4000-8000-000000000000";
 
-const objects = new Map<
-  string,
-  { bytes: Buffer; version: number; metadata: Record<string, string> }
->();
+const objects = new Map<string, { bytes: Buffer; version: number }>();
 const store: ComputerSessionFileStore = {
-  async write(objectPath, body, { metadata = {}, ifVersion } = {}) {
+  async write(objectPath, body, { ifVersion } = {}) {
     const bytes = Buffer.concat(await body.toArray());
     const stored = objects.get(objectPath);
     if (ifVersion !== undefined && ifVersion !== String(stored?.version ?? 0)) {
       throw new VersionMismatchError();
     }
     const version = (stored?.version ?? 0) + 1;
-    objects.set(objectPath, { bytes, version, metadata });
+    objects.set(objectPath, { bytes, version });
     return String(version);
   },
   async read(objectPath) {
@@ -64,12 +62,15 @@ const store: ComputerSessionFileStore = {
     return {
       sizeBytes: stored.bytes.length,
       version: String(stored.version),
-      metadata: stored.metadata,
       open: async () => Readable.from([stored.bytes]),
     };
   },
   async delete(objectPath) {
     objects.delete(objectPath);
+  },
+  // What the link was signed for, readable back from the URL.
+  async downloadUrl(objectPath, filename, expiresAt) {
+    return `https://storage.test/${objectPath}?filename=${filename}&expires=${expiresAt}`;
   },
 };
 
@@ -79,11 +80,7 @@ const linkLimit = new RateLimiterMemory({
   points: LINKS_PER_HOUR,
   duration: 60 * 60,
 });
-const controllers = computerSessionFileControllers(
-  store,
-  "https://files.test/",
-  linkLimit,
-);
+const controllers = computerSessionFileControllers(store, linkLimit);
 // Stands in for authMiddleware: the team, the hosted MCP mark and the team
 // flags come from test headers.
 const auth: express.RequestHandler = (req, _res, next) => {
@@ -119,7 +116,6 @@ app.get(
   run(controllers.readWorkspace),
 );
 app.post(`${SESSIONS}/:sessionId/links`, auth, run(controllers.createLink));
-app.get("/v2/computer/files/:token{/:filename}", run(controllers.download));
 
 const sessions = schema.computer_sessions;
 const forgetSessions = () =>
@@ -157,8 +153,6 @@ const link = (
     .set("x-test-team", team)
     .type("application/octet-stream")
     .send(Buffer.from(bytes));
-const download = (url: string) =>
-  request(server).get(new URL(url).pathname).responseType("blob");
 /** The status of a save that only declares its body, so no test sends one over the limit. */
 const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
   new Promise<number>((resolve, reject) => {
@@ -492,46 +486,55 @@ describe.skipIf(!databaseUrl)("session routes", () => {
   });
 
   describe("download links", () => {
-    it("serves the file to anyone holding the link, as a download", async () => {
+    it("stores the file and returns a link signed for it, under a safe name", async () => {
       const created = await link(await createId(), "a,b\n1,2\n", {
         filename: "../../quarterly report.csv",
       });
       expect(created.status).toBe(200);
       const { url, expiresAt, sizeBytes } = created.body.data;
-      expect(url).toMatch(
-        /^https:\/\/files\.test\/v2\/computer\/files\/[A-Za-z0-9_-]{43}\/quarterly_report\.csv$/,
-      );
       expect(sizeBytes).toBe(8);
       const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
       expect(lifetimeMs).toBeGreaterThan(14 * 60 * 1000);
       expect(lifetimeMs).toBeLessThanOrEqual(15 * 60 * 1000);
 
-      for (const target of [url, url.slice(0, url.lastIndexOf("/"))]) {
-        const res = await download(target);
-        expect(res.status).toBe(200);
-        expect(res.body.toString()).toBe("a,b\n1,2\n");
-        expect(res.headers["content-type"]).toBe("application/octet-stream");
-        expect(res.headers["content-disposition"]).toBe(
-          'attachment; filename="quarterly_report.csv"',
-        );
-        expect(res.headers["x-content-type-options"]).toBe("nosniff");
-      }
+      const signed = new URL(url);
+      const objectPath = decodeURIComponent(signed.pathname.slice(1));
+      expect(objectPath).toMatch(
+        /^links\/[0-9a-f-]{36}\/quarterly_report\.csv$/,
+      );
+      expect(objects.get(objectPath)?.bytes.toString()).toBe("a,b\n1,2\n");
+      expect(signed.searchParams.get("filename")).toBe("quarterly_report.csv");
+      // Signed to end when the caller is told it ends.
+      expect(Number(signed.searchParams.get("expires"))).toBe(
+        new Date(expiresAt).getTime(),
+      );
     });
 
-    it("stops serving a link once it expires", async () => {
+    it("signs the link for the time asked, counted from the end of the upload", async () => {
+      const write = store.write;
+      const began = Date.now();
+      vi.spyOn(store, "write").mockImplementationOnce(async (...args) => {
+        const version = await write(...args);
+        vi.spyOn(Date, "now").mockReturnValue(began + HOUR_MS);
+        return version;
+      });
       const created = await link(await createId(), "data", {
         filename: "a.txt",
         expiresInSeconds: 60,
       });
-      expect((await download(created.body.data.url)).status).toBe(200);
-      vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
-      expect((await download(created.body.data.url)).status).toBe(410);
+      expect(new Date(created.body.data.expiresAt).getTime()).toBe(
+        began + HOUR_MS + 60_000,
+      );
     });
 
     it("holds a team's links to its hourly limit", async () => {
       const id = await createId();
-      // A link that could not be stored does not count.
+      // A link that could not be stored, or not signed, does not count.
       vi.spyOn(store, "write").mockRejectedValueOnce(new Error("storage"));
+      expect((await link(id, "data", { filename: "a.txt" })).status).toBe(500);
+      vi.spyOn(store, "downloadUrl").mockRejectedValueOnce(
+        new Error("signing"),
+      );
       expect((await link(id, "data", { filename: "a.txt" })).status).toBe(500);
       for (let made = 0; made < LINKS_PER_HOUR; made++) {
         expect((await link(id, "data", { filename: "a.txt" })).status).toBe(
@@ -547,53 +550,6 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(
         (await link(other, "data", { filename: "a.txt" }, TEAM_B)).status,
       ).toBe(200);
-    });
-
-    it("keeps the token out of the logs when the file cannot be read", async () => {
-      const created = await link(await createId(), "data", {
-        filename: "a.txt",
-      });
-      const { pathname } = new URL(created.body.data.url);
-      const token = pathname.split("/")[4];
-      vi.spyOn(store, "read").mockRejectedValueOnce(
-        new Error(`Could not read links/${token}`),
-      );
-      // Answered by the route itself: the handler a thrown error reaches logs
-      // the path.
-      expect((await request(server).get(pathname)).status).toBe(503);
-      const logged = JSON.stringify(
-        [logger.info, logger.warn, logger.error].map(
-          log => vi.mocked(log).mock.calls,
-        ),
-      );
-      expect(logged).toContain("Computer session link could not be read");
-      expect(logged).not.toContain(token);
-    });
-
-    it("never serves a stored file that records no expiry", async () => {
-      const token = "t".repeat(43);
-      objects.set(`links/${token}`, {
-        bytes: Buffer.from("x"),
-        version: 1,
-        metadata: {},
-      });
-      expect(
-        (await request(server).get(`/v2/computer/files/${token}`)).status,
-      ).toBe(410);
-    });
-
-    it("finds nothing for an unknown token or a workspace path", async () => {
-      const id = await createId();
-      await save(TEAM_A, id, "files");
-      for (const token of [
-        "u".repeat(43),
-        `workspaces%2F${TEAM_A}%2F${id}`,
-        "short",
-      ]) {
-        expect(
-          (await request(server).get(`/v2/computer/files/${token}`)).status,
-        ).toBe(404);
-      }
     });
 
     it.each([
@@ -614,49 +570,66 @@ describe.skipIf(!databaseUrl)("session routes", () => {
 describe("configuration", () => {
   const original = {
     bucket: config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME,
-    url: config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL,
+    credentials: config.GCS_CREDENTIALS,
     redis: config.REDIS_RATE_LIMIT_URL,
   };
   afterAll(() => {
     config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = original.bucket;
-    config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = original.url;
+    config.GCS_CREDENTIALS = original.credentials;
     config.REDIS_RATE_LIMIT_URL = original.redis;
   });
 
-  it.each([
-    [undefined, undefined],
-    ["bucket", undefined],
-    [undefined, "https://files.test"],
-  ])("has no handlers with bucket %s and public URL %s", (bucket, url) => {
-    config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = bucket;
-    config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = url;
+  it("has no handlers without a bucket", () => {
+    config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = undefined;
     expect(configuredComputerSessionFiles()).toBeNull();
   });
 
-  it("has every handler, and a download limit per IP, with both set", async () => {
+  it("has every handler with a bucket", () => {
     config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = "bucket";
-    config.COMPUTER_SESSION_FILES_PUBLIC_BASE_URL = "https://files.test";
     // The limiter counts in memory, so the test needs no Redis.
     config.REDIS_RATE_LIMIT_URL = undefined;
-    const handlers = configuredComputerSessionFiles();
-    expect(Object.keys(handlers ?? {}).sort()).toEqual([
+    expect(Object.keys(configuredComputerSessionFiles() ?? {}).sort()).toEqual([
       "createLink",
       "createSession",
-      "download",
-      "downloadRateLimit",
       "readWorkspace",
       "saveWorkspace",
     ]);
+  });
 
-    const limited = express();
-    limited.get("/", handlers!.downloadRateLimit, (_req, res) => {
-      res.sendStatus(204);
+  it("signs a link that only downloads its file, under its name, until its end", async () => {
+    // A key made here signs the same way a service account's does.
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
     });
-    for (let call = 0; call < 60; call++) {
-      expect((await request(limited).get("/")).status).toBe(204);
-    }
-    const refused = await request(limited).get("/");
-    expect(refused.status).toBe(429);
-    expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+    config.GCS_CREDENTIALS = btoa(
+      JSON.stringify({
+        type: "service_account",
+        client_email: "signer@test.iam.gserviceaccount.com",
+        private_key: privateKey,
+      }),
+    );
+    const url = new URL(
+      await gcsStore("bucket").downloadUrl(
+        "links/id/report.csv",
+        "report.csv",
+        Date.now() + 60_000,
+      ),
+    );
+    expect(url.origin + url.pathname).toBe(
+      "https://storage.googleapis.com/bucket/links/id/report.csv",
+    );
+    const signed = url.searchParams;
+    expect(signed.get("X-Goog-Algorithm")).toBe("GOOG4-RSA-SHA256");
+    expect(signed.get("X-Goog-Signature")).toMatch(/^[0-9a-f]{512}$/);
+    expect(Number(signed.get("X-Goog-Expires"))).toBeGreaterThan(55);
+    expect(Number(signed.get("X-Goog-Expires"))).toBeLessThanOrEqual(60);
+    expect(signed.get("response-content-disposition")).toBe(
+      'attachment; filename="report.csv"',
+    );
+    expect(signed.get("response-content-type")).toBe(
+      "application/octet-stream",
+    );
   });
 });
