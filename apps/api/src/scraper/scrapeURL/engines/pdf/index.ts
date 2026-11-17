@@ -53,6 +53,7 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
+import { shouldRetryFirePdf } from "./fire-pdf/retry";
 import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
@@ -76,6 +77,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
 
@@ -179,25 +181,36 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      // The raw path returns the file base64'd inline in the response, so it
-      // keeps the historical cap even when a large prefetch (fire-engine GCS
-      // handoff) materialized a bigger file on disk for the parse path.
-      const prefetchSize = (await stat(meta.pdfPrefetch.filePath)).size;
-      if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
-        throw new UnsupportedFileError("File exceeds size limit");
-      }
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
+      const prefetch = await completeTruncatedHandoff(
+        meta,
+        meta.pdfPrefetch,
+        PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
+      let content: string;
+      try {
+        // The raw path returns the file base64'd inline in the response, so it
+        // keeps the historical cap even when a large prefetch (fire-engine GCS
+        // handoff) materialized a bigger file on disk for the parse path.
+        const prefetchSize = (await stat(prefetch.filePath)).size;
+        if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
+          throw new UnsupportedFileError("File exceeds size limit");
+        }
+        content = (await readFile(prefetch.filePath)).toString("base64");
+      } finally {
+        // A re-downloaded copy is this engine's own temp file.
+        if (prefetch !== meta.pdfPrefetch) {
+          await unlink(prefetch.filePath).catch(() => {});
+        }
+      }
       return {
-        url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-        statusCode: meta.pdfPrefetch.status,
+        url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
+        statusCode: prefetch.status,
 
         html: content,
         markdown: content,
 
         contentType: "application/pdf",
-        proxyUsed: meta.pdfPrefetch.proxyUsed,
+        proxyUsed: prefetch.proxyUsed,
       };
     } else {
       const file = await fetchPdfFileGuardingProxyFailure(meta, () =>
@@ -280,9 +293,20 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // granting (or withholding) the handoff for this request.
   const byReferenceReachable = byReferenceReachableForRequest(meta);
 
+  // Parse path streams to disk and can hand large files to FirePDF by GCS
+  // reference, so it admits more than the raw fetch path — up to the
+  // requesting team's large-PDF limit.
+  const downloadMaxBytes = byReferenceReachable
+    ? largePdfLimitBytes(meta)
+    : PDF_DOWNLOAD_MAX_FILE_SIZE;
+  const prefetch =
+    meta.pdfPrefetch != null
+      ? await completeTruncatedHandoff(meta, meta.pdfPrefetch, downloadMaxBytes)
+      : meta.pdfPrefetch;
+
   const { response, tempFilePath } =
-    meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
-      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
+    prefetch !== undefined && prefetch !== null
+      ? { response: prefetch, tempFilePath: prefetch.filePath }
       : await fetchPdfFileGuardingProxyFailure(meta, () =>
           downloadFile(
             meta.id,
@@ -292,12 +316,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               headers: meta.options.headers,
               signal: meta.abort.asSignal(),
             },
-            // Parse path streams to disk and can hand large files to FirePDF
-            // by GCS reference, so it admits more than the raw fetch path —
-            // up to the requesting team's large-PDF limit.
-            byReferenceReachable
-              ? largePdfLimitBytes(meta)
-              : PDF_DOWNLOAD_MAX_FILE_SIZE,
+            downloadMaxBytes,
           ),
         );
 
@@ -756,6 +775,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           usOnlyReserveMs !== undefined
             ? withUsOnlyTextLayerReserve(meta, usOnlyReserveMs)
             : undefined;
+        let syncRetried = false;
         try {
           const firePdfMeta = {
             ...(usOnlyReserve?.meta ?? meta),
@@ -795,6 +815,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                   team_id: meta.internalOptions.teamId,
                 },
               );
+              syncRetried = true;
               result = await scrapePDFWithFirePDF(
                 {
                   ...firePdfMeta,
@@ -828,21 +849,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             result,
           );
         } catch (error) {
+          let failure: unknown = error;
           if (usOnlyTextLayer && isUsOnlyCapacityFailure(error, meta)) {
             usOnlyTextLayerFallback = true;
-            meta.logger.warn(
-              "FirePDF has no US capacity for a US-only text PDF -- falling back to its text layer",
-              {
-                method: "scrapePDF/firePDF",
-                event: "us_only_text_layer_fallback",
-                scrape_id: meta.id,
-                team_id: meta.internalOptions.teamId,
-                reason:
-                  error instanceof UsOnlyUnavailableError
-                    ? error.firePdfReason
-                    : "reserve_reached",
-              },
-            );
           } else {
             if (
               error instanceof RemoveFeatureError ||
@@ -852,16 +861,88 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             ) {
               throw error;
             }
+            // The retry runs under the same US-only reserve as the first
+            // attempt, so the text-layer fallback still has time after it.
+            const retryMeta = usOnlyReserve?.meta ?? meta;
+            if (
+              !syncRetried &&
+              shouldRetryFirePdf(error, retryMeta.abort.scrapeTimeout())
+            ) {
+              meta.logger.warn(
+                "FirePDF failed with a transient error -- retrying synchronously",
+                {
+                  method: "scrapePDF/firePDFRetry",
+                  event: "fire_pdf_retry",
+                  error,
+                  scrape_id: meta.id,
+                  team_id: meta.internalOptions.teamId,
+                },
+              );
+              try {
+                result = await scrapePDFWithFirePDF(
+                  {
+                    ...retryMeta,
+                    logger: meta.logger.child({
+                      method: "scrapePDF/firePDFRetry",
+                    }),
+                  },
+                  base64Content,
+                  maxPages,
+                  effectivePageCount,
+                  mode,
+                  includePageMarkdown,
+                  includeBlocks,
+                  pageMarkers,
+                );
+                effectivePageCount = reconcilePageCountWithFirePdf(
+                  effectivePageCount,
+                  result,
+                );
+              } catch (retryError) {
+                if (
+                  usOnlyTextLayer &&
+                  isUsOnlyCapacityFailure(retryError, meta)
+                ) {
+                  usOnlyTextLayerFallback = true;
+                  failure = retryError;
+                } else if (
+                  retryError instanceof RemoveFeatureError ||
+                  retryError instanceof AbortManagerThrownError ||
+                  retryError instanceof UsOnlyUnavailableError ||
+                  retryError instanceof ReservedCapacityUnavailableError
+                ) {
+                  throw retryError;
+                } else {
+                  failure = retryError;
+                }
+              }
+            }
+          }
+          if (usOnlyTextLayerFallback) {
+            meta.logger.warn(
+              "FirePDF has no US capacity for a US-only text PDF -- falling back to its text layer",
+              {
+                method: "scrapePDF/firePDF",
+                event: "us_only_text_layer_fallback",
+                scrape_id: meta.id,
+                team_id: meta.internalOptions.teamId,
+                reason:
+                  failure instanceof UsOnlyUnavailableError
+                    ? failure.firePdfReason
+                    : "reserve_reached",
+              },
+            );
+          } else if (!result) {
             if (forceFirePDF) {
               meta.logger.error("FirePDF failed (forced, no fallback)", {
                 method: "scrapePDF/firePDF",
-                error,
+                error: failure,
               });
-              throw error;
+              throw failure;
             }
             meta.logger.warn("FirePDF failed -- falling back to MinerU", {
               method: "scrapePDF/firePDF",
-              error,
+              error: failure,
               event: "pdf_engine_fallback",
               scrape_id: meta.id,
               team_id: meta.internalOptions.teamId,
@@ -872,11 +953,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               // `.message` could be undefined or non-string, and `.slice` would
               // throw inside the fallback logger, masking the original failure.
               error_class:
-                (error as { name?: unknown })?.name != null
-                  ? String((error as { name?: unknown }).name)
+                (failure as { name?: unknown })?.name != null
+                  ? String((failure as { name?: unknown }).name)
                   : undefined,
               error_message: String(
-                (error as { message?: unknown })?.message ?? "",
+                (failure as { message?: unknown })?.message ?? "",
               ).slice(0, 500),
             });
           }
@@ -1096,7 +1177,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // Report the proxy that actually delivered the file: a browser
       // handoff may have come through the stealth proxy, while the direct
       // download always uses the basic route.
-      proxyUsed: meta.pdfPrefetch?.proxyUsed ?? "basic",
+      proxyUsed: prefetch?.proxyUsed ?? "basic",
     };
   } finally {
     // Always clean up temp file after we're done with it

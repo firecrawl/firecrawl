@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
   markCalls: vi.fn(),
+  providerToolsBody: vi.fn(),
 }));
 vi.mock("../../lib/alexandria-activity", () => ({
   markAlexandriaActivity: vi.fn(),
@@ -33,6 +34,9 @@ vi.mock("../../services/logging/log_job", () => ({
 vi.mock("../../lib/key-restriction", () => ({
   checkKeyFormatRestriction: async () => ({ allowed: true }),
 }));
+vi.mock("../../lib/keyless", () => ({
+  keylessProviderToolsBody: mocks.providerToolsBody,
+}));
 vi.mock("../../lib/agent-interop", () => ({
   isAgentInteropSecretValid: (value: string) => value === "test-secret",
 }));
@@ -42,6 +46,7 @@ vi.mock("../../config", () => ({
     FIRE_EXCHANGE_URL: "https://x",
     AGENT_INTEROP_SECRET: "test-secret",
     USE_DB_AUTHENTICATION: true,
+    AGENT_AUTH_RESOURCE_METADATA_URL: "https://x/auth",
   },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
@@ -54,11 +59,12 @@ const call = {
   options: {},
 };
 let flags: Record<string, unknown> = { exchangeRetrieve: true };
+let teamId = "team";
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
-    auth: { team_id: "team" },
+    auth: { team_id: teamId },
     acuc: {
       api_key_id: 12,
       org_id: "org",
@@ -81,6 +87,7 @@ const result = (results: unknown[], executed = true) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   flags = { exchangeRetrieve: true };
+  teamId = "team";
   mocks.log.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
   mocks.discovery.mockImplementation(async (_teamId, calls: unknown[]) =>
@@ -89,6 +96,33 @@ beforeEach(() => {
   mocks.retrieve.mockResolvedValue(
     result([{ ...call, creditsCost: 0, data: {} }]),
   );
+});
+
+it("refuses a keyless caller with its signup link and the auth discovery header", async () => {
+  teamId = "preview_keyless_203.0.113.8";
+  const refusal = {
+    success: false,
+    error: "An API key is required for provider tools.",
+    signup_url: "https://firecrawl.dev/k/token",
+  };
+  mocks.providerToolsBody.mockReturnValue(refusal);
+  const response = await request(app)
+    .post("/v2/scrape")
+    .set("x-origin", "cli")
+    .send({ alexandria: call });
+  expect(response.status).toBe(403);
+  expect(response.body).toEqual(refusal);
+  expect(mocks.providerToolsBody).toHaveBeenCalledExactlyOnceWith(
+    teamId,
+    expect.objectContaining({
+      body: { alexandria: call },
+      headers: expect.objectContaining({ "x-origin": "cli" }),
+    }),
+  );
+  expect(response.headers["www-authenticate"]).toBe(
+    'Bearer resource_metadata="https://x/auth"',
+  );
+  expect(mocks.retrieve).not.toHaveBeenCalled();
 });
 
 it("returns the Scrape contract, shares identity with the legacy route, and logs once per execution", async () => {

@@ -21,6 +21,7 @@ from .types import (
     DeveloperSearchResponse,
     DeveloperSearchType,
     GovSearchCourtType,
+    GovSearchSource,
     GovSearchResponse,
     SourceOption,
     FindToolsData,
@@ -81,6 +82,7 @@ from .methods.aio import research as async_research  # type: ignore[attr-defined
 from .methods.aio import feedback as async_feedback  # type: ignore[attr-defined]
 from .methods.research_docs import (
     ASYNC_CLIENT_INSPECT_PAPER_DOC,
+    ASYNC_CLIENT_LOOKUP_PROTEIN_DOC,
     ASYNC_CLIENT_READ_PAPER_DOC,
     ASYNC_CLIENT_RELATED_PAPERS_DOC,
     ASYNC_CLIENT_SEARCH_GITHUB_DOC,
@@ -216,6 +218,10 @@ class AsyncFirecrawlClient:
     @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
     async def related_papers(self, paper_id: str, intent: str, **kwargs):
         return await async_research.related_papers(self.async_http_client, paper_id, intent, **kwargs)
+
+    @doc(ASYNC_CLIENT_LOOKUP_PROTEIN_DOC)
+    async def lookup_protein(self, protein: str, **kwargs):
+        return await async_research.lookup_protein(self.async_http_client, protein, **kwargs)
 
     @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
     async def search_github(self, query: str, **kwargs):
@@ -390,8 +396,9 @@ class AsyncFirecrawlClient:
         jurisdiction: Optional[str] = None,
         court: Optional[str] = None,
         court_type: Optional[GovSearchCourtType] = None,
-        cites: Optional[str] = None,
+        cites: Optional[Union[str, List[str]]] = None,
         domain: Optional[str] = None,
+        sources: Optional[List[GovSearchSource]] = None,
     ) -> GovSearchResponse:
         """
         Search the Government Index of US primary law and regulatory material.
@@ -410,13 +417,17 @@ class AsyncFirecrawlClient:
                 id, such as "scotus", "ca9" or "nysd"
             court_type: Keep only pages from one type of court, such as
                 "federal-appellate" or "state-supreme"
-            cites: Keep only pages that cite one law or case, as a printed
+            cites: Keep only pages that cite a law or case, as a printed
                 citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a
-                citation id such as "us:usc:42:1983"
+                citation id such as "us:usc:42:1983"; a list of up to 32
+                keeps pages citing any of them
             domain: Keep only pages from one site, such as "irs.gov"
+            sources: Result groups to return: "web" (the default) and "gov",
+                the same results with the index's labels
 
         Returns:
-            GovSearchResponse with ranked results in data.web
+            GovSearchResponse with ranked results in data.web (None when sources
+            is ["gov"]), and in data.gov when sources includes "gov"
         """
         return await async_gov.gov_search(
             self.async_http_client,
@@ -427,6 +438,7 @@ class AsyncFirecrawlClient:
             court_type=court_type,
             cites=cites,
             domain=domain,
+            sources=sources,
         )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:

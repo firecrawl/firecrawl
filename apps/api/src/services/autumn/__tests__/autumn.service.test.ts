@@ -905,7 +905,7 @@ describe("firebill requests", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 42,
-      properties: { source: "test", endpoint: "extract" },
+      properties: { source: "test", endpoint: "extract", teamId: "team-1" },
       // Minted when the caller has none, so the retry inside firebillTrack is
       // the same event rather than a second charge.
       idempotency_key: expect.any(String),
@@ -971,7 +971,7 @@ describe("firebill requests", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 100,
-      properties: { source: "checkCreditsMiddleware" },
+      properties: { source: "checkCreditsMiddleware", teamId: "team-1" },
       // A read: no lock, no idempotency key, nothing to dedupe.
     });
   });
@@ -1216,7 +1216,11 @@ describe("firebill requests", () => {
       value: 10,
       lock_id: "monitor_check-1",
       expires_at: expiresAt,
-      properties: { source: "monitorCheck", endpoint: "monitor" },
+      properties: {
+        source: "monitorCheck",
+        endpoint: "monitor",
+        teamId: "team-1",
+      },
     });
   });
 
@@ -1694,7 +1698,11 @@ describe("firebill requests", () => {
       lock_id: "monitor_check-1",
       action: "confirm",
       override_value: 7,
-      properties: { source: "monitorCheck", endpoint: "monitor" },
+      properties: {
+        source: "monitorCheck",
+        endpoint: "monitor",
+        teamId: "team-1",
+      },
       // Deterministic per (lock, action) so a reconciler re-finalize dedupes.
       idempotency_key: "fc:finalize:confirm:monitor_check-1",
     });
@@ -1872,7 +1880,7 @@ describe("provisioning", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 100,
-      properties: { source: "checkCreditsMiddleware" },
+      properties: { source: "checkCreditsMiddleware", teamId: "team-1" },
     });
   });
 
@@ -1899,7 +1907,7 @@ describe("provisioning", () => {
       value: 10,
       lock_id: "lock-1",
       expires_at: 1_700_000_000_000,
-      properties: { source: "monitorCheck" },
+      properties: { source: "monitorCheck", teamId: "team-1" },
     });
   });
 
@@ -1956,7 +1964,11 @@ describe("provisioning", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 42,
-      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      properties: {
+        source: "billScrapeJob",
+        endpoint: "scrape",
+        teamId: "team-1",
+      },
       idempotency_key: "fc:track:scrape:job-1",
     });
   });
@@ -1982,7 +1994,11 @@ describe("provisioning", () => {
       feature_id: "CREDITS",
       // firebill negates a refund itself, so the positive value goes on the wire.
       value: 30,
-      properties: { endpoint: "extract", source: "autumn_refund" },
+      properties: {
+        endpoint: "extract",
+        source: "autumn_refund",
+        teamId: "team-1",
+      },
       idempotency_key: "fc:refund:extract:job-1",
     });
   });

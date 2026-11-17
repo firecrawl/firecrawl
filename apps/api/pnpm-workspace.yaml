@@ -122,6 +122,10 @@ allowBuilds:
   # @google-cloud/bigtable); the pure-JS fallback is fine for our payload
   # sizes, so no native compilation.
   sse4_crc32: false
+  # Optional native compressors for just-bash's archive commands, which the
+  # hosted shell (/v2/bash) does not expose.
+  "@mongodb-js/zstd": false
+  node-liblzma: false
   bufferutil: true
   esbuild: true
   foundationdb: true

@@ -12,7 +12,12 @@ vi.mock("../../../../../lib/gcs-jobs", () => ({
   getDocFromGCS: vi.fn(async () => null),
 }));
 
-import { AddFeatureError, SiteRestrictionError } from "../../../error";
+import {
+  AddFeatureError,
+  EngineError,
+  SiteBlockNoRetryError,
+  SiteRestrictionError,
+} from "../../../error";
 import { fireEngineCheckStatus } from "../checkStatus";
 import { fireEngineScrape } from "../scrape";
 
@@ -50,6 +55,12 @@ function fakeMeta(disableSiteHandling?: boolean) {
   } as any;
 }
 
+const polledFields = {
+  jobId: "job-id",
+  state: "failed",
+  processing: false,
+};
+
 describe.each([
   [
     "POST response",
@@ -75,14 +86,10 @@ describe.each([
         undefined,
         "http://fire-engine.test",
       ),
-    {
-      ...siteProtectionFailure,
-      jobId: "job-id",
-      state: "failed",
-      processing: false,
-    },
+    { ...siteProtectionFailure, ...polledFields },
   ],
-])("site protection in a %s", (_, run, status) => {
+])("site protection in a %s", (kind, run, status) => {
+  const extra = kind === "polled response" ? polledFields : {};
   beforeEach(() => {
     fetchFake.status = status;
   });
@@ -96,6 +103,45 @@ describe.each([
   });
 
   it("returns the terminal restriction error when Safe Mode disables site handling", async () => {
+    await expect(run(fakeMeta(true))).rejects.toBeInstanceOf(
+      SiteRestrictionError,
+    );
+  });
+
+  it("ends the scrape on an instant block marked not worth retrying", async () => {
+    fetchFake.status = {
+      error: "instant-block:example.signin-wall",
+      failureReason: "site_protection",
+      ...extra,
+    };
+    await expect(run(fakeMeta())).rejects.toBeInstanceOf(SiteBlockNoRetryError);
+  });
+
+  it("still retries an instant block that asks for stealth", async () => {
+    fetchFake.status = {
+      error: "instant-block:example.challenge",
+      failureReason: "site_protection",
+      retryWithStealth: true,
+      ...extra,
+    };
+    await expect(run(fakeMeta())).rejects.toBeInstanceOf(AddFeatureError);
+  });
+
+  it("leaves other site protection failures without a stealth retry to the waterfall", async () => {
+    fetchFake.status = {
+      error: "Challenge solver at capacity",
+      failureReason: "site_protection",
+      ...extra,
+    };
+    await expect(run(fakeMeta())).rejects.toBeInstanceOf(EngineError);
+  });
+
+  it("keeps Safe Mode's restriction error ahead of the no-retry block", async () => {
+    fetchFake.status = {
+      error: "instant-block:example.signin-wall",
+      failureReason: "site_protection",
+      ...extra,
+    };
     await expect(run(fakeMeta(true))).rejects.toBeInstanceOf(
       SiteRestrictionError,
     );

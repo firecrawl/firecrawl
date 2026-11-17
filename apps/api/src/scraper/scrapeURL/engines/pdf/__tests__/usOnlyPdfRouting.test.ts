@@ -239,6 +239,19 @@ describe("PDF routing for US-only teams", () => {
       expect(mockedPdfParse).not.toHaveBeenCalled();
     });
 
+    it("serves the text layer when the transient-failure retry is refused for lack of US capacity", async () => {
+      mockedFirePdf
+        .mockRejectedValueOnce(new Error("Request failed"))
+        .mockRejectedValueOnce(await refusal("region_unavailable"));
+
+      const result = await scrapePDF(await makeMeta(true));
+
+      expect(mockedFirePdf).toHaveBeenCalledTimes(2);
+      expect(result.markdown).toBe("text layer");
+      expect(mockedRunPodMU).not.toHaveBeenCalled();
+      expect(mockedPdfParse).not.toHaveBeenCalled();
+    });
+
     it("falls through to pdf-parse when the native extractor finds no text", async () => {
       mockedFirePdf.mockRejectedValueOnce(await refusal("region_unavailable"));
       mockedProcessPdf

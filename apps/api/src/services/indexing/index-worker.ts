@@ -17,11 +17,7 @@ import {
 import { resolveBillingMetadata } from "../billing/types";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
-import {
-  processIndexInsertJobs,
-  processOMCEJobs,
-  queryDomainsForPrecrawl,
-} from "..";
+import { processIndexInsertJobs, queryDomainsForPrecrawl } from "..";
 import { queryTopUrlsForDomain } from "../../db/rpc";
 import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
@@ -695,7 +691,8 @@ const workerFun = async (
 
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
-const OMCE_INSERT_INTERVAL = 5000;
+// OMCE job inserts are disabled to reduce index DB load.
+// const OMCE_INSERT_INTERVAL = 5000;
 const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 // Search indexing is now handled by separate search service, not this worker
 // const SEARCH_INDEX_INTERVAL = 10000;
@@ -750,18 +747,19 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     await processBrowserSessionActivityJobs();
   }, BROWSER_ACTIVITY_INSERT_INTERVAL);
 
-  const omceInserterInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan("firecrawl-index-worker-process-omce-jobs", async span => {
-      setSpanAttributes(span, {
-        "index.worker.operation": "process_omce_jobs",
-        "index.worker.type": "scheduled",
-      });
-      await processOMCEJobs();
-    });
-  }, OMCE_INSERT_INTERVAL);
+  // OMCE job inserts are disabled to reduce index DB load.
+  // const omceInserterInterval = setInterval(async () => {
+  //   if (isShuttingDown) {
+  //     return;
+  //   }
+  //   await withSpan("firecrawl-index-worker-process-omce-jobs", async span => {
+  //     setSpanAttributes(span, {
+  //       "index.worker.operation": "process_omce_jobs",
+  //       "index.worker.type": "scheduled",
+  //     });
+  //     await processOMCEJobs();
+  //   });
+  // }, OMCE_INSERT_INTERVAL);
 
   const engpickerPromise = (async () => {
     if (config.DISABLE_ENGPICKER) {
@@ -811,6 +809,6 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   clearInterval(webhookInserterInterval);
   clearInterval(browserActivityInterval);
   clearInterval(browserReconcileInterval);
-  clearInterval(omceInserterInterval);
+  // clearInterval(omceInserterInterval);
   logger.info("All workers shut down, exiting process");
 })();

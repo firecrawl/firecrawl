@@ -25,6 +25,7 @@ import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import { isUsOnly } from "../../lib/us-only";
+import { isAlexandriaVerified } from "../../lib/alexandria-verified";
 import {
   answerSchema,
   refusal,
@@ -144,6 +145,10 @@ export async function retrieveProviders(input: {
   billingCountry?: string;
   /** The team's Autumn rate-limit multiplier, which sizes its index budgets. */
   rateLimitMultiplier: number;
+  /** The most the caller allows: a quote above it is refused before anything is held or run. */
+  maxCredits?: number;
+  /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
+  ultrasearch?: boolean;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -213,6 +218,8 @@ export async function retrieveProviders(input: {
   const key = `alexandria:retrieve:${id}`;
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
+  const alexandriaVerified = isAlexandriaVerified(input.flags);
+  const ultrasearch = input.ultrasearch === true;
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -221,6 +228,8 @@ export async function retrieveProviders(input: {
       : [input.calls, billable]),
     ...(zeroDataRetention ? [{ zeroDataRetention }] : []),
     ...(usOnly ? [{ usOnly }] : []),
+    ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
+    ...(ultrasearch ? [{ ultrasearch }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -311,6 +320,7 @@ export async function retrieveProviders(input: {
         : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
@@ -433,6 +443,7 @@ export async function retrieveProviders(input: {
       input.clientIp,
       input.billingCountry,
       Math.min(10000, remaining()),
+      ultrasearch,
     );
     if (denied) return refuse(denied);
 
@@ -488,6 +499,8 @@ export async function retrieveProviders(input: {
       connectors: input.flags?.exchangeRetrieve === true,
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(ultrasearch ? { ultrasearch } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -509,6 +522,15 @@ export async function retrieveProviders(input: {
         refusal(502, "Provider quote was malformed. No provider was executed."),
       );
     maximumCredits = parsedQuote.data.maximumCredits;
+    // Execution is bound to this quote (Exchange refuses above it), so the caller's cap binds too.
+    if (input.maxCredits !== undefined && maximumCredits > input.maxCredits)
+      return refuse(
+        refusal(
+          402,
+          `This request needs up to ${maximumCredits} credits, above maxCredits ${input.maxCredits}. No provider was executed.`,
+          { code: "max_credits_exceeded", maximumCredits },
+        ),
+      );
 
     if (billable && maximumCredits > 0) {
       if (!config.USE_DB_AUTHENTICATION)
@@ -618,8 +640,13 @@ export async function retrieveProviders(input: {
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
+      // The organization this call bills against, so Exchange can attribute a paid read.
+      // Separate from termsIdentity and outside the fingerprint: it grants nothing.
+      ...(input.orgId ? { billingOrganizationId: input.orgId } : {}),
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
+      ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(ultrasearch ? { ultrasearch } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);

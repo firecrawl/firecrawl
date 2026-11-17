@@ -400,10 +400,6 @@ export function authMiddleware(
         currentRateLimiterMode = RateLimiterMode.ExtractAgentPreview;
       }
 
-      // if (currentRateLimiterMode === RateLimiterMode.Scrape && isAgentExtractModelValid((req.body as any)?.agent?.model)) {
-      //   currentRateLimiterMode = RateLimiterMode.ScrapeAgentPreview;
-      // }
-
       const auth = await authenticateUser(req, res, currentRateLimiterMode, {
         ...options,
         allowKeyless,

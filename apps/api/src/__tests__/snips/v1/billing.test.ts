@@ -1,9 +1,10 @@
-import { TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
+import { concurrentIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
 import {
   batchScrape,
   crawl,
   creditUsage,
   describeV1,
+  EXTRACT_LIVE,
   extract,
   idmux,
   map,
@@ -350,7 +351,7 @@ describeV1(TEST_PRODUCTION)("Billing tests", () => {
     600000,
   );
 
-  it.concurrent(
+  concurrentIf(EXTRACT_LIVE)(
     "bills extract correctly",
     async () => {
       const identity = await idmux({
