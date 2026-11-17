@@ -67,6 +67,19 @@ export function jobContext(data: ScrapeJobData): RequestContext {
   );
 }
 
+/**
+ * Whether a stored payload or crawl record is under zero data retention,
+ * `undefined` when it does not say. For code that carries the payloads of
+ * every queue, or that may be handed a job whose data is gone.
+ */
+export function storedZeroDataRetention(stored: unknown): boolean | undefined {
+  const shape = stored as
+    | { ctx?: RequestContext; zeroDataRetention?: boolean }
+    | null
+    | undefined;
+  return shape?.ctx?.zeroDataRetention ?? shape?.zeroDataRetention;
+}
+
 /** The context a crawl runs under, with the same fallback as `jobContext`. */
 export function crawlContext(crawl: StoredCrawl): RequestContext {
   return (

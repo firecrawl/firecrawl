@@ -11,6 +11,7 @@ import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
 import { isUsOnly } from "./us-only";
+import { crawlContext } from "./request-context";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -50,13 +51,14 @@ export type StoredCrawl = {
 };
 
 export async function saveCrawl(id: string, crawl: StoredCrawl) {
+  const { zeroDataRetention } = crawlContext(crawl);
   return await withSpan(
     "firecrawl-redis-save-crawl",
     async span => {
       setSpanAttributes(span, {
         "crawl.id": id,
         "crawl.team_id": crawl.team_id,
-        "crawl.zero_data_retention": crawl.zeroDataRetention || false,
+        "crawl.zero_data_retention": zeroDataRetention,
         operation: "save_crawl",
       });
 
@@ -66,7 +68,7 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
         method: "saveCrawl",
         crawlId: id,
         teamId: crawl.team_id,
-        zeroDataRetention: crawl.zeroDataRetention,
+        zeroDataRetention,
       });
 
       await redisEvictConnection.set(
@@ -81,7 +83,7 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
         24 * 60 * 60,
       );
     },
-    { zeroDataRetention: crawl.zeroDataRetention },
+    { zeroDataRetention },
   );
 }
 
@@ -155,7 +157,8 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
     setSpanAttributes(span, {
       "crawl.found": true,
       "crawl.team_id": crawl.team_id,
-      "crawl.zero_data_retention": crawl.zeroDataRetention === true,
+      "crawl.zero_data_retention":
+        crawlContext(crawl).zeroDataRetention === true,
     });
 
     return crawl;
@@ -893,7 +896,7 @@ export async function lockURL(
       setSpanAttributes(span, { "crawl.url_locked": res });
       return res;
     },
-    { zeroDataRetention: sc.zeroDataRetention },
+    { zeroDataRetention: crawlContext(sc).zeroDataRetention },
   );
 }
 
@@ -1026,12 +1029,13 @@ export function crawlToCrawler(
   newBase?: string,
   crawlerOptions?: any,
 ): WebCrawler {
+  const ctx = crawlContext(sc);
   // Resolve the crawl's Safe Mode once (honoring a stored request bypass) to
   // drive both lockdown and the robots override below.
   const crawlerSafeMode = sc.internalOptions?.safeModeBypassed
     ? undefined
     : resolveSafeMode(
-        sc.internalOptions?.teamFlags ?? teamFlags,
+        ctx.flags ?? teamFlags,
         undefined,
         sc.originUrl ?? undefined,
       ).safeMode;
@@ -1066,8 +1070,8 @@ export function crawlToCrawler(
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention:
-      (getScrapeZDR(teamFlags) === "forced" || sc.zeroDataRetention) ?? false,
-    usOnly: isUsOnly(sc.internalOptions?.teamFlags) || isUsOnly(teamFlags),
+      getScrapeZDR(teamFlags) === "forced" || ctx.zeroDataRetention,
+    usOnly: isUsOnly(ctx.flags) || isUsOnly(teamFlags),
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
