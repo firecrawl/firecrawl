@@ -9,6 +9,7 @@ import {
   runCclogTick,
 } from "../lib/cclog";
 import { getRedisConnection } from "./queue-service";
+import { startRole } from "../main";
 
 const CCLOG_WORKER_LOCK_KEY = "cclog:worker:tick-lock";
 const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
@@ -40,7 +41,7 @@ async function sendHeartbeat() {
   }
 }
 
-(async () => {
+export async function start() {
   let isShuttingDown = false;
   let tickInFlight = false;
 
@@ -80,10 +81,8 @@ async function sendHeartbeat() {
     });
   }
 
-  if (require.main === module) {
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   _logger.info("Waiting for next exact minute to start cclog worker", {
     waitMs: getMsUntilNextMinute(),
@@ -127,4 +126,8 @@ async function sendHeartbeat() {
       await sleepUntilNextMinute();
     }
   }
-})();
+}
+
+if (require.main === module) {
+  void startRole("cclog-worker");
+}

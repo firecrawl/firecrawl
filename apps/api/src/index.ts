@@ -50,6 +50,7 @@ import {
   shutdownPubSubLogging,
 } from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
+import { startRole } from "./main";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -263,14 +264,12 @@ async function startServer(port = DEFAULT_PORT) {
     });
   };
 
-  if (require.main === module) {
-    process.on("SIGTERM", exitHandler);
-    process.on("SIGINT", exitHandler);
-  }
+  process.on("SIGTERM", exitHandler);
+  process.on("SIGINT", exitHandler);
   return server;
 }
 
-if (require.main === module) {
+export function start() {
   startServer().catch(error => {
     logger.error("Failed to start server", { error });
     process.exit(1);
@@ -385,3 +384,7 @@ app.use(
 );
 
 logger.info(`Worker ${process.pid} started`);
+
+if (require.main === module) {
+  void startRole("api");
+}

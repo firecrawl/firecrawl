@@ -1,3 +1,4 @@
+export { coreParts } from "./core-parts";
 export type {
   Await,
   HookHandlers,
