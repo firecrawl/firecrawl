@@ -726,23 +726,35 @@ describe("serializeThrownError", () => {
   it.each([
     [
       "throws when it writes itself",
-      () => {
-        throw new Error("cannot serialize");
+      {
+        serialize: () => {
+          throw new Error("cannot serialize");
+        },
       },
     ],
     [
       "writes a field that JSON cannot write",
-      () => ({ message: "Sitemap fetch failed", pages: 10n }),
+      { serialize: () => ({ message: "Sitemap fetch failed", pages: 10n }) },
     ],
-    ["writes nothing", () => undefined],
-    ["writes something that is not an object", () => "Sitemap fetch failed"],
-    ["writes an object without a message", () => ({ pages: 10 })],
+    ["writes nothing", { serialize: () => undefined }],
+    [
+      "writes something that is not an object",
+      { serialize: () => "Sitemap fetch failed" },
+    ],
+    [
+      "writes an object without a message",
+      { serialize: () => ({ pages: 10 }) },
+    ],
+    ["has a code with a space in it", { code: "TWO WORDS" }],
+    ["has an empty code", { code: "" }],
+    ["has a code with the separator in it", { code: "A|B" }],
   ])(
     "sends an error that %s as UNKNOWN_ERROR with its message",
-    (_, serialize) => {
-      const original = Object.assign(new SitemapError("Sitemap fetch failed"), {
-        serialize,
-      });
+    (_, broken) => {
+      const original = Object.assign(
+        new SitemapError("Sitemap fetch failed"),
+        broken,
+      );
       const revived = deserializeTransportableError(
         serializeThrownError(original),
       )!;

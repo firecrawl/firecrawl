@@ -147,18 +147,16 @@ function shortened(text: string) {
  */
 export function serializeThrownError(error: unknown) {
   const thrown = isTransportableError(error) ? error : new UnknownError(error);
-  // What the queue keeps whole and a reader takes: within the limit, and after
-  // the code a JSON object with a message.
+  // What the queue keeps whole and every reader takes, whether or not it has
+  // a class for the code.
   const crosses = (serialized: string) => {
-    if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
-      return false;
-    }
-    try {
-      const written = JSON.parse(serialized.slice(serialized.indexOf("|") + 1));
-      return typeof written?.message === "string";
-    } catch {
-      return false;
-    }
+    const written = parseSerializedError(serialized);
+    return (
+      Buffer.byteLength(serialized, "utf8") <= MAX_SERIALIZED_ERROR_BYTES &&
+      written !== null &&
+      CODE.test(written.code) &&
+      typeof written.payload.message === "string"
+    );
   };
 
   try {
@@ -211,14 +209,14 @@ export function serializeThrownError(error: unknown) {
   return serializeTransportableError(new UnknownError(inner));
 }
 
+// A code has no whitespace in it.
+const CODE = /^\S+$/;
+
 /**
- * Returns null when `data` is not a serialized error; callers also pass plain
- * error messages. A code that no registered class carries gives a plain
- * TransportableError.
+ * Splits a serialized error into its code and the object written after it.
+ * Returns null for a string that is not written that way.
  */
-export function deserializeTransportableError(
-  data: string,
-): TransportableError | null {
+function parseSerializedError(data: string) {
   const [code, ...serialized] = data.split("|");
   if (serialized.length === 0) {
     return null;
@@ -232,14 +230,30 @@ export function deserializeTransportableError(
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
+  return { code, payload: payload as Record<string, unknown> };
+}
+
+/**
+ * Returns null when `data` is not a serialized error; callers also pass plain
+ * error messages. A code that no registered class carries gives a plain
+ * TransportableError.
+ */
+export function deserializeTransportableError(
+  data: string,
+): TransportableError | null {
+  const parsed = parseSerializedError(data);
+  if (parsed === null) {
+    return null;
+  }
+  const { code, payload } = parsed;
 
   const errorClass = service.errors.classFor(code);
   if (errorClass) {
     return errorClass.deserialize(code as ErrorCode, payload);
   }
 
-  const { message, stack, cause } = payload as Record<string, unknown>;
-  if (!/^\S+$/.test(code) || typeof message !== "string") {
+  const { message, stack, cause } = payload;
+  if (!CODE.test(code) || typeof message !== "string") {
     return null;
   }
   return TransportableError.deserialize(code as ErrorCode, {
