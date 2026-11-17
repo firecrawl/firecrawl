@@ -65,6 +65,7 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
+import type { TeamPlanClass } from "../lib/team-plan-class";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 
 interface SearchOptions {
@@ -101,6 +102,11 @@ interface SearchContext {
   integration?: string | null;
   apiKeyId: number | null;
   flags: TeamFlags;
+  /**
+   * The team's plan class, stated on the web search call. Required so every
+   * caller decides; undefined states nothing. See teamPlanClass.
+   */
+  teamPlanClass: TeamPlanClass | undefined;
   requestId: string;
   jobId: string;
   apiVersion: string;
@@ -421,6 +427,7 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
+          teamPlanClass: context.teamPlanClass,
         });
   const indexResultsPromise = indexCategorySearch
     ? indexCategorySearch(indexSearchOptions, logger)

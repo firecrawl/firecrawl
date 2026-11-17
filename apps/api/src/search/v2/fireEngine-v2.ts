@@ -7,6 +7,7 @@ import {
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
+import type { TeamPlanClass } from "../../lib/team-plan-class";
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],
@@ -50,6 +51,7 @@ export async function fire_engine_search_v2(
     includeDomains?: string[];
     excludeDomains?: string[];
     usOnly?: boolean;
+    teamPlanClass?: TeamPlanClass;
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
@@ -74,6 +76,9 @@ export async function fire_engine_search_v2(
     includeDomains: options.includeDomains,
     excludeDomains: options.excludeDomains,
     ...(options.usOnly ? { usOnly: true } : {}),
+    // Sent only when the caller knows it. Without it nothing is stated about
+    // the team, which the receiver must not read as free or self-serve.
+    ...(options.teamPlanClass ? { teamPlanClass: options.teamPlanClass } : {}),
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);
