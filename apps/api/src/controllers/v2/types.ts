@@ -1646,6 +1646,7 @@ export type ErrorResponse = {
   success: false;
   code?: ErrorCodes;
   error: string;
+  id?: string;
   details?: any;
   sponsor_status?: string;
   login_url?: string;
