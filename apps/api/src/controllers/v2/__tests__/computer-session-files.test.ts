@@ -1,14 +1,11 @@
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
-// Sessions are rows in Postgres, so these tests run the real queries. CI
-// provides the database; locally it is COMPUTER_SESSION_TEST_DATABASE_URL or
-// localhost.
+// Sessions are rows in Postgres, so these tests run the real queries against
+// COMPUTER_SESSION_TEST_DATABASE_URL, and are skipped without it.
 vi.mock("../../../db/connection", async () => {
   const { Pool } = await import("pg");
   const { drizzle } = await import("drizzle-orm/node-postgres");
   const client = new Pool({
-    connectionString:
-      process.env.COMPUTER_SESSION_TEST_DATABASE_URL ??
-      "postgres://postgres:postgres@localhost:5432/postgres",
+    connectionString: process.env.COMPUTER_SESSION_TEST_DATABASE_URL,
   });
   return { db: drizzle({ client }) };
 });
@@ -35,6 +32,7 @@ import {
   type ComputerSessionFileStore,
 } from "../computer-session-files";
 
+const databaseUrl = process.env.COMPUTER_SESSION_TEST_DATABASE_URL;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const TEAM_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -115,29 +113,6 @@ const forgetSessions = () =>
   db.delete(sessions).where(inArray(sessions.team_id, [TEAM_A, TEAM_B]));
 
 let server: http.Server;
-beforeAll(async () => {
-  // The table as the firecrawl-db migration creates it.
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS computer_sessions (
-      id uuid PRIMARY KEY,
-      team_id uuid NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      last_used_at timestamptz NOT NULL DEFAULT now(),
-      expires_at timestamptz NOT NULL
-    )
-  `);
-  server = app.listen(0);
-});
-afterAll(async () => {
-  server.closeAllConnections();
-  server.close();
-  await forgetSessions();
-  await (db as unknown as { $client: { end(): Promise<void> } }).$client.end();
-});
-beforeEach(async () => {
-  objects.clear();
-  await forgetSessions();
-});
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -203,245 +178,280 @@ const seed = (team: string, count: number, expiresAt: number) =>
 const storedSession = async (id: string) =>
   (await db.select().from(sessions).where(eq(sessions.id, id)))[0];
 
-describe("sessions", () => {
-  it("creates a session the API names, empty and live for a day", async () => {
-    const created = await create();
-    expect(created.status).toBe(200);
-    const { id, expiresAt } = created.body.data;
-    expect(id).toMatch(UUID);
-    const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
-    expect(lifetimeMs).toBeGreaterThan(DAY_MS - 60_000);
-    expect(lifetimeMs).toBeLessThanOrEqual(DAY_MS);
-    // The session is a row, and nothing is stored until the first save.
-    expect(await storedSession(id)).toMatchObject({ id, team_id: TEAM_A });
-    expect(objects.size).toBe(0);
-
-    const res = await read(TEAM_A, id);
-    expect(res.status).toBe(200);
-    expect(res.headers["content-length"]).toBe("0");
-    expect(res.headers.etag).toBe('"0"');
-    expect(res.body.length).toBe(0);
+describe.skipIf(!databaseUrl)("session routes", () => {
+  beforeAll(async () => {
+    // The table as the firecrawl-db migration creates it.
+    await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS computer_sessions (
+      id uuid PRIMARY KEY,
+      team_id uuid NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_used_at timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz NOT NULL
+    )
+  `);
+    server = app.listen(0);
+  });
+  afterAll(async () => {
+    server.closeAllConnections();
+    server.close();
+    await forgetSessions();
+    await (
+      db as unknown as { $client: { end(): Promise<void> } }
+    ).$client.end();
+  });
+  beforeEach(async () => {
+    objects.clear();
+    await forgetSessions();
   });
 
-  it("moves the session's end out on each save, up to a week from its start", async () => {
-    const { id, expiresAt } = (await create()).body.data;
-    const start = new Date(expiresAt).getTime() - DAY_MS;
-    const now = vi.spyOn(Date, "now");
+  describe("sessions", () => {
+    it("creates a session the API names, empty and live for a day", async () => {
+      const created = await create();
+      expect(created.status).toBe(200);
+      const { id, expiresAt } = created.body.data;
+      expect(id).toMatch(UUID);
+      const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
+      expect(lifetimeMs).toBeGreaterThan(DAY_MS - 60_000);
+      expect(lifetimeMs).toBeLessThanOrEqual(DAY_MS);
+      // The session is a row, and nothing is stored until the first save.
+      expect(await storedSession(id)).toMatchObject({ id, team_id: TEAM_A });
+      expect(objects.size).toBe(0);
 
-    now.mockReturnValue(start + 20 * HOUR_MS);
-    const saved = await save(TEAM_A, id, "files");
-    expect(new Date(saved.body.data.expiresAt).getTime()).toBe(
-      start + 44 * HOUR_MS,
-    );
-    // Past the end it was created with, and still live.
-    now.mockReturnValue(start + 30 * HOUR_MS);
-    expect((await read(TEAM_A, id)).status).toBe(200);
-    // A read does not move the end.
-    now.mockReturnValue(start + 44 * HOUR_MS + 1);
-    expect((await read(TEAM_A, id)).status).toBe(404);
-
-    const busy = (await create()).body.data.id;
-    const began = new Date((await storedSession(busy)).created_at).getTime();
-    let last;
-    for (let hour = 20; hour < 7 * 24; hour += 20) {
-      now.mockReturnValue(began + hour * HOUR_MS);
-      last = await save(TEAM_A, busy, "files");
-      expect(last.status).toBe(200);
-    }
-    expect(new Date(last!.body.data.expiresAt).getTime()).toBe(
-      began + 7 * DAY_MS,
-    );
-    now.mockReturnValue(began + 7 * DAY_MS);
-    expect((await save(TEAM_A, busy, "files")).status).toBe(404);
-  });
-
-  it("refuses a new session once the team has the limit of live ones", async () => {
-    await seed(TEAM_A, MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
-    await seed(TEAM_A, 5, Date.now() - 1);
-    expect((await create()).status).toBe(200);
-    expect((await create()).status).toBe(429);
-    expect((await create(TEAM_B)).status).toBe(200);
-  });
-
-  it("admits only up to the limit when creations arrive together", async () => {
-    await seed(TEAM_A, MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
-    const statuses = await Promise.all(
-      Array.from({ length: 10 }, async () => (await create()).status),
-    );
-    expect(statuses.filter(status => status === 200)).toHaveLength(3);
-    expect(statuses.filter(status => status === 429)).toHaveLength(7);
-  });
-
-  it.each([
-    ["an id the API did not issue", async () => UNISSUED],
-    ["an id of another shape", async () => "a.b"],
-    ["a path out of the team's own sessions", async () => `..%2F${TEAM_B}%2Fx`],
-    ["another team's session", () => createId(TEAM_B)],
-    [
-      "an expired session",
-      async () => {
-        const id = await createId();
-        vi.spyOn(Date, "now").mockReturnValue(Date.now() + DAY_MS + 1);
-        return id;
-      },
-    ],
-  ])("finds no session for %s on any route", async (_name, sessionId) => {
-    const id = await sessionId();
-    const before = new Map(objects);
-    expect((await save(TEAM_A, id, "files")).status).toBe(404);
-    expect((await read(TEAM_A, id)).status).toBe(404);
-    expect((await link(id, "data", { filename: "a.txt" })).status).toBe(404);
-    expect(objects).toEqual(before);
-  });
-
-  it.each([
-    ["a caller that is not the hosted MCP", { "x-test-direct": "1" }],
-    ["a zero data retention team", { "x-test-zdr": "1" }],
-  ])("refuses %s on every session route", async (_name, headers) => {
-    const id = await createId();
-    const before = new Map(objects);
-    const bytes = Buffer.from("x");
-    const calls = [
-      request(server).post(SESSIONS),
-      request(server)
-        .put(workspaceOf(id))
-        .type("application/octet-stream")
-        .send(bytes),
-      request(server).get(workspaceOf(id)),
-      request(server)
-        .post(`${SESSIONS}/${id}/links`)
-        .query({ filename: "a.txt" })
-        .type("application/octet-stream")
-        .send(bytes),
-    ];
-    for (const call of calls) {
-      const res = await call.set("x-test-team", TEAM_A).set(headers);
-      expect(res.status).toBe(403);
-    }
-    expect(objects).toEqual(before);
-  });
-});
-
-describe("workspace", () => {
-  it("reads back the bytes it saved", async () => {
-    const id = await createId();
-    const saved = await save(TEAM_A, id, "files");
-    expect(saved.status).toBe(200);
-    expect(saved.body.data).toEqual({
-      sizeBytes: 5,
-      version: "1",
-      expiresAt: expect.any(String),
-    });
-    expect([...objects.keys()]).toEqual([`workspaces/${TEAM_A}/${id}`]);
-
-    const res = await read(TEAM_A, id);
-    expect(res.status).toBe(200);
-    expect(res.headers.etag).toBe('"1"');
-    expect(res.body.toString()).toBe("files");
-  });
-
-  it("refuses a body over the limit, or of unknown size, before reading it", async () => {
-    const id = await createId();
-    expect(await declare(id, { "content-length": MAX_FILE_BYTES + 1 })).toBe(
-      413,
-    );
-    expect(await declare(id, {})).toBe(411);
-    expect(
-      await declare(id, {
-        "content-length": 1,
-        "content-type": "application/json",
-      }),
-    ).toBe(415);
-    expect(objects.size).toBe(0);
-  });
-
-  it("saves over a version only when If-Match names the stored one", async () => {
-    const id = await createId();
-    expect(
-      (await save(TEAM_A, id, "one").set("If-Match", '"0"')).body.data.version,
-    ).toBe("1");
-    expect((await save(TEAM_A, id, "lost").set("If-Match", '"0"')).status).toBe(
-      412,
-    );
-    expect(
-      (await save(TEAM_A, id, "lost").set("If-Match", "latest")).status,
-    ).toBe(400);
-    expect((await save(TEAM_A, id, "two")).body.data.version).toBe("2");
-    expect((await read(TEAM_A, id)).body.toString()).toBe("two");
-  });
-});
-
-describe("download links", () => {
-  it("serves the file to anyone holding the link, as a download", async () => {
-    const created = await link(await createId(), "a,b\n1,2\n", {
-      filename: "../../quarterly report.csv",
-    });
-    expect(created.status).toBe(200);
-    const { url, expiresAt, sizeBytes } = created.body.data;
-    expect(url).toMatch(
-      /^https:\/\/files\.test\/v2\/computer\/files\/[A-Za-z0-9_-]{43}\/quarterly_report\.csv$/,
-    );
-    expect(sizeBytes).toBe(8);
-    const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
-    expect(lifetimeMs).toBeGreaterThan(14 * 60 * 1000);
-    expect(lifetimeMs).toBeLessThanOrEqual(15 * 60 * 1000);
-
-    for (const target of [url, url.slice(0, url.lastIndexOf("/"))]) {
-      const res = await download(target);
+      const res = await read(TEAM_A, id);
       expect(res.status).toBe(200);
-      expect(res.body.toString()).toBe("a,b\n1,2\n");
-      expect(res.headers["content-type"]).toBe("application/octet-stream");
-      expect(res.headers["content-disposition"]).toBe(
-        'attachment; filename="quarterly_report.csv"',
+      expect(res.headers["content-length"]).toBe("0");
+      expect(res.headers.etag).toBe('"0"');
+      expect(res.body.length).toBe(0);
+    });
+
+    it("moves the session's end out on each save, up to a week from its start", async () => {
+      const { id, expiresAt } = (await create()).body.data;
+      const start = new Date(expiresAt).getTime() - DAY_MS;
+      const now = vi.spyOn(Date, "now");
+
+      now.mockReturnValue(start + 20 * HOUR_MS);
+      const saved = await save(TEAM_A, id, "files");
+      expect(new Date(saved.body.data.expiresAt).getTime()).toBe(
+        start + 44 * HOUR_MS,
       );
-      expect(res.headers["x-content-type-options"]).toBe("nosniff");
-    }
-  });
+      // Past the end it was created with, and still live.
+      now.mockReturnValue(start + 30 * HOUR_MS);
+      expect((await read(TEAM_A, id)).status).toBe(200);
+      // A read does not move the end.
+      now.mockReturnValue(start + 44 * HOUR_MS + 1);
+      expect((await read(TEAM_A, id)).status).toBe(404);
 
-  it("stops serving a link once it expires", async () => {
-    const created = await link(await createId(), "data", {
-      filename: "a.txt",
-      expiresInSeconds: 60,
+      const busy = (await create()).body.data.id;
+      const began = new Date((await storedSession(busy)).created_at).getTime();
+      let last;
+      for (let hour = 20; hour < 7 * 24; hour += 20) {
+        now.mockReturnValue(began + hour * HOUR_MS);
+        last = await save(TEAM_A, busy, "files");
+        expect(last.status).toBe(200);
+      }
+      expect(new Date(last!.body.data.expiresAt).getTime()).toBe(
+        began + 7 * DAY_MS,
+      );
+      now.mockReturnValue(began + 7 * DAY_MS);
+      expect((await save(TEAM_A, busy, "files")).status).toBe(404);
     });
-    expect((await download(created.body.data.url)).status).toBe(200);
-    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
-    expect((await download(created.body.data.url)).status).toBe(410);
-  });
 
-  it("never serves a stored file that records no expiry", async () => {
-    const token = "t".repeat(43);
-    objects.set(`links/${token}`, {
-      bytes: Buffer.from("x"),
-      version: 1,
-      metadata: {},
+    it("refuses a new session once the team has the limit of live ones", async () => {
+      await seed(TEAM_A, MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
+      await seed(TEAM_A, 5, Date.now() - 1);
+      expect((await create()).status).toBe(200);
+      expect((await create()).status).toBe(429);
+      expect((await create(TEAM_B)).status).toBe(200);
     });
-    expect(
-      (await request(server).get(`/v2/computer/files/${token}`)).status,
-    ).toBe(410);
+
+    it("admits only up to the limit when creations arrive together", async () => {
+      await seed(TEAM_A, MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
+      const statuses = await Promise.all(
+        Array.from({ length: 10 }, async () => (await create()).status),
+      );
+      expect(statuses.filter(status => status === 200)).toHaveLength(3);
+      expect(statuses.filter(status => status === 429)).toHaveLength(7);
+    });
+
+    it.each([
+      ["an id the API did not issue", async () => UNISSUED],
+      ["an id of another shape", async () => "a.b"],
+      [
+        "a path out of the team's own sessions",
+        async () => `..%2F${TEAM_B}%2Fx`,
+      ],
+      ["another team's session", () => createId(TEAM_B)],
+      [
+        "an expired session",
+        async () => {
+          const id = await createId();
+          vi.spyOn(Date, "now").mockReturnValue(Date.now() + DAY_MS + 1);
+          return id;
+        },
+      ],
+    ])("finds no session for %s on any route", async (_name, sessionId) => {
+      const id = await sessionId();
+      const before = new Map(objects);
+      expect((await save(TEAM_A, id, "files")).status).toBe(404);
+      expect((await read(TEAM_A, id)).status).toBe(404);
+      expect((await link(id, "data", { filename: "a.txt" })).status).toBe(404);
+      expect(objects).toEqual(before);
+    });
+
+    it.each([
+      ["a caller that is not the hosted MCP", { "x-test-direct": "1" }],
+      ["a zero data retention team", { "x-test-zdr": "1" }],
+    ])("refuses %s on every session route", async (_name, headers) => {
+      const id = await createId();
+      const before = new Map(objects);
+      const bytes = Buffer.from("x");
+      const calls = [
+        request(server).post(SESSIONS),
+        request(server)
+          .put(workspaceOf(id))
+          .type("application/octet-stream")
+          .send(bytes),
+        request(server).get(workspaceOf(id)),
+        request(server)
+          .post(`${SESSIONS}/${id}/links`)
+          .query({ filename: "a.txt" })
+          .type("application/octet-stream")
+          .send(bytes),
+      ];
+      for (const call of calls) {
+        const res = await call.set("x-test-team", TEAM_A).set(headers);
+        expect(res.status).toBe(403);
+      }
+      expect(objects).toEqual(before);
+    });
   });
 
-  it("finds nothing for an unknown token or a workspace path", async () => {
-    const id = await createId();
-    await save(TEAM_A, id, "files");
-    for (const token of [
-      "u".repeat(43),
-      `workspaces%2F${TEAM_A}%2F${id}`,
-      "short",
-    ]) {
+  describe("workspace", () => {
+    it("reads back the bytes it saved", async () => {
+      const id = await createId();
+      const saved = await save(TEAM_A, id, "files");
+      expect(saved.status).toBe(200);
+      expect(saved.body.data).toEqual({
+        sizeBytes: 5,
+        version: "1",
+        expiresAt: expect.any(String),
+      });
+      expect([...objects.keys()]).toEqual([`workspaces/${TEAM_A}/${id}`]);
+
+      const res = await read(TEAM_A, id);
+      expect(res.status).toBe(200);
+      expect(res.headers.etag).toBe('"1"');
+      expect(res.body.toString()).toBe("files");
+    });
+
+    it("refuses a body over the limit, or of unknown size, before reading it", async () => {
+      const id = await createId();
+      expect(await declare(id, { "content-length": MAX_FILE_BYTES + 1 })).toBe(
+        413,
+      );
+      expect(await declare(id, {})).toBe(411);
+      expect(
+        await declare(id, {
+          "content-length": 1,
+          "content-type": "application/json",
+        }),
+      ).toBe(415);
+      expect(objects.size).toBe(0);
+    });
+
+    it("saves over a version only when If-Match names the stored one", async () => {
+      const id = await createId();
+      expect(
+        (await save(TEAM_A, id, "one").set("If-Match", '"0"')).body.data
+          .version,
+      ).toBe("1");
+      expect(
+        (await save(TEAM_A, id, "lost").set("If-Match", '"0"')).status,
+      ).toBe(412);
+      expect(
+        (await save(TEAM_A, id, "lost").set("If-Match", "latest")).status,
+      ).toBe(400);
+      expect((await save(TEAM_A, id, "two")).body.data.version).toBe("2");
+      expect((await read(TEAM_A, id)).body.toString()).toBe("two");
+    });
+  });
+
+  describe("download links", () => {
+    it("serves the file to anyone holding the link, as a download", async () => {
+      const created = await link(await createId(), "a,b\n1,2\n", {
+        filename: "../../quarterly report.csv",
+      });
+      expect(created.status).toBe(200);
+      const { url, expiresAt, sizeBytes } = created.body.data;
+      expect(url).toMatch(
+        /^https:\/\/files\.test\/v2\/computer\/files\/[A-Za-z0-9_-]{43}\/quarterly_report\.csv$/,
+      );
+      expect(sizeBytes).toBe(8);
+      const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
+      expect(lifetimeMs).toBeGreaterThan(14 * 60 * 1000);
+      expect(lifetimeMs).toBeLessThanOrEqual(15 * 60 * 1000);
+
+      for (const target of [url, url.slice(0, url.lastIndexOf("/"))]) {
+        const res = await download(target);
+        expect(res.status).toBe(200);
+        expect(res.body.toString()).toBe("a,b\n1,2\n");
+        expect(res.headers["content-type"]).toBe("application/octet-stream");
+        expect(res.headers["content-disposition"]).toBe(
+          'attachment; filename="quarterly_report.csv"',
+        );
+        expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      }
+    });
+
+    it("stops serving a link once it expires", async () => {
+      const created = await link(await createId(), "data", {
+        filename: "a.txt",
+        expiresInSeconds: 60,
+      });
+      expect((await download(created.body.data.url)).status).toBe(200);
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
+      expect((await download(created.body.data.url)).status).toBe(410);
+    });
+
+    it("never serves a stored file that records no expiry", async () => {
+      const token = "t".repeat(43);
+      objects.set(`links/${token}`, {
+        bytes: Buffer.from("x"),
+        version: 1,
+        metadata: {},
+      });
       expect(
         (await request(server).get(`/v2/computer/files/${token}`)).status,
-      ).toBe(404);
-    }
-  });
+      ).toBe(410);
+    });
 
-  it.each([
-    ["no filename", {}],
-    ["a lifetime over an hour", { filename: "a.txt", expiresInSeconds: 3601 }],
-    ["a lifetime under a minute", { filename: "a.txt", expiresInSeconds: 5 }],
-  ])("refuses a link with %s", async (_name, query) => {
-    const id = await createId();
-    expect((await link(id, "data", query)).status).toBe(400);
-    expect(objects.size).toBe(0);
+    it("finds nothing for an unknown token or a workspace path", async () => {
+      const id = await createId();
+      await save(TEAM_A, id, "files");
+      for (const token of [
+        "u".repeat(43),
+        `workspaces%2F${TEAM_A}%2F${id}`,
+        "short",
+      ]) {
+        expect(
+          (await request(server).get(`/v2/computer/files/${token}`)).status,
+        ).toBe(404);
+      }
+    });
+
+    it.each([
+      ["no filename", {}],
+      [
+        "a lifetime over an hour",
+        { filename: "a.txt", expiresInSeconds: 3601 },
+      ],
+      ["a lifetime under a minute", { filename: "a.txt", expiresInSeconds: 5 }],
+    ])("refuses a link with %s", async (_name, query) => {
+      const id = await createId();
+      expect((await link(id, "data", query)).status).toBe(400);
+      expect(objects.size).toBe(0);
+    });
   });
 });
 
