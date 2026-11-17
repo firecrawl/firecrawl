@@ -20,8 +20,9 @@ export interface BaseRequestContext {
   /** Nothing of this request's content may be stored or logged. */
   zeroDataRetention: boolean;
   /**
-   * Settings resolved for this request. An absent flag is off, and an absent
-   * value means the service's default.
+   * Settings a request can be accepted with. Nothing sets them yet, so the
+   * code they are for does not read them yet. When it does, an absent flag
+   * is off and an absent value means the service's default.
    */
   checkRobotsOnScrape?: boolean;
   robotsUserAgent?: string;
