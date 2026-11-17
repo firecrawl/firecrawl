@@ -2,7 +2,8 @@
  * Query-string form of an Alexandria call for GET /v2/alexandria/:provider/*capability.
  *
  * Keys are matched against the capability's contract first: a key that is the exact name of a
- * declared option (`meta.version`, `timeout`, `key`) is that option, unsplit. Any other key
+ * declared option (`meta.version`, `timeout`) is that option, unsplit. Credential names are
+ * refused however they are reached; `key` and `token` only when the contract does not declare them. Any other key
  * uses dot notation to build nested options (`filters.country=US`), a repeated key builds a list
  * (`tags=a&tags=b`), and `\.` keeps a literal dot. `timeout` and `version` are request fields
  * unless the contract declares an option of that name; `options.` always reaches a provider
@@ -19,17 +20,19 @@ const MAX_DEPTH = 10;
 const MAX_VALUES = 200;
 const RESERVED = new Set(["timeout", "version"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-// Never options: credentials belong in the Authorization header, and
-// zero-data-retention requests must not put their options in a URL.
+// Never options, however they are reached (directly, through `options.`, or declared by the
+// contract): credentials belong in the Authorization header, and zero-data-retention requests
+// must not put their options in a URL.
 export const REFUSED_QUERY_KEYS = new Set([
   "api_key",
   "apiKey",
   "apikey",
-  "key",
-  "token",
   "access_token",
   "zeroDataRetention",
 ]);
+// Refused unless the capability's contract declares an option of that name, where they are
+// ordinary identifiers (a lookup key, a page token).
+const CREDENTIAL_UNLESS_DECLARED = new Set(["key", "token"]);
 
 const isTree = (value: unknown): value is Tree =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -86,6 +89,15 @@ export function parseAlexandriaQuery(
     const viaOptions =
       key.startsWith("options.") && key.length > 8 && !declared.has(key);
     const name = viaOptions ? key.slice(8) : key;
+    if (
+      REFUSED_QUERY_KEYS.has(name) ||
+      (CREDENTIAL_UNLESS_DECLARED.has(name) && !declared.has(name))
+    )
+      throw new AlexandriaQueryError(
+        name === "zeroDataRetention"
+          ? "Zero data retention requests must use POST /v2/alexandria."
+          : "Send the API key in the Authorization header, not the URL.",
+      );
     let segments: string[];
     if (declared.has(name)) {
       if (UNSAFE_KEYS.has(name))
@@ -96,12 +108,6 @@ export function parseAlexandriaQuery(
         throw new AlexandriaQueryError(`"${name}" can only be given once.`);
       request[name as "timeout" | "version"] = list[0];
       continue;
-    } else if (!viaOptions && REFUSED_QUERY_KEYS.has(name)) {
-      throw new AlexandriaQueryError(
-        name === "zeroDataRetention"
-          ? "Zero data retention requests must use POST /v2/alexandria."
-          : "Send the API key in the Authorization header, not the URL.",
-      );
     } else segments = splitKey(name);
     const value: Leaf = list.length === 1 ? list[0] : list;
     let node = options;
@@ -176,9 +182,9 @@ export function convertAlexandriaOptions(
       }
       case "string[]":
       case "object[]": {
+        // One value is a list of one, as the contract declares a list.
         const list = indexedList(value);
-        converted[name] =
-          type === "object[]" && !Array.isArray(list) ? [list] : list;
+        converted[name] = Array.isArray(list) ? list : [list];
         break;
       }
       default:

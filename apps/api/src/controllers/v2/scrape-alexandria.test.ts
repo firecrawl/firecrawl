@@ -1024,6 +1024,15 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
     );
   });
 
+  it("marks every /v2/alexandria answer no-store", async () => {
+    for (const response of [
+      await request(app).get(path),
+      await request(app).post("/v2/alexandria").send(call),
+      await request(app).post(path).send({}),
+    ])
+      expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
   it("answers exactly as POST /v2/alexandria", async () => {
     const get = await request(app).get(path);
     const post = await request(app).post("/v2/alexandria").send(call);

@@ -103,6 +103,23 @@ describe("parseAlexandriaQuery with the contract's option names", () => {
     fails({ api_key: "fc-1" }, /Authorization header/);
   });
 
+  it("refuses credential names through options. or the contract", () => {
+    const refuses = (query: Record<string, unknown>, names: string[] = []) =>
+      expect(() => parseAlexandriaQuery(query, declared(...names))).toThrow(
+        /Authorization header|must use POST/,
+      );
+    refuses({ "options.api_key": "fc-1" });
+    refuses({ "options.access_token": "t" });
+    refuses({ "options.zeroDataRetention": "true" });
+    refuses({ api_key: "fc-1" }, ["api_key"]);
+    refuses({ "options.zeroDataRetention": "true" }, ["zeroDataRetention"]);
+    refuses({ key: "k" });
+    refuses({ "options.token": "t" });
+    expect(
+      parseAlexandriaQuery({ "options.key": "isbn" }, declared("key")).options,
+    ).toEqual({ key: "isbn" });
+  });
+
   it("matches options.-prefixed keys against the contract too", () => {
     expect(
       parseAlexandriaQuery(
@@ -152,7 +169,7 @@ describe("convertAlexandriaOptions", () => {
       open: true,
       zip: "02139",
       ids: [7],
-      tags: "wifi",
+      tags: ["wifi"],
       filters: { open: "true" },
       other: "1",
     });

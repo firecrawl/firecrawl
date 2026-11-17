@@ -204,6 +204,8 @@ export async function providerScrapeController(
   res: Response,
   legacy = false,
 ) {
+  // A provider answer is for this caller and call only.
+  res.setHeader("Cache-Control", "no-store");
   const legacyZeroDataRetention = {
     zeroDataRetention: z.boolean().optional(),
     timeout: z.number().int().positive().optional(),
