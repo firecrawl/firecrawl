@@ -13,7 +13,7 @@
  */
 import type { z } from "zod";
 
-const owners = new Map<string, { keys: string[]; problems: string[] }>();
+const owners = new Map<string, { keys: Set<string>; problems: Set<string> }>();
 let asserted = false;
 
 const report = (problems: string[]) =>
@@ -28,7 +28,8 @@ const report = (problems: string[]) =>
  * When the environment does not fit the schema, the problems are kept for
  * `assertEnv` and reading any of the owner's variables throws. A definition
  * made after `assertEnv` has run throws its problems itself. A later
- * definition under the same name replaces the earlier one.
+ * definition under the same name adds to the earlier one: the owner lists the
+ * variables of both, and a problem of either is reported.
  */
 export function defineEnv<Schema extends z.ZodObject>(
   owner: string,
@@ -45,15 +46,19 @@ export function defineEnv<Schema extends z.ZodObject>(
         .map(key => [key, process.env[key]]),
     ),
   );
-  if (parsed.success) {
-    owners.set(owner, { keys, problems: [] });
-    return parsed.data;
-  }
+
+  const kept = owners.get(owner) ?? {
+    keys: new Set<string>(),
+    problems: new Set<string>(),
+  };
+  owners.set(owner, kept);
+  for (const key of keys) kept.keys.add(key);
+  if (parsed.success) return parsed.data;
 
   const problems = parsed.error.issues.map(issue =>
     [owner, ...issue.path.map(String), issue.message].join(": "),
   );
-  owners.set(owner, { keys, problems });
+  for (const problem of problems) kept.problems.add(problem);
   if (asserted) throw new Error(report(problems));
 
   const unreadable = {};
@@ -76,13 +81,13 @@ export function assertEnv(): void {
   asserted = true;
   const problems = [...owners.keys()]
     .sort()
-    .flatMap(owner => owners.get(owner)?.problems ?? []);
+    .flatMap(owner => [...(owners.get(owner)?.problems ?? [])]);
   if (problems.length > 0) throw new Error(report(problems));
 }
 
 /** The variables each owner declares. Each call returns a copy. */
 export function describeEnv(): Record<string, string[]> {
   return Object.fromEntries(
-    [...owners].map(([owner, { keys }]) => [owner, [...keys]]),
+    [...owners].map(([owner, { keys }]) => [owner, [...keys].sort()]),
   );
 }

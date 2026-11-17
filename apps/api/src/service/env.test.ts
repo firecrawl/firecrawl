@@ -139,15 +139,41 @@ describe("defineEnv", () => {
     );
   });
 
-  it("lets a later definition replace an earlier one of the same owner", () => {
-    vi.stubEnv("MAIL_HOST", undefined);
+  it("adds a later definition of the same owner to the earlier one", () => {
+    vi.stubEnv("MAIL_HOST", "mail.test");
+    vi.stubEnv("MAIL_USER", "postmaster");
     env.defineEnv("mail", mail());
+
+    expect(env.defineEnv("mail", z.object({ MAIL_USER: z.string() }))).toEqual({
+      MAIL_USER: "postmaster",
+    });
+    expect(() => env.assertEnv()).not.toThrow();
+    expect(env.describeEnv()).toEqual({
+      mail: ["MAIL_HOST", "MAIL_PORT", "MAIL_SECURE", "MAIL_USER"],
+    });
+  });
+
+  it("keeps the problems of an earlier definition when a later one of the same owner fits", () => {
+    vi.stubEnv("MAIL_HOST", undefined);
+    const earlier = env.defineEnv("mail", mail());
 
     vi.stubEnv("MAIL_HOST", "mail.test");
     env.defineEnv("mail", z.object({ MAIL_HOST: z.string() }));
 
-    expect(() => env.assertEnv()).not.toThrow();
-    expect(env.describeEnv()).toEqual({ mail: ["MAIL_HOST"] });
+    const problems =
+      "Invalid environment:\n  mail: MAIL_HOST: Invalid input: expected string, received undefined";
+    expect(messageOf(() => env.assertEnv())).toBe(problems);
+    expect(messageOf(() => earlier.MAIL_HOST)).toBe(problems);
+  });
+
+  it("reports a problem that two definitions of one owner share once", () => {
+    vi.stubEnv("MAIL_HOST", undefined);
+    env.defineEnv("mail", mail());
+    env.defineEnv("mail", z.object({ MAIL_HOST: z.string() }));
+
+    expect(messageOf(() => env.assertEnv())).toBe(
+      "Invalid environment:\n  mail: MAIL_HOST: Invalid input: expected string, received undefined",
+    );
   });
 
   it("throws the problems itself once assertEnv has run", () => {
