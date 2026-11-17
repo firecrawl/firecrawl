@@ -421,6 +421,25 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(res.body.toString()).toBe("two");
     });
 
+    it("leaves a session ended, and stores nothing, when it ends while a save uploads", async () => {
+      const id = await createId();
+      await save(TEAM_A, id, "one");
+      const write = store.write;
+      vi.spyOn(store, "write").mockImplementationOnce(async (...args) => {
+        const version = await write(...args);
+        await db
+          .update(sessions)
+          .set({ expires_at: new Date(Date.now() - 1).toISOString() })
+          .where(eq(sessions.id, id));
+        return version;
+      });
+
+      expect((await save(TEAM_A, id, "two")).status).toBe(404);
+      expect(objects.size).toBe(0);
+      expect(await liveSessions(TEAM_A)).toBe(0);
+      expect((await read(TEAM_A, id)).status).toBe(404);
+    });
+
     it("says so when a saved workspace is no longer stored", async () => {
       const id = await createId();
       await save(TEAM_A, id, "files");
@@ -499,6 +518,9 @@ describe.skipIf(!databaseUrl)("session routes", () => {
 
     it("holds a team's links to its hourly limit", async () => {
       const id = await createId();
+      // A link that could not be stored does not count.
+      vi.spyOn(store, "write").mockRejectedValueOnce(new Error("storage"));
+      expect((await link(id, "data", { filename: "a.txt" })).status).toBe(500);
       for (let made = 0; made < LINKS_PER_HOUR; made++) {
         expect((await link(id, "data", { filename: "a.txt" })).status).toBe(
           200,

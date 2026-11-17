@@ -162,6 +162,7 @@ const refuse = (res: Response, status: number, error: string) => {
 
 const sessions = schema.computer_sessions;
 const iso = (ms: number) => new Date(ms).toISOString();
+const NO_SESSION = "Session not found or expired. Create a new session.";
 
 /**
  * Records a new session and returns the ids of the sessions it ended. A team
@@ -377,7 +378,7 @@ export function computerSessionFileControllers(
           .limit(1)
       : [];
     if (!session) {
-      refuse(res, 404, "Session not found or expired. Create a new session.");
+      refuse(res, 404, NO_SESSION);
       return null;
     }
     return {
@@ -386,6 +387,22 @@ export function computerSessionFileControllers(
       createdAt: new Date(session.created_at).getTime(),
       saved: session.last_saved_at !== null,
     };
+  }
+
+  /**
+   * Deletes an ended session's workspace now, not when the bucket clears it,
+   * so ended sessions hold no storage. A failure leaves it to the bucket.
+   */
+  async function discardWorkspace(teamId: string, sessionId: string) {
+    try {
+      await store.delete(teamPrefix(teamId) + sessionId);
+    } catch (error) {
+      logger.warn("Computer session workspace not deleted", {
+        teamId,
+        sessionId,
+        error,
+      });
+    }
   }
 
   return {
@@ -397,20 +414,9 @@ export function computerSessionFileControllers(
       const now = Date.now();
       const expiresAt = now + SESSION_IDLE_SECONDS * 1000;
       const ended = await insertSession(teamId, id, now, expiresAt);
-      // An ended session's files go now, not when the bucket clears them, so
-      // starting sessions is not a way to store more than the limit holds.
+      // Otherwise starting sessions would store more than the limit holds.
       await Promise.all(
-        ended.map(async sessionId => {
-          try {
-            await store.delete(teamPrefix(teamId) + sessionId);
-          } catch (error) {
-            logger.warn("Computer session workspace not deleted", {
-              teamId,
-              sessionId,
-              error,
-            });
-          }
-        }),
+        ended.map(sessionId => discardWorkspace(teamId, sessionId)),
       );
       logger.info("Computer session created", {
         teamId,
@@ -462,22 +468,33 @@ export function computerSessionFileControllers(
         session.createdAt + SESSION_MAX_SECONDS * 1000,
       );
       // Never moved back, so a slow save that began earlier cannot shorten
-      // what a later one set.
-      const [{ expires_at }] = await db
+      // what a later one set. Only a session that is still live is moved: one
+      // that ended during the upload, by its time or to make room for another,
+      // stays ended, and what this save stored for it goes.
+      const [extended] = await db
         .update(sessions)
         .set({
           last_saved_at: sql`GREATEST(${sessions.last_saved_at}, ${iso(savedAt)}::timestamptz)`,
           expires_at: sql`GREATEST(${sessions.expires_at}, ${iso(end)}::timestamptz)`,
         })
-        .where(eq(sessions.id, session.id))
+        .where(
+          and(
+            eq(sessions.id, session.id),
+            gt(sessions.expires_at, sql`clock_timestamp()`),
+          ),
+        )
         .returning({ expires_at: sessions.expires_at });
+      if (!extended) {
+        await discardWorkspace(teamId, session.id);
+        return refuse(res, 404, NO_SESSION);
+      }
       res.setHeader("ETag", `"${version}"`);
       res.status(200).json({
         success: true,
         data: {
           sizeBytes,
           version,
-          expiresAt: new Date(expires_at).toISOString(),
+          expiresAt: new Date(extended.expires_at).toISOString(),
         },
       });
     },
@@ -528,8 +545,9 @@ export function computerSessionFileControllers(
       const sizeBytes = declaredSize(req, res);
       if (sizeBytes === null) return;
       if (!(await liveSession(req, res, teamId))) return;
+      const mebibytes = Math.ceil(sizeBytes / MEBIBYTE);
       try {
-        await linkLimit.consume(teamId, Math.ceil(sizeBytes / MEBIBYTE));
+        await linkLimit.consume(teamId, mebibytes);
       } catch (rejection) {
         const limit =
           "This team has reached its hourly limit for download links.";
@@ -546,14 +564,20 @@ export function computerSessionFileControllers(
       // no log line carries it.
       const token = crypto.randomBytes(32).toString("base64url");
       const expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
-      await store.write(`links/${token}`, bodyOf(req, res), {
-        metadata: {
-          teamId,
-          sessionId: req.params.sessionId,
-          filename,
-          expiresAt: String(expiresAt),
-        },
-      });
+      try {
+        await store.write(`links/${token}`, bodyOf(req, res), {
+          metadata: {
+            teamId,
+            sessionId: req.params.sessionId,
+            filename,
+            expiresAt: String(expiresAt),
+          },
+        });
+      } catch (error) {
+        // Nothing was stored, so nothing counts against the team's hour.
+        await linkLimit.reward(teamId, mebibytes).catch(() => {});
+        throw error;
+      }
       logger.info("Computer session link created", {
         teamId,
         sessionId: req.params.sessionId,
