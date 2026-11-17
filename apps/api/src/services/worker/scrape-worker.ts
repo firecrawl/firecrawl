@@ -773,6 +773,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   {
                     url: link,
                     mode: "single_urls",
+                    ctx: job.data.ctx,
                     team_id: sc.team_id,
                     scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
                     internalOptions: sc.internalOptions,
@@ -1335,6 +1336,7 @@ async function addKickoffSitemapJob(
   await _addScrapeJobToBullMQ(
     {
       mode: "kickoff_sitemap" as const,
+      ctx: sourceJob.data.ctx,
       team_id: sourceJob.data.team_id,
       zeroDataRetention:
         sourceJob.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
@@ -1391,6 +1393,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       {
         url: job.data.url,
         mode: "single_urls",
+        ctx: job.data.ctx,
         team_id: job.data.team_id,
         crawlerOptions: job.data.crawlerOptions,
         scrapeOptions: scrapeOptions.parse(job.data.scrapeOptions),
@@ -1545,6 +1548,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           data: {
             url,
             mode: "single_urls" as const,
+            ctx: job.data.ctx,
             team_id: job.data.team_id,
             crawlerOptions: job.data.crawlerOptions,
             scrapeOptions: job.data.scrapeOptions,
@@ -1715,6 +1719,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         data: {
           url: url,
           mode: "single_urls" as const,
+          ctx: job.data.ctx,
           team_id: job.data.team_id,
           crawlerOptions: sc.crawlerOptions,
           scrapeOptions: sc.scrapeOptions,
