@@ -38,6 +38,7 @@ import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
@@ -228,6 +229,15 @@ export async function scrapeController(
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
+      const ctx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+      req.ctx = ctx;
 
       if (
         req.body.__agentInterop &&
@@ -403,6 +413,7 @@ export async function scrapeController(
                   data: {
                     url: req.body.url,
                     mode: "single_urls",
+                    ctx,
                     team_id: req.auth.team_id,
                     scrapeOptions: {
                       ...req.body,
