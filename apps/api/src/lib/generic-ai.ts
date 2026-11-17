@@ -1,6 +1,8 @@
+// Keep the config import first: it removes an empty OPENAI_BASE_URL from the
+// environment, and @ai-sdk/openai throws on one as soon as it is loaded.
+import { config } from "../config";
 import { createOpenAI } from "@ai-sdk/openai";
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
-import { config } from "../config";
 import { createOllama } from "ollama-ai-provider-v2";
 import { anthropic as keyedAnthropic } from "@ai-sdk/anthropic";
 import { groq } from "@ai-sdk/groq";
