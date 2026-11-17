@@ -112,13 +112,64 @@ export function serializeTransportableError(error: TransportableError) {
 }
 
 /**
+ * The size of the longest reason that every queue backend keeps whole for a
+ * failed job, in bytes of UTF-8. A serialized error that is cut cannot be read
+ * back.
+ */
+export const MAX_SERIALIZED_ERROR_BYTES = 90 * 1024;
+
+// What a stack or a message is cut to in an error that is longer than that.
+const SHORTENED_LENGTH = 4096;
+
+function shortened(text: string) {
+  return text.length <= SHORTENED_LENGTH
+    ? text
+    : `${text.slice(0, SHORTENED_LENGTH)}... [truncated]`;
+}
+
+/**
  * The wire form of anything a job throws. What is not a transportable error
  * goes out as UNKNOWN_ERROR.
+ *
+ * An error crosses with its code even when it cannot be written as it is. A
+ * cause that JSON cannot write is left out. An error that is too long for the
+ * queue to keep whole gets its stack shortened, then its message, and then
+ * loses its cause, until it fits.
  */
 export function serializeThrownError(error: unknown) {
-  return serializeTransportableError(
-    isTransportableError(error) ? error : new UnknownError(error),
-  );
+  const thrown = isTransportableError(error) ? error : new UnknownError(error);
+  let payload = thrown.serialize();
+  const write = (fields: typeof payload) =>
+    `${thrown.code}|${JSON.stringify(fields)}`;
+
+  let serialized: string;
+  try {
+    serialized = write(payload);
+  } catch {
+    // Only the cause can hold a value that JSON cannot write, such as an
+    // object that refers to itself.
+    payload = { ...payload, cause: undefined };
+    serialized = write(payload);
+  }
+  const fits = () =>
+    Buffer.byteLength(serialized, "utf8") <= MAX_SERIALIZED_ERROR_BYTES;
+  if (fits()) {
+    return serialized;
+  }
+
+  const stack = payload.stack && shortened(payload.stack);
+  const message = shortened(payload.message);
+  for (const shorter of [
+    { ...payload, stack },
+    { ...payload, stack, message },
+    { ...payload, stack, message, cause: undefined },
+  ]) {
+    serialized = write(shorter);
+    if (fits()) {
+      break;
+    }
+  }
+  return serialized;
 }
 
 /**

@@ -53,6 +53,7 @@ import {
 import {
   coreErrors,
   deserializeTransportableError,
+  MAX_SERIALIZED_ERROR_BYTES,
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
@@ -699,6 +700,112 @@ describe("serializeThrownError", () => {
 
     expect(isTransportableError(inner)).toBe(false);
     expect(serializeThrownError(inner)).toMatch(/^UNKNOWN_ERROR\|/);
+  });
+
+  it("leaves out a cause that JSON cannot write", () => {
+    const circular: Record<string, unknown> = { status: 503 };
+    circular.self = circular;
+
+    for (const cause of [circular, { bytes: 10n }]) {
+      const original = new SitemapError("Sitemap fetch failed", cause);
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(() => serializeTransportableError(original)).toThrow(TypeError);
+      expect(serialized).toBe(
+        wire("SCRAPE_SITEMAP_ERROR", {
+          stack: original.stack,
+          message: "Sitemap fetch failed",
+        }),
+      );
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.cause).toBeUndefined();
+    }
+  });
+
+  describe("an error that is too long for the queue to keep whole", () => {
+    const long = (length: number) => "x".repeat(length);
+    const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+    const cut = (text: string) => `${text.slice(0, 4096)}... [truncated]`;
+
+    it("is left as it is while it fits", () => {
+      const original = new SitemapError(long(30_000));
+      const serialized = serializeThrownError(original);
+
+      expect(serialized).toBe(serializeTransportableError(original));
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+    });
+
+    it("gets its stack shortened first", () => {
+      const original = new SitemapError(long(60_000));
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(bytes(serializeTransportableError(original))).toBeGreaterThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.message).toBe(original.message);
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("is measured in bytes, as the queue stores it", () => {
+      const original = new SitemapError("é".repeat(30_000));
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(serializeTransportableError(original).length).toBeLessThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serializeTransportableError(original))).toBeGreaterThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived.message).toBe(original.message);
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("then gets its message shortened", () => {
+      const original = new SitemapError(long(200_000), { status: 503 });
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.message).toBe(cut(original.message));
+      expect(revived.stack).toBe(cut(original.stack!));
+      expect(revived.cause).toEqual({ status: 503 });
+    });
+
+    it("then loses its cause", () => {
+      const original = new SitemapError("Sitemap fetch failed", {
+        body: long(200_000),
+      });
+      original.stack = "Error: Sitemap fetch failed\n    at fetchSitemap";
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(serialized).toBe(
+        wire("SCRAPE_SITEMAP_ERROR", {
+          stack: original.stack,
+          message: "Sitemap fetch failed",
+        }),
+      );
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.cause).toBeUndefined();
+    });
+
+    it("keeps UNKNOWN_ERROR readable for an error with a very long message", () => {
+      const inner = new Error(long(200_000));
+      const serialized = serializeThrownError(inner);
+      const revived = deserializeTransportableError(serialized);
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(cut(new UnknownError(inner).message));
+    });
   });
 
   it("keeps the code of an error built from a second copy of the base class", async () => {
