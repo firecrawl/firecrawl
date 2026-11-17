@@ -20,8 +20,6 @@ import { randomUUID } from "crypto";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
-// Outlasts the dispatcher's full retry ladder (1m + 5m + 15m plus attempt timeouts).
-const ZDR_WEBHOOK_MESSAGE_TTL_MS = 30 * 60 * 1000;
 
 type WebhookSendResult = {
   attempted: boolean;
@@ -150,9 +148,7 @@ export class WebhookSender {
 
       try {
         await webhookQueue.publish(queueMessage, {
-          expirationMs: this.context.zeroDataRetention
-            ? ZDR_WEBHOOK_MESSAGE_TTL_MS
-            : undefined,
+          zeroDataRetention: this.context.zeroDataRetention,
         });
         this.logger.info("Webhook queued for delivery", {
           webhookUrl: this.config.url,

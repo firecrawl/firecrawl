@@ -4,6 +4,8 @@ import { logger as _logger } from "../../lib/logger";
 import { WebhookQueueMessage } from "./types";
 
 const WEBHOOK_QUEUE_NAME = "webhooks";
+// Declared by the webhook dispatcher with a queue-level TTL and no dead-letter target.
+const ZDR_WEBHOOK_QUEUE_NAME = "webhooks.zdr";
 const CONNECT_TIMEOUT = 5000;
 const DRAIN_TIMEOUT = 30000;
 
@@ -40,6 +42,7 @@ class WebhookQueue {
       this.channel = await this.connection.createChannel();
 
       await this.channel.checkQueue(WEBHOOK_QUEUE_NAME);
+      await this.channel.checkQueue(ZDR_WEBHOOK_QUEUE_NAME);
 
       this._registerConnectionEvents();
 
@@ -90,7 +93,7 @@ class WebhookQueue {
 
   async publish(
     message: WebhookQueueMessage,
-    options: { expirationMs?: number } = {},
+    options: { zeroDataRetention?: boolean } = {},
   ): Promise<void> {
     await this.connect();
 
@@ -98,13 +101,16 @@ class WebhookQueue {
 
     const buffer = Buffer.from(JSON.stringify(message));
 
-    const canSendMore = this.channel.sendToQueue(WEBHOOK_QUEUE_NAME, buffer, {
-      persistent: true,
-      contentType: "application/json",
-      ...(options.expirationMs !== undefined && {
-        expiration: String(options.expirationMs),
-      }),
-    });
+    const canSendMore = options.zeroDataRetention
+      ? this.channel.sendToQueue(ZDR_WEBHOOK_QUEUE_NAME, buffer, {
+          persistent: true,
+          contentType: "application/json",
+          timestamp: Math.floor(Date.now() / 1000),
+        })
+      : this.channel.sendToQueue(WEBHOOK_QUEUE_NAME, buffer, {
+          persistent: true,
+          contentType: "application/json",
+        });
 
     if (!canSendMore) {
       _logger.warn("Webhook message buffer full, waiting for drain", {
