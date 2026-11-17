@@ -768,6 +768,41 @@ describe("serializeThrownError", () => {
     },
   );
 
+  it.each([
+    ["cannot be made into a string", () => Object.create(null)],
+    [
+      "throws when its message is read",
+      () =>
+        Object.defineProperty(new Error("slow"), "message", {
+          get() {
+            throw new Error("cannot read");
+          },
+        }),
+    ],
+    [
+      "throws when it is asked whether it is an error",
+      () =>
+        new Proxy(
+          {},
+          {
+            getPrototypeOf() {
+              throw new Error("cannot ask");
+            },
+          },
+        ),
+    ],
+  ])("sends a thrown value that %s as UNKNOWN_ERROR", (_, build) => {
+    const revived = deserializeTransportableError(
+      serializeThrownError(build()),
+    )!;
+
+    expect(revived).toBeInstanceOf(UnknownError);
+    expect(revived.code).toBe("UNKNOWN_ERROR");
+    expect(revived.message).toBe(
+      new UnknownError("The thrown value could not be read").message,
+    );
+  });
+
   describe("an error that is too long for the queue to keep whole", () => {
     const long = (length: number) => "x".repeat(length);
     const bytes = (text: string) => Buffer.byteLength(text, "utf8");

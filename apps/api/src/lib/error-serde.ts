@@ -131,28 +131,18 @@ function shortened(text: string) {
   return `${kept}... [truncated]`;
 }
 
-/**
- * The wire form of anything a job throws. What is not a transportable error
- * goes out as UNKNOWN_ERROR.
- *
- * An error crosses with its code even when it cannot be written as it is. A
- * cause that JSON cannot write is left out. An error that is too long for the
- * queue to keep whole gets its stack shortened, then its message, then loses
- * its cause, and then gets every other text it carries shortened, until it
- * fits.
- *
- * An error that still does not fit, or that does not write itself as a reader
- * takes it, goes out as UNKNOWN_ERROR with its message and its stack, so that
- * what is written here can always be read back.
- */
-export function serializeThrownError(error: unknown) {
+// What serializeThrownError returns for a value that can be read. Reading a
+// thrown value can itself throw, and then this throws.
+function serializeWithinLimit(error: unknown) {
   const thrown = isTransportableError(error) ? error : new UnknownError(error);
   // What the queue keeps whole and every reader takes, whether or not it has
   // a class for the code.
   const crosses = (serialized: string) => {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
+      return false;
+    }
     const written = parseSerializedError(serialized);
     return (
-      Buffer.byteLength(serialized, "utf8") <= MAX_SERIALIZED_ERROR_BYTES &&
       written !== null &&
       CODE.test(written.code) &&
       typeof written.payload.message === "string"
@@ -207,6 +197,33 @@ export function serializeThrownError(error: unknown) {
   const inner = new Error(shortened(String(thrown.message)));
   inner.stack = thrown.stack && shortened(String(thrown.stack));
   return serializeTransportableError(new UnknownError(inner));
+}
+
+/**
+ * The wire form of anything a job throws. What is not a transportable error
+ * goes out as UNKNOWN_ERROR. This never throws, and what it returns can
+ * always be read back.
+ *
+ * An error crosses with its code even when it cannot be written as it is. A
+ * cause that JSON cannot write is left out. An error that is too long for the
+ * queue to keep whole gets its stack shortened, then its message, then loses
+ * its cause, and then gets every other text it carries shortened, until it
+ * fits.
+ *
+ * An error that still does not fit, or that does not write itself as a reader
+ * takes it, goes out as UNKNOWN_ERROR with its message and its stack. A value
+ * that cannot be read at all goes out as UNKNOWN_ERROR with a fixed message.
+ */
+export function serializeThrownError(error: unknown) {
+  try {
+    return serializeWithinLimit(error);
+  } catch {
+    // Reading the thrown value threw, as it does for an object that cannot be
+    // made into a string.
+    return serializeTransportableError(
+      new UnknownError("The thrown value could not be read"),
+    );
+  }
 }
 
 // A code has no whitespace in it.
