@@ -13,8 +13,26 @@ vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   return { logger: { ...log, child: () => log } };
 });
+// A key made here signs the same way a service account's does.
+vi.mock("../../../lib/gcs-jobs", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { Storage } = await import("@google-cloud/storage");
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+  return {
+    storage: new Storage({
+      credentials: {
+        type: "service_account",
+        client_email: "signer@test.iam.gserviceaccount.com",
+        private_key: privateKey,
+      },
+    }),
+  };
+});
 
-import { generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
@@ -28,8 +46,6 @@ import * as schema from "../../../db/schema";
 import {
   MAX_FILE_BYTES,
   MAX_LIVE_SESSIONS,
-  VersionMismatchError,
-  VersionReplacedError,
   computerSessionFileControllers,
   configuredComputerSessionFiles,
   gcsStore,
@@ -44,26 +60,14 @@ const TEAM_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UNISSUED = "00000000-0000-4000-8000-000000000000";
 
-const objects = new Map<string, { bytes: Buffer; version: number }>();
+const objects = new Map<string, Buffer>();
 const store: ComputerSessionFileStore = {
-  async write(objectPath, body, { ifVersion } = {}) {
-    const bytes = Buffer.concat(await body.toArray());
-    const stored = objects.get(objectPath);
-    if (ifVersion !== undefined && ifVersion !== String(stored?.version ?? 0)) {
-      throw new VersionMismatchError();
-    }
-    const version = (stored?.version ?? 0) + 1;
-    objects.set(objectPath, { bytes, version });
-    return String(version);
+  async write(objectPath, body) {
+    objects.set(objectPath, Buffer.concat(await body.toArray()));
   },
   async read(objectPath) {
-    const stored = objects.get(objectPath);
-    if (!stored) return null;
-    return {
-      sizeBytes: stored.bytes.length,
-      version: String(stored.version),
-      open: async () => Readable.from([stored.bytes]),
-    };
+    const bytes = objects.get(objectPath);
+    return bytes ? Readable.from([bytes]) : null;
   },
   async delete(objectPath) {
     objects.delete(objectPath);
@@ -250,49 +254,35 @@ describe.skipIf(!databaseUrl)("session routes", () => {
 
       const res = await read(TEAM_A, id);
       expect(res.status).toBe(200);
-      expect(res.headers["content-length"]).toBe("0");
-      expect(res.headers.etag).toBe('"0"');
       expect(res.body.length).toBe(0);
     });
 
     it("moves the session's end out on each save, up to a week from its start", async () => {
-      const { id, expiresAt } = (await create()).body.data;
-      const start = new Date(expiresAt).getTime() - DAY_MS;
-      const now = vi.spyOn(Date, "now");
-
-      now.mockReturnValue(start + 20 * HOUR_MS);
+      const lifetimeMs = (saved: request.Response) =>
+        new Date(saved.body.data.expiresAt).getTime() - Date.now();
+      const id = await createId();
+      await elapse(id, 20 * HOUR_MS);
       const saved = await save(TEAM_A, id, "files");
-      expect(new Date(saved.body.data.expiresAt).getTime()).toBe(
-        start + 44 * HOUR_MS,
-      );
-      // A save that began earlier and lands later does not move the end back.
-      now.mockReturnValue(start + 10 * HOUR_MS);
-      const late = await save(TEAM_A, id, "files");
-      expect(new Date(late.body.data.expiresAt).getTime()).toBe(
-        start + 44 * HOUR_MS,
-      );
+      expect(lifetimeMs(saved)).toBeGreaterThan(DAY_MS - 60_000);
+      expect(lifetimeMs(saved)).toBeLessThanOrEqual(DAY_MS);
       // Past the end it was created with, and still live.
-      await elapse(id, 30 * HOUR_MS);
+      await elapse(id, 20 * HOUR_MS);
       expect((await read(TEAM_A, id)).status).toBe(200);
       // A read does not move the end.
-      await elapse(id, 14 * HOUR_MS);
+      await elapse(id, 5 * HOUR_MS);
       expect((await read(TEAM_A, id)).status).toBe(404);
 
-      // The next session starts by the real clock, as the first did.
-      now.mockRestore();
-      const busy = (await create()).body.data.id;
-      const began = new Date((await storedSession(busy)).created_at).getTime();
-      const later = vi.spyOn(Date, "now");
-      let last;
+      const busy = await createId();
+      let last: request.Response;
       for (let hour = 20; hour < 7 * 24; hour += 20) {
-        later.mockReturnValue(began + hour * HOUR_MS);
+        await elapse(busy, 20 * HOUR_MS);
         last = await save(TEAM_A, busy, "files");
         expect(last.status).toBe(200);
       }
-      expect(new Date(last!.body.data.expiresAt).getTime()).toBe(
-        began + 7 * DAY_MS,
-      );
-      await elapse(busy, 7 * DAY_MS);
+      // 160 hours in, so the week leaves 8.
+      expect(lifetimeMs(last!)).toBeGreaterThan(8 * HOUR_MS - 60_000);
+      expect(lifetimeMs(last!)).toBeLessThanOrEqual(8 * HOUR_MS);
+      await elapse(busy, 8 * HOUR_MS);
       expect((await save(TEAM_A, busy, "files")).status).toBe(404);
     });
 
@@ -400,31 +390,13 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(saved.status).toBe(200);
       expect(saved.body.data).toEqual({
         sizeBytes: 5,
-        version: "1",
         expiresAt: expect.any(String),
       });
       expect([...objects.keys()]).toEqual([`workspaces/${TEAM_A}/${id}`]);
 
       const res = await read(TEAM_A, id);
       expect(res.status).toBe(200);
-      expect(res.headers.etag).toBe('"1"');
       expect(res.body.toString()).toBe("files");
-    });
-
-    it("reads the workspace a save stored while the read was starting", async () => {
-      const id = await createId();
-      await save(TEAM_A, id, "one");
-      const replaced = (await store.read(`workspaces/${TEAM_A}/${id}`))!;
-      replaced.open = async () => {
-        throw new VersionReplacedError();
-      };
-      await save(TEAM_A, id, "two");
-      vi.spyOn(store, "read").mockResolvedValueOnce(replaced);
-
-      const res = await read(TEAM_A, id);
-      expect(res.status).toBe(200);
-      expect(res.headers.etag).toBe('"2"');
-      expect(res.body.toString()).toBe("two");
     });
 
     it("leaves a session ended, and stores nothing, when it ends while a save uploads", async () => {
@@ -432,12 +404,11 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       await save(TEAM_A, id, "one");
       const write = store.write;
       vi.spyOn(store, "write").mockImplementationOnce(async (...args) => {
-        const version = await write(...args);
+        await write(...args);
         await db
           .update(sessions)
           .set({ expires_at: new Date(Date.now() - 1).toISOString() })
           .where(eq(sessions.id, id));
-        return version;
       });
 
       expect((await save(TEAM_A, id, "two")).status).toBe(404);
@@ -467,22 +438,6 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       ).toBe(415);
       expect(objects.size).toBe(0);
     });
-
-    it("saves over a version only when If-Match names the stored one", async () => {
-      const id = await createId();
-      expect(
-        (await save(TEAM_A, id, "one").set("If-Match", '"0"')).body.data
-          .version,
-      ).toBe("1");
-      expect(
-        (await save(TEAM_A, id, "lost").set("If-Match", '"0"')).status,
-      ).toBe(412);
-      expect(
-        (await save(TEAM_A, id, "lost").set("If-Match", "latest")).status,
-      ).toBe(400);
-      expect((await save(TEAM_A, id, "two")).body.data.version).toBe("2");
-      expect((await read(TEAM_A, id)).body.toString()).toBe("two");
-    });
   });
 
   describe("download links", () => {
@@ -502,7 +457,7 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(objectPath).toMatch(
         /^links\/[0-9a-f-]{36}\/quarterly_report\.csv$/,
       );
-      expect(objects.get(objectPath)?.bytes.toString()).toBe("a,b\n1,2\n");
+      expect(objects.get(objectPath)?.toString()).toBe("a,b\n1,2\n");
       expect(signed.searchParams.get("filename")).toBe("quarterly_report.csv");
       // Signed to end when the caller is told it ends.
       expect(Number(signed.searchParams.get("expires"))).toBe(
@@ -514,9 +469,8 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       const write = store.write;
       const began = Date.now();
       vi.spyOn(store, "write").mockImplementationOnce(async (...args) => {
-        const version = await write(...args);
+        await write(...args);
         vi.spyOn(Date, "now").mockReturnValue(began + HOUR_MS);
-        return version;
       });
       const created = await link(await createId(), "data", {
         filename: "a.txt",
@@ -572,12 +526,10 @@ describe.skipIf(!databaseUrl)("session routes", () => {
 describe("configuration", () => {
   const original = {
     bucket: config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME,
-    credentials: config.GCS_CREDENTIALS,
     redis: config.REDIS_RATE_LIMIT_URL,
   };
   afterAll(() => {
     config.GCS_COMPUTER_SESSION_FILES_BUCKET_NAME = original.bucket;
-    config.GCS_CREDENTIALS = original.credentials;
     config.REDIS_RATE_LIMIT_URL = original.redis;
   });
 
@@ -599,19 +551,6 @@ describe("configuration", () => {
   });
 
   it("signs a link that only downloads its file, under its name, until its end", async () => {
-    // A key made here signs the same way a service account's does.
-    const { privateKey } = generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: "spki", format: "pem" },
-      privateKeyEncoding: { type: "pkcs8", format: "pem" },
-    });
-    config.GCS_CREDENTIALS = btoa(
-      JSON.stringify({
-        type: "service_account",
-        client_email: "signer@test.iam.gserviceaccount.com",
-        private_key: privateKey,
-      }),
-    );
     const url = new URL(
       await gcsStore("bucket").downloadUrl(
         "links/id/report.csv",

@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { Request, Response, NextFunction } from "express";
-import { Storage } from "@google-cloud/storage";
 import { v7 as uuidv7 } from "uuid";
 import { z } from "zod";
 import { config } from "../../config";
+import { storage } from "../../lib/gcs-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { getRedisConnection } from "../../services/queue-service";
@@ -61,13 +61,6 @@ function getParseUploadDriver(): ParseUploadDriver {
   if (config.PARSE_UPLOAD_STORAGE_DRIVER === "local") return "local";
   if (config.GCS_PARSE_UPLOAD_BUCKET_NAME) return "gcs";
   return isLocalUploadAdapterAllowed() ? "local" : "gcs";
-}
-
-function getStorageClient() {
-  const credentials = config.GCS_CREDENTIALS
-    ? JSON.parse(atob(config.GCS_CREDENTIALS))
-    : undefined;
-  return new Storage({ credentials });
 }
 
 function isLocalUploadAdapterAllowed() {
@@ -353,9 +346,7 @@ export async function parseUploadUrlController(
           });
         }
 
-        const bucket = getStorageClient().bucket(
-          config.GCS_PARSE_UPLOAD_BUCKET_NAME,
-        );
+        const bucket = storage.bucket(config.GCS_PARSE_UPLOAD_BUCKET_NAME);
         const file = bucket.file(objectPath);
         const [policy] = await file.generateSignedPostPolicyV4({
           expires: expiresAt,
@@ -566,7 +557,7 @@ async function resolveUploadRef(
     throw new Error("Parse upload storage is not configured.");
   }
 
-  const file = getStorageClient()
+  const file = storage
     .bucket(config.GCS_PARSE_UPLOAD_BUCKET_NAME)
     .file(payload.objectPath);
   const [metadata] = await file.getMetadata();
