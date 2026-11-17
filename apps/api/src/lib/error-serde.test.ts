@@ -709,7 +709,7 @@ describe("serializeThrownError", () => {
     for (const cause of [circular, { bytes: 10n }]) {
       const original = new SitemapError("Sitemap fetch failed", cause);
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(() => serializeTransportableError(original)).toThrow(TypeError);
       expect(serialized).toBe(
@@ -722,6 +722,36 @@ describe("serializeThrownError", () => {
       expect(revived.cause).toBeUndefined();
     }
   });
+
+  it.each([
+    [
+      "throws when it writes itself",
+      () => {
+        throw new Error("cannot serialize");
+      },
+    ],
+    [
+      "writes a field that JSON cannot write",
+      () => ({ message: "Sitemap fetch failed", pages: 10n }),
+    ],
+  ])(
+    "sends an error that %s as UNKNOWN_ERROR with its message",
+    (_, serialize) => {
+      const original = Object.assign(new SitemapError("Sitemap fetch failed"), {
+        serialize,
+      });
+      const revived = deserializeTransportableError(
+        serializeThrownError(original),
+      )!;
+
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(
+        new UnknownError(new Error("Sitemap fetch failed")).message,
+      );
+      expect(revived.stack).toBe(original.stack);
+    },
+  );
 
   describe("an error that is too long for the queue to keep whole", () => {
     const long = (length: number) => "x".repeat(length);
@@ -739,7 +769,7 @@ describe("serializeThrownError", () => {
     it("gets its stack shortened first", () => {
       const original = new SitemapError(long(60_000));
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(bytes(serializeTransportableError(original))).toBeGreaterThan(
         MAX_SERIALIZED_ERROR_BYTES,
@@ -753,7 +783,7 @@ describe("serializeThrownError", () => {
     it("is measured in bytes, as the queue stores it", () => {
       const original = new SitemapError("é".repeat(30_000));
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(serializeTransportableError(original).length).toBeLessThan(
         MAX_SERIALIZED_ERROR_BYTES,
@@ -769,7 +799,7 @@ describe("serializeThrownError", () => {
     it("then gets its message shortened", () => {
       const original = new SitemapError(long(200_000), { status: 503 });
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
       expect(revived).toBeInstanceOf(SitemapError);
@@ -784,7 +814,7 @@ describe("serializeThrownError", () => {
       );
       const revived = deserializeTransportableError(
         serializeThrownError(original),
-      );
+      )!;
 
       expect(revived.message).toBe(`${long(4095)}... [truncated]`);
     });
@@ -795,7 +825,7 @@ describe("serializeThrownError", () => {
       });
       original.stack = "Error: Sitemap fetch failed\n    at fetchSitemap";
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(serialized).toBe(
         wire("SCRAPE_SITEMAP_ERROR", {
@@ -807,10 +837,63 @@ describe("serializeThrownError", () => {
       expect(revived.cause).toBeUndefined();
     });
 
+    it("then gets every other text it carries shortened", () => {
+      const original = new CrawlDenialError(long(200_000), {
+        robotsBlockedUrl: "https://example.com/private",
+      });
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(
+        serialized,
+      ) as CrawlDenialError;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(CrawlDenialError);
+      expect(revived.code).toBe("CRAWL_DENIAL");
+      expect(revived.reason).toBe(cut(original.reason));
+      expect(revived.robotsBlockedUrl).toBe("https://example.com/private");
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("goes out as UNKNOWN_ERROR with its message when it still does not fit", () => {
+      const original = new NoEnginesLeftError(
+        Array.from({ length: 20_000 }, () => "fetch" as const),
+      );
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(
+        new UnknownError(new Error(cut(original.message))).message,
+      );
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("fits whatever characters its texts hold", () => {
+      // A control character takes six bytes when it is written as JSON.
+      const original = Object.assign(
+        new SitemapError("\u0001".repeat(200_000)),
+        {
+          serialize: () => {
+            throw new Error("cannot serialize");
+          },
+        },
+      );
+      const serialized = serializeThrownError(original);
+
+      expect(serialized).toMatch(/^UNKNOWN_ERROR\|/);
+      expect(bytes(serialized)).toBeGreaterThan(40_000);
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(deserializeTransportableError(serialized)).toBeInstanceOf(
+        UnknownError,
+      );
+    });
+
     it("keeps UNKNOWN_ERROR readable for an error with a very long message", () => {
       const inner = new Error(long(200_000));
       const serialized = serializeThrownError(inner);
-      const revived = deserializeTransportableError(serialized);
+      const revived = deserializeTransportableError(serialized)!;
 
       expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
       expect(revived).toBeInstanceOf(UnknownError);

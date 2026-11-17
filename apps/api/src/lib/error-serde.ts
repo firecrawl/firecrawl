@@ -137,43 +137,67 @@ function shortened(text: string) {
  *
  * An error crosses with its code even when it cannot be written as it is. A
  * cause that JSON cannot write is left out. An error that is too long for the
- * queue to keep whole gets its stack shortened, then its message, and then
- * loses its cause, until it fits.
+ * queue to keep whole gets its stack shortened, then its message, then loses
+ * its cause, and then gets every other text it carries shortened, until it
+ * fits.
+ *
+ * An error that still does not fit, or that cannot write itself, goes out as
+ * UNKNOWN_ERROR with its message and its stack, so that what is written here
+ * can always be read back.
  */
 export function serializeThrownError(error: unknown) {
   const thrown = isTransportableError(error) ? error : new UnknownError(error);
-  let payload = thrown.serialize();
-  const write = (fields: typeof payload) =>
-    `${thrown.code}|${JSON.stringify(fields)}`;
-
-  let serialized: string;
-  try {
-    serialized = write(payload);
-  } catch {
-    // Only the cause can hold a value that JSON cannot write, such as an
-    // object that refers to itself.
-    payload = { ...payload, cause: undefined };
-    serialized = write(payload);
-  }
-  const fits = () =>
+  const fits = (serialized: string) =>
     Buffer.byteLength(serialized, "utf8") <= MAX_SERIALIZED_ERROR_BYTES;
-  if (fits()) {
-    return serialized;
+
+  try {
+    let payload = thrown.serialize();
+    const write = (fields: object) =>
+      `${thrown.code}|${JSON.stringify(fields)}`;
+
+    let serialized: string;
+    try {
+      serialized = write(payload);
+    } catch {
+      // The cause takes any value, and JSON cannot write every value, such as
+      // an object that refers to itself.
+      payload = { ...payload, cause: undefined };
+      serialized = write(payload);
+    }
+    if (fits(serialized)) {
+      return serialized;
+    }
+
+    const stack = payload.stack && shortened(payload.stack);
+    const message = shortened(payload.message);
+    for (const shorter of [
+      { ...payload, stack },
+      { ...payload, stack, message },
+      { ...payload, stack, message, cause: undefined },
+      {
+        ...Object.fromEntries(
+          Object.entries(payload).map(([field, value]) => [
+            field,
+            typeof value === "string" ? shortened(value) : value,
+          ]),
+        ),
+        cause: undefined,
+      },
+    ]) {
+      serialized = write(shorter);
+      if (fits(serialized)) {
+        return serialized;
+      }
+    }
+  } catch {
+    // `serialize()` threw, or a field other than the cause cannot be written.
   }
 
-  const stack = payload.stack && shortened(payload.stack);
-  const message = shortened(payload.message);
-  for (const shorter of [
-    { ...payload, stack },
-    { ...payload, stack, message },
-    { ...payload, stack, message, cause: undefined },
-  ]) {
-    serialized = write(shorter);
-    if (fits()) {
-      break;
-    }
-  }
-  return serialized;
+  // This always fits: it holds two shortened texts and a fixed sentence, and a
+  // character takes six bytes at most when it is written as JSON.
+  const inner = new Error(shortened(String(thrown.message)));
+  inner.stack = thrown.stack && shortened(String(thrown.stack));
+  return serializeTransportableError(new UnknownError(inner));
 }
 
 /**
