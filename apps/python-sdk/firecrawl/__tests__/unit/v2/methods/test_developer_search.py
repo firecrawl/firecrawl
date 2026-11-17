@@ -44,7 +44,7 @@ def _options():
     return {
         "k": 20,
         "passages": 5,
-        "types": ["doc", "issue", "pull_request", "readme"],
+        "types": ["doc", "issue", "pull_request", "readme", "discussion", "release"],
         "repos": ["firecrawl/firecrawl"],
         "sources": ["firecrawl"],
         "language": "TypeScript",
