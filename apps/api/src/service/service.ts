@@ -90,7 +90,9 @@ export function createService(
 
   const modules = Object.freeze({ ...config.modules });
   const workers: Record<string, Worker> = Object.freeze(
-    Object.assign({}, ...extensions.map(extension => extension.workers ?? {})),
+    Object.fromEntries(
+      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
+    ),
   );
 
   const hooks = buildHooks<HookPoints>(
@@ -100,9 +102,10 @@ export function createService(
 
   // Worked out here, from the extensions as the handlers and roles above were
   // just read from them, so it stays true to what the service runs whatever
-  // happens to an extension object later.
-  const handlerOwners: Record<string, string[]> = {};
-  const roleOwners: Record<string, string> = {};
+  // happens to an extension object later. The two records have no prototype,
+  // so a name such as "constructor" is a key like any other.
+  const handlerOwners: Record<string, string[]> = Object.create(null);
+  const roleOwners: Record<string, string> = Object.create(null);
   for (const extension of extensions) {
     for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
       const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;

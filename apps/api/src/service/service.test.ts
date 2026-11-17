@@ -152,6 +152,28 @@ describe("describe", () => {
     });
   });
 
+  it("treats a name that every object inherits as a name like any other", () => {
+    const inherited = worker();
+    const built = createService(
+      { modules: {} },
+      parts({
+        hooks: handlers({ constructor: vi.fn() }),
+        workers: { ["__proto__"]: inherited, constructor: worker() },
+      }),
+    );
+
+    const description = built.describe();
+
+    expect(Object.hasOwn(built.workers, "__proto__")).toBe(true);
+    expect(built.workers["__proto__"]).toBe(inherited);
+    expect(Object.keys(description.hooks)).toEqual(["constructor"]);
+    expect(description.hooks.constructor).toEqual(["core"]);
+    expect(Object.entries(description.roles)).toEqual([
+      ["__proto__", "core"],
+      ["constructor", "core"],
+    ]);
+  });
+
   it("returns a copy, so a caller cannot change what the next one reads", () => {
     const built = createService(
       { modules: {} },
