@@ -598,18 +598,6 @@ function shutdownSiemLoggingTransport(): void {
   });
 }
 
-process.on("SIGINT", () => {
-  logger.info("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-  shutdownSiemLoggingTransport();
-});
-
-process.on("SIGTERM", () => {
-  logger.info("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-  shutdownSiemLoggingTransport();
-});
-
 let cantAcceptConnectionCount = 0;
 
 // Generic worker function that can process different job types
@@ -698,6 +686,18 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 
 // Start the workers
 export async function start() {
+  process.on("SIGINT", () => {
+    logger.info("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+    shutdownSiemLoggingTransport();
+  });
+
+  process.on("SIGTERM", () => {
+    logger.info("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+    shutdownSiemLoggingTransport();
+  });
+
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(
