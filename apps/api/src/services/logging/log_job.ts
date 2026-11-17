@@ -1231,6 +1231,7 @@ export type LoggedExtract = {
   error?: string;
   result?: any;
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
+  zeroDataRetention?: boolean;
 };
 
 export async function logExtract(extract: LoggedExtract) {
@@ -1240,6 +1241,7 @@ export async function logExtract(extract: LoggedExtract) {
       table: "extracts",
       id: extract.id,
       requestId: extract.request_id,
+      zeroDataRetention: extract.zeroDataRetention,
     },
     () => logExtractInternal(extract),
   );
@@ -1252,6 +1254,7 @@ async function logExtractInternal(extract: LoggedExtract) {
     extractId: extract.id,
     requestId: extract.request_id,
     teamId: extract.team_id,
+    zeroDataRetention: extract.zeroDataRetention,
   });
 
   await robustInsert(
@@ -1259,16 +1262,16 @@ async function logExtractInternal(extract: LoggedExtract) {
     {
       id: extract.id,
       request_id: extract.request_id,
-      urls: extract.urls,
+      urls: extract.zeroDataRetention ? [] : extract.urls,
       team_id:
         extract.team_id === "preview" || extract.team_id?.startsWith("preview_")
           ? previewTeamId
           : extract.team_id,
-      options: extract.options,
+      options: extract.zeroDataRetention ? null : extract.options,
       model_kind: extract.model_kind,
       credits_cost: extract.credits_cost,
       is_successful: extract.is_successful,
-      error: extract.error ?? null,
+      error: extract.zeroDataRetention ? null : (extract.error ?? null),
       cost_tracking: extract.cost_tracking ?? null,
     },
     logger,
@@ -1433,6 +1436,7 @@ export type LoggedDeepResearch = {
   credits_cost: number;
   result: { finalAnalysis: string; sources: any; json: any };
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
+  zeroDataRetention: boolean;
 };
 
 export async function logDeepResearch(deepResearch: LoggedDeepResearch) {
@@ -1442,6 +1446,7 @@ export async function logDeepResearch(deepResearch: LoggedDeepResearch) {
       table: "deep_researches",
       id: deepResearch.id,
       requestId: deepResearch.request_id,
+      zeroDataRetention: deepResearch.zeroDataRetention,
     },
     () => logDeepResearchInternal(deepResearch),
   );
@@ -1454,6 +1459,7 @@ async function logDeepResearchInternal(deepResearch: LoggedDeepResearch) {
     deepResearchId: deepResearch.id,
     requestId: deepResearch.request_id,
     teamId: deepResearch.team_id,
+    zeroDataRetention: deepResearch.zeroDataRetention,
   });
 
   await robustInsert(
@@ -1461,13 +1467,15 @@ async function logDeepResearchInternal(deepResearch: LoggedDeepResearch) {
     {
       id: deepResearch.id,
       request_id: deepResearch.request_id,
-      query: deepResearch.query,
+      query: deepResearch.zeroDataRetention
+        ? "<redacted due to zero data retention>"
+        : deepResearch.query,
       team_id:
         deepResearch.team_id === "preview" ||
         deepResearch.team_id?.startsWith("preview_")
           ? previewTeamId
           : deepResearch.team_id,
-      options: deepResearch.options,
+      options: deepResearch.zeroDataRetention ? null : deepResearch.options,
       time_taken: deepResearch.time_taken,
       credits_cost: deepResearch.credits_cost,
       cost_tracking: deepResearch.cost_tracking ?? null,
@@ -1475,7 +1483,7 @@ async function logDeepResearchInternal(deepResearch: LoggedDeepResearch) {
     logger,
   );
 
-  if (deepResearch.result) {
+  if (deepResearch.result && !deepResearch.zeroDataRetention) {
     await saveDeepResearchToGCS(deepResearch, logger);
   }
 }

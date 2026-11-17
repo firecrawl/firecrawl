@@ -283,7 +283,7 @@ export async function saveExtractToGCS(
     num_docs: 1,
     is_successful: extract.is_successful,
     data: extract.result,
-    zeroDataRetention: false, // ZDR not supported on extract
+    zeroDataRetention: extract.zeroDataRetention ?? false,
     metadata: {
       mode: "extract",
       job_id: extract.id,

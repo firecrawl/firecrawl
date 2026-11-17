@@ -12,6 +12,7 @@ import { getTeamIdSyncB } from "../../lib/extract/team-id-sync";
 import { ExtractResult } from "../../lib/extract/types";
 import {
   checkExtractAvailable,
+  isExtractSearchZeroDataRetention,
   performExtraction_F0,
 } from "../../lib/extract/fire-0/extraction-service-f0";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
@@ -271,13 +272,17 @@ export async function extractController(
     }
   }
 
+  const zeroDataRetention = isExtractSearchZeroDataRetention(
+    req.body,
+    req.acuc?.flags,
+  );
   _logger.info("Extract starting...", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
 
   await logRequest({
@@ -289,7 +294,7 @@ export async function extractController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? "",
-    zeroDataRetention: false, // not supported for extract
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 

@@ -80,6 +80,18 @@ type completions = {
   sources?: string[];
 };
 
+/** Whether this extract runs a search for a team whose searches are forced to zero data retention. */
+export function isExtractSearchZeroDataRetention(
+  request: { urls?: string[] | null; scrapeOptions?: { safeMode?: boolean } },
+  teamFlags: TeamFlags | null | undefined,
+): boolean {
+  return (
+    !request.urls?.length &&
+    getEffectiveSearchForcedKind(teamFlags, request.scrapeOptions?.safeMode) !==
+      null
+  );
+}
+
 // Throws UsOnlyUnavailableError for a US-only team. Called up front because
 // later model calls fall back quietly on errors, which would hide the refusal
 // behind an empty result.
@@ -107,6 +119,10 @@ export async function performExtraction_F0(
   const acuc = await getACUCTeam(teamId);
   const teamFlags = acuc?.flags ?? null;
   checkExtractAvailable(teamFlags);
+  const zeroDataRetention = isExtractSearchZeroDataRetention(
+    request,
+    teamFlags,
+  );
 
   // Threat protection: resolve the effective policy once for this extract
   // job (org config + the request's threatProtection override, which the
@@ -126,6 +142,7 @@ export async function performExtraction_F0(
     extractModel: "fire-0",
     extractId,
     teamId,
+    zeroDataRetention,
   });
 
   // If no URLs are provided, generate URLs from the prompt
@@ -163,6 +180,7 @@ export async function performExtraction_F0(
       team_id: teamId,
       options: request,
       model_kind: "fire-0",
+      zeroDataRetention,
       credits_cost: 0,
       is_successful: false,
       error: "No search results found",
@@ -250,6 +268,7 @@ export async function performExtraction_F0(
       is_successful: false,
       error: "No valid URLs found to scrape",
       model_kind: "fire-0",
+      zeroDataRetention,
     });
     return {
       success: false,
@@ -631,6 +650,7 @@ export async function performExtraction_F0(
         is_successful: false,
         error: "Failed to transform array to object",
         model_kind: "fire-0",
+        zeroDataRetention,
       });
       return {
         success: false,
@@ -722,6 +742,7 @@ export async function performExtraction_F0(
         team_id: teamId,
         options: request,
         model_kind: "fire-0",
+        zeroDataRetention,
         credits_cost: 0,
         is_successful: false,
         error: "Failed to scrape documents",
@@ -745,6 +766,7 @@ export async function performExtraction_F0(
         team_id: teamId,
         options: request,
         model_kind: "fire-0",
+        zeroDataRetention,
         credits_cost: 0,
         is_successful: false,
         error: "All provided URLs are invalid",
@@ -933,6 +955,7 @@ export async function performExtraction_F0(
     team_id: teamId,
     options: request,
     model_kind: "fire-0",
+    zeroDataRetention,
     credits_cost: creditsToBill,
     is_successful: true,
     result: finalResult ?? {},

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
 import { researchModels } from "../../lib/deep-research/research-manager";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
@@ -118,7 +119,8 @@ export async function deepResearchController(
     team_id: req.auth.team_id,
     origin: "api",
     target_hint: req.body.query ?? "",
-    zeroDataRetention: false, // not supported for deep research
+    zeroDataRetention:
+      getEffectiveSearchForcedKind(req.acuc?.flags, undefined) !== null,
     api_key_id: req.acuc?.api_key_id ?? null,
     jobAccessExpiresAt: new Date(Date.now() + DEEP_RESEARCH_TTL * 1000),
   });

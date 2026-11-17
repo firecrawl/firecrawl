@@ -149,11 +149,13 @@ import {
   logRequest,
   logScrape,
   logExtract,
+  logDeepResearch,
   logSearch,
   shutdownPubSubLogging,
   type LoggedSearch,
 } from "./log_job";
 import { config } from "../../config";
+import { saveDeepResearchToGCS } from "../../lib/gcs-jobs";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -573,6 +575,88 @@ describe("operational job state logging", () => {
     expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
       saveExtractResult.mock.invocationCallOrder[0],
     );
+  });
+});
+
+describe("zero data retention on deep research and extract logs", () => {
+  const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    publishMessage.mockResolvedValue("message-id");
+    publishes.length = 0;
+  });
+
+  function published() {
+    return JSON.parse(publishMessage.mock.calls[0][0].data.toString());
+  }
+
+  function makeDeepResearch(zeroDataRetention: boolean) {
+    return {
+      id,
+      request_id: id,
+      query: "secret research topic",
+      team_id: "team-id",
+      options: { query: "secret research topic" },
+      time_taken: 1,
+      credits_cost: 3,
+      result: { finalAnalysis: "analysis", sources: [], json: null },
+      zeroDataRetention,
+    };
+  }
+
+  function makeExtract(zeroDataRetention: boolean) {
+    return {
+      id,
+      request_id: id,
+      urls: ["https://example.com/found-by-search"],
+      team_id: "team-id",
+      options: { prompt: "secret extract prompt" },
+      model_kind: "fire-0" as const,
+      credits_cost: 5,
+      is_successful: true,
+      result: { answer: 42 },
+      zeroDataRetention,
+    };
+  }
+
+  it("redacts a ZDR deep research and keeps its result out of storage", async () => {
+    await logDeepResearch(makeDeepResearch(true));
+
+    const row = published();
+    expect(row.query).toBe("<redacted due to zero data retention>");
+    expect(row.options).toBeNull();
+    expect(row.credits_cost).toBe(3);
+    expect(saveDeepResearchToGCS).not.toHaveBeenCalled();
+  });
+
+  it("keeps a deep research that is not ZDR", async () => {
+    await logDeepResearch(makeDeepResearch(false));
+
+    const row = published();
+    expect(row.query).toBe("secret research topic");
+    expect(saveDeepResearchToGCS).toHaveBeenCalledTimes(1);
+  });
+
+  it("redacts a ZDR extract and still records its credits", async () => {
+    await logExtract(makeExtract(true));
+
+    const row = published();
+    expect(row.urls).toEqual([]);
+    expect(row.options).toBeNull();
+    expect(row.credits_cost).toBe(5);
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ status: "completed", creditsBilled: 5 }),
+    );
+  });
+
+  it("keeps an extract that is not ZDR", async () => {
+    await logExtract(makeExtract(false));
+
+    const row = published();
+    expect(row.urls).toEqual(["https://example.com/found-by-search"]);
+    expect(row.options).toMatchObject({ prompt: "secret extract prompt" });
   });
 });
 

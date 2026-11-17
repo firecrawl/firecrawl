@@ -26,7 +26,10 @@ import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import { checkExtractAvailable } from "../../lib/extract/fire-0/extraction-service-f0";
+import {
+  checkExtractAvailable,
+  isExtractSearchZeroDataRetention,
+} from "../../lib/extract/fire-0/extraction-service-f0";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -74,13 +77,17 @@ export async function extractController(
 
   const extractId = uuidv7();
   const createdAt = Date.now();
+  const zeroDataRetention = isExtractSearchZeroDataRetention(
+    req.body,
+    req.acuc?.flags,
+  );
   _logger.info("Extract starting...", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
 
   if (req.body.agent?.model === "v3-beta") {
@@ -218,7 +225,7 @@ export async function extractController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? "",
-    zeroDataRetention: false, // not supported for extract
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 

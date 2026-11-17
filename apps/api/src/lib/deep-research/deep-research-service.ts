@@ -9,6 +9,7 @@ import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
 import { orgIdFromAcuc } from "../team-org";
 import { includesFormat } from "../format-utils";
+import { getEffectiveSearchForcedKind } from "../safe-mode";
 export interface DeepResearchServiceOptions {
   researchId: string;
   teamId: string;
@@ -32,10 +33,15 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
   let currentTopic = options.query;
   let urlsAnalyzed = 0;
 
+  const acuc = await getACUCTeam(teamId);
+  const zeroDataRetention =
+    getEffectiveSearchForcedKind(acuc?.flags, undefined) !== null;
+
   const logger = _logger.child({
     module: "deep-research",
     method: "performDeepResearch",
     researchId,
+    zeroDataRetention,
   });
 
   logger.debug("[Deep Research] Starting research with options:", { options });
@@ -47,7 +53,6 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     logger,
     options.query,
   );
-  const acuc = await getACUCTeam(teamId);
 
   const checkTimeLimit = () => {
     const timeElapsed = Date.now() - startTime;
@@ -415,6 +420,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       time_taken: (Date.now() - startTime) / 1000,
       credits_cost: credits_billed,
       cost_tracking: costTracking.toJSON(),
+      zeroDataRetention,
       result: {
         finalAnalysis: finalAnalysis,
         sources: state.getSources(),

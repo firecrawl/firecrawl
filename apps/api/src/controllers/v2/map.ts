@@ -19,7 +19,7 @@ import {
 import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "../../lib/zdr-helpers";
 import { AvgrabResolveError, resolveViaAvgrab } from "../../lib/avgrab-resolve";
 import {
   checkUrlsAgainstThreatPolicy,
@@ -33,9 +33,11 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
-  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  // Safe Mode lockdown is cache-only, which implies zero data retention. The
+  // site search follows the team's search zero data retention too.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getSearchForcedKind(req.acuc?.flags) === "zdr" ||
     isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     jobId: uuidv7(),

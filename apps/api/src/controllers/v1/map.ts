@@ -424,12 +424,15 @@ export async function mapController(
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
   const mapId = uuidv7();
+  const zeroDataRetention =
+    lockdownIndexOnly || getSearchForcedKind(req.acuc?.flags) === "zdr";
 
   logger.info("Map request", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
     mapId,
+    zeroDataRetention,
   });
 
   await logRequest({
@@ -441,7 +444,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
-    zeroDataRetention: lockdownIndexOnly,
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
@@ -562,7 +565,7 @@ export async function mapController(
     },
     results: result.links,
     credits_cost: creditsToBill,
-    zeroDataRetention: lockdownIndexOnly,
+    zeroDataRetention,
   }).catch(error => {
     logger.error("Failed to log map", { error, mapId });
   });
