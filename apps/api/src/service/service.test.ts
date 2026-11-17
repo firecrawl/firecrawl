@@ -121,6 +121,15 @@ describe("describe", () => {
       "zebra",
     ]);
   });
+
+  it("leaves out a hook point whose list of handlers is empty", () => {
+    const built = createService(
+      { modules: {} },
+      parts({ hooks: handlers({ "a.point": [] }) }),
+    );
+
+    expect(built.describe().hooks).toEqual({});
+  });
 });
 
 describe("service", () => {
@@ -182,6 +191,23 @@ describe("run", () => {
     expect(() => run(built, "api", "/app/main.js")).toThrow(
       "A service is already installed in this process",
     );
+  });
+
+  it("throws when the role throws before its start returns", () => {
+    const built = createService(
+      { modules: {} },
+      parts({
+        workers: {
+          api: {
+            run: () => {
+              throw new Error("cannot load");
+            },
+          },
+        },
+      }),
+    );
+
+    expect(() => run(built, "api", "/app/main.js")).toThrow("cannot load");
   });
 
   it("settles as the role's start does", async () => {

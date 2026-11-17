@@ -87,11 +87,9 @@ export function buildHooks<Points extends PointMap<Points>>(
   const table = new Map<PropertyKey, AnyHandler[]>();
   for (const set of sets) {
     for (const [name, listed] of Object.entries(set)) {
-      if (!listed) continue;
-      table.set(name, [
-        ...(table.get(name) ?? []),
-        ...(Array.isArray(listed) ? listed : [listed]),
-      ]);
+      const handlers = Array.isArray(listed) ? listed : listed ? [listed] : [];
+      if (handlers.length === 0) continue;
+      table.set(name, [...(table.get(name) ?? []), ...handlers]);
     }
   }
 

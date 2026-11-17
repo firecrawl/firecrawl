@@ -137,6 +137,13 @@ describe("buildHooks", () => {
       expect(hooks.transform("shaped", value, { id: "a" })).toBe(value);
     });
 
+    it("treats an empty list of handlers as no handler", () => {
+      const hooks = buildHooks<Points>([{ shaped: [] }], vi.fn());
+      const value = ["a"];
+
+      expect(hooks.transform("shaped", value, { id: "a" })).toBe(value);
+    });
+
     it("hands each handler the value the one before it returned", async () => {
       const hooks = buildHooks<Points>(
         [

@@ -18,8 +18,9 @@ export interface Modules {}
 /** A process role: what one process of the service runs. */
 export interface Worker {
   /**
-   * `entry` is the file the process was started from, so a role that starts
-   * other processes can start them the same way: `node <entry> <role>`.
+   * `entry` is the file that starts any role as `node <entry> <role>`. A role
+   * that starts other processes starts them through it, whichever file its own
+   * process was started from.
    */
   run(env: { entry: string }): void | Promise<void>;
 }
@@ -104,8 +105,8 @@ export function createService(
       const roles: Record<string, string> = {};
       for (const extension of extensions) {
         for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
-          if (!listed) continue;
-          const count = Array.isArray(listed) ? listed.length : 1;
+          const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
+          if (count === 0) continue;
           hooks[point] = [
             ...(hooks[point] ?? []),
             ...Array<string>(count).fill(extension.name),
@@ -169,6 +170,10 @@ export function replaceService(next: Service | undefined): Service | undefined {
 /**
  * Starts one process role: installs the service, then runs the role. The
  * returned promise settles when the role's own start does.
+ *
+ * An unknown role, a second install and a role that throws while it loads are
+ * thrown from this call and not turned into a rejection, so a process that
+ * cannot start fails the way a main module that throws does.
  */
 export function run(next: Service, role: string, entry: string): Promise<void> {
   if (!Object.hasOwn(next.workers, role)) {

@@ -1238,9 +1238,9 @@ process.on("unhandledRejection", async (reason, promise) => {
   process.exit(1);
 });
 
-export function start(env: { entry: string }) {
+export async function start(env: { entry: string }) {
   roleEntry = env.entry;
-  main().catch(async error => {
+  await main().catch(async error => {
     logger.error("Fatal error in main");
     console.error(error?.stack || error?.message || error);
     await gracefulShutdown();

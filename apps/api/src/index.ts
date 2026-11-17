@@ -269,8 +269,8 @@ async function startServer(port = DEFAULT_PORT) {
   return server;
 }
 
-export function start() {
-  startServer().catch(error => {
+export async function start() {
+  await startServer().catch(error => {
     logger.error("Failed to start server", { error });
     process.exit(1);
   });
