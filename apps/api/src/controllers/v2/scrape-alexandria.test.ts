@@ -870,10 +870,11 @@ describe("feedback next step", () => {
           {
             provider: "fred",
             capability: "categories/category",
+            options: {},
             creditsCost: 1,
             data: { price: 1 },
             nextStep: {
-              instruction: expect.stringContaining("call firecrawl_feedback"),
+              instruction: expect.stringContaining("firecrawl_feedback"),
               tool: "firecrawl_feedback",
               arguments: expect.objectContaining({ endpoint: "alexandria" }),
             },
@@ -954,6 +955,7 @@ describe("feedback next step", () => {
     expect(response.body.data.alexandria[0]).toEqual({
       provider: "fred",
       capability: "categories/category",
+      options: {},
       creditsCost: 1,
       data: { price: 1 },
     });
