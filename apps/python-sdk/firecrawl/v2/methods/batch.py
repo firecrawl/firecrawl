@@ -288,6 +288,9 @@ def cancel_batch_scrape(
     response = client.delete(f"/v2/batch/scrape/{job_id}")
     
     # Handle errors
+    if response.status_code == 409:
+        # The batch job already completed, so there is nothing to cancel.
+        return False
     if not response.ok:
         handle_response_error(response, "cancel batch scrape")
     
