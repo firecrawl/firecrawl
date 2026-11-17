@@ -4,6 +4,7 @@ import { Agent, fetch } from "undici";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
+import { getScrapeZDR, getSearchForcedKind } from "../lib/zdr-helpers";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, wrap } from "./shared";
@@ -104,6 +105,26 @@ async function labsProxyController(req: Request, res: Response) {
       error:
         "Labs Search is not available for teams restricted to US-only processing.",
     });
+  }
+
+  // Labs Search keeps queries and indexed sources in a hosted service with no zero data retention mode.
+  const flags = authedReq.acuc?.flags;
+  if (getScrapeZDR(flags) === "forced" || getSearchForcedKind(flags) !== null) {
+    return labsError(
+      res,
+      400,
+      "Your team has zero data retention enabled. This is not supported on Labs Search. Please contact support@firecrawl.com to unblock this feature.",
+    );
+  }
+  if (
+    authedReq.body?.zeroDataRetention === true ||
+    authedReq.query?.zeroDataRetention === "true"
+  ) {
+    return labsError(
+      res,
+      400,
+      "Zero data retention is not supported on Labs Search.",
+    );
   }
 
   try {

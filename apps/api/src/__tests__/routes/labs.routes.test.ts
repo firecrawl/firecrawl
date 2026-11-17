@@ -157,3 +157,55 @@ describe("labs router for a US-only team", () => {
     });
   });
 });
+
+describe("labs router under zero data retention", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+  });
+
+  it.each([
+    { forceZDR: true },
+    { scrapeZDR: "forced" },
+    { searchZDR: "forced" },
+    { searchZDR: "forced-zdr" },
+    { searchZDR: "forced-anon" },
+  ])("refuses a team with %o without calling the labs service", async zdr => {
+    mocks.flags = { labsSearch: true, ...zdr };
+
+    const response = await request(appWithLabs()).post("/labs/search");
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toContain("zero data retention");
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request that asks for zero data retention", async () => {
+    mocks.flags = { labsSearch: true };
+    const app = express();
+    app.use(express.json());
+    app.use("/labs", labsRouter);
+
+    const response = await request(app)
+      .post("/labs/search")
+      .send({ query: "q", zeroDataRetention: true });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      success: false,
+      error: "Zero data retention is not supported on Labs Search.",
+    });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a GET that asks for zero data retention", async () => {
+    mocks.flags = { labsSearch: true };
+
+    const response = await request(appWithLabs()).get(
+      "/labs/search/data?zeroDataRetention=true",
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+});
