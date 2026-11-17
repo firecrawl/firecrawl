@@ -1,6 +1,11 @@
 import type { AuthCreditUsageChunk, TeamFlags } from "../controllers/v1/types";
 import { isUsOnly } from "./us-only";
-import { getScrapeZDR, getSearchZDR, isDpaRestricted } from "./zdr-helpers";
+import {
+  getAlexandriaZDR,
+  getScrapeZDR,
+  getSearchZDR,
+  isDpaRestricted,
+} from "./zdr-helpers";
 
 /**
  * How a team buys Firecrawl: on a free plan, on a plan from the pricing page,
@@ -122,8 +127,9 @@ export function planClassOf(
 /**
  * Whether staff have put the team under negotiated terms: a signed contract,
  * an enterprise pilot that has not ended, or a data-handling term (zero data
- * retention on search or scrape, US-only processing, a restricting DPA, a
- * training restriction, Safe Mode). Anything unreadable counts as a term.
+ * retention on search, scrape or provider tools, US-only processing, a
+ * restricting DPA, a training restriction, Safe Mode). Anything unreadable
+ * counts as a term.
  */
 function hasNegotiatedTerms(flags: TeamFlags, now: number): boolean {
   if (!flags) return false;
@@ -134,6 +140,7 @@ function hasNegotiatedTerms(flags: TeamFlags, now: number): boolean {
     (pilot != null && !(pilotEnd <= now)) ||
     getSearchZDR(flags) !== "disabled" ||
     getScrapeZDR(flags) !== "disabled" ||
+    getAlexandriaZDR(flags) !== "disabled" ||
     isUsOnly(flags) ||
     isDpaRestricted(flags) ||
     flags.trainingRestricted === true ||

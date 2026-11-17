@@ -154,6 +154,11 @@ describe("teamPlanClass", () => {
     ["anonymous search forced", { searchZDR: "forced-anon" }],
     ["scrape zero data retention allowed", { scrapeZDR: "allowed" }],
     ["scrape zero data retention forced", { scrapeZDR: "forced" }],
+    [
+      "provider tools zero data retention allowed",
+      { alexandriaZDR: "allowed" },
+    ],
+    ["provider tools zero data retention forced", { alexandriaZDR: "forced" }],
     ["the legacy allow-ZDR flag", { allowZDR: true }],
     ["the legacy force-ZDR flag", { forceZDR: true }],
     ["US-only processing", { usOnly: true }],
@@ -203,6 +208,7 @@ describe("teamPlanClass", () => {
       {
         searchZDR: "disabled",
         scrapeZDR: "disabled",
+        alexandriaZDR: "disabled",
         usOnly: false,
         dpaRestricted: false,
         trainingRestricted: false,
