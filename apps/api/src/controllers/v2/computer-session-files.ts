@@ -158,7 +158,6 @@ async function insertSession(
       id,
       team_id: teamId,
       created_at: iso(now),
-      last_used_at: iso(now),
       expires_at: iso(expiresAt),
     });
     return true;
@@ -288,7 +287,10 @@ export function computerSessionFileControllers(
     const id = req.params.sessionId;
     const [session] = SESSION_ID.test(id)
       ? await db
-          .select({ created_at: sessions.created_at })
+          .select({
+            created_at: sessions.created_at,
+            last_saved_at: sessions.last_saved_at,
+          })
           .from(sessions)
           .where(
             and(
@@ -307,6 +309,7 @@ export function computerSessionFileControllers(
       id,
       objectPath: teamPrefix(teamId) + id,
       createdAt: new Date(session.created_at).getTime(),
+      saved: session.last_saved_at !== null,
     };
   }
 
@@ -366,18 +369,28 @@ export function computerSessionFileControllers(
           "The workspace changed since it was read. Read it again.",
         );
       }
-      const expiresAt = Math.min(
+      const end = Math.min(
         savedAt + SESSION_IDLE_SECONDS * 1000,
         session.createdAt + SESSION_MAX_SECONDS * 1000,
       );
-      await db
+      // Never moved back, so a slow save that began earlier cannot shorten
+      // what a later one set.
+      const [{ expires_at }] = await db
         .update(sessions)
-        .set({ last_used_at: iso(savedAt), expires_at: iso(expiresAt) })
-        .where(eq(sessions.id, session.id));
+        .set({
+          last_saved_at: sql`GREATEST(${sessions.last_saved_at}, ${iso(savedAt)}::timestamptz)`,
+          expires_at: sql`GREATEST(${sessions.expires_at}, ${iso(end)}::timestamptz)`,
+        })
+        .where(eq(sessions.id, session.id))
+        .returning({ expires_at: sessions.expires_at });
       res.setHeader("ETag", `"${version}"`);
       res.status(200).json({
         success: true,
-        data: { sizeBytes, version, expiresAt: iso(expiresAt) },
+        data: {
+          sizeBytes,
+          version,
+          expiresAt: new Date(expires_at).toISOString(),
+        },
       });
     },
 
@@ -386,8 +399,16 @@ export function computerSessionFileControllers(
       if (teamId === null) return;
       const session = await liveSession(req, res, teamId);
       if (!session) return;
-      const workspace =
-        (await store.read(session.objectPath)) ?? EMPTY_WORKSPACE;
+      const stored = await store.read(session.objectPath);
+      // A saved workspace that is gone is said so, not passed off as empty.
+      if (!stored && session.saved) {
+        return refuse(
+          res,
+          410,
+          "This session's files are no longer stored. Create a new session.",
+        );
+      }
+      const workspace = stored ?? EMPTY_WORKSPACE;
       res.setHeader("ETag", `"${workspace.version}"`);
       await send(res, workspace);
     },

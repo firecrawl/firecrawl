@@ -182,14 +182,18 @@ describe.skipIf(!databaseUrl)("session routes", () => {
   beforeAll(async () => {
     // The table as the firecrawl-db migration creates it.
     await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS computer_sessions (
-      id uuid PRIMARY KEY,
-      team_id uuid NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      last_used_at timestamptz NOT NULL DEFAULT now(),
-      expires_at timestamptz NOT NULL
-    )
-  `);
+      CREATE TABLE IF NOT EXISTS computer_sessions (
+        id uuid PRIMARY KEY,
+        team_id uuid NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_saved_at timestamptz,
+        expires_at timestamptz NOT NULL
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS computer_sessions_team_id_expires_at_idx
+        ON computer_sessions (team_id, expires_at)
+    `);
     server = app.listen(0);
   });
   afterAll(async () => {
@@ -233,6 +237,12 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       now.mockReturnValue(start + 20 * HOUR_MS);
       const saved = await save(TEAM_A, id, "files");
       expect(new Date(saved.body.data.expiresAt).getTime()).toBe(
+        start + 44 * HOUR_MS,
+      );
+      // A save that began earlier and lands later does not move the end back.
+      now.mockReturnValue(start + 10 * HOUR_MS);
+      const late = await save(TEAM_A, id, "files");
+      expect(new Date(late.body.data.expiresAt).getTime()).toBe(
         start + 44 * HOUR_MS,
       );
       // Past the end it was created with, and still live.
@@ -343,6 +353,13 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(res.status).toBe(200);
       expect(res.headers.etag).toBe('"1"');
       expect(res.body.toString()).toBe("files");
+    });
+
+    it("says so when a saved workspace is no longer stored", async () => {
+      const id = await createId();
+      await save(TEAM_A, id, "files");
+      objects.clear();
+      expect((await read(TEAM_A, id)).status).toBe(410);
     });
 
     it("refuses a body over the limit, or of unknown size, before reading it", async () => {

@@ -179,13 +179,23 @@ export const browser_sessions = pgTable("browser_sessions", {
 
 // Sessions of the hosted MCP shell (see computer_sessions migration). The
 // files live in object storage; a session is live until expires_at.
-export const computer_sessions = pgTable("computer_sessions", {
-  id: uuid("id").notNull(),
-  team_id: uuid("team_id").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  last_used_at: ts("last_used_at").notNull().defaultNow(),
-  expires_at: ts("expires_at").notNull(),
-});
+export const computer_sessions = pgTable(
+  "computer_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    team_id: uuid("team_id").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    // Null until the session's workspace is first saved.
+    last_saved_at: ts("last_saved_at"),
+    expires_at: ts("expires_at").notNull(),
+  },
+  table => [
+    index("computer_sessions_team_id_expires_at_idx").on(
+      table.team_id,
+      table.expires_at,
+    ),
+  ],
+);
 
 // Index of saved persistent browser profiles (see browser_profiles migration).
 // Contents live in Hangar; reconciliation upserts a row after a confirmed save.
