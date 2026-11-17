@@ -2,9 +2,7 @@
  * Query-string form of an Alexandria call for GET /v2/alexandria/:provider/*capability.
  *
  * Keys are matched against the capability's contract first: a key that is the exact name of a
- * declared option (`meta.version`, `timeout`) is that option, unsplit. Credential names are
- * refused however they are reached; `key` and `token` only when the contract does not declare them. Any other key
- * uses dot notation to build nested options (`filters.country=US`), a repeated key builds a list
+ * declared option (`meta.version`, `timeout`) is that option, unsplit. Any other key uses dot notation to build nested options (`filters.country=US`), a repeated key builds a list
  * (`tags=a&tags=b`), and `\.` keeps a literal dot. `timeout` and `version` are request fields
  * unless the contract declares an option of that name; `options.` always reaches a provider
  * option. Query values carry no types, so top-level options are converted against the contract;
@@ -20,19 +18,24 @@ const MAX_DEPTH = 10;
 const MAX_VALUES = 200;
 const RESERVED = new Set(["timeout", "version"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-// Never options, however they are reached (directly, through `options.`, or declared by the
-// contract): credentials belong in the Authorization header, and zero-data-retention requests
-// must not put their options in a URL.
+// Nothing that can carry a credential goes in a URL, where proxies, logs and browser history keep
+// it: these names are refused at any level, however they are reached (directly, through
+// `options.`, or declared by the contract), and so is any value shaped like a Firecrawl API key.
+// The Firecrawl key belongs in the Authorization header, and such options go in a POST body.
+// Zero-data-retention requests must not put their options in a URL either.
 export const REFUSED_QUERY_KEYS = new Set([
   "api_key",
   "apiKey",
   "apikey",
+  "key",
+  "token",
   "access_token",
+  "accessToken",
+  "secret",
+  "password",
   "zeroDataRetention",
 ]);
-// Refused unless the capability's contract declares an option of that name, where they are
-// ordinary identifiers (a lookup key, a page token).
-const CREDENTIAL_UNLESS_DECLARED = new Set(["key", "token"]);
+const FIRECRAWL_KEY = /\bfc-[0-9a-f]{32}\b/i;
 
 const isTree = (value: unknown): value is Tree =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -61,12 +64,29 @@ function splitKey(key: string): string[] {
   return segments;
 }
 
-/** Values in a query string, counted before the contract lookup so an oversized URL costs none. */
-export function assertAlexandriaQuerySize(query: Record<string, unknown>) {
-  const values = Object.values(query).reduce<number>(
-    (sum, raw) => sum + (Array.isArray(raw) ? raw.length : 1),
-    0,
-  );
+/**
+ * Refuses a query that is too large or carries a credential. It needs no contract, so it runs
+ * before the contract lookup and an unsafe URL costs nothing.
+ */
+export function checkAlexandriaQuery(query: Record<string, unknown>) {
+  let values = 0;
+  for (const [key, raw] of Object.entries(query)) {
+    const list = (Array.isArray(raw) ? raw : [raw]).map(String);
+    values += list.length;
+    const names = key.replace(/\\\./g, ".").split(".");
+    if (names.includes("zeroDataRetention"))
+      throw new AlexandriaQueryError(
+        "Zero data retention requests must use POST /v2/alexandria.",
+      );
+    if (names.some(name => REFUSED_QUERY_KEYS.has(name)))
+      throw new AlexandriaQueryError(
+        `"${key}" can carry a credential, so it cannot go in the URL. Send the API key in the Authorization header, and this option with POST /v2/alexandria.`,
+      );
+    if (list.some(value => FIRECRAWL_KEY.test(value)))
+      throw new AlexandriaQueryError(
+        "Send the API key in the Authorization header, not the URL.",
+      );
+  }
   if (values > MAX_VALUES)
     throw new AlexandriaQueryError(
       `A GET call takes at most ${MAX_VALUES} values. Use POST for larger calls.`,
@@ -81,7 +101,7 @@ export function parseAlexandriaQuery(
   timeout?: string;
   version?: string;
 } {
-  assertAlexandriaQuerySize(query);
+  checkAlexandriaQuery(query);
   const options: Tree = {};
   const request: { timeout?: string; version?: string } = {};
   for (const [key, raw] of Object.entries(query)) {
@@ -89,15 +109,6 @@ export function parseAlexandriaQuery(
     const viaOptions =
       key.startsWith("options.") && key.length > 8 && !declared.has(key);
     const name = viaOptions ? key.slice(8) : key;
-    if (
-      REFUSED_QUERY_KEYS.has(name) ||
-      (CREDENTIAL_UNLESS_DECLARED.has(name) && !declared.has(name))
-    )
-      throw new AlexandriaQueryError(
-        name === "zeroDataRetention"
-          ? "Zero data retention requests must use POST /v2/alexandria."
-          : "Send the API key in the Authorization header, not the URL.",
-      );
     let segments: string[];
     if (declared.has(name)) {
       if (UNSAFE_KEYS.has(name))

@@ -93,31 +93,23 @@ describe("parseAlexandriaQuery with the contract's option names", () => {
     ).toEqual({ options: { timeout: "5", version: "2" } });
   });
 
-  it("passes a declared option named like a credential to the provider", () => {
-    expect(
-      parseAlexandriaQuery(
-        { key: "isbn", token: "next" },
-        declared("key", "token"),
-      ).options,
-    ).toEqual({ key: "isbn", token: "next" });
-    fails({ api_key: "fc-1" }, /Authorization header/);
-  });
-
-  it("refuses credential names through options. or the contract", () => {
+  it("refuses credentials in the URL however they are reached", () => {
     const refuses = (query: Record<string, unknown>, names: string[] = []) =>
       expect(() => parseAlexandriaQuery(query, declared(...names))).toThrow(
         /Authorization header|must use POST/,
       );
-    refuses({ "options.api_key": "fc-1" });
-    refuses({ "options.access_token": "t" });
+    refuses({ api_key: "x" });
+    refuses({ "options.api_key": "x" });
+    refuses({ "options.access_token": "x" });
     refuses({ "options.zeroDataRetention": "true" });
-    refuses({ api_key: "fc-1" }, ["api_key"]);
-    refuses({ "options.zeroDataRetention": "true" }, ["zeroDataRetention"]);
-    refuses({ key: "k" });
-    refuses({ "options.token": "t" });
-    expect(
-      parseAlexandriaQuery({ "options.key": "isbn" }, declared("key")).options,
-    ).toEqual({ key: "isbn" });
+    refuses({ "auth.token": "x" });
+    refuses({ "meta\\.key": "x" });
+    refuses({ key: "isbn" }, ["key"]);
+    refuses({ "options.token": "next" }, ["token"]);
+    refuses({ api_key: "x" }, ["api_key"]);
+    refuses({ zeroDataRetention: "true" }, ["zeroDataRetention"]);
+    refuses({ q: "fc-1e914bb5895149f8b754f58e2d4650a7" });
+    refuses({ tags: ["a", "FC-1E914BB5895149F8B754F58E2D4650A7"] });
   });
 
   it("matches options.-prefixed keys against the contract too", () => {

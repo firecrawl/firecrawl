@@ -1085,6 +1085,21 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
     expect(mocks.retrieve).not.toHaveBeenCalled();
   });
 
+  it("refuses credentials before the contract lookup, even when declared", async () => {
+    mocks.optionTypes.mockResolvedValue(new Map([["key", "string"]]));
+    for (const query of [
+      "key=isbn",
+      "options.token=next",
+      "auth.api_key=x",
+      "q=fc-1e914bb5895149f8b754f58e2d4650a7",
+    ]) {
+      const response = await request(app).get(`${path}?${query}`);
+      expect(response.status, query).toBe(400);
+    }
+    expect(mocks.optionTypes).not.toHaveBeenCalled();
+    expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+
   it("refuses an oversized query before the contract lookup", async () => {
     const tags = Array.from({ length: 201 }, (_, i) => `tags=${i}`).join("&");
     const response = await request(app).get(`${path}?${tags}`);

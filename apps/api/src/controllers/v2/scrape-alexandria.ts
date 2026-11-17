@@ -40,7 +40,7 @@ import {
 import { capabilityOptionTypes } from "../../services/alexandria/option-types";
 import {
   AlexandriaQueryError,
-  assertAlexandriaQuerySize,
+  checkAlexandriaQuery,
   convertAlexandriaOptions,
   parseAlexandriaQuery,
 } from "../../lib/alexandria-query";
@@ -145,7 +145,7 @@ export async function alexandriaQueryBody(
   const refuse = (error: string) =>
     res.status(400).json({ success: false, error });
   try {
-    assertAlexandriaQuerySize(query);
+    checkAlexandriaQuery(query);
   } catch (error) {
     if (error instanceof AlexandriaQueryError) return refuse(error.message);
     throw error;
