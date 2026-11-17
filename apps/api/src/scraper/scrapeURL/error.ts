@@ -171,7 +171,7 @@ export class SiteError extends TransportableError {
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
       ERR_TUNNEL_CONNECTION_FAILED:
-        "Firecrawl encountered an internal proxy error while establishing the tunnel.",
+        "The proxy could not open a connection to the site. This usually means the site is down, unreachable, or refusing connections, and is occasionally a temporary proxy issue.",
       ERR_TIMED_OUT:
         "The connection timed out. The server is not responding or is too slow.",
       ERR_BLOCKED_BY_CLIENT:
@@ -190,17 +190,20 @@ export class SiteError extends TransportableError {
         "The page has too many redirects. The website may be misconfigured.",
     };
 
-    const isProxyError =
-      errorCode === "ERR_TUNNEL_CONNECTION_FAILED" ||
-      errorCode === "ERR_PROXY_CONNECTION_FAILED";
-
     const explanation =
       errorExplanations[errorCode] ||
       "The website returned an error or could not be loaded properly.";
 
-    const followUp = isProxyError
-      ? "This is an internal Firecrawl proxy error. Please retry or contact support."
-      : "Please verify the URL is correct and the website is accessible.";
+    const followUps: Record<string, string> = {
+      ERR_TUNNEL_CONNECTION_FAILED:
+        "Please verify the website loads in a browser and retry. If it loads but keeps failing here, contact support.",
+      ERR_PROXY_CONNECTION_FAILED:
+        "This is an internal Firecrawl proxy error. Please retry or contact support.",
+    };
+
+    const followUp =
+      followUps[errorCode] ??
+      "Please verify the URL is correct and the website is accessible.";
 
     super(
       "SCRAPE_SITE_ERROR",
