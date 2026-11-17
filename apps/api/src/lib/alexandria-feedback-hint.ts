@@ -5,6 +5,7 @@ import { getSearchZDR } from "./zdr-helpers";
 const RATING = "<good|partial|bad>";
 const WEBSITE = "<website the data is about>";
 const NEEDED = "<what you needed from it>";
+const OBJECTIVE = "<the underlying goal>";
 const RATIONALE = "<what was right, wrong or missing>";
 
 /** Whether the team can send Alexandria feedback that is stored, so the next step is worth offering. */
@@ -37,13 +38,14 @@ export function alexandriaFeedbackNextStep(
     endpoint: "alexandria",
     rating: RATING,
     requestedWebsite: { url: WEBSITE, requestedFunctionality: NEEDED },
+    objective: OBJECTIVE,
     rationale: RATIONALE,
   };
   const caller = origin.trim().toLowerCase();
   if (caller.startsWith("cli") || integration?.trim().toLowerCase() === "cli")
     return {
       instruction: `Next: once you have used this result, run this command to rate it.${refund}`,
-      command: `firecrawl alexandria feedback --rating "${RATING}" --url "${WEBSITE}" --requested-functionality "${NEEDED}" --rationale "${RATIONALE}"`,
+      command: `firecrawl alexandria feedback --rating "${RATING}" --url "${WEBSITE}" --requested-functionality "${NEEDED}" --objective "${OBJECTIVE}" --rationale "${RATIONALE}"`,
     };
   if (caller.startsWith("mcp"))
     return {

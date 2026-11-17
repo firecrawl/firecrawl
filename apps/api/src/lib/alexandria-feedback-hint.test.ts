@@ -22,6 +22,7 @@ it("points an MCP client at firecrawl_feedback with the arguments it takes", () 
         url: "<website the data is about>",
         requestedFunctionality: "<what you needed from it>",
       },
+      objective: "<the underlying goal>",
       rationale: "<what was right, wrong or missing>",
     },
   });
@@ -36,7 +37,7 @@ it.each([
     instruction:
       "Next: once you have used this result, run this command to rate it. Eligible feedback can refund 1 credit.",
     command:
-      'firecrawl alexandria feedback --rating "<good|partial|bad>" --url "<website the data is about>" --requested-functionality "<what you needed from it>" --rationale "<what was right, wrong or missing>"',
+      'firecrawl alexandria feedback --rating "<good|partial|bad>" --url "<website the data is about>" --requested-functionality "<what you needed from it>" --objective "<the underlying goal>" --rationale "<what was right, wrong or missing>"',
   });
 });
 
@@ -83,5 +84,5 @@ it("stays short", () => {
   for (const origin of ["mcp-cursor", "cli", "api"])
     expect(
       JSON.stringify(alexandriaFeedbackNextStep(origin)).length,
-    ).toBeLessThan(450);
+    ).toBeLessThan(500);
 });
