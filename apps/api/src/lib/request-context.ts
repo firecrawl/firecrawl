@@ -2,9 +2,9 @@
  * Builds the context a request runs under, and reads it back from the two
  * stored shapes that carry it: a scrape job's payload and a crawl record.
  *
- * No other file builds a RequestContext. The code that accepts a request
- * calls `requestContext` once, with the facts it has resolved, and everything
- * after that copies the value.
+ * No other file builds a RequestContext. The code that accepts a request, or
+ * that starts work of the service's own, calls `requestContext` once, with
+ * the facts it has resolved, and everything after that copies the value.
  */
 import type { TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
@@ -15,11 +15,14 @@ import type { StoredCrawl } from "./crawl-redis";
 declare module "../service/request-context" {
   interface RequestContext {
     /**
-     * The team's flags when the request was accepted: `null` when the team
-     * has none, absent when they were not looked up.
+     * The team's flags when the context was built: `null` when the team has
+     * none, absent when they were not looked up.
      */
     flags?: TeamFlags;
-    /** The organization the team belongs to, `null` when it has none. */
+    /**
+     * The organization the work runs under, `null` when it runs under none.
+     * It is not always the organization the team belongs to.
+     */
     orgId?: string | null;
     /** The API key the request was made with, `null` when it had none. */
     apiKeyId?: number | null;
