@@ -84,7 +84,6 @@ function isAgentStatusBody(body: unknown): body is ExtractV3AgentStatus {
   );
 }
 
-/** With teamId, the agent service answers 404 for a run another team owns. */
 export async function getExtractV3AgentStatus(
   id: string,
   teamId?: string,

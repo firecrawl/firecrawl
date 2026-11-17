@@ -16,11 +16,7 @@ type JobRequest<Body = any> = RequestWithAuth<{ jobId: string }, any, Body>;
 
 const AGENT_JOB_NOT_FOUND = { success: false, error: "Agent job not found" };
 
-/**
- * The run's job-access row, or null once it has expired; a run older than the
- * row is checked by the agent service from x-team-id instead. Sends 404 and
- * returns false when the row belongs to another team.
- */
+// Null once the row expires; the agent service then checks ownership from x-team-id.
 async function readOwnedRunAccess(req: JobRequest, res: Response) {
   const access = await getAgentJobAccess(req.params.jobId, req.auth.team_id);
   if (access && access.teamId !== req.auth.team_id) {
@@ -184,8 +180,7 @@ export async function agentShareController(req: JobRequest, res: Response) {
   );
 }
 
-// Share pages are public, so only the dashboard's preview credential may read
-// them; an ordinary API key gets 403.
+// Share pages are public, so only the dashboard's preview credential may read them.
 export async function agentSharedRunController(
   req: RequestWithAuth<{ shareId: string }, any, any>,
   res: Response,
