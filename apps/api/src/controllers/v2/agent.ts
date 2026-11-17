@@ -46,8 +46,14 @@ export async function agentController(
   // entitlements up front instead of failing on its first inner call.
   const scrapeZDR = getScrapeZDR(req.acuc?.flags);
   const searchZDR = getSearchZDR(req.acuc?.flags);
+  // A team that forces either flag only runs agents under ZDR.
+  const zeroDataRetention =
+    req.body.zeroDataRetention === true ||
+    scrapeZDR === "forced" ||
+    searchZDR === "forced-zdr" ||
+    searchZDR === "forced-anon";
   if (
-    (req.body.zeroDataRetention === true || scrapeZDR === "forced") &&
+    zeroDataRetention &&
     !(
       (scrapeZDR === "allowed" || scrapeZDR === "forced") &&
       (searchZDR === "allowed" || searchZDR === "forced-zdr")
@@ -60,10 +66,6 @@ export async function agentController(
         "Zero Data Retention (ZDR) for agent runs requires both scrape ZDR and search ZDR to be enabled for your team. Contact support@firecrawl.com to enable it.",
     });
   }
-
-  const zeroDataRetention =
-    scrapeZDR === "forced" ||
-    (req.body.zeroDataRetention === true && scrapeZDR === "allowed");
 
   const logger = _logger.child({
     agentId,

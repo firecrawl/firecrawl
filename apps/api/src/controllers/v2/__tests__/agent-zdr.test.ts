@@ -93,6 +93,11 @@ describe("agentController zero data retention", () => {
       { zeroDataRetention: true },
       { scrapeZDR: "allowed", searchZDR: "allowed" },
     ],
+    [
+      "search ZDR forced, scrape ZDR allowed",
+      {},
+      { scrapeZDR: "allowed", searchZDR: "forced-zdr" },
+    ],
   ])("runs with ZDR when %s", async (_name, body, flags) => {
     const res = await run(body, flags);
 
@@ -136,6 +141,12 @@ describe("agentController zero data retention", () => {
       "scrape ZDR forced, search anonymous only",
       {},
       { scrapeZDR: "forced", searchZDR: "forced-anon" },
+    ],
+    ["search ZDR forced, no scrape ZDR", {}, { searchZDR: "forced-zdr" }],
+    [
+      "search anonymous forced, scrape ZDR allowed",
+      {},
+      { scrapeZDR: "allowed", searchZDR: "forced-anon" },
     ],
   ])("rejects a ZDR run up front when %s", async (_name, body, flags) => {
     const res = await run(body, flags);
