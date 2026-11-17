@@ -444,6 +444,7 @@ export function authMiddleware(
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;
+      req.caller = { teamId: team_id };
       next();
     })().catch(err => next(err));
   };
