@@ -13,6 +13,7 @@ import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { reportPipelineError } from "../../lib/redis-pipeline";
+import { enqueueZdrCleanupJob } from "../../lib/zdr-queue";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -350,6 +351,11 @@ export async function parseUploadUrlController(
             code: "PARSE_UPLOAD_STORAGE_DISABLED",
             error: "Parse upload storage is not configured.",
           });
+        }
+
+        // Deletes the object even if it is never parsed; a parse deletes it sooner.
+        if (config.USE_DB_AUTHENTICATION === true) {
+          await enqueueZdrCleanupJob({ parseUploadPath: objectPath });
         }
 
         const bucket = getStorageClient().bucket(

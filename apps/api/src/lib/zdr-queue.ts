@@ -28,8 +28,12 @@ const ATTEMPT_HEADER = "zdr-attempt";
 
 const logger = _logger.child({ module: "zdr-queue" });
 
-// A request-level job resolves its blobs from ClickHouse; a blob job names one blob.
-export type ZdrCleanupJob = { requestId: string } | { blobId: string };
+// A request-level job resolves its blobs from ClickHouse; a blob job names one
+// blob; a parse upload job names one object in the parse upload bucket.
+export type ZdrCleanupJob =
+  | { requestId: string }
+  | { blobId: string }
+  | { parseUploadPath: string };
 
 type CleanupHandler = (job: ZdrCleanupJob) => Promise<void>;
 
@@ -245,7 +249,9 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
 }
 
 function jobId(job: ZdrCleanupJob): string {
-  return "blobId" in job ? job.blobId : job.requestId;
+  if ("blobId" in job) return job.blobId;
+  if ("parseUploadPath" in job) return job.parseUploadPath;
+  return job.requestId;
 }
 
 function publishConfirmed(
@@ -364,7 +370,9 @@ function isZdrCleanupJob(value: unknown): value is ZdrCleanupJob {
       ? value.blobId
       : "requestId" in value
         ? value.requestId
-        : undefined;
+        : "parseUploadPath" in value
+          ? value.parseUploadPath
+          : undefined;
   return typeof id === "string" && id.length > 0;
 }
 
@@ -422,7 +430,9 @@ async function subscribe(
           setSpanAttributes(span, {
             ...("blobId" in job
               ? { "zdr.blob_id": job.blobId }
-              : { "zdr.request_id": job.requestId }),
+              : "parseUploadPath" in job
+                ? { "zdr.parse_upload_path": job.parseUploadPath }
+                : { "zdr.request_id": job.requestId }),
             "zdr.attempt": attempt,
           });
 
