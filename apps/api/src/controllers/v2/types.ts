@@ -3070,6 +3070,8 @@ export type EndpointFeedbackResponse =
       success: true;
       feedbackId: string;
       creditsRefunded: number;
+      /** Alexandria only: states the refund, or why there was none. */
+      message?: string;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
       websiteCapReached?: boolean;

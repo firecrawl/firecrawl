@@ -841,3 +841,121 @@ describe("feedback tokens", () => {
     expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
   });
 });
+
+describe("feedback next step", () => {
+  const hint = config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean };
+  const second = { provider: "sec", capability: "filings", options: {} };
+  const answered = (item: object = call) => ({
+    ...item,
+    creditsCost: 1,
+    data: { price: 1 },
+  });
+  const send = (body: object) => request(app).post("/v2/scrape").send(body);
+  beforeEach(() => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    mocks.retrieve.mockResolvedValue(result([answered()]));
+  });
+  afterEach(() => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+  });
+
+  it("adds the next step beside the existing fields of a provider answer", async () => {
+    const response = await send({ alexandria: call, origin: "mcp-cursor" });
+    expect(response.body).toEqual({
+      success: true,
+      scrape_id: "scrape-1",
+      data: {
+        creditsCost: 0,
+        alexandria: [
+          {
+            provider: "fred",
+            capability: "categories/category",
+            creditsCost: 1,
+            data: { price: 1 },
+            nextStep: {
+              instruction: expect.stringContaining("call firecrawl_feedback"),
+              tool: "firecrawl_feedback",
+              arguments: expect.objectContaining({ endpoint: "alexandria" }),
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("matches the caller: a command for the CLI, the request for the API", async () => {
+    const cli = await send({ alexandria: call, integration: "cli" });
+    expect(cli.body.data.alexandria[0].nextStep.command).toMatch(
+      /^firecrawl alexandria feedback /,
+    );
+    const direct = await send({ alexandria: call });
+    expect(direct.body.data.alexandria[0].nextStep.request).toBe(
+      "POST /v2/feedback",
+    );
+  });
+
+  it("adds it once per response, on the first provider answer", async () => {
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { error: { code: "provider_error", message: "down" } },
+        answered(),
+        answered(second),
+      ]),
+    );
+    const response = await send({ alexandria: [second, call, second] });
+    expect(
+      response.body.data.alexandria.map(
+        (item: { nextStep?: unknown }) => item.nextStep !== undefined,
+      ),
+    ).toEqual([false, true, false]);
+  });
+
+  it("leaves out errors and Firecrawl's own calls, discovery included", async () => {
+    const findTools = {
+      provider: "firecrawl",
+      capability: "find-tools",
+      options: {},
+    };
+    mocks.retrieve.mockResolvedValue(
+      result([
+        { ...findTools, creditsCost: 0, data: { items: [] } },
+        { error: { code: "provider_error", message: "down" } },
+      ]),
+    );
+    const response = await send({ alexandria: [findTools, call] });
+    expect(response.body.data.alexandria[0].nextStep).toBeUndefined();
+    expect(response.body.data.alexandria[1].nextStep).toBeUndefined();
+  });
+
+  it("puts it on the legacy single-call answer too", async () => {
+    const response = await request(app).post("/exchange/retrieve").send(call);
+    expect(response.body.nextStep.request).toBe("POST /v2/feedback");
+    expect(response.body.data).toEqual({ price: 1 });
+  });
+
+  it.each([
+    [
+      "the switch is off",
+      () => (hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = false),
+    ],
+    [
+      "the team opted out of feedback",
+      () => (flags = { exchangeRetrieve: true, searchFeedbackOptOut: true }),
+    ],
+    ["the team is a preview team", () => (teamId = "preview_abc")],
+    [
+      "the team is under zero data retention",
+      () => (flags = { exchangeRetrieve: true, forceZDR: true }),
+    ],
+  ])("adds nothing when %s", async (_case, arrange) => {
+    arrange();
+    const response = await send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(response.body.data.alexandria[0]).toEqual({
+      provider: "fred",
+      capability: "categories/category",
+      creditsCost: 1,
+      data: { price: 1 },
+    });
+  });
+});
