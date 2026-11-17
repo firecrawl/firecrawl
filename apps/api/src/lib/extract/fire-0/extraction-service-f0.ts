@@ -138,7 +138,10 @@ export async function performExtraction_F0(
       { teamId, extractId },
       teamFlags,
     );
-    const searchForcedKind = getEffectiveSearchForcedKind(teamFlags, undefined);
+    const searchForcedKind = getEffectiveSearchForcedKind(
+      teamFlags,
+      request.scrapeOptions?.safeMode,
+    );
     const searchResults = await search({
       query: rephrasedPrompt.replace('"', "").replace("'", ""),
       logger,

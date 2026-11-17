@@ -245,6 +245,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         lockdown,
       );
       expect(create.statusCode).toBe(200);
+      expect(create.body.data.status).toBe("active");
       const id = create.body.data.id;
 
       try {
