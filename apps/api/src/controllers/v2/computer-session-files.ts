@@ -163,15 +163,17 @@ const refuse = (res: Response, status: number, error: string) => {
 const sessions = schema.computer_sessions;
 const iso = (ms: number) => new Date(ms).toISOString();
 const NO_SESSION = "Session not found or expired. Create a new session.";
+// A session is live until its end by the database's clock, the one clock
+// every replica shares: by their own, one replica could still count a session
+// another just ended.
+const live = gt(sessions.expires_at, sql`clock_timestamp()`);
 
 /**
  * Records a new session and returns the ids of the sessions it ended. A team
  * at the limit of live sessions gives up the ones saved longest ago, so
  * sessions nobody returns to never keep a team from starting one. A team's
  * creations run one at a time, so concurrent ones cannot pass the limit
- * together. They count live sessions by the database's clock: their own
- * clocks differ, and one that is behind would count sessions another creation
- * just ended, and end live ones in their place.
+ * together.
  */
 async function insertSession(
   teamId: string,
@@ -192,12 +194,7 @@ async function insertSession(
           tx
             .select({ id: sessions.id })
             .from(sessions)
-            .where(
-              and(
-                eq(sessions.team_id, teamId),
-                gt(sessions.expires_at, sql`clock_timestamp()`),
-              ),
-            )
+            .where(and(eq(sessions.team_id, teamId), live))
             .orderBy(
               desc(
                 sql`COALESCE(${sessions.last_saved_at}, ${sessions.created_at})`,
@@ -368,13 +365,7 @@ export function computerSessionFileControllers(
             last_saved_at: sessions.last_saved_at,
           })
           .from(sessions)
-          .where(
-            and(
-              eq(sessions.id, id),
-              eq(sessions.team_id, teamId),
-              gt(sessions.expires_at, iso(Date.now())),
-            ),
-          )
+          .where(and(eq(sessions.id, id), eq(sessions.team_id, teamId), live))
           .limit(1)
       : [];
     if (!session) {
@@ -477,12 +468,7 @@ export function computerSessionFileControllers(
           last_saved_at: sql`GREATEST(${sessions.last_saved_at}, ${iso(savedAt)}::timestamptz)`,
           expires_at: sql`GREATEST(${sessions.expires_at}, ${iso(end)}::timestamptz)`,
         })
-        .where(
-          and(
-            eq(sessions.id, session.id),
-            gt(sessions.expires_at, sql`clock_timestamp()`),
-          ),
-        )
+        .where(and(eq(sessions.id, session.id), live))
         .returning({ expires_at: sessions.expires_at });
       if (!extended) {
         await discardWorkspace(teamId, session.id);

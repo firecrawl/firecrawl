@@ -191,6 +191,15 @@ const seed = (team: string, count: number, expiresAt: number) =>
   );
 const storedSession = async (id: string) =>
   (await db.select().from(sessions).where(eq(sessions.id, id)))[0];
+/** Moves a session's times back, as if that long had passed. */
+const elapse = (id: string, ms: number) =>
+  db.execute(sql`
+    UPDATE computer_sessions
+    SET created_at = created_at - ${ms}::float8 * interval '1 millisecond',
+        last_saved_at = last_saved_at - ${ms}::float8 * interval '1 millisecond',
+        expires_at = expires_at - ${ms}::float8 * interval '1 millisecond'
+    WHERE id = ${id}::uuid
+  `);
 const liveSessions = (team: string) =>
   db.$count(
     sessions,
@@ -269,10 +278,10 @@ describe.skipIf(!databaseUrl)("session routes", () => {
         start + 44 * HOUR_MS,
       );
       // Past the end it was created with, and still live.
-      now.mockReturnValue(start + 30 * HOUR_MS);
+      await elapse(id, 30 * HOUR_MS);
       expect((await read(TEAM_A, id)).status).toBe(200);
       // A read does not move the end.
-      now.mockReturnValue(start + 44 * HOUR_MS + 1);
+      await elapse(id, 14 * HOUR_MS);
       expect((await read(TEAM_A, id)).status).toBe(404);
 
       const busy = (await create()).body.data.id;
@@ -286,7 +295,7 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(new Date(last!.body.data.expiresAt).getTime()).toBe(
         began + 7 * DAY_MS,
       );
-      now.mockReturnValue(began + 7 * DAY_MS);
+      await elapse(busy, 7 * DAY_MS);
       expect((await save(TEAM_A, busy, "files")).status).toBe(404);
     });
 
@@ -337,7 +346,7 @@ describe.skipIf(!databaseUrl)("session routes", () => {
         "an expired session",
         async () => {
           const id = await createId();
-          vi.spyOn(Date, "now").mockReturnValue(Date.now() + DAY_MS + 1);
+          await elapse(id, DAY_MS);
           return id;
         },
       ],
