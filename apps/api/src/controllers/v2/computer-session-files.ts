@@ -1,20 +1,23 @@
 import crypto from "node:crypto";
+import { once } from "node:events";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Request, RequestHandler, Response } from "express";
 import { ApiError, Storage } from "@google-cloud/storage";
 import {
+  type RateLimiterAbstract,
   RateLimiterMemory,
   RateLimiterRedis,
   RateLimiterRes,
 } from "rate-limiter-flexible";
-import { and, count, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { config } from "../../config";
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
+import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 import type { RequestWithAuth } from "./types";
@@ -24,6 +27,12 @@ export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const LINK_DEFAULT_SECONDS = 15 * 60;
 const LINK_MAX_SECONDS = 60 * 60;
 const DOWNLOADS_PER_MINUTE = 60;
+const MEBIBYTE = 1024 * 1024;
+// What a team's links may hold in an hour. Each link counts in whole
+// mebibytes, so this is also the most links a team can make in an hour.
+const LINK_MEBIBYTES_PER_HOUR = 2048;
+// How often a read looks a workspace up again when a save replaced it first.
+const READ_ATTEMPTS = 3;
 // A session ends a day after its workspace was last saved, and a week after it
 // was created however often it is saved, so it never becomes long-term
 // storage. The bucket deletes a workspace a day after its last save, so the
@@ -43,7 +52,11 @@ type StoredFile = {
   sizeBytes: number;
   version: string;
   metadata: Record<string, string>;
-  stream(): Readable;
+  /**
+   * This version's bytes, once the first of them is there to send. Throws
+   * VersionReplacedError when the version is no longer stored.
+   */
+  open(): Promise<Readable>;
 };
 
 export type ComputerSessionFileStore = {
@@ -58,9 +71,12 @@ export type ComputerSessionFileStore = {
     options?: { metadata?: Record<string, string>; ifVersion?: string },
   ): Promise<string>;
   read(objectPath: string): Promise<StoredFile | null>;
+  /** Removes the object, if it is stored. */
+  delete(objectPath: string): Promise<void>;
 };
 
 export class VersionMismatchError extends Error {}
+export class VersionReplacedError extends Error {}
 
 const stringValues = (metadata: object | undefined) =>
   Object.fromEntries(
@@ -115,10 +131,25 @@ function gcsStore(bucketName: string): ComputerSessionFileStore {
         sizeBytes: Number(stored.size),
         version: generation,
         metadata: stringValues(stored.metadata),
-        // Pinned to the version just read, so the bytes match the size sent.
-        stream: () =>
-          bucket.file(objectPath, { generation }).createReadStream(),
+        async open() {
+          // Pinned to the version just read, so the bytes match the size sent.
+          const body = bucket
+            .file(objectPath, { generation })
+            .createReadStream();
+          try {
+            await once(body, "readable");
+          } catch (error) {
+            if (error instanceof ApiError && error.code === 404) {
+              throw new VersionReplacedError();
+            }
+            throw error;
+          }
+          return body;
+        },
       };
+    },
+    async delete(objectPath) {
+      await bucket.file(objectPath).delete({ ignoreNotFound: true });
     },
   };
 }
@@ -133,34 +164,53 @@ const sessions = schema.computer_sessions;
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /**
- * Records a new session unless the team already holds the limit of live ones.
- * A team's creations run one at a time, so concurrent ones cannot pass the
- * limit together.
+ * Records a new session and returns the ids of the sessions it ended. A team
+ * at the limit of live sessions gives up the ones saved longest ago, so
+ * sessions nobody returns to never keep a team from starting one. A team's
+ * creations run one at a time, so concurrent ones cannot pass the limit
+ * together.
  */
 async function insertSession(
   teamId: string,
   id: string,
   now: number,
   expiresAt: number,
-): Promise<boolean> {
+): Promise<string[]> {
   return db.transaction(async tx => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`computer_sessions:${teamId}`}, 0))`,
     );
-    const [{ live }] = await tx
-      .select({ live: count() })
-      .from(sessions)
+    const ended = await tx
+      .update(sessions)
+      .set({ expires_at: iso(now) })
       .where(
-        and(eq(sessions.team_id, teamId), gt(sessions.expires_at, iso(now))),
-      );
-    if (live >= MAX_LIVE_SESSIONS) return false;
+        inArray(
+          sessions.id,
+          tx
+            .select({ id: sessions.id })
+            .from(sessions)
+            .where(
+              and(
+                eq(sessions.team_id, teamId),
+                gt(sessions.expires_at, iso(now)),
+              ),
+            )
+            .orderBy(
+              desc(
+                sql`COALESCE(${sessions.last_saved_at}, ${sessions.created_at})`,
+              ),
+            )
+            .offset(MAX_LIVE_SESSIONS - 1),
+        ),
+      )
+      .returning({ id: sessions.id });
     await tx.insert(sessions).values({
       id,
       team_id: teamId,
       created_at: iso(now),
       expires_at: iso(expiresAt),
     });
-    return true;
+    return ended.map(session => session.id);
   });
 }
 
@@ -183,7 +233,13 @@ function hostedMcpTeam(
     );
     return null;
   }
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  // Zero data retention forced on scrapes, on searches or by Safe Mode
+  // lockdown covers everything the team does, as it does in the hosted MCP.
+  const flags = req.acuc?.flags;
+  if (
+    getScrapeZDR(flags) === "forced" ||
+    getEffectiveSearchForcedKind(flags, undefined) !== null
+  ) {
     refuse(
       res,
       403,
@@ -237,16 +293,31 @@ function bodyOf(req: Request, res: Response): Readable {
   return body;
 }
 
-async function send(res: Response, file: StoredFile) {
+// A storage error names the object it was about, and a link's object is named
+// by its token, so a failed read is logged by its code alone.
+const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
+
+async function send(res: Response, file: StoredFile, body: Readable) {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Length", String(file.sizeBytes));
   res.setHeader("Cache-Control", "private, no-store");
   try {
-    await pipeline(file.stream(), res);
+    await pipeline(body, res);
   } catch (error) {
     // The headers are out, so there is no error response left to send.
-    logger.warn("Computer session file stream ended early", { error });
+    logger.warn("Computer session file stream ended early", {
+      code: codeOf(error),
+    });
   }
+}
+
+/** Answers a call its limiter refused, or returns false for any other failure. */
+function tooMany(res: Response, rejection: unknown, limit: string): boolean {
+  if (!(rejection instanceof RateLimiterRes)) return false;
+  const seconds = Math.max(1, Math.ceil(rejection.msBeforeNext / 1000));
+  res.setHeader("Retry-After", String(seconds));
+  refuse(res, 429, `${limit} Try again in ${seconds} seconds.`);
+  return true;
 }
 
 // A session's workspace is one object, absent until the first save.
@@ -257,7 +328,7 @@ const EMPTY_WORKSPACE: StoredFile = {
   sizeBytes: 0,
   version: "0",
   metadata: {},
-  stream: () => Readable.from([]),
+  open: async () => Readable.from([]),
 };
 
 const linkSchema = z.object({
@@ -273,6 +344,8 @@ const linkSchema = z.object({
 export function computerSessionFileControllers(
   store: ComputerSessionFileStore,
   publicBaseUrl: string,
+  /** Counts the mebibytes of each team's links. */
+  linkLimit: RateLimiterAbstract,
 ) {
   /**
    * The team's live session the request names, or null once a refusal has been
@@ -321,14 +394,27 @@ export function computerSessionFileControllers(
       const id = crypto.randomUUID();
       const now = Date.now();
       const expiresAt = now + SESSION_IDLE_SECONDS * 1000;
-      if (!(await insertSession(teamId, id, now, expiresAt))) {
-        return refuse(
-          res,
-          429,
-          `This team already has ${MAX_LIVE_SESSIONS} live sessions. Wait for one to expire.`,
-        );
-      }
-      logger.info("Computer session created", { teamId, sessionId: id });
+      const ended = await insertSession(teamId, id, now, expiresAt);
+      // An ended session's files go now, not when the bucket clears them, so
+      // starting sessions is not a way to store more than the limit holds.
+      await Promise.all(
+        ended.map(async sessionId => {
+          try {
+            await store.delete(teamPrefix(teamId) + sessionId);
+          } catch (error) {
+            logger.warn("Computer session workspace not deleted", {
+              teamId,
+              sessionId,
+              error,
+            });
+          }
+        }),
+      );
+      logger.info("Computer session created", {
+        teamId,
+        sessionId: id,
+        ended: ended.length,
+      });
       res.status(200).json({
         success: true,
         data: { id, expiresAt: iso(expiresAt) },
@@ -399,18 +485,30 @@ export function computerSessionFileControllers(
       if (teamId === null) return;
       const session = await liveSession(req, res, teamId);
       if (!session) return;
-      const stored = await store.read(session.objectPath);
-      // A saved workspace that is gone is said so, not passed off as empty.
-      if (!stored && session.saved) {
-        return refuse(
-          res,
-          410,
-          "This session's files are no longer stored. Create a new session.",
-        );
+      for (let attempt = 1; ; attempt++) {
+        const stored = await store.read(session.objectPath);
+        // A saved workspace that is gone is said so, not passed off as empty.
+        if (!stored && session.saved) {
+          return refuse(
+            res,
+            410,
+            "This session's files are no longer stored. Create a new session.",
+          );
+        }
+        const workspace = stored ?? EMPTY_WORKSPACE;
+        let body: Readable;
+        try {
+          body = await workspace.open();
+        } catch (error) {
+          // A save landed between finding the workspace and reading it, so
+          // the one it stored is read instead.
+          const replaced = error instanceof VersionReplacedError;
+          if (replaced && attempt < READ_ATTEMPTS) continue;
+          throw error;
+        }
+        res.setHeader("ETag", `"${workspace.version}"`);
+        return send(res, workspace, body);
       }
-      const workspace = stored ?? EMPTY_WORKSPACE;
-      res.setHeader("ETag", `"${workspace.version}"`);
-      await send(res, workspace);
     },
 
     /** Stores the file in the body and returns a link anyone can download it from until it expires. */
@@ -428,14 +526,22 @@ export function computerSessionFileControllers(
       const sizeBytes = declaredSize(req, res);
       if (sizeBytes === null) return;
       if (!(await liveSession(req, res, teamId))) return;
+      try {
+        await linkLimit.consume(teamId, Math.ceil(sizeBytes / MEBIBYTE));
+      } catch (rejection) {
+        const limit =
+          "This team has reached its hourly limit for download links.";
+        if (tooMany(res, rejection, limit)) return;
+        throw rejection;
+      }
 
       const filename =
         path
           .basename(query.data.filename)
           .replace(/[^a-zA-Z0-9._-]/g, "_")
           .replace(/^\.+/, "") || "download";
-      // The token is the only way to the file: it names the stored object and
-      // is never logged.
+      // The token is the only way to the file. It names the stored object, and
+      // no log line carries it.
       const token = crypto.randomBytes(32).toString("base64url");
       const expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
       await store.write(`links/${token}`, bodyOf(req, res), {
@@ -464,12 +570,24 @@ export function computerSessionFileControllers(
 
     /** Serves a link's file to whoever holds the link. */
     async download(req: Request<{ token: string }>, res: Response) {
-      const file = LINK_TOKEN.test(req.params.token)
-        ? await store.read(`links/${req.params.token}`)
-        : null;
-      if (!file) return refuse(res, 404, "Download link not found.");
-      if (!isLive(file.metadata)) {
-        return refuse(res, 410, "This download link has expired.");
+      let file: StoredFile | null;
+      let body: Readable;
+      try {
+        file = LINK_TOKEN.test(req.params.token)
+          ? await store.read(`links/${req.params.token}`)
+          : null;
+        if (!file) return refuse(res, 404, "Download link not found.");
+        if (!isLive(file.metadata)) {
+          return refuse(res, 410, "This download link has expired.");
+        }
+        body = await file.open();
+      } catch (error) {
+        // Answered here and not thrown: the handler that logs a thrown error
+        // logs the request's path with it, and the path holds the token.
+        logger.error("Computer session link could not be read", {
+          code: codeOf(error),
+        });
+        return refuse(res, 503, "The file could not be read. Try again.");
       }
       logger.info("Computer session link downloaded", {
         teamId: file.metadata.teamId,
@@ -483,36 +601,48 @@ export function computerSessionFileControllers(
       );
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
-      await send(res, file);
+      await send(res, file, body);
     },
   };
 }
 
-/** Downloads per IP per minute across every replica; the download route has no other caller identity. */
-function downloadRateLimit(): RequestHandler {
-  const memory = new RateLimiterMemory({
-    points: DOWNLOADS_PER_MINUTE,
-    duration: 60,
-  });
-  const limiter = config.REDIS_RATE_LIMIT_URL
+/** A limit counted across every replica, or in this process without Redis. */
+function limiter(
+  keyPrefix: string,
+  points: number,
+  duration: number,
+): RateLimiterAbstract {
+  const memory = new RateLimiterMemory({ points, duration });
+  return config.REDIS_RATE_LIMIT_URL
     ? new RateLimiterRedis({
         storeClient: redisRateLimitClient,
-        keyPrefix: "computer-session-download",
-        points: DOWNLOADS_PER_MINUTE,
-        duration: 60,
+        keyPrefix,
+        points,
+        duration,
         insuranceLimiter: memory,
       })
     : memory;
+}
+
+/** Downloads per IP per minute; the download route has no other caller identity. */
+function downloadRateLimit(): RequestHandler {
+  const downloads = limiter(
+    "computer-session-download",
+    DOWNLOADS_PER_MINUTE,
+    60,
+  );
   return async (req, res, next) => {
     try {
-      await limiter.consume(req.ip ?? "unknown");
-      next();
+      await downloads.consume(req.ip ?? "unknown");
     } catch (rejection) {
-      if (!(rejection instanceof RateLimiterRes)) return next(rejection);
-      const seconds = Math.max(1, Math.ceil(rejection.msBeforeNext / 1000));
-      res.setHeader("Retry-After", String(seconds));
-      refuse(res, 429, `Too many downloads. Try again in ${seconds} seconds.`);
+      if (tooMany(res, rejection, "Too many downloads.")) return;
+      // Answered here for the same reason a failed download is.
+      logger.error("Computer session download limit failed", {
+        error: rejection,
+      });
+      return refuse(res, 503, "Downloads are unavailable. Try again.");
     }
+    next();
   };
 }
 
@@ -532,7 +662,11 @@ export function configuredComputerSessionFiles() {
     return null;
   }
   return {
-    ...computerSessionFileControllers(gcsStore(bucket), publicBaseUrl),
+    ...computerSessionFileControllers(
+      gcsStore(bucket),
+      publicBaseUrl,
+      limiter("computer-session-link-mebibytes", LINK_MEBIBYTES_PER_HOUR, 3600),
+    ),
     downloadRateLimit: downloadRateLimit(),
   };
 }

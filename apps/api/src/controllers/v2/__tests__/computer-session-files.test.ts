@@ -17,16 +17,19 @@ vi.mock("../../../lib/logger", () => {
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import express from "express";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 import request from "supertest";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { logger } from "../../../lib/logger";
 import {
   MAX_FILE_BYTES,
   MAX_LIVE_SESSIONS,
   VersionMismatchError,
+  VersionReplacedError,
   computerSessionFileControllers,
   configuredComputerSessionFiles,
   type ComputerSessionFileStore,
@@ -62,14 +65,24 @@ const store: ComputerSessionFileStore = {
       sizeBytes: stored.bytes.length,
       version: String(stored.version),
       metadata: stored.metadata,
-      stream: () => Readable.from([stored.bytes]),
+      open: async () => Readable.from([stored.bytes]),
     };
+  },
+  async delete(objectPath) {
+    objects.delete(objectPath);
   },
 };
 
+// Each link in these tests is under a mebibyte, so it counts as one.
+const LINKS_PER_HOUR = 5;
+const linkLimit = new RateLimiterMemory({
+  points: LINKS_PER_HOUR,
+  duration: 60 * 60,
+});
 const controllers = computerSessionFileControllers(
   store,
   "https://files.test/",
+  linkLimit,
 );
 // Stands in for authMiddleware: the team, the hosted MCP mark and the team
 // flags come from test headers.
@@ -79,7 +92,7 @@ const auth: express.RequestHandler = (req, _res, next) => {
       team_id: req.get("x-test-team"),
       ...(req.get("x-test-direct") ? {} : { hostedMcp: true }),
     },
-    acuc: { flags: req.get("x-test-zdr") ? { forceZDR: true } : {} },
+    acuc: { flags: JSON.parse(req.get("x-test-flags") ?? "{}") },
   });
   next();
 };
@@ -136,11 +149,12 @@ const link = (
   id: string,
   bytes: string,
   query: Record<string, string | number>,
+  team = TEAM_A,
 ) =>
   request(server)
     .post(`${SESSIONS}/${id}/links`)
     .query(query)
-    .set("x-test-team", TEAM_A)
+    .set("x-test-team", team)
     .type("application/octet-stream")
     .send(Buffer.from(bytes));
 const download = (url: string) =>
@@ -177,6 +191,14 @@ const seed = (team: string, count: number, expiresAt: number) =>
   );
 const storedSession = async (id: string) =>
   (await db.select().from(sessions).where(eq(sessions.id, id)))[0];
+const liveSessions = (team: string) =>
+  db.$count(
+    sessions,
+    and(
+      eq(sessions.team_id, team),
+      gt(sessions.expires_at, new Date().toISOString()),
+    ),
+  );
 
 describe.skipIf(!databaseUrl)("session routes", () => {
   beforeAll(async () => {
@@ -207,6 +229,7 @@ describe.skipIf(!databaseUrl)("session routes", () => {
   beforeEach(async () => {
     objects.clear();
     await forgetSessions();
+    await linkLimit.delete(TEAM_A);
   });
 
   describe("sessions", () => {
@@ -267,21 +290,39 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect((await save(TEAM_A, busy, "files")).status).toBe(404);
     });
 
-    it("refuses a new session once the team has the limit of live ones", async () => {
-      await seed(TEAM_A, MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
+    it("ends the session saved longest ago when a team at the limit starts another", async () => {
+      const idle = await createId();
+      await save(TEAM_A, idle, "files");
+      await db
+        .update(sessions)
+        .set({ last_saved_at: new Date(Date.now() - HOUR_MS).toISOString() })
+        .where(eq(sessions.id, idle));
+      const other = await createId(TEAM_B);
+      await save(TEAM_B, other, "files");
       await seed(TEAM_A, 5, Date.now() - 1);
+      await seed(TEAM_A, MAX_LIVE_SESSIONS - 2, Date.now() + DAY_MS);
+
+      // The last free place, so nothing ends.
       expect((await create()).status).toBe(200);
-      expect((await create()).status).toBe(429);
-      expect((await create(TEAM_B)).status).toBe(200);
+      expect((await read(TEAM_A, idle)).status).toBe(200);
+
+      const created = await create();
+      expect(created.status).toBe(200);
+      expect((await read(TEAM_A, created.body.data.id)).status).toBe(200);
+      // The ended session is gone with its files, and no other team's is.
+      expect((await read(TEAM_A, idle)).status).toBe(404);
+      expect([...objects.keys()]).toEqual([`workspaces/${TEAM_B}/${other}`]);
+      expect((await read(TEAM_B, other)).status).toBe(200);
+      expect(await liveSessions(TEAM_A)).toBe(MAX_LIVE_SESSIONS);
     });
 
-    it("admits only up to the limit when creations arrive together", async () => {
+    it("holds a team to the limit when creations arrive together", async () => {
       await seed(TEAM_A, MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
       const statuses = await Promise.all(
         Array.from({ length: 10 }, async () => (await create()).status),
       );
-      expect(statuses.filter(status => status === 200)).toHaveLength(3);
-      expect(statuses.filter(status => status === 429)).toHaveLength(7);
+      expect(statuses).toEqual(Array(10).fill(200));
+      expect(await liveSessions(TEAM_A)).toBe(MAX_LIVE_SESSIONS);
     });
 
     it.each([
@@ -309,9 +350,18 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(objects).toEqual(before);
     });
 
-    it.each([
+    it.each<[string, Record<string, string>]>([
       ["a caller that is not the hosted MCP", { "x-test-direct": "1" }],
-      ["a zero data retention team", { "x-test-zdr": "1" }],
+      ...[
+        { forceZDR: true },
+        { scrapeZDR: "forced" },
+        { searchZDR: "forced-zdr" },
+        { searchZDR: "forced-anon" },
+        { safeMode: true, safeModeConfig: { lockdown: true } },
+      ].map((flags): [string, Record<string, string>] => {
+        const json = JSON.stringify(flags);
+        return [`a team with the flags ${json}`, { "x-test-flags": json }];
+      }),
     ])("refuses %s on every session route", async (_name, headers) => {
       const id = await createId();
       const before = new Map(objects);
@@ -353,6 +403,22 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect(res.status).toBe(200);
       expect(res.headers.etag).toBe('"1"');
       expect(res.body.toString()).toBe("files");
+    });
+
+    it("reads the workspace a save stored while the read was starting", async () => {
+      const id = await createId();
+      await save(TEAM_A, id, "one");
+      const replaced = (await store.read(`workspaces/${TEAM_A}/${id}`))!;
+      replaced.open = async () => {
+        throw new VersionReplacedError();
+      };
+      await save(TEAM_A, id, "two");
+      vi.spyOn(store, "read").mockResolvedValueOnce(replaced);
+
+      const res = await read(TEAM_A, id);
+      expect(res.status).toBe(200);
+      expect(res.headers.etag).toBe('"2"');
+      expect(res.body.toString()).toBe("two");
     });
 
     it("says so when a saved workspace is no longer stored", async () => {
@@ -429,6 +495,45 @@ describe.skipIf(!databaseUrl)("session routes", () => {
       expect((await download(created.body.data.url)).status).toBe(200);
       vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
       expect((await download(created.body.data.url)).status).toBe(410);
+    });
+
+    it("holds a team's links to its hourly limit", async () => {
+      const id = await createId();
+      for (let made = 0; made < LINKS_PER_HOUR; made++) {
+        expect((await link(id, "data", { filename: "a.txt" })).status).toBe(
+          200,
+        );
+      }
+      const stored = objects.size;
+      const refused = await link(id, "data", { filename: "a.txt" });
+      expect(refused.status).toBe(429);
+      expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+      expect(objects.size).toBe(stored);
+      const other = await createId(TEAM_B);
+      expect(
+        (await link(other, "data", { filename: "a.txt" }, TEAM_B)).status,
+      ).toBe(200);
+    });
+
+    it("keeps the token out of the logs when the file cannot be read", async () => {
+      const created = await link(await createId(), "data", {
+        filename: "a.txt",
+      });
+      const { pathname } = new URL(created.body.data.url);
+      const token = pathname.split("/")[4];
+      vi.spyOn(store, "read").mockRejectedValueOnce(
+        new Error(`Could not read links/${token}`),
+      );
+      // Answered by the route itself: the handler a thrown error reaches logs
+      // the path.
+      expect((await request(server).get(pathname)).status).toBe(503);
+      const logged = JSON.stringify(
+        [logger.info, logger.warn, logger.error].map(
+          log => vi.mocked(log).mock.calls,
+        ),
+      );
+      expect(logged).toContain("Computer session link could not be read");
+      expect(logged).not.toContain(token);
     });
 
     it("never serves a stored file that records no expiry", async () => {
