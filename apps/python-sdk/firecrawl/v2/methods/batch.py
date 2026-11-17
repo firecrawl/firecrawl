@@ -279,19 +279,20 @@ def cancel_batch_scrape(
         job_id: ID of the batch scrape job to cancel
         
     Returns:
-        BatchScrapeStatusResponse with updated status
+        bool: True if the batch scrape was cancelled. False if the batch scrape
+        was not cancelled, for example because it already completed (HTTP 409).
         
     Raises:
-        FirecrawlError: If the cancellation fails
+        FirecrawlError: If the API returns any other error status
     """
-    # Make the API request
     response = client.delete(f"/v2/batch/scrape/{job_id}")
-    
-    # Handle errors
+
+    if response.status_code == 409:
+        return False
+
     if not response.ok:
         handle_response_error(response, "cancel batch scrape")
-    
-    # Parse response
+
     body = response.json()
     return body.get("status") == "cancelled"
 
@@ -556,6 +557,8 @@ def get_batch_scrape_errors(client: HttpClient, job_id: str) -> CrawlErrorsRespo
         handle_response_error(response, "get batch scrape errors")
 
     body = response.json()
+    if body.get("success") is False:
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     payload = body.get("data", body)
     normalized = {
         "errors": payload.get("errors", []),

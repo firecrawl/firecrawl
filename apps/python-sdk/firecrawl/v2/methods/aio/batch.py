@@ -1,5 +1,13 @@
 from typing import Optional, List, Dict, Any
-from ...types import ScrapeOptions, WebhookConfig, Document, BatchScrapeResponse, BatchScrapeJob, PaginationConfig
+from ...types import (
+    ScrapeOptions,
+    WebhookConfig,
+    Document,
+    BatchScrapeResponse,
+    BatchScrapeJob,
+    CrawlErrorsResponse,
+    PaginationConfig,
+)
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 from ...utils.error_handler import FirecrawlError, handle_response_error
@@ -228,17 +236,24 @@ async def _fetch_all_batch_pages_async(
 
 async def cancel_batch_scrape(client: AsyncHttpClient, job_id: str) -> bool:
     response = await client.delete(f"/v2/batch/scrape/{job_id}")
+    if response.status_code == 409:
+        return False
     if response.status_code >= 400:
         handle_response_error(response, "cancel batch scrape")
     body = response.json()
     return body.get("status") == "cancelled"
 
 
-async def get_batch_scrape_errors(client: AsyncHttpClient, job_id: str) -> Dict[str, Any]:
+async def get_batch_scrape_errors(client: AsyncHttpClient, job_id: str) -> CrawlErrorsResponse:
     response = await client.get(f"/v2/batch/scrape/{job_id}/errors")
     if response.status_code >= 400:
         handle_response_error(response, "get batch scrape errors")
     body = response.json()
-    if not body.get("success"):
+    if body.get("success") is False:
         raise FirecrawlError(body.get("error", "Unknown error occurred"))
-    return body
+    payload = body.get("data", body)
+    normalized = {
+        "errors": payload.get("errors", []),
+        "robots_blocked": payload.get("robotsBlocked", payload.get("robots_blocked", [])),
+    }
+    return CrawlErrorsResponse(**normalized)

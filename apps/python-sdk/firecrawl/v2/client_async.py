@@ -831,8 +831,7 @@ class AsyncFirecrawlClient:
         return await async_batch.cancel_batch_scrape(self.async_http_client, job_id)
 
     async def get_batch_scrape_errors(self, job_id: str) -> CrawlErrorsResponse:
-        # Returns v2 errors structure; typed as CrawlErrorsResponse for parity
-        return await async_batch.get_batch_scrape_errors(self.async_http_client, job_id)  # type: ignore[return-value]
+        return await async_batch.get_batch_scrape_errors(self.async_http_client, job_id)
 
     # Extract (proxy to v1 async) — deprecated
     async def extract(
