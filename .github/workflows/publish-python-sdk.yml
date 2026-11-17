@@ -28,10 +28,13 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install pip
+        run: python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
+
       - name: Install build tools
-        run: |
-          python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
-          python -m pip install build==1.6.1 requests==2.34.2 packaging==26.3
+        env:
+          PIP_UPLOADED_PRIOR_TO: P3D
+        run: python -m pip install build==1.6.1 requests==2.34.2 packaging==26.3
 
       - name: Run version check script
         id: version_check
@@ -42,6 +45,8 @@ jobs:
       - name: Build firecrawl-py and firecrawl
         if: steps.version_check.outputs.publish == 'true'
         working-directory: ./apps/python-sdk
+        env:
+          PIP_UPLOADED_PRIOR_TO: P3D
         run: |
           python -m build --outdir "$RUNNER_TEMP/dist/firecrawl-py"
           sed -i 's/name = "firecrawl-py"/name = "firecrawl"/g' pyproject.toml
