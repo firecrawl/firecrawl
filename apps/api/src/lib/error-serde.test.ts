@@ -778,6 +778,17 @@ describe("serializeThrownError", () => {
       expect(revived.cause).toEqual({ status: 503 });
     });
 
+    it("is not cut in the middle of a character", () => {
+      const original = new SitemapError(
+        `${long(4095)}\u{1F600}${long(200_000)}`,
+      );
+      const revived = deserializeTransportableError(
+        serializeThrownError(original),
+      );
+
+      expect(revived.message).toBe(`${long(4095)}... [truncated]`);
+    });
+
     it("then loses its cause", () => {
       const original = new SitemapError("Sitemap fetch failed", {
         body: long(200_000),

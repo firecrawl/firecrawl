@@ -122,9 +122,13 @@ export const MAX_SERIALIZED_ERROR_BYTES = 90 * 1024;
 const SHORTENED_LENGTH = 4096;
 
 function shortened(text: string) {
-  return text.length <= SHORTENED_LENGTH
-    ? text
-    : `${text.slice(0, SHORTENED_LENGTH)}... [truncated]`;
+  if (text.length <= SHORTENED_LENGTH) {
+    return text;
+  }
+  // A character outside the basic plane takes two code units. A cut between
+  // them would leave half a character, so the first half goes too.
+  const kept = text.slice(0, SHORTENED_LENGTH).replace(/[\uD800-\uDBFF]$/, "");
+  return `${kept}... [truncated]`;
 }
 
 /**
