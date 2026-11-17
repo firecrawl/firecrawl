@@ -23,7 +23,9 @@ const report = (problems: string[]) =>
  * Declares the environment variables one owner reads and returns their parsed
  * values. The schema is an object with one key per variable, and a check
  * across variables is a refinement of that object. Only those variables are
- * read from the environment, whatever the object does with other keys.
+ * read from the environment, whatever the object does with other keys. A
+ * variable that is set and empty reaches its schema as an empty string, and
+ * that schema decides whether it counts as unset.
  *
  * When the environment does not fit the schema, the problems are kept for
  * `assertEnv` and reading any of the owner's variables throws. A definition

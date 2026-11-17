@@ -75,6 +75,25 @@ describe("defineEnv", () => {
     ).toEqual({ MAIL_HOST: "mail.test" });
   });
 
+  it("gives a variable that is set and empty to its schema, which decides what it means", () => {
+    vi.stubEnv("MAIL_HOST", "");
+    vi.stubEnv("MAIL_FROM", "");
+    const unsetWhenEmpty = z.preprocess(
+      value => (value === "" ? undefined : value),
+      z.string().default("postmaster"),
+    );
+
+    expect(
+      env.defineEnv(
+        "mail",
+        z.object({
+          MAIL_HOST: z.string().default("localhost"),
+          MAIL_FROM: unsetWhenEmpty,
+        }),
+      ),
+    ).toEqual({ MAIL_HOST: "", MAIL_FROM: "postmaster" });
+  });
+
   it("returns values that can be assigned", () => {
     vi.stubEnv("MAIL_HOST", "mail.test");
     const values = env.defineEnv("mail", mail());
