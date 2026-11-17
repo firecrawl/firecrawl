@@ -8,6 +8,18 @@
       "types": "./src/service/index.ts",
       "default": "./dist/src/service/index.js"
     },
+    "./config": {
+      "types": "./src/config.ts",
+      "default": "./dist/src/config.js"
+    },
+    "./crawl": {
+      "types": "./src/lib/crawl-redis.ts",
+      "default": "./dist/src/lib/crawl-redis.js"
+    },
+    "./logger": {
+      "types": "./src/lib/logger.ts",
+      "default": "./dist/src/lib/logger.js"
+    },
     "./testing": {
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
