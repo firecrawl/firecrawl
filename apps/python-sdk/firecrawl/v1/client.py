@@ -540,6 +540,10 @@ class V1FirecrawlApp:
         self.api_key = api_key or os.getenv('FIRECRAWL_API_KEY')
         self.api_url = api_url or os.getenv('FIRECRAWL_API_URL', 'https://api.firecrawl.dev')
         
+        # Reject empty or whitespace-only API keys
+        if self.api_key is not None and not self.api_key.strip():
+            self.api_key = None
+        
         # Only require API key when using cloud service
         if 'api.firecrawl.dev' in self.api_url and self.api_key is None:
             logger.warning("No API key provided for cloud service")
