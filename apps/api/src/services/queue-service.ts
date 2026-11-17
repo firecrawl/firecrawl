@@ -7,8 +7,6 @@ import { addExtractJob, ExtractJobData } from "./extract-queue";
 import type { BillTeamJobData } from "./billing/types";
 import type { TrackParams } from "./autumn/types";
 
-let loggingQueue: Queue;
-let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue<BillTeamJobData>;

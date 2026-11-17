@@ -270,8 +270,6 @@ const configSchema = z.object({
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   OPENROUTER_API_KEY: z.string().optional(),
-  LLAMAPARSE_API_KEY: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
@@ -604,6 +602,9 @@ const configSchema = z.object({
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Share of scrapes (by scrape id) that download a cut-off PDF handoff
+  // again directly. 0 disables the re-download; truncation is still logged.
+  PDF_TRUNCATED_REFETCH_PERCENT: z.coerce.number().min(0).max(100).default(0),
   // Separate cohort for crawl/batch-originated scrapes (any scrape
   // carrying a crawlId): no caller waits on one specific document, so
   // these can ramp onto the async lane ahead of interactive traffic.
@@ -735,7 +736,6 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
-  MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
   // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
@@ -746,10 +746,6 @@ const configSchema = z.object({
   LANGSMITH_PROJECT: z.string().optional(),
   LANGSMITH_ENDPOINT: z.string().optional(),
   LANGSMITH_TRACING: z.stringbool().optional(),
-
-  // Rate Limiting
-  RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
-  RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
 
   // Testing
   TEST_API_KEY: z.string().optional(),
@@ -781,7 +777,6 @@ const configSchema = z.object({
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
-  AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
   // firebill — durable usage-event store that sits in front of Autumn. Every
   // billing write (check, lock, track, refund, finalize) goes through it;
   // without both URL and SECRET set, billing is skipped.
