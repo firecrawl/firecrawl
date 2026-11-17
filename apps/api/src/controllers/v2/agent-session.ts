@@ -73,29 +73,22 @@ async function forwardToAgentService(
   }
 }
 
-function jobPath(req: JobRequest, prefix: string, suffix = "") {
-  return `${prefix}/${encodeURIComponent(req.params.jobId)}${suffix}`;
+function jobPath(req: JobRequest, suffix = "") {
+  return `/internal/extracts/${encodeURIComponent(req.params.jobId)}${suffix}`;
 }
 
 export function agentFeedbackController(kind: "like" | "dislike") {
   return async (req: JobRequest, res: Response) => {
     if (!(await readOwnedRunAccess(req, res))) return;
-    return forwardToAgentService(
-      req,
-      res,
-      jobPath(req, "/internal/extracts", `/${kind}`),
-      { method: "POST" },
-    );
+    return forwardToAgentService(req, res, jobPath(req, `/${kind}`), {
+      method: "POST",
+    });
   };
 }
 
 export async function agentOptionsController(req: JobRequest, res: Response) {
   if (!(await readOwnedRunAccess(req, res))) return;
-  return forwardToAgentService(
-    req,
-    res,
-    jobPath(req, "/v2/extract", "/options"),
-  );
+  return forwardToAgentService(req, res, jobPath(req, "/options"));
 }
 
 // Unlike GET /agent/:jobId, this also reads runs past the 24 hour job TTL.
@@ -162,22 +155,17 @@ export async function agentSettingsController(req: JobRequest, res: Response) {
   }
 
   if (!(await readOwnedRunAccess(req, res))) return;
-  return forwardToAgentService(
-    req,
-    res,
-    jobPath(req, "/internal/extracts", "/settings"),
-    { method: req.method, body },
-  );
+  return forwardToAgentService(req, res, jobPath(req, "/settings"), {
+    method: req.method,
+    body,
+  });
 }
 
 export async function agentShareController(req: JobRequest, res: Response) {
   if (!(await readOwnedRunAccess(req, res))) return;
-  return forwardToAgentService(
-    req,
-    res,
-    jobPath(req, "/internal/extracts", "/share"),
-    { method: req.method },
-  );
+  return forwardToAgentService(req, res, jobPath(req, "/share"), {
+    method: req.method,
+  });
 }
 
 // Share pages are public, so only the dashboard's preview credential may read them.
@@ -203,6 +191,6 @@ export async function agentSharedRunController(
   return forwardToAgentService(
     req,
     res,
-    `/v2/sessions/share/${encodeURIComponent(req.params.shareId)}`,
+    `/internal/shares/${encodeURIComponent(req.params.shareId)}`,
   );
 }

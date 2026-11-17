@@ -140,7 +140,12 @@ describe("agent session routes", () => {
       "POST",
       `/internal/extracts/${JOB_ID}/dislike`,
     ],
-    ["options", agentOptionsController, "GET", `/v2/extract/${JOB_ID}/options`],
+    [
+      "options",
+      agentOptionsController,
+      "GET",
+      `/internal/extracts/${JOB_ID}/options`,
+    ],
     [
       "settings",
       agentSettingsController,
@@ -182,7 +187,7 @@ describe("agent session routes", () => {
 
     expectInteropCall(
       fetchMock,
-      `http://agent.test/v2/extract/${JOB_ID}/options`,
+      `http://agent.test/internal/extracts/${JOB_ID}/options`,
       "GET",
     );
     expect(res.status).toHaveBeenCalledWith(404);
@@ -319,7 +324,7 @@ describe("agent session routes", () => {
 
       expectInteropCall(
         fetchMock,
-        `http://agent.test/v2/sessions/share/${SHARE_ID}`,
+        `http://agent.test/internal/shares/${SHARE_ID}`,
         "GET",
         "preview_1",
       );
