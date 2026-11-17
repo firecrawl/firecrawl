@@ -115,6 +115,11 @@ describe("teamPlanClass", () => {
   });
 
   const negotiatedTerms: [string, object][] = [
+    ["a contract on file", { contractOnFile: true }],
+    [
+      "a contract on file flag that is not a boolean",
+      { contractOnFile: "yes" },
+    ],
     ["a signed contract", { signedContract: true }],
     ["a signed contract flag that is not a boolean", { signedContract: "yes" }],
     [
@@ -183,6 +188,8 @@ describe("teamPlanClass", () => {
   });
 
   it.each<[string, object]>([
+    ["a contract on file flag set to false", { contractOnFile: false }],
+    ["a null contract on file flag", { contractOnFile: null }],
     ["a signed contract flag set to false", { signedContract: false }],
     ["a null enterprise pilot", { enterprisePilot: null }],
     [

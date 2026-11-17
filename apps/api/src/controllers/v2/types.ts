@@ -2187,8 +2187,11 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
-  // Staff-set: the org has a signed contract on file.
+  // Staff-set: the org is billed under a signed contract.
   signedContract?: boolean;
+  // Staff-set: the org has signed a contract, however it is billed. Only the
+  // team's plan class reads it.
+  contractOnFile?: boolean;
   // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
   // strings. No endDate means the pilot has no end.
   enterprisePilot?: { startDate?: string; endDate?: string } | null;

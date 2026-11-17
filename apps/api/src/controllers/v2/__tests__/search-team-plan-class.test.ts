@@ -112,6 +112,7 @@ describe("the team plan class a v2 search runs with", () => {
 
   it("is contract for a team under negotiated terms, whatever plan it pays for", async () => {
     for (const flags of [
+      { contractOnFile: true },
       { signedContract: true },
       { enterprisePilot: { startDate: "2026-01-01T00:00:00Z" } },
       { searchZDR: "allowed" },
