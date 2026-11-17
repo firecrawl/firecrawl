@@ -15,8 +15,15 @@ async function forwardToAgentService(
   }
 
   const upstream = await fetch(`${config.EXTRACT_V3_BETA_URL}${path}`, init);
-  const body = await upstream.json().catch(() => ({}));
-  return res.status(upstream.status).json(body);
+  const text = await upstream.text();
+  try {
+    return res.status(upstream.status).json(JSON.parse(text));
+  } catch {
+    return res
+      .status(upstream.status)
+      .type(upstream.headers.get("content-type") ?? "text/plain")
+      .send(text);
+  }
 }
 
 // The agent service answers 404 when x-team-id does not own the run.
