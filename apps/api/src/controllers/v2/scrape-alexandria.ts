@@ -32,6 +32,13 @@ import {
   exchangeRequestId,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
+import { capabilityOptionTypes } from "../../services/alexandria/option-types";
+import {
+  AlexandriaQueryError,
+  assertAlexandriaQuerySize,
+  convertAlexandriaOptions,
+  parseAlexandriaQuery,
+} from "../../lib/alexandria-query";
 import type { RequestWithAuth } from "./types";
 
 const FIND_TOOLS_LOGGED_OPTIONS = [
@@ -106,6 +113,81 @@ export function alexandriaPathBody(
             { true: true, false: false }[zeroDataRetention] ??
             zeroDataRetention,
         }),
+    ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
+  };
+  next();
+}
+
+/**
+ * GET /v2/alexandria/:provider/*capability: the whole call in the URL, the capability in the
+ * path and its options in the query string (see lib/alexandria-query). Builds the
+ * POST /v2/alexandria body so the rest of the chain answers it exactly as that route does.
+ * Query keys are matched against the capability's contract before dot notation applies, so the
+ * contract is looked up first; nothing runs when it cannot be read. The timeout can also be the
+ * x-timeout-ms header, for a capability that declares its own `timeout` option.
+ */
+export async function alexandriaQueryBody(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  res.setHeader("Cache-Control", "no-store");
+  const { auth, acuc } = req as RequestWithAuth<any, any, any>;
+  const provider = String(req.params.provider);
+  const capability = ([] as string[]).concat(req.params.capability).join("/");
+  const query = req.query as Record<string, unknown>;
+  const refuse = (error: string) =>
+    res.status(400).json({ success: false, error });
+  try {
+    assertAlexandriaQuerySize(query);
+  } catch (error) {
+    if (error instanceof AlexandriaQueryError) return refuse(error.message);
+    throw error;
+  }
+  if (acuc && getScrapeZDR(acuc.flags) === "forced")
+    return refuse(
+      "This team uses zero data retention. Use POST /v2/alexandria.",
+    );
+
+  let types = new Map<string, string>();
+  if (acuc && !auth.team_id.startsWith("preview_keyless_")) {
+    try {
+      types = await capabilityOptionTypes({
+        teamId: auth.team_id,
+        provider,
+        capability,
+        connectors: acuc.flags?.exchangeRetrieve === true,
+        timeoutMs: 5_000,
+      });
+    } catch (error) {
+      logger.warn("Alexandria contract lookup failed", { error });
+      return res.status(503).json({
+        success: false,
+        error:
+          "Provider contract lookup unavailable. No provider was executed. Retry, or use POST /v2/alexandria.",
+      });
+    }
+  }
+
+  let parsed: ReturnType<typeof parseAlexandriaQuery>;
+  let options: Record<string, unknown>;
+  try {
+    parsed = parseAlexandriaQuery(query, new Set(types.keys()));
+    options = convertAlexandriaOptions(parsed.options, types);
+  } catch (error) {
+    if (error instanceof AlexandriaQueryError) return refuse(error.message);
+    throw error;
+  }
+  const header = req.get("x-timeout-ms");
+  if (header !== undefined && parsed.timeout !== undefined)
+    return refuse("Give the timeout once: in the query or in x-timeout-ms.");
+  const timeout = header ?? parsed.timeout;
+  req.body = {
+    provider,
+    capability,
+    ...(parsed.version === undefined ? {} : { version: parsed.version }),
+    options,
+    // Anything but a whole number of milliseconds is left for the schema to refuse.
     ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
   };
   next();

@@ -12,6 +12,7 @@ import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
 import {
   alexandriaPathBody,
+  alexandriaQueryBody,
   providerScrapeController,
 } from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
@@ -295,6 +296,17 @@ v2Router.post(
   "/alexandria/:provider/*capability",
   authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
   alexandriaPathBody,
+  inferIntegrationMiddleware,
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
+);
+
+// The whole call in the URL: the capability in the path, its options in the query string.
+v2Router.get(
+  "/alexandria/:provider/*capability",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  (req, res, next) => {
+    alexandriaQueryBody(req, res, next).catch(next);
+  },
   inferIntegrationMiddleware,
   wrap((req, res) => providerScrapeController(req as any, res, true)),
 );

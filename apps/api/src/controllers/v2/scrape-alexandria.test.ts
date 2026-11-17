@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   recordDiscovered: vi.fn(),
   markCalls: vi.fn(),
   providerToolsBody: vi.fn(),
+  optionTypes: vi.fn(),
+}));
+vi.mock("../../services/alexandria/option-types", () => ({
+  capabilityOptionTypes: mocks.optionTypes,
 }));
 vi.mock("../../lib/alexandria-activity", () => ({
   markAlexandriaActivity: vi.fn(),
@@ -51,6 +55,7 @@ vi.mock("../../config", () => ({
 }));
 import {
   alexandriaPathBody,
+  alexandriaQueryBody,
   providerScrapeController,
 } from "./scrape-alexandria";
 import { resolveIntegration } from "../../utils/integration";
@@ -97,6 +102,14 @@ app.post(
   integration,
   (req, res) => providerScrapeController(req as any, res, true),
 );
+app.get(
+  "/v2/alexandria/:provider/*capability",
+  (req, res, next) => {
+    alexandriaQueryBody(req, res, next).catch(next);
+  },
+  integration,
+  (req, res) => providerScrapeController(req as any, res, true),
+);
 const result = (results: unknown[], executed = true) => ({
   status: 200,
   body: { success: true, creditsCost: 0, results },
@@ -110,6 +123,7 @@ beforeEach(() => {
   teamId = "team";
   mocks.log.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
+  mocks.optionTypes.mockResolvedValue(new Map());
   mocks.discovery.mockImplementation(async (_teamId, calls: unknown[]) =>
     calls.map(() => ({})),
   );
@@ -941,5 +955,120 @@ describe("feedback tokens", () => {
       .post("/v2/scrape")
       .send({ alexandria: call });
     expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
+  });
+});
+
+describe("GET /v2/alexandria/:provider/*capability", () => {
+  const path = "/v2/alexandria/fred/categories/category";
+
+  it("builds the call from the path and query, typed by the contract", async () => {
+    mocks.optionTypes.mockResolvedValue(
+      new Map([
+        ["limit", "number"],
+        ["zip", "string"],
+        ["tags", "string[]"],
+      ]),
+    );
+    const response = await request(app).get(
+      `${path}?limit=10&zip=02139&tags=a&tags=b&filters.country=US&timeout=30000&version=1.2.0`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(mocks.optionTypes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "fred",
+        capability: "categories/category",
+      }),
+    );
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeoutMs: 30_000,
+        calls: [
+          {
+            ...call,
+            version: "1.2.0",
+            options: {
+              limit: 10,
+              zip: "02139",
+              tags: ["a", "b"],
+              filters: { country: "US" },
+            },
+          },
+        ],
+      }),
+    );
+  });
+
+  it("answers exactly as POST /v2/alexandria", async () => {
+    const get = await request(app).get(path);
+    const post = await request(app).post("/v2/alexandria").send(call);
+    expect(get.status).toBe(200);
+    expect(get.body).toEqual(post.body);
+  });
+
+  it("gives declared options named timeout or with dots to the provider", async () => {
+    mocks.optionTypes.mockResolvedValue(
+      new Map([
+        ["timeout", "number"],
+        ["meta.version", "string"],
+      ]),
+    );
+    const response = await request(app)
+      .get(`${path}?timeout=5&meta.version=4`)
+      .set("x-timeout-ms", "60000");
+    expect(response.status).toBe(200);
+    const [arg] = mocks.retrieve.mock.calls[0];
+    expect(arg.calls[0].options).toEqual({ timeout: 5, "meta.version": "4" });
+    expect(arg.timeoutMs).toBe(60_000);
+  });
+
+  it("refuses a timeout given in both the query and the header", async () => {
+    const response = await request(app)
+      .get(`${path}?timeout=5000`)
+      .set("x-timeout-ms", "60000");
+    expect(response.status).toBe(400);
+    expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("logs the X-Integration header", async () => {
+    await request(app).get(path).set("x-integration", "zapier");
+    await vi.waitFor(() =>
+      expect(mocks.log).toHaveBeenCalledWith(
+        expect.objectContaining({ integration: "zapier" }),
+      ),
+    );
+  });
+
+  it("refuses a key in the URL and malformed queries", async () => {
+    for (const query of [
+      "api_key=fc-1",
+      "zeroDataRetention=true",
+      "filters=x&filters.country=US",
+    ]) {
+      const response = await request(app).get(`${path}?${query}`);
+      expect(response.status, query).toBe(400);
+    }
+    expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("refuses an oversized query before the contract lookup", async () => {
+    const tags = Array.from({ length: 201 }, (_, i) => `tags=${i}`).join("&");
+    const response = await request(app).get(`${path}?${tags}`);
+    expect(response.status).toBe(400);
+    expect(mocks.optionTypes).not.toHaveBeenCalled();
+  });
+
+  it("refuses teams with forced zero data retention", async () => {
+    flags = { exchangeRetrieve: true, forceZDR: true };
+    const response = await request(app).get(path);
+    expect(response.status).toBe(400);
+    expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("executes nothing when the contract lookup fails", async () => {
+    mocks.optionTypes.mockRejectedValue(new Error("down"));
+    const response = await request(app).get(`${path}?limit=10`);
+    expect(response.status).toBe(503);
+    expect(mocks.retrieve).not.toHaveBeenCalled();
   });
 });
