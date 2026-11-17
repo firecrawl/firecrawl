@@ -40,6 +40,7 @@ import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { startRole } from "../../main";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -597,19 +598,17 @@ function shutdownSiemLoggingTransport(): void {
   });
 }
 
-if (require.main === module) {
-  process.on("SIGINT", () => {
-    logger.info("Received SIGINT. Shutting down gracefully...");
-    isShuttingDown = true;
-    shutdownSiemLoggingTransport();
-  });
+process.on("SIGINT", () => {
+  logger.info("Received SIGINT. Shutting down gracefully...");
+  isShuttingDown = true;
+  shutdownSiemLoggingTransport();
+});
 
-  process.on("SIGTERM", () => {
-    logger.info("Received SIGTERM. Shutting down gracefully...");
-    isShuttingDown = true;
-    shutdownSiemLoggingTransport();
-  });
-}
+process.on("SIGTERM", () => {
+  logger.info("Received SIGTERM. Shutting down gracefully...");
+  isShuttingDown = true;
+  shutdownSiemLoggingTransport();
+});
 
 let cantAcceptConnectionCount = 0;
 
@@ -698,7 +697,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 // const SEARCH_INDEX_INTERVAL = 10000;
 
 // Start the workers
-(async () => {
+export async function start() {
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(
@@ -811,4 +810,8 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   clearInterval(browserReconcileInterval);
   // clearInterval(omceInserterInterval);
   logger.info("All workers shut down, exiting process");
-})();
+}
+
+if (require.main === module) {
+  void startRole("index-worker");
+}

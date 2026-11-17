@@ -65,7 +65,7 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 
 interface SearchOptions {
   query: string;
@@ -208,9 +208,9 @@ export async function executeSearch(
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
-  // A team held to zero data retention for scrapes still gets tools, but only from providers
+  // A team held to zero data retention for scrapes or Alexandria still gets tools, but only from providers
   // that support it. Read from team flags only, never from the request.
-  const toolsZeroDataRetention = getScrapeZDR(flags) === "forced";
+  const toolsZeroDataRetention = isAlexandriaZDRForced(flags);
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");

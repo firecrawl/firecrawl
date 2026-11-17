@@ -155,18 +155,19 @@ describe("Exchange proxy under zero data retention", () => {
     },
   );
 
-  it.each([{ forceZDR: true }, { scrapeZDR: "forced" }])(
-    "reads the legacy and current flag alike (%o)",
-    async teamFlags => {
-      flags = teamFlags;
-      await request(app)
-        .get("/exchange/discover?q=people")
-        .set("authorization", `Bearer ${KEY}`);
-      expect(forwardedHeaders()["x-exchange-zero-data-retention"]).toBe("true");
-    },
-  );
+  it.each([
+    { forceZDR: true },
+    { scrapeZDR: "forced" },
+    { alexandriaZDR: "forced" },
+  ])("reads the legacy and current flag alike (%o)", async teamFlags => {
+    flags = teamFlags;
+    await request(app)
+      .get("/exchange/discover?q=people")
+      .set("authorization", `Bearer ${KEY}`);
+    expect(forwardedHeaders()["x-exchange-zero-data-retention"]).toBe("true");
+  });
 
-  it.each([{}, { scrapeZDR: "allowed" }])(
+  it.each([{}, { scrapeZDR: "allowed" }, { alexandriaZDR: "allowed" }])(
     "leaves it off otherwise (%o)",
     async teamFlags => {
       flags = teamFlags;

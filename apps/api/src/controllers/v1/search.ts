@@ -65,11 +65,13 @@ export async function searchAndScrapeSearchResult(
   flags: any,
 ): Promise<DocumentWithCostTracking[]> {
   try {
+    const forcedKind = getEffectiveSearchForcedKind(flags, undefined);
     const searchResults = await search({
       query,
       logger,
       num_results: 5,
       usOnly: isUsOnly(flags),
+      enterprise: forcedKind ? [forcedKind] : undefined,
     });
 
     const { scrapeOptions } = fromV1ScrapeOptions(

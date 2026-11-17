@@ -612,6 +612,7 @@ it("applies the payload limit after normalizing feedback", async () => {
 it.each([
   { forceZDR: true },
   { scrapeZDR: "forced" },
+  { alexandriaZDR: "forced" },
   { searchZDR: "forced" },
   { searchZDR: "forced-zdr" },
   { searchZDR: "forced-anon" },

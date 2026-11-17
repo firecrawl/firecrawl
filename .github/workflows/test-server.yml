@@ -259,7 +259,12 @@ jobs:
 
       - name: Run Autumn billing service regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
-        run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
+        run: >-
+          pnpm exec vitest run
+          src/services/autumn/__tests__/autumn.service.test.ts
+          src/services/autumn/__tests__/firebill.test.ts
+          src/services/autumn/__tests__/firebill.transport.test.ts
+          --reporter=default
         working-directory: apps/api
 
       - name: Run historical credit usage regression tests
@@ -631,6 +636,16 @@ jobs:
           if failures > 0:
               print(f"::error::{failures} failure(s)")
               sys.exit(1)
+
+      # The tests above start every process as `node dist/src/main.js <role>`.
+      # The Docker image, docker-compose.yaml and examples/kubernetes start a
+      # compiled entry file directly, as in `node dist/src/index.js`, so this
+      # step keeps that form covered. Its processes append to the log files
+      # the next step collects.
+      - name: Start each compiled entry file
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy'
+        run: node .github/scripts/start-entry-files.mjs apps/api
+        timeout-minutes: 10
 
       - name: Copy log files
         if: always()

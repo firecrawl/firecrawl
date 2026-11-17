@@ -528,6 +528,31 @@ it("forwards zero data retention for forced-ZDR teams instead of refusing them",
   );
 });
 
+it("keeps every call under zero data retention for teams with Alexandria ZDR forced", async () => {
+  flags = {
+    exchangeRetrieve: true,
+    alexandriaZDR: "forced",
+    scrapeZDR: "allowed",
+  };
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  expect(mocks.retrieve).toHaveBeenCalledWith(
+    expect.objectContaining({ zeroDataRetention: true }),
+  );
+  await vi.waitFor(() =>
+    expect(mocks.log).toHaveBeenCalledWith(
+      expect.objectContaining({ zeroDataRetention: true }),
+    ),
+  );
+  await vi.waitFor(() =>
+    expect(mocks.scrapeLog).toHaveBeenCalledWith(
+      expect.objectContaining({ zeroDataRetention: true }),
+    ),
+  );
+});
+
 it("accepts zero data retention in the body and forwards it", async () => {
   const response = await request(app)
     .post("/v2/scrape")
