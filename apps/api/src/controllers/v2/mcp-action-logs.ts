@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import { db } from "../../db/connection";
 import { ErrorResponse, RequestWithAuth, TeamFlags } from "./types";
+import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
 import {
   authorizeMcpActionLogViewer,
   listMcpActionLogs,
@@ -21,8 +22,7 @@ type ListResponse =
 
 function isMcpActionLogZdrTeam(flags: TeamFlags | undefined) {
   return (
-    flags?.forceZDR === true ||
-    flags?.scrapeZDR === "forced" ||
+    isAlexandriaZDRForced(flags) ||
     flags?.searchZDR === "forced" ||
     flags?.searchZDR === "forced-zdr" ||
     flags?.searchZDR === "forced-anon"

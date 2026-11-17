@@ -7,6 +7,7 @@ const { mocks, updater } = vi.hoisted(() => {
     events: [] as string[],
     lock: vi.fn(),
     todayRows: vi.fn(),
+    refundedCalls: vi.fn(),
     update: vi.fn(),
     refundCredits: vi.fn(),
     logError: vi.fn(),
@@ -35,6 +36,12 @@ vi.mock("../../../db/connection", () => ({
               mocks.events.push("tx:select");
               return mocks.todayRows();
             },
+            innerJoin: () => ({
+              where: (condition: unknown) => {
+                mocks.events.push("tx:select:calls");
+                return mocks.refundedCalls(condition);
+              },
+            }),
           }),
         }),
         update: updater("tx"),
@@ -66,13 +73,30 @@ const original = {
   cap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
   websiteCap: config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS,
 };
-const refund = (overrides: { orgId?: string | null; url?: string } = {}) =>
+const call = (requestId: string, provider = "fred") => ({
+  requestId,
+  provider,
+  capability: "lookup",
+});
+const refundedCall = (requestId: string, provider = "fred") => ({
+  request_id: requestId,
+  provider,
+  capability: "lookup",
+});
+const refund = (
+  overrides: {
+    orgId?: string | null;
+    url?: string;
+    calls?: ReturnType<typeof call>[];
+  } = {},
+) =>
   refundAlexandriaFeedback({
     feedbackId: "feedback-1",
     teamId,
     orgId: overrides.orgId === undefined ? "org-1" : overrides.orgId,
     rating: "partial",
     requestedUrl: overrides.url ?? "https://SAM.gov/contracts",
+    calls: overrides.calls ?? [],
     now,
   });
 const persisted = () => mocks.update.mock.calls.at(-1)?.[0];
@@ -85,6 +109,7 @@ beforeEach(() => {
   config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 3;
   mocks.lock.mockResolvedValue(undefined);
   mocks.todayRows.mockResolvedValue([]);
+  mocks.refundedCalls.mockResolvedValue([]);
   mocks.update.mockResolvedValue(undefined);
   mocks.refundCredits.mockResolvedValue(true);
 });
@@ -99,6 +124,7 @@ it("reserves the refund under a per-team lock before billing, then reports it", 
     { requested_host: "data.gov", credits_refunded: 1 },
   ]);
   await expect(refund()).resolves.toEqual({
+    message: "Feedback recorded. 1 credit refunded.",
     creditsRefunded: 1,
     creditsRefundedToday: 2,
     dailyRefundCap: 10,
@@ -151,6 +177,7 @@ it("keeps refunding the same website until its daily cap", async () => {
     { requested_host: "data.gov", credits_refunded: 1 },
   ]);
   await expect(refund()).resolves.toEqual({
+    message: "Feedback recorded. 1 credit refunded.",
     creditsRefunded: 1,
     creditsRefundedToday: 3,
     dailyRefundCap: 10,
@@ -269,4 +296,107 @@ it("does not throw when resetting an unconfirmed refund fails", async () => {
     .mockResolvedValueOnce(undefined)
     .mockRejectedValueOnce(new Error("write failed"));
   await expect(refund()).resolves.toMatchObject({ creditsRefunded: 0 });
+});
+
+describe("one refund per call and website", () => {
+  it("refunds feedback that covers a call no earlier feedback was refunded for", async () => {
+    mocks.refundedCalls.mockResolvedValue([refundedCall("req-1")]);
+    await expect(
+      refund({ calls: [call("req-1"), call("req-2")] }),
+    ).resolves.toMatchObject({
+      creditsRefunded: 1,
+      message: "Feedback recorded. 1 credit refunded.",
+    });
+    expect(mocks.events).toEqual([
+      "tx:lock",
+      "tx:select",
+      "tx:select:calls",
+      "tx:update:1",
+      "billing",
+    ]);
+  });
+
+  it("refuses a repeat: every call was already refunded for this website", async () => {
+    mocks.refundedCalls.mockResolvedValue([
+      refundedCall("req-1"),
+      refundedCall("req-2", "sec"),
+    ]);
+    const result = await refund({
+      calls: [call("req-1"), call("req-2", "sec")],
+    });
+    expect(result).toMatchObject({
+      creditsRefunded: 0,
+      creditsRefundedToday: 0,
+      message:
+        "Feedback recorded. No refund: earlier feedback about this website already refunded these Alexandria calls.",
+    });
+    expect(result.dailyCapReached).toBeUndefined();
+    expect(mocks.events).toEqual([
+      "tx:lock",
+      "tx:select",
+      "tx:select:calls",
+      "tx:update:0",
+    ]);
+    expect(mocks.refundCredits).not.toHaveBeenCalled();
+    expect(persisted()).toMatchObject({
+      credits_refunded: 0,
+      refund_policy: { mode: "none", matchedReason: "calls_already_refunded" },
+    });
+  });
+
+  it("does not count a refund of the same request for another provider call", async () => {
+    mocks.refundedCalls.mockResolvedValue([refundedCall("req-1", "sec")]);
+    await expect(refund({ calls: [call("req-1")] })).resolves.toMatchObject({
+      creditsRefunded: 1,
+    });
+  });
+
+  it("looks only at this team's refunded feedback about the same website", async () => {
+    await refund({ calls: [call("req-1"), call("req-1", "sec")] });
+    const query = new PgDialect().sqlToQuery(
+      mocks.refundedCalls.mock.calls[0][0] as SQL,
+    );
+    expect(query.params).toEqual([teamId, "req-1", "feedback-1", "sam.gov", 0]);
+  });
+
+  it("skips the lookup for feedback that names no call", async () => {
+    await expect(refund()).resolves.toMatchObject({ creditsRefunded: 1 });
+    expect(mocks.refundedCalls).not.toHaveBeenCalled();
+  });
+
+  it("does not refund when the lookup fails", async () => {
+    mocks.refundedCalls.mockRejectedValue(new Error("db unavailable"));
+    await expect(refund({ calls: [call("req-1")] })).resolves.toMatchObject({
+      creditsRefunded: 0,
+      message:
+        "Feedback recorded. No refund: the refund could not be confirmed.",
+    });
+    expect(mocks.refundCredits).not.toHaveBeenCalled();
+  });
+});
+
+it.each([
+  [
+    "the website cap",
+    [
+      { requested_host: "sam.gov", credits_refunded: 1 },
+      { requested_host: "sam.gov", credits_refunded: 1 },
+      { requested_host: "sam.gov", credits_refunded: 1 },
+    ],
+    "Feedback recorded. No refund: sam.gov reached its daily cap of 3 refunded credits.",
+  ],
+  [
+    "the team cap",
+    Array.from({ length: 10 }, (_, i) => ({
+      requested_host: `${i}.example`,
+      credits_refunded: 1,
+    })),
+    "Feedback recorded. No refund: the team reached its daily cap of 10 refunded credits.",
+  ],
+])("says why there is no refund at %s", async (_case, rows, message) => {
+  mocks.todayRows.mockResolvedValue(rows);
+  await expect(refund()).resolves.toMatchObject({
+    creditsRefunded: 0,
+    message,
+  });
 });

@@ -73,10 +73,7 @@ async function evaluateURL(
     schema: z.object({
       is_successful: z.boolean(),
     }),
-    messages: [
-      {
-        role: "system",
-        content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
+    instructions: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
 
 A scrape should be considered UNSUCCESSFUL if the content indicates any of the following:
 - Antibot/captcha challenges (e.g., Cloudflare, reCAPTCHA, hCaptcha, bot detection messages)
@@ -93,7 +90,7 @@ A scrape should be considered SUCCESSFUL if:
 A scrape may still be successful if:
 - Cookie consent walls block the actual content
 - Paywalls block the actual content`,
-      },
+    messages: [
       {
         role: "user",
         content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,

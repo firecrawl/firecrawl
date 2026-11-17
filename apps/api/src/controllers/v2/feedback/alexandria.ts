@@ -13,7 +13,7 @@ import {
 } from "../../../lib/alexandria-feedback-token";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
+import { getSearchZDR, isAlexandriaZDRForced } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
@@ -66,7 +66,7 @@ export async function recordAlexandriaFeedback(
   // retention policy without looking up or recording individual jobs.
   const searchZdr = getSearchZDR(req.acuc?.flags);
   if (
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    isAlexandriaZDRForced(req.acuc?.flags) ||
     searchZdr === "forced-zdr" ||
     searchZdr === "forced-anon"
   ) {
@@ -75,6 +75,8 @@ export async function recordAlexandriaFeedback(
       body: {
         success: true,
         feedbackId: "00000000-0000-0000-0000-000000000000",
+        message:
+          "Feedback accepted. No refund: feedback is not stored under zero data retention.",
         creditsRefunded: 0,
         creditsRefundedToday: 0,
         dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
@@ -240,6 +242,7 @@ export async function recordAlexandriaFeedback(
     orgId: req.acuc?.org_id ?? null,
     rating: body.rating,
     requestedUrl: body.requestedWebsite.url,
+    calls: [...calls.values()],
   });
   void forwardExchangeToolFeedback({
     teamId,

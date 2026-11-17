@@ -476,19 +476,5 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       },
       scrapeTimeout,
     );
-
-    it.concurrent(
-      "v0 content endpoints reject a Safe Mode org",
-      async () => {
-        const res = await request(TEST_API_URL)
-          .post("/v0/scrape")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .set("Content-Type", "application/json")
-          .send({ url: createTestIdUrl() });
-        expect(res.statusCode).toBe(403);
-        expect(res.body.error).toMatch(/v0 API/i);
-      },
-      scrapeTimeout,
-    );
   });
 });

@@ -13,6 +13,8 @@ import {
   FEPageLoadFailed,
   ProxySelectionError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
+  isNoRetrySiteBlock,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
@@ -196,6 +198,15 @@ export async function fireEngineCheckStatus(
       meta.internalOptions.safeMode?.disableSiteHandling
     ) {
       throw new SiteRestrictionError();
+    }
+    if (isNoRetrySiteBlock(failedParse.data, status.error)) {
+      logger.info(
+        "Fire Engine reported a site block that a retry does not get past.",
+        {
+          error: status.error,
+        },
+      );
+      throw new SiteBlockNoRetryError(status.error);
     }
     if (
       failedParse.data.retryWithStealth &&

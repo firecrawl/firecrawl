@@ -8,11 +8,16 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
 import { issueFeedbackToken } from "../../lib/alexandria-feedback-token";
+import {
+  alexandriaFeedbackHintApplies,
+  alexandriaFeedbackNextStep,
+} from "../../lib/alexandria-feedback-hint";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import {
   markAlexandriaActivity,
@@ -83,6 +88,7 @@ const providerScrapeSchema = z.strictObject({
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
   zeroDataRetention: z.boolean().optional(),
+  maxCredits: z.number().int().nonnegative().safe().optional(),
   __agentInterop: agentInteropSchema.optional(),
 });
 
@@ -144,7 +150,7 @@ export async function alexandriaQueryBody(
     if (error instanceof AlexandriaQueryError) return refuse(error.message);
     throw error;
   }
-  if (acuc && getScrapeZDR(acuc.flags) === "forced")
+  if (acuc && isAlexandriaZDRForced(acuc.flags))
     return refuse(
       "This team uses zero data retention. Use POST /v2/alexandria.",
     );
@@ -240,6 +246,17 @@ export async function providerScrapeController(
         .status(403)
         .json({ success: false, error: "Invalid agent interop." });
   }
+  // Trusted internal marker for zero-priced provider lines: honoured only with
+  // the proxy secret and never for `fco_` tokens, otherwise ignored.
+  const token = req.get("authorization")?.split(" ")[1];
+  const ultrasearch =
+    req.get("x-firecrawl-ultrasearch") === "true" &&
+    !!token &&
+    !token.startsWith("fco_") &&
+    timingSafeSecretEqual(
+      req.get("x-firecrawl-keyless-secret"),
+      config.KEYLESS_PROXY_SECRET,
+    );
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
@@ -258,8 +275,7 @@ export async function providerScrapeController(
     });
   // Exchange refuses capabilities that cannot honour ZDR, per call.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc.flags) === "forced" ||
-    body.zeroDataRetention === true;
+    isAlexandriaZDRForced(req.acuc.flags) || body.zeroDataRetention === true;
   if (
     (req as any).agentIndexOnly ||
     ["pending", "blocked"].includes(req.acuc._agentSponsor?.status ?? "")
@@ -313,6 +329,8 @@ export async function providerScrapeController(
       clientIp: req.ip,
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
+      ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
+      ...(ultrasearch ? { ultrasearch } : {}),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -403,6 +421,7 @@ export async function providerScrapeController(
         target,
         team_id: req.auth.team_id,
         options: {
+          ...(ultrasearch ? { ultrasearch } : {}),
           alexandria: body.alexandria.map(
             ({ provider, capability, options }, i) => ({
               provider,
@@ -483,6 +502,13 @@ export async function providerScrapeController(
       ({ provenance: _provenance, ...item }) => item,
     ),
   };
+  // One next step per response, on the first provider answer. Teams that
+  // cannot send feedback get none.
+  const hinted = alexandriaFeedbackHintApplies(req.auth.team_id, req.acuc.flags)
+    ? parsed.results.findIndex(
+        item => !item.error && item.provider !== "firecrawl",
+      )
+    : -1;
   const answer = zeroDataRetention
     ? parsed
     : {
@@ -499,7 +525,18 @@ export async function providerScrapeController(
                   capability,
                 })
               : undefined;
-          return feedbackToken ? { ...item, feedbackToken } : item;
+          return {
+            ...item,
+            ...(feedbackToken ? { feedbackToken } : {}),
+            ...(i === hinted
+              ? {
+                  nextStep: alexandriaFeedbackNextStep(
+                    body.origin,
+                    body.integration,
+                  ),
+                }
+              : {}),
+          };
         }),
       };
   if (legacy) {

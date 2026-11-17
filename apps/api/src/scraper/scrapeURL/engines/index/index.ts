@@ -11,7 +11,6 @@ import {
   generateURLSplits,
   addIndexInsertJob,
   generateDomainSplits,
-  addOMCEJob,
 } from "../../../../services";
 import { queryMaxAge, indexGetRecent5 } from "../../../../db/rpc";
 import {
@@ -228,18 +227,19 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         });
       }
 
-      if (domainSplits.length > 0) {
-        try {
-          await addOMCEJob([
-            domainSplits.length - 1,
-            domainSplitsHash.slice(-1)[0],
-          ]);
-        } catch (error) {
-          meta.logger.warn("Failed to add domain to OMCE job queue", {
-            error,
-          });
-        }
-      }
+      // OMCE job inserts are disabled to reduce index DB load.
+      // if (domainSplits.length > 0) {
+      //   try {
+      //     await addOMCEJob([
+      //       domainSplits.length - 1,
+      //       domainSplitsHash.slice(-1)[0],
+      //     ]);
+      //   } catch (error) {
+      //     meta.logger.warn("Failed to add domain to OMCE job queue", {
+      //       error,
+      //     });
+      //   }
+      // }
     } catch (error) {
       meta.logger.error("Failed to save document to index (outer)", {
         error,

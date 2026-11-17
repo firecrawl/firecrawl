@@ -65,7 +65,8 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import type { TeamPlanClass } from "../lib/team-plan-class";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 
 interface SearchOptions {
   query: string;
@@ -101,6 +102,11 @@ interface SearchContext {
   integration?: string | null;
   apiKeyId: number | null;
   flags: TeamFlags;
+  /**
+   * The team's plan class, stated on the web search call. Required so every
+   * caller decides; undefined states nothing. See teamPlanClass.
+   */
+  teamPlanClass: TeamPlanClass | undefined;
   requestId: string;
   jobId: string;
   apiVersion: string;
@@ -208,9 +214,9 @@ export async function executeSearch(
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
-  // A team held to zero data retention for scrapes still gets tools, but only from providers
+  // A team held to zero data retention for scrapes or Alexandria still gets tools, but only from providers
   // that support it. Read from team flags only, never from the request.
-  const toolsZeroDataRetention = getScrapeZDR(flags) === "forced";
+  const toolsZeroDataRetention = isAlexandriaZDRForced(flags);
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
@@ -421,6 +427,7 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
+          teamPlanClass: context.teamPlanClass,
         });
   const indexResultsPromise = indexCategorySearch
     ? indexCategorySearch(indexSearchOptions, logger)

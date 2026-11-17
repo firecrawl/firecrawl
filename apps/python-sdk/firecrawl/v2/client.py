@@ -87,6 +87,7 @@ from .methods import research as research_module
 from .methods import feedback as feedback_module
 from .methods.research_docs import (
     CLIENT_INSPECT_PAPER_DOC,
+    CLIENT_LOOKUP_PROTEIN_DOC,
     CLIENT_READ_PAPER_DOC,
     CLIENT_RELATED_PAPERS_DOC,
     CLIENT_SEARCH_GITHUB_DOC,
@@ -354,6 +355,10 @@ class FirecrawlClient:
     @doc(CLIENT_RELATED_PAPERS_DOC)
     def related_papers(self, paper_id: str, intent: str, **kwargs):
         return research_module.related_papers(self.http_client, paper_id, intent, **kwargs)
+
+    @doc(CLIENT_LOOKUP_PROTEIN_DOC)
+    def lookup_protein(self, protein: str, **kwargs):
+        return research_module.lookup_protein(self.http_client, protein, **kwargs)
 
     @doc(CLIENT_SEARCH_GITHUB_DOC)
     def search_github(self, query: str, **kwargs):

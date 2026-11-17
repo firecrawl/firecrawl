@@ -23,6 +23,7 @@ import {
   DNSResolutionError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
   SSLError,
   UnsupportedFileError,
   FEPageLoadFailed,
@@ -157,6 +158,7 @@ async function performFireEngineScrape<
             error instanceof EngineError ||
             error instanceof SiteError ||
             error instanceof SiteRestrictionError ||
+            error instanceof SiteBlockNoRetryError ||
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||

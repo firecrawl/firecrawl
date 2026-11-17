@@ -839,6 +839,9 @@ fn _extract_images(
   let mut images = HashSet::<String>::new();
 
   let resolve_image_url = |src: &str| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    if src.trim().is_empty() {
+      return Err("empty image URL".into());
+    }
     if src.starts_with("data:") || src.starts_with("blob:") {
       return Ok(src.to_string());
     }

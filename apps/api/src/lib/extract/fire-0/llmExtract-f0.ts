@@ -14,6 +14,7 @@ import { generateObject, generateText, LanguageModel } from "ai";
 import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
+import { aiTelemetry } from "../../ai-telemetry";
 
 // Get max tokens from model prices
 const getModelLimits_F0 = (model: string) => {
@@ -253,7 +254,7 @@ export async function generateCompletions_F0({
             },
           },
         },
-        experimental_telemetry: {
+        telemetry: aiTelemetry({
           isEnabled: true,
           functionId: metadata.functionId,
           metadata: {
@@ -271,7 +272,7 @@ export async function generateCompletions_F0({
                 }
               : {}),
           },
-        },
+        }),
       });
 
       extract = result.text;
@@ -358,7 +359,7 @@ export async function generateCompletions_F0({
               },
             },
           },
-          experimental_telemetry: {
+          telemetry: aiTelemetry({
             isEnabled: true,
             functionId: metadata.functionId,
             metadata: {
@@ -376,7 +377,7 @@ export async function generateCompletions_F0({
                   }
                 : {}),
             },
-          },
+          }),
         });
         return fixedText;
       },
@@ -407,7 +408,7 @@ export async function generateCompletions_F0({
           },
         },
       },
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: true,
         functionId: metadata.functionId,
         metadata: {
@@ -425,7 +426,7 @@ export async function generateCompletions_F0({
               }
             : {}),
         },
-      },
+      }),
     } satisfies Parameters<typeof generateObject>[0];
 
     const result = await generateObject(generateObjectConfig);
