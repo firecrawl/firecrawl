@@ -8,7 +8,11 @@ overrides:
   # fixed release. The published firecrawl dependency only uses zod for types.
   "zod@<4.6.6": "4.6.7"
   "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1"
-  "minimatch@<10.2.3": ">=10.2.3"
+  # GHSA-g3hv-75wg-m249: fixed in 11.0.1. Bounded <12.0.0.
+  "minimatch@<11.0.1": ">=11.0.1 <12.0.0"
+  # GHSA-3g3m-2fjr-6pw4: every 9.x to 14.0.1 is affected; fixed in 14.0.2.
+  # Bounded <15.0.0.
+  "glob@>=9.0.0 <14.0.2": ">=14.0.2 <15.0.0"
   "rollup@<4.59.0": ">=4.59.0"
   "picomatch@<4.0.4": ">=4.0.4"
   # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
@@ -21,7 +25,8 @@ overrides:
   # pin the 1.x line only. Exact 1.20.0 cannot resolve to 2.x.
   "axios@>=1.0.0 <1.20.0": "1.20.0"
   # GHSA-Q3JH-WRC6-JGQ8 / GHSA-8R9P-F939-6H3C: fixed in 1.16.1.
+  # GHSA-mrwp-f3q8-3g9p: fixed in 1.16.2.
   # Replacement is bounded <2.0.0; cannot resolve to follow-redirects 2.x.
-  "follow-redirects@<1.16.1": ">=1.16.1 <2.0.0"
+  "follow-redirects@<1.16.2": ">=1.16.2 <2.0.0"
   "form-data@>=4.0.0 <4.0.6": "4.0.6"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"

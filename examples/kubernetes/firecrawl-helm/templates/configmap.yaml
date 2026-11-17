@@ -38,7 +38,6 @@ data:
   FIRECRAWL_APP_PORT: {{ default $apiPortDefault .Values.config.FIRECRAWL_APP_PORT | quote }}
   OPENAI_BASE_URL: {{ .Values.config.OPENAI_BASE_URL | quote }}
   MODEL_NAME: {{ .Values.config.MODEL_NAME | quote }}
-  MODEL_EMBEDDING_NAME: {{ .Values.config.MODEL_EMBEDDING_NAME | quote }}
   OLLAMA_BASE_URL: {{ .Values.config.OLLAMA_BASE_URL | quote }}
   PROXY_SERVER: {{ .Values.config.PROXY_SERVER | quote }}
   PROXY_USERNAME: {{ .Values.config.PROXY_USERNAME | quote }}

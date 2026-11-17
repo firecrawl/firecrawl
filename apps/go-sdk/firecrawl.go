@@ -675,6 +675,9 @@ func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPap
 		if opts.To != "" {
 			values.Set("to", opts.To)
 		}
+		if opts.Sort != "" {
+			values.Set("sort", opts.Sort)
+		}
 	}
 
 	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())
@@ -765,10 +768,33 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 	return &resp, nil
 }
 
+// LookupProtein looks up one protein in UniProtKB/Swiss-Prot by accession,
+// entry name, gene symbol or protein name.
+func (c *Client) LookupProtein(ctx context.Context, protein string, opts *LookupProteinOptions) (*ProteinLookupResponse, error) {
+	if protein == "" {
+		return nil, &FirecrawlError{Message: "protein is required"}
+	}
+	values := url.Values{}
+	values.Set("protein", protein)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil && opts.Organism != "" {
+		values.Set("organism", opts.Organism)
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/proteins?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp ProteinLookupResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
 // SearchGitHub searches GitHub research content.
 //
-// Deprecated: stops responding after 2026-11-03. Use DeveloperSearch, which
-// does not carry over the score breakdown or the web fallback results.
+// Deprecated: the research index GitHub search endpoint was removed after
+// 2026-11-03. Use DeveloperSearch instead.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}

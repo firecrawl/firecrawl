@@ -50,6 +50,19 @@ interface Generation {
   truncated: boolean;
 }
 
+// The AI SDK takes system text as `instructions`, not as a message.
+function splitInstructions(messages: ChatMessage[]) {
+  return {
+    instructions: messages
+      .filter(message => message.role === "system")
+      .map(message => message.content)
+      .join("\n\n"),
+    messages: messages
+      .filter(message => message.role === "user")
+      .map(message => ({ role: "user" as const, content: message.content })),
+  };
+}
+
 export async function generateCode(
   messages: ChatMessage[],
   costTracking: CostTracking,
@@ -58,7 +71,7 @@ export async function generateCode(
   try {
     res = await generateText({
       model: getModel(CODEGEN_MODEL, "vertex"),
-      messages,
+      ...splitInstructions(messages),
       temperature: 1.0, // even though it would be nice to have more deterministic output, google recommends keeping this at 1 for complex tasks
       maxOutputTokens: CODEGEN_MAX_TOKENS,
     });
@@ -77,7 +90,7 @@ export async function pickSnippets(
   try {
     res = await generateText({
       model: getModel(ANCHOR_MODEL, "groq"),
-      messages,
+      ...splitInstructions(messages),
       temperature: 0,
       maxOutputTokens: ANCHOR_PICKER_MAX_TOKENS,
     });
@@ -210,10 +223,8 @@ export function makeAskLlm(
           model: getModel(LIGHT_MODEL, "groq"),
           temperature: 0,
           maxOutputTokens: ASK_LLM_MAX_TOKENS,
-          messages: [
-            { role: "system", content: ASK_LLM_SYSTEM },
-            { role: "user", content: userContent },
-          ],
+          instructions: ASK_LLM_SYSTEM,
+          messages: [{ role: "user", content: userContent }],
         });
         raw = res.text?.trim() ?? "";
         record(costTracking, "askLlm", "groq", LIGHT_MODEL, res.usage);

@@ -236,6 +236,10 @@ function findBlockedMatch(
   let parsedUrl: any;
   try {
     parsedUrl = parse(decryptedUrl);
+    // tldts doesn't percent-decode hosts the way fetchers do.
+    if (!parsedUrl.domain && URL.canParse(decryptedUrl)) {
+      parsedUrl = parse(new URL(decryptedUrl).hostname);
+    }
   } catch {
     console.log("Error parsing URL:", url);
     return null;

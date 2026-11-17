@@ -44,7 +44,6 @@ vi.mock("../autumn/autumn.service", () => ({
     hostedMcpFeatureId: async () => "MCP_CREDITS",
     finalizeCreditsLock: mocks.finalize,
     refundCredits: mocks.refund,
-    isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
@@ -129,7 +128,7 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
     expect.objectContaining({
       credits: 3,
       org_id: "org",
-      autumnTrackInRequest: true,
+      autumnTrackInRequest: false,
     }),
     expect.objectContaining({
       jobId: expect.stringMatching(/^alexandria-bill-/),
@@ -193,6 +192,40 @@ it("holds and settles a hosted MCP call's whole budget on MCP credits", async ()
     }),
     expect.anything(),
   );
+});
+
+it("holds a hosted MCP call MCP credits refuse on the team's own credits", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied" })
+    .mockResolvedValueOnce({ status: "locked", lockId: "held" });
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+
+  expect((await run({ hostedMcp: true })).status).toBe(200);
+  expect(mocks.lock.mock.calls.map(([hold]) => hold.featureId)).toEqual([
+    "MCP_CREDITS",
+    "credits",
+  ]);
+  expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ featureId: "credits" }),
+  );
+  expect(mocks.billAdd).toHaveBeenCalledWith(
+    "bill_team",
+    expect.objectContaining({
+      billing: expect.not.objectContaining({ hostedMcp: true }),
+    }),
+    expect.anything(),
+  );
+  expect(mocks.refund).not.toHaveBeenCalled();
+});
+
+it("reports billing unavailable when the team-credit fallback hold can't be placed", async () => {
+  mocks.lock
+    .mockResolvedValueOnce({ status: "denied", reason: "out_of_credits" })
+    .mockResolvedValueOnce({ status: "denied", reason: "gate_unavailable" });
+
+  const refused = await run({ hostedMcp: true });
+  expect(refused).toMatchObject({ status: 503, executed: false });
+  expect(executions()).toHaveLength(0);
 });
 
 it("refuses a different payload under the same x-request-id", async () => {
@@ -315,22 +348,12 @@ it("returns the answer but records nothing when the settle does not land", async
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
-it("refunds the direct-Autumn charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
+it("keeps the charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).toHaveBeenCalledTimes(3);
-  expect(mocks.refund).toHaveBeenCalledWith(
-    expect.objectContaining({ teamId: "team", orgId: "org", value: 3 }),
-  );
+  expect(mocks.refund).not.toHaveBeenCalled();
   expect(mocks.report).not.toHaveBeenCalled();
-});
-
-it("refunds a hosted MCP charge to MCP credits when the ledger enqueue fails", async () => {
-  mocks.billAdd.mockRejectedValue(new Error("queue down"));
-  expect((await run({ hostedMcp: true })).status).toBe(200);
-  expect(mocks.refund).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ value: 3, featureId: "MCP_CREDITS" }),
-  );
 });
 
 it("treats a team with no org as a skipped hold and executes nothing", async () => {
@@ -491,6 +514,55 @@ it("forwards verified terms identity only for terms-only executions", async () =
     await run(overrides);
     expect(executions()[0][0].termsIdentity).toBeUndefined();
   }
+});
+
+it("names the billing organization only on execution, and only when it is known", async () => {
+  await run();
+  expect(executions()[0][0].billingOrganizationId).toBe("org");
+  expect(executions()[0][0].termsIdentity).toBeUndefined();
+  expect(
+    mocks.request.mock.calls
+      .filter(([arg]) => arg.path !== "/v1/retrieve")
+      .every(([arg]) => arg.billingOrganizationId === undefined),
+  ).toBe(true);
+
+  mocks.store.clear();
+  mocks.request.mockClear();
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...call, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  expect(await run({ orgId: null })).toMatchObject({ executed: true });
+  expect(executions()[0][0]).not.toHaveProperty("billingOrganizationId");
+});
+
+it("keeps the billing organization out of the request fingerprint", async () => {
+  expect((await run()).executed).toBe(true);
+  expect(await run({ orgId: "other-org" })).toMatchObject({
+    status: 200,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("leaves the billing organization off the catalogue read", async () => {
+  const read = { provider: "firecrawl", capability: "find-tools", options: {} };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [{ ...read, creditsCost: 0, data: {} }],
+  });
+  expect(await run({ calls: [read] })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(executions()[0][0]).not.toHaveProperty("billingOrganizationId");
 });
 
 it("binds terms replay to exact organization and credential identity", async () => {
@@ -747,6 +819,32 @@ it("keeps and replays the response without zero data retention", async () => {
   });
 });
 
+it("forwards Alexandria Verified to quote and execution", async () => {
+  await run({ flags: { alexandriaVerified: true } });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded)
+    expect(request.alexandriaVerified).toBe(true);
+});
+
+it.each([
+  ["losing", { alexandriaVerified: true }, {}],
+  ["gaining", {}, { alexandriaVerified: true }],
+])(
+  "refuses the same x-request-id after %s Alexandria Verified, rather than replaying",
+  async (_case, before, after) => {
+    await run({ flags: before });
+    const other = await run({ flags: after });
+    expect(other.status).toBe(409);
+    expect(other.body).toEqual(
+      expect.objectContaining({ code: "duplicate_request" }),
+    );
+    expect(executions()).toHaveLength(1);
+  },
+);
+
 it("refuses the same x-request-id with a different zero data retention setting", async () => {
   await run();
   const other = await run({ zeroDataRetention: true });
@@ -776,10 +874,15 @@ it("records nothing on the agent run when nothing was charged", async () => {
   mocks.store.clear();
   mocks.finalize.mockResolvedValueOnce(false);
   await run({ agentRequestId: "agent-run" });
-  mocks.store.clear();
+  expect(mocks.recordCredits).not.toHaveBeenCalled();
+});
+
+it("records an agent call's charge when the ledger enqueue fails, since the charge stands", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   await run({ agentRequestId: "agent-run" });
-  expect(mocks.recordCredits).not.toHaveBeenCalled();
+  expect(mocks.recordCredits).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ requestId: "agent-run", credits: 3 }),
+  );
 });
 
 it("still answers when the agent run's credits cannot be recorded", async () => {

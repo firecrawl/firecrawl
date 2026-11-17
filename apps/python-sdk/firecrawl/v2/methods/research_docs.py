@@ -2,8 +2,9 @@
 Canonical docstrings for the research paper index (``/v2/search/research``).
 
 Single source of truth for the prose that documents ``search_papers``,
-``inspect_paper``, ``read_paper``, ``related_papers`` and ``search_github``.
-The same five methods are surfaced at six layers — the implementation functions
+``inspect_paper``, ``read_paper``, ``related_papers``, ``lookup_protein`` and
+``search_github``.
+The same six methods are surfaced at six layers — the implementation functions
 in ``research.py`` and ``aio/research.py``, and the delegating methods on
 ``FirecrawlClient``, ``AsyncFirecrawlClient``, ``Firecrawl`` and
 ``AsyncFirecrawl``. Every layer keeps a full docstring (``help()`` on any of
@@ -56,19 +57,14 @@ _ASYNC_CLIENT_ARG = "client: Async HTTP client."
 # ---------------------------------------------------------------------------
 
 GITHUB_SEARCH_DEPRECATION_MSG = (
-    "search_github() is deprecated and the research index GitHub endpoint "
-    "stops responding after 2026-11-03. Use developer_search() instead: it "
-    "searches GitHub issues, pull requests and READMEs plus curated "
-    "documentation sources, returns matched passages, and adds filters for "
-    "repo, language, license and stars. Response changes: 'snippet' becomes "
-    "'passages', results gain an 'id', and there is no score breakdown and no "
-    "web fallback result type. See "
+    "The research index GitHub search endpoint behind search_github() was "
+    "removed after 2026-11-03. Use developer_search() instead. See "
     "https://docs.firecrawl.dev/features/developer."
 )
 
 
 _SEARCH_PAPERS_TEMPLATE = """
-Search the research paper index by abstract relevance.
+Search the research paper index.
 
 Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of the
 corpus — biomedical and life sciences) plus arXiv (physics, mathematics,
@@ -89,6 +85,10 @@ Args:
         ``categories`` argument of ``search()``.
     from_date: Inclusive lower bound on publication date (``YYYY-MM-DD``).
     to_date: Inclusive upper bound on publication date (``YYYY-MM-DD``).
+    sort: ``relevance`` (default) or ``date_desc``, which returns the newest
+        of the most relevant matches, newest first by created date. It does
+        not list every paper in a date range; add ``from_date`` (and
+        ``to_date``) for that.
 
 Returns:
     Raw API ``dict`` with ``success`` and ``results``. Keys are camelCase
@@ -180,35 +180,51 @@ Note:
     (``/v2/search/research/papers/{id}/similar``), different method name.
 """
 
+_LOOKUP_PROTEIN_TEMPLATE = """
+Look up one protein's curated UniProtKB/Swiss-Prot entry.
+
+Returns UniProt's subcellular location, function and GO cellular-component
+terms. Each statement carries an evidence kind and, where UniProt cites a
+paper, a ``pmid:<id>`` paper id that ``inspect_paper`` and ``read_paper``
+accept.
+
+Args:
+    |CLIENT_ARG|
+    protein: One UniProt accession (``Q6P087``, ``Q6P087-2``), entry name
+        (``RUSD3_HUMAN``), gene symbol (``RPUSD3``) or exact protein name.
+    organism: NCBI taxon ID (``"9606"``), scientific name or UniProt common
+        name of the organism in which a gene symbol or protein name is
+        looked up first. The API defaults to ``9606`` (human).
+
+Returns:
+    Raw API ``dict`` with ``success``, ``release``, ``match`` and
+    ``notice``. ``match`` is ``"found"`` with ``protein``, ``"ambiguous"``
+    with up to 10 ``candidates`` and their total ``candidateCount``, or
+    ``"not_found"``. Keys are camelCase and are **not** normalized to
+    snake_case. ``notice`` is UniProt's CC BY 4.0 credit; print it with any
+    results you show to a person.
+
+Example:
+    >>> res = lookup_protein(client, "RPUSD3")
+    >>> res["protein"]["subcellularLocation"][0]["text"]
+"""
+
 _SEARCH_GITHUB_TEMPLATE = """
 Search the **research index** GitHub slice: GitHub issue/PR history and
 repository readmes.
 
 .. deprecated::
-    Use ``developer_search()`` instead. This endpoint stops responding after
-    2026-11-03. The developer index searches GitHub issues, pull requests and
-    readmes plus curated documentation sources, returns matched passages, and
-    adds filters for repo, language, license and stars. It does **not** carry
-    over the ``scores`` breakdown or the ``resultType: "web"`` fallback
-    results. See https://docs.firecrawl.dev/features/developer.
-
-This is the code-and-discussion companion to ``search_papers`` and is served
-by the same ``/v2/search/research`` surface. It is a separate index from the
-developer index, it does **not** search the paper corpus, and it is not the
-same as ``search(categories=["github"])`` (which is a ``site:github.com``
-filter on ordinary web search).
+    The research index GitHub search endpoint was removed after 2026-11-03.
+    Use ``developer_search()`` instead. See
+    https://docs.firecrawl.dev/features/developer.
 
 Args:
     |CLIENT_ARG|
     query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
     k: Maximum number of results to return.
 
-Returns:
-    Raw API ``dict`` with ``success`` and ``results``. Keys are camelCase and
-    are **not** normalized to snake_case — expect ``resultType``, ``repo``,
-    ``url``, ``pageType``, ``number`` and a ``scores`` object. The response
-    also carries a ``warnings`` list and a ``replacement`` field while the
-    deprecation is live.
+Raises:
+    FirecrawlError: Always. The API answers 410 Gone with the removal message.
 """
 
 SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
@@ -219,6 +235,8 @@ READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_READ_PAPER_DOC = _READ_PAPER_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_RELATED_PAPERS_DOC = _RELATED_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
+LOOKUP_PROTEIN_DOC = _LOOKUP_PROTEIN_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
+AIO_LOOKUP_PROTEIN_DOC = _LOOKUP_PROTEIN_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
 AIO_SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIENT_ARG)
 
@@ -229,7 +247,7 @@ AIO_SEARCH_GITHUB_DOC = _SEARCH_GITHUB_TEMPLATE.replace(_CLIENT_ARG, _ASYNC_CLIE
 # ---------------------------------------------------------------------------
 
 _CLIENT_SEARCH_PAPERS_TEMPLATE = """
-Search the research paper index by abstract relevance.
+Search the research paper index.
 
 Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of
 the corpus — biomedical and life sciences) plus arXiv (physics,
@@ -243,6 +261,10 @@ searches the paper index itself and returns ranked paper records.
 Args:
     query: Natural-language query, e.g. ``"CRISPR base editing
         off-target effects in primary human T cells"``.
+    sort: ``relevance`` (default) or ``date_desc``, which returns the newest
+        of the most relevant matches, newest first by created date. It does
+        not list every paper in a date range; add ``from_date`` (and
+        ``to_date``) for that.
     **kwargs: ``k``, ``authors``, ``categories``, ``from_date``,
         ``to_date``.
 
@@ -309,31 +331,42 @@ Note:
     ``research.similarPapers()``.
 """
 
+_CLIENT_LOOKUP_PROTEIN_TEMPLATE = """
+Look up one protein's curated UniProtKB/Swiss-Prot entry.
+
+Returns UniProt's subcellular location, function and GO cellular-component
+terms, with ``pmid:<id>`` paper ids that ``inspect_paper`` accepts.
+
+Args:
+    protein: One UniProt accession (``Q6P087``), entry name
+        (``RUSD3_HUMAN``), gene symbol (``RPUSD3``) or exact protein name.
+    **kwargs: ``organism`` (NCBI taxon ID, scientific name or UniProt
+        common name; the API defaults to ``9606``).
+
+Returns:
+    Raw API ``dict`` with ``success``, ``release``, ``match`` (``found``,
+    ``ambiguous`` or ``not_found``) and ``notice``, UniProt's CC BY 4.0
+    credit. Keys are camelCase, **not** snake_case-normalized.
+
+Example:
+    >>> |AWAIT|firecrawl.lookup_protein("RPUSD3")
+"""
+
 _CLIENT_SEARCH_GITHUB_TEMPLATE = """
 Search the **research index** GitHub slice: issue/PR history and repo
 readmes.
 
 .. deprecated::
-    Use ``developer_search()`` instead. This endpoint stops responding
-    after 2026-11-03. The developer index searches GitHub issues, pull
-    requests and readmes plus curated documentation sources, and returns
-    matched passages. It does **not** carry over the ``scores`` breakdown
-    or the ``resultType: "web"`` fallback results. See
+    The research index GitHub search endpoint was removed after
+    2026-11-03. Use ``developer_search()`` instead. See
     https://docs.firecrawl.dev/features/developer.
-
-The code-and-discussion companion to ``search_papers``, served by the
-same ``/v2/search/research`` surface. A separate index from the developer
-index. It does not search the paper corpus, and it is not
-``search(categories=["github"])`` (which is just a ``site:github.com``
-filter on ordinary web search).
 
 Args:
     query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
     **kwargs: ``k``.
 
-Returns:
-    Raw API ``dict`` with ``success`` and ``results``. Keys are
-    camelCase, **not** snake_case-normalized.
+Raises:
+    FirecrawlError: Always. The API answers 410 Gone with the removal message.
 """
 
 CLIENT_SEARCH_PAPERS_DOC = _CLIENT_SEARCH_PAPERS_TEMPLATE.replace(_AWAIT, "")
@@ -344,5 +377,7 @@ CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_READ_PAPER_DOC = _CLIENT_READ_PAPER_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_RELATED_PAPERS_DOC = _CLIENT_RELATED_PAPERS_TEMPLATE.replace(_AWAIT, "await ")
+CLIENT_LOOKUP_PROTEIN_DOC = _CLIENT_LOOKUP_PROTEIN_TEMPLATE.replace(_AWAIT, "")
+ASYNC_CLIENT_LOOKUP_PROTEIN_DOC = _CLIENT_LOOKUP_PROTEIN_TEMPLATE.replace(_AWAIT, "await ")
 CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "")
 ASYNC_CLIENT_SEARCH_GITHUB_DOC = _CLIENT_SEARCH_GITHUB_TEMPLATE.replace(_AWAIT, "await ")

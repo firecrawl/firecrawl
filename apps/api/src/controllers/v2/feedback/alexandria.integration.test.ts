@@ -15,6 +15,7 @@ vi.mock("./record", () => ({
 }));
 vi.mock("../../../lib/alexandria-activity", () => ({
   hasRecentAlexandriaActivity: async () => true,
+  getRecentAlexandriaCalls: async () => [],
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   CREDITS_FEATURE_ID: "CREDITS",

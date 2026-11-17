@@ -1,13 +1,21 @@
 import { config } from "../config";
-import { redisRateLimitClient } from "../services/rate-limiter";
+import type { TeamFlags } from "../controllers/v1/types";
+import {
+  getAutumnRateLimiter,
+  redisRateLimitClient,
+} from "../services/rate-limiter";
+import { RateLimiterMode } from "../types";
 import { isKeylessTeamId } from "./keyless";
 import { logger } from "./logger";
 
 // Daily call budgets for the free Firecrawl indexes, per team and per UTC day,
 // sized by plan. Every route into an index reserves from the same counter, so a
 // team cannot raise its budget by switching between the direct endpoint, the
-// search category and the Alexandria provider. A new route into an index (for
-// example the `research` category on /search) must reserve here as well.
+// search category and the Alexandria provider. The per-minute limit is shared
+// the same way: it is the direct endpoint's limiter, which every other route
+// and keyless auth take from through consumeIndexRateLimit. A new route into an
+// index (for example the `research` category on /search) must reserve here and
+// take from that limiter as well.
 
 export type IndexName = "gov" | "research";
 
@@ -28,6 +36,11 @@ const DISPLAY_NAMES: Record<IndexName, string> = {
 };
 
 const UPGRADE_URL = "https://firecrawl.dev/pricing";
+
+const RATE_LIMITER_MODES: Record<IndexName, RateLimiterMode> = {
+  gov: RateLimiterMode.GovSearch,
+  research: RateLimiterMode.Research,
+};
 
 const BASE_CALLS_PER_DAY = 1000;
 
@@ -164,6 +177,82 @@ return 1
           .catch(() => {});
       },
     };
+  }
+}
+
+/**
+ * Takes the calls from the team's per-minute limit for the index where auth
+ * has not counted them: a route that reaches the index through another
+ * endpoint, or a keyless request, which auth does not rate limit. One script
+ * checks and counts on the index endpoint's own limiter key, so every route
+ * shares one count and window, and a refused batch takes nothing. Like the
+ * daily check, it allows the calls when Redis fails or does not answer in
+ * time.
+ */
+export async function consumeIndexRateLimit(
+  index: IndexName,
+  teamId: string,
+  rateLimitMultiplier: number,
+  flags: TeamFlags | null | undefined,
+  calls: number,
+): Promise<
+  { ok: true } | { ok: false; error: string; retryAfterSeconds: number }
+> {
+  if (calls <= 0) return { ok: true };
+  const limiter = getAutumnRateLimiter(
+    RATE_LIMITER_MODES[index],
+    rateLimitMultiplier,
+    flags ?? undefined,
+  );
+  try {
+    const [admitted, ttl] = (await withTimeout(
+      redisRateLimitClient.eval(
+        `
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local calls = tonumber(ARGV[1])
+local ttl = redis.call("PTTL", KEYS[1])
+if ttl == -1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[3])
+  ttl = tonumber(ARGV[3]) * 1000
+end
+if current + calls > tonumber(ARGV[2]) then
+  return {0, ttl}
+end
+if ttl < 0 then
+  redis.call("SET", KEYS[1], current + calls, "EX", ARGV[3])
+else
+  redis.call("INCRBY", KEYS[1], calls)
+end
+return {1, ttl}
+`,
+        1,
+        limiter.getKey(teamId),
+        calls,
+        limiter.points,
+        limiter.duration,
+      ),
+    )) as [number, number];
+    if (admitted === 1) return { ok: true };
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((ttl >= 0 ? ttl : limiter.duration * 1000) / 1000),
+    );
+    const needs =
+      calls > 1
+        ? ` and this request needs ${calls.toLocaleString("en-US")}`
+        : "";
+    return {
+      ok: false,
+      retryAfterSeconds,
+      error: `${DISPLAY_NAMES[index]} rate limit reached: your team can make ${limiter.points.toLocaleString("en-US")} calls a minute across every endpoint that queries the index${needs}. Retry in ${retryAfterSeconds}s.`,
+    };
+  } catch (error) {
+    logger.warn("Index rate limit check failed; allowing request", {
+      index,
+      teamId,
+      error,
+    });
+    return { ok: true };
   }
 }
 

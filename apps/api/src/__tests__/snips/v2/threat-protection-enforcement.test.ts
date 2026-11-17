@@ -4,6 +4,7 @@ import {
   describeIf,
   idmux,
   Identity,
+  itIf,
   TEST_API_URL,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
@@ -13,6 +14,7 @@ import {
   crawl,
   crawlStart,
   creditUsage,
+  EXTRACT_LIVE,
   map,
   scrape,
   scrapeRaw,
@@ -416,7 +418,7 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
       scrapeTimeout,
     );
 
-    it(
+    itIf(EXTRACT_LIVE)(
       "extract: blocked target URLs are rejected before fetching",
       async () => {
         const res = await request(TEST_API_URL)

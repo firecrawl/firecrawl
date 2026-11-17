@@ -67,7 +67,9 @@ export type JevCallOutcome =
   | "rate_limited"
   | "error"
   | "unusable"
-  | "breaker_open";
+  | "breaker_open"
+  /** TypeSafe refused the first screen (529, or a 5xx about the image); the call was retried without it and its outcome is counted on its own. */
+  | "image_rejected";
 
 // Export quiet series before their first event, so rates read 0, not missing.
 for (const [model, reason] of [
@@ -85,6 +87,7 @@ for (const outcome of [
   "error",
   "unusable",
   "breaker_open",
+  "image_rejected",
 ] satisfies JevCallOutcome[]) {
   brandingJevCallsTotal.inc({ outcome }, 0);
 }

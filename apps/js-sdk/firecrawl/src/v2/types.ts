@@ -577,6 +577,9 @@ export interface ProductSale {
 export interface ProductVariant {
   id?: string;
   sku?: string;
+  gtin?: string;
+  mpn?: string;
+  condition?: "new" | "used" | "refurbished" | "damaged";
   title?: string;
   values?: Record<string, unknown>;
   price?: ProductPrice;
@@ -853,15 +856,36 @@ export interface GovSearchOptions {
   court?: string;
   /** Keep only pages from one type of court. */
   courtType?: GovSearchCourtType;
-  /** Keep only pages that cite one law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". */
-  cites?: string;
+  /** Keep only pages that cite a law or case, as a printed citation such as "42 U.S.C. § 1983" or "5 U.S. 137", or a citation id such as "us:usc:42:1983". A list of up to 32 keeps pages citing any of them. */
+  cites?: string | string[];
   /** Keep only pages from one site, such as "irs.gov". */
   domain?: string;
+  /** Result groups to return: `web` (the default) and `gov`, the same results with the index's labels. */
+  sources?: GovSearchSource[];
+}
+
+export type GovSearchSource = "web" | "gov";
+
+/** A Government Index result with the index's labels; a label the index does not have is absent. */
+export interface GovSearchResult extends SearchResultWeb {
+  /** "us" for federal, or "us-" plus a two-letter state or territory code. */
+  jurisdiction?: string;
+  /** CourtListener court id, such as "scotus" or "ca9". */
+  court?: string;
+  courtType?: GovSearchCourtType;
+  /** Citation ids of the laws and cases the page cites. */
+  cites?: string[];
+  /** Citation ids other pages cite this page by; pass one as `cites` to find them. */
+  citedAs?: string[];
+  lang?: string;
+  /** Crawl time in Unix milliseconds. */
+  updatedAt?: number;
 }
 
 export interface GovSearchResponse {
   success: boolean;
-  data: { web: SearchResultWeb[] };
+  /** `web` is present unless `sources` leaves it out; `gov` is present when `sources` includes it. */
+  data: { web?: SearchResultWeb[]; gov?: GovSearchResult[] };
 }
 
 export interface SearchResultWeb {
@@ -891,6 +915,15 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface SkillCard {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+}
+
 export interface SearchData {
   agent_hints?: string[];
   warning?: string;
@@ -898,6 +931,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   tools?: DiscoveredTool[];
+  skills?: SkillCard[];
 }
 
 /** A complete tool contract returned by semantic or contextual discovery. */
@@ -965,6 +999,8 @@ export interface FindToolsData {
   }>;
   total: number;
   next: AlexandriaCall | null;
+  /** Opaque feedback token of this find-tools call. Absent when the API issues none. */
+  feedbackToken?: string;
 }
 
 export interface AlexandriaScrapeRequest extends AlexandriaOptions {
@@ -994,12 +1030,15 @@ export type AlexandriaScrapeResult =
       records?: number;
       upstreamStatus?: number;
       recordedAt?: string;
+      /** Opaque token to pass to `alexandriaFeedback`. Absent under zero data retention. */
+      feedbackToken?: string;
       error?: undefined;
       [key: string]: unknown;
     }
   | {
       provider?: string;
       capability?: string;
+      feedbackToken?: string;
       error: AlexandriaScrapeError;
       [key: string]: unknown;
     };
@@ -1023,7 +1062,8 @@ export interface AlexandriaOptions {
  * Narrows ordinary **web search**. A category does not switch `search()` to a
  * different index.
  *
- * - `github` — restrict web results to github.com (a `site:` filter).
+ * - `github` — removed. Use `developer` for GitHub issues, pull requests and
+ *   READMEs.
  * - `research` — restrict web results to a fixed list of ~14 academic
  *   *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
@@ -1058,7 +1098,8 @@ export interface SearchRequest {
     | "news"
     | "images"
     | "alexandria"
-    | { type: "web" | "news" | "images" | "alexandria" }
+    | "skills"
+    | { type: "web" | "news" | "images" | "alexandria" | "skills" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1226,6 +1267,60 @@ export interface FeedbackResponse {
   creditsRefundedToday?: number;
   dailyRefundCap?: number;
   warning?: string;
+}
+
+export interface AlexandriaProviderFeedback {
+  name: string;
+  issue:
+    | "missing_provider"
+    | "insufficient_coverage"
+    | "provider_unavailable"
+    | "other";
+  why: string;
+}
+
+export type AlexandriaCapabilityFeedback = {
+  name: string;
+  provider: string;
+  why: string;
+} & (
+  | { issue: "new_capability_request"; requestedFunctionality: string }
+  | {
+      issue:
+        | "missing_capability"
+        | "insufficient_functionality"
+        | "incorrect_result"
+        | "execution_error"
+        | "other";
+      requestedFunctionality?: string;
+    }
+);
+
+export interface AlexandriaCallRating {
+  /** The `feedbackToken` of an Alexandria call result. */
+  token: string;
+  rating: FeedbackRating;
+}
+
+export interface AlexandriaFeedbackRequest {
+  /** Session-level rating, applied to every call in `tokens`. */
+  rating: FeedbackRating;
+  requestedWebsite: { url: string; requestedFunctionality: string };
+  rationale: string;
+  objective?: string;
+  providerFeedback?: AlexandriaProviderFeedback[];
+  capabilityFeedback?: AlexandriaCapabilityFeedback[];
+  /** Tokens of the calls `rating` covers: at most 20, newest last. */
+  tokens?: string[];
+  /** Per-call ratings: at most 20. A token here need not also be in `tokens`. */
+  callRatings?: AlexandriaCallRating[];
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface AlexandriaFeedbackResponse extends FeedbackResponse {
+  /** Tokens that failed verification (expired, other team, or forged). */
+  rejectedTokens?: number;
 }
 
 /**
@@ -2265,6 +2360,9 @@ export interface PaperResult {
   ids?: IdMap;
   title: string;
   abstract: string;
+  authors?: string[];
+  createdDate?: string;
+  updateDate?: string;
   /** Final ranking score (post-rerank when enabled). Not normalized. */
   score: number;
   /** Present on similarity results. */
@@ -2326,12 +2424,109 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
+export type ProteinMatchedBy =
+  | "accession"
+  | "secondary_accession"
+  | "entry_name"
+  | "gene"
+  | "synonym"
+  | "name";
+
+export type ProteinEvidenceKind =
+  | "experimental"
+  | "large_scale_experimental"
+  | "author_statement"
+  | "curator_inference"
+  | "by_similarity"
+  | "sequence_analysis"
+  | "imported"
+  | "untagged";
+
+export interface ProteinOrganism {
+  taxonId: number;
+  scientificName: string;
+  commonName?: string;
+}
+
+export interface ProteinEvidence {
+  kind: ProteinEvidenceKind;
+  eco?: string;
+  /** `pmid:<id>`, accepted by `getPaper`. */
+  paperId?: string;
+  /** Accession of the protein a `by_similarity` statement was inferred from. */
+  fromProtein?: string;
+}
+
+export interface ProteinStatement {
+  text: string;
+  note: boolean;
+  molecule?: string;
+  topology?: string;
+  orientation?: string;
+  evidence: ProteinEvidence[];
+}
+
+export interface ProteinGoTerm {
+  id: string;
+  term: string;
+  code: string;
+  assignedBy: string;
+  paperIds: string[];
+}
+
+export interface ProteinCandidate {
+  accession: string;
+  entryName: string;
+  gene?: string;
+  name: string;
+  organism: ProteinOrganism;
+  matchedBy: ProteinMatchedBy;
+}
+
+export interface ProteinEntry extends ProteinCandidate {
+  synonyms: string[];
+  url: string;
+  subcellularLocation: ProteinStatement[];
+  function: ProteinStatement[];
+  goCellularComponent: ProteinGoTerm[];
+  paperIds: string[];
+}
+
+interface ProteinLookupBase {
+  success: boolean;
+  /** UniProtKB release, such as `2026_04`. */
+  release: string;
+  /** UniProt's CC BY 4.0 credit. Print it with any results you show to a person. */
+  notice: string;
+}
+
+export interface ProteinLookupFound extends ProteinLookupBase {
+  match: "found";
+  protein: ProteinEntry;
+}
+
+export interface ProteinLookupAmbiguous extends ProteinLookupBase {
+  match: "ambiguous";
+  /** At most 10 of the `candidateCount` matches. */
+  candidates: ProteinCandidate[];
+  candidateCount: number;
+}
+
+export interface ProteinLookupNotFound extends ProteinLookupBase {
+  match: "not_found";
+}
+
+/** Narrow on `match`. */
+export type ProteinLookupResponse =
+  | ProteinLookupFound
+  | ProteinLookupAmbiguous
+  | ProteinLookupNotFound;
+
 /**
- * Component scores; each field is present only when that signal contributed.
+ * Component scores.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. The developer index does not
- * expose a score breakdown. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubScoreBreakdown {
@@ -2343,8 +2538,8 @@ export interface GitHubScoreBreakdown {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchItem {
@@ -2370,8 +2565,8 @@ export interface GitHubSearchItem {
 }
 
 /**
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface GitHubSearchResponse {
@@ -2395,6 +2590,7 @@ export interface SearchPapersOptions {
   from?: string;
   /** Inclusive upper bound on created/updated date (lexicographic). */
   to?: string;
+  sort?: "relevance" | "date_desc";
 }
 
 /** Options for `research.getPaper`. */
@@ -2419,11 +2615,20 @@ export interface SimilarPapersOptions {
   anchor?: string[];
 }
 
+/** Options for `research.lookupProtein`. */
+export interface LookupProteinOptions {
+  /**
+   * NCBI taxon ID, scientific name or UniProt common name of the organism in
+   * which a gene symbol or protein name is looked up first (default `9606`).
+   */
+  organism?: string;
+}
+
 /**
  * Options for `research.searchGithub`.
  *
- * @deprecated Use the developer index instead. The research index GitHub
- * search stops responding after 2026-11-03. See
+ * @deprecated The research index GitHub search endpoint was removed after
+ * 2026-11-03. Use `developerSearch()` instead. See
  * https://docs.firecrawl.dev/features/developer.
  */
 export interface SearchGithubOptions {

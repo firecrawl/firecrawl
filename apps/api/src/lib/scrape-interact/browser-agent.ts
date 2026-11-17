@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { tool, stepCountIs, generateText as untracedGenerateText } from "ai";
+import { tool, isStepCount, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { isUsOnly } from "../us-only";
 import {
   generateText,
   buildLangSmithProviderOptions,
@@ -25,7 +27,7 @@ const SNAPSHOT_MAX_CHARS = 40_000;
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,11 +230,37 @@ interface BrowserAgentTraceContext {
   teamId: string;
   orgId?: string;
   zeroDataRetention?: boolean;
+  teamFlags?: TeamFlags | null;
   scrapeUrl?: string;
   targetUrl?: string;
   scrapeWaitForMs?: number;
   scrapeActions?: number;
   scrapeOrigin?: string;
+}
+
+// The tracing vendor is skipped for US-only teams, as it is for ZDR.
+function isUntraced(trace: BrowserAgentTraceContext | undefined): boolean {
+  return (
+    trace?.zeroDataRetention === true || isUsOnly(trace?.teamFlags ?? undefined)
+  );
+}
+
+// Throws UsOnlyUnavailableError when a US-only team has no US route, so
+// callers can refuse before creating a session or reserving credits.
+export function getBrowserAgentModel(
+  trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
+) {
+  const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
+  return trace?.zeroDataRetention === true
+    ? getModel("gpt-6-luna", "openai", {
+        ignoreModelOverride: true,
+        ...modelOptions,
+      })
+    : getModel(
+        "gemini-3.5-flash",
+        hasVertex() ? "vertex" : "google",
+        modelOptions,
+      );
 }
 
 export async function executePromptViaBrowserAgent(
@@ -243,6 +271,8 @@ export async function executePromptViaBrowserAgent(
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
   const zeroDataRetention = trace?.zeroDataRetention === true;
+  const untraced = isUntraced(trace);
+  const model = getBrowserAgentModel(trace);
   const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
   debugLog.add(`=== AGENT RUN ===`);
   debugLog.add(`Time:    ${new Date().toISOString()}`);
@@ -341,7 +371,7 @@ export async function executePromptViaBrowserAgent(
           org_id: trace.orgId,
           browser_id: browserId,
           mode: "prompt",
-          zeroDataRetention: trace.zeroDataRetention,
+          zeroDataRetention: untraced,
           scrape_url: trace.scrapeUrl,
           target_url: trace.targetUrl,
           scrape_wait_for_ms: trace.scrapeWaitForMs,
@@ -358,12 +388,10 @@ export async function executePromptViaBrowserAgent(
   try {
     // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
     // is enabled globally. Use the same provider as ZDR JSON extraction.
-    const generate = zeroDataRetention ? untracedGenerateText : generateText;
+    const generate = untraced ? untracedGenerateText : generateText;
     const result = await generate({
-      model: zeroDataRetention
-        ? getModel("gpt-6-luna", "openai", { ignoreModelOverride: true })
-        : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
-      experimental_telemetry: { isEnabled: false },
+      model,
+      telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -377,7 +405,7 @@ export async function executePromptViaBrowserAgent(
         },
       ],
       tools: { browser: browserTool },
-      stopWhen: stepCountIs(MAX_STEPS),
+      stopWhen: isStepCount(MAX_STEPS),
       temperature: zeroDataRetention ? undefined : 0,
       // LangSmith's provider-options object is recognized by wrapAISDK but
       // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
@@ -388,6 +416,7 @@ export async function executePromptViaBrowserAgent(
               openai: {
                 store: false,
                 reasoningEffort: "medium",
+                reasoningSummary: null,
               },
             },
           }
@@ -411,7 +440,7 @@ export async function executePromptViaBrowserAgent(
           ],
         };
       },
-      onStepFinish: ({ text, toolCalls }) => {
+      onStepEnd: ({ text, toolCalls }) => {
         if (toolCalls?.length) {
           debugLog.add(`[Step: ${toolCalls.length} tool call(s)]`);
         }
@@ -484,7 +513,7 @@ export async function executeCodeViaBrowserSession(
       org_id: trace.orgId,
       browser_id: browserId,
       mode: "code",
-      zeroDataRetention: trace.zeroDataRetention,
+      zeroDataRetention: isUntraced(trace),
       scrape_url: trace.scrapeUrl,
       target_url: trace.targetUrl,
       scrape_wait_for_ms: trace.scrapeWaitForMs,

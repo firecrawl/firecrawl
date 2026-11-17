@@ -9,6 +9,7 @@ import { getModel } from "../lib/generic-ai";
 import { getTypeSafeClient } from "../lib/typesafe";
 import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { aiTelemetry } from "../lib/ai-telemetry";
 
 const MODEL = "claude-haiku-5-5";
 const INFERENCE_TIMEOUT_MS = 2500;
@@ -28,7 +29,9 @@ export type ToolIntent = {
 };
 
 const modelsConfigured = () =>
-  config.ANTHROPIC_API_KEY !== undefined &&
+  (config.ANTHROPIC_API_KEY !== undefined ||
+    (config.ANTHROPIC_FEDERATION_RULE_ID !== undefined &&
+      config.ANTHROPIC_ORGANIZATION_ID !== undefined)) &&
   config.TYPESAFE_API_KEY !== undefined;
 
 export const queryInferenceEnabled = modelsConfigured;
@@ -36,6 +39,9 @@ export const queryInferenceEnabled = modelsConfigured;
 export const autoToolsEnabled = (flags: TeamFlags | null | undefined) =>
   modelsConfigured() &&
   (config.ALEXANDRIA_AUTO_TOOLS || flags?.alexandriaAutoTools === true);
+
+export const toolFusionEnabled = (flags: TeamFlags | null | undefined) =>
+  config.ALEXANDRIA_TOOL_FUSION || flags?.alexandriaToolFusion === true;
 
 const OPERATORS = new Set([
   "site",
@@ -206,12 +212,14 @@ async function infer(text: string, logger: Logger): Promise<Inferred> {
     prompt: `<${tag}>\n${text.slice(0, 2000)}\n</${tag}>`,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
-    experimental_telemetry: {
+    // A forced tool call answers faster than native structured output here.
+    providerOptions: { anthropic: { structuredOutputMode: "jsonTool" } },
+    telemetry: aiTelemetry({
       isEnabled: true,
       recordInputs: false,
       recordOutputs: false,
       functionId: "inferToolIntent",
-    },
+    }),
   });
   const inferred = clean(object);
   redisRateLimitClient
@@ -264,6 +272,8 @@ export async function inferToolIntent(
 const VERIFY_TIMEOUT_MS = 1500;
 /** Jev's probability that a tool fits the query, at or above which it is kept. */
 const FIT_THRESHOLD = 0.5;
+/** Lower bar for rewrite-found tools when they are fused into the raw-query ranking. */
+export const FUSED_FIT_THRESHOLD = 0.2;
 
 const fitQuestion = {
   fits: noul(
@@ -288,6 +298,7 @@ export async function verifyTools(
   query: string,
   tools: DiscoveredTool[],
   logger: Logger,
+  threshold = FIT_THRESHOLD,
 ): Promise<DiscoveredTool[]> {
   const typesafe = getTypeSafeClient();
   if (!typesafe || !tools.length) return [];
@@ -309,7 +320,7 @@ export async function verifyTools(
           },
           { signal, timeout: VERIFY_TIMEOUT_MS, retry: { maxRetries: 0 } },
         );
-        return answers.fits.noul >= FIT_THRESHOLD;
+        return answers.fits.noul >= threshold;
       } catch {
         failed++;
         return false;

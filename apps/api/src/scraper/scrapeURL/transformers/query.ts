@@ -6,12 +6,14 @@ import { Meta } from "..";
 import { getModel } from "../../../lib/generic-ai";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 import {
   parseMarkdownToSentences,
   assembleAnswer,
 } from "../../../lib/highlight-spans";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
@@ -22,7 +24,7 @@ function escapePromptTags(text: string): string {
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 const DIRECT_QUOTE_MODEL = {
@@ -198,7 +200,7 @@ ${escapePromptTags(indexedLines)}
       model,
       system: querySystemPrompt,
       prompt: queryPrompt,
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: true,
         functionId:
           purpose === "highlights"
@@ -209,7 +211,7 @@ ${escapePromptTags(indexedLines)}
           teamId: meta.internalOptions.teamId ?? "",
           feature: "query",
         },
-      },
+      }),
     });
 
     const elapsed = Date.now() - start;
@@ -328,7 +330,7 @@ ${escapePromptTags(fitted.text)}
         system: querySystemPrompt,
         prompt: queryPrompt,
         providerOptions: FREEFORM_PROVIDER_OPTIONS,
-        experimental_telemetry: {
+        telemetry: aiTelemetry({
           isEnabled: true,
           functionId: "performQuery/freeform",
           metadata: {
@@ -336,7 +338,7 @@ ${escapePromptTags(fitted.text)}
             teamId: meta.internalOptions.teamId ?? "",
             feature: "query",
           },
-        },
+        }),
       });
 
       const elapsed = Date.now() - start;
@@ -392,6 +394,14 @@ export async function performQuery(
     document.warning =
       "Query mode is not supported with zero data retention." +
       (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    addWarning(
+      document,
+      "Query mode is not supported for teams restricted to US-only processing.",
+    );
     return document;
   }
 

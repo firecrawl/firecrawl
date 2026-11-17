@@ -296,4 +296,52 @@ describe("FirePDF cache background refresh", () => {
     expect(await refreshCount("skipped_zdr")).toBe(1);
     expect(await refreshCount("skipped_image")).toBe(1);
   });
+
+  it("serves a US-only team the stale entry without offering or submitting a refresh", async () => {
+    const meta = makeMeta();
+    meta.internalOptions.teamFlags = { usOnly: true };
+    answerWith(staleAnswer(true));
+    expect(await lookupCachedResult(meta, base64, lookupArgs)).toEqual(
+      staleResult,
+    );
+    await settle();
+    expect(lookupFetch.mock.calls[0][0].body).not.toHaveProperty(
+      "background_refresh",
+    );
+    expect(
+      await submitBackgroundRefresh(meta, base64, {
+        mode: undefined,
+        includePageMarkdown: false,
+        includeBlocks: false,
+        pageMarkers: false,
+        sourceKind: "pdf",
+      }),
+    ).toBe("skipped_us_only");
+    expect(jobsFetch).not.toHaveBeenCalled();
+    expect(await refreshCount("skipped_us_only")).toBe(1);
+  });
+
+  it("serves a team restricted to reserved capacity the stale entry without offering or submitting a refresh", async () => {
+    const meta = makeMeta();
+    meta.internalOptions.teamFlags = { reservedCapacity: true };
+    answerWith(staleAnswer(true));
+    expect(await lookupCachedResult(meta, base64, lookupArgs)).toEqual(
+      staleResult,
+    );
+    await settle();
+    expect(lookupFetch.mock.calls[0][0].body).not.toHaveProperty(
+      "background_refresh",
+    );
+    expect(
+      await submitBackgroundRefresh(meta, base64, {
+        mode: undefined,
+        includePageMarkdown: false,
+        includeBlocks: false,
+        pageMarkers: false,
+        sourceKind: "pdf",
+      }),
+    ).toBe("skipped_reserved_capacity");
+    expect(jobsFetch).not.toHaveBeenCalled();
+    expect(await refreshCount("skipped_reserved_capacity")).toBe(1);
+  });
 });

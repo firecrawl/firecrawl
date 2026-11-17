@@ -1,6 +1,12 @@
 import type { MockedFunction } from "vitest";
+import { getACUCTeam } from "../../controllers/auth";
+import type { TeamFlags } from "../../controllers/v2/types";
 import { addMonitorCheckJob } from "./queue";
-import { enqueueDueMonitorChecks } from "./scheduler";
+import {
+  enqueueDueMonitorChecks,
+  MONITOR_ZDR_PAUSED_ERROR,
+  monitorRefusedForZdr,
+} from "./scheduler";
 import { isMonitorCheckStale } from "./stale";
 import {
   advanceMonitorAfterSkippedCheck,
@@ -8,11 +14,16 @@ import {
   createMonitorCheck,
   dispatchScheduledMonitorCheck,
   getMonitorCheckForUpdate,
+  updateMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
 } from "./store";
 import { autumnService } from "../autumn/autumn.service";
+
+vi.mock("../../controllers/auth", () => ({
+  getACUCTeam: vi.fn(),
+}));
 
 vi.mock("./queue", () => ({
   addMonitorCheckJob: vi.fn(),
@@ -24,6 +35,7 @@ vi.mock("./store", () => ({
   createMonitorCheck: vi.fn(),
   dispatchScheduledMonitorCheck: vi.fn(),
   getMonitorCheckForUpdate: vi.fn(),
+  updateMonitor: vi.fn(),
   updateMonitorCheck: vi.fn(),
   updateMonitorCheckIfStatus: vi.fn(),
   updateMonitorScheduleAfterRun: vi.fn(),
@@ -75,6 +87,45 @@ const mockUpdateMonitorScheduleAfterRun =
   updateMonitorScheduleAfterRun as MockedFunction<
     typeof updateMonitorScheduleAfterRun
   >;
+const mockGetACUCTeam = getACUCTeam as MockedFunction<typeof getACUCTeam>;
+const mockUpdateMonitor = updateMonitor as MockedFunction<typeof updateMonitor>;
+
+describe("monitorRefusedForZdr", () => {
+  const scrape = [{ type: "scrape" }];
+  const search = [{ type: "scrape" }, { type: "search" }];
+
+  it.each<[string, TeamFlags | undefined, { type: string }[], boolean]>([
+    ["no ZDR flags", undefined, search, false],
+    ["scrapeZDR forced, scrape targets", { scrapeZDR: "forced" }, scrape, true],
+    ["searchZDR forced, search target", { searchZDR: "forced" }, search, true],
+    [
+      "searchZDR forced-zdr, search target",
+      { searchZDR: "forced-zdr" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-anon, search target",
+      { searchZDR: "forced-anon" },
+      search,
+      true,
+    ],
+    [
+      "searchZDR forced-zdr, scrape targets only",
+      { searchZDR: "forced-zdr" },
+      scrape,
+      false,
+    ],
+    [
+      "searchZDR allowed, search target",
+      { searchZDR: "allowed" },
+      search,
+      false,
+    ],
+  ])("%s", (_label, flags, targets, refused) => {
+    expect(monitorRefusedForZdr(flags, targets)).toBe(refused);
+  });
+});
 
 describe("monitoring scheduler", () => {
   const monitor = {
@@ -106,6 +157,8 @@ describe("monitoring scheduler", () => {
     mockGetMonitorCheckForUpdate.mockResolvedValue(null);
     mockIsMonitorCheckStale.mockReturnValue(false);
     mockFinalizeCreditsLock.mockResolvedValue(true);
+    mockGetACUCTeam.mockResolvedValue(null);
+    mockUpdateMonitor.mockResolvedValue(null);
   });
 
   it("dispatches and advances a scheduled monitor before enqueueing its job", async () => {
@@ -151,6 +204,93 @@ describe("monitoring scheduler", () => {
         teamId: monitor.team_id,
       },
       { search: true },
+    );
+  });
+
+  it("pauses a monitor whose team requires zero data retention instead of running it", async () => {
+    const refused = { id: check.id, status: "failed" } as any;
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { scrapeZDR: "forced" },
+    } as any);
+    mockUpdateMonitorCheck.mockResolvedValue(refused);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(0);
+
+    expect(mockGetACUCTeam).toHaveBeenCalledWith(monitor.team_id);
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor,
+      trigger: "scheduled",
+      scheduledFor: monitor.next_run_at,
+      status: "failed",
+    });
+    expect(mockUpdateMonitorCheck).toHaveBeenCalledWith(check.id, {
+      status: "failed",
+      finished_at: expect.any(String),
+      error: MONITOR_ZDR_PAUSED_ERROR,
+    });
+    expect(mockUpdateMonitor).toHaveBeenCalledWith({
+      teamId: monitor.team_id,
+      monitorId: monitor.id,
+      input: { status: "paused" },
+    });
+    expect(mockAdvanceMonitorAfterSkippedCheck).toHaveBeenCalledWith({
+      monitor,
+      check: refused,
+    });
+    expect(mockUpdateMonitor.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAdvanceMonitorAfterSkippedCheck.mock.invocationCallOrder[0],
+    );
+    expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
+  it("pauses a search monitor whose team requires zero data retention for search", async () => {
+    const searchMonitor = {
+      ...monitor,
+      targets: [{ id: "t-1", type: "search" }],
+    } as any;
+    mockClaimDueMonitors.mockResolvedValue([searchMonitor]);
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-zdr" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(0);
+
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor: searchMonitor,
+      trigger: "scheduled",
+      scheduledFor: searchMonitor.next_run_at,
+      status: "failed",
+    });
+    expect(mockUpdateMonitor).toHaveBeenCalledWith({
+      teamId: searchMonitor.team_id,
+      monitorId: searchMonitor.id,
+      input: { status: "paused" },
+    });
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps running a scrape monitor when only search requires zero data retention", async () => {
+    mockGetACUCTeam.mockResolvedValue({
+      flags: { searchZDR: "forced-anon" },
+    } as any);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(1);
+
+    expect(mockUpdateMonitor).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith(
+      {
+        monitorId: monitor.id,
+        checkId: check.id,
+        teamId: monitor.team_id,
+      },
+      { search: false },
     );
   });
 

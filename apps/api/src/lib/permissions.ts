@@ -16,6 +16,7 @@ import {
   THREAT_PROTECTION_NOT_ENABLED_MESSAGE,
   THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE,
 } from "./threat-protection/request";
+import { usOnlyLocationRefusal } from "./us-only";
 
 type LocationOptions = { country?: string };
 type ThreatProtectionOption = { mode?: string };
@@ -23,8 +24,10 @@ type ThreatProtectionOption = { mode?: string };
 interface APIRequest {
   zeroDataRetention?: boolean;
   location?: LocationOptions;
+  geolocation?: LocationOptions;
   scrapeOptions?: {
     location?: LocationOptions;
+    geolocation?: LocationOptions;
     threatProtection?: ThreatProtectionOption;
   };
   crawlerOptions?: {
@@ -51,6 +54,20 @@ interface PermissionOptions {
 }
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
+
+/** The refusal for static-IP egress ("us-whitelist") without the entitlement. */
+export function ipWhitelistRefusal(
+  flags: TeamFlags | null | undefined,
+  ...countries: unknown[]
+): string | undefined {
+  const needsWhitelist = countries.some(
+    value =>
+      typeof value === "string" && value.toLowerCase() === "us-whitelist",
+  );
+  return needsWhitelist && !flags?.ipWhitelist
+    ? `Static IP addresses are not enabled for your team. Contact ${SUPPORT_EMAIL} to get a dedicated set of IP addresses you can whitelist.`
+    : undefined;
+}
 
 export function checkPermissions(
   request: APIRequest,
@@ -171,15 +188,24 @@ export function checkPermissions(
     }
   }
 
-  // ip whitelist perms
-  const needsWhitelist =
-    request.location?.country === "us-whitelist" ||
-    request.scrapeOptions?.location?.country === "us-whitelist";
+  const usOnlyLocationError = usOnlyLocationRefusal(
+    flags,
+    request.location?.country,
+    request.geolocation?.country,
+    request.scrapeOptions?.location?.country,
+    request.scrapeOptions?.geolocation?.country,
+  );
+  if (usOnlyLocationError) {
+    return { error: usOnlyLocationError, code: "US_ONLY_UNAVAILABLE" };
+  }
 
-  if (needsWhitelist && !flags?.ipWhitelist) {
-    return {
-      error: `Static IP addresses are not enabled for your team. Contact ${SUPPORT_EMAIL} to get a dedicated set of IP addresses you can whitelist.`,
-    };
+  const ipWhitelistError = ipWhitelistRefusal(
+    flags,
+    request.location?.country,
+    request.scrapeOptions?.location?.country,
+  );
+  if (ipWhitelistError) {
+    return { error: ipWhitelistError };
   }
 
   return {};

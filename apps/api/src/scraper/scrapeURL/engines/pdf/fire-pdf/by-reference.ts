@@ -12,6 +12,7 @@ import {
 } from "../../../../../controllers/v2/types";
 import { deterministicPercentage } from "./routing";
 import { storage } from "../../../../../lib/gcs-jobs";
+import { isProcessingRestricted } from "../../../../../lib/reserved-capacity";
 import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
 import { parseAlwaysFirePdf } from "./request-metadata";
 
@@ -201,11 +202,13 @@ export function largePdfLimitBytes(meta: Meta): number {
  * fire-engine handoff grant, the download admission, and the PDF engine's
  * routing — sees the SAME verdict; a per-call random draw would let them
  * drift. Keyed apart from the async-cohort hash. Parse requests that must
- * reach FirePDF (parseAlwaysFirePdf) are never diverted. */
+ * reach FirePDF (parseAlwaysFirePdf) and teams whose processing is restricted
+ * (isProcessingRestricted) are never diverted. */
 export function mineruDiverted(meta: Meta): boolean {
   return (
     config.MINERU_PERCENT > 0 &&
     !parseAlwaysFirePdf(meta) &&
+    !isProcessingRestricted(meta.internalOptions.teamFlags ?? undefined) &&
     deterministicPercentage(`mineru:${meta.id}`) < config.MINERU_PERCENT
   );
 }

@@ -1,6 +1,7 @@
 import {
   Document,
   ExtractRequest,
+  TeamFlags,
   TokenUsage,
   URLTrace,
 } from "../../../controllers/v2/types";
@@ -41,6 +42,8 @@ import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
 import { orgIdFromAcuc } from "../../team-org";
 import { resolveThreatProtection } from "../../threat-protection/request";
+import { getModel } from "../../generic-ai";
+import { isUsOnly } from "../../us-only";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
@@ -76,6 +79,13 @@ type completions = {
   sources?: string[];
 };
 
+// Throws UsOnlyUnavailableError for a US-only team. Called up front because
+// later model calls fall back quietly on errors, which would hide the refusal
+// behind an empty result.
+export function checkExtractAvailable(teamFlags: TeamFlags | null | undefined) {
+  getModel("gpt-4.1", undefined, { teamFlags, feature: "Extract" });
+}
+
 export async function performExtraction_F0(
   extractId: string,
   options: ExtractServiceOptions,
@@ -94,6 +104,8 @@ export async function performExtraction_F0(
   let sources: Record<string, string[]> = {};
 
   const acuc = await getACUCTeam(teamId);
+  const teamFlags = acuc?.flags ?? null;
+  checkExtractAvailable(teamFlags);
 
   // Threat protection: resolve the effective policy once for this extract
   // job (org config + the request's threatProtection override, which the
@@ -123,11 +135,13 @@ export async function performExtraction_F0(
     const rephrasedPrompt = await generateBasicCompletion_FO(
       buildRephraseToSerpPrompt_F0(request.prompt),
       { teamId, extractId },
+      teamFlags,
     );
     const searchResults = await search({
       query: rephrasedPrompt.replace('"', "").replace("'", ""),
       logger,
       num_results: 10,
+      usOnly: isUsOnly(acuc?.flags),
     });
 
     request.urls = searchResults.map(result => result.url) as string[];
@@ -255,10 +269,11 @@ export async function performExtraction_F0(
 
   let reqSchema = request.schema;
   if (!reqSchema && request.prompt) {
-    reqSchema = await generateSchemaFromPrompt_F0(request.prompt, {
-      teamId,
-      extractId,
-    });
+    reqSchema = await generateSchemaFromPrompt_F0(
+      request.prompt,
+      { teamId, extractId },
+      teamFlags,
+    );
     logger.debug("Generated request schema.", {
       originalSchema: request.schema,
       schema: reqSchema,
@@ -286,11 +301,13 @@ export async function performExtraction_F0(
     reasoning,
     keyIndicators,
     tokenUsage: schemaAnalysisTokenUsage,
-  } = await analyzeSchemaAndPrompt_F0(links, reqSchema, request.prompt ?? "", {
-    teamId,
-    extractId,
-    functionId: "performExtraction_F0",
-  });
+  } = await analyzeSchemaAndPrompt_F0(
+    links,
+    reqSchema,
+    request.prompt ?? "",
+    { teamId, extractId, functionId: "performExtraction_F0" },
+    teamFlags,
+  );
 
   logger.debug("Analyzed schema.", {
     isMultiEntity,
@@ -441,6 +458,7 @@ export async function performExtraction_F0(
               multiEntitySchema,
               doc,
               { teamId, extractId, functionId: "performExtraction_F0" },
+              teamFlags,
             );
 
           tokenUsage.push(shouldExtractCheckTokenUsage);
@@ -489,6 +507,7 @@ export async function performExtraction_F0(
             request.systemPrompt ?? "",
             doc,
             { teamId, extractId, functionId: "performExtraction_F0" },
+            teamFlags,
           );
 
           // Race between timeout and completion
@@ -759,6 +778,7 @@ export async function performExtraction_F0(
       prompt: request.prompt ?? "",
       systemPrompt: request.systemPrompt ?? "",
       metadata: { teamId, extractId, functionId: "performExtraction_F0" },
+      teamFlags,
     });
     logger.debug("Done generating singleAnswer completions.");
 

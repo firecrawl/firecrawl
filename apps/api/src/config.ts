@@ -48,16 +48,8 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
-// "github" is out of the default and the true/all shorthand, so keyless
-// behaviour is unchanged until someone names it. An explicit list replaces the
-// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
-const RESEARCH_KEYLESS_OPERATIONS = [
-  ...RESEARCH_PAPER_OPERATIONS,
-  "github",
-] as const;
-
 export type ResearchKeylessOperation =
-  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
+  (typeof RESEARCH_PAPER_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -74,7 +66,7 @@ const researchKeylessDisabled = z.preprocess(
       .filter(Boolean);
   },
   z
-    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
+    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
@@ -137,12 +129,22 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
+  // When true, a plain web search that the search platform classifies as
+  // government is served through the Government Index. It needs
+  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
+  // The longest a plain web search waits for the routing decision before the
+  // regular web search starts; a decision that takes longer routes nothing.
+  GOV_ROUTING_DECISION_TIMEOUT_MS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(100),
+  ),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
+  FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -265,16 +267,15 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  // Key for US-only teams; OPENAI_API_KEY is never used for them.
+  OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   OPENROUTER_API_KEY: z.string().optional(),
-  XAI_API_KEY: z.string().optional(),
-  LLAMAPARSE_API_KEY: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
-  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
+  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(300),
   SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
     .number()
     .int()
@@ -298,6 +299,20 @@ const configSchema = z.object({
     .int()
     .nonnegative()
     .default(10),
+
+  // Vercel Marketplace integration id (oac_...). Vercel OIDC resource tokens
+  // (iss https://integrations.vercel.com/<id>) are accepted as bearer
+  // credentials when DB authentication is on. Unset uses Firecrawl's
+  // integration; an empty value disables the branch. Not a secret.
+  VERCEL_MARKETPLACE_INTEGRATION_ID: z.preprocess(
+    value => (value === "" ? null : value),
+    z
+      .string()
+      .regex(/^oac_[A-Za-z0-9]+$/)
+      .nullable()
+      .default("oac_jkJx3wOqOMTpj4TqJJcwA4l8")
+      .transform(value => value ?? undefined),
+  ),
 
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
@@ -379,6 +394,8 @@ const configSchema = z.object({
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
+  // Publishes with ambient credentials when PUBSUB_CREDENTIALS is unset.
+  PUBSUB_PROJECT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
   // Prepended to every log topic name. Production leaves it unset and
   // publishes to `<table>`; staging sets `staging-` so its rows land in the
   // `staging-<table>` topics and the staging ClickHouse database instead of
@@ -434,11 +451,37 @@ const configSchema = z.object({
   // tool lookup, and add tools to default searches (also the alexandriaAutoTools
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Workload identity federation, used when ANTHROPIC_API_KEY is unset: the
+  // pod's Google identity is exchanged for short-lived Anthropic tokens.
+  ANTHROPIC_FEDERATION_RULE_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
+  ANTHROPIC_ORGANIZATION_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  ANTHROPIC_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
+  // Rank rewrite-found tools together with raw-query tools by reciprocal rank
+  // fusion (also the alexandriaToolFusion team flag), waiting up to
+  // ALEXANDRIA_TOOL_FUSION_WAIT_MS past the raw lookup for them. On by default;
+  // set to false to append rewrite tools after the raw ranking instead.
+  ALEXANDRIA_TOOL_FUSION: z.stringbool().default(true),
+  ALEXANDRIA_TOOL_FUSION_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .default(1000),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  EXCHANGE_CREDIT_GRANTS_ENABLED: z.stringbool().default(false),
+  EXCHANGE_CREDIT_GRANT_MAX_CREDITS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10000),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
@@ -690,57 +733,16 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
-  // Optional OpenAI-compatible provider for JSON extraction. Traffic is routed
-  // by team cohort (stable hash) at ROLLOUT_PERCENT, mirrored without using the
-  // result at SHADOW_PERCENT, and always routed for TEAM_IDS. Any failure falls
-  // back to the default model for that request.
-  EXTRACTION_PROVIDER_BASE_URL: blankStringAsUnset(z.string().url().optional()),
-  EXTRACTION_PROVIDER_API_KEY: blankStringAsUnset(z.string().optional()),
-  EXTRACTION_PROVIDER_MODEL: blankStringAsUnset(
-    z.string().min(1).default("extraction-v1"),
-  ),
-  EXTRACTION_PROVIDER_ROLLOUT_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  EXTRACTION_PROVIDER_SHADOW_PERCENT: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(100)
-    .default(0),
-  EXTRACTION_PROVIDER_TEAM_IDS: z.string().optional(),
-  // Let any team pick the provider per request (json format `model`); off =
-  // only teams in TEAM_IDS may.
-  EXTRACTION_PROVIDER_REQUEST_OPT_IN: z.stringbool().optional(),
-  EXTRACTION_PROVIDER_MAX_INPUT_BYTES: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(400_000),
-  EXTRACTION_PROVIDER_INPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.07),
-  EXTRACTION_PROVIDER_OUTPUT_COST_PER_MTOK: z.coerce
-    .number()
-    .nonnegative()
-    .default(0.2),
-  MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
+  VERTEX_USE_ADC: z.stringbool().default(false),
 
   // LangSmith (tracing for interact agent)
   LANGSMITH_API_KEY: z.string().optional(),
   LANGSMITH_PROJECT: z.string().optional(),
   LANGSMITH_ENDPOINT: z.string().optional(),
   LANGSMITH_TRACING: z.stringbool().optional(),
-
-  // Rate Limiting
-  RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
-  RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
 
   // Testing
   TEST_API_KEY: z.string().optional(),
@@ -772,14 +774,11 @@ const configSchema = z.object({
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
-  AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
-  // firebill — durable usage-event store that sits in front of Autumn. When
-  // both URL and SECRET are set, usage tracking for orgs listed in
-  // FIREBILL_ORG_IDS (comma-separated org UUIDs) is routed through firebill
-  // instead of directly to Autumn (gradual rollout).
+  // firebill — durable usage-event store that sits in front of Autumn. Every
+  // billing write (check, lock, track, refund, finalize) goes through it;
+  // without both URL and SECRET set, billing is skipped.
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
-  FIREBILL_ORG_IDS: delimitedList(",").optional(),
   // How long "this team is not partner-provisioned" is trusted. Only the
   // negative is bounded: provisioning is one-way, so a positive cannot go
   // stale, while a negative does the moment a partner provisions an account.
@@ -793,12 +792,6 @@ const configSchema = z.object({
     .min(0)
     .max(300)
     .default(60),
-  // Sticky percentage ramp, on top of the allowlist above. The bucket is a
-  // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
-  // only ever adds, and never reshuffles who is on which path mid-rollout.
-  // 0 (the default) is also the kill switch: the allowlist still routes, and
-  // nothing else does.
-  FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Miscellaneous
   // The commit the image was built from, set by the Dockerfile's GIT_SHA.
@@ -858,16 +851,12 @@ const configSchema = z.object({
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
-  if (
-    value.EXTRACTION_PROVIDER_ROLLOUT_PERCENT +
-      value.EXTRACTION_PROVIDER_SHADOW_PERCENT >
-    100
-  ) {
+  if (value.GOV_ROUTING_ENABLED && !value.SEARCH_PLATFORM_URL) {
     context.addIssue({
       code: "custom",
-      path: ["EXTRACTION_PROVIDER_SHADOW_PERCENT"],
+      path: ["GOV_ROUTING_ENABLED"],
       message:
-        "EXTRACTION_PROVIDER_ROLLOUT_PERCENT + EXTRACTION_PROVIDER_SHADOW_PERCENT must not exceed 100",
+        "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
     });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
