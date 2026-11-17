@@ -637,6 +637,16 @@ jobs:
               print(f"::error::{failures} failure(s)")
               sys.exit(1)
 
+      # The tests above start every process as `node dist/src/main.js <role>`.
+      # The Docker image, docker-compose.yaml and examples/kubernetes start a
+      # compiled entry file directly, as in `node dist/src/index.js`, so this
+      # step keeps that form covered. Its processes append to the log files
+      # the next step collects.
+      - name: Start each compiled entry file
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy'
+        run: node .github/scripts/start-entry-files.mjs apps/api
+        timeout-minutes: 10
+
       - name: Copy log files
         if: always()
         run: |
@@ -663,16 +673,6 @@ jobs:
         with:
           name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
           path: logs/logs.zip
-
-      # The tests above start every process as `node dist/src/main.js <role>`.
-      # The Docker image, docker-compose.yaml and examples/kubernetes start a
-      # compiled entry file directly, as in `node dist/src/index.js`, so this
-      # step keeps that form covered. It runs last, once the logs are uploaded,
-      # because the processes it starts append to the same log files.
-      - name: Start each compiled entry file
-        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy'
-        run: node .github/scripts/start-entry-files.mjs apps/api
-        timeout-minutes: 10
 
   nuq-fdb-core:
     name: NuQ FoundationDB core tests

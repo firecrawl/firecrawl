@@ -21,6 +21,7 @@ const HEALTH_TIMEOUT_MS = 90_000;
 // with no health path has loaded and registered its signal handlers by then.
 const MIN_RUNNING_MS = 30_000;
 const EXIT_TIMEOUT_MS = 60_000;
+const CLOSE_TIMEOUT_MS = 5_000;
 const OUTPUT_KEPT = 8_000;
 
 // Ports of their own, so the check does not depend on which defaults are free.
@@ -114,15 +115,17 @@ function start(apiDirectory, entry) {
       run.output = (run.output + chunk).slice(-OUTPUT_KEPT);
     });
   }
-  run.exited = new Promise(resolve => {
+  child.once("exit", (code, signal) => {
+    run.result = code ?? signal;
+  });
+  // "close" follows "exit" once both streams have ended, so the output that
+  // is printed for a failure includes what the process wrote last.
+  run.closed = new Promise(resolve => {
     child.once("error", error => {
       run.result = error.message;
       resolve();
     });
-    child.once("exit", (code, signal) => {
-      run.result = code ?? signal;
-      resolve();
-    });
+    child.once("close", resolve);
   });
   return run;
 }
@@ -144,16 +147,18 @@ async function waitUntilUp(run) {
 }
 
 async function stop(run) {
-  if (run.result !== undefined) return;
-  run.child.kill("SIGTERM");
-  await Promise.race([run.exited, sleep(EXIT_TIMEOUT_MS)]);
   if (run.result === undefined) {
-    run.problem ??= `still running ${EXIT_TIMEOUT_MS / 1000} seconds after SIGTERM`;
-    run.child.kill("SIGKILL");
-    await run.exited;
-  } else if (run.result !== 0) {
-    run.problem ??= `exited with ${run.result} on SIGTERM`;
+    run.child.kill("SIGTERM");
+    await Promise.race([run.closed, sleep(EXIT_TIMEOUT_MS)]);
+    if (run.result === undefined) {
+      run.problem ??= `still running ${EXIT_TIMEOUT_MS / 1000} seconds after SIGTERM`;
+      run.child.kill("SIGKILL");
+    } else if (run.result !== 0) {
+      run.problem ??= `exited with ${run.result} on SIGTERM`;
+    }
   }
+  // Also for a process that exited by itself: its streams end shortly after.
+  await Promise.race([run.closed, sleep(CLOSE_TIMEOUT_MS)]);
 }
 
 async function check(apiDirectory, entries) {
