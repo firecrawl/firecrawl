@@ -869,7 +869,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             } catch (retryError) {
               if (
                 retryError instanceof RemoveFeatureError ||
-                retryError instanceof AbortManagerThrownError
+                retryError instanceof AbortManagerThrownError ||
+                retryError instanceof UsOnlyUnavailableError ||
+                retryError instanceof ReservedCapacityUnavailableError
               ) {
                 throw retryError;
               }

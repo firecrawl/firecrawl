@@ -36,10 +36,10 @@ export function isTransientFirePdfFailure(error: unknown): boolean {
   if (error instanceof FirePdfAsyncFailure) {
     if (RETRYABLE_ASYNC_REASONS.has(error.reason)) return true;
     // http_5xx also covers unexpected 4xx and response-validation failures;
-    // only a real 5xx status is an infrastructure error.
+    // only a real 5xx or a 429 is an infrastructure error.
     if (error.reason === "http_5xx") {
       const status = error.extra.status;
-      return typeof status === "number" && status >= 500;
+      return typeof status === "number" && (status === 429 || status >= 500);
     }
     if (error.reason !== "terminal_failed") return false;
     const errorClass = jobErrorClass(error);

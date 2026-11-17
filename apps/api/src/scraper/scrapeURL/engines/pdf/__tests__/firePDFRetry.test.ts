@@ -14,6 +14,7 @@ import {
 } from "../fire-pdf/retry";
 import { scrapePDFWithParsePDF } from "../pdfParse";
 import { scrapePDF } from "../index";
+import { UsOnlyUnavailableError } from "../../../error";
 
 vi.mock("@mendable/firecrawl-rs", () => ({
   processPdf: vi.fn(),
@@ -118,6 +119,11 @@ describe("isTransientFirePdfFailure", () => {
     [
       "async 5xx status",
       new FirePdfAsyncFailure("http_5xx", { status: 500 }),
+      true,
+    ],
+    [
+      "async 429 status",
+      new FirePdfAsyncFailure("http_5xx", { status: 429 }),
       true,
     ],
     [
@@ -229,6 +235,18 @@ describe("FirePDF retry in scrapePDF", () => {
 
     expect(result.markdown).toBe("pdf-parse");
     expect(mockedSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails without a fallback when the retry is refused for capacity", async () => {
+    mockedSync
+      .mockRejectedValueOnce(statusError(503))
+      .mockRejectedValueOnce(new UsOnlyUnavailableError("no US capacity"));
+
+    const error = await scrapePDF(await makeMeta()).catch(e => e);
+
+    expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+    expect(mockedSync).toHaveBeenCalledTimes(2);
+    expect(mockedPdfParse).not.toHaveBeenCalled();
   });
 
   it("does not retry a failure caused by the document", async () => {
