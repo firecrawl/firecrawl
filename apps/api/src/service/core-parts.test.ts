@@ -1,21 +1,45 @@
-import { describe, expect, it } from "vitest";
-import { coreErrors } from "../lib/error-serde";
+import Module from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ScrapeJobTimeoutError } from "../lib/error";
+import * as errorSerde from "../lib/error-serde";
 import { coreParts } from "./core-parts";
 import { createService } from "./service";
 
+const errorClassesModule = "../lib/error-serde";
+
+// coreParts() loads its error classes with require() on the first lookup. The
+// test runner cannot resolve a source file that is loaded that way, so the
+// load is answered with the module the runner imported.
+function answerRequire() {
+  const load = Module.prototype.require;
+  return vi.spyOn(Module.prototype, "require").mockImplementation(function (
+    this: Module,
+    id: string,
+  ) {
+    return id === errorClassesModule ? errorSerde : load.call(this, id);
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("coreParts", () => {
-  it("lists its error classes without loading them", () => {
-    expect(coreParts().core.errors).toBeTypeOf("function");
+  it("loads its error classes on the first lookup, and once", () => {
+    const required = answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    expect(required).not.toHaveBeenCalledWith(errorClassesModule);
+    expect(built.errors.classFor("SCRAPE_TIMEOUT")).toBe(ScrapeJobTimeoutError);
+    expect(built.errors.classFor("NOT_A_CODE")).toBeUndefined();
+    expect(
+      required.mock.calls.filter(([id]) => id === errorClassesModule),
+    ).toHaveLength(1);
   });
 
   it("gives the service every process role and error class, and nothing else yet", () => {
-    // A test runner cannot load a module on first use, so the classes that
-    // coreParts() would load are listed here.
-    const parts = coreParts();
-    const built = createService(
-      { modules: {} },
-      { ...parts, core: { ...parts.core, errors: coreErrors } },
-    );
+    answerRequire();
+    const built = createService({ modules: {} }, coreParts());
 
     expect(built.describe()).toEqual({
       extensions: ["core"],

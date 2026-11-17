@@ -110,6 +110,21 @@ describe("errors", () => {
     expect(built.errors.classFor("")).toBeUndefined();
   });
 
+  it("takes any name for a code", () => {
+    const inherited = errorClass("__proto__", "constructor");
+    const built = createService(
+      { modules: {} },
+      parts({ errors: [inherited] }),
+    );
+
+    expect(built.errors.classFor("__proto__")).toBe(inherited);
+    expect(built.errors.classFor("constructor")).toBe(inherited);
+    expect(Object.entries(built.describe().errors)).toEqual([
+      ["__proto__", "core"],
+      ["constructor", "core"],
+    ]);
+  });
+
   it("calls a function that lists classes on the first lookup, and once", () => {
     const timeout = errorClass("TIMEOUT");
     const list = vi.fn(() => [timeout]);
