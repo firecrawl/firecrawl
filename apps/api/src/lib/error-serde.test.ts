@@ -35,6 +35,7 @@ import {
   ZDRViolationError,
 } from "../scraper/scrapeURL/error";
 import { createService, replaceService } from "../service/service";
+import { DATA_CHUNK_BYTES } from "../services/worker/nuq-fdb/queue";
 import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
@@ -807,6 +808,10 @@ describe("serializeThrownError", () => {
     const long = (length: number) => "x".repeat(length);
     const bytes = (text: string) => Buffer.byteLength(text, "utf8");
     const cut = (text: string) => `${text.slice(0, 4096)}... [truncated]`;
+
+    it("is too long past what the FoundationDB queue keeps of a reason", () => {
+      expect(MAX_SERIALIZED_ERROR_BYTES).toBe(DATA_CHUNK_BYTES);
+    });
 
     it("is left as it is while it fits", () => {
       const original = new SitemapError(long(30_000));

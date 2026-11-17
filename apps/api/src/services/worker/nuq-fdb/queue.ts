@@ -56,7 +56,7 @@ import {
 } from "./ops";
 import { NuqFdbGroupOps } from "./groups";
 
-const DATA_CHUNK_BYTES = 90 * 1024;
+export const DATA_CHUNK_BYTES = 90 * 1024;
 // FoundationDB caps transactions at 10,000,000 bytes of affected data. Keep
 // enqueue batches much smaller so large payloads cannot accidentally combine
 // into a commit-time transaction_too_large failure.
