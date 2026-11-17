@@ -168,7 +168,9 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * at the limit of live sessions gives up the ones saved longest ago, so
  * sessions nobody returns to never keep a team from starting one. A team's
  * creations run one at a time, so concurrent ones cannot pass the limit
- * together.
+ * together. They count live sessions by the database's clock: their own
+ * clocks differ, and one that is behind would count sessions another creation
+ * just ended, and end live ones in their place.
  */
 async function insertSession(
   teamId: string,
@@ -182,7 +184,7 @@ async function insertSession(
     );
     const ended = await tx
       .update(sessions)
-      .set({ expires_at: iso(now) })
+      .set({ expires_at: sql`clock_timestamp()` })
       .where(
         inArray(
           sessions.id,
@@ -192,7 +194,7 @@ async function insertSession(
             .where(
               and(
                 eq(sessions.team_id, teamId),
-                gt(sessions.expires_at, iso(now)),
+                gt(sessions.expires_at, sql`clock_timestamp()`),
               ),
             )
             .orderBy(
