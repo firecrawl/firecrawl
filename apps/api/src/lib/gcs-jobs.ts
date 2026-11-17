@@ -283,7 +283,7 @@ export async function saveExtractToGCS(
     num_docs: 1,
     is_successful: extract.is_successful,
     data: extract.result,
-    zeroDataRetention: extract.zeroDataRetention ?? false,
+    zeroDataRetention: extract.zeroDataRetention,
     metadata: {
       mode: "extract",
       job_id: extract.id,
@@ -292,10 +292,12 @@ export async function saveExtractToGCS(
         extract.team_id === "preview" || extract.team_id?.startsWith("preview_")
           ? null
           : extract.team_id,
-      options: JSON.stringify(extract.options),
+      options: extract.zeroDataRetention
+        ? null
+        : JSON.stringify(extract.options),
       credits_cost: extract.credits_cost,
       success: extract.is_successful,
-      error: extract.error ?? null,
+      error: extract.zeroDataRetention ? null : (extract.error ?? null),
     },
     logger: _logger,
   });

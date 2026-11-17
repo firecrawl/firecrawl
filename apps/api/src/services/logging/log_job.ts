@@ -1231,7 +1231,7 @@ export type LoggedExtract = {
   error?: string;
   result?: any;
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
-  zeroDataRetention?: boolean;
+  zeroDataRetention: boolean;
 };
 
 export async function logExtract(extract: LoggedExtract) {

@@ -538,6 +538,7 @@ describe("operational job state logging", () => {
       credits_cost: 3,
       is_successful: false,
       error: "failed",
+      zeroDataRetention: false,
     });
 
     expect(writeExtractJobState).toHaveBeenCalledWith(
@@ -565,6 +566,7 @@ describe("operational job state logging", () => {
         credits_cost: 3,
         is_successful: true,
         result: { ok: true },
+        zeroDataRetention: false,
       }),
     ).rejects.toThrow("Redis unavailable");
 

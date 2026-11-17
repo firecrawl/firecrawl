@@ -37,7 +37,7 @@ export async function mapController(
   // site search follows the team's search zero data retention too.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    getSearchForcedKind(req.acuc?.flags) === "zdr" ||
+    getSearchForcedKind(req.acuc?.flags) !== null ||
     isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     jobId: uuidv7(),

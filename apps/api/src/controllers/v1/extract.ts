@@ -337,7 +337,7 @@ export async function extractController(
     showLLMUsage: req.body.__experimental_llmUsage,
     showSources: req.body.__experimental_showSources || req.body.showSources,
     showCostTracking: req.body.__experimental_showCostTracking,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
 
   await addExtractJobToQueue(extractId, jobData);

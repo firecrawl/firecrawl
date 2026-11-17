@@ -425,7 +425,7 @@ export async function mapController(
 
   const mapId = uuidv7();
   const zeroDataRetention =
-    lockdownIndexOnly || getSearchForcedKind(req.acuc?.flags) === "zdr";
+    lockdownIndexOnly || getSearchForcedKind(req.acuc?.flags) !== null;
 
   logger.info("Map request", {
     request: req.body,

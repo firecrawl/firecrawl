@@ -5,7 +5,11 @@ import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { ExtractResult } from "../lib/extract/types";
 import { updateExtract } from "../lib/extract/extract-redis";
-import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
+import {
+  isExtractSearchZeroDataRetention,
+  performExtraction_F0,
+} from "../lib/extract/fire-0/extraction-service-f0";
+import { getACUCTeam } from "../controllers/auth";
 import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
@@ -154,6 +158,10 @@ const processDLQJob = async (data: ExtractJobData) => {
     error:
       "Extract job crashed unexpectedly. Please try again or contact support if the issue persists.",
     cost_tracking: undefined,
+    zeroDataRetention: isExtractSearchZeroDataRetention(
+      data.request,
+      (await getACUCTeam(data.teamId))?.flags,
+    ),
   });
 
   // Send webhook notification
