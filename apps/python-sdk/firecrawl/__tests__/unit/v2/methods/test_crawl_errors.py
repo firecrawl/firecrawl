@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from firecrawl.v1.client import V1CrawlErrorsResponse
 from firecrawl.v2.methods.batch import get_batch_scrape_errors
