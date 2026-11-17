@@ -39,12 +39,13 @@ export function alexandriaFeedbackNextStep(
     requestedWebsite: { url: WEBSITE, requestedFunctionality: NEEDED },
     rationale: RATIONALE,
   };
-  if (origin.startsWith("cli") || integration === "cli")
+  const caller = origin.trim().toLowerCase();
+  if (caller.startsWith("cli") || integration?.trim().toLowerCase() === "cli")
     return {
       instruction: `Next: once you have used this result, run this command to rate it.${refund}`,
-      command: `firecrawl alexandria feedback --rating ${RATING} --url "${WEBSITE}" --requested-functionality "${NEEDED}" --rationale "${RATIONALE}"`,
+      command: `firecrawl alexandria feedback --rating "${RATING}" --url "${WEBSITE}" --requested-functionality "${NEEDED}" --rationale "${RATIONALE}"`,
     };
-  if (origin.startsWith("mcp"))
+  if (caller.startsWith("mcp"))
     return {
       instruction: `Next: once you have used this result, rate it with firecrawl_feedback if that tool is available.${refund}`,
       tool: "firecrawl_feedback",

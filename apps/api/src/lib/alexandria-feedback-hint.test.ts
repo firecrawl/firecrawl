@@ -30,12 +30,19 @@ it("points an MCP client at firecrawl_feedback with the arguments it takes", () 
 it.each([
   ["cli.codex", undefined],
   ["api", "cli"],
+  ["api", " CLI "],
 ])("gives the CLI its own command (origin %s)", (origin, integration) => {
   expect(alexandriaFeedbackNextStep(origin, integration)).toEqual({
     instruction:
       "Next: once you have used this result, run this command to rate it. Eligible feedback can refund 1 credit.",
     command:
-      'firecrawl alexandria feedback --rating <good|partial|bad> --url "<website the data is about>" --requested-functionality "<what you needed from it>" --rationale "<what was right, wrong or missing>"',
+      'firecrawl alexandria feedback --rating "<good|partial|bad>" --url "<website the data is about>" --requested-functionality "<what you needed from it>" --rationale "<what was right, wrong or missing>"',
+  });
+});
+
+it("reads the origin without regard to case or padding", () => {
+  expect(alexandriaFeedbackNextStep(" MCP-Cursor@3.40.0 ")).toMatchObject({
+    tool: "firecrawl_feedback",
   });
 });
 
