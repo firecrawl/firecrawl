@@ -5,7 +5,6 @@ export type BillingEndpoint =
   | "crawl"
   | "deep_research"
   | "extract"
-  | "fireclaw"
   | "interact"
   | "llms_txt"
   | "map"
@@ -27,7 +26,7 @@ export type BillingMetadata = {
    * (collision = silent underbilling). A jobId shared with another charge on
    * the same endpoint needs a suffix (e.g. `${extractId}:threat` for the
    * threat-scan fee vs the extract's main charge). Sites with no unique
-   * identity (fireclaw, grouped charges) leave it unset and keep firebill's
+   * identity (grouped charges) leave it unset and keep firebill's
    * per-request UUID, which dedupes only firebill's own retries.
    */
   chargeId?: string;
