@@ -267,8 +267,16 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  // Workload identity federation, used when OPENAI_API_KEY is unset: the
+  // pod's Google identity is exchanged for short-lived OpenAI tokens.
+  OPENAI_IDENTITY_PROVIDER_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  OPENAI_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Service account for US-only teams, used when OPENAI_US_API_KEY is unset.
+  OPENAI_US_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   OPENROUTER_API_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),

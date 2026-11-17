@@ -155,6 +155,7 @@
     "marked": "^14.1.2",
     "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^4.1.0",
+    "openai": "7.57.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
