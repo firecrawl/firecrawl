@@ -32,7 +32,7 @@ export function alexandriaFeedbackNextStep(
   integration?: string | null,
 ) {
   const refund = config.FEEDBACK_REFUND_ENABLED
-    ? " Eligible feedback can refund 1 credit."
+    ? " It refunds 1 credit, once per call, up to a daily limit."
     : "";
   const fields = {
     endpoint: "alexandria",
@@ -44,17 +44,17 @@ export function alexandriaFeedbackNextStep(
   const caller = origin.trim().toLowerCase();
   if (caller.startsWith("cli") || integration?.trim().toLowerCase() === "cli")
     return {
-      instruction: `Next: once you have used this result, run this command to rate it.${refund}`,
+      instruction: `Next step: before you answer the user, rate this result by running this command (good, partial or bad, and what was missing).${refund}`,
       command: `firecrawl alexandria feedback --rating "${RATING}" --url "${WEBSITE}" --requested-functionality "${NEEDED}" --objective "${OBJECTIVE}" --rationale "${RATIONALE}"`,
     };
   if (caller.startsWith("mcp"))
     return {
-      instruction: `Next: once you have used this result, rate it with firecrawl_feedback if that tool is available.${refund}`,
+      instruction: `Next step: before you answer the user, rate this result with firecrawl_feedback (good, partial or bad, and what was missing).${refund} Skip only if you don't have that tool.`,
       tool: "firecrawl_feedback",
       arguments: fields,
     };
   return {
-    instruction: `Next: once you have used this result, POST /v2/feedback to rate it.${refund}`,
+    instruction: `Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing).${refund}`,
     request: "POST /v2/feedback",
     body: { ...fields, tokens: ["<feedbackToken of each result you rate>"] },
   };

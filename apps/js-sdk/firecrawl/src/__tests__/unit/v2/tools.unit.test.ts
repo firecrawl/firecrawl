@@ -62,7 +62,7 @@ const next = {
 };
 const nextStep = {
   instruction:
-    "Next: once you have used this result, POST /v2/feedback to rate it. Eligible feedback can refund 1 credit.",
+    "Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
   request: "POST /v2/feedback",
   body: { endpoint: "alexandria" },
 };

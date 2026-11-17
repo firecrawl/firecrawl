@@ -195,7 +195,7 @@ def test_alexandria_call_boundaries_and_result_errors(count):
 
 def test_alexandria_result_keeps_fields_the_sdk_does_not_model():
     from firecrawl.v2.methods.scrape import _parse_scrape_alexandria_response
-    next_step = {"instruction": "Next: once you have used this result, POST /v2/feedback to rate it. Eligible feedback can refund 1 credit.",
+    next_step = {"instruction": "Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
                  "request": "POST /v2/feedback", "body": {"endpoint": "alexandria"}}
     item = {"provider": "p", "capability": "a", "creditsCost": 1, "data": {"price": 1}, "nextStep": next_step}
     result = _parse_scrape_alexandria_response({"scrape_id": "s1", "data": {"alexandria": [item], "creditsCost": 1}}, "r1")

@@ -13,7 +13,7 @@ afterAll(() => {
 it("points an MCP client at firecrawl_feedback with the arguments it takes", () => {
   expect(alexandriaFeedbackNextStep("mcp-claude-code@3.40.0")).toEqual({
     instruction:
-      "Next: once you have used this result, rate it with firecrawl_feedback if that tool is available. Eligible feedback can refund 1 credit.",
+      "Next step: before you answer the user, rate this result with firecrawl_feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit. Skip only if you don't have that tool.",
     tool: "firecrawl_feedback",
     arguments: {
       endpoint: "alexandria",
@@ -35,7 +35,7 @@ it.each([
 ])("gives the CLI its own command (origin %s)", (origin, integration) => {
   expect(alexandriaFeedbackNextStep(origin, integration)).toEqual({
     instruction:
-      "Next: once you have used this result, run this command to rate it. Eligible feedback can refund 1 credit.",
+      "Next step: before you answer the user, rate this result by running this command (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
     command:
       'firecrawl alexandria feedback --rating "<good|partial|bad>" --url "<website the data is about>" --requested-functionality "<what you needed from it>" --objective "<the underlying goal>" --rationale "<what was right, wrong or missing>"',
   });
@@ -51,7 +51,7 @@ it("gives any other caller the HTTP request, with the tokens it rates", () => {
   const step = alexandriaFeedbackNextStep("api", null);
   expect(step).toMatchObject({
     instruction:
-      "Next: once you have used this result, POST /v2/feedback to rate it. Eligible feedback can refund 1 credit.",
+      "Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
     request: "POST /v2/feedback",
     body: { tokens: ["<feedbackToken of each result you rate>"] },
   });
@@ -76,7 +76,7 @@ it("names only fields the feedback endpoint accepts", () => {
 it("does not promise a refund when refunds are off", () => {
   config.FEEDBACK_REFUND_ENABLED = false;
   expect(alexandriaFeedbackNextStep("mcp-cursor").instruction).toBe(
-    "Next: once you have used this result, rate it with firecrawl_feedback if that tool is available.",
+    "Next step: before you answer the user, rate this result with firecrawl_feedback (good, partial or bad, and what was missing). Skip only if you don't have that tool.",
   );
 });
 
@@ -84,5 +84,5 @@ it("stays short", () => {
   for (const origin of ["mcp-cursor", "cli", "api"])
     expect(
       JSON.stringify(alexandriaFeedbackNextStep(origin)).length,
-    ).toBeLessThan(500);
+    ).toBeLessThan(600);
 });
