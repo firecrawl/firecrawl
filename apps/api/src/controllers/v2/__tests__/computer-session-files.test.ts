@@ -529,13 +529,15 @@ describe.skipIf(!databaseUrl)("session routes", () => {
 
     it("holds a team's links to its hourly limit", async () => {
       const id = await createId();
-      // A link that could not be stored, or not signed, does not count.
+      // A link that could not be stored, or not signed, does not count, and
+      // leaves nothing stored.
       vi.spyOn(store, "write").mockRejectedValueOnce(new Error("storage"));
       expect((await link(id, "data", { filename: "a.txt" })).status).toBe(500);
       vi.spyOn(store, "downloadUrl").mockRejectedValueOnce(
         new Error("signing"),
       );
       expect((await link(id, "data", { filename: "a.txt" })).status).toBe(500);
+      expect(objects.size).toBe(0);
       for (let made = 0; made < LINKS_PER_HOUR; made++) {
         expect((await link(id, "data", { filename: "a.txt" })).status).toBe(
           200,

@@ -560,8 +560,12 @@ export function computerSessionFileControllers(
         expiresAt = Date.now() + query.data.expiresInSeconds * 1000;
         url = await store.downloadUrl(objectPath, filename, expiresAt);
       } catch (error) {
-        // No link came of it, so nothing counts against the team's hour.
-        await linkLimit.reward(teamId, mebibytes).catch(() => {});
+        // No link came of it, so nothing counts against the team's hour and
+        // nothing stays stored for it.
+        await Promise.allSettled([
+          linkLimit.reward(teamId, mebibytes),
+          store.delete(objectPath),
+        ]);
         throw error;
       }
       logger.info("Computer session link created", {
