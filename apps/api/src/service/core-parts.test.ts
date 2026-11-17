@@ -23,6 +23,7 @@ describe("coreParts", () => {
         "queue-worker": "core",
         "zdr-worker": "core",
       },
+      env: {},
     });
   });
 });
