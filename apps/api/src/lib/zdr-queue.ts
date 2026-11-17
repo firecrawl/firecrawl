@@ -28,8 +28,7 @@ const ATTEMPT_HEADER = "zdr-attempt";
 
 const logger = _logger.child({ module: "zdr-queue" });
 
-// A request-level job resolves its blobs from ClickHouse; a blob job names one
-// blob; a parse upload job names one object in the parse upload bucket.
+// A request-level job resolves its blobs from ClickHouse; the others name one object.
 export type ZdrCleanupJob =
   | { requestId: string }
   | { blobId: string }

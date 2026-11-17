@@ -378,7 +378,6 @@ export async function parseUploadUrlController(
           return;
         }
 
-        // Deletes the object even if it is never parsed; a parse deletes it sooner.
         if (config.USE_DB_AUTHENTICATION === true) {
           try {
             await enqueueZdrCleanupJob({ parseUploadPath: objectPath });
