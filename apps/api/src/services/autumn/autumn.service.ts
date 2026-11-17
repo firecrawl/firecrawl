@@ -87,7 +87,7 @@ export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
-  /** The org's plan class; absent when billing names no active plan for it. */
+  /** The org's plan class from planClassOf; absent when that yields none. */
   plan_class?: TeamPlanClass;
 };
 

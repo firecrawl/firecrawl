@@ -1350,9 +1350,11 @@ export type AuthCreditUsageChunk = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
-  // The org's plan class as billing reported it, before team flags are
-  // applied (see teamPlanClass). Absent when it was never read: billing did
-  // not answer, the chunk is a mock, or it was cached before this field.
+  // The team's plan class before team flags are applied (see teamPlanClass):
+  // what planClassOf made of the org's billing record, or the keyless class
+  // on the chunk keyless auth builds. Absent when billing did not answer or
+  // gave the org no class, when the chunk is any other mock, or when it was
+  // cached before this field.
   plan_class?: TeamPlanClass;
 
   // Agent signup: populated when the key is agent-provisioned

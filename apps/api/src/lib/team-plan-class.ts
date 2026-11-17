@@ -96,12 +96,13 @@ const SELF_SERVE_ADD_ON_IDS = new Set([
 
 /**
  * The class of an org from the subscriptions billing reports for it, or
- * undefined when they name no active plan.
+ * undefined when they give none.
  *
- * One subscription to a plan this build cannot name, active or scheduled,
- * plan or add-on, makes the org `contract`. `free` and `self_serve` each
- * need an active plan of that kind, so an org with no plan on record is never
- * stated as free.
+ * One subscription to a plan this build cannot name makes the org `contract`,
+ * whatever its status and whether it is a plan or an add-on, so a status this
+ * build does not know can never hide such a plan. Failing that, `free` and
+ * `self_serve` each need an active plan of that kind, so an org with no plan
+ * on record is never stated as free.
  */
 export function planClassOf(
   subscriptions: readonly { planId: string; status: string }[],
@@ -150,9 +151,11 @@ function hasNegotiatedTerms(flags: TeamFlags, now: number): boolean {
 
 /**
  * The plan class to state for the team behind an auth chunk, or undefined to
- * state nothing: there is no chunk, or its plan was never read (billing did
- * not answer, the chunk is a mock, or it was cached before the class existed).
- * A team under negotiated terms is `contract` whatever plan it pays for.
+ * state nothing. A team under negotiated terms is `contract` whatever plan it
+ * pays for. Any other team gets the class on its chunk, and there is none
+ * when billing did not answer or gave the org no class, when the chunk is a
+ * mock other than the keyless one, or when it was cached before the class
+ * existed. No chunk states nothing.
  */
 export function teamPlanClass(
   acuc: Pick<AuthCreditUsageChunk, "flags" | "plan_class"> | undefined,

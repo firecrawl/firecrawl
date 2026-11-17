@@ -69,6 +69,10 @@ describe("planClassOf", () => {
       [active("growth"), scheduled("enterprise_10m")],
     ],
     [
+      "a negotiated plan in a status this build has never seen",
+      [active("growth"), { planId: "enterprise_10m", status: "expired" }],
+    ],
+    [
       "a pricing-page plan with an add-on this build has never seen",
       [active("growth"), active("custom_add_on")],
     ],
