@@ -84,8 +84,10 @@ function isAgentStatusBody(body: unknown): body is ExtractV3AgentStatus {
   );
 }
 
+/** With teamId, the agent service answers 404 for a run another team owns. */
 export async function getExtractV3AgentStatus(
   id: string,
+  teamId?: string,
 ): Promise<ExtractV3AgentStatus> {
   if (!config.EXTRACT_V3_BETA_URL) {
     throw new Error("Agent beta is not enabled.");
@@ -102,6 +104,7 @@ export async function getExtractV3AgentStatus(
       response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+          ...(teamId !== undefined ? { "x-team-id": teamId } : {}),
         },
         signal: AbortSignal.timeout(10_000),
       });
