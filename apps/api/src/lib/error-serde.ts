@@ -201,8 +201,10 @@ function serializeWithinLimit(error: unknown) {
 
 /**
  * The wire form of anything a job throws. What is not a transportable error
- * goes out as UNKNOWN_ERROR. This never throws, and what it returns can
- * always be read back.
+ * goes out as UNKNOWN_ERROR. This never throws. What it returns fits the queue
+ * and is what every reader parses as a serialized error: a code, then a JSON
+ * object with a message. Reading back the fields that a class adds is up to
+ * that class.
  *
  * An error crosses with its code even when it cannot be written as it is. A
  * cause that JSON cannot write is left out. An error that is too long for the
