@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import AsyncMock, Mock
 
 from firecrawl.v1.client import V1CrawlErrorsResponse
