@@ -14,6 +14,10 @@ import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
 import { issueFeedbackToken } from "../../lib/alexandria-feedback-token";
+import {
+  alexandriaFeedbackHintApplies,
+  alexandriaFeedbackNextStep,
+} from "../../lib/alexandria-feedback-hint";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import {
   markAlexandriaActivity,
@@ -374,6 +378,13 @@ export async function providerScrapeController(
       ({ provenance: _provenance, ...item }) => item,
     ),
   };
+  // One next step per response, on the first provider answer. Teams that
+  // cannot send feedback get none.
+  const hinted = alexandriaFeedbackHintApplies(req.auth.team_id, req.acuc.flags)
+    ? parsed.results.findIndex(
+        item => !item.error && item.provider !== "firecrawl",
+      )
+    : -1;
   const answer = zeroDataRetention
     ? parsed
     : {
@@ -390,7 +401,18 @@ export async function providerScrapeController(
                   capability,
                 })
               : undefined;
-          return feedbackToken ? { ...item, feedbackToken } : item;
+          return {
+            ...item,
+            ...(feedbackToken ? { feedbackToken } : {}),
+            ...(i === hinted
+              ? {
+                  nextStep: alexandriaFeedbackNextStep(
+                    body.origin,
+                    body.integration,
+                  ),
+                }
+              : {}),
+          };
         }),
       };
   if (legacy) {
