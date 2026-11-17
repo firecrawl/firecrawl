@@ -868,10 +868,12 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
   }
 });
 
-// The OpenAI provider package reads OPENAI_BASE_URL from the environment when
-// it is loaded and throws on an empty value. Docker Compose and the example
-// Helm chart pass an empty value when the variable is not set, so it counts as
-// not set.
+// Docker Compose and the example Helm chart pass an empty OPENAI_BASE_URL when
+// the variable is not set, so an empty value counts as not set. @ai-sdk/openai
+// reads the variable from the environment itself, for the default provider it
+// creates when the package is loaded and in createOpenAI, and throws on an
+// empty value. It is therefore removed here, and lib/generic-ai.ts imports
+// this module before the package.
 if (process.env.OPENAI_BASE_URL?.trim() === "") {
   delete process.env.OPENAI_BASE_URL;
 }
