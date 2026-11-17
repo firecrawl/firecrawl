@@ -116,18 +116,19 @@ export class TransportableError extends Error {
 }
 
 /**
- * Whether a value is a transportable error. Unlike `instanceof`, this also
- * holds for an error built by another copy of this module, so ask it wherever
- * the question is whether an error can cross the job queue with its code.
+ * Whether a value is a transportable error: an error that carries the brand,
+ * has a code and can write itself. Unlike `instanceof`, this also holds for
+ * an error built by another copy of this module, so ask it wherever the
+ * question is whether an error can cross the job queue with its code.
  */
 export function isTransportableError(
   error: unknown,
 ): error is TransportableError {
   return (
-    typeof error === "object" &&
-    error !== null &&
+    error instanceof Error &&
     (error as Partial<TransportableError>)[transportableErrorBrand] === true &&
-    typeof (error as Partial<TransportableError>).code === "string"
+    typeof (error as Partial<TransportableError>).code === "string" &&
+    typeof (error as Partial<TransportableError>).serialize === "function"
   );
 }
 

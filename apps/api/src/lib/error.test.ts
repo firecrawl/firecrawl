@@ -30,6 +30,25 @@ describe("isTransportableError", () => {
     expect(isTransportableError(undefined)).toBe(false);
   });
 
+  it("does not hold for a branded value that is no error or cannot write itself", () => {
+    const branded = {
+      [Symbol.for("firecrawl.TransportableError")]: true,
+      code: "SCRAPE_TIMEOUT",
+    };
+
+    expect(isTransportableError({ ...branded, serialize: () => ({}) })).toBe(
+      false,
+    );
+    expect(
+      isTransportableError(Object.assign(new Error("slow"), branded)),
+    ).toBe(false);
+    expect(
+      isTransportableError(
+        Object.assign(new Error("slow"), branded, { serialize: () => ({}) }),
+      ),
+    ).toBe(true);
+  });
+
   it("leaves what an error shows of itself unchanged", () => {
     const error = new CrawlDenialError("denied");
 

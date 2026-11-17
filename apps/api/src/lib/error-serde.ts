@@ -126,7 +126,9 @@ export function serializeThrownError(error: unknown) {
  * error messages. A code that no registered class carries gives a plain
  * TransportableError.
  */
-export function deserializeTransportableError(data: string): any {
+export function deserializeTransportableError(
+  data: string,
+): TransportableError | null {
   const [code, ...serialized] = data.split("|");
   if (serialized.length === 0) {
     return null;
