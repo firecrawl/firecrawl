@@ -434,7 +434,7 @@ async function subscribe(
             ...("blobId" in job
               ? { "zdr.blob_id": job.blobId }
               : "parseUploadPath" in job
-                ? { "zdr.parse_upload_path": job.parseUploadPath }
+                ? { "zdr.parse_upload_id": jobId(job) }
                 : { "zdr.request_id": job.requestId }),
             "zdr.attempt": attempt,
           });
