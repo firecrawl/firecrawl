@@ -19,7 +19,10 @@ export interface BaseRequestContext {
   teamId: string;
   /** Nothing of this request's content may be stored or logged. */
   zeroDataRetention: boolean;
-  /** Settings resolved for this request. Each one is off when it is absent. */
+  /**
+   * Settings resolved for this request. An absent flag is off, and an absent
+   * value means the service's default.
+   */
   checkRobotsOnScrape?: boolean;
   robotsUserAgent?: string;
   crawlTtlHours?: number;
