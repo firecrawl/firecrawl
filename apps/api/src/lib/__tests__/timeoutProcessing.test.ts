@@ -162,7 +162,7 @@ describe("SCRAPE_TIMEOUT processing details transport", () => {
     const original = new ScrapeJobTimeoutError(message, details);
     const revived = deserializeTransportableError(
       serializeTransportableError(original),
-    );
+    )!;
     expect(revived).toBeInstanceOf(ScrapeJobTimeoutError);
     expect(revived.message).toBe(message);
     expect(getTimeoutProcessingDetails(revived)).toEqual(details);

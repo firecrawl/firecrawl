@@ -89,7 +89,7 @@ describe("deserializeTransportableError", () => {
       });
       const revived = deserializeTransportableError(
         serializeTransportableError(original),
-      );
+      ) as CrawlDenialError;
 
       expect(revived).toBeInstanceOf(CrawlDenialError);
       expect(revived.code).toBe("CRAWL_DENIAL");
@@ -102,7 +102,7 @@ describe("deserializeTransportableError", () => {
     it("reads a payload written as code, separator, JSON", () => {
       const revived = deserializeTransportableError(
         'SCRAPE_TIMEOUT|{"stack":"Error: slow | very slow\\n    at worker","message":"slow | very slow"}',
-      );
+      )!;
 
       expect(revived).toBeInstanceOf(ScrapeJobTimeoutError);
       expect(revived.code).toBe("SCRAPE_TIMEOUT");
@@ -119,7 +119,7 @@ describe("deserializeTransportableError", () => {
           message: "Not known here",
           detail: { onlyTheOtherBuildReadsThis: true },
         }),
-      );
+      )!;
 
       expect(revived).toBeInstanceOf(TransportableError);
       expect(revived.constructor).toBe(TransportableError);
@@ -131,7 +131,7 @@ describe("deserializeTransportableError", () => {
     it("keeps a message that contains the separator", () => {
       const revived = deserializeTransportableError(
         wire("SCRAPE_FROM_ANOTHER_BUILD", { message: "a | b | c" }),
-      );
+      )!;
 
       expect(revived.code).toBe("SCRAPE_FROM_ANOTHER_BUILD");
       expect(revived.message).toBe("a | b | c");
@@ -143,10 +143,10 @@ describe("deserializeTransportableError", () => {
           stack: "Error: Not known here\n    at worker",
           message: "Not known here",
         }),
-      );
+      )!;
       const second = deserializeTransportableError(
         serializeTransportableError(first),
-      );
+      )!;
 
       expect(second.constructor).toBe(TransportableError);
       expect(second.code).toBe("SCRAPE_FROM_ANOTHER_BUILD");
@@ -157,7 +157,7 @@ describe("deserializeTransportableError", () => {
     it("treats a code that is listed without a class the same way", () => {
       const revived = deserializeTransportableError(
         wire("SAFE_MODE_BLOCKED", { message: "Blocked by Safe Mode" }),
-      );
+      )!;
 
       expect(revived.constructor).toBe(TransportableError);
       expect(revived.code).toBe("SAFE_MODE_BLOCKED");
@@ -167,7 +167,7 @@ describe("deserializeTransportableError", () => {
     it("does not take an inherited object key for a class", () => {
       const revived = deserializeTransportableError(
         wire("constructor", { message: "Not a class" }),
-      );
+      )!;
 
       expect(revived.constructor).toBe(TransportableError);
       expect(revived.code).toBe("constructor");
@@ -654,7 +654,7 @@ describe("the wire form of every class", () => {
       }),
     );
 
-    const revived = deserializeTransportableError(serialized);
+    const revived = deserializeTransportableError(serialized)!;
 
     expect(revived.constructor).toBe(original.constructor);
     expect(revived.code).toBe(code);
@@ -831,7 +831,9 @@ describe("serializeThrownError", () => {
     expect(isTransportableError(foreign)).toBe(true);
 
     const serialized = serializeThrownError(foreign);
-    const revived = deserializeTransportableError(serialized);
+    const revived = deserializeTransportableError(
+      serialized,
+    ) as CrawlDenialError;
 
     expect(serialized).toBe(serializeTransportableError(foreign));
     expect(serialized).toMatch(/^CRAWL_DENIAL\|/);
