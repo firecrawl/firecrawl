@@ -8,7 +8,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
@@ -147,8 +147,7 @@ export async function providerScrapeController(
     });
   // Exchange refuses capabilities that cannot honour ZDR, per call.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc.flags) === "forced" ||
-    body.zeroDataRetention === true;
+    isAlexandriaZDRForced(req.acuc.flags) || body.zeroDataRetention === true;
   if (
     (req as any).agentIndexOnly ||
     ["pending", "blocked"].includes(req.acuc._agentSponsor?.status ?? "")

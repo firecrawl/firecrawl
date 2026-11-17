@@ -295,7 +295,9 @@ describe("executeSearch tool intent", () => {
   it.each([
     [{ scrapeZDR: "forced" }, true],
     [{ forceZDR: true }, true],
+    [{ alexandriaZDR: "forced" }, true],
     [{ scrapeZDR: "allowed" }, false],
+    [{ alexandriaZDR: "allowed" }, false],
     [{}, false],
   ])(
     "asks tool and skill discovery for zero-data-retention providers by team flags (%o)",

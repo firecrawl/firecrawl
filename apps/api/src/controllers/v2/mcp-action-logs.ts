@@ -23,6 +23,7 @@ function isMcpActionLogZdrTeam(flags: TeamFlags | undefined) {
   return (
     flags?.forceZDR === true ||
     flags?.scrapeZDR === "forced" ||
+    flags?.alexandriaZDR === "forced" ||
     flags?.searchZDR === "forced" ||
     flags?.searchZDR === "forced-zdr" ||
     flags?.searchZDR === "forced-anon"
