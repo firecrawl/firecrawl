@@ -16,6 +16,7 @@ export async function browser(
     ttl?: number;
     activityTtl?: number;
     streamWebView?: boolean;
+    recordSession?: boolean;
     /** Block ads, trackers and cookie notices, as in scrape (default true). */
     blockAds?: boolean;
     profile?: {
@@ -32,6 +33,7 @@ export async function browser(
   if (args.ttl != null) body.ttl = args.ttl;
   if (args.activityTtl != null) body.activityTtl = args.activityTtl;
   if (args.streamWebView != null) body.streamWebView = args.streamWebView;
+  if (args.recordSession != null) body.recordSession = args.recordSession;
   if (args.blockAds != null) body.blockAds = args.blockAds;
   if (args.profile != null) body.profile = args.profile;
   if (args.location != null) body.location = args.location;

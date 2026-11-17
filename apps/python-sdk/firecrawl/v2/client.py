@@ -1850,6 +1850,7 @@ class FirecrawlClient:
         ttl: Optional[int] = None,
         activity_ttl: Optional[int] = None,
         stream_web_view: Optional[bool] = None,
+        record_session: Optional[bool] = None,
         block_ads: Optional[bool] = None,
         profile: Optional[Dict[str, Any]] = None,
         location: Optional[Dict[str, str]] = None,
@@ -1860,6 +1861,7 @@ class FirecrawlClient:
             ttl: Total time-to-live in seconds (30-3600, default 300)
             activity_ttl: Inactivity TTL in seconds (10-3600)
             stream_web_view: Whether to enable webview streaming
+            record_session: Whether to record the browser session (default ``True``)
             block_ads: Block ads, trackers and cookie notices (default ``True``)
             profile: Profile config with ``name`` (str) and
                 optional ``save_changes`` (bool, default ``True``)
@@ -1874,6 +1876,7 @@ class FirecrawlClient:
             ttl=ttl,
             activity_ttl=activity_ttl,
             stream_web_view=stream_web_view,
+            record_session=record_session,
             block_ads=block_ads,
             profile=profile,
             location=location,
