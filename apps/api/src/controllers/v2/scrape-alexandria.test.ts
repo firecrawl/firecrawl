@@ -54,7 +54,6 @@ vi.mock("../../config", () => ({
   },
 }));
 import {
-  alexandriaPathBody,
   alexandriaQueryBody,
   providerScrapeController,
 } from "./scrape-alexandria";
@@ -95,12 +94,6 @@ const integration = (req: any, _res: any, next: () => void) => {
 };
 app.post("/v2/alexandria", integration, (req, res) =>
   providerScrapeController(req as any, res, true),
-);
-app.post(
-  "/v2/alexandria/:provider/*capability",
-  alexandriaPathBody,
-  integration,
-  (req, res) => providerScrapeController(req as any, res, true),
 );
 app.get(
   "/v2/alexandria/:provider/*capability",
@@ -602,82 +595,6 @@ it("accepts zero data retention in the body and forwards it", async () => {
   );
 });
 
-describe("the capability in the path", () => {
-  const path = "/v2/alexandria/fred/categories/category";
-
-  it("runs the capability the path names with the body as its options", async () => {
-    const response = await request(app).post(path).send({ category_id: 32991 });
-    expect(response.status).toBe(200);
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        calls: [{ ...call, options: { category_id: 32991 } }],
-        timeoutMs: 120_000,
-      }),
-    );
-    // Answered as the flat route answers: one result, not the Scrape envelope.
-    const flat = await request(app).post("/v2/alexandria").send(call);
-    expect(flat.status).toBe(200);
-    expect(Object.keys(response.body)).toEqual(Object.keys(flat.body));
-  });
-
-  it("logs the X-Integration header, not an option named integration", async () => {
-    await request(app)
-      .post(path)
-      .set("x-integration", "zapier")
-      .send({ integration: "n8n" });
-    const [arg] = mocks.retrieve.mock.calls[0];
-    expect(arg.calls[0].options).toEqual({ integration: "n8n" });
-    await vi.waitFor(() =>
-      expect(mocks.log).toHaveBeenCalledWith(
-        expect.objectContaining({ integration: "zapier" }),
-      ),
-    );
-  });
-
-  it("runs with no body when the capability needs no options", async () => {
-    const response = await request(app).post(path);
-    expect(response.status).toBe(200);
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({ calls: [call] }),
-    );
-  });
-
-  it("keeps an option named like a request field as the provider's own", async () => {
-    await request(app).post(path).send({ timeout: 5, zeroDataRetention: true });
-    const [arg] = mocks.retrieve.mock.calls[0];
-    expect(arg.calls[0].options).toEqual({
-      timeout: 5,
-      zeroDataRetention: true,
-    });
-    expect(arg.timeoutMs).toBe(120_000);
-    expect(arg.zeroDataRetention).toBeFalsy();
-  });
-
-  it("takes zero data retention and the timeout from headers", async () => {
-    const response = await request(app)
-      .post(path)
-      .set("x-zero-data-retention", "true")
-      .set("x-timeout-ms", "60000")
-      .send({});
-    expect(response.status).toBe(200);
-    expect(mocks.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({ zeroDataRetention: true, timeoutMs: 60_000 }),
-    );
-  });
-
-  it("refuses a header it cannot read instead of falling back to the default", async () => {
-    for (const [name, value] of [
-      ["x-timeout-ms", "soon"],
-      ["x-timeout-ms", "0"],
-      ["x-zero-data-retention", "yes"],
-    ]) {
-      const response = await request(app).post(path).set(name, value).send({});
-      expect(response.status, `${name}: ${value}`).toBeGreaterThanOrEqual(400);
-    }
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-  });
-});
-
 it("logs the integration on the flat route from the body or the X-Integration header", async () => {
   await request(app)
     .post("/v2/alexandria")
@@ -1028,7 +945,6 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
     for (const response of [
       await request(app).get(path),
       await request(app).post("/v2/alexandria").send(call),
-      await request(app).post(path).send({}),
     ])
       expect(response.headers["cache-control"]).toBe("no-store");
   });
@@ -1054,6 +970,14 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
     const [arg] = mocks.retrieve.mock.calls[0];
     expect(arg.calls[0].options).toEqual({ timeout: 5, "meta.version": "4" });
     expect(arg.timeoutMs).toBe(60_000);
+  });
+
+  it("refuses an x-timeout-ms it cannot read instead of falling back to the default", async () => {
+    for (const value of ["soon", "0"]) {
+      const response = await request(app).get(path).set("x-timeout-ms", value);
+      expect(response.status, value).toBeGreaterThanOrEqual(400);
+    }
+    expect(mocks.retrieve).not.toHaveBeenCalled();
   });
 
   it("refuses a timeout given in both the query and the header", async () => {

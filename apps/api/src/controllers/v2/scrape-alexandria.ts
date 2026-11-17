@@ -93,38 +93,6 @@ const providerScrapeSchema = z.strictObject({
 });
 
 /**
- * POST /v2/alexandria/:provider/*capability: rewrites the capability in the path and its options
- * as the body into the POST /v2/alexandria body, so the rest of the chain answers it exactly as
- * that route does. Zero data retention and the timeout are headers, so the body stays the
- * provider's own and an option named like one of them cannot be mistaken. It runs before the
- * integration middleware, which then reads only the X-Integration header or infers one, never an
- * option of that name.
- */
-export function alexandriaPathBody(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-) {
-  const zeroDataRetention = req.get("x-zero-data-retention");
-  const timeout = req.get("x-timeout-ms");
-  req.body = {
-    provider: String(req.params.provider),
-    capability: ([] as string[]).concat(req.params.capability).join("/"),
-    options: req.body ?? {},
-    // Anything but true or false, or a whole number of milliseconds, is left for the schema to refuse.
-    ...(zeroDataRetention === undefined
-      ? {}
-      : {
-          zeroDataRetention:
-            { true: true, false: false }[zeroDataRetention] ??
-            zeroDataRetention,
-        }),
-    ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
-  };
-  next();
-}
-
-/**
  * GET /v2/alexandria/:provider/*capability: the whole call in the URL, the capability in the
  * path and its options in the query string (see lib/alexandria-query). Builds the
  * POST /v2/alexandria body so the rest of the chain answers it exactly as that route does.
