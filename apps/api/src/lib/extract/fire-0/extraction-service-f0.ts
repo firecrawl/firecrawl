@@ -18,6 +18,7 @@ import { ExtractStep, updateExtract } from "../extract-redis";
 import { CUSTOM_U_TEAMS } from "../config";
 import { normalizeUrl } from "../../canonical-url";
 import { search } from "../../../search";
+import { SearchUnavailableError } from "../../error";
 import { buildRephraseToSerpPrompt_F0 } from "./build-prompts-f0";
 import { processUrl_F0, generateBasicCompletion_FO } from "./url-processor-f0";
 import {
@@ -137,12 +138,33 @@ export async function performExtraction_F0(
       { teamId, extractId },
       teamFlags,
     );
-    const searchResults = await search({
-      query: rephrasedPrompt.replace('"', "").replace("'", ""),
-      logger,
-      num_results: 10,
-      usOnly: isUsOnly(acuc?.flags),
-    });
+    let searchResults: Awaited<ReturnType<typeof search>>;
+    try {
+      searchResults = await search({
+        query: rephrasedPrompt.replace('"', "").replace("'", ""),
+        logger,
+        num_results: 10,
+        usOnly: isUsOnly(acuc?.flags),
+      });
+    } catch (error) {
+      if (!(error instanceof SearchUnavailableError)) throw error;
+      await logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: [],
+        team_id: teamId,
+        options: request,
+        model_kind: "fire-0",
+        credits_cost: 0,
+        is_successful: false,
+        error: error.message,
+      });
+      return {
+        success: false,
+        error: error.message,
+        extractId,
+      };
+    }
 
     request.urls = searchResults.map(result => result.url) as string[];
   }

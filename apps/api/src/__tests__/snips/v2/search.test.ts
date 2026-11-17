@@ -65,6 +65,25 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 
+  concurrentIf(!process.env.TEST_SUITE_SELF_HOSTED)(
+    "returns search results as a success without leaking failedTypes",
+    async () => {
+      const res = await searchRaw(
+        {
+          query: "firecrawl",
+          limit: 3,
+          sources: [{ type: "web" }, { type: "news" }],
+        },
+        identity,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.web?.length).toBeGreaterThan(0);
+      expect(res.body.data.failedTypes).toBeUndefined();
+    },
+    60000,
+  );
+
   it.concurrent(
     "works with includeDomains",
     async () => {

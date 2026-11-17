@@ -1,19 +1,10 @@
 import { config } from "../../config";
-import {
-  SearchResult,
-  SearchV2Response,
-  SearchResultType,
-} from "../../lib/entities";
+import { SearchV2BackendResponse, SearchResultType } from "../../lib/entities";
 import { logger } from "../../lib/logger";
-import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
+import { requestSearchBackend } from "../../lib/retry-utils";
 import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
 
-function normalizeSearchTypes(
-  type?: SearchResultType | SearchResultType[],
-): SearchResultType[] {
-  if (!type) return ["web"];
-  return Array.isArray(type) ? type : [type];
-}
+const SEARCH_TYPES: SearchResultType[] = ["web", "images", "news"];
 
 /**
  * Checks if the response has at least one requested type with results.
@@ -52,7 +43,7 @@ export async function fire_engine_search_v2(
     usOnly?: boolean;
   },
   abort?: AbortSignal,
-): Promise<SearchV2Response> {
+): Promise<SearchV2BackendResponse> {
   if (!useFireEngine) {
     logger.warn(
       "FIRE_ENGINE_BETA_URL is not configured, returning empty search results",
@@ -76,15 +67,20 @@ export async function fire_engine_search_v2(
     ...(options.usOnly ? { usOnly: true } : {}),
   };
 
-  const requestedTypes = normalizeSearchTypes(options.type);
   const url = `${config.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 
-  const result = await executeWithRetry<SearchV2Response>(
-    () => attemptRequest<SearchV2Response>(url, data, abort, options.requestId),
-    (response): response is SearchV2Response => response !== null,
+  const result = await requestSearchBackend<SearchV2BackendResponse>(
+    url,
+    data,
     abort,
+    options.requestId,
   );
+  if (result === null) return {};
 
-  return result ?? {};
+  const { failedTypes: reportedFailedTypes, ...response } = result;
+  const failedTypes = Array.isArray(reportedFailedTypes)
+    ? reportedFailedTypes.filter(type => SEARCH_TYPES.includes(type))
+    : [];
+  return failedTypes.length > 0 ? { ...response, failedTypes } : response;
 }

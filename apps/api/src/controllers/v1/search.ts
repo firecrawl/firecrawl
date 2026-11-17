@@ -20,7 +20,7 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import type { Logger } from "winston";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, SearchUnavailableError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -464,6 +464,15 @@ export async function searchController(
 
     if (error instanceof UsOnlyUnavailableError) {
       return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof SearchUnavailableError) {
+      logger.warn("Search unavailable", { version: "v1" });
+      return res.status(503).json({
         success: false,
         code: error.code,
         error: error.message,

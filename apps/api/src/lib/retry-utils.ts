@@ -1,16 +1,19 @@
 import { logger } from "./logger";
+import { SearchUnavailableError } from "./error";
 
 const RETRY_DELAYS = [500, 1500, 3000] as const;
 const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
 
 /**
- * Generic HTTP request function for Fire Engine API calls
+ * Generic HTTP request function for Fire Engine API calls. `onFailure` gets
+ * the response status of a non-2xx reply, or undefined when no reply arrived.
  */
 export async function attemptRequest<T>(
   url: string,
   data: string,
   abort?: AbortSignal,
   requestId?: string,
+  onFailure?: (status?: number) => void,
 ): Promise<T | null> {
   try {
     const response = await fetch(url, {
@@ -27,6 +30,7 @@ export async function attemptRequest<T>(
     if (response.ok) {
       return await response.json();
     } else {
+      onFailure?.(response.status);
       // Log non-OK responses for better observability
       const statusText = response.statusText || "Unknown Error";
       let bodySnippet = "";
@@ -45,6 +49,7 @@ export async function attemptRequest<T>(
       });
     }
   } catch (error) {
+    onFailure?.(undefined);
     logger.error("Fire Engine API request failed:", error);
   }
   return null;
@@ -114,4 +119,46 @@ export async function executeWithRetry<T>(
   }
 
   return null;
+}
+
+/**
+ * POSTs a search request to fire-engine. A 5xx or network failure is retried
+ * once and then throws SearchUnavailableError; a 4xx returns null.
+ */
+export async function requestSearchBackend<T>(
+  url: string,
+  data: string,
+  abort?: AbortSignal,
+  requestId?: string,
+): Promise<T | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await abortableSleep(500, abort);
+    if (abort?.aborted) return null;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Disable-Cache": "true",
+          ...(requestId ? { "X-Request-ID": requestId } : {}),
+        },
+        body: data,
+        signal: abort,
+      });
+    } catch (error) {
+      if (abort?.aborted) return null;
+      logger.warn("Fire Engine search request failed", { error });
+      continue;
+    }
+
+    if (response.ok) return await response.json();
+    await response.body?.cancel().catch(() => {});
+    logger.warn("Fire Engine search returned non-OK response", {
+      status: response.status,
+    });
+    if (response.status < 500) return null;
+  }
+  throw new SearchUnavailableError();
 }

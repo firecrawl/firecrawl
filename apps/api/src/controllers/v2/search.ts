@@ -23,7 +23,7 @@ import {
   logResearchEndpoint,
 } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, SearchUnavailableError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
@@ -723,6 +723,7 @@ async function searchControllerInner(
     const warning = [
       usOnlyImagesWarning,
       result.usOnlyWarning,
+      result.failedTypesWarning,
       result.toolsWarning,
     ]
       .filter(Boolean)
@@ -762,6 +763,17 @@ async function searchControllerInner(
     if (error instanceof UsOnlyUnavailableError) {
       setSpanAttributes(span, { "search.status_code": 403 });
       return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof SearchUnavailableError) {
+      logger.warn("Search unavailable", { version: "v2" });
+      recordSpanException(span, error);
+      setSpanAttributes(span, { "search.status_code": 503 });
+      return res.status(503).json({
         success: false,
         code: error.code,
         error: error.message,

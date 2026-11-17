@@ -172,6 +172,11 @@ export interface SearchV2Response {
   news?: NewsSearchResult[];
 }
 
+/** A search backend's response; `failedTypes` names requested types that could not be served. */
+export type SearchV2BackendResponse = SearchV2Response & {
+  failedTypes?: SearchResultType[];
+};
+
 /**
  * Length of each `SearchV2Response` group as returned to the client. Every
  * group is present and non-negative — a source that was not requested, or that
