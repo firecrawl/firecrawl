@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
 import { eq } from "drizzle-orm";
-import { db } from "../../../db/connection";
-import * as schema from "../../../db/schema";
-import { clearACUC, clearACUCTeam } from "../../auth";
-import { logger } from "../../../lib/logger";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
+import { clearACUC, clearACUCTeam } from "../auth";
+import { logger } from "../../lib/logger";
 
 export async function acucCacheClearController(req: Request, res: Response) {
   try {

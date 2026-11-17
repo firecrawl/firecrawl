@@ -1,26 +1,26 @@
 import { Response } from "express";
-import { logger as _logger } from "../../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 import {
   crawlerOptions,
   RequestWithAuth,
   scrapeOptions,
   toV0CrawlerOptions,
-} from "../../v2/types";
+} from "../v2/types";
 import { v7 as uuidv7 } from "uuid";
-import { logRequest } from "../../../services/logging/log_job";
+import { logRequest } from "../../services/logging/log_job";
 import {
   crawlToCrawler,
   markCrawlActive,
   saveCrawl,
   StoredCrawl,
-} from "../../../lib/crawl-redis";
-import { config } from "../../../config";
+} from "../../lib/crawl-redis";
+import { config } from "../../config";
 import {
   crawlGroup,
   resolveNewGroupBackend,
-} from "../../../services/worker/nuq-router";
-import { _addScrapeJobToBullMQ } from "../../../services/queue-jobs";
-import { requestCreditsShards } from "../../../lib/request-credits-store";
+} from "../../services/worker/nuq-router";
+import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 type ResponseType = {
   ok: boolean;

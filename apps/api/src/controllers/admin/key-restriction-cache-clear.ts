@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { clearKeyRestrictionCache } from "../../../lib/key-restriction";
-import { logger } from "../../../lib/logger";
+import { clearKeyRestrictionCache } from "../../lib/key-restriction";
+import { logger } from "../../lib/logger";
 
 // Called by the dashboard after it writes key_restriction_config so
 // restriction edits take effect immediately instead of after the 60s
