@@ -972,10 +972,15 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
     expect(arg.timeoutMs).toBe(60_000);
   });
 
-  it("refuses an x-timeout-ms it cannot read instead of falling back to the default", async () => {
-    for (const value of ["soon", "0"]) {
-      const response = await request(app).get(path).set("x-timeout-ms", value);
-      expect(response.status, value).toBeGreaterThanOrEqual(400);
+  it("refuses a timeout it cannot read instead of falling back to the default", async () => {
+    for (const value of ["soon", "0", "-5", "1.5", "1e3"]) {
+      const header = await request(app).get(path).set("x-timeout-ms", value);
+      expect(header.status, `x-timeout-ms: ${value}`).toBe(400);
+      expect(header.body.error).toMatch(/whole number of milliseconds/);
+      const query = await request(app).get(
+        `${path}?timeout=${encodeURIComponent(value)}`,
+      );
+      expect(query.status, `timeout=${value}`).toBe(400);
     }
     expect(mocks.retrieve).not.toHaveBeenCalled();
   });

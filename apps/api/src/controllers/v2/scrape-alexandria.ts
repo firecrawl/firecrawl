@@ -156,12 +156,15 @@ export async function alexandriaQueryBody(
   if (header !== undefined && parsed.timeout !== undefined)
     return refuse("Give the timeout once: in the query or in x-timeout-ms.");
   const timeout = header ?? parsed.timeout;
+  if (timeout !== undefined && !/^[1-9]\d{0,8}$/.test(timeout))
+    return refuse(
+      "The timeout must be a whole number of milliseconds greater than 0.",
+    );
   req.body = {
     provider,
     capability,
     ...(parsed.version === undefined ? {} : { version: parsed.version }),
     options,
-    // Anything but a whole number of milliseconds is left for the schema to refuse.
     ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
   };
   next();
