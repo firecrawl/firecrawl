@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request, type Response } from "express";
 import request from "supertest";
 
 vi.mock("../controllers/auth", () => ({
@@ -9,11 +9,12 @@ import { authenticateUser } from "../controllers/auth";
 import { authenticate } from "./index";
 
 function appWithProbe() {
+  const handler = vi.fn((req: Request, res: Response) => {
+    res.status(200).json({ caller: req.caller });
+  });
   const app = express();
-  app.get("/probe", authenticate("scrape"), (req, res) =>
-    res.status(200).json({ caller: req.caller }),
-  );
-  return app;
+  app.get("/probe", authenticate("scrape"), handler);
+  return { app, handler };
 }
 
 describe("authenticate", () => {
@@ -29,13 +30,14 @@ describe("authenticate", () => {
       chunk: null,
     });
 
-    const app = appWithProbe();
+    const { app, handler } = appWithProbe();
     const first = await request(app).get("/probe");
     const second = await request(app).get("/probe");
 
     expect(first.status).toBe(200);
     expect(first.body).toEqual({ caller: { teamId: "team-1" } });
     expect(second.body).toEqual(first.body);
+    expect(handler).toHaveBeenCalledTimes(2);
     expect(vi.mocked(authenticateUser).mock.calls[0][2]).toBe("scrape");
   });
 
@@ -46,12 +48,14 @@ describe("authenticate", () => {
       status: 401,
     });
 
-    const response = await request(appWithProbe()).get("/probe");
+    const { app, handler } = appWithProbe();
+    const response = await request(app).get("/probe");
 
     expect(response.status).toBe(401);
     expect(response.body).toEqual({
       success: false,
       error: "Unauthorized: Invalid token",
     });
+    expect(handler).not.toHaveBeenCalled();
   });
 });
