@@ -29,6 +29,7 @@ import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
   setSpanAttributes,
@@ -568,6 +569,7 @@ async function searchControllerInner(
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        teamPlanClass: teamPlanClass(req.acuc),
         requestId: agentRequestId ?? jobId,
         jobId,
         apiVersion: "v2",

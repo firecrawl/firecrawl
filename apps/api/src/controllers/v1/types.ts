@@ -29,6 +29,7 @@ import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
+import type { TeamPlanClass } from "../../lib/team-plan-class";
 
 type Format =
   | "markdown"
@@ -1349,6 +1350,12 @@ export type AuthCreditUsageChunk = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  // The team's plan class before team flags are applied (see teamPlanClass):
+  // what planClassOf made of the org's billing record, or the keyless class
+  // on the chunk keyless auth builds. Absent when billing did not answer or
+  // gave the org no class, when the chunk is any other mock, or when it was
+  // cached before this field.
+  plan_class?: TeamPlanClass;
 
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {
@@ -1422,6 +1429,11 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Staff-set: the org has a signed contract on file.
+  signedContract?: boolean;
+  // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
+  // strings. No endDate means the pilot has no end.
+  enterprisePilot?: { startDate?: string; endDate?: string } | null;
   // PDF and image parsing runs only on reserved processing capacity. A parse
   // that cannot be kept there is refused.
   reservedCapacity?: boolean;

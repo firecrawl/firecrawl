@@ -47,6 +47,7 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { teamPlanClass } from "../../lib/team-plan-class";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 // Used for deep research
@@ -329,6 +330,7 @@ export async function searchController(
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        teamPlanClass: teamPlanClass(req.acuc),
         requestId: jobId,
         jobId,
         apiVersion: "v1",
