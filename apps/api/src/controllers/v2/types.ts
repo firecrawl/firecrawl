@@ -26,7 +26,7 @@ import {
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
@@ -1644,7 +1644,7 @@ export type VideoItem = {
 
 export type ErrorResponse = {
   success: false;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error: string;
   details?: any;
   sponsor_status?: string;
@@ -1687,7 +1687,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -2101,7 +2101,7 @@ export type CrawlErrorsResponse =
         id: string;
         timestamp?: string;
         url: string;
-        code?: ErrorCodes;
+        code?: ErrorCode;
         error: string;
         requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];

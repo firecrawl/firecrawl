@@ -5,9 +5,24 @@ import {
   TransportableError,
 } from "../error";
 import {
+  coreErrors,
   deserializeTransportableError,
   serializeTransportableError,
 } from "../error-serde";
+import { createService, replaceService } from "../../service/service";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const T0 = 1_756_200_000_000;
 

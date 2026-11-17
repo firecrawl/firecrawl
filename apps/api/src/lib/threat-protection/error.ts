@@ -1,4 +1,4 @@
-import { ErrorCodes, TransportableError } from "../error";
+import { ErrorCode, TransportableError } from "../error";
 import type { ThreatDecision } from "./types";
 
 // Error surfaced when threat protection blocks a URL. Wired into the shared
@@ -10,6 +10,8 @@ import type { ThreatDecision } from "./types";
 // read it even across the job queue.
 
 export class UnsafeDomainBlockedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["unsafe_domain_blocked"];
+
   /** Canonicalized host of the blocked URL (from the decision). */
   public readonly domain: string;
 
@@ -37,7 +39,7 @@ export class UnsafeDomainBlockedError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new UnsafeDomainBlockedError(data.url ?? data.domain, {

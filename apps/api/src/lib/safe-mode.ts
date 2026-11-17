@@ -2,7 +2,7 @@ import {
   LOCKDOWN_DEFAULT_MAX_AGE_MS,
   TeamFlags,
 } from "../controllers/v2/types";
-import type { ErrorCodes } from "./error";
+import type { ErrorCode } from "./error";
 import { getSearchForcedKind } from "./zdr-helpers";
 import {
   domainMatchesList,
@@ -178,7 +178,7 @@ export function resolveSafeMode(
   bypassed?: boolean;
   allowlisted?: boolean;
   error?: string;
-  code?: ErrorCodes;
+  code?: ErrorCode;
 } {
   if (!getSafeMode(flags)) {
     if (requestSafeMode === true) {
