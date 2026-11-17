@@ -353,11 +353,6 @@ export async function parseUploadUrlController(
           });
         }
 
-        // Deletes the object even if it is never parsed; a parse deletes it sooner.
-        if (config.USE_DB_AUTHENTICATION === true) {
-          await enqueueZdrCleanupJob({ parseUploadPath: objectPath });
-        }
-
         const bucket = getStorageClient().bucket(
           config.GCS_PARSE_UPLOAD_BUCKET_NAME,
         );
@@ -381,6 +376,16 @@ export async function parseUploadUrlController(
           )
         ) {
           return;
+        }
+
+        // Deletes the object even if it is never parsed; a parse deletes it sooner.
+        if (config.USE_DB_AUTHENTICATION === true) {
+          try {
+            await enqueueZdrCleanupJob({ parseUploadPath: objectPath });
+          } catch (error) {
+            await releaseRejectedUploadRef(refPayload);
+            throw error;
+          }
         }
 
         return res.status(200).json({

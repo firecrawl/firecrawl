@@ -1,37 +1,56 @@
 import { vi } from "vitest";
 
-const { query, spans, withSpan, setSpanAttributes, removeJobFromGCS, client } =
-  vi.hoisted(() => {
-    const query = vi.fn();
-    const spans: Array<{ name: string; attributes: Record<string, unknown> }> =
-      [];
-    const withSpan = vi.fn(async (name: string, fn: (span: any) => any) => {
-      const span = { attributes: {} };
-      spans.push({ name, attributes: span.attributes });
-      return fn(span);
-    });
-    const setSpanAttributes = vi.fn(
-      (span: { attributes: Record<string, unknown> }, attributes: object) => {
-        Object.assign(span.attributes, attributes);
-      },
-    );
-    return {
-      query,
-      spans,
-      withSpan,
-      setSpanAttributes,
-      removeJobFromGCS: vi.fn<(id: string) => Promise<void>>(async () => {}),
-      client: { current: { query } as { query: typeof query } | null },
-    };
+const {
+  query,
+  spans,
+  withSpan,
+  setSpanAttributes,
+  removeJobFromGCS,
+  client,
+  mockConfig,
+  storage,
+  bucket,
+  file,
+  deleteObject,
+} = vi.hoisted(() => {
+  const query = vi.fn();
+  const spans: Array<{ name: string; attributes: Record<string, unknown> }> =
+    [];
+  const withSpan = vi.fn(async (name: string, fn: (span: any) => any) => {
+    const span = { attributes: {} };
+    spans.push({ name, attributes: span.attributes });
+    return fn(span);
   });
+  const setSpanAttributes = vi.fn(
+    (span: { attributes: Record<string, unknown> }, attributes: object) => {
+      Object.assign(span.attributes, attributes);
+    },
+  );
+  const deleteObject = vi.fn(async () => [{}]);
+  const file = vi.fn(() => ({ delete: deleteObject }));
+  const bucket = vi.fn(() => ({ file }));
+  return {
+    query,
+    spans,
+    withSpan,
+    setSpanAttributes,
+    removeJobFromGCS: vi.fn<(id: string) => Promise<void>>(async () => {}),
+    client: { current: { query } as { query: typeof query } | null },
+    mockConfig: {} as { GCS_PARSE_UPLOAD_BUCKET_NAME?: string },
+    storage: { bucket },
+    bucket,
+    file,
+    deleteObject,
+  };
+});
 
 vi.mock("./clickhouse-client", () => ({
   get clickhouseClient() {
     return client.current;
   },
 }));
-vi.mock("./gcs-jobs", () => ({ removeJobFromGCS }));
-vi.mock("../config", () => ({ config: {} }));
+vi.mock("./gcs-jobs", () => ({ removeJobFromGCS, storage }));
+vi.mock("../config", () => ({ config: mockConfig }));
 vi.mock("./logger", () => {
   const logger: any = {
     child: vi.fn(() => logger),
@@ -205,6 +224,27 @@ describe("ZDR cleanup job dispatch", () => {
       "GCS unavailable",
     );
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("deletes a parse upload object from the parse upload bucket", async () => {
+    mockConfig.GCS_PARSE_UPLOAD_BUCKET_NAME = "parse-uploads";
+
+    await cleanZdrJob({ parseUploadPath: "parse-uploads/team/upload/a.pdf" });
+
+    expect(bucket).toHaveBeenCalledWith("parse-uploads");
+    expect(file).toHaveBeenCalledWith("parse-uploads/team/upload/a.pdf");
+    expect(deleteObject).toHaveBeenCalledWith({ ignoreNotFound: true });
+    expect(removeJobFromGCS).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("fails a parse upload job when the bucket is not configured", async () => {
+    delete mockConfig.GCS_PARSE_UPLOAD_BUCKET_NAME;
+
+    await expect(
+      cleanZdrJob({ parseUploadPath: "parse-uploads/team/upload/a.pdf" }),
+    ).rejects.toThrow("GCS_PARSE_UPLOAD_BUCKET_NAME is not configured");
+    expect(deleteObject).not.toHaveBeenCalled();
   });
 
   it("still resolves a request-level job's blobs from ClickHouse", async () => {

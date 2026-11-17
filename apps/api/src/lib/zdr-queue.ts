@@ -1,5 +1,5 @@
 import amqp from "amqplib";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { config } from "../config";
 import { logger as _logger } from "./logger";
 import {
@@ -250,7 +250,10 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
 
 function jobId(job: ZdrCleanupJob): string {
   if ("blobId" in job) return job.blobId;
-  if ("parseUploadPath" in job) return job.parseUploadPath;
+  // AMQP caps messageId at 255 bytes; the path includes a client filename.
+  if ("parseUploadPath" in job) {
+    return createHash("sha256").update(job.parseUploadPath).digest("hex");
+  }
   return job.requestId;
 }
 
