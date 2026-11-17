@@ -1,4 +1,6 @@
 import { describe, test, expect, vi, type Mock } from "vitest";
+import { AxiosError } from "axios";
+import { SdkError } from "../../../v2/types";
 import { getCrawlStatus } from "../../../v2/methods/crawl";
 import { getBatchScrapeStatus } from "../../../v2/methods/batch";
 import { getMonitorCheck } from "../../../v2/methods/monitor";
@@ -7,6 +9,61 @@ describe("JS SDK v2 pagination", () => {
   function makeHttp(getImpl: (url: string) => any) {
     return { get: vi.fn(async (u: string) => getImpl(u)) } as any;
   }
+
+
+  const callers = [
+    { name: "crawl", read: (http: any) => getCrawlStatus(http, "job1"), data: [{ markdown: "a" }] },
+    { name: "batch", read: (http: any) => getBatchScrapeStatus(http, "job1"), data: [{ markdown: "a" }] },
+    { name: "monitor check", read: (http: any) => getMonitorCheck(http, "mon1", "check1"), data: { pages: [{ url: "a", status: "changed" }] } },
+  ];
+
+  describe.each(callers)("$name: page failures", ({ read, data }) => {
+    test.each([1, 2])("normalizes HTTP errors on request %i", async (failedRequest) => {
+      const failure = Object.assign(new AxiosError("fixture page failure", "ERR_BAD_RESPONSE"), {
+        response: { status: 500, data: { error: "fixture page failure", code: "PAGE_UNAVAILABLE" } },
+      });
+      const http = makeHttp(() => {
+        if (http.get.mock.calls.length === failedRequest) throw failure;
+        return { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/next", data } };
+      });
+
+      const result = read(http);
+      await expect(result).rejects.toBeInstanceOf(SdkError);
+      await expect(result).rejects.toMatchObject({ status: 500, code: "PAGE_UNAVAILABLE", message: "fixture page failure" });
+      expect(http.get).toHaveBeenCalledTimes(failedRequest);
+    });
+
+    test("still stops on an unsuccessful page response", async () => {
+      const http = makeHttp(() => http.get.mock.calls.length === 1
+        ? { status: 200, data: { success: true, next: "https://api/next", data } }
+        : { status: 200, data: { success: false, next: "https://api/another" } });
+      const result = await read(http);
+      expect(result.next).toBeNull();
+      expect("pages" in result ? result.pages : result.data).toHaveLength(1);
+      expect(http.get).toHaveBeenCalledTimes(2);
+    });
+
+    test("preserves non-HTTP errors from a later page", async () => {
+      const failure = new Error("fixture transport failure");
+      const http = makeHttp(() => {
+        if (http.get.mock.calls.length === 2) throw failure;
+        return { status: 200, data: { success: true, next: "https://api/next", data } };
+      });
+      await expect(read(http)).rejects.toBe(failure);
+      expect(http.get).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  test("monitor check: follows nested page cursors", async () => {
+    const http = makeHttp(() => {
+      const request = http.get.mock.calls.length;
+      return { status: 200, data: { success: true, data: { pages: [{ url: String(request) }], next: request < 3 ? `https://api/m${request}` : null } } };
+    });
+    const result = await getMonitorCheck(http, "mon1", "check1");
+    expect(result.pages.map(page => page.url)).toEqual(["1", "2", "3"]);
+    expect(result.next).toBeNull();
+    expect(http.get.mock.calls.map(([url]: [string]) => url)).toEqual(["/v2/monitor/mon1/checks/check1", "https://api/m1", "https://api/m2"]);
+  });
 
   test("crawl: autoPaginate=false returns next", async () => {
     const first = { status: 200, data: { success: true, status: "completed", completed: 1, total: 2, next: "https://api/next", data: [{ markdown: "a" }] } };
