@@ -52,11 +52,17 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
 export async function startCrawl(http: HttpClient, request: CrawlRequest): Promise<CrawlResponse> {
   const payload = prepareCrawlPayload(request);
   try {
-    const res = await http.post<{ success: boolean; id: string; url: string; error?: string }>("/v2/crawl", payload);
+    const res = await http.post<CrawlResponse & { success: boolean; error?: string }>("/v2/crawl", payload);
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "start crawl");
     }
-    return { id: res.data.id, url: res.data.url };
+    const { id, url, promptGeneratedOptions, finalCrawlerOptions } = res.data;
+    return {
+      id,
+      url,
+      ...(promptGeneratedOptions && { promptGeneratedOptions }),
+      ...(finalCrawlerOptions && { finalCrawlerOptions }),
+    };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "start crawl");
     throw err;
