@@ -101,16 +101,17 @@ class WebhookQueue {
 
     const buffer = Buffer.from(JSON.stringify(message));
 
-    const canSendMore = options.zeroDataRetention
-      ? this.channel.sendToQueue(ZDR_WEBHOOK_QUEUE_NAME, buffer, {
-          persistent: true,
-          contentType: "application/json",
-          timestamp: Math.floor(Date.now() / 1000),
-        })
-      : this.channel.sendToQueue(WEBHOOK_QUEUE_NAME, buffer, {
-          persistent: true,
-          contentType: "application/json",
-        });
+    const queue = options.zeroDataRetention
+      ? ZDR_WEBHOOK_QUEUE_NAME
+      : WEBHOOK_QUEUE_NAME;
+
+    const canSendMore = this.channel.sendToQueue(queue, buffer, {
+      persistent: true,
+      contentType: "application/json",
+      ...(options.zeroDataRetention && {
+        timestamp: Math.floor(Date.now() / 1000),
+      }),
+    });
 
     if (!canSendMore) {
       _logger.warn("Webhook message buffer full, waiting for drain", {
