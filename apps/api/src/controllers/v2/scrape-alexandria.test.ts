@@ -50,9 +50,10 @@ vi.mock("../../config", () => ({
   },
 }));
 import {
-  alexandriaPathController,
+  alexandriaPathBody,
   providerScrapeController,
 } from "./scrape-alexandria";
+import { resolveIntegration } from "../../utils/integration";
 import { config } from "../../config";
 import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 
@@ -80,8 +81,21 @@ app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
-app.post("/v2/alexandria/:provider/*capability", (req, res) =>
-  alexandriaPathController(req as any, res),
+// Stands in for inferIntegrationMiddleware, which the routes run after these steps; importing the
+// routes would load the whole API.
+const integration = (req: any, _res: any, next: () => void) => {
+  const resolved = resolveIntegration(req.body?.integration, req);
+  if (resolved !== undefined) req.body.integration = resolved;
+  next();
+};
+app.post("/v2/alexandria", integration, (req, res) =>
+  providerScrapeController(req as any, res, true),
+);
+app.post(
+  "/v2/alexandria/:provider/*capability",
+  alexandriaPathBody,
+  integration,
+  (req, res) => providerScrapeController(req as any, res, true),
 );
 const result = (results: unknown[], executed = true) => ({
   status: 200,
@@ -562,8 +576,23 @@ describe("the capability in the path", () => {
       }),
     );
     // Answered as the flat route answers: one result, not the Scrape envelope.
-    const flat = await request(app).post("/exchange/retrieve").send(call);
+    const flat = await request(app).post("/v2/alexandria").send(call);
+    expect(flat.status).toBe(200);
     expect(Object.keys(response.body)).toEqual(Object.keys(flat.body));
+  });
+
+  it("logs the X-Integration header, not an option named integration", async () => {
+    await request(app)
+      .post(path)
+      .set("x-integration", "zapier")
+      .send({ integration: "n8n" });
+    const [arg] = mocks.retrieve.mock.calls[0];
+    expect(arg.calls[0].options).toEqual({ integration: "n8n" });
+    await vi.waitFor(() =>
+      expect(mocks.log).toHaveBeenCalledWith(
+        expect.objectContaining({ integration: "zapier" }),
+      ),
+    );
   });
 
   it("runs with no body when the capability needs no options", async () => {
@@ -607,6 +636,25 @@ describe("the capability in the path", () => {
       expect(response.status, `${name}: ${value}`).toBeGreaterThanOrEqual(400);
     }
     expect(mocks.retrieve).not.toHaveBeenCalled();
+  });
+});
+
+it("logs the integration on the flat route from the body or the X-Integration header", async () => {
+  await request(app)
+    .post("/v2/alexandria")
+    .send({ ...call, integration: "n8n" });
+  await request(app)
+    .post("/v2/alexandria")
+    .set("x-integration", "zapier")
+    .send(call);
+  expect(mocks.retrieve).toHaveBeenCalledTimes(2);
+  await vi.waitFor(() => {
+    expect(mocks.log).toHaveBeenCalledWith(
+      expect.objectContaining({ integration: "n8n" }),
+    );
+    expect(mocks.log).toHaveBeenCalledWith(
+      expect.objectContaining({ integration: "zapier" }),
+    );
   });
 });
 

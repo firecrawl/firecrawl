@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
@@ -80,13 +80,17 @@ const providerScrapeSchema = z.strictObject({
 });
 
 /**
- * POST /v2/alexandria/:provider/*capability: the capability in the path and its options as the
- * body, answered exactly as POST /v2/alexandria. Zero data retention and the timeout are headers,
- * so the body stays the provider's own and an option named like one of them cannot be mistaken.
+ * POST /v2/alexandria/:provider/*capability: rewrites the capability in the path and its options
+ * as the body into the POST /v2/alexandria body, so the rest of the chain answers it exactly as
+ * that route does. Zero data retention and the timeout are headers, so the body stays the
+ * provider's own and an option named like one of them cannot be mistaken. It runs before the
+ * integration middleware, which then reads only the X-Integration header or infers one, never an
+ * option of that name.
  */
-export function alexandriaPathController(
-  req: RequestWithAuth<any, any, any>,
-  res: Response,
+export function alexandriaPathBody(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
 ) {
   const zeroDataRetention = req.get("x-zero-data-retention");
   const timeout = req.get("x-timeout-ms");
@@ -104,7 +108,7 @@ export function alexandriaPathController(
         }),
     ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
   };
-  return providerScrapeController(req, res, true);
+  next();
 }
 
 export async function providerScrapeController(
@@ -115,6 +119,7 @@ export async function providerScrapeController(
   const legacyZeroDataRetention = {
     zeroDataRetention: z.boolean().optional(),
     timeout: z.number().int().positive().optional(),
+    integration: z.string().nullable().optional(),
     __agentInterop: agentInteropSchema.optional(),
   };
   const legacyBody = legacy
@@ -127,10 +132,17 @@ export async function providerScrapeController(
     : null;
   const body = providerScrapeSchema.parse(
     legacyBody
-      ? (({ zeroDataRetention, timeout, __agentInterop, ...rest }) => ({
+      ? (({
+          zeroDataRetention,
+          timeout,
+          integration,
+          __agentInterop,
+          ...rest
+        }) => ({
           alexandria: "requests" in rest ? rest.requests : [rest],
           zeroDataRetention,
           timeout,
+          integration,
           __agentInterop,
         }))(legacyBody)
       : req.body,
