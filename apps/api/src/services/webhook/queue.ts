@@ -6,21 +6,38 @@ import { WebhookQueueMessage } from "./types";
 const WEBHOOK_QUEUE_NAME = "webhooks";
 const CONNECT_TIMEOUT = 5000;
 const DRAIN_TIMEOUT = 30000;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 class WebhookQueue {
   private connection: amqp.ChannelModel | null = null;
   private channel: amqp.Channel | null = null;
 
   private connectPromise: Promise<void> | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
+  private closing = false;
 
   async connect(): Promise<void> {
     if (this.connection && this.channel) return;
+    if (this.closing) return;
     if (this.connectPromise) return this.connectPromise;
 
     this.connectPromise = this._establishConnection();
 
     try {
       await this.connectPromise;
+      if (this.closing) {
+        await this.channel?.close().catch(() => {});
+        await this.connection?.close().catch(() => {});
+        this.cleanup();
+        return;
+      }
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+      this.reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
     } finally {
       this.connectPromise = null;
     }
@@ -31,61 +48,115 @@ class WebhookQueue {
       throw new Error("NUQ_RABBITMQ_URL is not configured");
     }
 
+    const isNewConnection = !this.connection;
+    let connection: amqp.ChannelModel | null = this.connection;
+    let channel: amqp.Channel | null = null;
+
     try {
       _logger.info("Connecting to webhook RabbitMQ", {
         module: "webhook-queue",
       });
 
-      this.connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
-      this.channel = await this.connection.createChannel();
+      if (!connection) {
+        connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+      }
+      channel = await connection.createChannel();
 
-      await this.channel.checkQueue(WEBHOOK_QUEUE_NAME);
+      await channel.checkQueue(WEBHOOK_QUEUE_NAME);
 
-      this._registerConnectionEvents();
+      if (this.closing) {
+        await channel.close().catch(() => {});
+        await connection.close().catch(() => {});
+        return;
+      }
+
+      this.connection = connection;
+      this.channel = channel;
+
+      if (isNewConnection) {
+        this._registerConnectionEvents(connection);
+      }
+      this._registerChannelEvents(channel);
 
       _logger.info("Connected to webhook RabbitMQ", {
         module: "webhook-queue",
       });
     } catch (err) {
+      if (channel) {
+        await channel.close().catch(() => {});
+      }
+      if (connection) {
+        await connection.close().catch(() => {});
+      }
       this.connection = null;
       this.channel = null;
       throw err;
     }
   }
 
-  private _registerConnectionEvents() {
-    if (!this.connection || !this.channel) return;
-
-    this.connection.on("close", () => {
+  private _registerConnectionEvents(connection: amqp.ChannelModel) {
+    connection.on("close", () => {
       _logger.warn("Webhook RabbitMQ connection closed", {
         module: "webhook-queue",
       });
       this.cleanup();
-      setTimeout(
-        () =>
-          this.connect().catch(err =>
-            _logger.error("Reconnection failed", {
-              module: "webhook-queue",
-              err,
-            }),
-          ),
-        CONNECT_TIMEOUT,
-      );
+      if (!this.closing) {
+        this.scheduleReconnect();
+      }
     });
 
-    this.connection.on("error", err => {
+    connection.on("error", err => {
       _logger.error("Webhook RabbitMQ connection error", {
         module: "webhook-queue",
         err,
       });
     });
+  }
 
-    this.channel.on("error", err => {
+  private _registerChannelEvents(channel: amqp.Channel) {
+    channel.on("close", () => {
+      _logger.warn("Webhook RabbitMQ channel closed", {
+        module: "webhook-queue",
+      });
+      this.channel = null;
+      if (!this.closing) {
+        this.scheduleReconnect();
+      }
+    });
+
+    channel.on("error", err => {
       _logger.error("Webhook RabbitMQ channel error", {
         module: "webhook-queue",
         err,
       });
     });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer || this.closing) return;
+
+    const delayMs = this.reconnectDelayMs;
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      if (this.closing || (this.connection && this.channel)) return;
+
+      try {
+        await this.connect();
+        this.reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
+        _logger.info("Webhook RabbitMQ reconnected successfully", {
+          module: "webhook-queue",
+        });
+      } catch (err) {
+        _logger.error("Webhook RabbitMQ reconnection failed", {
+          module: "webhook-queue",
+          err,
+          delayMs,
+        });
+        this.reconnectDelayMs = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+        this.scheduleReconnect();
+      }
+    }, delayMs);
+    this.reconnectTimer.unref?.();
   }
 
   async publish(message: WebhookQueueMessage): Promise<void> {
@@ -158,6 +229,26 @@ class WebhookQueue {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.connectPromise) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.connectPromise,
+          new Promise<void>(resolve => {
+            timer = setTimeout(resolve, CONNECT_TIMEOUT);
+            timer.unref?.();
+          }),
+        ]);
+      } catch {
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
     try {
       await this.channel?.close();
       await this.connection?.close();
