@@ -868,4 +868,12 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
   }
 });
 
+// The OpenAI provider package reads OPENAI_BASE_URL from the environment when
+// it is loaded and throws on an empty value. Docker Compose and the example
+// Helm chart pass an empty value when the variable is not set, so it counts as
+// not set.
+if (process.env.OPENAI_BASE_URL?.trim() === "") {
+  delete process.env.OPENAI_BASE_URL;
+}
+
 export const config = validatedConfigSchema.parse(process.env);
