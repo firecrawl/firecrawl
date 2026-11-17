@@ -281,11 +281,6 @@ jobs:
         run: pnpm exec vitest run src/controllers/exchange-credit-grant.test.ts --reporter=default
         working-directory: apps/api
 
-      - name: Run computer session file regression tests
-        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
-        run: pnpm exec vitest run src/controllers/v2/__tests__/computer-session-files.test.ts --reporter=default
-        working-directory: apps/api
-
       - name: Run MCP credits billing regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-
@@ -475,6 +470,18 @@ jobs:
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+
+      - name: Run computer session file regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          pnpm exec vitest run src/controllers/v2/__tests__/computer-session-files.test.ts --reporter=default
+        working-directory: apps/api
+        env:
+          COMPUTER_SESSION_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 
       - name: Run monitor bounded progress regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'

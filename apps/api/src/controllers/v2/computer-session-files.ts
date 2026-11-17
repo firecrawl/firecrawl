@@ -9,11 +9,13 @@ import {
   RateLimiterRedis,
   RateLimiterRes,
 } from "rate-limiter-flexible";
+import { and, count, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { config } from "../../config";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { getRedisConnection } from "../../services/queue-service";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 import type { RequestWithAuth } from "./types";
 
@@ -22,9 +24,12 @@ export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const LINK_DEFAULT_SECONDS = 15 * 60;
 const LINK_MAX_SECONDS = 60 * 60;
 const DOWNLOADS_PER_MINUTE = 60;
-// A session ends a day after it is created, however much it is used, so it
-// never becomes long-term storage.
-const SESSION_SECONDS = 24 * 60 * 60;
+// A session ends a day after its workspace was last saved, and a week after it
+// was created however often it is saved, so it never becomes long-term
+// storage. The bucket deletes a workspace a day after its last save, so the
+// idle time cannot be longer than that.
+const SESSION_IDLE_SECONDS = 24 * 60 * 60;
+const SESSION_MAX_SECONDS = 7 * 24 * 60 * 60;
 export const MAX_LIVE_SESSIONS = 100;
 // The UUID a new session is given.
 const SESSION_ID =
@@ -124,38 +129,43 @@ const refuse = (res: Response, status: number, error: string) => {
   res.status(status).json({ success: false, error });
 };
 
-const liveSessionsKey = (teamId: string) => `computer-sessions:${teamId}`;
+const sessions = schema.computer_sessions;
+const iso = (ms: number) => new Date(ms).toISOString();
 
 /**
- * Counts a new session against the team's live ones in one atomic step, so
- * concurrent creations cannot pass the limit together. False at the limit.
+ * Records a new session unless the team already holds the limit of live ones.
+ * A team's creations run one at a time, so concurrent ones cannot pass the
+ * limit together.
  */
-async function reserveSession(
+async function insertSession(
   teamId: string,
-  sessionId: string,
+  id: string,
+  now: number,
   expiresAt: number,
 ): Promise<boolean> {
-  const reserved = await getRedisConnection().eval(
-    `
-      redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", ARGV[1])
-      if redis.call("ZCARD", KEYS[1]) >= tonumber(ARGV[2]) then
-        return 0
-      end
-      redis.call("ZADD", KEYS[1], ARGV[4], ARGV[3])
-      redis.call("PEXPIREAT", KEYS[1], ARGV[4])
-      return 1
-    `,
-    1,
-    liveSessionsKey(teamId),
-    Date.now(),
-    MAX_LIVE_SESSIONS,
-    sessionId,
-    expiresAt,
-  );
-  return Number(reserved) === 1;
+  return db.transaction(async tx => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`computer_sessions:${teamId}`}, 0))`,
+    );
+    const [{ live }] = await tx
+      .select({ live: count() })
+      .from(sessions)
+      .where(
+        and(eq(sessions.team_id, teamId), gt(sessions.expires_at, iso(now))),
+      );
+    if (live >= MAX_LIVE_SESSIONS) return false;
+    await tx.insert(sessions).values({
+      id,
+      team_id: teamId,
+      created_at: iso(now),
+      last_used_at: iso(now),
+      expires_at: iso(expiresAt),
+    });
+    return true;
+  });
 }
 
-/** Written so that a session or link with no expiry recorded is never live. */
+/** Written so that a link with no expiry recorded is never live. */
 const isLive = (metadata: Record<string, string>) =>
   Date.now() < Number(metadata.expiresAt);
 
@@ -240,10 +250,16 @@ async function send(res: Response, file: StoredFile) {
   }
 }
 
-// A session is one object: its workspace, empty until the first save, with
-// the session's expiry in its metadata.
+// A session's workspace is one object, absent until the first save.
 const teamPrefix = (teamId: string) =>
   `workspaces/${encodeURIComponent(teamId)}/`;
+
+const EMPTY_WORKSPACE: StoredFile = {
+  sizeBytes: 0,
+  version: "0",
+  metadata: {},
+  stream: () => Readable.from([]),
+};
 
 const linkSchema = z.object({
   filename: z.string().min(1).max(255),
@@ -269,56 +285,57 @@ export function computerSessionFileControllers(
     res: Response,
     teamId: string,
   ) {
-    const objectPath = teamPrefix(teamId) + req.params.sessionId;
-    const workspace = SESSION_ID.test(req.params.sessionId)
-      ? await store.read(objectPath)
-      : null;
-    if (!workspace || !isLive(workspace.metadata)) {
+    const id = req.params.sessionId;
+    const [session] = SESSION_ID.test(id)
+      ? await db
+          .select({ created_at: sessions.created_at })
+          .from(sessions)
+          .where(
+            and(
+              eq(sessions.id, id),
+              eq(sessions.team_id, teamId),
+              gt(sessions.expires_at, iso(Date.now())),
+            ),
+          )
+          .limit(1)
+      : [];
+    if (!session) {
       refuse(res, 404, "Session not found or expired. Create a new session.");
       return null;
     }
-    return { objectPath, workspace };
+    return {
+      id,
+      objectPath: teamPrefix(teamId) + id,
+      createdAt: new Date(session.created_at).getTime(),
+    };
   }
 
   return {
-    /** Starts a session: an id only this team can use, and an empty workspace. */
+    /** Starts a session: an id only this team can use, with an empty workspace. */
     async createSession(req: RequestWithAuth<{}, any, any>, res: Response) {
       const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
       const id = crypto.randomUUID();
-      const expiresAt = Date.now() + SESSION_SECONDS * 1000;
-      if (!(await reserveSession(teamId, id, expiresAt))) {
+      const now = Date.now();
+      const expiresAt = now + SESSION_IDLE_SECONDS * 1000;
+      if (!(await insertSession(teamId, id, now, expiresAt))) {
         return refuse(
           res,
           429,
           `This team already has ${MAX_LIVE_SESSIONS} live sessions. Wait for one to expire.`,
         );
       }
-      try {
-        await store.write(teamPrefix(teamId) + id, Readable.from([]), {
-          metadata: { expiresAt: String(expiresAt) },
-          ifVersion: "0",
-        });
-      } catch (error) {
-        // A session that was never stored gives its place back. One that
-        // cannot be given back frees itself when it would have expired.
-        await getRedisConnection()
-          .zrem(liveSessionsKey(teamId), id)
-          .catch(release =>
-            logger.warn("Failed to release a computer session slot", {
-              error: release,
-            }),
-          );
-        throw error;
-      }
       logger.info("Computer session created", { teamId, sessionId: id });
       res.status(200).json({
         success: true,
-        data: { id, expiresAt: new Date(expiresAt).toISOString() },
+        data: { id, expiresAt: iso(expiresAt) },
       });
     },
 
-    /** Stores the session's workspace, replacing the one saved before. */
+    /**
+     * Stores the session's workspace, replacing the one saved before, and
+     * moves the session's end out.
+     */
     async saveWorkspace(req: SessionRequest, res: Response) {
       const teamId = hostedMcpTeam(req, res);
       if (teamId === null) return;
@@ -334,11 +351,11 @@ export function computerSessionFileControllers(
       const session = await liveSession(req, res, teamId);
       if (!session) return;
 
+      // Taken before the write, so the session never outlives its workspace.
+      const savedAt = Date.now();
       let version: string;
       try {
-        // The save keeps the expiry the session was created with.
         version = await store.write(session.objectPath, bodyOf(req, res), {
-          metadata: session.workspace.metadata,
           ifVersion,
         });
       } catch (error) {
@@ -349,8 +366,19 @@ export function computerSessionFileControllers(
           "The workspace changed since it was read. Read it again.",
         );
       }
+      const expiresAt = Math.min(
+        savedAt + SESSION_IDLE_SECONDS * 1000,
+        session.createdAt + SESSION_MAX_SECONDS * 1000,
+      );
+      await db
+        .update(sessions)
+        .set({ last_used_at: iso(savedAt), expires_at: iso(expiresAt) })
+        .where(eq(sessions.id, session.id));
       res.setHeader("ETag", `"${version}"`);
-      res.status(200).json({ success: true, data: { sizeBytes, version } });
+      res.status(200).json({
+        success: true,
+        data: { sizeBytes, version, expiresAt: iso(expiresAt) },
+      });
     },
 
     async readWorkspace(req: SessionRequest, res: Response) {
@@ -358,8 +386,10 @@ export function computerSessionFileControllers(
       if (teamId === null) return;
       const session = await liveSession(req, res, teamId);
       if (!session) return;
-      res.setHeader("ETag", `"${session.workspace.version}"`);
-      await send(res, session.workspace);
+      const workspace =
+        (await store.read(session.objectPath)) ?? EMPTY_WORKSPACE;
+      res.setHeader("ETag", `"${workspace.version}"`);
+      await send(res, workspace);
     },
 
     /** Stores the file in the body and returns a link anyone can download it from until it expires. */

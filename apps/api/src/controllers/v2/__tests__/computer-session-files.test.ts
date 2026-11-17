@@ -1,13 +1,16 @@
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
-// The live-session count runs on a real Redis, so these tests exercise the
-// reservation script itself. CI provides one; locally it is REDIS_URL or
+// Sessions are rows in Postgres, so these tests run the real queries. CI
+// provides the database; locally it is COMPUTER_SESSION_TEST_DATABASE_URL or
 // localhost.
-vi.mock("../../../services/queue-service", async () => {
-  const { Redis } = await import("ioredis");
-  const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
-    maxRetriesPerRequest: 1,
+vi.mock("../../../db/connection", async () => {
+  const { Pool } = await import("pg");
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const client = new Pool({
+    connectionString:
+      process.env.COMPUTER_SESSION_TEST_DATABASE_URL ??
+      "postgres://postgres:postgres@localhost:5432/postgres",
   });
-  return { getRedisConnection: () => redis };
+  return { db: drizzle({ client }) };
 });
 vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -17,10 +20,12 @@ vi.mock("../../../lib/logger", () => {
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
 import { config } from "../../../config";
-import { getRedisConnection } from "../../../services/queue-service";
+import { db } from "../../../db/connection";
+import * as schema from "../../../db/schema";
 import {
   MAX_FILE_BYTES,
   MAX_LIVE_SESSIONS,
@@ -30,7 +35,10 @@ import {
   type ComputerSessionFileStore,
 } from "../computer-session-files";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const TEAM_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TEAM_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UNISSUED = "00000000-0000-4000-8000-000000000000";
 
@@ -38,11 +46,9 @@ const objects = new Map<
   string,
   { bytes: Buffer; version: number; metadata: Record<string, string> }
 >();
-let storageDown = false;
 const store: ComputerSessionFileStore = {
   async write(objectPath, body, { metadata = {}, ifVersion } = {}) {
     const bytes = Buffer.concat(await body.toArray());
-    if (storageDown) throw new Error("storage is down");
     const stored = objects.get(objectPath);
     if (ifVersion !== undefined && ifVersion !== String(stored?.version ?? 0)) {
       throw new VersionMismatchError();
@@ -104,33 +110,41 @@ app.get(
 app.post(`${SESSIONS}/:sessionId/links`, auth, run(controllers.createLink));
 app.get("/v2/computer/files/:token{/:filename}", run(controllers.download));
 
-const redis = getRedisConnection();
-const liveSessionsOf = (team: string) => `computer-sessions:${team}`;
-const forgetLiveSessions = () =>
-  redis.del(liveSessionsOf("team-a"), liveSessionsOf("team-b"));
+const sessions = schema.computer_sessions;
+const forgetSessions = () =>
+  db.delete(sessions).where(inArray(sessions.team_id, [TEAM_A, TEAM_B]));
 
 let server: http.Server;
-beforeAll(() => {
+beforeAll(async () => {
+  // The table as the firecrawl-db migration creates it.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS computer_sessions (
+      id uuid PRIMARY KEY,
+      team_id uuid NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_used_at timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz NOT NULL
+    )
+  `);
   server = app.listen(0);
 });
 afterAll(async () => {
   server.closeAllConnections();
   server.close();
-  await forgetLiveSessions();
-  await redis.quit();
+  await forgetSessions();
+  await (db as unknown as { $client: { end(): Promise<void> } }).$client.end();
 });
 beforeEach(async () => {
   objects.clear();
-  await forgetLiveSessions();
-  storageDown = false;
+  await forgetSessions();
 });
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const create = (team = "team-a") =>
+const create = (team = TEAM_A) =>
   request(server).post(SESSIONS).set("x-test-team", team);
-const createId = async (team = "team-a") =>
+const createId = async (team = TEAM_A) =>
   (await create(team)).body.data.id as string;
 const save = (team: string, id: string, bytes: string) =>
   request(server)
@@ -151,7 +165,7 @@ const link = (
   request(server)
     .post(`${SESSIONS}/${id}/links`)
     .query(query)
-    .set("x-test-team", "team-a")
+    .set("x-test-team", TEAM_A)
     .type("application/octet-stream")
     .send(Buffer.from(bytes));
 const download = (url: string) =>
@@ -165,7 +179,7 @@ const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
         method: "PUT",
         path: workspaceOf(id),
         headers: {
-          "x-test-team": "team-a",
+          "x-test-team": TEAM_A,
           "content-type": "application/octet-stream",
           ...headers,
         },
@@ -179,13 +193,15 @@ const declare = (id: string, headers: http.OutgoingHttpHeaders) =>
     req.write("x");
   });
 const seed = (team: string, count: number, expiresAt: number) =>
-  redis.zadd(
-    liveSessionsOf(team),
-    ...Array.from({ length: count }, (_, index) => [
-      expiresAt,
-      `seed-${expiresAt}-${index}`,
-    ]).flat(),
+  db.insert(sessions).values(
+    Array.from({ length: count }, () => ({
+      id: crypto.randomUUID(),
+      team_id: team,
+      expires_at: new Date(expiresAt).toISOString(),
+    })),
   );
+const storedSession = async (id: string) =>
+  (await db.select().from(sessions).where(eq(sessions.id, id)))[0];
 
 describe("sessions", () => {
   it("creates a session the API names, empty and live for a day", async () => {
@@ -196,30 +212,59 @@ describe("sessions", () => {
     const lifetimeMs = new Date(expiresAt).getTime() - Date.now();
     expect(lifetimeMs).toBeGreaterThan(DAY_MS - 60_000);
     expect(lifetimeMs).toBeLessThanOrEqual(DAY_MS);
-    expect([...objects.keys()]).toEqual([`workspaces/team-a/${id}`]);
-    // The count holds the session until it ends, and then forgets the team.
-    const endsAt = new Date(expiresAt).getTime();
-    expect(await redis.zscore(liveSessionsOf("team-a"), id)).toBe(
-      String(endsAt),
-    );
-    expect(await redis.pexpiretime(liveSessionsOf("team-a"))).toBe(endsAt);
+    // The session is a row, and nothing is stored until the first save.
+    expect(await storedSession(id)).toMatchObject({ id, team_id: TEAM_A });
+    expect(objects.size).toBe(0);
 
-    const res = await read("team-a", id);
+    const res = await read(TEAM_A, id);
     expect(res.status).toBe(200);
     expect(res.headers["content-length"]).toBe("0");
+    expect(res.headers.etag).toBe('"0"');
     expect(res.body.length).toBe(0);
   });
 
+  it("moves the session's end out on each save, up to a week from its start", async () => {
+    const { id, expiresAt } = (await create()).body.data;
+    const start = new Date(expiresAt).getTime() - DAY_MS;
+    const now = vi.spyOn(Date, "now");
+
+    now.mockReturnValue(start + 20 * HOUR_MS);
+    const saved = await save(TEAM_A, id, "files");
+    expect(new Date(saved.body.data.expiresAt).getTime()).toBe(
+      start + 44 * HOUR_MS,
+    );
+    // Past the end it was created with, and still live.
+    now.mockReturnValue(start + 30 * HOUR_MS);
+    expect((await read(TEAM_A, id)).status).toBe(200);
+    // A read does not move the end.
+    now.mockReturnValue(start + 44 * HOUR_MS + 1);
+    expect((await read(TEAM_A, id)).status).toBe(404);
+
+    const busy = (await create()).body.data.id;
+    const began = new Date((await storedSession(busy)).created_at).getTime();
+    let last;
+    for (let hour = 20; hour < 7 * 24; hour += 20) {
+      now.mockReturnValue(began + hour * HOUR_MS);
+      last = await save(TEAM_A, busy, "files");
+      expect(last.status).toBe(200);
+    }
+    expect(new Date(last!.body.data.expiresAt).getTime()).toBe(
+      began + 7 * DAY_MS,
+    );
+    now.mockReturnValue(began + 7 * DAY_MS);
+    expect((await save(TEAM_A, busy, "files")).status).toBe(404);
+  });
+
   it("refuses a new session once the team has the limit of live ones", async () => {
-    await seed("team-a", MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
-    await seed("team-a", 5, Date.now() - 1);
+    await seed(TEAM_A, MAX_LIVE_SESSIONS - 1, Date.now() + DAY_MS);
+    await seed(TEAM_A, 5, Date.now() - 1);
     expect((await create()).status).toBe(200);
     expect((await create()).status).toBe(429);
-    expect((await create("team-b")).status).toBe(200);
+    expect((await create(TEAM_B)).status).toBe(200);
   });
 
   it("admits only up to the limit when creations arrive together", async () => {
-    await seed("team-a", MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
+    await seed(TEAM_A, MAX_LIVE_SESSIONS - 3, Date.now() + DAY_MS);
     const statuses = await Promise.all(
       Array.from({ length: 10 }, async () => (await create()).status),
     );
@@ -227,18 +272,11 @@ describe("sessions", () => {
     expect(statuses.filter(status => status === 429)).toHaveLength(7);
   });
 
-  it("gives the place back when the session cannot be stored", async () => {
-    storageDown = true;
-    expect((await create()).status).toBe(500);
-    expect(await redis.zcard(liveSessionsOf("team-a"))).toBe(0);
-    expect(objects.size).toBe(0);
-  });
-
   it.each([
     ["an id the API did not issue", async () => UNISSUED],
     ["an id of another shape", async () => "a.b"],
-    ["a path out of the team's own sessions", async () => "..%2Fteam-b%2Fx"],
-    ["another team's session", () => createId("team-b")],
+    ["a path out of the team's own sessions", async () => `..%2F${TEAM_B}%2Fx`],
+    ["another team's session", () => createId(TEAM_B)],
     [
       "an expired session",
       async () => {
@@ -250,8 +288,8 @@ describe("sessions", () => {
   ])("finds no session for %s on any route", async (_name, sessionId) => {
     const id = await sessionId();
     const before = new Map(objects);
-    expect((await save("team-a", id, "files")).status).toBe(404);
-    expect((await read("team-a", id)).status).toBe(404);
+    expect((await save(TEAM_A, id, "files")).status).toBe(404);
+    expect((await read(TEAM_A, id)).status).toBe(404);
     expect((await link(id, "data", { filename: "a.txt" })).status).toBe(404);
     expect(objects).toEqual(before);
   });
@@ -277,7 +315,7 @@ describe("sessions", () => {
         .send(bytes),
     ];
     for (const call of calls) {
-      const res = await call.set("x-test-team", "team-a").set(headers);
+      const res = await call.set("x-test-team", TEAM_A).set(headers);
       expect(res.status).toBe(403);
     }
     expect(objects).toEqual(before);
@@ -285,20 +323,21 @@ describe("sessions", () => {
 });
 
 describe("workspace", () => {
-  it("reads back the bytes it saved, and keeps the session's expiry", async () => {
+  it("reads back the bytes it saved", async () => {
     const id = await createId();
-    const { expiresAt } = objects.get(`workspaces/team-a/${id}`)!.metadata;
-    const saved = await save("team-a", id, "files");
+    const saved = await save(TEAM_A, id, "files");
     expect(saved.status).toBe(200);
-    expect(saved.body.data).toEqual({ sizeBytes: 5, version: "2" });
-
-    const res = await read("team-a", id);
-    expect(res.status).toBe(200);
-    expect(res.headers.etag).toBe('"2"');
-    expect(res.body.toString()).toBe("files");
-    expect(objects.get(`workspaces/team-a/${id}`)!.metadata).toEqual({
-      expiresAt,
+    expect(saved.body.data).toEqual({
+      sizeBytes: 5,
+      version: "1",
+      expiresAt: expect.any(String),
     });
+    expect([...objects.keys()]).toEqual([`workspaces/${TEAM_A}/${id}`]);
+
+    const res = await read(TEAM_A, id);
+    expect(res.status).toBe(200);
+    expect(res.headers.etag).toBe('"1"');
+    expect(res.body.toString()).toBe("files");
   });
 
   it("refuses a body over the limit, or of unknown size, before reading it", async () => {
@@ -313,23 +352,22 @@ describe("workspace", () => {
         "content-type": "application/json",
       }),
     ).toBe(415);
-    expect(objects.get(`workspaces/team-a/${id}`)!.version).toBe(1);
+    expect(objects.size).toBe(0);
   });
 
   it("saves over a version only when If-Match names the stored one", async () => {
     const id = await createId();
     expect(
-      (await save("team-a", id, "one").set("If-Match", '"1"')).body.data
-        .version,
-    ).toBe("2");
+      (await save(TEAM_A, id, "one").set("If-Match", '"0"')).body.data.version,
+    ).toBe("1");
+    expect((await save(TEAM_A, id, "lost").set("If-Match", '"0"')).status).toBe(
+      412,
+    );
     expect(
-      (await save("team-a", id, "lost").set("If-Match", '"1"')).status,
-    ).toBe(412);
-    expect(
-      (await save("team-a", id, "lost").set("If-Match", "latest")).status,
+      (await save(TEAM_A, id, "lost").set("If-Match", "latest")).status,
     ).toBe(400);
-    expect((await save("team-a", id, "two")).body.data.version).toBe("3");
-    expect((await read("team-a", id)).body.toString()).toBe("two");
+    expect((await save(TEAM_A, id, "two")).body.data.version).toBe("2");
+    expect((await read(TEAM_A, id)).body.toString()).toBe("two");
   });
 });
 
@@ -384,10 +422,10 @@ describe("download links", () => {
 
   it("finds nothing for an unknown token or a workspace path", async () => {
     const id = await createId();
-    await save("team-a", id, "files");
+    await save(TEAM_A, id, "files");
     for (const token of [
       "u".repeat(43),
-      `workspaces%2Fteam-a%2F${id}`,
+      `workspaces%2F${TEAM_A}%2F${id}`,
       "short",
     ]) {
       expect(
@@ -403,7 +441,7 @@ describe("download links", () => {
   ])("refuses a link with %s", async (_name, query) => {
     const id = await createId();
     expect((await link(id, "data", query)).status).toBe(400);
-    expect([...objects.keys()]).toEqual([`workspaces/team-a/${id}`]);
+    expect(objects.size).toBe(0);
   });
 });
 
