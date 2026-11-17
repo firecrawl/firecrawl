@@ -20,7 +20,6 @@ from firecrawl.v2.utils.error_handler import FirecrawlError
 
 JOB_ID = "crawl-job-123"
 ALREADY_COMPLETED = {"success": False, "error": "Crawl is already completed"}
-BATCH_ALREADY_COMPLETED = {"success": False, "error": "Crawl is already completed"}
 
 
 def _sync_response(body, status_code=200):
@@ -282,7 +281,7 @@ class TestAsyncCrawlCancellation:
 
         client.async_http_client.delete.assert_not_called()
 
- 
+
 class TestSyncCancelBatchScrape:
     def test_returns_true_when_cancelled(self):
         client = Mock()
@@ -293,7 +292,7 @@ class TestSyncCancelBatchScrape:
 
     def test_returns_false_when_batch_already_completed(self):
         client = Mock()
-        client.delete.return_value = _sync_response(BATCH_ALREADY_COMPLETED, status_code=409)
+        client.delete.return_value = _sync_response(ALREADY_COMPLETED, status_code=409)
 
         assert batch_module.cancel_batch_scrape(client, JOB_ID) is False
 
