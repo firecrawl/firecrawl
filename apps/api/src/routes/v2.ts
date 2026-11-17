@@ -71,6 +71,14 @@ import { agentSnapshotController } from "../controllers/v2/agent-snapshot";
 import { agentSkillController } from "../controllers/v2/agent-skill";
 import { agentThreadController } from "../controllers/v2/agent-thread";
 import {
+  agentFeedbackController,
+  agentOptionsController,
+  agentResultController,
+  agentSettingsController,
+  agentShareController,
+  agentSharedRunController,
+} from "../controllers/v2/agent-session";
+import {
   browserProfileDeleteController,
   browserCreateController,
   browserExecuteController,
@@ -439,6 +447,12 @@ v2Router.get(
   wrap(agentThreadController),
 );
 
+v2Router.get(
+  "/agent/shares/:shareId",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(agentSharedRunController),
+);
+
 v2Router.post(
   "/agent",
   authMiddleware(RateLimiterMode.Extract),
@@ -482,6 +496,57 @@ v2Router.delete(
   authMiddleware(RateLimiterMode.ExtractStatus),
   validateJobIdParam,
   wrap(agentCancelController),
+);
+
+v2Router.get(
+  "/agent/:jobId/options",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentOptionsController),
+);
+
+v2Router.get(
+  "/agent/:jobId/result",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentResultController),
+);
+
+for (const kind of ["like", "dislike"] as const) {
+  v2Router.post(
+    `/agent/:jobId/${kind}`,
+    authMiddleware(RateLimiterMode.ExtractStatus),
+    validateJobIdParam,
+    wrap(agentFeedbackController(kind)),
+  );
+}
+
+v2Router.get(
+  "/agent/:jobId/settings",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentSettingsController),
+);
+
+v2Router.patch(
+  "/agent/:jobId/settings",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentSettingsController),
+);
+
+v2Router.post(
+  "/agent/:jobId/share",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentShareController),
+);
+
+v2Router.delete(
+  "/agent/:jobId/share",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentShareController),
 );
 
 v2Router.get(
