@@ -63,6 +63,18 @@ describe("defineEnv", () => {
     });
   });
 
+  it("reads only the variables the schema declares, whatever it does with other keys", () => {
+    vi.stubEnv("MAIL_HOST", "mail.test");
+    vi.stubEnv("MAIL_UNDECLARED", "ignored");
+
+    expect(
+      env.defineEnv("strict", z.strictObject({ MAIL_HOST: z.string() })),
+    ).toEqual({ MAIL_HOST: "mail.test" });
+    expect(
+      env.defineEnv("loose", z.looseObject({ MAIL_HOST: z.string() })),
+    ).toEqual({ MAIL_HOST: "mail.test" });
+  });
+
   it("returns values that can be assigned", () => {
     vi.stubEnv("MAIL_HOST", "mail.test");
     const values = env.defineEnv("mail", mail());

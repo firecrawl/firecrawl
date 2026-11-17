@@ -22,7 +22,8 @@ const report = (problems: string[]) =>
 /**
  * Declares the environment variables one owner reads and returns their parsed
  * values. The schema is an object with one key per variable, and a check
- * across variables is a refinement of that object.
+ * across variables is a refinement of that object. Only those variables are
+ * read from the environment, whatever the object does with other keys.
  *
  * When the environment does not fit the schema, the problems are kept for
  * `assertEnv` and reading any of the owner's variables throws. A definition
@@ -37,7 +38,13 @@ export function defineEnv<Schema extends z.ZodObject>(
   require("dotenv/config");
 
   const keys = Object.keys(schema.shape).sort();
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(
+    Object.fromEntries(
+      keys
+        .filter(key => Object.hasOwn(process.env, key))
+        .map(key => [key, process.env[key]]),
+    ),
+  );
   if (parsed.success) {
     owners.set(owner, { keys, problems: [] });
     return parsed.data;
