@@ -26,6 +26,7 @@ import {
   parseUploadUrlController,
 } from "../controllers/v2/parse-upload";
 import { parseFormatsController } from "../controllers/v2/parse-formats";
+import { configuredComputerSessionFiles } from "../controllers/v2/computer-session-files";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
@@ -254,6 +255,32 @@ v2Router.put(
   express.raw({ type: "*/*", limit: "50mb" }),
   wrap(parseLocalUploadController),
 );
+
+// Files of hosted MCP shell sessions. Registered only on a deployment that
+// configures them, so the paths otherwise answer like an unknown route.
+const computerSessionFiles = configuredComputerSessionFiles();
+if (computerSessionFiles) {
+  v2Router.post(
+    "/computer/sessions",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.createSession),
+  );
+  v2Router.put(
+    "/computer/sessions/:sessionId/workspace",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.saveWorkspace),
+  );
+  v2Router.get(
+    "/computer/sessions/:sessionId/workspace",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.readWorkspace),
+  );
+  v2Router.post(
+    "/computer/sessions/:sessionId/links",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.createLink),
+  );
+}
 
 v2Router.post(
   "/parse",
