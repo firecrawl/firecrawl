@@ -124,7 +124,6 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["developer"], "research"],
   [["llmstxt"], "llmstxt"],
   [["deep-research"], "deep-research"],
-  [["fireclaw"], "fireclaw"],
 ];
 
 // Account/metadata endpoints that never fetch web content; always reachable
