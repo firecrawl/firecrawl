@@ -1314,13 +1314,6 @@ async function supaAuthenticateUser(
     const secs = Math.ceil(rateLimiterRes.msBeforeNext / 1000) || 1;
     const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
 
-    // We can only send a rate limit email every 7 days, send notification already has the date in between checking
-    // const startDate = new Date();
-    // const endDate = new Date();
-    // endDate.setDate(endDate.getDate() + 7);
-
-    // await sendNotification(team_id, NotificationType.RATE_LIMIT_REACHED, startDate.toISOString(), endDate.toISOString());
-
     return {
       success: false,
       error: `Rate limit exceeded. Consumed (req/min): ${rateLimiterRes.consumedPoints}, Remaining (req/min): ${rateLimiterRes.remainingPoints}. Upgrade your plan at https://firecrawl.dev/pricing for increased rate limits or please retry after ${secs}s, resets at ${retryDate}`,

@@ -28,6 +28,8 @@ export async function exchangeRequest(input: {
   maximumCredits?: number;
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
+  /** The organization a provider call bills against, so Exchange can attribute a paid read. Grants nothing. */
+  billingOrganizationId?: string;
   /** Caller's IP as the API sees it; Exchange resolves what it needs from it. */
   clientIp?: string;
   /** Country on the team's billing address, when it has one. */
@@ -40,8 +42,12 @@ export async function exchangeRequest(input: {
   zeroDataRetention?: boolean;
   /** The team may only be served by US-based providers. */
   usOnly?: boolean;
+  /** The team carries the Alexandria Verified flag, so Exchange runs its verifiedOnly providers. */
+  alexandriaVerified?: boolean;
   /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
   retryConnection?: boolean;
+  /** Trusted internal marker for zero-priced provider lines, sent with the internal secret so Exchange can verify it. */
+  ultrasearch?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
@@ -64,6 +70,11 @@ export async function exchangeRequest(input: {
             "x-exchange-api-key-id": input.termsIdentity.apiKeyId,
           }
         : {}),
+      ...(input.billingOrganizationId
+        ? {
+            "x-exchange-billing-organization-id": input.billingOrganizationId,
+          }
+        : {}),
       "x-exchange-extended-catalog-access": "true",
       ...(input.clientIp ? { "x-exchange-client-ip": input.clientIp } : {}),
       ...(input.billingCountry
@@ -74,6 +85,15 @@ export async function exchangeRequest(input: {
         ? { "x-exchange-zero-data-retention": "true" }
         : {}),
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
+      ...(input.alexandriaVerified
+        ? { "x-exchange-alexandria-verified": "true" }
+        : {}),
+      ...(input.ultrasearch && config.EXCHANGE_INTERNAL_SECRET
+        ? {
+            "x-exchange-ultrasearch": "true",
+            "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+          }
+        : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}

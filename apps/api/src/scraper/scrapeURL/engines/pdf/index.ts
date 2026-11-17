@@ -17,6 +17,7 @@ import {
   EngineUnsuccessfulError,
   UnsupportedFileError,
   UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
 } from "../../error";
 import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
@@ -47,10 +48,12 @@ import {
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { isUsOnly } from "../../../../lib/us-only";
+import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
+import { shouldRetryFirePdf } from "./fire-pdf/retry";
 import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
@@ -67,6 +70,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
 
@@ -170,25 +174,36 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      // The raw path returns the file base64'd inline in the response, so it
-      // keeps the historical cap even when a large prefetch (fire-engine GCS
-      // handoff) materialized a bigger file on disk for the parse path.
-      const prefetchSize = (await stat(meta.pdfPrefetch.filePath)).size;
-      if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
-        throw new UnsupportedFileError("File exceeds size limit");
-      }
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
+      const prefetch = await completeTruncatedHandoff(
+        meta,
+        meta.pdfPrefetch,
+        PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
+      let content: string;
+      try {
+        // The raw path returns the file base64'd inline in the response, so it
+        // keeps the historical cap even when a large prefetch (fire-engine GCS
+        // handoff) materialized a bigger file on disk for the parse path.
+        const prefetchSize = (await stat(prefetch.filePath)).size;
+        if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
+          throw new UnsupportedFileError("File exceeds size limit");
+        }
+        content = (await readFile(prefetch.filePath)).toString("base64");
+      } finally {
+        // A re-downloaded copy is this engine's own temp file.
+        if (prefetch !== meta.pdfPrefetch) {
+          await unlink(prefetch.filePath).catch(() => {});
+        }
+      }
       return {
-        url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-        statusCode: meta.pdfPrefetch.status,
+        url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
+        statusCode: prefetch.status,
 
         html: content,
         markdown: content,
 
         contentType: "application/pdf",
-        proxyUsed: meta.pdfPrefetch.proxyUsed,
+        proxyUsed: prefetch.proxyUsed,
       };
     } else {
       const file = await fetchPdfFileGuardingProxyFailure(meta, () =>
@@ -247,8 +262,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   // US-only teams get GPU parsing only from the PDF service, pinned to US
   // capacity: no diversion to another engine, no serverless fallback, and no
-  // sampling out of the PDF service.
+  // sampling out of the PDF service. Teams restricted to reserved capacity are
+  // routed the same way.
   const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+  const processingRestricted = isProcessingRestricted(
+    meta.internalOptions.teamFlags ?? undefined,
+  );
 
   // The MinerU diversion is deterministic on the scrape id (see
   // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
@@ -267,9 +286,20 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // granting (or withholding) the handoff for this request.
   const byReferenceReachable = byReferenceReachableForRequest(meta);
 
+  // Parse path streams to disk and can hand large files to FirePDF by GCS
+  // reference, so it admits more than the raw fetch path — up to the
+  // requesting team's large-PDF limit.
+  const downloadMaxBytes = byReferenceReachable
+    ? largePdfLimitBytes(meta)
+    : PDF_DOWNLOAD_MAX_FILE_SIZE;
+  const prefetch =
+    meta.pdfPrefetch != null
+      ? await completeTruncatedHandoff(meta, meta.pdfPrefetch, downloadMaxBytes)
+      : meta.pdfPrefetch;
+
   const { response, tempFilePath } =
-    meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
-      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
+    prefetch !== undefined && prefetch !== null
+      ? { response: prefetch, tempFilePath: prefetch.filePath }
       : await fetchPdfFileGuardingProxyFailure(meta, () =>
           downloadFile(
             meta.id,
@@ -279,12 +309,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               headers: meta.options.headers,
               signal: meta.abort.asSignal(),
             },
-            // Parse path streams to disk and can hand large files to FirePDF
-            // by GCS reference, so it admits more than the raw fetch path —
-            // up to the requesting team's large-PDF limit.
-            byReferenceReachable
-              ? largePdfLimitBytes(meta)
-              : PDF_DOWNLOAD_MAX_FILE_SIZE,
+            downloadMaxBytes,
           ),
         );
 
@@ -634,7 +659,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE));
       const runpodMuUsable =
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes < MAX_FILE_SIZE &&
         !!config.RUNPOD_MU_API_KEY &&
         !!config.RUNPOD_MU_POD_ID;
@@ -682,7 +707,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             config.FIRE_PDF_BASE_URL &&
             fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
             (alwaysFirePdf ||
-              usOnly ||
+              processingRestricted ||
               Math.random() * 100 < config.FIRE_PDF_PERCENT)));
 
       if (useFirePDF) {
@@ -724,6 +749,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             crawl_id: meta.internalOptions.crawlId,
           });
         }
+        let syncRetried = false;
         try {
           const firePdfMeta = {
             ...meta,
@@ -749,7 +775,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 (!includePageMarkdown && !includeBlocks && !pageMarkers) ||
                 error instanceof RemoveFeatureError ||
                 error instanceof AbortManagerThrownError ||
-                error instanceof UsOnlyUnavailableError
+                error instanceof UsOnlyUnavailableError ||
+                error instanceof ReservedCapacityUnavailableError
               ) {
                 throw error;
               }
@@ -762,6 +789,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                   team_id: meta.internalOptions.teamId,
                 },
               );
+              syncRetried = true;
               result = await scrapePDFWithFirePDF(
                 {
                   ...firePdfMeta,
@@ -798,44 +826,94 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           if (
             error instanceof RemoveFeatureError ||
             error instanceof AbortManagerThrownError ||
-            error instanceof UsOnlyUnavailableError
+            error instanceof UsOnlyUnavailableError ||
+            error instanceof ReservedCapacityUnavailableError
           ) {
             throw error;
           }
-          if (forceFirePDF) {
-            meta.logger.error("FirePDF failed (forced, no fallback)", {
-              method: "scrapePDF/firePDF",
-              error,
-            });
-            throw error;
+          let failure: unknown = error;
+          if (
+            !syncRetried &&
+            shouldRetryFirePdf(error, meta.abort.scrapeTimeout())
+          ) {
+            meta.logger.warn(
+              "FirePDF failed with a transient error -- retrying synchronously",
+              {
+                method: "scrapePDF/firePDFRetry",
+                event: "fire_pdf_retry",
+                error,
+                scrape_id: meta.id,
+                team_id: meta.internalOptions.teamId,
+              },
+            );
+            try {
+              result = await scrapePDFWithFirePDF(
+                {
+                  ...meta,
+                  logger: meta.logger.child({
+                    method: "scrapePDF/firePDFRetry",
+                  }),
+                },
+                base64Content,
+                maxPages,
+                effectivePageCount,
+                mode,
+                includePageMarkdown,
+                includeBlocks,
+                pageMarkers,
+              );
+              effectivePageCount = reconcilePageCountWithFirePdf(
+                effectivePageCount,
+                result,
+              );
+            } catch (retryError) {
+              if (
+                retryError instanceof RemoveFeatureError ||
+                retryError instanceof AbortManagerThrownError ||
+                retryError instanceof UsOnlyUnavailableError ||
+                retryError instanceof ReservedCapacityUnavailableError
+              ) {
+                throw retryError;
+              }
+              failure = retryError;
+            }
           }
-          meta.logger.warn("FirePDF failed -- falling back to MinerU", {
-            method: "scrapePDF/firePDF",
-            error,
-            event: "pdf_engine_fallback",
-            scrape_id: meta.id,
-            team_id: meta.internalOptions.teamId,
-            from_engine: "firepdf",
-            to_engine: "mineru",
-            // Coerce both to strings defensively — if someone throws a
-            // non-Error (e.g. a plain object or primitive), `.name` /
-            // `.message` could be undefined or non-string, and `.slice` would
-            // throw inside the fallback logger, masking the original failure.
-            error_class:
-              (error as { name?: unknown })?.name != null
-                ? String((error as { name?: unknown }).name)
-                : undefined,
-            error_message: String(
-              (error as { message?: unknown })?.message ?? "",
-            ).slice(0, 500),
-          });
+          if (!result) {
+            if (forceFirePDF) {
+              meta.logger.error("FirePDF failed (forced, no fallback)", {
+                method: "scrapePDF/firePDF",
+                error: failure,
+              });
+              throw failure;
+            }
+            meta.logger.warn("FirePDF failed -- falling back to MinerU", {
+              method: "scrapePDF/firePDF",
+              error: failure,
+              event: "pdf_engine_fallback",
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+              from_engine: "firepdf",
+              to_engine: "mineru",
+              // Coerce both to strings defensively — if someone throws a
+              // non-Error (e.g. a plain object or primitive), `.name` /
+              // `.message` could be undefined or non-string, and `.slice` would
+              // throw inside the fallback logger, masking the original failure.
+              error_class:
+                (failure as { name?: unknown })?.name != null
+                  ? String((failure as { name?: unknown }).name)
+                  : undefined,
+              error_message: String(
+                (failure as { message?: unknown })?.message ?? "",
+              ).slice(0, 500),
+            });
+          }
         }
       }
 
       if (
         !result &&
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes >= MAX_FILE_SIZE &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
@@ -854,7 +932,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (
         !result &&
         !forceFirePDF &&
-        !usOnly &&
+        !processingRestricted &&
         fileSizeBytes < MAX_FILE_SIZE &&
         base64Content !== undefined &&
         config.RUNPOD_MU_API_KEY &&
@@ -972,20 +1050,34 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
       // Without GPU OCR a scanned document has no text layer to return.
       if (
-        usOnly &&
+        processingRestricted &&
         !skipOCR &&
         (detectedPdfType === "Scanned" ||
           detectedPdfType === "ImageBased" ||
           !result.markdown?.trim())
       ) {
-        meta.logger.warn("US-only PDF needs OCR the PDF service did not run", {
-          method: "scrapePDF",
-          scrape_id: meta.id,
-          pdf_type: detectedPdfType,
-        });
-        throw new UsOnlyUnavailableError(
-          "This PDF needs OCR, which is not available for teams restricted to US-only processing right now. Try again later.",
+        if (usOnly) {
+          meta.logger.warn(
+            "US-only PDF needs OCR the PDF service did not run",
+            {
+              method: "scrapePDF",
+              scrape_id: meta.id,
+              pdf_type: detectedPdfType,
+            },
+          );
+          throw new UsOnlyUnavailableError(
+            "This PDF needs OCR, which is not available for teams restricted to US-only processing right now. Try again later.",
+          );
+        }
+        meta.logger.warn(
+          "PDF restricted to reserved capacity needs OCR the PDF service did not run",
+          {
+            method: "scrapePDF",
+            scrape_id: meta.id,
+            pdf_type: detectedPdfType,
+          },
         );
+        throw new ReservedCapacityUnavailableError();
       }
     }
 
@@ -1015,7 +1107,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // Report the proxy that actually delivered the file: a browser
       // handoff may have come through the stealth proxy, while the direct
       // download always uses the basic route.
-      proxyUsed: meta.pdfPrefetch?.proxyUsed ?? "basic",
+      proxyUsed: prefetch?.proxyUsed ?? "basic",
     };
   } finally {
     // Always clean up temp file after we're done with it

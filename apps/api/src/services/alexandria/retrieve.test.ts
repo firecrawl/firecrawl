@@ -497,6 +497,55 @@ it("forwards verified terms identity only for terms-only executions", async () =
   }
 });
 
+it("names the billing organization only on execution, and only when it is known", async () => {
+  await run();
+  expect(executions()[0][0].billingOrganizationId).toBe("org");
+  expect(executions()[0][0].termsIdentity).toBeUndefined();
+  expect(
+    mocks.request.mock.calls
+      .filter(([arg]) => arg.path !== "/v1/retrieve")
+      .every(([arg]) => arg.billingOrganizationId === undefined),
+  ).toBe(true);
+
+  mocks.store.clear();
+  mocks.request.mockClear();
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...call, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  expect(await run({ orgId: null })).toMatchObject({ executed: true });
+  expect(executions()[0][0]).not.toHaveProperty("billingOrganizationId");
+});
+
+it("keeps the billing organization out of the request fingerprint", async () => {
+  expect((await run()).executed).toBe(true);
+  expect(await run({ orgId: "other-org" })).toMatchObject({
+    status: 200,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("leaves the billing organization off the catalogue read", async () => {
+  const read = { provider: "firecrawl", capability: "find-tools", options: {} };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [{ ...read, creditsCost: 0, data: {} }],
+  });
+  expect(await run({ calls: [read] })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(executions()[0][0]).not.toHaveProperty("billingOrganizationId");
+});
+
 it("binds terms replay to exact organization and credential identity", async () => {
   const termsCall = {
     provider: "firecrawl",
@@ -750,6 +799,32 @@ it("keeps and replays the response without zero data retention", async () => {
     executed: false,
   });
 });
+
+it("forwards Alexandria Verified to quote and execution", async () => {
+  await run({ flags: { alexandriaVerified: true } });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded)
+    expect(request.alexandriaVerified).toBe(true);
+});
+
+it.each([
+  ["losing", { alexandriaVerified: true }, {}],
+  ["gaining", {}, { alexandriaVerified: true }],
+])(
+  "refuses the same x-request-id after %s Alexandria Verified, rather than replaying",
+  async (_case, before, after) => {
+    await run({ flags: before });
+    const other = await run({ flags: after });
+    expect(other.status).toBe(409);
+    expect(other.body).toEqual(
+      expect.objectContaining({ code: "duplicate_request" }),
+    );
+    expect(executions()).toHaveLength(1);
+  },
+);
 
 it("refuses the same x-request-id with a different zero data retention setting", async () => {
   await run();

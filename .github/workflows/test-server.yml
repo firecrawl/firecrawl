@@ -111,7 +111,7 @@ jobs:
             apps/api/native/index.js
             apps/api/native/index.d.ts
           # note: this key is not ideal, need to find a better solution
-          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/Cargo.lock', 'apps/api/native/build.rs', 'apps/api/native/.cargo/config.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
 
       - name: Build native lib
         if: steps.napi_restore.outputs.cache-hit != 'true'
@@ -150,7 +150,7 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.mod', 'apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
 
       - name: Build go-html-to-md
         if: steps.golib_restore.outputs.cache-hit != 'true'
@@ -259,7 +259,12 @@ jobs:
 
       - name: Run Autumn billing service regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
-        run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
+        run: >-
+          pnpm exec vitest run
+          src/services/autumn/__tests__/autumn.service.test.ts
+          src/services/autumn/__tests__/firebill.test.ts
+          src/services/autumn/__tests__/firebill.transport.test.ts
+          --reporter=default
         working-directory: apps/api
 
       - name: Run historical credit usage regression tests
@@ -274,6 +279,11 @@ jobs:
       - name: Run billing batch regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: pnpm exec vitest run src/services/billing/__tests__/batch_billing.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run Exchange credit grant regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/controllers/exchange-credit-grant.test.ts --reporter=default
         working-directory: apps/api
 
       - name: Run MCP credits billing regression tests
@@ -325,6 +335,11 @@ jobs:
           src/controllers/v1/__tests__/crawl-status-next.test.ts
           src/controllers/v2/__tests__/crawl-status-next.test.ts
           --reporter=default
+        working-directory: apps/api
+
+      - name: Run Exchange proof route tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/__tests__/routes/exchange-proof.routes.test.ts --reporter=default
         working-directory: apps/api
 
       - name: Run agent interop auth and concurrency regression tests
@@ -394,6 +409,17 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run reserved capacity PDF regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFReservedCapacity.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/reservedCapacityPdfRouting.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+          src/scraper/scrapeURL/engines/pdf/__tests__/indexPdfSupersede.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run US-only page fetch regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-
@@ -402,6 +428,17 @@ jobs:
           src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
           src/scraper/scrapeURL/__tests__/usOnly.test.ts
           src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run ZDR cleanup regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/zdr-queue.test.ts
+          src/lib/zdrcleaner.test.ts
+          src/lib/gcs-jobs.test.ts
+          src/services/logging/log_job.test.ts
           --reporter=default
         working-directory: apps/api
 

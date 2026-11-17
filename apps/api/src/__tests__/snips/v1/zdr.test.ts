@@ -6,8 +6,9 @@ import {
   scrapeStatusRaw,
   zdrcleaner,
   idmux,
+  describeV1,
 } from "./lib";
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { TEST_PRODUCTION } from "../lib";
 import {
   getLogs,
   expectScrapeIsCleanedUp,
@@ -18,7 +19,7 @@ import {
 } from "../zdr-helpers";
 import { HAS_JOB_LOG } from "../job-log";
 
-describeIf(TEST_PRODUCTION && HAS_JOB_LOG)("Zero Data Retention", () => {
+describeV1(TEST_PRODUCTION && HAS_JOB_LOG)("Zero Data Retention", () => {
   describe.each(["Team-scoped", "Request-scoped"] as const)("%s", scope => {
     it("should clean up a scrape immediately", async () => {
       let identity = await idmux({

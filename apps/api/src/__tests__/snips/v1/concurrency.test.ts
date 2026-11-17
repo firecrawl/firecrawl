@@ -1,13 +1,14 @@
-import { describeIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
+import { TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
 import {
   batchScrapeWithConcurrencyTracking,
   crawlWithConcurrencyTracking,
+  describeV1,
   idmux,
 } from "./lib";
 
 const accountConcurrencyLimit = 20;
 
-describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
+describeV1(TEST_PRODUCTION)("Concurrency queue and limit", () => {
   const base = TEST_SUITE_WEBSITE;
 
   it.concurrent(

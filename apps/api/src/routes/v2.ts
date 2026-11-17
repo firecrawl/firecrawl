@@ -3,6 +3,7 @@ import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
+import { createFreshFeedRouter } from "./fresh-feed";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -775,5 +776,13 @@ if (config.SEARCH_PLATFORM_URL) {
       allowKeyless: true,
     }),
     createGovRouter(),
+  );
+}
+
+if (config.FRESH_FEED_URL) {
+  v2Router.use(
+    "/fresh-vertical-feed",
+    authMiddleware(RateLimiterMode.FreshFeed),
+    createFreshFeedRouter(config.FRESH_FEED_URL),
   );
 }

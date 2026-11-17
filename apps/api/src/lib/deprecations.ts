@@ -25,31 +25,51 @@ export interface Notice {
   replacement?: string;
 }
 
+// Every v1 route below shares one deprecation date, sunset and extension flag.
+const V1 = {
+  docs: "https://docs.firecrawl.dev/migrate-to-v2",
+  deprecatedAt: "@1793923200",
+  sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+  surface: "v1",
+};
+
 // Every legacy entry shipped together in #3469, so they share one date.
 const DEPRECATIONS = {
   v1_extract: {
     message:
-      "/v1/extract is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v1/extract is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v1_extract_status: {
     message:
-      "/v1/extract/:jobId is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v1/extract/:jobId is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_extract: {
     message:
-      "/v2/extract is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v2/extract is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_extract_status: {
     message:
-      "/v2/extract/:jobId is deprecated. Use /v2/scrape with formats including a 'json' format object.",
+      "/v2/extract/:jobId is deprecated. Use /v2/scrape with a 'json' format for a single page, or /v2/agent for wildcard URLs, web search or one answer across several pages. See https://docs.firecrawl.dev/migrating-from-extract.",
     replacement: "/v2/scrape",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    docs: "https://docs.firecrawl.dev/migrating-from-extract",
+    surface: "extract",
   },
   v2_research_github_search: {
     message:
@@ -60,54 +80,203 @@ const DEPRECATIONS = {
     sunset: "Tue, 03 Nov 2026 23:59:59 GMT",
   },
   v1_deep_research: {
-    message: "/v1/deep-research is deprecated. Use /v2/search instead.",
-    replacement: "/v2/search",
+    message:
+      "/v1/deep-research is deprecated. Use /v2/agent instead, or /v2/search with scrapeOptions to run your own research loop.",
+    replacement: "/v2/agent",
+    docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "deep_research",
   },
   v1_deep_research_status: {
-    message: "/v1/deep-research/:jobId is deprecated. Use /v2/search instead.",
-    replacement: "/v2/search",
+    message:
+      "/v1/deep-research/:jobId is deprecated. Use /v2/agent instead, and read results from /v2/agent/:jobId.",
+    replacement: "/v2/agent/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-deep-research",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "deep_research",
   },
   v1_llmstxt: {
-    message: "/v1/llmstxt is deprecated and will not be replaced.",
+    message:
+      "/v1/llmstxt is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
+    docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "llmstxt",
   },
   v1_llmstxt_status: {
-    message: "/v1/llmstxt/:jobId is deprecated and will not be replaced.",
+    message:
+      "/v1/llmstxt/:jobId is deprecated. Build llms.txt from /v2/map and /v2/batch/scrape instead.",
+    docs: "https://docs.firecrawl.dev/migrating-from-llmstxt",
     deprecatedAt: "@1778025600",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    surface: "llmstxt",
   },
   v0_scrape: {
-    message: "/v0/scrape is deprecated. Use /v2/scrape instead.",
+    message:
+      "/v0/scrape is deprecated. Use /v2/scrape instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/scrape",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl: {
-    message: "/v0/crawl is deprecated. Use /v2/crawl instead.",
+    message:
+      "/v0/crawl is deprecated. Use /v2/crawl instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl_status: {
     message:
-      "/v0/crawl/status/:jobId is deprecated. Use /v2/crawl/:jobId instead.",
+      "/v0/crawl/status/:jobId is deprecated. Use /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_crawl_cancel: {
     message:
-      "/v0/crawl/cancel/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead.",
+      "/v0/crawl/cancel/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/crawl/:jobId",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
   },
   v0_search: {
-    message: "/v0/search is deprecated. Use /v2/search instead.",
+    message:
+      "/v0/search is deprecated. Use /v2/search instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/search",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
     surface: "v0",
+  },
+  v1_scrape: {
+    message:
+      "/v1/scrape is deprecated. Use /v2/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/scrape",
+    ...V1,
+  },
+  v1_scrape_status: {
+    message:
+      "/v1/scrape/:jobId is deprecated. Use /v2/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/scrape/:jobId",
+    ...V1,
+  },
+  v1_crawl: {
+    message:
+      "/v1/crawl is deprecated. Use /v2/crawl instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl",
+    ...V1,
+  },
+  v1_crawl_status: {
+    message:
+      "/v1/crawl/:jobId is deprecated. Use /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/:jobId",
+    ...V1,
+  },
+  v1_crawl_cancel: {
+    message:
+      "DELETE /v1/crawl/:jobId is deprecated. Use DELETE /v2/crawl/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/:jobId",
+    ...V1,
+  },
+  v1_crawl_errors: {
+    message:
+      "/v1/crawl/:jobId/errors is deprecated. Use /v2/crawl/:jobId/errors instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/:jobId/errors",
+    ...V1,
+  },
+  v1_crawl_active: {
+    message:
+      "/v1/crawl/active is deprecated. Use /v2/crawl/active instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/active",
+    ...V1,
+  },
+  v1_crawl_ongoing: {
+    message:
+      "/v1/crawl/ongoing is deprecated. Use /v2/crawl/active instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/crawl/active",
+    ...V1,
+  },
+  v1_batch_scrape: {
+    message:
+      "/v1/batch/scrape is deprecated. Use /v2/batch/scrape instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/batch/scrape",
+    ...V1,
+  },
+  v1_batch_scrape_status: {
+    message:
+      "/v1/batch/scrape/:jobId is deprecated. Use /v2/batch/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/batch/scrape/:jobId",
+    ...V1,
+  },
+  v1_batch_scrape_cancel: {
+    message:
+      "DELETE /v1/batch/scrape/:jobId is deprecated. Use DELETE /v2/batch/scrape/:jobId instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/batch/scrape/:jobId",
+    ...V1,
+  },
+  v1_batch_scrape_errors: {
+    message:
+      "/v1/batch/scrape/:jobId/errors is deprecated. Use /v2/batch/scrape/:jobId/errors instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/batch/scrape/:jobId/errors",
+    ...V1,
+  },
+  v1_search: {
+    message:
+      "/v1/search is deprecated. Use /v2/search instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/search",
+    ...V1,
+  },
+  v1_map: {
+    message:
+      "/v1/map is deprecated. Use /v2/map instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/map",
+    ...V1,
+  },
+  v1_concurrency_check: {
+    message:
+      "/v1/concurrency-check is deprecated. Use /v2/concurrency-check instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/concurrency-check",
+    ...V1,
+  },
+  v1_team_credit_usage: {
+    message:
+      "/v1/team/credit-usage is deprecated. Use /v2/team/credit-usage instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/team/credit-usage",
+    ...V1,
+  },
+  v1_team_credit_usage_historical: {
+    message:
+      "/v1/team/credit-usage/historical is deprecated. Use /v2/team/credit-usage/historical instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/team/credit-usage/historical",
+    ...V1,
+  },
+  v1_team_token_usage: {
+    message:
+      "/v1/team/token-usage is deprecated. Use /v2/team/token-usage instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/team/token-usage",
+    ...V1,
+  },
+  v1_team_token_usage_historical: {
+    message:
+      "/v1/team/token-usage/historical is deprecated. Use /v2/team/token-usage/historical instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/team/token-usage/historical",
+    ...V1,
+  },
+  v1_team_queue_status: {
+    message:
+      "/v1/team/queue-status is deprecated. Use /v2/team/queue-status instead. See https://docs.firecrawl.dev/migrate-to-v2.",
+    replacement: "/v2/team/queue-status",
+    ...V1,
   },
 } as const satisfies Record<string, Deprecation>;
 
@@ -170,6 +339,12 @@ export function sunsetInstant(key: string, sunset: string | undefined): number {
   return at;
 }
 
+/** When the entry's route starts answering 410, Infinity without a sunset. */
+export function sunsetOf(key: DeprecationKey): number {
+  const dep: Deprecation = DEPRECATIONS[key];
+  return sunsetInstant(key, dep.sunset);
+}
+
 const EXTENSION_UNTIL = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/;
 
 /**
@@ -198,7 +373,7 @@ export function hasSunsetExtension(
  */
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
-  const sunsetAt = sunsetInstant(key, dep.sunset);
+  const sunsetAt = sunsetOf(key);
 
   const annotate = (res: Response) => {
     setDeprecationHeaders(res, dep);

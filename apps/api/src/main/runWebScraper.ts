@@ -1,3 +1,4 @@
+import { PaywalledContentError } from "../scraper/scrapeURL/error";
 import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
@@ -121,6 +122,7 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
+      if (_error instanceof PaywalledContentError) break;
     }
   }
 

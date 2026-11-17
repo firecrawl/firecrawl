@@ -5,8 +5,11 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
+import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -74,6 +77,7 @@ const providerScrapeSchema = z.strictObject({
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
   zeroDataRetention: z.boolean().optional(),
+  maxCredits: z.number().int().nonnegative().safe().optional(),
   __agentInterop: agentInteropSchema.optional(),
 });
 
@@ -114,15 +118,26 @@ export async function providerScrapeController(
         .status(403)
         .json({ success: false, error: "Invalid agent interop." });
   }
+  // Trusted internal marker for zero-priced provider lines: honoured only with
+  // the proxy secret and never for `fco_` tokens, otherwise ignored.
+  const token = req.get("authorization")?.split(" ")[1];
+  const ultrasearch =
+    req.get("x-firecrawl-ultrasearch") === "true" &&
+    !!token &&
+    !token.startsWith("fco_") &&
+    timingSafeSecretEqual(
+      req.get("x-firecrawl-keyless-secret"),
+      config.KEYLESS_PROXY_SECRET,
+    );
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
 
   if (req.auth.team_id.startsWith("preview_keyless_")) {
-    return res.status(403).json({
-      success: false,
-      error: "An API key is required for provider tools.",
-    });
+    applyAgentAuthDiscoveryHeader(res);
+    return res
+      .status(403)
+      .json(keylessProviderToolsBody(req.auth.team_id, req));
   }
 
   if (!req.acuc)
@@ -132,8 +147,7 @@ export async function providerScrapeController(
     });
   // Exchange refuses capabilities that cannot honour ZDR, per call.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc.flags) === "forced" ||
-    body.zeroDataRetention === true;
+    isAlexandriaZDRForced(req.acuc.flags) || body.zeroDataRetention === true;
   if (
     (req as any).agentIndexOnly ||
     ["pending", "blocked"].includes(req.acuc._agentSponsor?.status ?? "")
@@ -187,6 +201,8 @@ export async function providerScrapeController(
       clientIp: req.ip,
       billingCountry: await billingCountryForTeam(req.auth.team_id),
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
+      ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
+      ...(ultrasearch ? { ultrasearch } : {}),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -277,6 +293,7 @@ export async function providerScrapeController(
         target,
         team_id: req.auth.team_id,
         options: {
+          ...(ultrasearch ? { ultrasearch } : {}),
           alexandria: body.alexandria.map(
             ({ provider, capability, options }, i) => ({
               provider,

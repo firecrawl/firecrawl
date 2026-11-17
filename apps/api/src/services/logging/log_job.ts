@@ -170,7 +170,11 @@ let lastDropWarningAt = 0;
 
 function getPubSubClient(logger: Logger): PubSub | null {
   if (pubSubClient !== undefined) return pubSubClient;
-  if (!config.PUBSUB_CREDENTIALS) return (pubSubClient = null);
+  if (!config.PUBSUB_CREDENTIALS?.trim()) {
+    return (pubSubClient = config.PUBSUB_PROJECT_ID
+      ? new PubSub({ projectId: config.PUBSUB_PROJECT_ID })
+      : null);
+  }
 
   try {
     const credentials = JSON.parse(
@@ -228,7 +232,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
       }
       const client = getPubSubClient(logger);
       if (!client) {
-        if (config.PUBSUB_CREDENTIALS) {
+        if (config.PUBSUB_CREDENTIALS?.trim() || config.PUBSUB_PROJECT_ID) {
           throw new Error("Pub/Sub log publisher initialization failed");
         }
         setSpanAttributes(span, {
@@ -428,7 +432,8 @@ type LoggedRequest = {
     | "research_paper_read"
     | "research_related_papers"
     | "code_search"
-    | "gov_search";
+    | "gov_search"
+    | "fresh_feed";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -570,7 +575,7 @@ async function logRequestInternal(request: LoggedRequest) {
   }
 
   if (request.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
-    await enqueueZdrCleanupJob(request.id);
+    await enqueueZdrCleanupJob({ requestId: request.id });
   }
 
   await robustInsert(

@@ -2,7 +2,8 @@ import type { Meta } from "../../..";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import { isUsOnly } from "../../../../../lib/us-only";
-import { firePdfRegionRefused } from "./data-region";
+import { isReservedCapacity } from "../../../../../lib/reserved-capacity";
+import { firePdfReservedRefused, firePdfRegionRefused } from "./data-region";
 import {
   firePdfAsyncCompletedTotal,
   firePdfAsyncLongPollTotal,
@@ -182,6 +183,20 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
       firePdfAsyncPollCount.observe(pollCount);
       firePdfAsyncCompletedTotal.labels("failed").inc();
       failAsync(meta, "region_unavailable", { pollCount, body: pollBody });
+    }
+
+    if (
+      isReservedCapacity(meta.internalOptions.teamFlags ?? undefined) &&
+      (pollBody as { status?: unknown }).status === "failed" &&
+      firePdfReservedRefused(pollBody)
+    ) {
+      if (waitMs > 0) firePdfAsyncLongPollTotal.labels("terminal").inc();
+      firePdfAsyncPollCount.observe(pollCount);
+      firePdfAsyncCompletedTotal.labels("failed").inc();
+      failAsync(meta, "reserved_unavailable", {
+        pollCount,
+        body: pollBody,
+      });
     }
 
     if (pollStatus === 401) {

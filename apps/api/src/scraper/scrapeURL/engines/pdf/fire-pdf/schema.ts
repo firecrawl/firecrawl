@@ -302,6 +302,7 @@ export const resultResponseSchema = z.object({
   // build does not understand never fails the scrape.
   provenance: z.unknown().optional(),
   data_region_applied: z.unknown().optional(),
+  reserved_applied: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

@@ -544,7 +544,8 @@ export async function scrapeController(
 
           if (
             e.code === "unsafe_domain_blocked" ||
-            e.code === "US_ONLY_UNAVAILABLE"
+            e.code === "US_ONLY_UNAVAILABLE" ||
+            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
           ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
@@ -579,6 +580,17 @@ export async function scrapeController(
           }
 
           if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
