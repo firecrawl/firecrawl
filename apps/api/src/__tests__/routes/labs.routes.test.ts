@@ -158,6 +158,9 @@ describe("labs router for a US-only team", () => {
   });
 });
 
+const ZDR_TEAM_ERROR =
+  "Your team has zero data retention enabled. This is not supported on Labs Search. Please contact support@firecrawl.com to unblock this feature.";
+
 describe("labs router under zero data retention", () => {
   beforeEach(() => {
     mocks.fetch.mockReset();
@@ -169,16 +172,32 @@ describe("labs router under zero data retention", () => {
     { searchZDR: "forced" },
     { searchZDR: "forced-zdr" },
     { searchZDR: "forced-anon" },
+    { safeMode: true, safeModeConfig: { lockdown: true } },
   ])("refuses a team with %o without calling the labs service", async zdr => {
     mocks.flags = { labsSearch: true, ...zdr };
 
     const response = await request(appWithLabs()).post("/labs/search");
 
     expect(response.status).toBe(400);
-    expect(response.body.success).toBe(false);
-    expect(response.body.error).toContain("zero data retention");
+    expect(response.body).toEqual({ success: false, error: ZDR_TEAM_ERROR });
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
+
+  it.each(LABS_ROUTES)(
+    "refuses %s for a forced zero data retention team",
+    async route => {
+      mocks.flags = { labsSearch: true, forceZDR: true };
+      const [method, path] = route.split(" ");
+
+      const response = await (request(appWithLabs()) as any)[
+        method.toLowerCase()
+      ]("/labs" + path.replace(/:\w+/g, "id-1"));
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ success: false, error: ZDR_TEAM_ERROR });
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses a request that asks for zero data retention", async () => {
     mocks.flags = { labsSearch: true };
