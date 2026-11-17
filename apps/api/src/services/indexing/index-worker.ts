@@ -31,6 +31,7 @@ import {
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
+import { requestContext } from "../../lib/request-context";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
@@ -499,7 +500,14 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               storeInCache: true,
               onlyMainContent: false,
             });
+            const ctx = requestContext({
+              teamId,
+              zeroDataRetention: false,
+              orgId: null,
+              apiKeyId: null,
+            });
             const sc: StoredCrawl = {
+              ctx,
               originUrl: url,
               crawlerOptions: toV0CrawlerOptions(crawlerOptions),
               scrapeOptions,
@@ -538,6 +546,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               {
                 url: url,
                 mode: "kickoff" as const,
+                ctx,
                 team_id: teamId,
                 crawlerOptions,
                 scrapeOptions: sc.scrapeOptions,
