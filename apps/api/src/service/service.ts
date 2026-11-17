@@ -147,7 +147,6 @@ export function createService(
     workers,
     describe() {
       const hooks: Record<string, string[]> = {};
-      const errors: Record<string, string> = {};
       const roles: Record<string, string> = {};
       for (const extension of extensions) {
         for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
@@ -162,9 +161,10 @@ export function createService(
           roles[role] = extension.name;
         }
       }
-      for (const [code, { owner }] of registeredErrors()) {
-        errors[code] = owner;
-      }
+      // Built from entries, so that a code is listed whatever its name is.
+      const errors = Object.fromEntries(
+        [...registeredErrors()].map(([code, { owner }]) => [code, owner]),
+      );
       return {
         extensions: names,
         modules: Object.keys(modules).sort(),
