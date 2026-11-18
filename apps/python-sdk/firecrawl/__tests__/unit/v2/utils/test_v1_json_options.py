@@ -261,3 +261,34 @@ async def test_legacy_typed_config_aliases_reach_api(local_api, monkeypatch, cli
     assert len(requests) == 1
     assert requests[0][1]["formats"] == [expected]
     assert config.model_dump(by_alias=True) == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [Firecrawl, AsyncFirecrawl])
+@pytest.mark.parametrize("operation", ["scrape", "crawl"])
+@pytest.mark.parametrize("typed", [False, True])
+@pytest.mark.parametrize("unsupported,field", [
+    ({"systemPrompt": "Use this system context"}, "system_prompt"),
+    ({"agent": {"model": "FIRE-1"}}, "agent"),
+])
+async def test_unsupported_legacy_json_options_rejected_before_http(
+    local_api, monkeypatch, client_type, operation, typed, unsupported, field
+):
+    api_url, requests = local_api
+    requests.clear()
+    monkeypatch.setattr(v1_compat, "_warned", False)
+    client = client_type(api_key="fc-test", api_url=api_url)
+    options = {**copy.deepcopy(JSON_OPTIONS), **unsupported}
+    config = V1JsonConfig(**options) if typed else options
+    params = {"formats": ["json"], "jsonOptions": config}
+    if operation == "crawl":
+        params = {"scrapeOptions": params}
+    original = copy.deepcopy(params)
+    with pytest.warns(DeprecationWarning, match="v1-style calls"):
+        with pytest.raises(ValueError, match=f"Unsupported JSON options.*{field}"):
+            method = client.scrape_url if operation == "scrape" else client.async_crawl_url
+            result = method("https://example.com", params=params)
+            if inspect.isawaitable(result):
+                await result
+    assert requests == []
+    assert params == original

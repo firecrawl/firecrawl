@@ -49,6 +49,12 @@ def _convert_json_options(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(json_options, BaseModel):
         json_options = json_options.model_dump(by_alias=True, exclude_none=True)
     json_options = {_snake_case(key): value for key, value in json_options.items()}
+    unsupported = sorted(
+        key for key, value in json_options.items()
+        if key not in v2_types.JsonFormat.model_fields and value is not None
+    )
+    if unsupported:
+        raise ValueError("Unsupported JSON options for the v2 API (" + ", ".join(unsupported) + ")")
     data["formats"] = [
         v2_types.JsonFormat(**json_options).model_dump(exclude_none=True) if fmt == "json" else fmt
         for fmt in formats
