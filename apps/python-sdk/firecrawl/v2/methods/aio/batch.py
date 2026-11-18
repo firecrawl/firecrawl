@@ -60,8 +60,11 @@ def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwar
 
 
 async def start_batch_scrape(client: AsyncHttpClient, urls: List[str], **kwargs) -> BatchScrapeResponse:
+    # Extract idempotency_key before _prepare (which does not handle it) and forward as header.
+    idempotency_key = kwargs.pop("idempotency_key", None)
     payload = _prepare(urls, **kwargs)
-    response = await client.post("/v2/batch/scrape", payload)
+    headers = client._headers(idempotency_key) if idempotency_key else None
+    response = await client.post("/v2/batch/scrape", payload, headers=headers)
     if response.status_code >= 400:
         handle_response_error(response, "start batch scrape")
     body = response.json()
