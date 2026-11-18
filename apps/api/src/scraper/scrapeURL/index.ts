@@ -27,6 +27,7 @@ import {
   shouldUseIndex,
 } from "./engines";
 import { applyHandoffFeatureFlags } from "./lib/handoffFeatureFlags";
+import { isSoftErrorPage } from "./lib/softErrorPage";
 import { parseMarkdown } from "../../lib/html-to-markdown";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
@@ -788,9 +789,12 @@ async function scrapeURLLoopIter(
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
       : isParsedImage || isLongEnough || !isGoodStatusCode;
-    const isLikelyProxyError = [401, 403, 429].includes(
-      engineResult.statusCode,
+    const isSoftError = isSoftErrorPage(
+      meta.rewrittenUrl ?? meta.url,
+      engineResult.html,
     );
+    const isLikelyProxyError =
+      [401, 403, 429].includes(engineResult.statusCode) || isSoftError;
 
     if (
       isLikelyProxyError &&
@@ -802,7 +806,12 @@ async function scrapeURLLoopIter(
           engine +
           " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
         {
-          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+          factors: {
+            isLongEnough,
+            isGoodStatusCode,
+            hasNoPageError,
+            isSoftError,
+          },
           statusCode: engineResult.statusCode,
           length: engineResult.html?.trim().length ?? 0,
         },
@@ -813,7 +822,7 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (hasRequiredOutput) {
+    if (hasRequiredOutput && !isSoftError) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
         factors: {
           isLongEnough,
@@ -825,7 +834,12 @@ async function scrapeURLLoopIter(
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          isSoftError,
+        },
         length: engineResult.html?.trim().length ?? 0,
       });
       throw new EngineUnsuccessfulError(engine);
