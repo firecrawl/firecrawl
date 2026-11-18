@@ -115,11 +115,6 @@ if (config.BULL_AUTH_KEY && config.BULL_AUTH_KEY_PATH_ROUTES) {
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/change-tracking-purge`,
-    wrap(changeTrackingPurgeController),
-  );
-
-  adminRouter.post(
     `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),

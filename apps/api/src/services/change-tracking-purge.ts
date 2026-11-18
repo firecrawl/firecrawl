@@ -45,19 +45,22 @@ export function changeTrackingPurgeConfigured(): boolean {
 /**
  * Durably schedules both purge passes for a team. Call it before deleting the
  * team row, so a failure here can still stop the deletion; a pass retries
- * while the row exists and never deletes rows of a live team.
+ * while the row exists and never deletes rows of a live team. Enqueuing again
+ * while a pass is pending is a no-op for that pass; once it has finished, a new
+ * enqueue schedules it again.
  */
 export async function enqueueChangeTrackingPurge(
   teamId: string,
 ): Promise<void> {
   await getChangeTrackingPurgeQueue().addBulk(
-    PASS_DELAYS_MS.map(delay => ({
+    PASS_DELAYS_MS.map((delay, pass) => ({
       name: "purge",
       data: { teamId },
       opts: {
         delay,
         attempts: PURGE_ATTEMPTS,
         backoff: { type: "exponential", delay: PURGE_BACKOFF_MS },
+        deduplication: { id: `change-tracking-purge:${teamId}:${pass}` },
       },
     })),
   );

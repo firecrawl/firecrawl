@@ -16,7 +16,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 function changeTrackingPurge(teamId: unknown) {
   return request(TEST_API_URL)
-    .post(`/admin/${config.BULL_AUTH_KEY}/change-tracking-purge`)
+    .post("/admin/ops/change-tracking-purge")
+    .set("Authorization", `Bearer ${config.BULL_AUTH_KEY}`)
     .send({ team_id: teamId });
 }
 

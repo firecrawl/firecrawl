@@ -64,6 +64,9 @@ describe("change tracking purge", () => {
 
     mockConfig.BIGTABLE_INSTANCE_ID = "instance";
     expect(changeTrackingPurgeConfigured()).toBe(true);
+
+    mockConfig.USE_DB_AUTHENTICATION = false;
+    expect(changeTrackingPurgeConfigured()).toBe(false);
   });
 
   it("schedules a pass after deletion and a pass for late writes", async () => {
@@ -81,6 +84,10 @@ describe("change tracking purge", () => {
       expect(j.opts.attempts).toBe(12);
       expect(j.opts.backoff).toEqual({ type: "exponential", delay: 60 * 1000 });
     }
+    expect(jobs.map((j: any) => j.opts.deduplication)).toEqual([
+      { id: `change-tracking-purge:${TEAM_ID}:0` },
+      { id: `change-tracking-purge:${TEAM_ID}:1` },
+    ]);
   });
 
   it("purges the rows once the team row is gone", async () => {

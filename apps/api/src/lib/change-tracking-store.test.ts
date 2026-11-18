@@ -171,6 +171,15 @@ describe("changeTrackingDeleteTeam", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it("refuses to delete when the client hands back decoded keys", async () => {
+    getRows.mockResolvedValueOnce([[{ id: keyOf(0x01).toString("utf8") }]]);
+
+    await expect(changeTrackingDeleteTeam(TEAM_ID)).rejects.toThrow(
+      "decoded row keys",
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("stops at a failed delete so the caller retries the pass", async () => {
     getRows.mockResolvedValueOnce([[{ id: keyOf(0x01) }]]);
     mutate.mockRejectedValueOnce(new Error("unavailable"));

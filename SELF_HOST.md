@@ -89,8 +89,10 @@ other variables in the API container's environment.
 Header-authenticated routes: `GET /admin/ops/redis-health`,
 `POST /admin/ops/acuc-cache-clear`,
 `POST /admin/ops/ip-restriction-cache-clear`,
-`POST /admin/ops/key-restriction-cache-clear` and
-`POST /admin/ops/concurrency-queue-backfill`.
+`POST /admin/ops/key-restriction-cache-clear`,
+`POST /admin/ops/concurrency-queue-backfill` and
+`POST /admin/ops/change-tracking-purge` (schedules the deletion of a deleted
+team's change tracking rows; header only, with no `/admin/<key>/` form).
 
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,

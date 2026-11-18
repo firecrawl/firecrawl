@@ -186,7 +186,12 @@ export async function changeTrackingDeleteTeam(
       });
       if (rows.length === 0) break;
 
-      const keys = rows.map(row => row.id as unknown as Buffer);
+      const keys = rows.map(row => row.id as unknown);
+      if (!keys.every(key => Buffer.isBuffer(key))) {
+        throw new Error(
+          "Bigtable returned decoded row keys; refusing to delete",
+        );
+      }
       await table.mutate(
         keys.map(key => ({
           key: key as unknown as string,

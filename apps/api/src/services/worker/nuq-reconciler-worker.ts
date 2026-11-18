@@ -112,8 +112,10 @@ export async function start() {
     isShuttingDown = true;
     _logger.info("NuQ reconciler worker shutting down");
 
-    await firebillTrackRetryWorker?.close();
-    await changeTrackingPurgeWorker?.close();
+    await Promise.allSettled([
+      firebillTrackRetryWorker?.close(),
+      changeTrackingPurgeWorker?.close(),
+    ]);
 
     while (reconcilerInFlight) {
       _logger.info("Waiting for in-flight reconciliation to complete...");
