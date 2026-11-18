@@ -92,7 +92,12 @@ Header-authenticated routes: `GET /admin/ops/redis-health`,
 `POST /admin/ops/key-restriction-cache-clear`,
 `POST /admin/ops/concurrency-queue-backfill` and
 `POST /admin/ops/change-tracking-purge` (schedules the deletion of a deleted
-team's change tracking rows; header only, with no `/admin/<key>/` form).
+team's change tracking rows).
+
+`POST /admin/ops/change-tracking-purge` has no `/admin/<key>/` form. Only a
+`202` answer with `queued: true` means the purge was scheduled. Without
+database authentication and Bigtable no change tracking rows exist, so the route
+answers `200` with `queued: false` and schedules nothing.
 
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
