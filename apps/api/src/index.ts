@@ -32,6 +32,7 @@ import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
+import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { registerHostedBashRoute } from "./controllers/v2/bash";
@@ -49,6 +50,7 @@ import {
   shutdownPubSubLogging,
 } from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
+import { startRole } from "./main";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -155,6 +157,7 @@ app.use("/v1", v1Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
 app.use("/exchange", exchangeRouter);
+app.use(exchangeInternalRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -261,15 +264,13 @@ async function startServer(port = DEFAULT_PORT) {
     });
   };
 
-  if (require.main === module) {
-    process.on("SIGTERM", exitHandler);
-    process.on("SIGINT", exitHandler);
-  }
+  process.on("SIGTERM", exitHandler);
+  process.on("SIGINT", exitHandler);
   return server;
 }
 
-if (require.main === module) {
-  startServer().catch(error => {
+export async function start() {
+  await startServer().catch(error => {
     logger.error("Failed to start server", { error });
     process.exit(1);
   });
@@ -383,3 +384,7 @@ app.use(
 );
 
 logger.info(`Worker ${process.pid} started`);
+
+if (require.main === module) {
+  void startRole("api");
+}

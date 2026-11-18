@@ -124,6 +124,7 @@ it.each(["good", "partial", "bad"])(
       orgId: "org-1",
       rating,
       requestedUrl: minimal.requestedWebsite.url,
+      calls: [],
     });
     expect(parentRows()).toEqual([
       {
@@ -612,6 +613,7 @@ it("applies the payload limit after normalizing feedback", async () => {
 it.each([
   { forceZDR: true },
   { scrapeZDR: "forced" },
+  { alexandriaZDR: "forced" },
   { searchZDR: "forced" },
   { searchZDR: "forced-zdr" },
   { searchZDR: "forced-anon" },
@@ -621,6 +623,9 @@ it.each([
   expect(response.status).toBe(200);
   expect(response.body.feedbackId).toBe("00000000-0000-0000-0000-000000000000");
   expect(response.body.creditsRefunded).toBe(0);
+  expect(response.body.message).toBe(
+    "Feedback accepted. No refund: feedback is not stored under zero data retention.",
+  );
   expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
   expect(mocks.getRecentAlexandriaCalls).not.toHaveBeenCalled();
@@ -906,6 +911,45 @@ describe("call attribution", () => {
     expect(response.status).toBe(200);
     expect(response.body.rejectedTokens).toBe(1);
     expect(callRows().every(row => row.attribution === "window")).toBe(true);
+  });
+
+  it("never refunds against another team's call", async () => {
+    const foreign = token("req-9", "fred", {
+      team: "01933161-0000-7000-8000-00000000000f",
+    });
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+    const closed = await submit({ ...minimal, tokens: [foreign] });
+    expect(closed.status).toBe(409);
+    expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
+    const open = await submit({ ...minimal, tokens: [foreign] });
+    expect(open.status).toBe(200);
+    expect(open.body.rejectedTokens).toBe(1);
+    expect(
+      mocks.refundAlexandriaFeedback.mock.calls[0][0].calls.map(
+        (call: { requestId: string }) => call.requestId,
+      ),
+    ).toEqual(["req-3", "req-2", "req-2"]);
+  });
+
+  it("hands the refund the calls the feedback covers", async () => {
+    const response = await submit({
+      ...minimal,
+      tokens: [token("req-2", "fred")],
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.refundAlexandriaFeedback).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        calls: [
+          {
+            requestId: "req-2",
+            provider: "fred",
+            capability: "lookup",
+            rating: null,
+          },
+        ],
+      }),
+    );
   });
 
   it("falls back to the distinct calls inside the window", async () => {

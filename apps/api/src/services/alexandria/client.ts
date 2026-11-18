@@ -1,5 +1,6 @@
 import { Agent, fetch } from "undici";
 import { config } from "../../config";
+import type { AlexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
 import type { ExchangeResponse } from "./contracts";
 
 const dispatcher = new Agent({
@@ -19,6 +20,16 @@ const connectionFailed = (error: unknown) => {
   return typeof code === "string" && CONNECTION_ERRORS.has(code);
 };
 
+// A caller-supplied label as a short token that is safe in a header, or nothing.
+const headerToken = (value: string | null | undefined) => {
+  const token = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, "-")
+    .slice(0, 64);
+  return /[a-z0-9]/.test(token) ? token : undefined;
+};
+
 export async function exchangeRequest(input: {
   teamId: string;
   path: string;
@@ -28,6 +39,8 @@ export async function exchangeRequest(input: {
   maximumCredits?: number;
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
+  /** The organization a provider call bills against, so Exchange can attribute a paid read. Grants nothing. */
+  billingOrganizationId?: string;
   /** Caller's IP as the API sees it; Exchange resolves what it needs from it. */
   clientIp?: string;
   /** Country on the team's billing address, when it has one. */
@@ -40,11 +53,22 @@ export async function exchangeRequest(input: {
   zeroDataRetention?: boolean;
   /** The team may only be served by US-based providers. */
   usOnly?: boolean;
+  /** The team carries the Alexandria Verified flag, so Exchange runs its verifiedOnly providers. */
+  alexandriaVerified?: boolean;
   /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
   retryConnection?: boolean;
+  /** Trusted internal marker for zero-priced provider lines, sent with the internal secret so Exchange can verify it. */
+  ultrasearch?: boolean;
+  /** Whether Alexandria feedback from this team may be stored, and the reason when it may not. */
+  feedbackStorage?: AlexandriaFeedbackStorage;
+  /** The caller's origin and integration as the request named them; sent as short tokens. */
+  clientOrigin?: string | null;
+  clientIntegration?: string | null;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
+  const clientOrigin = headerToken(input.clientOrigin);
+  const clientIntegration = headerToken(input.clientIntegration);
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const signal = AbortSignal.timeout(Math.max(1, input.timeoutMs));
   const init = {
@@ -64,6 +88,11 @@ export async function exchangeRequest(input: {
             "x-exchange-api-key-id": input.termsIdentity.apiKeyId,
           }
         : {}),
+      ...(input.billingOrganizationId
+        ? {
+            "x-exchange-billing-organization-id": input.billingOrganizationId,
+          }
+        : {}),
       "x-exchange-extended-catalog-access": "true",
       ...(input.clientIp ? { "x-exchange-client-ip": input.clientIp } : {}),
       ...(input.billingCountry
@@ -74,6 +103,22 @@ export async function exchangeRequest(input: {
         ? { "x-exchange-zero-data-retention": "true" }
         : {}),
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
+      ...(input.alexandriaVerified
+        ? { "x-exchange-alexandria-verified": "true" }
+        : {}),
+      ...(input.ultrasearch && config.EXCHANGE_INTERNAL_SECRET
+        ? {
+            "x-exchange-ultrasearch": "true",
+            "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+          }
+        : {}),
+      ...(input.feedbackStorage
+        ? { "x-exchange-feedback-storage": input.feedbackStorage }
+        : {}),
+      ...(clientOrigin ? { "x-exchange-client-origin": clientOrigin } : {}),
+      ...(clientIntegration
+        ? { "x-exchange-client-integration": clientIntegration }
+        : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}

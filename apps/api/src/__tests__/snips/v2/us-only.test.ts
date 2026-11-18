@@ -15,9 +15,11 @@ import {
 } from "./lib";
 import { config } from "../../../config";
 
-// Without the US OpenAI key, every OpenAI-backed feature is refused for
-// US-only teams.
-const HAS_US_OPENAI = !!config.OPENAI_US_API_KEY;
+// Without a US OpenAI key or service account, every OpenAI-backed feature is
+// refused for US-only teams.
+const HAS_US_OPENAI =
+  !!config.OPENAI_US_API_KEY ||
+  !!(config.OPENAI_IDENTITY_PROVIDER_ID && config.OPENAI_US_SERVICE_ACCOUNT_ID);
 
 describeIf(TEST_PRODUCTION)("US-only teams", () => {
   let identity: Identity;

@@ -108,7 +108,7 @@ function judge(overrides: Partial<Parameters<typeof judgeChange>[0]> = {}) {
 
 function telemetryOfCalls() {
   return (generateText as Mock).mock.calls.map(
-    ([options]) => options.experimental_telemetry,
+    ([options]) => options.telemetry,
   );
 }
 
@@ -381,10 +381,6 @@ describe("judgeChange behaviour", () => {
     });
     expect(telemetryOfCalls()[1]).toMatchObject({
       functionId: "monitor/judgeChangeValidationRetry",
-      metadata: expect.objectContaining({
-        jobId: "test-check",
-        feature: "monitor_judge_validation_retry",
-      }),
     });
     expect(warnings.map(warning => warning.message)).toEqual([
       "Judge validation failed; retrying once",

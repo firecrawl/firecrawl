@@ -640,6 +640,7 @@ describe("getTeamLimits", () => {
       concurrency_limit: 7,
       rate_limit_multiplier: 25,
       is_paid_plan: true,
+      plan_class: "self_serve",
     });
     expect(mockEntityGet).toHaveBeenCalledWith({
       customerId: "org-1",
@@ -690,6 +691,61 @@ describe("getTeamLimits", () => {
     const limits = await makeService().getTeamLimits("team-1", "org-1");
 
     expect(limits.is_paid_plan).toBe(expected);
+  });
+
+  it.each([
+    ["the free plan", [subscription("free")], "free"],
+    [
+      "free plus the pay-as-you-go add-on",
+      [subscription("free"), subscription("pay_as_you_go", { addOn: true })],
+      "free",
+    ],
+    ["a pricing-page plan", [subscription("standard")], "self_serve"],
+    ["an enterprise plan", [subscription("enterprise_10m")], "contract"],
+    [
+      "a plan id this build cannot name",
+      [subscription("plan_from_2031")],
+      "contract",
+    ],
+    [
+      "a pricing-page plan with a negotiated one scheduled",
+      [
+        subscription("growth"),
+        subscription("enterprise_10m", { status: "scheduled" }),
+      ],
+      "contract",
+    ],
+    [
+      "only an add-on",
+      [subscription("credit_pack_1k", { addOn: true })],
+      undefined,
+    ],
+    ["no subscriptions", [], undefined],
+  ])("plan_class for %s is %s", async (_case, subscriptions, expected) => {
+    mockCustomerGet.mockResolvedValue({ subscriptions });
+
+    const limits = await makeService().getTeamLimits("team-1", "org-1");
+
+    expect(limits.plan_class).toBe(expected);
+  });
+
+  it("gives no plan class when the customer is missing (404)", async () => {
+    mockCustomerGet.mockRejectedValue({ statusCode: 404 });
+
+    const limits = await makeService().getTeamLimits("team-1", "org-1");
+
+    expect(limits.plan_class).toBeUndefined();
+  });
+
+  it("gives no plan class for a preview team or without an Autumn client", async () => {
+    expect(
+      (await makeService().getTeamLimits("preview_x", "org-1")).plan_class,
+    ).toBeUndefined();
+
+    state.autumnClientRef = null;
+    expect(
+      (await makeService().getTeamLimits("team-1", "org-1")).plan_class,
+    ).toBeUndefined();
   });
 
   it.each([
@@ -905,7 +961,7 @@ describe("firebill requests", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 42,
-      properties: { source: "test", endpoint: "extract" },
+      properties: { source: "test", endpoint: "extract", teamId: "team-1" },
       // Minted when the caller has none, so the retry inside firebillTrack is
       // the same event rather than a second charge.
       idempotency_key: expect.any(String),
@@ -971,7 +1027,7 @@ describe("firebill requests", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 100,
-      properties: { source: "checkCreditsMiddleware" },
+      properties: { source: "checkCreditsMiddleware", teamId: "team-1" },
       // A read: no lock, no idempotency key, nothing to dedupe.
     });
   });
@@ -1216,7 +1272,11 @@ describe("firebill requests", () => {
       value: 10,
       lock_id: "monitor_check-1",
       expires_at: expiresAt,
-      properties: { source: "monitorCheck", endpoint: "monitor" },
+      properties: {
+        source: "monitorCheck",
+        endpoint: "monitor",
+        teamId: "team-1",
+      },
     });
   });
 
@@ -1694,7 +1754,11 @@ describe("firebill requests", () => {
       lock_id: "monitor_check-1",
       action: "confirm",
       override_value: 7,
-      properties: { source: "monitorCheck", endpoint: "monitor" },
+      properties: {
+        source: "monitorCheck",
+        endpoint: "monitor",
+        teamId: "team-1",
+      },
       // Deterministic per (lock, action) so a reconciler re-finalize dedupes.
       idempotency_key: "fc:finalize:confirm:monitor_check-1",
     });
@@ -1872,7 +1936,7 @@ describe("provisioning", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 100,
-      properties: { source: "checkCreditsMiddleware" },
+      properties: { source: "checkCreditsMiddleware", teamId: "team-1" },
     });
   });
 
@@ -1899,7 +1963,7 @@ describe("provisioning", () => {
       value: 10,
       lock_id: "lock-1",
       expires_at: 1_700_000_000_000,
-      properties: { source: "monitorCheck" },
+      properties: { source: "monitorCheck", teamId: "team-1" },
     });
   });
 
@@ -1956,7 +2020,11 @@ describe("provisioning", () => {
       entity_id: "team-1",
       feature_id: "CREDITS",
       value: 42,
-      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      properties: {
+        source: "billScrapeJob",
+        endpoint: "scrape",
+        teamId: "team-1",
+      },
       idempotency_key: "fc:track:scrape:job-1",
     });
   });
@@ -1982,7 +2050,11 @@ describe("provisioning", () => {
       feature_id: "CREDITS",
       // firebill negates a refund itself, so the positive value goes on the wire.
       value: 30,
-      properties: { endpoint: "extract", source: "autumn_refund" },
+      properties: {
+        endpoint: "extract",
+        source: "autumn_refund",
+        teamId: "team-1",
+      },
       idempotency_key: "fc:refund:extract:job-1",
     });
   });

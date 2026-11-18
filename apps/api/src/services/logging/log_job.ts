@@ -432,7 +432,8 @@ type LoggedRequest = {
     | "research_paper_read"
     | "research_related_papers"
     | "code_search"
-    | "gov_search";
+    | "gov_search"
+    | "fresh_feed";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -825,7 +826,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         });
         _logger.debug("Change tracking record inserted successfully");
       } catch (error) {
-        _logger.warn("Error inserting into change_tracking_scrapes", {
+        _logger.warn("Error writing change tracking record", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,

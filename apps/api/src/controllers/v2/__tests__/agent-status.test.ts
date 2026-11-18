@@ -30,6 +30,52 @@ describe("agentStatusController", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 404 when the job id is unknown", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue(null);
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+    expect(getExtractV3AgentStatus).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the job belongs to another team", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-other",
+      expiresAtMs: Date.now() + 60_000,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+  });
+
+  it("returns 404 when the job access row has expired", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() - 1_000,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+  });
+
   it("returns model from agent options", async () => {
     (getAgentJobAccess as Mock).mockResolvedValue({
       teamId: "team-123",

@@ -43,6 +43,7 @@ export async function authorizeProviders(
   clientIp?: string,
   billingCountry?: string,
   timeoutMs = 10000,
+  ultrasearch = false,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   const deadline = Date.now() + timeoutMs;
@@ -54,6 +55,7 @@ export async function authorizeProviders(
     clientIp,
     billingCountry,
     retryConnection: true,
+    ...(ultrasearch ? { ultrasearch } : {}),
   }).catch(error => {
     logger.warn("Provider agreements unavailable", { error, teamId });
     return undefined;

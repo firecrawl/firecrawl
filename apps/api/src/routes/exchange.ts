@@ -8,8 +8,18 @@ import {
   acceptTermsSchema,
 } from "../services/alexandria/terms";
 import compression from "compression";
-import express, { Request, Response } from "express";
+import express, {
+  NextFunction,
+  Request,
+  RequestHandler,
+  Response,
+} from "express";
 import { constants as zlibConstants } from "node:zlib";
+import {
+  RateLimiterMemory,
+  RateLimiterRedis,
+  RateLimiterRes,
+} from "rate-limiter-flexible";
 import { Agent, fetch, type Response as UpstreamResponse } from "undici";
 import type { Logger } from "winston";
 import { config } from "../config";
@@ -18,16 +28,18 @@ import { teamRecommendationSignals } from "../services/alexandria/recommendation
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
+import { redisRateLimitClient } from "../services/rate-limiter";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import { alexandriaVerifiedHeader } from "../lib/alexandria-verified";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 
 // Tells Exchange the team is held to zero data retention, so it only lists and runs
 // providers that support it.
 function zeroDataRetentionHeader(
-  flags: Parameters<typeof getScrapeZDR>[0],
+  flags: Parameters<typeof isAlexandriaZDRForced>[0],
 ): Record<string, string> {
-  return getScrapeZDR(flags) === "forced"
+  return isAlexandriaZDRForced(flags)
     ? { "x-exchange-zero-data-retention": "true" }
     : {};
 }
@@ -39,6 +51,27 @@ const APPLICATIONS_TIMEOUT_MS = 15_000;
 const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
+const PROOF_PAGE_TIMEOUT_MS = 15_000;
+// The internal service reads the photo before it answers.
+const PROOF_UPLOAD_TIMEOUT_MS = 90_000;
+const PROOF_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const PROOF_REQUESTS_PER_WINDOW = 60;
+const PROOF_WINDOW_SECONDS = 600;
+const PROOF_TOKEN_MAX_LENGTH = 128;
+const PROOF_TOKEN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){3}$/;
+const PROOF_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const PROOF_QUERY_PARAMS = ["item", "takenAt", "lat", "lng", "accuracy"];
+const PROOF_QUERY_VALUE_MAX_LENGTH = 64;
+const PROOF_PAGE_RESPONSE_HEADERS = [
+  "content-type",
+  "cache-control",
+  "content-security-policy",
+  "referrer-policy",
+  "permissions-policy",
+  "x-robots-tag",
+  "x-content-type-options",
+  "x-frame-options",
+];
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -217,6 +250,7 @@ function exchangeProxy(
             ? { "x-exchange-us-only": "true" }
             : {}),
           ...zeroDataRetentionHeader(authedReq.acuc?.flags),
+          ...alexandriaVerifiedHeader(authedReq.acuc?.flags),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -313,6 +347,181 @@ async function providerTermsAcceptController(req: Request, res: Response) {
   return res.status(response.status).json(response.body);
 }
 
+// Proof links carry no API key: the token is the whole permission and the internal service
+// verifies it. These helpers only check its shape, bound the caller per IP, and forward.
+// Nothing here logs the token or the request URL.
+const proofLogger = (route: string) =>
+  rootLogger.child({ module: "api/exchange", route });
+
+// Fails closed: any limiter error answers 429 rather than reaching the global error
+// handler, which logs the request path.
+function proofRateLimit(keyPrefix: string): RequestHandler {
+  const memory = new RateLimiterMemory({
+    points: PROOF_REQUESTS_PER_WINDOW,
+    duration: PROOF_WINDOW_SECONDS,
+  });
+  const limiter = config.REDIS_RATE_LIMIT_URL
+    ? new RateLimiterRedis({
+        storeClient: redisRateLimitClient,
+        keyPrefix,
+        points: PROOF_REQUESTS_PER_WINDOW,
+        duration: PROOF_WINDOW_SECONDS,
+        insuranceLimiter: memory,
+      })
+    : memory;
+  return async (req, res, next) => {
+    try {
+      await limiter.consume(req.ip ?? "unknown");
+      next();
+    } catch (rejection) {
+      if (!(rejection instanceof RateLimiterRes)) {
+        proofLogger(keyPrefix).error("Proof rate limiter failed", {
+          error: rejection,
+        });
+      }
+      const seconds =
+        rejection instanceof RateLimiterRes
+          ? Math.max(1, Math.ceil(rejection.msBeforeNext / 1000))
+          : PROOF_WINDOW_SECONDS;
+      res.setHeader("Retry-After", String(seconds));
+      exchangeError(res, 429, "Too many requests. Try again later.");
+    }
+  };
+}
+
+function proofGate(req: Request, res: Response, next: NextFunction) {
+  const token = req.params.token;
+  if (
+    typeof token !== "string" ||
+    token.length > PROOF_TOKEN_MAX_LENGTH ||
+    !PROOF_TOKEN.test(token)
+  ) {
+    return exchangeError(res, 404, "Not found.");
+  }
+  const base = upstreamBase();
+  if (!base) {
+    return exchangeError(res, 503, "This endpoint is not available.");
+  }
+  res.locals.proofUpstream = `${base}/v1/proof/${encodeURIComponent(token)}`;
+  next();
+}
+
+function proofRequestHeaders(req: Request): Record<string, string> {
+  return {
+    ...forwardedRequestHeaders(req),
+    ...(config.EXCHANGE_INTERNAL_SECRET
+      ? { "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET }
+      : {}),
+    ...(req.ip ? { "x-exchange-client-ip": req.ip } : {}),
+  };
+}
+
+const proofPageDispatcher = dispatcherFor(PROOF_PAGE_TIMEOUT_MS);
+const proofUploadDispatcher = dispatcherFor(PROOF_UPLOAD_TIMEOUT_MS);
+
+// The page is an HTML document: its bytes and security headers pass through as sent.
+async function proofPageController(req: Request, res: Response) {
+  const logger = proofLogger("GET /exchange/proof/:token");
+  try {
+    const upstream = await fetch(res.locals.proofUpstream, {
+      method: "GET",
+      headers: proofRequestHeaders(req),
+      redirect: "manual",
+      signal: AbortSignal.timeout(PROOF_PAGE_TIMEOUT_MS),
+      dispatcher: proofPageDispatcher,
+    });
+    if (upstream.status >= 300 && upstream.status < 400) {
+      logger.warn("Proof page upstream redirect", { status: upstream.status });
+      await upstream.body?.cancel();
+      return exchangeError(res, 502, "The request could not be completed.");
+    }
+    const body = Buffer.from(await upstream.arrayBuffer());
+    for (const h of PROOF_PAGE_RESPONSE_HEADERS) {
+      const value = upstream.headers.get(h);
+      if (value) res.setHeader(h, value);
+    }
+    if (upstream.status >= 500) {
+      logger.warn("Proof page upstream error", { status: upstream.status });
+    }
+    return res.status(upstream.status).send(body);
+  } catch (error: unknown) {
+    return upstreamFailure(res, logger, error);
+  }
+}
+
+function proofImageOnly(req: Request, res: Response, next: NextFunction) {
+  if (!req.is(PROOF_IMAGE_TYPES)) {
+    return exchangeError(
+      res,
+      415,
+      "Send the photo as image/jpeg, image/png or image/webp.",
+    );
+  }
+  next();
+}
+
+function proofUploadBodyError(
+  error: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+) {
+  if ((error as { status?: number } | null)?.status === 413) {
+    return exchangeError(res, 413, "The photo is too large.");
+  }
+  return exchangeError(res, 400, "The photo could not be read.");
+}
+
+async function proofUploadController(req: Request, res: Response) {
+  const logger = proofLogger("POST /exchange/proof/:token/photos");
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return exchangeError(res, 400, "A photo is required.");
+  }
+
+  const query = new URLSearchParams();
+  for (const name of PROOF_QUERY_PARAMS) {
+    const value = req.query[name];
+    if (
+      typeof value === "string" &&
+      value.length > 0 &&
+      value.length <= PROOF_QUERY_VALUE_MAX_LENGTH
+    ) {
+      query.set(name, value);
+    }
+  }
+  const search = query.toString();
+
+  try {
+    const upstream = await fetch(
+      `${res.locals.proofUpstream}/photos${search ? `?${search}` : ""}`,
+      {
+        method: "POST",
+        headers: {
+          ...proofRequestHeaders(req),
+          "content-type": String(req.headers["content-type"]),
+        },
+        body: req.body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(PROOF_UPLOAD_TIMEOUT_MS),
+        dispatcher: proofUploadDispatcher,
+      },
+    );
+    if (upstream.status >= 300 && upstream.status < 400) {
+      logger.warn("Proof upload upstream redirect", {
+        status: upstream.status,
+      });
+      await upstream.body?.cancel();
+      return exchangeError(res, 502, "The request could not be completed.");
+    }
+    if (upstream.status >= 500) {
+      logger.warn("Proof upload upstream error", { status: upstream.status });
+    }
+    return sendUpstream(res, upstream, await upstream.text());
+  } catch (error: unknown) {
+    return upstreamFailure(res, logger, error);
+  }
+}
+
 export const exchangeRouter = express.Router();
 
 // Compresses responses that declare a Content-Length larger than one TCP
@@ -333,6 +542,23 @@ exchangeRouter.use(
       return res.hasHeader("Content-Length") && compression.filter(req, res);
     },
   }),
+);
+
+exchangeRouter.get(
+  "/proof/:token",
+  proofGate,
+  proofRateLimit("proof-page"),
+  wrap(proofPageController),
+);
+
+exchangeRouter.post(
+  "/proof/:token/photos",
+  proofGate,
+  proofRateLimit("proof-upload"),
+  proofImageOnly,
+  express.raw({ type: PROOF_IMAGE_TYPES, limit: PROOF_UPLOAD_MAX_BYTES }),
+  proofUploadBodyError,
+  wrap(proofUploadController),
 );
 
 // Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take

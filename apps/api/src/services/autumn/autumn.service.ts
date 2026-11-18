@@ -5,6 +5,7 @@ import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { autumnClient } from "./client";
+import { planClassOf, type TeamPlanClass } from "../../lib/team-plan-class";
 import {
   firebillFinalize,
   firebillLock,
@@ -45,6 +46,18 @@ function billingEntityId(
 }
 
 /**
+ * Properties sent with every charge, hold, check and refund. `teamId` is set
+ * here so an event names its team even when it carries no entity (MCP credits),
+ * and is written last so a caller cannot drop or misstate it.
+ */
+function eventProperties(
+  properties: Record<string, unknown> | undefined,
+  teamId: string,
+): Record<string, unknown> {
+  return { ...properties, teamId };
+}
+
+/**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
  * null when it's absent or not a sane finite value. These balances feed
  * directly into rate-limit and concurrency controls, so NaN, Infinity, and
@@ -74,6 +87,8 @@ export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  /** The org's plan class from planClassOf; absent when that yields none. */
+  plan_class?: TeamPlanClass;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
@@ -231,7 +246,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId) ?? "",
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
       });
       if (result.status === "unavailable") return null;
       return {
@@ -345,7 +360,7 @@ export class AutumnService {
         // is what makes firebill lock-table-free); default to an hour, the
         // monitor runner's convention, when the caller sets none.
         expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
-        properties,
+        properties: eventProperties(properties, teamId),
         partnerJobToken,
       });
       if (result.status === "locked") {
@@ -422,7 +437,9 @@ export class AutumnService {
       lockId,
       action,
       overrideValue,
-      properties,
+      // A settle sends its own properties, so it names the team too when the
+      // caller passes one.
+      properties: team ? eventProperties(properties, team.teamId) : properties,
       externalRequestId,
       customerId,
       featureId: customerId ? featureId : null,
@@ -454,7 +471,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
         idempotencyKey,
         externalRequestId,
         durableRetry,
@@ -476,8 +493,9 @@ export class AutumnService {
    * The team's limits from one uncached Autumn entity read, and its plan from
    * a customer read made in parallel (the ACUC caches both). An entity 404
    * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
-   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
-   * when Autumn errors or the team has no org.
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Its plan
+   * class comes from the same subscriptions (planClassOf), and a customer 404
+   * gives none. Throws when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
@@ -517,6 +535,7 @@ export class AutumnService {
           !subscription.addOn &&
           !FREE_PLAN_IDS.has(subscription.planId),
       ),
+      plan_class: planClassOf(customer?.subscriptions ?? []),
     };
   }
 
@@ -543,7 +562,10 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value: -value,
-        properties: { ...properties, source: "autumn_refund" },
+        properties: eventProperties(
+          { ...properties, source: "autumn_refund" },
+          teamId,
+        ),
         idempotencyKey,
         externalRequestId,
         durableRetry,

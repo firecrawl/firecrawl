@@ -1,4 +1,4 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
@@ -8,7 +8,6 @@ import { NotificationType } from "../../types";
 import { logger } from "../../../src/lib/logger";
 import { sendSlackWebhook } from "../alerts/slack";
 import { getNotificationString } from "./notification_string";
-import { redlock } from "../redlock";
 import { redisEvictConnection } from "../redis";
 import { trackEvent } from "../ledger/tracking";
 
@@ -72,27 +71,6 @@ const notificationToEmailCategory: Record<
   [NotificationType.AUTO_RECHARGE_FREQUENT]: "system_alerts",
   [NotificationType.AGENT_SPONSOR_CONFIRM]: "system_alerts",
 };
-
-/** @public used by credit_billing.ts notification logic (disabled, migrating to Autumn) */
-export async function sendNotification(
-  team_id: string,
-  notificationType: NotificationType,
-  startDateString: string | null,
-  endDateString: string | null,
-  bypassRecentChecks: boolean = false,
-  is_ledger_enabled: boolean = false,
-  context: NotificationContext = {},
-) {
-  return withAuth(sendNotificationInternal, undefined)(
-    team_id,
-    notificationType,
-    startDateString,
-    endDateString,
-    bypassRecentChecks,
-    is_ledger_enabled,
-    context,
-  );
-}
 
 async function sendEmailNotification(
   email: string,
@@ -200,152 +178,6 @@ async function sendLedgerEvent(
       });
     });
   }
-}
-
-async function sendNotificationInternal(
-  team_id: string,
-  notificationType: NotificationType,
-  startDateString: string | null,
-  endDateString: string | null,
-  bypassRecentChecks: boolean = false,
-  is_ledger_enabled: boolean = false,
-  context: NotificationContext = {},
-): Promise<{ success: boolean }> {
-  if (team_id === "preview" || team_id.startsWith("preview_")) {
-    return { success: true };
-  }
-  return await redlock.using(
-    [`notification-lock:${team_id}:${notificationType}`],
-    5000,
-    async () => {
-      if (!bypassRecentChecks) {
-        const fifteenDaysAgo = new Date();
-        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-
-        let data: { id: string }[];
-        try {
-          data = await db
-            .select({ id: schema.user_notifications.id })
-            .from(schema.user_notifications)
-            .where(
-              and(
-                eq(schema.user_notifications.team_id, team_id),
-                eq(
-                  schema.user_notifications.notification_type,
-                  notificationType,
-                ),
-                gte(
-                  schema.user_notifications.sent_date,
-                  fifteenDaysAgo.toISOString(),
-                ),
-              ),
-            );
-        } catch (error) {
-          logger.debug(`Error fetching notifications: ${error}`);
-          return { success: false };
-        }
-
-        if (data.length !== 0) {
-          return { success: false };
-        }
-
-        // TODO: observation: Free credits people are not receiving notifications
-
-        let recentData: { id: string }[];
-        try {
-          recentData = await db
-            .select({ id: schema.user_notifications.id })
-            .from(schema.user_notifications)
-            .where(
-              and(
-                eq(schema.user_notifications.team_id, team_id),
-                eq(
-                  schema.user_notifications.notification_type,
-                  notificationType,
-                ),
-                gte(
-                  schema.user_notifications.sent_date,
-                  startDateString as string,
-                ),
-                lte(
-                  schema.user_notifications.sent_date,
-                  endDateString as string,
-                ),
-              ),
-            );
-        } catch (recentError) {
-          logger.debug(`Error fetching recent notifications: ${recentError}`);
-          return { success: false };
-        }
-
-        if (recentData.length !== 0) {
-          return { success: false };
-        }
-      }
-
-      console.log(
-        `Sending notification for team_id: ${team_id} and notificationType: ${notificationType}`,
-      );
-
-      if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch(error => {
-          logger.warn("Error sending ledger event", {
-            module: "email_notification",
-            method: "sendEmail",
-            error,
-          });
-        });
-      }
-      // get the emails from the user with the team_id
-      let emails: { email: string | null }[];
-      try {
-        emails = await db
-          .select({ email: schema.users.email })
-          .from(schema.users)
-          .where(eq(schema.users.team_id, team_id));
-      } catch (emailsError) {
-        logger.debug(`Error fetching emails: ${emailsError}`);
-        return { success: false };
-      }
-
-      if (!is_ledger_enabled) {
-        for (const email of emails) {
-          if (email.email) {
-            await sendEmailNotification(email.email, notificationType, context);
-          }
-        }
-      }
-
-      let insertError: unknown = null;
-      try {
-        await db.insert(schema.user_notifications).values({
-          team_id: team_id,
-          notification_type: notificationType,
-          sent_date: new Date().toISOString(),
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        insertError = error;
-      }
-
-      if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
-        sendSlackWebhook(
-          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}`,
-          false,
-          config.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch(error => {
-          logger.debug(`Error sending slack notification: ${error}`);
-        });
-      }
-
-      if (insertError) {
-        logger.debug(`Error inserting notification record: ${insertError}`);
-        return { success: false };
-      }
-
-      return { success: true };
-    },
-  );
 }
 
 export async function sendNotificationWithCustomDays(
