@@ -7,6 +7,12 @@ import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
 
+export class SearchProviderError extends Error {
+  constructor(cause: unknown) {
+    super("Search provider request failed.", { cause });
+  }
+}
+
 export async function search({
   query,
   logger,
@@ -28,6 +34,7 @@ export async function search({
   excludeDomains = undefined,
   usOnly = false,
   teamPlanClass = undefined,
+  throwOnSelfHostedProviderError = false,
 }: {
   query: string;
   logger: Logger;
@@ -50,6 +57,7 @@ export async function search({
   usOnly?: boolean;
   /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
   teamPlanClass?: TeamPlanClass;
+  throwOnSelfHostedProviderError?: boolean;
 }): Promise<SearchV2Response> {
   // The fallback backends below take no US-only routing.
   if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
@@ -111,6 +119,9 @@ export async function search({
     return {};
   } catch (error) {
     logger.error(`Error in search function`, { error });
+    if (throwOnSelfHostedProviderError && !config.FIRE_ENGINE_BETA_URL) {
+      throw new SearchProviderError(error);
+    }
     return {};
   }
 }

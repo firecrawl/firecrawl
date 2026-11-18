@@ -428,6 +428,7 @@ export async function executeSearch(
           ]),
           usOnly,
           teamPlanClass: context.teamPlanClass,
+          throwOnSelfHostedProviderError: context.apiVersion === "v2",
         });
   const indexResultsPromise = indexCategorySearch
     ? indexCategorySearch(indexSearchOptions, logger)

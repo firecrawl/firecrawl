@@ -181,6 +181,19 @@ export async function ddgSearch(
           });
         }
 
+        if (!response.ok) {
+          await response.body?.cancel();
+          if (results.length > 0) {
+            logger.warn("DuckDuckGo search returned partial results", {
+              status: response.status,
+            });
+            break;
+          }
+          throw new Error(
+            `DuckDuckGo search failed with HTTP ${response.status}`,
+          );
+        }
+
         const buf = Buffer.from(await response.arrayBuffer());
         const dom = new JSDOM(buf.toString("utf8"));
         const doc = dom.window.document;
@@ -254,13 +267,6 @@ export async function ddgSearch(
       throw new Error("DuckDuckGo: Blocked by anti-bot measures.");
     }
 
-    if (error.response?.status === 429) {
-      logger.warn("DuckDuckGo: Too many requests, try again later.", {
-        status: error.response.status,
-        statusText: error.response.statusText,
-      });
-      throw new Error("DuckDuckGo: Too many requests, try again later.");
-    }
     logger.error("DuckDuckGo search error", { error: error.message, term });
     throw error;
   }
