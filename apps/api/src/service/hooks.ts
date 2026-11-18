@@ -79,6 +79,7 @@ type AnyHandler = (first: unknown, second?: unknown) => unknown;
 /**
  * Builds the dispatcher for a list of handler sets. Handlers of one hook point
  * run in the order of the list, and within one set in the order it gives them.
+ * The sets are read once, here, and the dispatcher is frozen.
  */
 export function buildHooks<Points extends PointMap<Points>>(
   sets: HandlersOf<Points>[],
@@ -93,15 +94,22 @@ export function buildHooks<Points extends PointMap<Points>>(
     }
   }
 
-  return {
+  const hooks: HooksOf<Points> = {
     observe(name, payload) {
+      // The caller cannot fail, so a reporter that throws stops here as well.
+      // After a rejected handler it would otherwise be an unhandled rejection.
+      const reportFailure = (error: unknown) => {
+        try {
+          report(String(name), error);
+        } catch {
+          // Nothing is left to report it to.
+        }
+      };
       for (const handler of table.get(name) ?? []) {
         try {
-          Promise.resolve(handler(payload)).catch(error =>
-            report(String(name), error),
-          );
+          Promise.resolve(handler(payload)).catch(reportFailure);
         } catch (error) {
-          report(String(name), error);
+          reportFailure(error);
         }
       }
     },
@@ -123,4 +131,5 @@ export function buildHooks<Points extends PointMap<Points>>(
       })();
     },
   };
+  return Object.freeze(hooks);
 }

@@ -68,6 +68,7 @@ export interface Service {
   readonly modules: Readonly<Modules>;
   readonly hooks: Hooks;
   readonly workers: Readonly<Record<string, Worker>>;
+  /** What the service was made of when it was created. Each call returns a copy. */
   describe(): ServiceDescription;
 }
 
@@ -89,40 +90,47 @@ export function createService(
 
   const modules = Object.freeze({ ...config.modules });
   const workers: Record<string, Worker> = Object.freeze(
-    Object.assign({}, ...extensions.map(extension => extension.workers ?? {})),
+    Object.fromEntries(
+      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
+    ),
   );
+
+  const hooks = buildHooks<HookPoints>(
+    extensions.flatMap(extension => extension.hooks ?? []),
+    (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
+  );
+
+  // Worked out here, from the extensions as the handlers and roles above were
+  // just read from them, so it stays true to what the service runs whatever
+  // happens to an extension object later. The two records have no prototype,
+  // so a name such as "constructor" is a key like any other.
+  const handlerOwners: Record<string, string[]> = Object.create(null);
+  const roleOwners: Record<string, string> = Object.create(null);
+  for (const extension of extensions) {
+    for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
+      const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
+      if (count === 0) continue;
+      handlerOwners[point] = [
+        ...(handlerOwners[point] ?? []),
+        ...Array<string>(count).fill(extension.name),
+      ];
+    }
+    for (const role of Object.keys(extension.workers ?? {})) {
+      roleOwners[role] = extension.name;
+    }
+  }
+  const description: ServiceDescription = {
+    extensions: names,
+    modules: Object.keys(modules).sort(),
+    hooks: sortedByKey(handlerOwners),
+    roles: sortedByKey(roleOwners),
+  };
 
   return Object.freeze({
     modules,
-    hooks: buildHooks<HookPoints>(
-      extensions.flatMap(extension => extension.hooks ?? []),
-      (hook, error) =>
-        parts.logger.error("Hook handler failed", { hook, error }),
-    ),
+    hooks,
     workers,
-    describe() {
-      const hooks: Record<string, string[]> = {};
-      const roles: Record<string, string> = {};
-      for (const extension of extensions) {
-        for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
-          const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
-          if (count === 0) continue;
-          hooks[point] = [
-            ...(hooks[point] ?? []),
-            ...Array<string>(count).fill(extension.name),
-          ];
-        }
-        for (const role of Object.keys(extension.workers ?? {})) {
-          roles[role] = extension.name;
-        }
-      }
-      return {
-        extensions: names,
-        modules: Object.keys(modules).sort(),
-        hooks: sortedByKey(hooks),
-        roles: sortedByKey(roles),
-      };
-    },
+    describe: () => structuredClone(description),
   });
 }
 
@@ -160,10 +168,14 @@ export const service: Service = {
   describe: () => current().describe(),
 };
 
-/** Swaps the installed service and returns the one it replaced. For tests. */
+/**
+ * Swaps the installed service and returns the one it replaced. The role `run`
+ * started belongs to the service it installed, so it is forgotten. For tests.
+ */
 export function replaceService(next: Service | undefined): Service | undefined {
   const previous = installed;
   installed = next;
+  startedRole = undefined;
   return previous;
 }
 

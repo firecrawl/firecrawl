@@ -34,6 +34,7 @@ describe("createService", () => {
 
     expect(Object.isFrozen(built)).toBe(true);
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.hooks)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
 
@@ -130,6 +131,66 @@ describe("describe", () => {
 
     expect(built.describe().hooks).toEqual({});
   });
+
+  it("keeps describing the service as it was created", () => {
+    const mine: Extension = {
+      name: "mine",
+      hooks: handlers({ "a.point": vi.fn() }),
+      workers: { api: worker() },
+    };
+    const built = createService({ modules: {}, extensions: [mine] }, parts());
+
+    mine.name = "renamed";
+    mine.hooks = handlers({ "b.point": vi.fn() });
+    mine.workers = { other: worker() };
+
+    expect(built.describe()).toEqual({
+      extensions: ["core", "mine"],
+      modules: [],
+      hooks: { "a.point": ["mine"] },
+      roles: { api: "mine" },
+    });
+  });
+
+  it("treats a name that every object inherits as a name like any other", () => {
+    const inherited = worker();
+    const built = createService(
+      { modules: {} },
+      parts({
+        hooks: handlers({ constructor: vi.fn() }),
+        workers: { ["__proto__"]: inherited, constructor: worker() },
+      }),
+    );
+
+    const description = built.describe();
+
+    expect(Object.hasOwn(built.workers, "__proto__")).toBe(true);
+    expect(built.workers["__proto__"]).toBe(inherited);
+    expect(Object.keys(description.hooks)).toEqual(["constructor"]);
+    expect(description.hooks.constructor).toEqual(["core"]);
+    expect(Object.entries(description.roles)).toEqual([
+      ["__proto__", "core"],
+      ["constructor", "core"],
+    ]);
+  });
+
+  it("returns a copy, so a caller cannot change what the next one reads", () => {
+    const built = createService(
+      { modules: {} },
+      parts({ workers: { api: worker() } }),
+    );
+
+    const first = built.describe();
+    first.extensions.push("added");
+    first.roles.api = "changed";
+
+    expect(built.describe()).toEqual({
+      extensions: ["core"],
+      modules: [],
+      hooks: {},
+      roles: { api: "core" },
+    });
+  });
 });
 
 describe("service", () => {
@@ -191,6 +252,19 @@ describe("run", () => {
     expect(() => run(built, "api", "/app/main.js")).toThrow(
       "A service is already installed in this process",
     );
+  });
+
+  it("forgets the started role when the service is replaced", async () => {
+    const built = createService(
+      { modules: {} },
+      parts({ workers: { api: worker() } }),
+    );
+    await run(built, "api", "/app/main.js");
+    expect(processRole()).toBe("api");
+
+    replaceService(undefined);
+
+    expect(processRole()).toBeUndefined();
   });
 
   it("throws when the role throws before its start returns", () => {
