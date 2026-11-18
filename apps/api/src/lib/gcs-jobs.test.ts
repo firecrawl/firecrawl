@@ -84,6 +84,23 @@ describe("GCS job blobs", () => {
     );
   });
 
+  it("stamps a ZDR blob with customTime so the bucket lifecycle deletes it", async () => {
+    const before = Date.now();
+    await saveScrapeToGCS(scrape(true));
+
+    const customTime = (save.mock.calls[0] as any[])[1].metadata.customTime;
+    expect(Date.parse(customTime)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(customTime)).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("never stamps a non-ZDR blob with customTime", async () => {
+    await saveScrapeToGCS(scrape(false));
+
+    expect((save.mock.calls[0] as any[])[1].metadata).not.toHaveProperty(
+      "customTime",
+    );
+  });
+
   it("does not schedule a delete for a non-ZDR blob", async () => {
     await saveScrapeToGCS(scrape(false));
 

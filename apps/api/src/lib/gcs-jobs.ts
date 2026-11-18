@@ -137,6 +137,11 @@ async function saveJobToGCS(params: {
             metadata: {
               contentType: "application/json",
               metadata: params.metadata,
+              // The bucket's lifecycle rule deletes a blob a day after its customTime,
+              // a backstop for a lost ZDR cleanup job. Never set it on non-ZDR blobs.
+              ...(params.zeroDataRetention
+                ? { customTime: new Date().toISOString() }
+                : {}),
             },
             resumable: data.length > 3 * 1024 * 1024, // 3MB, 5MB official limit
           });
