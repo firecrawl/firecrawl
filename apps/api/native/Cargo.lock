@@ -1325,7 +1325,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "nodesig"
 version = "2.0.0"
-source = "git+https://github.com/firecrawl/nodesig#ddb516867fd82e1eb9beb5f8f176a829fd032492"
+source = "git+https://github.com/firecrawl/nodesig#b847d586d5eec33d9d6209c971ec9068c605657c"
 dependencies = [
  "base64",
  "hex",
