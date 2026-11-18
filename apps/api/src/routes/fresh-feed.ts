@@ -1,6 +1,8 @@
 import compression from "compression";
 import express, { NextFunction, Request, Response } from "express";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
+import zlib from "node:zlib";
 import { request, type Dispatcher } from "undici";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestWithAuth } from "../controllers/v1/types";
@@ -12,9 +14,10 @@ import {
 import { logger as rootLogger } from "../lib/logger";
 import { requestOrigin } from "../lib/request-origin";
 import { getEffectiveSearchForcedKind } from "../lib/safe-mode";
+import { billTeam } from "../services/billing/credit_billing";
 import { logRequest } from "../services/logging/log_job";
 import { resolveIntegration } from "../utils/integration";
-import { wrap } from "./shared";
+import { checkCreditsMiddleware, wrap } from "./shared";
 
 const TIMEOUT_MS = 30_000;
 const UPSTREAM_PATH = "/fresh-vertical-feed/local/latest";
@@ -24,6 +27,38 @@ const FORWARDED_RESPONSE_HEADERS = [
   "content-length",
   "vary",
 ];
+
+const DECODERS: Record<string, (body: Buffer) => Promise<Buffer>> = {
+  identity: async body => body,
+  gzip: promisify(zlib.gunzip),
+  "x-gzip": promisify(zlib.gunzip),
+  deflate: promisify(zlib.inflate),
+  br: promisify(zlib.brotliDecompress),
+  zstd: promisify(zlib.zstdDecompress),
+};
+
+function creditsPerRecord(req: Request): number {
+  const rate = (req as RequestWithAuth<any, any, any>).acuc?.flags
+    ?.freshFeedCreditsPerRecord;
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0
+    ? rate
+    : 0;
+}
+
+async function countRecords(
+  chunks: Buffer[],
+  contentEncoding: string | string[] | undefined,
+): Promise<number> {
+  const encoding = String(contentEncoding ?? "identity")
+    .trim()
+    .toLowerCase();
+  const decode = DECODERS[encoding];
+  if (!decode) throw new Error(`Unsupported content-encoding: ${encoding}`);
+  const page = JSON.parse((await decode(Buffer.concat(chunks))).toString());
+  if (!Array.isArray(page?.events))
+    throw new Error("The page has no events array");
+  return page.events.length;
+}
 
 function freshFeedError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
@@ -38,6 +73,20 @@ function requireFreshFeedFlag(req: Request, res: Response, next: NextFunction) {
     );
   }
   next();
+}
+
+function requireFreshFeedCredits(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const rate = creditsPerRecord(req);
+  if (rate === 0) return next();
+  return checkCreditsMiddleware(Math.ceil(rate))(
+    req as RequestWithAuth<any, any, any>,
+    res,
+    next,
+  );
 }
 
 function rejectHead(_req: Request, res: Response) {
@@ -122,9 +171,12 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
       if (value) res.setHeader(h, value);
     }
 
+    const rate = upstream.statusCode === 200 ? creditsPerRecord(req) : 0;
+    const chunks: Buffer[] = [];
     let bytes = 0;
     upstream.body.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
+      if (rate > 0) chunks.push(chunk);
     });
     const outcome = () => ({
       status: upstream.statusCode,
@@ -133,15 +185,52 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
       seconds: (Date.now() - started) / 1000,
     });
 
+    let delivered = false;
     try {
       await pipeline(upstream.body, res);
-      logger.info("Fresh feed request", outcome());
+      delivered = true;
     } catch (error: unknown) {
       logger.warn("Fresh feed stream failed", { error, ...outcome() });
     }
     httpRequestDurationSeconds
       .labels("v2", req.method, getRoutePattern(req), String(res.statusCode))
       .observe((Date.now() - started) / 1000);
+    if (!delivered) return;
+
+    let records: number | undefined;
+    let credits = 0;
+    if (rate > 0) {
+      try {
+        records = await countRecords(
+          chunks,
+          upstream.headers["content-encoding"],
+        );
+        credits = Math.ceil(records * rate);
+      } catch (error: unknown) {
+        logger.error("Fresh feed page could not be counted for billing", {
+          error,
+          ...outcome(),
+        });
+      }
+    }
+    if (credits > 0) {
+      billTeam(
+        authedReq.auth.team_id,
+        authedReq.acuc?.org_id ?? null,
+        credits,
+        authedReq.acuc?.api_key_id ?? null,
+        {
+          endpoint: "fresh_feed",
+          jobId,
+          chargeId: jobId,
+          externalRequestId: externalRequestId(authedReq),
+        },
+        logger,
+      ).catch(error => {
+        logger.error("Failed to bill fresh feed request", { error, credits });
+      });
+    }
+    logger.info("Fresh feed request", { ...outcome(), records, credits });
   };
 }
 
@@ -154,6 +243,7 @@ export function createFreshFeedRouter(
   router.get(
     "/local/latest",
     requireFreshFeedFlag,
+    requireFreshFeedCredits,
     compression(),
     wrap(freshFeedController(upstreamUrl.replace(/\/+$/, ""), timeoutMs)),
   );
