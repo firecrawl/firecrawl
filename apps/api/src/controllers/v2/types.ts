@@ -2130,6 +2130,8 @@ export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
   alexandriaToolFusion?: boolean;
+  // Search skips highlights entirely, including their index lookups.
+  skipSearchHighlights?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
