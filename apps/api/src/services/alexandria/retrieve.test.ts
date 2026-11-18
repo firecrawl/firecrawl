@@ -546,6 +546,106 @@ it("leaves the billing organization off the catalogue read", async () => {
   expect(executions()[0][0]).not.toHaveProperty("billingOrganizationId");
 });
 
+it.each(["find-tools", "library"])(
+  "sends a free %s read straight to execution: no agreement lookup, quote or hold",
+  async capability => {
+    const read = { provider: "firecrawl", capability, options: {} };
+    const free = {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...read, creditsCost: 0, data: {} }],
+    };
+    exchangeAnswers(free);
+    expect(await run({ calls: [read] })).toMatchObject({
+      status: 200,
+      executed: true,
+      body: free,
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(executions()[0][0]).toMatchObject({
+      body: { requests: [read] },
+      maximumCredits: 0,
+    });
+    expect(mocks.authorize).not.toHaveBeenCalled();
+    expect(mocks.lock).not.toHaveBeenCalled();
+    expect(mocks.finalize).not.toHaveBeenCalled();
+    expect(mocks.billAdd).not.toHaveBeenCalled();
+    // The same x-request-id replays the recorded answer without a second read.
+    expect(await run({ calls: [read] })).toMatchObject({
+      status: 200,
+      body: free,
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("runs a library read through the full path when Exchange prices it", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  const priced = {
+    success: true,
+    creditsCost: 2,
+    results: [{ ...read, creditsCost: 2, data: {} }],
+  };
+  mocks.request.mockImplementation(async arg =>
+    arg.path.endsWith("/quote")
+      ? { status: 200, body: { maximumCredits: 2 } }
+      : arg.maximumCredits === 0
+        ? { status: 402, body: { code: "credit_budget_exceeded" } }
+        : { status: 200, body: priced },
+  );
+  expect(await run({ calls: [read] })).toMatchObject({
+    status: 200,
+    executed: true,
+    body: priced,
+  });
+  expect(mocks.authorize).toHaveBeenCalledTimes(1);
+  expect(mocks.lock).toHaveBeenCalledWith(
+    expect.objectContaining({ value: 2 }),
+  );
+  expect(executions()).toHaveLength(2);
+});
+
+it("keeps a library read sent beside a paid call on the full path", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 3,
+    results: [
+      { ...call, creditsCost: 3, data: {} },
+      { ...read, creditsCost: 0, data: {} },
+    ],
+  });
+  expect(await run({ calls: [call, read] })).toMatchObject({
+    status: 200,
+    executed: true,
+  });
+  expect(mocks.authorize).toHaveBeenCalledTimes(1);
+  expect(
+    mocks.request.mock.calls.some(([arg]) => arg.path.endsWith("/quote")),
+  ).toBe(true);
+  expect(mocks.lock).toHaveBeenCalledTimes(1);
+});
+
+it("leaves a library read to the full path when the organization turned Firecrawl data off", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...read, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  await run({
+    calls: [read],
+    flags: {
+      organizationDataSourceAccess: { firecrawl: { status: "disabled" } },
+    },
+  });
+  expect(mocks.authorize).toHaveBeenCalledTimes(1);
+});
+
 it("binds terms replay to exact organization and credential identity", async () => {
   const termsCall = {
     provider: "firecrawl",
