@@ -34,13 +34,13 @@ const DECODERS: Record<string, (body: Buffer) => Promise<Buffer>> = {
   "x-gzip": promisify(zlib.gunzip),
   deflate: promisify(zlib.inflate),
   br: promisify(zlib.brotliDecompress),
-  zstd: promisify(zlib.zstdDecompress),
+  ...(zlib.zstdDecompress ? { zstd: promisify(zlib.zstdDecompress) } : {}),
 };
 
 function creditsPerRecord(req: Request): number {
   const rate = (req as RequestWithAuth<any, any, any>).acuc?.flags
     ?.freshFeedCreditsPerRecord;
-  return typeof rate === "number" && Number.isFinite(rate) && rate > 0
+  return typeof rate === "number" && Number.isSafeInteger(rate) && rate > 0
     ? rate
     : 0;
 }
@@ -49,12 +49,22 @@ async function countRecords(
   chunks: Buffer[],
   contentEncoding: string | string[] | undefined,
 ): Promise<number> {
-  const encoding = String(contentEncoding ?? "identity")
-    .trim()
-    .toLowerCase();
-  const decode = DECODERS[encoding];
-  if (!decode) throw new Error(`Unsupported content-encoding: ${encoding}`);
-  const page = JSON.parse((await decode(Buffer.concat(chunks))).toString());
+  let body: Buffer = Buffer.concat(chunks);
+  const encodings = String(contentEncoding ?? "identity")
+    .split(",")
+    .map(encoding => encoding.trim().toLowerCase())
+    .reverse();
+  for (const encoding of encodings) {
+    const decode = DECODERS[encoding];
+    if (!decode) throw new Error(`Unsupported content-encoding: ${encoding}`);
+    body = await decode(body);
+  }
+  let page: any;
+  try {
+    page = JSON.parse(body.toString());
+  } catch {
+    throw new Error("The page is not valid JSON");
+  }
   if (!Array.isArray(page?.events))
     throw new Error("The page has no events array");
   return page.events.length;
@@ -82,7 +92,7 @@ function requireFreshFeedCredits(
 ) {
   const rate = creditsPerRecord(req);
   if (rate === 0) return next();
-  return checkCreditsMiddleware(Math.ceil(rate))(
+  return checkCreditsMiddleware(rate)(
     req as RequestWithAuth<any, any, any>,
     res,
     next,
@@ -205,10 +215,10 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
           chunks,
           upstream.headers["content-encoding"],
         );
-        credits = Math.ceil(records * rate);
+        credits = records * rate;
       } catch (error: unknown) {
         logger.error("Fresh feed page could not be counted for billing", {
-          error,
+          reason: error instanceof Error ? error.message : "unknown",
           ...outcome(),
         });
       }

@@ -436,6 +436,11 @@ describe("billing per returned record", () => {
     ["gzip", (b: string) => gzipSync(b), "gzip"],
     ["br", (b: string) => brotliCompressSync(b), "br"],
     ["zstd", (b: string) => zstdCompressSync(b), "zstd"],
+    [
+      "gzip then br",
+      (b: string) => brotliCompressSync(gzipSync(b)),
+      "gzip, br",
+    ],
   ])(
     "bills 500 credits for a 500-record %s page at rate 1 and relays its bytes unchanged",
     async (_name, encode, contentEncoding) => {
@@ -467,6 +472,34 @@ describe("billing per returned record", () => {
       );
     },
   );
+
+  it.each([0.5, "1", -1, Infinity])(
+    "treats a rate of %j as free",
+    async rate => {
+      mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: rate };
+      upstream.body = page(500);
+
+      const response = await latest();
+
+      expect(response.status).toBe(200);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(mocks.checkCredits).not.toHaveBeenCalled();
+      expect(mocks.billTeam).not.toHaveBeenCalled();
+    },
+  );
+
+  it("bills nothing and logs no page content when a page is not JSON", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.body = '{"events":[{"title":"private words"';
+
+    await undecoded({});
+
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
+      "private words",
+    );
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
 
   it("bills nothing for an empty page", async () => {
     mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
