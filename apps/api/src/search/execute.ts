@@ -780,7 +780,12 @@ export async function executeSearch(
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (zeroDataRetention !== true && !isZDR && highlightsEnvReady()) {
+  if (
+    zeroDataRetention !== true &&
+    !isZDR &&
+    flags?.skipSearchHighlights !== true &&
+    highlightsEnvReady()
+  ) {
     const mode = searchHighlightsMode({
       requested: options.highlights,
       origin: context.origin,
