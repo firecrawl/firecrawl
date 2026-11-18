@@ -1,6 +1,6 @@
 [package]
 name = "firecrawl-local"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Firecrawl Local: scrape, crawl and map on your own machine from one binary, with a hand-off to Firecrawl cloud."
 license = "AGPL-3.0"
