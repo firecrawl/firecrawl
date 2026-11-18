@@ -58,4 +58,25 @@ describe("stripWwwFromUrl", () => {
       "https://www.example.com",
     );
   });
+
+  it("strips www. from the hostname when userinfo is present", () => {
+    expect(stripWwwFromUrl("https://user:pass@www.example.com/path")).toBe(
+      "https://user:pass@example.com/path",
+    );
+  });
+
+  it("never rewrites www. inside userinfo", () => {
+    expect(stripWwwFromUrl("https://www.user:pass@example.com")).toBe(
+      "https://www.user:pass@example.com",
+    );
+    expect(stripWwwFromUrl("https://user:www.@example.com")).toBe(
+      "https://user:www.@example.com",
+    );
+  });
+
+  it("preserves a port after the hostname", () => {
+    expect(stripWwwFromUrl("https://www.example.com:8080/x")).toBe(
+      "https://example.com:8080/x",
+    );
+  });
 });
