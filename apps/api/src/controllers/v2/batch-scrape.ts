@@ -527,7 +527,7 @@ export async function batchScrapeController(
       team_id: req.auth.team_id,
       crawlerOptions: null,
       scrapeOptions,
-      origin: "api",
+      origin: sc.origin ?? req.body.origin ?? "api",
       integration: req.body.integration,
       billing,
       crawl_id: id,
