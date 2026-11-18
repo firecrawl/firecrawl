@@ -55,10 +55,10 @@ once_cell = "1"
 uuid = { version = "1", features = ["v4"] }
 chromiumoxide = { version = "0.9", default-features = false, features = ["bytes"] }
 base64 = "0.22"
-anydoc = "0.2.2"
+anydoc = "0.2.5"
 pdf-inspector = "1.21.0"
 chrono = "0.4"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 tinyvec = ">=1.12, <1.13"
 mimalloc = "0.1.52"
 libmimalloc-sys = { version = "0.1.49", features = ["extended"] }
