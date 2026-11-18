@@ -903,9 +903,9 @@ pub struct ProductPrice {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductAvailability {
-    /// Whether the product is in stock.
-    #[serde(rename = "inStock")]
-    pub in_stock: bool,
+    /// Whether the product is in stock; `None` when the page does not state it.
+    #[serde(rename = "inStock", default)]
+    pub in_stock: Option<bool>,
     /// Human-readable availability text.
     pub text: Option<String>,
 }
@@ -1504,6 +1504,27 @@ mod tests {
         assert_eq!(item_json["sourceUrl"], "https://example.com/menu#i1");
         assert_eq!(item_json["availability"]["inStock"], true);
         assert_eq!(item_json["identifiers"]["merchantItemId"], "abc123");
+    }
+
+    #[test]
+    fn test_product_availability_in_stock() {
+        for (availability, expected) in [
+            (json!({ "inStock": true, "text": "In stock" }), Some(true)),
+            (json!({ "inStock": false, "text": "Sold out" }), Some(false)),
+            (json!({ "inStock": null }), None),
+            (json!({ "text": "Call for availability" }), None),
+        ] {
+            let json = json!({
+                "product": {
+                    "title": "Widget",
+                    "url": "https://example.com/widget",
+                    "variants": [{ "title": "Default", "availability": availability }]
+                }
+            });
+            let doc: Document = serde_json::from_value(json).unwrap();
+            let product = doc.product.expect("product should be present");
+            assert_eq!(product.variants[0].availability.in_stock, expected);
+        }
     }
 
     #[test]
