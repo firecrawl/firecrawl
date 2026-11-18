@@ -10,6 +10,10 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
+import {
+  alexandriaQueryBody,
+  providerScrapeController,
+} from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   keylessWorldIdDeviceController,
@@ -304,6 +308,25 @@ v2Router.post(
   checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
+);
+
+// The provider call as the body: { provider, capability, options }.
+v2Router.post(
+  "/alexandria",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  inferIntegrationMiddleware,
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
+);
+
+// The whole call in the URL: the capability in the path, its options in the query string.
+v2Router.get(
+  "/alexandria/:provider/*capability",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  (req, res, next) => {
+    alexandriaQueryBody(req, res, next).catch(next);
+  },
+  inferIntegrationMiddleware,
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
 );
 
 v2Router.get(

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
@@ -37,6 +37,13 @@ import {
   exchangeRequestId,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
+import { capabilityOptionTypes } from "../../services/alexandria/option-types";
+import {
+  AlexandriaQueryError,
+  checkAlexandriaQuery,
+  convertAlexandriaOptions,
+  parseAlexandriaQuery,
+} from "../../lib/alexandria-query";
 import type { RequestWithAuth } from "./types";
 
 const FIND_TOOLS_LOGGED_OPTIONS = [
@@ -85,13 +92,95 @@ const providerScrapeSchema = z.strictObject({
   __agentInterop: agentInteropSchema.optional(),
 });
 
+/**
+ * GET /v2/alexandria/:provider/*capability: the whole call in the URL, the capability in the
+ * path and its options in the query string (see lib/alexandria-query). Builds the
+ * POST /v2/alexandria body so the rest of the chain answers it exactly as that route does.
+ * Query keys are matched against the capability's contract before dot notation applies, so the
+ * contract is looked up first; nothing runs when it cannot be read. The timeout can also be the
+ * x-timeout-ms header, for a capability that declares its own `timeout` option.
+ */
+export async function alexandriaQueryBody(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  res.setHeader("Cache-Control", "no-store");
+  const { auth, acuc } = req as RequestWithAuth<any, any, any>;
+  const provider = String(req.params.provider);
+  const capability = ([] as string[]).concat(req.params.capability).join("/");
+  const query = req.query as Record<string, unknown>;
+  const refuse = (error: string) =>
+    res.status(400).json({ success: false, error });
+  try {
+    checkAlexandriaQuery(query);
+  } catch (error) {
+    if (error instanceof AlexandriaQueryError) return refuse(error.message);
+    throw error;
+  }
+  if (acuc && isAlexandriaZDRForced(acuc.flags))
+    return refuse(
+      "This team uses zero data retention. Use POST /v2/alexandria.",
+    );
+
+  let types = new Map<string, string>();
+  if (acuc && !auth.team_id.startsWith("preview_keyless_")) {
+    try {
+      types = await capabilityOptionTypes({
+        teamId: auth.team_id,
+        provider,
+        capability,
+        connectors: acuc.flags?.exchangeRetrieve === true,
+        timeoutMs: 5_000,
+      });
+    } catch (error) {
+      logger.warn("Alexandria contract lookup failed", { error });
+      return res.status(503).json({
+        success: false,
+        error:
+          "Provider contract lookup unavailable. No provider was executed. Retry, or use POST /v2/alexandria.",
+      });
+    }
+  }
+
+  let parsed: ReturnType<typeof parseAlexandriaQuery>;
+  let options: Record<string, unknown>;
+  try {
+    parsed = parseAlexandriaQuery(query, new Set(types.keys()));
+    options = convertAlexandriaOptions(parsed.options, types);
+  } catch (error) {
+    if (error instanceof AlexandriaQueryError) return refuse(error.message);
+    throw error;
+  }
+  const header = req.get("x-timeout-ms");
+  if (header !== undefined && parsed.timeout !== undefined)
+    return refuse("Give the timeout once: in the query or in x-timeout-ms.");
+  const timeout = header ?? parsed.timeout;
+  if (timeout !== undefined && !/^[1-9]\d{0,8}$/.test(timeout))
+    return refuse(
+      "The timeout must be a whole number of milliseconds greater than 0.",
+    );
+  req.body = {
+    provider,
+    capability,
+    ...(parsed.version === undefined ? {} : { version: parsed.version }),
+    options,
+    ...(timeout === undefined ? {} : { timeout: Number(timeout) }),
+  };
+  next();
+}
+
 export async function providerScrapeController(
   req: RequestWithAuth<any, any, any>,
   res: Response,
   legacy = false,
 ) {
+  // A provider answer is for this caller and call only.
+  res.setHeader("Cache-Control", "no-store");
   const legacyZeroDataRetention = {
     zeroDataRetention: z.boolean().optional(),
+    timeout: z.number().int().positive().optional(),
+    integration: z.string().nullable().optional(),
     __agentInterop: agentInteropSchema.optional(),
   };
   const legacyBody = legacy
@@ -104,9 +193,17 @@ export async function providerScrapeController(
     : null;
   const body = providerScrapeSchema.parse(
     legacyBody
-      ? (({ zeroDataRetention, __agentInterop, ...rest }) => ({
+      ? (({
+          zeroDataRetention,
+          timeout,
+          integration,
+          __agentInterop,
+          ...rest
+        }) => ({
           alexandria: "requests" in rest ? rest.requests : [rest],
           zeroDataRetention,
+          timeout,
+          integration,
           __agentInterop,
         }))(legacyBody)
       : req.body,
