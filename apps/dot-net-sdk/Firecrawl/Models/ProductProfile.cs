@@ -66,8 +66,11 @@ public class ProductPrice
 /// </summary>
 public class ProductAvailability
 {
+    /// <summary>
+    /// Whether the product is in stock, or null when the page does not state it.
+    /// </summary>
     [JsonPropertyName("inStock")]
-    public bool InStock { get; set; }
+    public bool? InStock { get; set; }
 
     [JsonPropertyName("text")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
