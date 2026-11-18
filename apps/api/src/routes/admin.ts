@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import { Counter } from "prom-client";
 import { config } from "../config";
 import { acucCacheClearController } from "../controllers/admin/acuc-cache-clear";
+import { changeTrackingPurgeController } from "../controllers/admin/change-tracking-purge";
 import { checkFireEngine } from "../controllers/admin/check-fire-engine";
 import { concurrencyQueueBackfillController } from "../controllers/admin/concurrency-queue-backfill";
 import { crawlMonitorController } from "../controllers/admin/crawl-monitor";
@@ -114,6 +115,11 @@ if (config.BULL_AUTH_KEY && config.BULL_AUTH_KEY_PATH_ROUTES) {
   );
 
   adminRouter.post(
+    `/admin/${config.BULL_AUTH_KEY}/change-tracking-purge`,
+    wrap(changeTrackingPurgeController),
+  );
+
+  adminRouter.post(
     `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
@@ -145,6 +151,8 @@ if (config.BULL_AUTH_KEY) {
     "/concurrency-queue-backfill",
     wrap(concurrencyQueueBackfillController),
   );
+
+  opsRouter.post("/change-tracking-purge", wrap(changeTrackingPurgeController));
 
   adminRouter.post(
     "/admin/ops/crawl-monitor",
