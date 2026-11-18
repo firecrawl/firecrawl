@@ -319,7 +319,7 @@ class TestAsyncCancelBatchScrape:
     @pytest.mark.asyncio
     async def test_returns_false_when_batch_already_completed(self):
         client = AsyncMock()
-        client.delete.return_value = _async_response(BATCH_ALREADY_COMPLETED, status_code=409)
+        client.delete.return_value = _async_response(ALREADY_COMPLETED, status_code=409)
 
         assert await async_batch_module.cancel_batch_scrape(client, JOB_ID) is False
 
