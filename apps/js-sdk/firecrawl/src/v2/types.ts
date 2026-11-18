@@ -561,7 +561,8 @@ export interface ProductPrice {
 }
 
 export interface ProductAvailability {
-  inStock: boolean;
+  /** null when the page doesn't state stock. */
+  inStock: boolean | null;
   text?: string;
 }
 

@@ -13,7 +13,8 @@ const productSaleSchema = z.object({
   originalPrice: productPriceSchema,
 });
 const productAvailabilitySchema = z.object({
-  inStock: z.boolean(),
+  // null when the page doesn't state stock.
+  inStock: z.boolean().nullable(),
   text: z.string().optional(),
 });
 const productImageSchema = z.object({

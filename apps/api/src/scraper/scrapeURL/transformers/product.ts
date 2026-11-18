@@ -3,6 +3,10 @@ import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
+import {
+  acceptsNullStock,
+  withLegacyStockDefaults,
+} from "../../../lib/product-stock-compat";
 
 export async function fetchProduct(
   meta: Meta,
@@ -82,7 +86,9 @@ export async function fetchProduct(
   }
 
   if (data.product) {
-    document.product = data.product;
+    document.product = acceptsNullStock(meta.internalOptions.origin)
+      ? data.product
+      : withLegacyStockDefaults(data.product);
   } else {
     // `product` is null: the page loaded but is not a product page.
     document.warning =

@@ -14,12 +14,13 @@ describe("fetchProduct", () => {
   function baseMeta(
     formats: any[] = [{ type: "product" }],
     zeroDataRetention = false,
+    origin?: string,
   ) {
     return {
       url: "https://shop.test/p",
       rewrittenUrl: "https://shop.test/p",
       options: { formats },
-      internalOptions: { zeroDataRetention },
+      internalOptions: { zeroDataRetention, origin },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     } as any;
   }
@@ -83,6 +84,67 @@ describe("fetchProduct", () => {
     expect(JSON.parse(init!.body as string)).toEqual({
       html: "<html>jsonld</html>",
       url: "https://shop.test/p",
+    });
+  });
+
+  describe("unknown stock", () => {
+    const serviceProduct = () => ({
+      title: "X",
+      url: "https://shop.test/p",
+      variants: [
+        { id: "1", availability: { inStock: true } },
+        { id: "2", availability: { inStock: false } },
+        { id: "3", availability: { inStock: null, text: "See store" } },
+      ],
+    });
+
+    async function stockFor(origin?: string) {
+      config.PRODUCT_EXTRACTION_SERVICE_URL = "https://product.internal";
+      global.fetch = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ product: serviceProduct() }),
+      })) as any;
+      const document: any = {
+        rawHtml: "<html>jsonld</html>",
+        metadata: { url: "https://shop.test/p" },
+      };
+      const out = await fetchProduct(
+        baseMeta([{ type: "product" }], false, origin),
+        document,
+      );
+      return out.product!.variants.map(v => v.availability.inStock);
+    }
+
+    it.each([
+      "python-sdk@4.57.0",
+      "python-sdk.some-agent@4.30.3",
+      "js-sdk@4.54.0",
+      "java-sdk@1.18.0",
+      "go-sdk@1.16.11",
+      "rust-sdk@2.21.10",
+      "ruby-sdk@1.17.8",
+      "php-sdk@1.16.7",
+      "dotnet-sdk@1.15.3",
+      "python-sdk@not-a-version",
+    ])("sends true for unknown stock to %s", async origin => {
+      expect(await stockFor(origin)).toEqual([true, false, true]);
+    });
+
+    it.each([
+      undefined,
+      "api",
+      "python-sdk@4.58.0",
+      "js-sdk@4.55.0",
+      "java-sdk@1.19.0",
+      "go-sdk@1.17.0",
+      "rust-sdk@2.22.0",
+      "ruby-sdk@1.18.0",
+      "php-sdk@1.17.0",
+      "dotnet-sdk@1.16.0",
+      "mcp-server",
+      "cli.claude-code@1.29.0",
+    ])("passes null through to %s", async origin => {
+      expect(await stockFor(origin)).toEqual([true, false, null]);
     });
   });
 
