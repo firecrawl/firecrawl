@@ -26,13 +26,14 @@ module Firecrawl
         end
       end
 
-      # Stock availability information for a variant. Always present.
+      # Stock availability information for a variant. Always present;
+      # in_stock is nil when the page does not state whether it is in stock.
       class Availability
         attr_reader :in_stock, :text
 
         def initialize(data)
           data ||= {}
-          @in_stock = data["inStock"] || false
+          @in_stock = data["inStock"]
           @text = data["text"]
         end
       end
