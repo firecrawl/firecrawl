@@ -1,6 +1,6 @@
 import { config } from "../config";
 import type { TeamFlags } from "../controllers/v2/types";
-import { getSearchZDR, isAlexandriaZDRForced } from "./zdr-helpers";
+import { getSearchForcedKind, isAlexandriaZDRForced } from "./zdr-helpers";
 
 export type AlexandriaFeedbackStorage =
   | "allowed"
@@ -23,11 +23,9 @@ export function alexandriaFeedbackStorage(
   if (flags?.searchFeedbackOptOut === true) return "opted_out";
   // A session can contain both search and scrape data, so either forced
   // retention policy applies.
-  const searchZdr = getSearchZDR(flags ?? undefined);
   if (
     isAlexandriaZDRForced(flags ?? undefined) ||
-    searchZdr === "forced-zdr" ||
-    searchZdr === "forced-anon"
+    getSearchForcedKind(flags ?? undefined) !== null
   )
     return "zero_data_retention";
   return "allowed";
