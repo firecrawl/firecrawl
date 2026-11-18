@@ -74,7 +74,7 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Generic retry utility that executes an operation with exponential backoff
+ * Generic retry utility that executes an operation with fixed delay intervals
  * @param operation - The async operation to retry
  * @param hasValidResult - Function to check if the result is valid/complete
  * @param signal - Optional AbortSignal to cancel the operation
