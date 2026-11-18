@@ -1,5 +1,6 @@
 import { InternalOptions } from "../scraper/scrapeURL";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type { RequestContext } from "../service/request-context";
 import { WebhookConfig } from "../services/webhook/types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
 import { redisEvictConnection } from "../services/redis";
@@ -17,6 +18,11 @@ import {
 } from "./redis-pipeline";
 
 export type StoredCrawl = {
+  /**
+   * The context of the request that started the crawl. Absent on a record
+   * written before the context existed; read it with `crawlContext`.
+   */
+  ctx?: RequestContext;
   originUrl?: string;
   crawlerOptions: any;
   scrapeOptions: Omit<ScrapeOptions, "timeout">;
