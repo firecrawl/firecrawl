@@ -6,6 +6,7 @@ import pytest
 import time
 from unittest.mock import Mock, patch, AsyncMock
 from typing import Dict, Any, List
+from pydantic import ValidationError
 
 from firecrawl.v2.types import (
     PaginationConfig, 
@@ -998,6 +999,63 @@ class TestRunningJobPagination:
 
         assert client.get.call_count == 3
         assert len(result.data) == 1
+
+
+class TestPaginationInvalidLaterPage:
+    """A later page that fails validation must raise instead of silently truncating results."""
+
+    job_id = "invalid-page-123"
+    valid_doc = {"url": "https://example.com/a", "markdown": "# A", "metadata": {"title": "A"}}
+    invalid_doc = {"url": "https://example.com/b", "markdown": 123, "metadata": {"title": "B"}}
+
+    def _responses(self, kind, *, async_client=False):
+        def page(data, next_url):
+            response = Mock()
+            if async_client:
+                response.status_code = 200
+            else:
+                response.ok = True
+            response.json.return_value = {
+                "success": True,
+                "status": "completed",
+                "completed": 2,
+                "total": 2,
+                "creditsUsed": 2,
+                "expiresAt": "2024-01-01T00:00:00Z",
+                "next": next_url,
+                "data": data,
+            }
+            return response
+
+        next_url = f"https://api.firecrawl.dev/v2/{kind}/{self.job_id}?skip=1"
+        return [page([self.valid_doc], next_url), page([self.invalid_doc], None)]
+
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status), ("crawl", get_crawl_status)],
+    )
+    def test_invalid_later_page_raises(self, kind, get_status):
+        client = Mock()
+        client.get.side_effect = self._responses(kind)
+
+        with pytest.raises(ValidationError):
+            get_status(client, self.job_id)
+
+        assert client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status_async), ("crawl", get_crawl_status_async)],
+    )
+    async def test_invalid_later_page_raises_async(self, kind, get_status):
+        client = AsyncMock()
+        client.get.side_effect = self._responses(kind, async_client=True)
+
+        with pytest.raises(ValidationError):
+            await get_status(client, self.job_id)
+
+        assert client.get.call_count == 2
 
 
 if __name__ == "__main__":
