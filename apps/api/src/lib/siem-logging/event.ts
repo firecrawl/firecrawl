@@ -1,5 +1,6 @@
 import type { Document } from "../../controllers/v2/types";
 import type { ScrapeJobSingleUrls } from "../../types";
+import { jobContext } from "../request-context";
 import type { ThreatDecision } from "../threat-protection/types";
 import {
   CrawlDenialError,
@@ -44,7 +45,7 @@ export interface RejectedScrapeActivity {
 function endpointForJob(
   job: ScrapeJobSingleUrls,
 ): ScrapeActivityEvent["endpoint"] {
-  const endpoint = job.billing?.endpoint;
+  const endpoint = jobContext(job).billing?.endpoint;
   if (
     endpoint === "scrape" ||
     endpoint === "crawl" ||
@@ -198,18 +199,19 @@ export function buildScrapeActivityEvent(
   apiKeyName: string | null,
   outcome: ScrapeActivityOutcome,
 ): ScrapeActivityEvent {
+  const ctx = jobContext(job);
   return buildEvent(
     {
       scrapeId: jobId,
       requestId: job.requestId ?? job.crawl_id ?? jobId,
       endpoint: endpointForJob(job),
       teamId: job.team_id,
-      apiKeyId: job.apiKeyId,
+      apiKeyId: ctx.apiKeyId,
       auditMetadata: job.scrapeOptions.auditMetadata,
       url: job.url,
       origin: job.origin,
       integration: job.integration,
-      zeroDataRetention: job.zeroDataRetention,
+      zeroDataRetention: ctx.zeroDataRetention,
       httpStatus: outcome.document?.metadata.statusCode ?? null,
     },
     orgId,
