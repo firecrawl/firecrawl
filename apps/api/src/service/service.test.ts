@@ -113,6 +113,7 @@ describe("describe", () => {
         "b.point": ["core", "second", "second", "third"],
       },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
+      env: {},
     });
     expect(Object.keys(description.hooks)).toEqual(["a.point", "b.point"]);
     expect(Object.keys(description.roles)).toEqual([
