@@ -119,7 +119,7 @@ final class Product
             }
 
             $entry = [];
-            foreach (['id', 'sku', 'title'] as $key) {
+            foreach (['id', 'sku', 'gtin', 'mpn', 'condition', 'title'] as $key) {
                 if (isset($variant[$key])) {
                     $entry[$key] = (string) $variant[$key];
                 }

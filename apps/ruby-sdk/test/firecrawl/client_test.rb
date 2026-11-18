@@ -294,6 +294,30 @@ class ClientTest < Minitest::Test
     end
   end
 
+  def test_product_variant_identifiers
+    fixture = {
+      "sku" => "SKU-1",
+      "gtin" => "00012345678905",
+      "mpn" => "MPN-1",
+      "condition" => "refurbished",
+      "availability" => { "inStock" => nil },
+    }
+    variant = Firecrawl::Models::ProductProfile::Variant.new(JSON.parse(JSON.generate(fixture)))
+    assert_equal "SKU-1", variant.sku
+    assert_equal "00012345678905", variant.gtin
+    assert_equal "MPN-1", variant.mpn
+    assert_equal "refurbished", variant.condition
+    assert_nil variant.availability.in_stock
+
+    bare = Firecrawl::Models::ProductProfile::Variant.new({ "availability" => { "inStock" => true } })
+    assert_nil bare.gtin
+    assert_nil bare.mpn
+    assert_nil bare.condition
+
+    unknown = Firecrawl::Models::ProductProfile::Variant.new({ "condition" => "open-box" })
+    assert_equal "open-box", unknown.condition
+  end
+
   def test_scrape_without_product_format_leaves_product_nil
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .to_return(

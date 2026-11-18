@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firecrawl.models.Document;
 import com.firecrawl.models.ProductAvailability;
+import com.firecrawl.models.ProductVariant;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -41,7 +42,7 @@ class ProductAvailabilityTest {
     void inStockNull() throws Exception {
         ProductAvailability availability = parse("{\"inStock\":null,\"text\":null}");
         assertNull(availability.getInStock());
-        assertFalse(availability.isInStock());
+        assertTrue(availability.isInStock());
     }
 
     @Test
@@ -49,7 +50,7 @@ class ProductAvailabilityTest {
     void inStockMissing() throws Exception {
         ProductAvailability availability = parse("{\"text\":\"Call for availability\"}");
         assertNull(availability.getInStock());
-        assertFalse(availability.isInStock());
+        assertTrue(availability.isInStock());
         assertEquals("Call for availability", availability.getText());
     }
 
@@ -71,6 +72,40 @@ class ProductAvailabilityTest {
         ProductAvailability copy = mapper.readValue(mapper.writeValueAsString(original), ProductAvailability.class);
         assertNull(copy.getInStock());
         assertEquals("Unknown", copy.getText());
+    }
+
+    @Test
+    void variantIdentifiersRoundTrip() throws Exception {
+        String fixture = "{\"sku\":\"SKU-1\",\"gtin\":\"00012345678905\",\"mpn\":\"MPN-1\","
+                + "\"condition\":\"refurbished\",\"availability\":{\"inStock\":null}}";
+        ProductVariant variant = mapper.readValue(fixture, ProductVariant.class);
+        assertEquals("SKU-1", variant.getSku());
+        assertEquals("00012345678905", variant.getGtin());
+        assertEquals("MPN-1", variant.getMpn());
+        assertEquals("refurbished", variant.getCondition());
+        assertNull(variant.getAvailability().getInStock());
+
+        JsonNode node = mapper.valueToTree(variant);
+        assertEquals("00012345678905", node.get("gtin").asText());
+        assertEquals("MPN-1", node.get("mpn").asText());
+        assertEquals("refurbished", node.get("condition").asText());
+        assertTrue(node.get("availability").get("inStock").isNull());
+        ProductVariant copy = mapper.readValue(mapper.writeValueAsString(variant), ProductVariant.class);
+        assertEquals("00012345678905", copy.getGtin());
+        assertEquals("MPN-1", copy.getMpn());
+        assertEquals("refurbished", copy.getCondition());
+        assertNull(copy.getAvailability().getInStock());
+    }
+
+    @Test
+    void variantOmitsAbsentIdentifiersAndKeepsUnknownCondition() throws Exception {
+        JsonNode bare = mapper.valueToTree(mapper.readValue("{\"availability\":{\"inStock\":true}}", ProductVariant.class));
+        assertFalse(bare.has("gtin"));
+        assertFalse(bare.has("mpn"));
+        assertFalse(bare.has("condition"));
+
+        ProductVariant unknown = mapper.readValue("{\"condition\":\"open-box\"}", ProductVariant.class);
+        assertEquals("open-box", unknown.getCondition());
     }
 
     @Test

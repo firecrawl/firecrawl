@@ -20,13 +20,15 @@ public class ProductAvailability {
     public Boolean getInStock() { return inStock; }
 
     /**
-     * Returns {@code false} when stock is unknown ({@code inStock} is {@code null}).
+     * Returns {@code true} unless the product is known to be out of stock, so unknown stock
+     * ({@code inStock} is {@code null}) reads as {@code true}, as older API responses reported it.
      *
-     * @deprecated use {@link #getInStock()}, which distinguishes unknown stock from out of stock.
+     * @deprecated use {@link #getInStock()} for the tri-state value, which distinguishes unknown
+     * stock ({@code null}) from in stock and out of stock.
      */
     @Deprecated
     @JsonIgnore
-    public boolean isInStock() { return Boolean.TRUE.equals(inStock); }
+    public boolean isInStock() { return !Boolean.FALSE.equals(inStock); }
 
     public String getText() { return text; }
 

@@ -23,6 +23,36 @@ public class ProductAvailabilityTests
         Assert.Equal(expected, doc!.Product!.Variants![0].Availability!.InStock);
     }
 
+    [Fact]
+    public void ProductVariant_RoundTripsIdentifiersAndUnknownStock()
+    {
+        const string fixture = "{\"sku\":\"SKU-1\",\"gtin\":\"00012345678905\",\"mpn\":\"MPN-1\","
+            + "\"condition\":\"refurbished\",\"availability\":{\"inStock\":null}}";
+
+        var variant = JsonSerializer.Deserialize<ProductVariant>(fixture, FirecrawlHttpClient.JsonOptions)!;
+
+        Assert.Equal("00012345678905", variant.Gtin);
+        Assert.Equal("MPN-1", variant.Mpn);
+        Assert.Equal("refurbished", variant.Condition);
+        Assert.Null(variant.Availability.InStock);
+        Assert.Equal(fixture, JsonSerializer.Serialize(variant, FirecrawlHttpClient.JsonOptions));
+    }
+
+    [Fact]
+    public void ProductVariant_OmitsAbsentIdentifiersAndKeepsUnknownCondition()
+    {
+        var json = JsonSerializer.Serialize(new ProductVariant(), FirecrawlHttpClient.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        foreach (var key in new[] { "gtin", "mpn", "condition" })
+        {
+            Assert.False(doc.RootElement.TryGetProperty(key, out _), key);
+        }
+
+        var unknown = JsonSerializer.Deserialize<ProductVariant>(
+            "{\"condition\":\"open-box\",\"availability\":{\"inStock\":false}}", FirecrawlHttpClient.JsonOptions)!;
+        Assert.Equal("open-box", unknown.Condition);
+    }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public List<(string Path, string Body)> Requests { get; } = new();

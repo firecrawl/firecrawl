@@ -50,12 +50,15 @@ module Firecrawl
       # A purchasable variant of a product. Pricing, availability, and images
       # live here rather than on the top-level product.
       class Variant
-        attr_reader :id, :sku, :title, :values, :price, :sale,
-                    :availability, :images
+        attr_reader :id, :sku, :gtin, :mpn, :condition, :title, :values,
+                    :price, :sale, :availability, :images
 
         def initialize(data)
           @id = data["id"]
           @sku = data["sku"]
+          @gtin = data["gtin"]
+          @mpn = data["mpn"]
+          @condition = data["condition"]
           @title = data["title"]
           @values = data["values"]
           @price = data["price"] && Price.new(data["price"])
