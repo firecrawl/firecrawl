@@ -86,8 +86,10 @@ const hash = (value: unknown) =>
 export const exchangeRequestId = (teamId: string, requestId: string) =>
   hash([teamId, requestId]);
 
+// The catalogue's own free reads: the tool lookup and the library shell.
+const CATALOGUE_READS = new Set(["find-tools", "library"]);
 const isCatalogueRead = (call: ProviderCall) =>
-  call.provider === "firecrawl" && call.capability === "find-tools";
+  call.provider === "firecrawl" && CATALOGUE_READS.has(call.capability);
 
 const unresolved = (chargeId: string) =>
   refusal(
@@ -296,8 +298,9 @@ export async function retrieveProviders(input: {
     return notExecuted(unresolved(id));
   }
 
-  // A catalogue read is free and idempotent, so once its request id is claimed it skips the
-  // agreement and quote lookups and the credit hold and goes to Exchange with a zero budget.
+  // A catalogue read (the tool lookup or a library command) is free and idempotent, so once its
+  // request id is claimed it skips the agreement and quote lookups and the credit hold and goes
+  // to Exchange with a zero budget.
   // Exchange quotes against that budget itself and refuses with credit_budget_exceeded should
   // the read ever carry a price, in which case the full path below runs under the same claim
   // and deadline. The answer is recorded like any other, so a repeat of the id replays it.

@@ -23,7 +23,7 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // `options.`, or declared by the contract), and so is any value shaped like a Firecrawl API key.
 // The Firecrawl key belongs in the Authorization header, and such options go in a POST body.
 // Zero-data-retention requests must not put their options in a URL either.
-export const REFUSED_QUERY_KEYS = new Set([
+const REFUSED_QUERY_KEYS = new Set([
   "api_key",
   "apiKey",
   "apikey",
