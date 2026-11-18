@@ -1015,6 +1015,68 @@ describe("providers whose responses are not kept", () => {
     expect(charges()).toEqual(before);
   });
 
+  it.each(["enrich", "enrich/auto", "enrich/waterfall", "search/auto"])(
+    "keeps no firecrawl %s data in the record and replays a coded error without charging again",
+    async capability => {
+      const enrich = {
+        provider: "firecrawl",
+        capability,
+        options: { find: ["work_email"], subjects: [{ full_name: "A B" }] },
+      };
+      const answered = {
+        success: true,
+        creditsCost: 4,
+        results: [
+          {
+            ...enrich,
+            creditsCost: 4,
+            data: {
+              results: [{ served_by: "apollo", record: { email: "enriched" } }],
+            },
+          },
+        ],
+      };
+      exchangeAnswers(answered);
+      expect(await run({ calls: [enrich] })).toMatchObject({
+        status: 200,
+        body: answered,
+        executed: true,
+      });
+      const record = stored();
+      expect(record).toMatchObject({ phase: "done", maximumCredits: 5 });
+      expect(JSON.stringify(record)).not.toContain("enriched");
+      expect(record.response.body).toEqual({
+        success: true,
+        creditsCost: 4,
+        results: [notRetained("firecrawl", capability)],
+      });
+      const before = charges();
+      expect(before).toEqual({ executions: 1, confirms: 1, ledger: 1 });
+
+      const replay = await run({ calls: [enrich], scrapeId: "scrape-2" });
+      expect(replay).toMatchObject({ status: 200, executed: false });
+      expect(answerSchema.safeParse(replay.body).success).toBe(true);
+      expect(JSON.stringify(replay)).not.toContain("enriched");
+      expect(charges()).toEqual(before);
+    },
+  );
+
+  it.each([
+    { provider: "acme", capability: "enrich" },
+    { provider: "acme", capability: "search/auto" },
+    { provider: "firecrawl", capability: "search" },
+  ])("keeps $provider $capability whole", async identity => {
+    const other = { ...identity, options: {} };
+    const answered = {
+      success: true,
+      creditsCost: 2,
+      results: [{ ...other, creditsCost: 2, data: { kept: true } }],
+    };
+    exchangeAnswers(answered);
+    await run({ calls: [other] });
+    expect(stored().response).toEqual({ status: 200, body: answered });
+  });
+
   it("keeps an unrestricted provider's response whole and replays it without charging again", async () => {
     await run();
     expect(stored().response).toEqual({ status: 200, body: answer });

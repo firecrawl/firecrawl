@@ -94,9 +94,17 @@ const isCatalogueRead = (call: ProviderCall) =>
 
 // Providers whose response bodies are not kept for replay. Matched on the exact provider slug.
 const UNRETAINED_PROVIDERS = new Set(["particle", "apollo"]);
+// Enrichment and people search can answer with records from those providers under the firecrawl
+// slug, so none of their results are kept.
+const isUnretained = (provider: string, capability: string) =>
+  UNRETAINED_PROVIDERS.has(provider) ||
+  (provider === "firecrawl" &&
+    (capability === "enrich" ||
+      capability.startsWith("enrich/") ||
+      capability === "search/auto"));
 
-/** The answer as recorded for replay: each result from a provider that does not permit storage
- *  is kept as a coded error, with no data, while every other result and the charge stay as they were. */
+/** The answer as recorded for replay: each result that may not be stored is kept as a coded
+ *  error, with no data, while every other result and the charge stay as they were. */
 const retainable = (
   answer: z.infer<typeof answerSchema>,
   calls: ProviderCall[],
@@ -106,10 +114,11 @@ const retainable = (
     ...answer,
     results: answer.results.map((item, i) => {
       const provider = item.provider ?? calls[i].provider;
-      if (!UNRETAINED_PROVIDERS.has(provider)) return item;
+      const capability = item.capability ?? calls[i].capability;
+      if (!isUnretained(provider, capability)) return item;
       return {
         provider,
-        capability: item.capability ?? calls[i].capability,
+        capability,
         error: {
           code: "response_not_retained",
           message:
