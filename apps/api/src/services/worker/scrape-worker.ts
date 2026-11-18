@@ -79,12 +79,11 @@ import {
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
+  isTransportableError,
   SitemapError,
-  TransportableError,
-  UnknownError,
   UnsupportedSiteError,
 } from "../../lib/error";
-import { serializeTransportableError } from "../../lib/error-serde";
+import { serializeThrownError } from "../../lib/error-serde";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
@@ -1236,7 +1235,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           ? error
           : (error.message ??
             "Something went wrong... Contact help@mendable.ai"),
-      error_code: error instanceof TransportableError ? error.code : undefined,
+      error_code: isTransportableError(error) ? error.code : undefined,
       time_taken: timeTakenInSeconds,
       team_id: job.data.team_id,
       options: job.data.scrapeOptions,
@@ -1906,11 +1905,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
     if (job.data.skipNuq) {
       throw error;
     } else {
-      if (error instanceof TransportableError) {
-        throw new Error(serializeTransportableError(error));
-      } else {
-        throw new Error(serializeTransportableError(new UnknownError(error)));
-      }
+      throw new Error(serializeThrownError(error));
     }
   }
 }

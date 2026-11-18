@@ -23,8 +23,25 @@ vi.mock("../../../services/redis", () => ({
 import { crawlErrorsController as v1CrawlErrorsController } from "../../../controllers/v1/crawl-errors";
 import { crawlErrorsController as v2CrawlErrorsController } from "../../../controllers/v2/crawl-errors";
 import { ThirdPartyDataTermsRequiredError } from "../../../lib/exchange";
-import { serializeTransportableError } from "../../../lib/error-serde";
+import {
+  coreErrors,
+  serializeTransportableError,
+} from "../../../lib/error-serde";
 import { SiteError } from "../../../scraper/scrapeURL/error";
+import { createService, replaceService } from "../../../service/service";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 describe.each([
   ["v1", v1CrawlErrorsController],
