@@ -7,6 +7,14 @@ export type {
   Observe,
   Transform,
 } from "./hooks";
+export { authenticate } from "./http";
+export type { RouteKind } from "./http";
+export type {
+  BaseCaller,
+  BaseRequestContext,
+  Caller,
+  RequestContext,
+} from "./request-context";
 export { createService, run, service } from "./service";
 export type {
   CoreParts,
