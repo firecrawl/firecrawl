@@ -1015,7 +1015,7 @@ describe("providers whose responses are not kept", () => {
     expect(charges()).toEqual(before);
   });
 
-  it.each(["enrich", "enrich/auto", "enrich/waterfall"])(
+  it.each(["enrich", "enrich/auto", "enrich/waterfall", "search/auto"])(
     "keeps no firecrawl %s data in the record and replays a coded error without charging again",
     async capability => {
       const enrich = {
@@ -1061,8 +1061,12 @@ describe("providers whose responses are not kept", () => {
     },
   );
 
-  it("keeps another provider's enrich capability whole", async () => {
-    const other = { provider: "acme", capability: "enrich", options: {} };
+  it.each([
+    { provider: "acme", capability: "enrich" },
+    { provider: "acme", capability: "search/auto" },
+    { provider: "firecrawl", capability: "search" },
+  ])("keeps $provider $capability whole", async identity => {
+    const other = { ...identity, options: {} };
     const answered = {
       success: true,
       creditsCost: 2,

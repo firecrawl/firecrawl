@@ -94,11 +94,14 @@ const isCatalogueRead = (call: ProviderCall) =>
 
 // Providers whose response bodies are not kept for replay. Matched on the exact provider slug.
 const UNRETAINED_PROVIDERS = new Set(["particle", "apollo"]);
-// Enrichment can answer with records from those providers under the firecrawl slug, so none of its results are kept.
+// Enrichment and people search can answer with records from those providers under the firecrawl
+// slug, so none of their results are kept.
 const isUnretained = (provider: string, capability: string) =>
   UNRETAINED_PROVIDERS.has(provider) ||
   (provider === "firecrawl" &&
-    (capability === "enrich" || capability.startsWith("enrich/")));
+    (capability === "enrich" ||
+      capability.startsWith("enrich/") ||
+      capability === "search/auto"));
 
 /** The answer as recorded for replay: each result that may not be stored is kept as a coded
  *  error, with no data, while every other result and the charge stay as they were. */
