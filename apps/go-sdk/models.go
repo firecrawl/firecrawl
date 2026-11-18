@@ -106,8 +106,9 @@ type ProductPrice struct {
 }
 
 // ProductAvailability represents stock availability for a product or variant.
+// InStock is nil when the page does not state whether the product is in stock.
 type ProductAvailability struct {
-	InStock bool   `json:"inStock"`
+	InStock *bool  `json:"inStock"`
 	Text    string `json:"text,omitempty"`
 }
 
