@@ -1418,6 +1418,7 @@ export type TeamFlags = {
   enrichBeta?: boolean;
   labsSearch?: boolean;
   freshFeed?: boolean;
+  freshFeedCreditsPerRecord?: number;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be
