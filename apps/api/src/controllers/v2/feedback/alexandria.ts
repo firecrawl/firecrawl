@@ -11,9 +11,9 @@ import {
   checkFeedbackToken,
   type FeedbackTokenRejection,
 } from "../../../lib/alexandria-feedback-token";
+import { alexandriaFeedbackStorage } from "../../../lib/alexandria-feedback-storage";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
-import { getSearchZDR, isAlexandriaZDRForced } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
@@ -39,22 +39,23 @@ export async function recordAlexandriaFeedback(
   req: RequestWithAuth<any, any, any>,
   body: AlexandriaFeedbackRequest,
 ): Promise<FeedbackRecordResult> {
-  if (!config.USE_DB_AUTHENTICATION) {
+  const teamId = req.auth.team_id;
+  const storage = alexandriaFeedbackStorage(teamId, req.acuc?.flags);
+  if (storage === "unavailable") {
     return failure(
       503,
       "DB_DISABLED",
       "Feedback requires database authentication.",
     );
   }
-  const teamId = req.auth.team_id;
-  if (teamId === "preview" || teamId.startsWith("preview_")) {
+  if (storage === "preview_team") {
     return failure(
       403,
       "PREVIEW_TEAM_NOT_ALLOWED",
       "Feedback is not available for preview teams.",
     );
   }
-  if (req.acuc?.flags?.searchFeedbackOptOut === true) {
+  if (storage === "opted_out") {
     return failure(
       403,
       "TEAM_OPTED_OUT",
@@ -62,14 +63,8 @@ export async function recordAlexandriaFeedback(
     );
   }
 
-  // A session can contain both search and scrape data. Honor either forced
-  // retention policy without looking up or recording individual jobs.
-  const searchZdr = getSearchZDR(req.acuc?.flags);
-  if (
-    isAlexandriaZDRForced(req.acuc?.flags) ||
-    searchZdr === "forced-zdr" ||
-    searchZdr === "forced-anon"
-  ) {
+  // Accepted without looking up or recording individual jobs.
+  if (storage === "zero_data_retention") {
     return {
       status: 200,
       body: {

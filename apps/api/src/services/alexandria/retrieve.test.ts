@@ -891,3 +891,101 @@ it("does not retry the write when the credit store is unavailable", async () => 
   });
   expect(mocks.recordCredits).toHaveBeenCalledTimes(1);
 });
+
+const free = (results: unknown[]) =>
+  exchangeAnswers({ success: true, creditsCost: 0, results }, 200, {
+    status: 200,
+    body: { maximumCredits: 0 },
+  });
+
+it("tells Exchange on execution whether feedback may be stored and who is calling", async () => {
+  await run({ clientOrigin: "mcp-cursor", clientIntegration: "n8n" });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0]).toMatchObject({
+    feedbackStorage: "allowed",
+    clientOrigin: "mcp-cursor",
+    clientIntegration: "n8n",
+  });
+  for (const [arg] of mocks.request.mock.calls.filter(
+    ([arg]) => arg.path !== "/v1/retrieve",
+  )) {
+    expect(arg).not.toHaveProperty("feedbackStorage");
+    expect(arg).not.toHaveProperty("clientOrigin");
+    expect(arg).not.toHaveProperty("clientIntegration");
+  }
+});
+
+it("says the same on the catalogue read, and names no origin or integration it was not given", async () => {
+  const read = { provider: "firecrawl", capability: "find-tools", options: {} };
+  free([{ ...read, creditsCost: 0, data: {} }]);
+  await run({ calls: [read] });
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(executions()[0][0].feedbackStorage).toBe("allowed");
+  expect(executions()[0][0]).not.toHaveProperty("clientOrigin");
+  expect(executions()[0][0]).not.toHaveProperty("clientIntegration");
+});
+
+it.each([
+  ["opted_out", "team", { searchFeedbackOptOut: true }, true],
+  ["zero_data_retention", "team", { searchZDR: "forced-anon" }, true],
+  ["preview_team", "preview_example", {}, true],
+  ["unavailable", "team", {}, false],
+])(
+  "reports feedback storage as %s",
+  async (storage, teamId, flags, dbAuthentication) => {
+    mocks.config.USE_DB_AUTHENTICATION = dbAuthentication;
+    free([{ ...call, creditsCost: 0, data: {} }]);
+    expect(await run({ teamId, flags })).toMatchObject({ executed: true });
+    expect(executions()[0][0].feedbackStorage).toBe(storage);
+  },
+);
+
+it("keeps who is calling out of the request fingerprint", async () => {
+  expect((await run({ clientOrigin: "cli" })).executed).toBe(true);
+  expect(await run({ clientOrigin: "mcp-cursor" })).toMatchObject({
+    status: 200,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("runs a free Firecrawl capability without a hold or a charge and returns its answer whole", async () => {
+  const report = {
+    provider: "firecrawl",
+    capability: "report-missing-data",
+    options: { need: "<what was needed>", tried: "<what was tried>" },
+  };
+  const results = [
+    {
+      provider: report.provider,
+      capability: report.capability,
+      creditsCost: 0,
+      data: {
+        logged: true,
+        reference: "ref-1",
+        status: "new",
+        reports: 1,
+        teams: 1,
+        repeat: false,
+        knownProviders: [],
+        message: "<message>",
+      },
+    },
+  ];
+  free(results);
+  expect(await run({ calls: [report] })).toEqual({
+    status: 200,
+    body: { success: true, creditsCost: 0, results },
+    executed: true,
+    scrapeId: "scrape-1",
+  });
+  expect(executions()[0][0]).toMatchObject({
+    body: { requests: [report] },
+    maximumCredits: 0,
+    feedbackStorage: "allowed",
+  });
+  expect(mocks.lock).not.toHaveBeenCalled();
+  expect(mocks.finalize).not.toHaveBeenCalled();
+  expect(mocks.billAdd).not.toHaveBeenCalled();
+  expect(mocks.recordCredits).not.toHaveBeenCalled();
+});

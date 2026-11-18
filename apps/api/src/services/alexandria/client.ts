@@ -1,5 +1,6 @@
 import { Agent, fetch } from "undici";
 import { config } from "../../config";
+import type { AlexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
 import type { ExchangeResponse } from "./contracts";
 
 const dispatcher = new Agent({
@@ -17,6 +18,16 @@ const CONNECTION_ERRORS = new Set([
 const connectionFailed = (error: unknown) => {
   const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
   return typeof code === "string" && CONNECTION_ERRORS.has(code);
+};
+
+// A caller-supplied label as a short token that is safe in a header, or nothing.
+const headerToken = (value: string | null | undefined) => {
+  const token = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, "-")
+    .slice(0, 64);
+  return /[a-z0-9]/.test(token) ? token : undefined;
 };
 
 export async function exchangeRequest(input: {
@@ -48,9 +59,16 @@ export async function exchangeRequest(input: {
   retryConnection?: boolean;
   /** Trusted internal marker for zero-priced provider lines, sent with the internal secret so Exchange can verify it. */
   ultrasearch?: boolean;
+  /** Whether Alexandria feedback from this team may be stored, and the reason when it may not. */
+  feedbackStorage?: AlexandriaFeedbackStorage;
+  /** The caller's origin and integration as the request named them; sent as short tokens. */
+  clientOrigin?: string | null;
+  clientIntegration?: string | null;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
+  const clientOrigin = headerToken(input.clientOrigin);
+  const clientIntegration = headerToken(input.clientIntegration);
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const signal = AbortSignal.timeout(Math.max(1, input.timeoutMs));
   const init = {
@@ -93,6 +111,13 @@ export async function exchangeRequest(input: {
             "x-exchange-ultrasearch": "true",
             "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
           }
+        : {}),
+      ...(input.feedbackStorage
+        ? { "x-exchange-feedback-storage": input.feedbackStorage }
+        : {}),
+      ...(clientOrigin ? { "x-exchange-client-origin": clientOrigin } : {}),
+      ...(clientIntegration
+        ? { "x-exchange-client-integration": clientIntegration }
         : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
