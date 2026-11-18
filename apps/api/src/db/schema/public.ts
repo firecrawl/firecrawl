@@ -197,6 +197,18 @@ export const computer_sessions = pgTable(
   ],
 );
 
+// First request per (team, surface); gates the api_surface_first_used event
+// (see api_surface_first_uses migration).
+export const api_surface_first_uses = pgTable(
+  "api_surface_first_uses",
+  {
+    team_id: uuid("team_id").notNull(),
+    surface: text("surface").notNull(),
+    first_used_at: ts("first_used_at").notNull().defaultNow(),
+  },
+  table => [primaryKey({ columns: [table.team_id, table.surface] })],
+);
+
 // Index of saved persistent browser profiles (see browser_profiles migration).
 // Contents live in Hangar; reconciliation upserts a row after a confirmed save.
 export const browser_profiles = pgTable(

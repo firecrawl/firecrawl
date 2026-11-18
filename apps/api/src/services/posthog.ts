@@ -1,6 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { redisEvictConnection } from "./redis";
-import { dbRr } from "../db/connection";
+import { db, dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { logger as _logger } from "../lib/logger";
 import { capturePostHog, isPostHogCaptureEnabled } from "./posthog-capture";
@@ -91,19 +90,17 @@ async function resolveOrgId(teamId: string): Promise<string | null> {
   }
 }
 
+const SEEN_CACHE_MAX = 200_000;
+const seenPairs = new Set<string>();
+
 /**
  * Emit a one-time `api_surface_first_used` event the first time a team makes a
  * request from a given surface (playground / sdk / mcp / cli / api / ...).
  *
- * Dedup is a Redis SET NX (no DB change): the key is written once per
- * (team, surface), so the event fires at most once per pair. Volume is bounded
- * by #teams × #surfaces, independent of total request volume.
- *
- * Durability caveat: the marker lives on the evict Redis connection, so an
- * eviction / flush can let the event re-fire for a team. That is acceptable for
- * a milestone (PostHog `first_time_for_user` / min-timestamp analysis dedupes
- * downstream). If exactly-once is ever required, back this with a Postgres
- * table keyed on (team_id, surface) instead.
+ * Dedup is a row in `api_surface_first_uses`: the event is sent only by the
+ * call whose INSERT created the row. An in-process cache of seen pairs keeps
+ * most requests off the DB. Fails open: a DB error skips the event and is
+ * retried on a later request; a rejected capture is not retried.
  *
  * Fire-and-forget: never awaited in the request path, never throws.
  */
@@ -117,21 +114,26 @@ export function trackFirstSurfaceUse(args: {
 }): void {
   const { teamId, origin, integration, kind, apiVersion, apiKeyId } = args;
 
-  // No PostHog key → capture is a no-op. Bail BEFORE the Redis SETNX so we don't
-  // burn the dedup marker without emitting (which would lose the milestone for
-  // good once PostHog is enabled).
   if (!isPostHogCaptureEnabled()) return;
 
   // Skip anonymous / preview traffic — not a real team milestone.
   if (!teamId || teamId === "preview" || teamId.startsWith("preview_")) return;
 
+  const surface = originToSurface(origin, integration);
+  const pair = `${teamId}:${surface}`;
+  if (seenPairs.has(pair)) return;
+
   void (async () => {
     try {
-      const surface = originToSurface(origin, integration);
-      const key = `firecrawl:surface_first:${teamId}:${surface}`;
-      // SET key 1 NX → "OK" only the very first time; null otherwise. Atomic.
-      const isFirst = await redisEvictConnection.set(key, "1", "NX");
-      if (isFirst !== "OK") return;
+      const inserted = await db
+        .insert(schema.api_surface_first_uses)
+        .values({ team_id: teamId, surface })
+        .onConflictDoNothing()
+        .returning({ team_id: schema.api_surface_first_uses.team_id });
+
+      if (seenPairs.size >= SEEN_CACHE_MAX) seenPairs.clear();
+      seenPairs.add(pair);
+      if (inserted.length === 0) return;
 
       // Key to the person (api-key owner email) so the event attributes to the
       // same PostHog person the dashboard identifies, e.g. for experiments.
@@ -140,7 +142,7 @@ export function trackFirstSurfaceUse(args: {
         resolveOrgId(teamId),
       ]);
 
-      const sent = await capturePostHog("api_surface_first_used", distinctId, {
+      await capturePostHog("api_surface_first_used", distinctId, {
         surface,
         raw_origin: origin ?? null,
         raw_integration: integration ?? null,
@@ -151,8 +153,6 @@ export function trackFirstSurfaceUse(args: {
         // `company` ($group_0) groups for group-level analysis.
         $groups: { team: teamId, ...(orgId ? { company: orgId } : {}) },
       });
-      // A rejected capture must not use up the one-time milestone.
-      if (!sent) await redisEvictConnection.del(key);
     } catch (error) {
       _logger.debug("trackFirstSurfaceUse failed", {
         module: "posthog",
