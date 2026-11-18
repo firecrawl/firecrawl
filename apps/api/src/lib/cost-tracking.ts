@@ -1,7 +1,6 @@
 export class CostLimitExceededError extends Error {
   constructor() {
     super("Cost limit exceeded");
-    this.message = "Cost limit exceeded";
     this.name = "CostLimitExceededError";
   }
 }
