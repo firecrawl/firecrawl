@@ -279,7 +279,7 @@ def cancel_batch_scrape(
         job_id: ID of the batch scrape job to cancel
         
     Returns:
-        BatchScrapeStatusResponse with updated status
+        bool: True if cancelled, False if the job was already completed or not cancelled
         
     Raises:
         FirecrawlError: If the cancellation fails
