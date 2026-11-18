@@ -26,6 +26,7 @@ import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
+import { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
 import {
   answerSchema,
   refusal,
@@ -151,6 +152,9 @@ export async function retrieveProviders(input: {
   maxCredits?: number;
   /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
   ultrasearch?: boolean;
+  /** The caller's origin and integration, when the request named them. Labels only. */
+  clientOrigin?: string;
+  clientIntegration?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -222,6 +226,14 @@ export async function retrieveProviders(input: {
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
   const ultrasearch = input.ultrasearch === true;
+  // Sent with every execution. Outside the fingerprint, so a repeat of the id replays its answer.
+  const caller = {
+    feedbackStorage: alexandriaFeedbackStorage(input.teamId, input.flags),
+    ...(input.clientOrigin ? { clientOrigin: input.clientOrigin } : {}),
+    ...(input.clientIntegration
+      ? { clientIntegration: input.clientIntegration }
+      : {}),
+  };
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -324,6 +336,7 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...caller,
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
@@ -650,6 +663,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...caller,
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);

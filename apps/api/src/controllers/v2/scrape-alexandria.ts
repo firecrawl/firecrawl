@@ -281,6 +281,10 @@ export async function providerScrapeController(
           logger.warn("Alexandria discovery lookup failed", { error });
           return null;
         });
+  // The origin as the caller named it: the schema default would label every caller "api".
+  const sentOrigin = (req.body as { origin?: unknown } | null)?.origin;
+  const clientOrigin =
+    typeof sentOrigin === "string" ? sentOrigin : req.get("x-origin");
   const startedAt = Date.now();
   let result;
   try {
@@ -304,6 +308,8 @@ export async function providerScrapeController(
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
       ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(clientOrigin ? { clientOrigin } : {}),
+      ...(body.integration ? { clientIntegration: body.integration } : {}),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -498,17 +504,27 @@ export async function providerScrapeController(
                   capability,
                 })
               : undefined;
+          const feedbackStep =
+            i === hinted
+              ? alexandriaFeedbackNextStep(body.origin, body.integration)
+              : undefined;
+          if (!feedbackStep)
+            return { ...item, ...(feedbackToken ? { feedbackToken } : {}) };
+          // A next step Exchange sent joins the feedback step: the feedback
+          // keys stay first and keep their values, Exchange's keys follow.
+          const { nextStep: exchangeStep, ...rest } = item;
           return {
-            ...item,
+            ...rest,
             ...(feedbackToken ? { feedbackToken } : {}),
-            ...(i === hinted
-              ? {
-                  nextStep: alexandriaFeedbackNextStep(
-                    body.origin,
-                    body.integration,
-                  ),
-                }
-              : {}),
+            nextStep: {
+              ...feedbackStep,
+              ...(exchangeStep &&
+              typeof exchangeStep === "object" &&
+              !Array.isArray(exchangeStep)
+                ? exchangeStep
+                : {}),
+              ...feedbackStep,
+            },
           };
         }),
       };
@@ -522,6 +538,9 @@ export async function providerScrapeController(
         code: first.error.code,
         error: first.error.message,
         ...(first.feedbackToken ? { feedbackToken: first.feedbackToken } : {}),
+        ...("nextStep" in first && first.nextStep
+          ? { nextStep: first.nextStep }
+          : {}),
       });
     }
     return res.json({ success: true, ...first });

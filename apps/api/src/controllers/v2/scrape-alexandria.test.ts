@@ -60,6 +60,7 @@ import {
 import { resolveIntegration } from "../../utils/integration";
 import { config } from "../../config";
 import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
+import { alexandriaFeedbackNextStep } from "../../lib/alexandria-feedback-hint";
 
 const call = {
   provider: "fred",
@@ -1168,5 +1169,253 @@ describe("feedback next step", () => {
       creditsCost: 1,
       data: { price: 1 },
     });
+  });
+});
+
+describe("next step from Exchange", () => {
+  const hint = config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean };
+  const ifNotFound = {
+    note: "<note>",
+    call: {
+      provider: "firecrawl",
+      capability: "report-missing-data",
+      options: { need: "<what you needed>", tried: "<what you tried>" },
+    },
+  };
+  const answered = (extra: object = {}) => ({
+    ...call,
+    creditsCost: 1,
+    data: { price: 1 },
+    ...extra,
+  });
+  const send = () =>
+    request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: call, origin: "mcp-cursor" });
+  afterEach(() => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+  });
+
+  it("keeps both next steps, the feedback keys first and unchanged", async () => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    mocks.retrieve.mockResolvedValue(
+      result([answered({ nextStep: { ifNotFound } })]),
+    );
+    const [item] = (await send()).body.data.alexandria;
+    expect(item).toEqual({
+      ...answered(),
+      nextStep: { ...alexandriaFeedbackNextStep("mcp-cursor"), ifNotFound },
+    });
+    expect(Object.keys(item.nextStep)).toEqual([
+      "instruction",
+      "tool",
+      "arguments",
+      "ifNotFound",
+    ]);
+  });
+
+  it("adds only the feedback step when Exchange sends none", async () => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    mocks.retrieve.mockResolvedValue(result([answered()]));
+    const [item] = (await send()).body.data.alexandria;
+    expect(item).toEqual({
+      ...answered(),
+      nextStep: alexandriaFeedbackNextStep("mcp-cursor"),
+    });
+    expect(Object.keys(item.nextStep)).toEqual([
+      "instruction",
+      "tool",
+      "arguments",
+    ]);
+  });
+
+  it("returns Exchange's next step as sent when there is no feedback step", async () => {
+    mocks.retrieve.mockResolvedValue(
+      result([answered({ nextStep: { ifNotFound } })]),
+    );
+    const [item] = (await send()).body.data.alexandria;
+    expect(item).toEqual(answered({ nextStep: { ifNotFound } }));
+  });
+
+  it("adds no next step when neither applies", async () => {
+    mocks.retrieve.mockResolvedValue(result([answered()]));
+    const [item] = (await send()).body.data.alexandria;
+    expect(item).toEqual(answered());
+  });
+
+  it("never lets Exchange replace a feedback key", async () => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    mocks.retrieve.mockResolvedValue(
+      result([
+        answered({
+          nextStep: { instruction: "other", tool: "other", ifNotFound },
+        }),
+      ]),
+    );
+    const [item] = (await send()).body.data.alexandria;
+    expect(item.nextStep).toEqual({
+      ...alexandriaFeedbackNextStep("mcp-cursor"),
+      ifNotFound,
+    });
+  });
+
+  it("keeps Exchange's next step on results the feedback step skips, under zero data retention too", async () => {
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    const failed = {
+      error: { code: "not_found", message: "Nothing found." },
+      nextStep: { ifNotFound },
+    };
+    mocks.retrieve.mockResolvedValue(result([failed, answered()]));
+    const response = await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: [call, call] });
+    expect(response.body.data.alexandria[0]).toEqual(failed);
+    expect(response.body.data.alexandria[1].nextStep).toEqual(
+      alexandriaFeedbackNextStep("api"),
+    );
+
+    mocks.retrieve.mockResolvedValue(
+      result([answered({ nextStep: { ifNotFound } })]),
+    );
+    const retained = await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: call, zeroDataRetention: true });
+    expect(retained.body.data.alexandria[0]).toEqual(
+      answered({ nextStep: { ifNotFound } }),
+    );
+  });
+
+  it("includes it in the error body of a failed legacy single call", async () => {
+    mocks.retrieve.mockResolvedValue(
+      result([
+        {
+          ...call,
+          creditsCost: 0,
+          error: { code: "not_found", message: "Nothing found.", status: 404 },
+          nextStep: { ifNotFound },
+        },
+      ]),
+    );
+    const response = await request(app).post("/exchange/retrieve").send(call);
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      success: false,
+      code: "not_found",
+      error: "Nothing found.",
+      nextStep: { ifNotFound },
+    });
+  });
+});
+
+describe("caller labels for Exchange", () => {
+  const sent = () => mocks.retrieve.mock.calls.at(-1)![0];
+
+  it("passes on the origin and integration the request names", async () => {
+    await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: call, origin: "mcp-cursor", integration: "n8n" });
+    expect(sent()).toMatchObject({
+      clientOrigin: "mcp-cursor",
+      clientIntegration: "n8n",
+    });
+  });
+
+  it("reads them from the headers on the flat route, which takes no origin in its body", async () => {
+    await request(app)
+      .post("/v2/alexandria")
+      .set("x-origin", "cli")
+      .set("x-integration", "zapier")
+      .send(call);
+    expect(sent()).toMatchObject({
+      clientOrigin: "cli",
+      clientIntegration: "zapier",
+    });
+  });
+
+  it.each(["/v2/scrape", "/v2/alexandria"])(
+    "names neither on %s when the request does not",
+    async path => {
+      await request(app)
+        .post(path)
+        .send(path === "/v2/scrape" ? { alexandria: call } : call);
+      expect(mocks.retrieve).toHaveBeenCalledTimes(1);
+      expect(sent()).not.toHaveProperty("clientOrigin");
+      expect(sent()).not.toHaveProperty("clientIntegration");
+    },
+  );
+});
+
+describe("a free Firecrawl capability", () => {
+  const report = {
+    provider: "firecrawl",
+    capability: "report-missing-data",
+    options: { need: "<what was needed>", tried: "<what was tried>" },
+  };
+  const answer = {
+    provider: report.provider,
+    capability: report.capability,
+    creditsCost: 0,
+    data: {
+      logged: true,
+      reference: "ref-1",
+      status: "new",
+      reports: 1,
+      teams: 1,
+      repeat: false,
+      knownProviders: [],
+      message: "<message>",
+    },
+  };
+  beforeEach(() => {
+    (
+      config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean }
+    ).ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    mocks.retrieve.mockResolvedValue(result([answer]));
+  });
+  afterEach(() => {
+    (
+      config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean }
+    ).ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+  });
+
+  it("returns the answer unchanged on every route and charges nothing", async () => {
+    const batch = await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: report });
+    expect(batch.status).toBe(200);
+    expect(batch.body).toEqual({
+      success: true,
+      scrape_id: "scrape-1",
+      data: { alexandria: [answer], creditsCost: 0 },
+    });
+    const single = await request(app).post("/v2/alexandria").send(report);
+    expect(single.status).toBe(200);
+    expect(single.body).toEqual({ success: true, ...answer });
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ calls: [report] }),
+    );
+  });
+
+  it("logs the call with no credits and none of its options", async () => {
+    await request(app).post("/v2/alexandria").send(report);
+    await vi.waitFor(() =>
+      expect(mocks.scrapeLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: "alexandria:firecrawl/report-missing-data",
+          credits_cost: 0,
+          is_successful: true,
+          options: {
+            alexandria: [
+              {
+                provider: report.provider,
+                capability: report.capability,
+                code: null,
+                creditsCost: 0,
+              },
+            ],
+          },
+        }),
+      ),
+    );
   });
 });
