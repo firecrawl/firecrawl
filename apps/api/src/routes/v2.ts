@@ -779,7 +779,7 @@ v2Router.post(
 );
 v2Router.post(
   "/support/docs-search",
-  authMiddleware(RateLimiterMode.SupportDocsSearch),
+  authMiddleware(RateLimiterMode.SupportAsk),
   wrap(supportProxyController),
 );
 
