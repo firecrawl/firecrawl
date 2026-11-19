@@ -562,7 +562,7 @@ The build skills for integrating Firecrawl into product code live in this repo u
 
 ![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
-[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server on your own infrastructure, with its own queues, workers and databases, all of it still lives in this repo and you can run it.
+[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server with its own queues, workers and databases, all of it still lives in this repo and you can run it on your own infrastructure.
 
 The server runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
 
