@@ -28,6 +28,8 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { KEYLESS_PLAN_CLASS } from "../lib/team-plan-class";
+import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -43,7 +45,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -73,7 +79,8 @@ const ACUC_TTL_SECONDS = 600;
 const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
 // When Autumn can't answer, fail open rather than throttle or gate real teams
 // on the low defaults. Generous but bounded: the concurrency queue cap still
-// applies.
+// applies. The plan class is the exception and fails closed: these limits
+// carry none, so nothing is stated about a team whose plan could not be read.
 const FAIL_OPEN_LIMITS: TeamLimits = {
   concurrency_limit: 200,
   rate_limit_multiplier: 2500,
@@ -342,6 +349,7 @@ async function getACUC(
       concurrency_limit: limits.concurrency_limit,
       rate_limit_multiplier: limits.rate_limit_multiplier,
       is_paid_plan: limits.is_paid_plan,
+      plan_class: limits.plan_class,
     };
   } else {
     return null;
@@ -510,6 +518,21 @@ export async function getACUCTeam(
   } else {
     return null;
   }
+}
+
+/**
+ * The flags of the team behind a request's plain API key, read without rate
+ * limiting or the other auth checks. Null without a known API key.
+ */
+export async function getApiKeyTeamFlags(req: {
+  headers: { authorization?: string };
+}): Promise<TeamFlags | null> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const normalizedApi = parseApi(token);
+  if (!normalizedApiIsUuid(normalizedApi)) return null;
+  const chunk = await getACUC(normalizedApi);
+  return chunk?.flags ?? null;
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -781,6 +804,31 @@ async function handleKeylessAuth(
     };
   }
 
+  if (modeLabel === "gov" || modeLabel === "research") {
+    const perMinute = await consumeIndexRateLimit(
+      modeLabel,
+      teamId,
+      1,
+      undefined,
+      1,
+    );
+    if (!perMinute.ok) {
+      keylessAuthTotal.inc({ mode, outcome: "index_rate_limit" });
+      logger.warn("Keyless request blocked", {
+        ...baseLog,
+        blocked: true,
+        reason: "index_rate_limit",
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      });
+      return {
+        success: false,
+        error: perMinute.error,
+        status: 429,
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      };
+    }
+  }
+
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
   keylessAuthTotal.inc({ mode, outcome: "allowed" });
 
@@ -788,11 +836,17 @@ async function handleKeylessAuth(
   // are skipped automatically; mockPreviewACUC supplies concurrency 2 + credits.
   // Actual credits consumed are charged to the IP's daily budget after the
   // request completes (see chargeKeylessCredits).
+  // The plan class is set here and not in mockPreviewACUC, which also builds
+  // the chunk of every other preview team: only a request that came through
+  // the keyless checks above is stated as keyless.
   return {
     success: true,
     team_id: teamId,
     org_id: null,
-    chunk: mockPreviewACUC(teamId, false),
+    chunk: {
+      ...mockPreviewACUC(teamId, false),
+      plan_class: KEYLESS_PLAN_CLASS,
+    },
   };
 }
 
@@ -1268,13 +1322,6 @@ async function supaAuthenticateUser(
 
     const secs = Math.ceil(rateLimiterRes.msBeforeNext / 1000) || 1;
     const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
-
-    // We can only send a rate limit email every 7 days, send notification already has the date in between checking
-    // const startDate = new Date();
-    // const endDate = new Date();
-    // endDate.setDate(endDate.getDate() + 7);
-
-    // await sendNotification(team_id, NotificationType.RATE_LIMIT_REACHED, startDate.toISOString(), endDate.toISOString());
 
     return {
       success: false,

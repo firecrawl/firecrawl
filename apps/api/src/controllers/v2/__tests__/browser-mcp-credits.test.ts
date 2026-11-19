@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   billTeam: vi.fn(),
   recordRequestCredits: vi.fn(),
   getHangarBrowser: vi.fn(),
+  createHangarBrowser: vi.fn(),
+  insertSession: vi.fn(),
 }));
 
 vi.mock("../../../config", async importOriginal => {
@@ -46,26 +48,14 @@ vi.mock("../../../lib/hangar", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../lib/hangar")>();
   return {
     ...actual,
-    createHangarBrowser: vi.fn(async (key: string) => ({
-      id: `browser-${key}`,
-      cdp_url: "wss://cdp.test",
-      view_url: null,
-      control_url: null,
-      playlist_url: null,
-      max_expires_at: null,
-    })),
+    createHangarBrowser: mocks.createHangarBrowser,
     getHangarBrowser: mocks.getHangarBrowser,
     stopHangarBrowser: vi.fn(async () => {}),
   };
 });
 
 vi.mock("../../../lib/browser-sessions", () => ({
-  insertBrowserSession: vi.fn(async (row: { id: string }) => ({
-    ...row,
-    cdp_url: "wss://cdp.test",
-    cdp_path: "",
-    cdp_interactive_path: "",
-  })),
+  insertBrowserSession: mocks.insertSession,
   completeBrowserSessionSettlement: vi.fn(),
   getBrowserSession: vi.fn(),
   getBrowserSessionFromScrape: vi.fn(),
@@ -109,8 +99,9 @@ vi.mock("../../../services/logging/log_job", () => ({
   logRequest: vi.fn(async () => {}),
 }));
 
-import { browserCreateController } from "../browser";
+import { browserCreateController, browserError } from "../browser";
 import {
+  createBrowserSession,
   reserveBrowserPromptCredits,
   settleBrowserSession,
 } from "../../../lib/browser-lifecycle";
@@ -184,8 +175,46 @@ beforeEach(() => {
   mocks.usedPrompt.mockResolvedValue(false);
   mocks.billTeam.mockResolvedValue({ success: true });
   mocks.recordRequestCredits.mockResolvedValue(true);
-  mocks.getHangarBrowser.mockResolvedValue({ status: "running" });
+  mocks.getHangarBrowser.mockResolvedValue({
+    status: "running",
+    created_at: Math.floor(Date.now() / 1000),
+  });
+  mocks.createHangarBrowser.mockImplementation(async (key: string) => ({
+    id: `browser-${key}`,
+    cdp_url: "wss://cdp.test",
+    view_url: null,
+    control_url: null,
+    playlist_url: null,
+    max_expires_at: null,
+  }));
+  mocks.insertSession.mockImplementation(async (row: { id: string }) => ({
+    ...row,
+    cdp_url: "wss://cdp.test",
+    cdp_path: "",
+    cdp_interactive_path: "",
+  }));
 });
+
+const RESETS_AT = Date.parse("2026-11-04T00:00:00.000Z");
+
+// Autumn answers an MCP credits check from MCP credits plus the org's own
+// credits, and a team credits check from the team's grants plus the org's.
+function balances({
+  mcp = 0,
+  org = 0,
+  team = 0,
+}: {
+  mcp?: number;
+  org?: number;
+  team?: number;
+}) {
+  mocks.checkCredits.mockImplementation(
+    async ({ featureId, value }: { featureId?: string; value: number }) => {
+      const remaining = featureId === "MCP_CREDITS" ? mcp + org : team + org;
+      return { allowed: value <= remaining, remaining, resetsAt: RESETS_AT };
+    },
+  );
+}
 
 describe("browser sessions from hosted MCP calls", () => {
   it("checks MCP credits for a hosted session and marks it hosted", async () => {
@@ -305,4 +334,152 @@ describe("browser sessions from hosted MCP calls", () => {
       });
     },
   );
+});
+
+describe("hosted MCP browser sessions under the full charge", () => {
+  const createOptions = {
+    blockAds: true,
+    ttl: 600,
+    activityTtl: 300,
+    streamWebView: false,
+    recordSession: false,
+  };
+
+  async function createForPrompt() {
+    const req = makeReq(true);
+    const { session } = await createBrowserSession(req as any, {
+      ...createOptions,
+      prompt: true,
+    });
+    return { req, session };
+  }
+
+  it("runs the full session when MCP credits cover it", async () => {
+    balances({ mcp: 100 });
+
+    expect((await create(true)).statusCode).toBe(200);
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 600 }),
+    );
+    await reserveBrowserPromptCredits(makeReq(true) as any, session);
+    expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
+  });
+
+  it("shortens a new session to the MCP credits left", async () => {
+    balances({ mcp: 12 });
+
+    const res = await create(true);
+    expect(res.statusCode).toBe(200);
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 360 }),
+    );
+    expect(mocks.insertSession).toHaveBeenCalledWith(
+      expect.objectContaining({ ttl_total: 360 }),
+    );
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith(res.body.id);
+  });
+
+  it("sizes a session about to be prompted for the MCP credits left", async () => {
+    balances({ mcp: 45 });
+
+    const { req, session: created } = await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 385 }),
+    );
+    expect(created.ttl_total).toBe(385);
+
+    await reserveBrowserPromptCredits(req as any, {
+      ...session,
+      ttl_total: created.ttl_total,
+    });
+    expect(mocks.checkCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ value: 45, featureId: "MCP_CREDITS" }),
+    );
+    expect(mocks.markUsedPrompt).toHaveBeenCalledWith("session-1");
+    expect(mocks.markHostedMcp).toHaveBeenCalledWith("session-1");
+  });
+
+  it("counts the org's own credits after MCP credits", async () => {
+    balances({ mcp: 40, org: 40 });
+    await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenLastCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 600 }),
+    );
+
+    balances({ mcp: 20, org: 30 });
+    await createForPrompt();
+    expect(mocks.createHangarBrowser).toHaveBeenLastCalledWith(
+      expect.any(String),
+      TEAM_ID,
+      expect.objectContaining({ ttl: 428 }),
+    );
+  });
+
+  it("sizes a session on a team grant to what the grant covers", async () => {
+    balances({ mcp: 10, team: 40 });
+
+    const { session: created } = await createForPrompt();
+    expect(created.ttl_total).toBe(342);
+    expect(mocks.markHostedMcp).not.toHaveBeenCalled();
+  });
+
+  it("refuses a session below the minimum and names the daily allowance", async () => {
+    balances({ mcp: 5 });
+
+    const res = makeRes();
+    const error = await createForPrompt().catch(error => error);
+    browserError(res as unknown as Response, error);
+    expect(res.statusCode).toBe(402);
+    expect(res.body).toMatchObject({
+      success: false,
+      code: "mcp_credits_exhausted",
+    });
+    expect(res.body.error).toContain("daily MCP credit allowance");
+    expect(res.body.error).toContain("resets at 2026-11-04T00:00:00.000Z");
+    expect(mocks.createHangarBrowser).not.toHaveBeenCalled();
+  });
+
+  it("refuses a prompt on a running session the credits can't fully cover", async () => {
+    balances({ mcp: 45 });
+
+    const res = makeRes();
+    const error = await reserveBrowserPromptCredits(
+      makeReq(true) as any,
+      session,
+    ).catch(error => error);
+    browserError(res as unknown as Response, error);
+    expect(res.statusCode).toBe(402);
+    expect(res.body.code).toBe("mcp_credits_exhausted");
+    expect(res.body.error).toContain("daily MCP credit allowance");
+    expect(mocks.markUsedPrompt).not.toHaveBeenCalled();
+  });
+
+  it("bills a shortened session for no more than its lifetime", async () => {
+    mocks.cameFromHostedMcp.mockResolvedValue(true);
+    mocks.usedPrompt.mockResolvedValue(true);
+    mocks.settleOnce.mockImplementation(async (_id: string, compute: any) => ({
+      creditsBilled: await compute({ ...session, should_bill: true }),
+      newlySettled: true,
+    }));
+
+    await settleBrowserSession({ ...session, scrape_id: "scrape-1" }, {
+      status: "stopped",
+      created_at: 1000,
+      ended_at: 1385,
+    } as any);
+    expect(mocks.billTeam).toHaveBeenCalledWith(TEAM_ID, "org-1", 45, null, {
+      endpoint: "interact",
+      jobId: "session-1",
+      chargeId: "session-1:destroy",
+      hostedMcp: true,
+    });
+  });
 });

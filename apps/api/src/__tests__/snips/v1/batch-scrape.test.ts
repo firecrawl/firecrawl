@@ -5,7 +5,7 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { batchScrape, scrapeTimeout, idmux, Identity } from "./lib";
+import { batchScrape, describeV1, scrapeTimeout, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -17,7 +17,7 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("Batch scrape tests", () => {
+describeV1()("Batch scrape tests", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
     async () => {

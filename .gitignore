@@ -4,16 +4,9 @@
 .env
 *.csv
 dump.rdb
-/mongo-data
 apps/js-sdk/node_modules/
 
 apps/api/.env.local
-
-apps/test-suite/node_modules/
-
-
-apps/test-suite/.env
-apps/test-suite/logs
 
 apps/playwright-service-ts/node_modules/
 apps/playwright-service-ts/package-lock.json

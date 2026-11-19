@@ -1,4 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "crypto";
+import { subscribe } from "node:diagnostics_channel";
+import { performance } from "node:perf_hooks";
+import { Agent } from "undici";
 import type { Job } from "bullmq";
 import { z } from "zod";
 import { config } from "../../config";
@@ -52,6 +56,68 @@ const FIREBILL_TIMEOUT_MS = 5000;
 // would abandon a call that is still going to take the hold - the run marked
 // skipped here, the balance reserved there.
 const FIREBILL_GATED_LOCK_TIMEOUT_MS = 10000;
+
+// One pool for every firebill call. undici's default closes a connection after
+// 4s idle, so a pod between bursts paid a DNS lookup and a connect on most
+// calls; firebill sets no idle timeout of its own. undici checks the connect
+// timeout only after pending socket events, so a stalled event loop cannot
+// trip it.
+const firebillDispatcher = new Agent({
+  keepAliveTimeout: 60_000,
+  connect: { timeout: 1_000 },
+});
+
+/** Whether a firebill call opened its own connection, and how long that took. */
+type ConnectionTrace = {
+  opened: boolean;
+  openedAt?: number;
+  connectMs?: number;
+};
+
+// With no connection cap and no pipelining, the pool opens a socket only for
+// a request that has none free, and undici publishes these from inside that
+// request's dispatch: the store is the firebill call that will use the socket.
+const connectionTraces = new AsyncLocalStorage<ConnectionTrace>();
+subscribe("undici:client:beforeConnect", () => {
+  const trace = connectionTraces.getStore();
+  if (!trace) return;
+  trace.opened = true;
+  trace.openedAt = performance.now();
+});
+subscribe("undici:client:connected", () => {
+  const trace = connectionTraces.getStore();
+  if (trace?.openedAt === undefined) return;
+  trace.connectMs = Math.round(performance.now() - trace.openedAt);
+});
+
+/**
+ * One firebill request on the shared pool, and what a failure log needs to
+ * tell a stalled event loop from a slow network.
+ *
+ * `eventLoopBusyMs` close to `elapsedMs` means the loop was blocked for the
+ * whole call: an answer that arrived in time was never read, because a timer
+ * that comes due during a stall runs before the socket is polled. A mostly
+ * idle loop means the wait was on the network or on firebill.
+ */
+function firebillTransport() {
+  const trace: ConnectionTrace = { opened: false };
+  const startedAt = performance.now();
+  const loopAtStart = performance.eventLoopUtilization();
+  return {
+    fetch: (url: string, init: RequestInit) =>
+      connectionTraces.run(trace, () =>
+        fetch(url, { ...init, dispatcher: firebillDispatcher } as RequestInit),
+      ),
+    diagnostics: () => ({
+      elapsedMs: Math.round(performance.now() - startedAt),
+      eventLoopBusyMs: Math.round(
+        performance.eventLoopUtilization(loopAtStart).active,
+      ),
+      newConnection: trace.opened,
+      ...(trace.connectMs !== undefined ? { connectMs: trace.connectMs } : {}),
+    }),
+  };
+}
 
 // Safe to retry because the idempotency key is stable across attempts: if the
 // first attempt did land (ambiguous confirm timeout), Autumn dedupes the second.
@@ -403,15 +469,26 @@ async function enqueueFirebillTrackRetry(
   let timer: NodeJS.Timeout | undefined;
   try {
     const added = await Promise.race([
-      getFirebillTrackRetryQueue().add(operation, event, {
-        jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
-        delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
-        attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
-        backoff: {
-          type: "exponential",
-          delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
-        },
-      }),
+      (async () => {
+        const queue = getFirebillTrackRetryQueue();
+        const job = await queue.add(operation, event, {
+          jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
+          delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
+          attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+          backoff: {
+            type: "exponential",
+            delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
+          },
+        });
+        // For a jobId that already exists, add() creates nothing and returns a
+        // Job built from this call, so only the stored timestamp tells a
+        // duplicate apart from a new job. The add has landed either way, so a
+        // failed read counts as enqueued rather than as a failure.
+        const stored = await queue.getJob(job.id!).catch(() => undefined);
+        return stored && stored.timestamp !== job.timestamp
+          ? "duplicate"
+          : "enqueued";
+      })(),
       new Promise<typeof timedOut>(resolve => {
         timer = setTimeout(
           () => resolve(timedOut),
@@ -428,7 +505,12 @@ async function enqueueFirebillTrackRetry(
       firebillTrackRetryTotal.labels(operation, "enqueue_timeout").inc();
       return false;
     }
-    firebillTrackRetryTotal.labels(operation, "enqueued").inc();
+    firebillTrackRetryTotal
+      .labels(
+        operation,
+        added === "duplicate" ? "enqueue_duplicate" : "enqueued",
+      )
+      .inc();
     return true;
   } catch (error) {
     logger.error(
@@ -529,8 +611,9 @@ async function firebillAttempt(
   }: TrackParams,
 ): Promise<AttemptResult> {
   const url = firebillUrl(path);
+  const transport = firebillTransport();
   try {
-    const response = await fetch(url, {
+    const response = await transport.fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.FIREBILL_SECRET}`,
@@ -645,6 +728,7 @@ async function firebillAttempt(
         path,
         timeoutMs: FIREBILL_TIMEOUT_MS,
         ...failure,
+        ...transport.diagnostics(),
         error,
       },
     );
@@ -726,8 +810,9 @@ export async function firebillCheck({
     return { status: "unavailable" };
   };
 
+  const transport = firebillTransport();
   try {
-    const response = await fetch(firebillUrl("/v1/check"), {
+    const response = await transport.fetch(firebillUrl("/v1/check"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.FIREBILL_SECRET}`,
@@ -823,7 +908,12 @@ export async function firebillCheck({
     return unavailable(
       "the request did not complete (client-side timeout or connection error); firebill did not answer",
       failure.cause,
-      { timeoutMs: FIREBILL_TIMEOUT_MS, ...failure, error },
+      {
+        timeoutMs: FIREBILL_TIMEOUT_MS,
+        ...failure,
+        ...transport.diagnostics(),
+        error,
+      },
     );
   }
 }
@@ -848,8 +938,9 @@ export async function firebillLock({
   partnerJobToken?: string | null;
 }): Promise<FirebillLockResult> {
   const url = firebillUrl("/v1/lock");
+  const transport = firebillTransport();
   try {
-    const response = await fetch(url, {
+    const response = await transport.fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.FIREBILL_SECRET}`,
@@ -958,6 +1049,7 @@ export async function firebillLock({
           ? FIREBILL_GATED_LOCK_TIMEOUT_MS
           : FIREBILL_TIMEOUT_MS,
         ...failure,
+        ...transport.diagnostics(),
         error,
       },
     );
@@ -1002,8 +1094,9 @@ export async function firebillFinalize({
   // the reconciler re-running a check it raced — dedupes upstream instead of
   // settling twice.
   const idempotencyKey = `fc:finalize:${action}:${lockId}`;
+  const transport = firebillTransport();
   try {
-    const response = await fetch(url, {
+    const response = await transport.fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.FIREBILL_SECRET}`,
@@ -1101,6 +1194,7 @@ export async function firebillFinalize({
         overrideValue,
         timeoutMs: FIREBILL_TIMEOUT_MS,
         ...failure,
+        ...transport.diagnostics(),
         error,
       },
     );

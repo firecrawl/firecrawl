@@ -8,7 +8,7 @@ import {
 } from "../../../../../lib/gcs-pdf-cache";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { robustFetch } from "../../../lib/fetch";
-import { isUsOnly } from "../../../../../lib/us-only";
+import { isProcessingRestricted } from "../../../../../lib/reserved-capacity";
 import {
   recordSpanException,
   type Span,
@@ -43,6 +43,27 @@ async function cacheLookupKeys(input: PdfCacheKeyInput): Promise<string[]> {
     `raw-${Buffer.from(digest).toString("hex")}`,
     createPdfCacheKey(input),
   ];
+}
+
+/**
+ * The keys a cache-service lookup asks with. A PDF's raw-byte key is also
+ * recorded on the scrape, so the URL index can later tell whether the cache
+ * holds a newer parse of this document.
+ */
+export async function recordFirePdfCacheKey(
+  meta: Meta,
+  input: PdfCacheKeyInput,
+  sourceKind: FirePdfSourceKind,
+): Promise<string[]> {
+  const keys = await cacheLookupKeys(input);
+  if (
+    sourceKind === "pdf" &&
+    keys[0].startsWith("raw-") &&
+    meta.firePdfCacheKey !== undefined
+  ) {
+    meta.firePdfCacheKey.current = keys[0];
+  }
+  return keys;
 }
 
 // The service's own read bound, so a lookup never waits longer than the
@@ -195,21 +216,14 @@ async function lookupWithinSpan(
   // Background refresh is only offered when this client could act on a
   // grant: it needs the bytes (inline, not by reference) of a PDF (images
   // are only parsed through the sync endpoint), outside zero data retention
-  // and outside US-only teams.
+  // and outside teams whose processing is restricted.
   const canRefreshInBackground =
     config.FIRE_PDF_CACHE_BACKGROUND_REFRESH === true &&
     typeof input === "string" &&
     sourceKind === "pdf" &&
     meta.internalOptions.zeroDataRetention !== true &&
-    !isUsOnly(meta.internalOptions.teamFlags ?? undefined);
-  const keys = await cacheLookupKeys(input);
-  if (
-    sourceKind === "pdf" &&
-    keys[0].startsWith("raw-") &&
-    meta.firePdfCacheKey !== undefined
-  ) {
-    meta.firePdfCacheKey.current = keys[0];
-  }
+    !isProcessingRestricted(meta.internalOptions.teamFlags ?? undefined);
+  const keys = await recordFirePdfCacheKey(meta, input, sourceKind);
   let answer: z.infer<typeof lookupOutcomeSchema>;
   try {
     answer = await robustFetch({

@@ -40,7 +40,7 @@ const mutable = config as unknown as MutableConfig;
 const createdAt = "2026-10-01T00:00:00.000Z";
 const rawKey = `raw-${"b".repeat(64)}`;
 
-function meta() {
+function meta(teamFlags?: Record<string, unknown>) {
   return {
     id: "index-supersede",
     url: "https://example.com/doc.pdf",
@@ -51,7 +51,7 @@ function meta() {
       error: vi.fn(),
       child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
     },
-    internalOptions: { teamId: "team-1" },
+    internalOptions: { teamId: "team-1", ...(teamFlags && { teamFlags }) },
     featureFlags: new Set(),
     options: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -187,5 +187,61 @@ describe("URL index PDF supersede check", () => {
     const served = await scrapeURLWithIndex(meta());
     expect(served.html).toBe("<p>old parse</p>");
     expect(checkFirePdfSupersedes).not.toHaveBeenCalled();
+  });
+});
+
+describe("URL index for teams restricted to reserved capacity", () => {
+  const reserved = { reservedCapacity: true };
+
+  beforeEach(() => {
+    vi.mocked(indexGetRecent5).mockResolvedValue([
+      {
+        id: "row-1",
+        created_at: createdAt,
+        status: 200,
+        has_screenshot: false,
+        has_screenshot_fullscreen: false,
+        wait_time_ms: null,
+      },
+    ] as any);
+    vi.mocked(getCachedIndexEntries).mockResolvedValue({ status: "miss" });
+  });
+
+  it("misses a parsed PDF entry for a restricted team", async () => {
+    vi.mocked(getIndexFromGCS).mockResolvedValue(indexedPdf());
+    await expect(scrapeURLWithIndex(meta(reserved))).rejects.toBeInstanceOf(
+      IndexMissError,
+    );
+  });
+
+  it("misses an OCR'd image entry for a restricted team", async () => {
+    vi.mocked(getIndexFromGCS).mockResolvedValue(
+      indexedPdf({ contentType: "image/png", pdfMetadata: undefined }),
+    );
+    const restricted = { ...meta(reserved), imageOcrEnabled: async () => true };
+    await expect(scrapeURLWithIndex(restricted)).rejects.toBeInstanceOf(
+      IndexMissError,
+    );
+  });
+
+  it.each([
+    ["an unrestricted team", undefined],
+    ["a US-only team", { usOnly: true }],
+  ])("still serves a parsed PDF entry to %s", async (_name, flags) => {
+    vi.mocked(getIndexFromGCS).mockResolvedValue(indexedPdf());
+    const served = await scrapeURLWithIndex(meta(flags));
+    expect(served.html).toBe("<p>old parse</p>");
+  });
+
+  it("still serves a non-PDF entry to a restricted team", async () => {
+    vi.mocked(getIndexFromGCS).mockResolvedValue(
+      indexedPdf({
+        url: "https://example.com/page",
+        contentType: "text/html",
+        pdfMetadata: undefined,
+      }),
+    );
+    const served = await scrapeURLWithIndex(meta(reserved));
+    expect(served.html).toBe("<p>old parse</p>");
   });
 });

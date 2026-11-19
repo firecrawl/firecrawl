@@ -11,6 +11,7 @@ import {
 import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
 import type { TeamFlags } from "../../../controllers/v2/types";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const GUARD_MODEL = "gpt-4o-mini";
 const GUARD_MAX_CHUNK_CHARS = 32000;
@@ -113,7 +114,7 @@ async function classifyChunk(
           strictJsonSchema: true,
         },
       },
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: !zeroDataRetention,
         // The input carries the page screenshot / raw page content; too large
         // for span attributes. Outputs stay recorded.
@@ -126,7 +127,7 @@ async function classifyChunk(
           ...(metadata.scrapeId ? { scrapeId: metadata.scrapeId } : {}),
           ...(metadata.extractId ? { extractId: metadata.extractId } : {}),
         },
-      },
+      }),
     });
 
     recordGuardCall(

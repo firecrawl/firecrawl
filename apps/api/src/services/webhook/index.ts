@@ -8,6 +8,7 @@ export async function createWebhookSender(params: {
   jobId: string;
   webhook?: WebhookConfig;
   v0: boolean;
+  zeroDataRetention?: boolean;
 }): Promise<WebhookSender | null> {
   const config = await getWebhookConfig(
     params.teamId,
@@ -22,6 +23,7 @@ export async function createWebhookSender(params: {
     teamId: params.teamId,
     jobId: params.jobId,
     v0: params.v0,
+    zeroDataRetention: params.zeroDataRetention,
   });
 }
 

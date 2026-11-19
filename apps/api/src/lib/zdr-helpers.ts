@@ -3,6 +3,7 @@ import type { TeamFlags } from "../controllers/v2/types";
 type OrgFlagMode = "disabled" | "allowed" | "forced";
 
 type ScrapeZDRMode = OrgFlagMode;
+type AlexandriaZDRMode = OrgFlagMode;
 type SearchZDRMode = "disabled" | "allowed" | "forced-zdr" | "forced-anon";
 type SearchForcedKind = "zdr" | "anon";
 
@@ -17,6 +18,28 @@ export function getScrapeZDR(flags: TeamFlags | undefined): ScrapeZDRMode {
   if (flags?.scrapeZDR === "forced" || flags?.forceZDR) return "forced";
   if (flags?.scrapeZDR === "allowed" || flags?.allowZDR) return "allowed";
   return "disabled";
+}
+
+/**
+ * Resolves the effective ZDR mode for Alexandria provider tools and the
+ * Exchange proxy from team flags.
+ *
+ * Forced scrape ZDR also forces Alexandria: a team held to zero data retention
+ * for scrapes is never logged through provider tools either.
+ */
+export function getAlexandriaZDR(
+  flags: TeamFlags | undefined,
+): AlexandriaZDRMode {
+  if (getScrapeZDR(flags) === "forced" || flags?.alexandriaZDR === "forced")
+    return "forced";
+  if (getScrapeZDR(flags) === "allowed" || flags?.alexandriaZDR === "allowed")
+    return "allowed";
+  return "disabled";
+}
+
+/** Whether every Alexandria call from this team runs under zero data retention. */
+export function isAlexandriaZDRForced(flags: TeamFlags | undefined): boolean {
+  return getAlexandriaZDR(flags) === "forced";
 }
 
 /**

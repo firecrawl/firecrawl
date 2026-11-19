@@ -82,6 +82,16 @@ const CONNECT_TIMEOUT_MS: Record<DbPoolProfile, number> = {
   utility: 30_000,
 };
 
+/**
+ * Per-pool exceptions to CONNECT_TIMEOUT_MS. API-tier index lookups fall back
+ * to live scraping on error, so a long wait for a free slot only adds latency.
+ */
+const POOL_CONNECT_TIMEOUT_MS: Partial<
+  Record<DbPoolProfile, Partial<Record<DbPoolName, number>>>
+> = {
+  api: { index: 3_000 },
+};
+
 /** Connections above `min` linger long enough to outlast a burst and its aftershocks. */
 const WARM_IDLE_TIMEOUT_MS = 10 * 60_000;
 const KEEPALIVE_DELAY_MS = 30_000;
@@ -122,7 +132,8 @@ export function resolveDbPoolOptions(
     max: size.max,
     min: size.min,
     idleTimeoutMillis: WARM_IDLE_TIMEOUT_MS,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS[profile],
+    connectionTimeoutMillis:
+      POOL_CONNECT_TIMEOUT_MS[profile]?.[pool] ?? CONNECT_TIMEOUT_MS[profile],
     maxLifetimeSeconds,
     keepAliveInitialDelayMillis: KEEPALIVE_DELAY_MS,
   };
