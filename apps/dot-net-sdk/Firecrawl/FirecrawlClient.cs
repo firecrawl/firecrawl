@@ -178,8 +178,10 @@ public class FirecrawlClient
     {
         ArgumentNullException.ThrowIfNull(jobId);
 
-        return await _http.GetAsync<CrawlJob>(
+        var job = await _http.GetAsync<CrawlJob>(
             $"/v2/crawl/{jobId}", cancellationToken);
+        job.Id ??= jobId;
+        return job;
     }
 
     /// <summary>
@@ -279,8 +281,10 @@ public class FirecrawlClient
     {
         ArgumentNullException.ThrowIfNull(jobId);
 
-        return await _http.GetAsync<BatchScrapeJob>(
+        var job = await _http.GetAsync<BatchScrapeJob>(
             $"/v2/batch/scrape/{jobId}", cancellationToken);
+        job.Id ??= jobId;
+        return job;
     }
 
     /// <summary>
