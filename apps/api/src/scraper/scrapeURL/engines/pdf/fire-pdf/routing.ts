@@ -56,6 +56,32 @@ export function deterministicPercentage(key: string): number {
   return (prefix / 2 ** 32) * 100;
 }
 
+/** Identity for a PDF engine cohort. Repeated scrapes of one document URL
+ * stay on one engine, including a zero-data-retention scrape of that URL.
+ * A parse upload's URL is only `https://parse.firecrawl.dev/uploads/<filename>`,
+ * so unrelated files that share a name cohort by scrape id instead.
+ * Any other missing URL falls back to the scrape id. */
+export function pdfCohortKey(meta: {
+  id: string;
+  url: string;
+  rewrittenUrl?: string;
+  internalOptions?: {
+    isParse?: boolean;
+    uploadedFile?: unknown;
+  };
+}): string {
+  // Same signals as firePdfRequestKind. Kept here so routing does not import
+  // request-metadata, which loads the native addon.
+  if (
+    meta.internalOptions?.isParse === true ||
+    meta.internalOptions?.uploadedFile !== undefined
+  ) {
+    return meta.id;
+  }
+  const url = (meta.rewrittenUrl ?? meta.url).trim();
+  return url || meta.id;
+}
+
 export function decideFirePdfAsyncRoute(
   input: FirePdfAsyncRouteInput,
 ): FirePdfAsyncRouteDecision {
