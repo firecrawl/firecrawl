@@ -1042,6 +1042,16 @@ describe("branding with Jev", () => {
       ["Madefor Display", "body"],
       ["Arial", undefined],
     ]);
+
+    // A page with no h1 measures <body> as its heading: the default is neither.
+    input.jsAnalysis.typography.fontStacks!.heading =
+      input.jsAnalysis.typography.fontStacks!.body;
+    input.jsAnalysis.typography.fontFamilies!.heading = "Arial";
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", undefined],
+      ["Madefor Display", "body"],
+      ["Arial", undefined],
+    ]);
   });
 
   it("never gives a role to a currency glyph face", () => {

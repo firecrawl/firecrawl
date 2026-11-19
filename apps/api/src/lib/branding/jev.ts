@@ -298,26 +298,27 @@ function typographyRole(
   const paragraph = first(t?.fontStacks?.paragraph);
   // A site builder's default on <body> (Wix's Arial) is not the body font
   // when the paragraphs are set in a real face.
-  const bodyElIsBody =
+  // With no h1 the heading stack is <body>'s, so the default goes there too.
+  const builderDefault =
     !!bodyEl &&
-    !(
-      isFallback(bodyEl) &&
-      paragraph &&
-      paragraph !== bodyEl &&
-      !isFallback(paragraph)
-    );
+    isFallback(bodyEl) &&
+    !!paragraph &&
+    paragraph !== bodyEl &&
+    !isFallback(paragraph);
+  const bodyElIsBody = !!bodyEl && !builderDefault;
   // The first paragraph is often a styled lead in the heading face; it is
-  // body text unless <body> already names a real body face.
+  // body text when <body> names that face too or only a builder default.
   const paragraphIsBody =
     !!paragraph &&
-    (paragraph !== heading || heading === bodyEl || !bodyElIsBody);
+    (paragraph !== heading || heading === bodyEl || builderDefault);
   // A family used for both is reported as body, the page's primary font.
   if (
     (bodyElIsBody && name === bodyEl) ||
     (paragraphIsBody && name === paragraph)
   )
     return "body";
-  if (name === heading) return "heading";
+  if (name === heading && !(builderDefault && heading === bodyEl))
+    return "heading";
   return undefined;
 }
 
