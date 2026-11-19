@@ -189,14 +189,14 @@ class TestAgentRequestPreparation:
         assert "maxCredits" not in data
 
     def test_request_with_false_strict_constrain(self):
-        """Test that False strict_constrain_to_urls is not included."""
+        """Test that an explicit False constraint reaches the API."""
         data = _prepare_agent_request(
             None,
             prompt="Test prompt",
             strict_constrain_to_urls=False
         )
         
-        assert "strictConstrainToURLs" not in data
+        assert data["strictConstrainToURLs"] is False
 
     def test_request_with_invalid_schema_type_string(self):
         """Test that invalid schema types raise ValueError."""
