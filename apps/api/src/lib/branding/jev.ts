@@ -28,13 +28,7 @@ import {
   JevScreenshotOutcome,
 } from "./metrics";
 import { sampled } from "../rollout";
-import {
-  GENERIC_FONTS,
-  knownFamily,
-  normalizeVendorName,
-  renderedFamily,
-  titleCase,
-} from "./font-names";
+import { cleanFontFamily } from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -246,7 +240,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
 const FALLBACK_FONTS = new Set([
@@ -276,70 +269,6 @@ const FALLBACK_FONTS = new Set([
   "noto color emoji",
 ]);
 
-// Families can end in a heavy weight ("Cooper Black", "Arial Black"), so
-// after a space only the weights no family name ends in are stripped. After a
-// hyphen or underscore ("Roboto-Black") the name is a self-hosted face.
-const SPACED_WEIGHTS =
-  "regular|reg|medium|semi-?bold|demi-?bold|bold|extra-?bold|ultra-?bold|light|extra-?light|ultra-?light|thin|hairline|italic|oblique";
-const WEIGHTS = `${SPACED_WEIGHTS}|book|black|heavy`;
-const FONT_WEIGHT = new RegExp(`^\\s*(?:(?:${WEIGHTS})\\s*)+$`, "i");
-const DELIMITED_WEIGHT_SUFFIX = new RegExp(`(?<=\\S)[_-]+(?:${WEIGHTS})$`, "i");
-const FONT_WEIGHT_SUFFIX = new RegExp(
-  `(?<=\\S)(?:[_-]+(?:${WEIGHTS})|\\s+(?:${SPACED_WEIGHTS}))$`,
-  "i",
-);
-
-// "GlacialIndifference" → "Glacial Indifference". Only words made of whole
-// capitalized parts split, so "TIActuBeta" and "HardwoodLP" stay.
-const splitCamelCase = (name: string) =>
-  name
-    .split(" ")
-    .map(word =>
-      /^(?:[A-Z][a-z]{2,}){2,}$/.test(word)
-        ? word.replace(/(?<=[a-z])(?=[A-Z])/g, " ")
-        : word,
-    )
-    .join(" ");
-
-export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack reports the family it renders: past hashed aliases, none
-  // for a system stack ("-apple-system, BlinkMacSystemFont, Segoe UI").
-  let name = renderedFamily(raw.split(",")) ?? "";
-  if (!name) return undefined;
-  if (/fallback/i.test(name)) return undefined;
-  // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
-  name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
-  // Vendor spellings and build suffixes: "orig_libre_baskerville",
-  // "helvetica-w01-roman", "inter-variable-web".
-  name = normalizeVendorName(name);
-  // A name that is only a weight ("Regular", "semibold") is not a family.
-  if (FONT_WEIGHT.test(name)) return undefined;
-  // A weight glued onto a lowercase name: "graphikextralight" → "graphik".
-  const glued = name.match(
-    /^([a-z]{4,}?)(?:extra|ultra|semi|demi)?(?:light|bold|medium|regular|book|black|heavy|thin)$/,
-  );
-  if (glued) name = knownFamily(glued[1]) ?? glued[1];
-  // "Roboto_Black": the weight goes before underscores turn into spaces.
-  while (DELIMITED_WEIGHT_SUFFIX.test(name))
-    name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
-  name = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  // Variable-font builds name the same family: "Newsreader Variable".
-  name = name.replace(/\s+(variable|vf)$/i, "");
-  // Self-hosted faces carry their weight: "OpenSans--Regular", "Inter Bold".
-  // A name that is only a weight ("Regular") is not a family.
-  if (FONT_WEIGHT.test(name)) return undefined;
-  // Before and after the weight goes: "GmarketSansMedium", "OpenSans--Regular".
-  name = splitCamelCase(name);
-  while (FONT_WEIGHT_SUFFIX.test(name))
-    name = name.replace(FONT_WEIGHT_SUFFIX, "");
-  name = splitCamelCase(name);
-  // A known family can only be matched once its weight is gone.
-  name = knownFamily(name) ?? name;
-  if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) name = titleCase(name);
-  return name;
-}
-
 type FontRole = BrandingEnhancement["cleanedFonts"][number]["role"];
 type FontCandidate = { family: string; count: number; role?: FontRole };
 
@@ -353,27 +282,45 @@ const familyKey = (family: string) =>
 function typographyRole(
   family: string,
   input: BrandingLLMInput,
+  counts: Map<string, FontCandidate>,
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    // A stack names the family it renders, not its first entry.
-    const raw = Array.isArray(value) ? renderedFamily(value) : value;
-    const cleaned = raw ? cleanFontFamily(raw) : undefined;
+    const cleaned = value ? cleanFontFamily(value) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
   const name = familyKey(family);
   if (/\b(mono|code)\b|consolas|menlo/i.test(family)) return "monospace";
-  const body = [first(t?.fontFamilies?.primary), first(t?.fontStacks?.body)];
-  const heading = [
-    first(t?.fontFamilies?.heading),
-    first(t?.fontStacks?.heading),
-  ];
+  const isFallback = (key?: string) =>
+    !!key && [...FALLBACK_FONTS].some(f => familyKey(f) === key);
+  const bodyEl = first(t?.fontStacks?.body) ?? first(t?.fontFamilies?.primary);
+  const heading =
+    first(t?.fontStacks?.heading) ?? first(t?.fontFamilies?.heading);
+  const paragraph = first(t?.fontStacks?.paragraph);
+  // A site builder's default on <body> (Wix's Arial) is not the body font
+  // when the paragraphs are set in a real face that more text uses.
+  // With no h1 the heading stack is <body>'s, so the default goes there too.
+  const builderDefault =
+    !!bodyEl &&
+    isFallback(bodyEl) &&
+    !!paragraph &&
+    paragraph !== bodyEl &&
+    !isFallback(paragraph) &&
+    (counts.get(bodyEl)?.count ?? 0) <= (counts.get(paragraph)?.count ?? 0);
+  const bodyElIsBody = !!bodyEl && !builderDefault;
+  // The first paragraph is often a styled lead in the heading face; it is
+  // body text when <body> names that face too or only a builder default.
+  const paragraphIsBody =
+    !!paragraph &&
+    (paragraph !== heading || heading === bodyEl || builderDefault);
   // A family used for both is reported as body, the page's primary font.
-  if (body.includes(name)) return "body";
-  if (heading.includes(name)) return "heading";
-  // The first paragraph is often a styled lead in the heading face, so it
-  // only names a body font the other measurements don't place.
-  if (first(t?.fontStacks?.paragraph) === name) return "body";
+  if (
+    (bodyElIsBody && name === bodyEl) ||
+    (paragraphIsBody && name === paragraph)
+  )
+    return "body";
+  if (name === heading && !(builderDefault && heading === bodyEl))
+    return "heading";
   return undefined;
 }
 
@@ -401,7 +348,10 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
   return [...byFamily.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_FONTS)
-    .map(font => ({ ...font, role: typographyRole(font.family, input) }));
+    .map(font => ({
+      ...font,
+      role: typographyRole(font.family, input, byFamily),
+    }));
 }
 
 // ---------------------------------------------------------------------------
