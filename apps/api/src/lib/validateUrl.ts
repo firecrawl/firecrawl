@@ -50,7 +50,11 @@ export const checkUrl = (url: string) => {
     throw new Error("Invalid URL");
   }
 
-  if ((url.split(".")[0].match(/:/g) || []).length !== 1) {
+  // Bracketed IPv6 literals (e.g. http://[2607:f8b0:4004:c07::71]/) legitimately
+  // contain multiple colons in the host, so skip the colon-count heuristic
+  // for them. See https://github.com/firecrawl/firecrawl/issues/5389
+  const isIpv6Literal = typedUrlObj.hostname.startsWith("[");
+  if (!isIpv6Literal && (url.split(".")[0].match(/:/g) || []).length !== 1) {
     throw new Error("Invalid URL. Invalid protocol."); // for this one: http://http://example.com
   }
 
