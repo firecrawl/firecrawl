@@ -1,13 +1,4 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true,
-    "allowlist": [
-        // GHSA-fc5q-39xc-vjpf: picomatch ReDoS via single-branch repeated extglobs.
-        // Patched version (>=4.0.8) is not yet published to npm; latest is 4.0.7.
-        // All affected paths are through astro/@astrojs/mdx (test/dev site only).
-        // Glob patterns in these tools come from project config, not runtime user input,
-        // so there is no external attack vector.
-        // Revisit once picomatch 4.0.8 is released; expires 2027-02-17.
-        "GHSA-fc5q-39xc-vjpf"
-    ]
+    "low": true
 }
