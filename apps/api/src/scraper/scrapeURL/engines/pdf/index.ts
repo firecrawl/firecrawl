@@ -59,7 +59,9 @@ import {
 import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
 import {
   decideFirePdfAsyncRoute,
+  deterministicPercentage,
   firePdfFeaturesLabel,
+  pdfCohortKey,
   recordFirePdfRoute,
 } from "./fire-pdf/routing";
 import { parseAlwaysFirePdf } from "./fire-pdf/request-metadata";
@@ -588,7 +590,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // buffering and base64-encoding hundreds of MB here would only burn
       // worker memory.
       // Unforced traffic is sampled here, before the read, so a PDF outside
-      // the FIRE_PDF_PERCENT sample is never encoded.
+      // the FIRE_PDF_PERCENT sample is never encoded. The draw is fixed for
+      // the document URL, so a repeat scrape stays on the same engine.
       const firePdfInlineUsable = forceFirePDF
         ? fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE
         : !!config.FIRE_PDF_ENABLE &&
@@ -596,7 +599,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
           (alwaysFirePdf ||
             processingRestricted ||
-            Math.random() * 100 < config.FIRE_PDF_PERCENT);
+            deterministicPercentage(`fire-pdf:${pdfCohortKey(meta)}`) <
+              config.FIRE_PDF_PERCENT);
       const base64Content = firePdfInlineUsable
         ? (await readFile(tempFilePath)).toString("base64")
         : undefined;
