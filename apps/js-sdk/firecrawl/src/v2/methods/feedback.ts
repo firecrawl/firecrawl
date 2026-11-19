@@ -27,7 +27,9 @@ export async function feedback(
   validateRating(request.rating);
 
   try {
-    const res = await http.post<FeedbackResponse>("/v2/feedback", request);
+    const res = await http.post<FeedbackResponse>("/v2/feedback", {
+      ...request,
+    });
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "feedback");
     }
@@ -49,7 +51,7 @@ export async function searchFeedback(
   try {
     const res = await http.post<FeedbackResponse>(
       `/v2/search/${encodeURIComponent(jobId)}/feedback`,
-      request,
+      { ...request },
     );
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "searchFeedback");
