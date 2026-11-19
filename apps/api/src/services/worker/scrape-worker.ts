@@ -751,8 +751,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
+            const crawlLimit = sc.crawlerOptions?.limit;
+            let remainingLimit =
+              typeof crawlLimit === "number" && discoveredLinks.length > 0
+                ? crawlLimit -
+                  (await redisEvictConnection.scard(
+                    "crawl:" + job.data.crawl_id + ":visited_unique",
+                  ))
+                : Infinity;
+
             for (const link of discoveredLinks) {
+              if (remainingLimit <= 0) break;
               if (await lockURL(job.data.crawl_id, sc, link)) {
+                remainingLimit--;
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
