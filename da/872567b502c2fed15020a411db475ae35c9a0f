@@ -1,0 +1,21 @@
+apps/api/src/__tests__/routes/exchange-onboarding.routes.test.ts
+  s_58d0bcd54097a6::t_c1a638ee95039d 1-168
+apps/api/src/routes/exchange.ts
+  s_58d0bcd54097a6::t_c1a638ee95039d 51,88,813-836
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "da872567b502c2fed15020a411db475ae35c9a0f",
+  "prompts": {},
+  "sessions": {
+    "s_58d0bcd54097a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4efc12a-bc44-43b9-baa0-d644b41a0677",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
