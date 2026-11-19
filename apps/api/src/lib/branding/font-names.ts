@@ -166,7 +166,11 @@ const splitWord = (word: string): string => {
     stem = stem.slice(0, -m[1].length);
   }
   if (tail.length === 0) return word;
-  return [stem.charAt(0).toUpperCase() + stem.slice(1), ...tail].join(" ");
+  const head =
+    stem === stem.toLowerCase()
+      ? stem.charAt(0).toUpperCase() + stem.slice(1)
+      : stem;
+  return [head, ...tail].join(" ");
 };
 
 // "GlacialIndifference" → "Glacial Indifference", "BasicCommercial LT Std" →

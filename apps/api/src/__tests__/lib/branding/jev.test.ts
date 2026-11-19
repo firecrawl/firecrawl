@@ -1487,6 +1487,7 @@ describe("Jev request building", () => {
     expect(cleanFontFamily("HubSpotSans")).toBe("HubSpot Sans");
     expect(cleanFontFamily("PayPalPro")).toBe("PayPal Pro");
     expect(cleanFontFamily("figmaSans")).toBe("Figma Sans");
+    expect(cleanFontFamily("eBaySans")).toBe("eBay Sans");
     expect(cleanFontFamily("SourceSansPro")).toBe("Source Sans Pro");
     // Already-clean names come back unchanged.
     expect(cleanFontFamily("GitLab Sans")).toBe("GitLab Sans");
