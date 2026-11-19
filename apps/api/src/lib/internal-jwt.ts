@@ -69,10 +69,12 @@ export async function verifyInternalJwt(
       clockTolerance: CLOCK_SKEW_SECONDS,
       requiredClaims: ["iat", "exp", "jti", "team_id", "request_id"],
     });
-    if (payload.exp! - payload.iat! > MAX_TTL_SECONDS) {
-      throw new Error("ttl too long");
+    const { iat, exp } = payload;
+    if (typeof iat !== "number" || typeof exp !== "number") {
+      throw new Error("bad time claims");
     }
-    if (payload.iat! > Date.now() / 1000 + CLOCK_SKEW_SECONDS) {
+    if (exp - iat > MAX_TTL_SECONDS) throw new Error("ttl too long");
+    if (iat > Date.now() / 1000 + CLOCK_SKEW_SECONDS) {
       throw new Error("iat in the future");
     }
     if (typeof payload.team_id !== "string") throw new Error("bad team_id");

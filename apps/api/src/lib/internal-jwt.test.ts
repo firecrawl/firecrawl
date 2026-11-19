@@ -29,16 +29,23 @@ async function sign(
     iat?: number;
     team?: string;
     aud?: string;
+    omit?: "iat" | "exp" | "jti" | "team_id" | "request_id";
+    iatValue?: unknown;
   } = {},
 ) {
   const iat = opts.iat ?? Math.floor(Date.now() / 1000);
-  return new SignJWT({ team_id: opts.team ?? "team-1", request_id: "req-1" })
+  const claims: Record<string, unknown> = {
+    team_id: opts.team ?? "team-1",
+    request_id: "req-1",
+    jti: "jti-1",
+    iat: opts.iatValue ?? iat,
+    exp: iat + (opts.ttl ?? 60),
+  };
+  if (opts.omit) delete claims[opts.omit];
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "EdDSA", kid: opts.kid ?? "k1" })
     .setIssuer(opts.iss ?? "firecrawl-web")
     .setAudience(opts.aud ?? "firecrawl-api")
-    .setJti("jti-1")
-    .setIssuedAt(iat)
-    .setExpirationTime(iat + (opts.ttl ?? 60))
     .sign(await importPKCS8(priv, "EdDSA"));
 }
 
@@ -103,10 +110,28 @@ describe("verifyInternalJwt", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("fails closed when keys are missing", async () => {
-    mockConfig.INTERNAL_JWT_PUBLIC_KEYS = undefined;
+  it.each([undefined, "", "{}"])(
+    "fails closed when keys are %j",
+    async keys => {
+      mockConfig.INTERNAL_JWT_PUBLIC_KEYS = keys;
+      await expect(
+        verifyInternalJwt(await sign(web.priv), "team-1"),
+      ).rejects.toMatchObject({ status: 401 });
+    },
+  );
+
+  it.each(["iat", "exp", "jti", "team_id", "request_id"] as const)(
+    "rejects a token missing %s",
+    async omit => {
+      await expect(
+        verifyInternalJwt(await sign(web.priv, { omit }), "team-1"),
+      ).rejects.toMatchObject({ status: 401 });
+    },
+  );
+
+  it("rejects a non-numeric iat", async () => {
     await expect(
-      verifyInternalJwt(await sign(web.priv), "team-1"),
+      verifyInternalJwt(await sign(web.priv, { iatValue: "now" }), "team-1"),
     ).rejects.toMatchObject({ status: 401 });
   });
 });
@@ -134,6 +159,21 @@ describe("internalJwtMiddleware", () => {
     );
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("stores the caller for a valid token", async () => {
+    const { priv, pub } = keypair();
+    mockConfig.INTERNAL_JWT_PUBLIC_KEYS = JSON.stringify({
+      "firecrawl-web": { k1: pub },
+    });
+    const { next, res } = await run({
+      "x-firecrawl-internal-token": await sign(priv),
+    });
+    expect(next).toHaveBeenCalled();
+    expect(res.locals.internalCaller).toEqual({
+      issuer: "firecrawl-web",
+      requestId: "req-1",
+    });
   });
 
   it("rejects a bad token when the flag is on", async () => {
