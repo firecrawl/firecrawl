@@ -1,4 +1,4 @@
-import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
+import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
@@ -1314,7 +1314,7 @@ async function supaAuthenticateUser(
   try {
     await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
-    if (!(rateLimiterRes instanceof RateLimiterRes)) {
+    if (rateLimiterRes instanceof Error) {
       logger.error("Rate limiter store error", {
         teamId,
         mode,
