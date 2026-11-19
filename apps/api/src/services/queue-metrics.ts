@@ -19,7 +19,19 @@ export function startBullmqQueueMetrics(queues: Queue[]) {
   monitoredQueues = queues;
 }
 
-async function withTimeout<T>(work: Promise<T>): Promise<T> {
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Bounds a read to COLLECT_TIMEOUT_MS. A read that outlives it cannot be
+ * cancelled, so later scrapes wait on that same read instead of queueing
+ * another command behind a disconnected client.
+ */
+async function readOnce<T>(key: string, read: () => Promise<T>): Promise<T> {
+  let work = inFlight.get(key) as Promise<T> | undefined;
+  if (!work) {
+    work = read().finally(() => inFlight.delete(key));
+    inFlight.set(key, work);
+  }
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -37,31 +49,34 @@ async function withTimeout<T>(work: Promise<T>): Promise<T> {
 }
 
 /**
- * Jobs per queue and state, read with getJobCounts on each scrape. On a failed
- * read the series are dropped rather than left at their last value, so a queue
- * nobody can read shows up as absent instead of as healthy.
+ * Jobs per queue and state, read with getJobCounts on each scrape. A queue
+ * whose read fails has its series dropped rather than left at their last
+ * value, so a queue nobody can read shows up as absent instead of as healthy.
  */
 export const bullmqQueueDepth = new Gauge({
   name: "firecrawl_bullmq_queue_depth",
   help: "Jobs in each BullMQ queue, by state",
   labelNames: ["queue", "state"] as const,
   async collect() {
-    try {
-      const counts = await withTimeout(
-        Promise.all(
-          monitoredQueues.map(queue => queue.getJobCounts(...STATES)),
-        ),
-      );
-      this.reset();
-      monitoredQueues.forEach((queue, i) => {
-        for (const state of STATES) {
-          this.labels(queue.name, state).set(counts[i][state] ?? 0);
-        }
-      });
-    } catch (error) {
-      this.reset();
-      logger.warn("Failed to collect BullMQ queue depth", { error });
-    }
+    const results = await Promise.allSettled(
+      monitoredQueues.map(queue =>
+        readOnce(`depth:${queue.name}`, () => queue.getJobCounts(...STATES)),
+      ),
+    );
+    this.reset();
+    results.forEach((result, i) => {
+      const queue = monitoredQueues[i].name;
+      if (result.status === "rejected") {
+        logger.warn("Failed to collect BullMQ queue depth", {
+          queue,
+          error: result.reason,
+        });
+        return;
+      }
+      for (const state of STATES) {
+        this.labels(queue, state).set(result.value[state] ?? 0);
+      }
+    });
   },
 });
 
@@ -76,27 +91,30 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
   help: "Seconds the earliest-due delayed job in each BullMQ queue is past due",
   labelNames: ["queue"] as const,
   async collect() {
-    try {
-      const earliest = await withTimeout(
-        Promise.all(
-          monitoredQueues.map(async queue => {
-            const client = await queue.client;
-            return client.zrange(queue.toKey("delayed"), 0, 0, "WITHSCORES");
-          }),
-        ),
-      );
-      const now = Date.now();
-      this.reset();
-      monitoredQueues.forEach((queue, i) => {
-        const score = earliest[i][1];
-        // BullMQ scores a delayed job as dueAtMs * 0x1000 plus a counter.
-        const dueAt =
-          score === undefined ? now : Math.floor(Number(score) / 0x1000);
-        this.labels(queue.name).set(Math.max(0, (now - dueAt) / 1000));
-      });
-    } catch (error) {
-      this.reset();
-      logger.warn("Failed to collect BullMQ queue overdue age", { error });
-    }
+    const results = await Promise.allSettled(
+      monitoredQueues.map(queue =>
+        readOnce(`overdue:${queue.name}`, async () => {
+          const client = await queue.client;
+          return client.zrange(queue.toKey("delayed"), 0, 0, "WITHSCORES");
+        }),
+      ),
+    );
+    const now = Date.now();
+    this.reset();
+    results.forEach((result, i) => {
+      const queue = monitoredQueues[i].name;
+      if (result.status === "rejected") {
+        logger.warn("Failed to collect BullMQ queue overdue age", {
+          queue,
+          error: result.reason,
+        });
+        return;
+      }
+      const score = result.value[1];
+      // BullMQ scores a delayed job as dueAtMs * 0x1000 plus a counter.
+      const dueAt =
+        score === undefined ? now : Math.floor(Number(score) / 0x1000);
+      this.labels(queue).set(Math.max(0, (now - dueAt) / 1000));
+    });
   },
 });

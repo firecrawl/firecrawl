@@ -54,6 +54,8 @@ export const firebillFailureCauseTotal = new Counter({
  * retry worker.
  *
  * - `enqueued` — handed to the retry queue instead of being dropped.
+ * - `enqueue_duplicate` — a job with the same idempotency key was already in
+ *   the queue, so no new job was created; that job owns the event.
  * - `enqueue_failed` — the queue rejected the hand-off; the event is
  *   unbilled unless someone replays it from the log line.
  * - `enqueue_timeout` — the hand-off did not confirm in time and may still
@@ -67,7 +69,8 @@ export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Durable retries of usage events firebill did not confirm",
   // operation: track|refund
-  // outcome: enqueued|enqueue_failed|enqueue_timeout|retried|settled|exhausted
+  // outcome: enqueued|enqueue_duplicate|enqueue_failed|enqueue_timeout|
+  //          retried|settled|exhausted
   labelNames: ["operation", "outcome"] as const,
 });
 
