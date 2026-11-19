@@ -57,6 +57,12 @@ Firecrawl Local installs from crates.io. You need Rust and a C compiler, which o
 cargo install firecrawl-local
 ```
 
+If you don't have Rust, [Firecrawl Cloud](#firecrawl-cloud) runs the same scrape with nothing to build and no signup.
+
+```bash
+npx -y firecrawl-cli@latest scrape https://firecrawl.dev
+```
+
 Scrape a page and print its markdown.
 
 ```bash
@@ -104,7 +110,7 @@ app = Firecrawl(api_url="http://localhost:3002")
 print(app.scrape("https://firecrawl.dev").markdown)
 ```
 
-The [Firecrawl Local README](apps/local) covers every command and option, the security defaults for `serve` and running it in Docker.
+The [Firecrawl Local README](apps/local) covers every command and option, the security defaults for `serve` and running it in Docker. Move to [Firecrawl Cloud](#firecrawl-cloud) when you need structured JSON, Interact, the Agent or scale beyond one machine.
 
 ---
 
@@ -119,15 +125,15 @@ The [Firecrawl Local README](apps/local) covers every command and option, the se
 | [Alexandria](#alexandria) | Through Firecrawl Cloud after `firecrawl-local login` | ✅ |
 | [Interact](#interact), [Agent](#agent) and [Monitor](https://docs.firecrawl.dev/features/monitoring) | | ✅ |
 
-Scraping, crawling and mapping run on your machine, except that by default a page that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
+Scraping, crawling and mapping run on your machine, except that by default a page that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Those Cloud calls work without an account at a limited rate, and `firecrawl-local login` puts them on your Firecrawl account. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
 
 ---
 
 ## Firecrawl Cloud
 
-Firecrawl Cloud runs everything above at scale on the real web, including JS-heavy pages and dynamic apps. It adds search, Alexandria, Interact and Agent through a single API.
+Firecrawl Cloud runs everything Firecrawl Local does without a browser or machine of your own. It adds search, Alexandria, Interact and Agent through a single API.
 
-- **Reliable.** Covers 96% of the web ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25)).
+- **Works on the real web.** Covers 96% of the web, including JS-heavy pages and dynamic apps ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25)).
 - **Fast.** P95 latency of 3.4s across millions of pages, built for real-time AI agents and dynamic apps.
 - **LLM-ready output.** Clean markdown, structured JSON, screenshots and more, so your AI agents spend fewer tokens.
 
@@ -562,7 +568,7 @@ The build skills for integrating Firecrawl into product code live in this repo u
 
 ![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
-[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server with its own queues, workers and databases, all of it still lives in this repo and you can run it on your own infrastructure.
+[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server with its own queues, workers and databases, all of it still lives in this repo and you can run it on your own infrastructure. If you'd rather not run anything yourself, [Firecrawl Cloud](#firecrawl-cloud) gives you every feature with no setup.
 
 The server runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
 
