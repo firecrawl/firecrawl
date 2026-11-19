@@ -14,6 +14,7 @@ mod engpicker;
 mod html;
 mod logging;
 mod pdf;
+mod pdf_table_align;
 mod utils;
 mod xml;
 

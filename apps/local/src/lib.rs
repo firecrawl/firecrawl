@@ -29,6 +29,10 @@ pub mod crawler;
 #[cfg_attr(vendored_native, path = "native/document.rs")]
 pub mod document;
 
+#[cfg_attr(not(vendored_native), path = "../../api/native/src/pdf_table_align.rs")]
+#[cfg_attr(vendored_native, path = "native/pdf_table_align.rs")]
+mod pdf_table_align;
+
 pub mod browser;
 pub mod cloud;
 pub mod crawl;

@@ -85,8 +85,10 @@ pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
     DocKind::Pdf => {
       let result =
         pdf_inspector::process_pdf_mem(body).map_err(|e| format!("could not read the PDF: {e}"))?;
+      let markdown =
+        crate::pdf_table_align::realign_tagged_tables(body, result.markdown.unwrap_or_default());
       Ok(ParsedDocument {
-        markdown: result.markdown.unwrap_or_default(),
+        markdown,
         title: result.title.filter(|t| !t.trim().is_empty()),
         pages: Some(result.page_count),
         pages_needing_ocr: result.pages_needing_ocr.len(),
@@ -171,5 +173,45 @@ mod tests {
       ),
       Some(DocKind::Pdf)
     ));
+  }
+
+  #[test]
+  fn pdf_table_keeps_empty_cells_in_their_columns() {
+    let pdf = include_bytes!("fixtures/empty-cells-statement.pdf");
+    let parsed = parse(&DocKind::Pdf, pdf).expect("pdf parses");
+    let md = parsed.markdown;
+    assert!(
+      md.contains("|Date|Description|Withdrawals|Deposits|Balance|"),
+      "{md}"
+    );
+    assert!(md.contains("|10/01|LOAN PMT|2,675.12||15,777.25|"), "{md}");
+    assert!(
+      md.contains("|10/06|MOBILE DEPOSIT||6,146.48|17,352.24|"),
+      "{md}"
+    );
+    assert!(!md.contains("|10/01|LOAN PMT|2,675.12|15,777.25||"), "{md}");
+    assert!(
+      !md.contains("|10/06|MOBILE DEPOSIT|6,146.48|17,352.24||"),
+      "{md}"
+    );
+  }
+
+  #[test]
+  fn pdf_table_without_empty_cells_keeps_its_values() {
+    let pdf = include_bytes!("fixtures/aligned-cells-statement.pdf");
+    let parsed = parse(&DocKind::Pdf, pdf).expect("pdf parses");
+    let md = parsed.markdown;
+    assert!(md.contains("|A|B|"), "{md}");
+    assert!(md.contains("|1|2|"), "{md}");
+    assert!(!md.contains("|1||") && !md.contains("||2|"), "{md}");
+  }
+
+  #[test]
+  fn pdf_without_a_table_is_not_rewritten_into_one() {
+    let pdf = include_bytes!("fixtures/plain-sentence.pdf");
+    let parsed = parse(&DocKind::Pdf, pdf).expect("pdf parses");
+    let md = parsed.markdown;
+    assert!(md.contains("sentence") || md.contains("tabular"), "{md}");
+    assert!(!md.contains('|'), "{md}");
   }
 }
