@@ -482,8 +482,9 @@ async function enqueueFirebillTrackRetry(
         });
         // For a jobId that already exists, add() creates nothing and returns a
         // Job built from this call, so only the stored timestamp tells a
-        // duplicate apart from a new job.
-        const stored = await queue.getJob(job.id!);
+        // duplicate apart from a new job. The add has landed either way, so a
+        // failed read counts as enqueued rather than as a failure.
+        const stored = await queue.getJob(job.id!).catch(() => undefined);
         return stored && stored.timestamp !== job.timestamp
           ? "duplicate"
           : "enqueued";

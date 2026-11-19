@@ -680,6 +680,18 @@ describe("firebillTrack durable retry", () => {
     expect(logCalls("error")[0][1]).toMatchObject({ handedToRetry: true });
   });
 
+  it("counts a landed add as enqueued when the duplicate check cannot read it back", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueGetJob.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueued": 1 });
+  });
+
   it("logs and counts an enqueue that fails, still reporting false", async () => {
     vi.stubGlobal(
       "fetch",

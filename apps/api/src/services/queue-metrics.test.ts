@@ -101,8 +101,9 @@ describe("BullMQ queue metrics", () => {
   it("reuses a read that outlived the timeout instead of issuing another", async () => {
     vi.useFakeTimers();
     const { queue } = fakeQueue("{firebillTrackRetryQueue}", {}, []);
-    vi.mocked(queue.getJobCounts).mockImplementation(
-      () => new Promise(() => {}),
+    let answer: (counts: Record<string, number>) => void = () => {};
+    vi.mocked(queue.getJobCounts).mockImplementationOnce(
+      () => new Promise(resolve => (answer = resolve)),
     );
     startBullmqQueueMetrics([queue]);
 
@@ -112,6 +113,11 @@ describe("BullMQ queue metrics", () => {
       expect(await collected).toEqual([]);
     }
     expect(queue.getJobCounts).toHaveBeenCalledTimes(1);
+
+    answer({ waiting: 1 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await values(bullmqQueueDepth)).toHaveLength(4);
+    expect(queue.getJobCounts).toHaveBeenCalledTimes(2);
   });
 
   it("is registered once in the default registry", () => {
