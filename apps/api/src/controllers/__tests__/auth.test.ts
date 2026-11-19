@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import { createHmac } from "node:crypto";
+import { RateLimiterRes } from "rate-limiter-flexible";
 import { authenticateUser, clearACUC, getACUCTeam } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
@@ -715,11 +716,7 @@ describe("authenticateUser", () => {
       async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
     );
     vi.mocked(getAutumnRateLimiter).mockReturnValue({
-      consume: vi.fn().mockRejectedValue({
-        msBeforeNext: 41_200,
-        consumedPoints: 11,
-        remainingPoints: 0,
-      }),
+      consume: vi.fn().mockRejectedValue(new RateLimiterRes(0, 41_200, 11)),
     } as never);
 
     const auth = await authenticateUser(
@@ -741,6 +738,48 @@ describe("authenticateUser", () => {
         error: expect.stringContaining("retry after 42s"),
       }),
     );
+  });
+
+  it("returns 503 rather than a malformed 429 when the rate limiter's Redis fails", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-limiter-down",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({
+      consume: vi
+        .fn()
+        .mockRejectedValue(
+          new Error("Reached the max retries per request limit"),
+        ),
+    } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual({
+      success: false,
+      error: "Rate limiting is temporarily unavailable. Please retry shortly.",
+      status: 503,
+      retryAfterSeconds: 5,
+    });
   });
 
   it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
