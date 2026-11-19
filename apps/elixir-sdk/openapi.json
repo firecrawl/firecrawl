@@ -2179,7 +2179,7 @@
                     "properties": {
                       "url": {
                         "type": "string",
-                        "description": "The URL to send the webhook to. This will trigger for crawl started (crawl.started), every page crawled (crawl.page) and when the crawl is completed (crawl.completed or crawl.failed). The response will be the same as the `/scrape` endpoint."
+                        "description": "The URL to send the webhook to. This will trigger for crawl started (crawl.started), every page crawled (crawl.page) and when the crawl is completed (crawl.completed). A page that fails to scrape is sent as crawl.page with success set to false. The response will be the same as the `/scrape` endpoint."
                       },
                       "headers": {
                         "type": "object",
@@ -2937,6 +2937,10 @@
                                   "high"
                                 ],
                                 "description": "Reasoning budget used for the agent run (only present for runs that set effort)"
+                              },
+                              "safe": {
+                                "type": "boolean",
+                                "description": "Whether the run's web searches filtered explicit content (only present for runs that set `safe: true`)"
                               }
                             }
                           }
@@ -3100,6 +3104,30 @@
                     ],
                     "default": "extract",
                     "description": "`extract` returns the complete structured result in `data` every turn. `chat` lets a follow-up that asks for no new data get a short reply in `message` instead of a re-run. `exchange.requireApproval` needs `chat` on the same request. Omitted on a follow-up turn keeps the thread's mode."
+                  },
+                  "zeroDataRetention": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run the agent with Zero Data Retention: Firecrawl keeps no prompt, result or step content in logs or storage, only billing and status metadata. The result is kept for 24 hours for retrieval, then deleted. Requires Scrape ZDR and Search ZDR to be enabled for your team, otherwise the request returns 400 `zdr_not_enabled`. Cannot be combined with `threadId`. With `exchange`, only capabilities that support ZDR are used. See [Zero Data Retention](https://docs.firecrawl.dev/features/agent#zero-data-retention-zdr)."
+                  },
+                  "location": {
+                    "type": "object",
+                    "description": "Proxy country for every request the agent makes during the run: scrapes, batch scrapes and browser sessions go out from this country, and the agent cannot change it. Search results are localized to the country. Omitted on a follow-up turn keeps the thread's country. See [Choosing a location](https://docs.firecrawl.dev/features/agent#choosing-a-location).",
+                    "additionalProperties": false,
+                    "required": [
+                      "country"
+                    ],
+                    "properties": {
+                      "country": {
+                        "type": "string",
+                        "description": "ISO 3166-1 alpha-2 country code, case-insensitive (e.g. `DE`, `gb`). Special values such as `us-generic` and `us-whitelist` are rejected.",
+                        "example": "DE"
+                      }
+                    }
+                  },
+                  "safe": {
+                    "type": "boolean",
+                    "description": "When `true`, every web search the agent makes during the run filters explicit content, the same filter as the search endpoint's `safe` option. Pages the agent scrapes or opens in a browser are not filtered. Omit to keep the default behavior, which does not apply the filter. Omitted on a follow-up turn keeps the thread's setting; `false` turns it off."
                   },
                   "exchange": {
                     "type": "object",
@@ -3387,6 +3415,10 @@
                         "high"
                       ],
                       "description": "Reasoning budget used for the agent run (only present for runs that set effort)"
+                    },
+                    "safe": {
+                      "type": "boolean",
+                      "description": "Whether the run's web searches filtered explicit content (only present for runs that set `safe: true`)"
                     },
                     "error": {
                       "type": "string",
@@ -4598,7 +4630,9 @@
                     },
                     "description": "Sources to search. Will determine the arrays available in the response. Defaults to ['web']. The plain string form (e.g. `[\"web\", \"alexandria\"]`) is also accepted. The `alexandria` source returns tool contracts discovered from the Alexandria catalogue in `data.tools` instead of search results; it is free and is never counted in `creditsUsed`. Requires the team's Alexandria access to be enabled (403 otherwise).",
                     "default": [
-                      "web"
+                      {
+                        "type": "web"
+                      }
                     ]
                   },
                   "domainTools": {
@@ -4616,72 +4650,90 @@
                     "description": "How much of each tool contract to return in `data.tools`. `compact` returns only `provider`, `capability`, and `description`. `summary` returns the full tool entry without `options` and `response`. `full` also returns `options`, `response`, and `examples`."
                   },
                   "categories": {
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "title": "Developer",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
-                                "developer"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "title": "Gov",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
-                                "gov"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "title": "Research",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
-                                "research"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "type"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "title": "PDF",
-                          "properties": {
-                            "type": {
-                              "type": "string",
-                              "enum": [
-                                "pdf"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "type"
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "title": "Category names",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "developer",
+                            "gov",
+                            "research",
+                            "pdf"
                           ]
                         }
-                      ]
-                    },
-                    "description": "Categories to filter results by. Defaults to [], which means results will not be filtered by any categories."
+                      },
+                      {
+                        "type": "array",
+                        "title": "Category objects",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "title": "Developer",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "developer"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "title": "Gov",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "gov"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "title": "Research",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "research"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "title": "PDF",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pdf"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "description": "Categories to filter results by. Pass either an array of category names, such as `[\"research\", \"pdf\"]`, or an array of objects, such as `[{\"type\": \"research\"}]`; one array cannot mix the two forms. `developer` and `gov` must be the only entry in the array, and combining either with another category returns `400`. `research` restricts web results to academic and research websites and returns them in `data.web`; to search paper records, use `GET /search/research/papers`. Defaults to [], which means results will not be filtered by any categories."
                   },
                   "includeDomains": {
                     "type": "array",
@@ -5847,6 +5899,20 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "Result order. `relevance` (default) returns the most relevant papers first. `date_desc` returns the newest papers among the most relevant matches, newest first by created date, with undated papers last. It does not list every paper in a date range; use `from` and `to` for that.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "relevance",
+                "date_desc"
+              ],
+              "default": "relevance"
+            }
           }
         ],
         "responses": {
@@ -5870,6 +5936,12 @@
                       },
                       "title": "Diffusion Models Beat GANs on Image Synthesis",
                       "abstract": "We show that diffusion models can achieve image sample quality superior to the current state-of-the-art generative models...",
+                      "authors": [
+                        "Prafulla Dhariwal",
+                        "Alex Nichol"
+                      ],
+                      "createdDate": "2021-05-11",
+                      "updateDate": "2021-06-01",
                       "score": 0.0163934
                     }
                   ]
@@ -5977,7 +6049,7 @@
                     "categories": [
                       "cs.LG"
                     ],
-                    "createdDate": "Wed, 11 May 2021 18:01:01 GMT",
+                    "createdDate": "2021-05-11",
                     "updateDate": "2021-06-01"
                   }
                 }
@@ -6137,6 +6209,268 @@
           },
           "500": {
             "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/search/research/proteins": {
+      "get": {
+        "summary": "Look up a protein",
+        "operationId": "researchLookupProtein",
+        "tags": [
+          "Research"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "protein",
+            "in": "query",
+            "required": true,
+            "description": "One protein identifier, 1 to 200 characters after trimming: a UniProt accession (`Q6P087`, or `Q6P087-2` for an isoform), an entry name (`RUSD3_HUMAN`), a gene symbol (`RPUSD3`), or an exact protein name (`Mitochondrial mRNA pseudouridine synthase RPUSD3`).",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "description": "Organism that scopes a gene symbol or protein name: an NCBI taxon id (`9606`), a scientific name (`Homo sapiens`), or a UniProt common name (`Human`), matched without regard to case. Accessions and entry names ignore it.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "default": "9606"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lookup result. `match` is `found`, `ambiguous`, or `not_found`. A protein that matches no entry is a `200` with `match: \"not_found\"`, not a `404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ResearchProteinFoundResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResearchProteinAmbiguousResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResearchProteinNotFoundResponse"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "match",
+                    "mapping": {
+                      "found": "#/components/schemas/ResearchProteinFoundResponse",
+                      "ambiguous": "#/components/schemas/ResearchProteinAmbiguousResponse",
+                      "not_found": "#/components/schemas/ResearchProteinNotFoundResponse"
+                    }
+                  }
+                },
+                "examples": {
+                  "found": {
+                    "summary": "One entry matched",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "found",
+                      "protein": {
+                        "accession": "Q6P087",
+                        "entryName": "RUSD3_HUMAN",
+                        "gene": "RPUSD3",
+                        "synonyms": [],
+                        "name": "Mitochondrial mRNA pseudouridine synthase RPUSD3",
+                        "organism": {
+                          "taxonId": 9606,
+                          "scientificName": "Homo sapiens",
+                          "commonName": "Human"
+                        },
+                        "matchedBy": "gene",
+                        "url": "https://www.uniprot.org/uniprotkb/Q6P087/entry",
+                        "subcellularLocation": [
+                          {
+                            "text": "Mitochondrion matrix",
+                            "note": false,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              }
+                            ]
+                          },
+                          {
+                            "text": "Localizes to mitochondrial RNA granules, platforms for post-transcriptional RNA modification and ribosome assembly",
+                            "note": true,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              },
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:28082677"
+                              }
+                            ]
+                          }
+                        ],
+                        "function": [
+                          {
+                            "text": "Catalyzes uridine to pseudouridine isomerization (pseudouridylation) of specific mitochondrial mRNAs (mt-mRNAs), a post-transcriptional modification necessary for their translation. Acts at position 390 in COXI mt-mRNA and at position 697-699 in mitochondrial COXIII mt-mRNA (PubMed:27974379). As a component of a functional protein-RNA module, consisting of RCC1L, NGRN, RPUSD3, RPUSD4, TRUB2, FASTKD2 and 16S mitochondrial ribosomal RNA (16S mt-rRNA), controls 16S mt-rRNA abundance and may play a role in mitochondrial ribosome biogenesis (PubMed:27667664)",
+                            "note": false,
+                            "evidence": [
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27667664"
+                              },
+                              {
+                                "kind": "experimental",
+                                "eco": "ECO:0000269",
+                                "paperId": "pmid:27974379"
+                              }
+                            ]
+                          }
+                        ],
+                        "goCellularComponent": [
+                          {
+                            "id": "GO:0005759",
+                            "term": "mitochondrial matrix",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": [
+                              "pmid:27974379"
+                            ]
+                          },
+                          {
+                            "id": "GO:0005739",
+                            "term": "mitochondrion",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": [
+                              "pmid:28082677"
+                            ]
+                          },
+                          {
+                            "id": "GO:0035770",
+                            "term": "ribonucleoprotein granule",
+                            "code": "IDA",
+                            "assignedBy": "FlyBase",
+                            "paperIds": [
+                              "pmid:28082677"
+                            ]
+                          }
+                        ],
+                        "paperIds": [
+                          "pmid:27974379",
+                          "pmid:28082677",
+                          "pmid:27667664"
+                        ]
+                      },
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
+                  },
+                  "ambiguous": {
+                    "summary": "A gene symbol that names two entries",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "ambiguous",
+                      "candidates": [
+                        {
+                          "accession": "C0HLS1",
+                          "entryName": "OSCRI_HUMAN",
+                          "gene": "SCRIB",
+                          "name": "SCRIB overlapping open reading frame protein",
+                          "organism": {
+                            "taxonId": 9606,
+                            "scientificName": "Homo sapiens",
+                            "commonName": "Human"
+                          },
+                          "matchedBy": "gene"
+                        },
+                        {
+                          "accession": "Q14160",
+                          "entryName": "SCRIB_HUMAN",
+                          "gene": "SCRIB",
+                          "name": "Protein scribble homolog",
+                          "organism": {
+                            "taxonId": 9606,
+                            "scientificName": "Homo sapiens",
+                            "commonName": "Human"
+                          },
+                          "matchedBy": "gene"
+                        }
+                      ],
+                      "candidateCount": 2,
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
+                  },
+                  "notFound": {
+                    "summary": "No entry matched",
+                    "value": {
+                      "success": true,
+                      "release": "2026_04",
+                      "match": "not_found",
+                      "notice": "Protein data from UniProtKB/Swiss-Prot release 2026_04. Copyright UniProt Consortium, https://www.uniprot.org. CC BY 4.0, https://creativecommons.org/licenses/by/4.0/. No warranty, see https://www.uniprot.org/help/license. Selected fields, reformatted."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request. A `protein` that is missing, empty, or longer than 200 characters, or an empty `organism`, returns `error: \"Invalid query parameters\"` with `details`. An `organism` that matches no organism, or a name shared by more than one taxon, returns `code: \"BAD_REQUEST\"`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "BAD_REQUEST"
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "unknown organism 'unicorn': pass an NCBI taxon ID such as 9606, a scientific name such as Homo sapiens, or a UniProt common name such as Human"
+                    },
+                    "details": {
+                      "type": "array",
+                      "description": "The parameters that failed validation, on an `Invalid query parameters` error.",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "504": {
+            "description": "The lookup exceeded its time limit"
           }
         }
       }
@@ -6324,10 +6658,10 @@
                 },
                 "example": {
                   "success": true,
+                  "partial": false,
                   "results": [
                     {
                       "id": "issue:firecrawl/firecrawl#1234",
-                      "type": "issue",
                       "url": "https://github.com/firecrawl/firecrawl/issues/1234",
                       "title": "Retries are not applied to 429 responses",
                       "passages": [
@@ -6336,14 +6670,7 @@
                         }
                       ]
                     }
-                  ],
-                  "coverage": {
-                    "doc": "ok",
-                    "issue": "ok",
-                    "pull_request": "ok",
-                    "readme": "ok"
-                  },
-                  "reranked": true
+                  ]
                 }
               }
             }
@@ -6549,7 +6876,7 @@
             "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
             "schema": {
               "type": "string",
-              "pattern": "^us(-[a-zA-Z]{2})?$"
+              "example": "us-ca"
             }
           },
           {
@@ -6588,11 +6915,18 @@
             "name": "cites",
             "in": "query",
             "required": false,
-            "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`.",
+            "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them. Repeat the parameter to pass more than one.",
             "schema": {
-              "type": "string",
-              "minLength": 1
-            }
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 32
+            },
+            "style": "form",
+            "explode": true
           },
           {
             "name": "domain",
@@ -6603,11 +6937,28 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": false,
+            "description": "Result groups to return. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`. Repeat the parameter to return both.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["web", "gov"]
+              },
+              "minItems": 1,
+              "default": ["web"]
+            },
+            "style": "form",
+            "explode": true
           }
         ],
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6630,7 +6981,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including an unknown field"
+            "description": "Invalid request, including an unknown field or an invalid filter value"
           },
           "401": {
             "description": "Invalid bearer token"
@@ -6683,7 +7034,7 @@
                   "jurisdiction": {
                     "type": "string",
                     "description": "Keep only pages of one jurisdiction: `us` for federal, or `us-` plus a two-letter state or territory code, such as `us-ca` or `us-dc`.",
-                    "pattern": "^us(-[a-zA-Z]{2})?$"
+                    "example": "us-ca"
                   },
                   "court": {
                     "type": "string",
@@ -6708,14 +7059,45 @@
                     "description": "Keep only pages from one type of court: `federal-supreme`, `federal-appellate`, `federal-district`, `federal-bankruptcy`, `federal-special`, `military`, `state-supreme`, `state-appellate`, `state-trial`, `state-special`, `state-attorney-general`."
                   },
                   "cites": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Keep only pages that cite one law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`."
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 32
+                      }
+                    ],
+                    "description": "Keep only pages that cite a law or case, as a printed citation such as `42 U.S.C. § 1983` or `5 U.S. 137`, or a citation id such as `us:usc:42:1983`. Pass up to 32 to keep pages citing any of them."
                   },
                   "domain": {
                     "type": "string",
                     "minLength": 1,
                     "description": "Keep only pages from one site, such as `irs.gov`."
+                  },
+                  "sources": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "enum": ["web", "gov"]
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": ["web", "gov"]
+                        },
+                        "minItems": 1
+                      }
+                    ],
+                    "default": ["web"],
+                    "description": "Result groups to return, as one name or a list. `web` returns plain search results. `gov` returns the same results with the index's labels: `jurisdiction`, `court`, `courtType`, `cites`, `citedAs`, `lang` and `updatedAt`."
                   }
                 }
               },
@@ -6728,7 +7110,7 @@
         },
         "responses": {
           "200": {
-            "description": "Ranked Government Index results in the `web` group.",
+            "description": "Ranked Government Index results in each group `sources` names, `web` by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6738,7 +7120,7 @@
             }
           },
           "400": {
-            "description": "Invalid request, including an unknown field"
+            "description": "Invalid request, including an unknown field or an invalid filter value"
           },
           "401": {
             "description": "Invalid bearer token"
@@ -7467,6 +7849,7 @@
                 ]
               },
               "error": {
+                "type": "object",
                 "nullable": true,
                 "allOf": [
                   {
@@ -7589,6 +7972,7 @@
                 "type": "integer"
               },
               "error": {
+                "type": "object",
                 "nullable": true,
                 "allOf": [
                   {
@@ -9183,7 +9567,9 @@
         },
         "description": "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`.",
         "default": [
-          "markdown"
+          {
+            "type": "markdown"
+          }
         ]
       },
       "ParseFormats": {
@@ -9307,7 +9693,9 @@
         },
         "description": "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported.",
         "default": [
-          "markdown"
+          {
+            "type": "markdown"
+          }
         ]
       },
       "ParseOptions": {
@@ -9400,13 +9788,15 @@
               ]
             },
             "default": [
-              "pdf"
+              {
+                "type": "pdf"
+              }
             ]
           },
           "skipTlsVerification": {
             "type": "boolean",
             "description": "Skip TLS certificate verification when making requests.",
-            "default": true
+            "default": false
           },
           "removeBase64Images": {
             "type": "boolean",
@@ -9451,7 +9841,7 @@
           "integration": {
             "type": "string",
             "nullable": true,
-            "description": "Optional integration identifier."
+            "description": "Optional integration identifier. When omitted, a valid `X-Integration` request header is used instead; the body value takes precedence."
           },
           "auditMetadata": {
             "$ref": "#/components/schemas/AuditMetadata"
@@ -9520,7 +9910,7 @@
           "skipTlsVerification": {
             "type": "boolean",
             "description": "Skip TLS certificate verification when making requests.",
-            "default": true
+            "default": false
           },
           "timeout": {
             "type": "integer",
@@ -10274,18 +10664,19 @@
                     "description": "Description extracted from the page, can be a string or array of strings"
                   },
                   "language": {
-                    "oneOf": [
+                    "anyOf": [
                       {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
                       },
                       {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "nullable": true
                       }
                     ],
-                    "nullable": true,
                     "description": "Language extracted from the page, can be a string or array of strings"
                   },
                   "sourceURL": {
@@ -10386,10 +10777,10 @@
                             "status": {
                               "type": "string",
                               "enum": [
-                              "matched",
-                              "not_found",
-                              "error"
-                            ]
+                                "matched",
+                                "not_found",
+                                "error"
+                              ]
                             },
                             "creditsCost": {
                               "type": "integer"
@@ -11446,6 +11837,7 @@
                 "$ref": "#/components/schemas/AlexandriaCall"
               }
             ],
+            "type": "object",
             "nullable": true,
             "description": "An `alexandria` call for the next page of this listing, or `null` on the last page."
           }
@@ -11719,18 +12111,19 @@
                       "description": "Description extracted from the page, can be a string or array of strings"
                     },
                     "language": {
-                      "oneOf": [
+                      "anyOf": [
                         {
-                          "type": "string"
+                          "type": "string",
+                          "nullable": true
                         },
                         {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "nullable": true
                         }
                       ],
-                      "nullable": true,
                       "description": "Language extracted from the page, can be a string or array of strings"
                     },
                     "sourceURL": {
@@ -12060,18 +12453,19 @@
                       "description": "Description extracted from the page, can be a string or array of strings"
                     },
                     "language": {
-                      "oneOf": [
+                      "anyOf": [
                         {
-                          "type": "string"
+                          "type": "string",
+                          "nullable": true
                         },
                         {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "nullable": true
                         }
                       ],
-                      "nullable": true,
                       "description": "Language extracted from the page, can be a string or array of strings"
                     },
                     "sourceURL": {
@@ -12259,7 +12653,7 @@
       },
       "SearchFeedbackRequest": {
         "type": "object",
-        "description": "For 'good', include valuableSources. For 'partial', include valuableSources or missingContent. For 'bad', include missingContent or querySuggestions.",
+        "description": "For 'good', include valuableSources or valuableResults. For 'partial', include valuableSources, valuableResults, or missingContent. For 'bad', include missingContent or querySuggestions.",
         "properties": {
           "rating": {
             "type": "string",
@@ -12286,6 +12680,37 @@
               },
               "required": [
                 "url"
+              ]
+            }
+          },
+          "valuableResults": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Results that were useful, each addressed by the `data` group it appears in and its 1-indexed position within that group. Results are returned grouped (`data.web`, `data.images`, `data.news`) and each group is numbered from 1 independently, so `source` is required. List every useful result; unlisted results are treated as not useful. Positions beyond what the group actually returned are ignored.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "images",
+                    "news"
+                  ]
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "source",
+                "position"
               ]
             }
           },
@@ -12511,6 +12936,23 @@
           "abstract": {
             "type": "string"
           },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "First 20 author names. GET /search/research/papers/{id} returns the full list."
+          },
+          "createdDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Creation date, YYYY-MM-DD."
+          },
+          "updateDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Last update date, YYYY-MM-DD."
+          },
           "score": {
             "type": "number",
             "format": "double"
@@ -12554,11 +12996,13 @@
           },
           "createdDate": {
             "type": "string",
-            "description": "Original creation date string."
+            "description": "Creation date, YYYY-MM-DD.",
+            "format": "date"
           },
           "updateDate": {
             "type": "string",
-            "description": "Last-updated date string."
+            "description": "Last update date, YYYY-MM-DD.",
+            "format": "date"
           }
         }
       },
@@ -12674,12 +13118,589 @@
           }
         }
       },
+      "ResearchProteinOrganism": {
+        "type": "object",
+        "required": [
+          "taxonId",
+          "scientificName"
+        ],
+        "properties": {
+          "taxonId": {
+            "type": "integer",
+            "description": "NCBI taxon id."
+          },
+          "scientificName": {
+            "type": "string"
+          },
+          "commonName": {
+            "type": "string",
+            "description": "UniProt common name. Left out when UniProt gives none."
+          }
+        }
+      },
+      "ResearchProteinMatchedBy": {
+        "type": "string",
+        "enum": [
+          "accession",
+          "secondary_accession",
+          "entry_name",
+          "gene",
+          "synonym",
+          "name"
+        ],
+        "description": "Which identifier matched the entry. `secondary_accession` is an older accession that UniProt keeps on the current entry. An older accession that UniProt kept on several entries after a split returns `ambiguous`. `synonym` is a gene synonym. `name` is a recommended or alternative full protein name."
+      },
+      "ResearchProteinEvidence": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "large_scale_experimental",
+              "author_statement",
+              "curator_inference",
+              "by_similarity",
+              "sequence_analysis",
+              "imported",
+              "untagged"
+            ],
+            "description": "Evidence kind, mapped from the ECO code UniProt attaches to the statement."
+          },
+          "eco": {
+            "type": "string",
+            "description": "ECO code, such as `ECO:0000269`. Left out only when `kind` is `untagged`."
+          },
+          "paperId": {
+            "type": "string",
+            "description": "PubMed paper the evidence cites, such as `pmid:27974379`, in the form `GET /search/research/papers/{id}` accepts."
+          },
+          "fromProtein": {
+            "type": "string",
+            "description": "Accession of the related UniProt entry the statement is inferred from, on `by_similarity` evidence."
+          }
+        }
+      },
+      "ResearchProteinStatement": {
+        "type": "object",
+        "required": [
+          "text",
+          "note",
+          "evidence"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Statement text as UniProt writes it: a location term, a location note, or the text of a function, disease, PTM, subunit, tissue specificity or domain comment."
+          },
+          "note": {
+            "type": "boolean",
+            "description": "`true` for the free-text note of a location comment."
+          },
+          "molecule": {
+            "type": "string",
+            "description": "Isoform or chain the statement applies to, such as `Isoform 2`."
+          },
+          "topology": {
+            "type": "string",
+            "description": "Membrane topology, on location statements, such as `Single-pass type I membrane protein`."
+          },
+          "orientation": {
+            "type": "string",
+            "description": "Membrane orientation, on location statements, such as `Cytoplasmic side`."
+          },
+          "diseaseName": {
+            "type": "string",
+            "description": "Disease a disease statement is about, when UniProt names one."
+          },
+          "diseaseAcronym": {
+            "type": "string",
+            "description": "Acronym of that disease, when UniProt gives one."
+          },
+          "mimId": {
+            "type": "string",
+            "description": "OMIM id of that disease, such as `191170`."
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinEvidence"
+            },
+            "description": "Evidence for the statement. A statement UniProt leaves without evidence has one item with `kind: \"untagged\"`."
+          }
+        }
+      },
+      "ResearchProteinGoTerm": {
+        "type": "object",
+        "required": [
+          "id",
+          "term",
+          "code",
+          "assignedBy",
+          "paperIds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "GO term id, such as `GO:0005759`."
+          },
+          "term": {
+            "type": "string",
+            "description": "GO term name, such as `mitochondrial matrix`."
+          },
+          "code": {
+            "type": "string",
+            "description": "GO evidence code, such as `IDA`."
+          },
+          "assignedBy": {
+            "type": "string",
+            "description": "Database that assigned the term."
+          },
+          "paperIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`pmid:` id of each PubMed paper cited for the term. Empty when no paper is loaded for the term. Only GO terms of human entries have paper ids."
+          }
+        }
+      },
+      "ResearchProteinInteraction": {
+        "type": "object",
+        "required": [
+          "partner",
+          "organismDiffers",
+          "experiments",
+          "intactIds"
+        ],
+        "properties": {
+          "partner": {
+            "type": "string",
+            "description": "UniProt accession of the interacting protein. It may be an unreviewed entry."
+          },
+          "partnerMolecule": {
+            "type": "string",
+            "description": "Isoform or chain of the partner, when the interaction is with one form of it."
+          },
+          "partnerGene": {
+            "type": "string",
+            "description": "Gene name of the partner."
+          },
+          "molecule": {
+            "type": "string",
+            "description": "Isoform or chain of this entry that interacts."
+          },
+          "organismDiffers": {
+            "type": "boolean",
+            "description": "`true` when the partner is from another organism."
+          },
+          "experiments": {
+            "type": "integer",
+            "description": "Number of experiments IntAct holds for the interaction."
+          },
+          "intactIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IntAct ids of this entry and of the partner."
+          }
+        }
+      },
+      "ResearchProteinFeature": {
+        "type": "object",
+        "required": [
+          "type",
+          "evidence"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "initiator_methionine",
+              "signal",
+              "propeptide",
+              "transit_peptide",
+              "chain",
+              "peptide",
+              "topological_domain",
+              "transmembrane",
+              "intramembrane",
+              "domain",
+              "repeat",
+              "zinc_finger",
+              "dna_binding",
+              "region",
+              "coiled_coil",
+              "motif",
+              "active_site",
+              "binding_site",
+              "site",
+              "non_standard_residue",
+              "modified_residue",
+              "lipidation",
+              "glycosylation",
+              "disulfide_bond",
+              "cross_link"
+            ],
+            "description": "UniProt feature type."
+          },
+          "start": {
+            "type": "integer",
+            "description": "First residue, counted from 1. Left out when UniProt gives no position."
+          },
+          "end": {
+            "type": "integer",
+            "description": "Last residue, counted from 1. Left out when UniProt gives no position."
+          },
+          "molecule": {
+            "type": "string",
+            "description": "Isoform whose sequence the positions count on, when it is not the canonical one."
+          },
+          "description": {
+            "type": "string",
+            "description": "Feature description, such as a domain name or a modification."
+          },
+          "id": {
+            "type": "string",
+            "description": "UniProt id of the feature, such as `PRO_0000185246`."
+          },
+          "ligand": {
+            "type": "string",
+            "description": "Ligand name, on binding sites."
+          },
+          "ligandId": {
+            "type": "string",
+            "description": "Ligand id, on binding sites, such as a ChEBI id."
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinEvidence"
+            },
+            "description": "Evidence for the feature. A feature UniProt leaves without evidence has one item with `kind: \"untagged\"`."
+          }
+        }
+      },
+      "ResearchProteinEntry": {
+        "type": "object",
+        "required": [
+          "accession",
+          "entryName",
+          "synonyms",
+          "name",
+          "organism",
+          "matchedBy",
+          "url",
+          "subcellularLocation",
+          "function",
+          "goCellularComponent",
+          "disease",
+          "ptm",
+          "subunit",
+          "tissueSpecificity",
+          "domain",
+          "interactions",
+          "interactionCount",
+          "features",
+          "featureCount",
+          "variantCount",
+          "paperIds"
+        ],
+        "properties": {
+          "accession": {
+            "type": "string",
+            "description": "Primary UniProt accession, such as `Q6P087`."
+          },
+          "entryName": {
+            "type": "string",
+            "description": "UniProt entry name, such as `RUSD3_HUMAN`."
+          },
+          "gene": {
+            "type": "string",
+            "description": "Primary gene name. Left out when UniProt gives none."
+          },
+          "synonyms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gene synonyms."
+          },
+          "name": {
+            "type": "string",
+            "description": "Recommended full protein name."
+          },
+          "organism": {
+            "$ref": "#/components/schemas/ResearchProteinOrganism"
+          },
+          "matchedBy": {
+            "$ref": "#/components/schemas/ResearchProteinMatchedBy"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "UniProt page for the entry."
+          },
+          "subcellularLocation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Subcellular location statements, in UniProt order."
+          },
+          "function": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Function statements, in UniProt order."
+          },
+          "goCellularComponent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinGoTerm"
+            },
+            "description": "GO cellular-component terms with one of these experimental GO evidence codes: IDA, HDA, IPI, IMP, IEP, EXP, HTP, IGI."
+          },
+          "length": {
+            "type": "integer",
+            "description": "Residues in the canonical sequence."
+          },
+          "mass": {
+            "type": "integer",
+            "description": "Mass of the canonical sequence, in daltons."
+          },
+          "disease": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Disease statements, in UniProt order. Each names its disease in `diseaseName` when UniProt gives one."
+          },
+          "ptm": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Post-translational modification statements, in UniProt order."
+          },
+          "subunit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Subunit structure statements, in UniProt order."
+          },
+          "tissueSpecificity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Tissue specificity statements, in UniProt order."
+          },
+          "domain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinStatement"
+            },
+            "description": "Domain statements, in UniProt order."
+          },
+          "interactions": {
+            "type": "array",
+            "maxItems": 25,
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinInteraction"
+            },
+            "description": "Up to 25 binary interactions from IntAct, those with the most experiments first. They carry no evidence kind and no paper."
+          },
+          "interactionCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Full number of interactions."
+          },
+          "features": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinFeature"
+            },
+            "description": "Up to 50 sequence features in UniProt order, such as chains, domains, modified residues and binding sites. Natural variants, mutagenesis results and isoform sequences are left out."
+          },
+          "featureCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Full number of features, not counting natural variants, mutagenesis results and isoform sequences."
+          },
+          "variantCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of natural variants, mutagenesis results and isoform sequences UniProt records for the entry. The response does not list them."
+          },
+          "pdbCrossReferenceCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of PDB structures the UniProt entry cross-references."
+          },
+          "paperIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every paper cited anywhere in the entry, once each: in the statements of every field, the GO terms and the features. It can hold papers cited only in `disease`, `ptm`, `subunit`, `tissueSpecificity`, `domain` or `features`."
+          }
+        }
+      },
+      "ResearchProteinCandidate": {
+        "type": "object",
+        "required": [
+          "accession",
+          "entryName",
+          "name",
+          "organism",
+          "matchedBy"
+        ],
+        "properties": {
+          "accession": {
+            "type": "string",
+            "description": "Primary UniProt accession. Pass it as `protein` to look this entry up."
+          },
+          "entryName": {
+            "type": "string"
+          },
+          "gene": {
+            "type": "string",
+            "description": "Primary gene name. Left out when UniProt gives none."
+          },
+          "name": {
+            "type": "string",
+            "description": "Recommended full protein name."
+          },
+          "organism": {
+            "$ref": "#/components/schemas/ResearchProteinOrganism"
+          },
+          "matchedBy": {
+            "$ref": "#/components/schemas/ResearchProteinMatchedBy"
+          }
+        }
+      },
+      "ResearchProteinFoundResponse": {
+        "type": "object",
+        "title": "Found",
+        "required": [
+          "success",
+          "release",
+          "match",
+          "protein",
+          "notice"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "release": {
+            "type": "string",
+            "description": "UniProt release the lookup reads, such as `2026_04`."
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "found"
+            ]
+          },
+          "protein": {
+            "$ref": "#/components/schemas/ResearchProteinEntry"
+          },
+          "notice": {
+            "type": "string",
+            "description": "Attribution and license notice for the UniProt data."
+          }
+        }
+      },
+      "ResearchProteinAmbiguousResponse": {
+        "type": "object",
+        "title": "Ambiguous",
+        "required": [
+          "success",
+          "release",
+          "match",
+          "candidates",
+          "candidateCount",
+          "notice"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "release": {
+            "type": "string",
+            "description": "UniProt release the lookup reads, such as `2026_04`."
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "ambiguous"
+            ]
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/ResearchProteinCandidate"
+            },
+            "description": "Up to 10 matching entries, those in the requested organism first, then by accession. Candidates carry no annotation."
+          },
+          "candidateCount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Full number of matching entries."
+          },
+          "notice": {
+            "type": "string",
+            "description": "Attribution and license notice for the UniProt data."
+          }
+        }
+      },
+      "ResearchProteinNotFoundResponse": {
+        "type": "object",
+        "title": "Not found",
+        "required": [
+          "success",
+          "release",
+          "match",
+          "notice"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "release": {
+            "type": "string",
+            "description": "UniProt release the lookup reads, such as `2026_04`."
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "not_found"
+            ]
+          },
+          "notice": {
+            "type": "string",
+            "description": "Attribution and license notice for the UniProt data."
+          }
+        }
+      },
       "DeveloperSearchResult": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable result id, such as `issue:owner/repo#123`. The prefix is the result kind.",
+            "description": "Stable result id. Its prefix names the result kind, such as `issue:owner/repo#123` or `doc:<page URL>`.",
             "example": "issue:firecrawl/firecrawl#1234"
           },
           "url": {
@@ -12702,15 +13723,15 @@
                 "citation_url": {
                   "type": "string",
                   "format": "uri",
-                  "description": "URL to cite for this passage."
+                  "description": "Link to the passage's own location, such as a section anchor, when it differs from the result `url`."
                 },
                 "truncated": {
                   "type": "boolean",
-                  "description": "Present and true when `text` omits bytes from the full passage."
+                  "description": "True when `text` omits part of the full passage. Absent when false."
                 },
                 "served_span": {
                   "type": "object",
-                  "description": "Byte offsets of `text` within the full passage when it is one contiguous span. Absent for table context assembled from separate rows.",
+                  "description": "Byte offsets of `text` within the full passage, present when `text` is one contiguous span.",
                   "required": [
                     "start",
                     "end"
@@ -12736,8 +13757,7 @@
           },
           "license": {
             "type": "string",
-            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known.",
-            "example": "MIT"
+            "description": "SPDX license id, verbatim, including `NOASSERTION`. Absent when the license is not known."
           }
         }
       },
@@ -12747,57 +13767,15 @@
           "success": {
             "type": "boolean"
           },
+          "partial": {
+            "type": "boolean",
+            "description": "True when the deadline passed before every best-effort stage finished, so the response holds the work completed by then."
+          },
           "results": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeveloperSearchResult"
             }
-          },
-          "coverage": {
-            "type": "object",
-            "description": "Outcome for each result type. Check this when an expected result type is missing: `skipped` means your `types` value did not ask for that type, while `degraded` or `unavailable` means the gap came from the index or from a filter, not from the query. A repository filter is one such cause — see [how the repository filters scope a search](/api-reference/endpoint/developer-search#how-the-repository-filters-scope-a-search).",
-            "properties": {
-              "doc": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "degraded",
-                  "unavailable",
-                  "skipped"
-                ]
-              },
-              "issue": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "degraded",
-                  "unavailable",
-                  "skipped"
-                ]
-              },
-              "pull_request": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "degraded",
-                  "unavailable",
-                  "skipped"
-                ]
-              },
-              "readme": {
-                "type": "string",
-                "enum": [
-                  "ok",
-                  "degraded",
-                  "unavailable",
-                  "skipped"
-                ]
-              }
-            }
-          },
-          "reranked": {
-            "type": "boolean",
-            "description": "Whether the ranked list went through the reranking stage."
           },
           "repos": {
             "type": "array",
@@ -12807,6 +13785,10 @@
               "properties": {
                 "repo": {
                   "type": "string"
+                },
+                "canonicalRepo": {
+                  "type": "string",
+                  "description": "The current indexed slug when `repo` is a superseded alias. Absent otherwise."
                 },
                 "indexed": {
                   "type": "boolean"
@@ -12898,6 +13880,65 @@
                     }
                   }
                 }
+              },
+              "gov": {
+                "type": "array",
+                "description": "Present when `sources` includes `gov`. The same results as `web`, in the same order, with the index's labels.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Matched snippet from the source document."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "1-based rank in the result list."
+                    },
+                    "jurisdiction": {
+                      "type": "string",
+                      "description": "Jurisdiction label: `us` for federal, or `us-` plus a two-letter state or territory code. Absent when the index has no label."
+                    },
+                    "court": {
+                      "type": "string",
+                      "description": "CourtListener court id, such as `scotus` or `ca9`. Absent when the index has no label."
+                    },
+                    "courtType": {
+                      "type": "string",
+                      "description": "Type of court, one of the `courtType` filter values. Absent when the index has no label."
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids of the laws and cases the page cites. Absent when none are known."
+                    },
+                    "citedAs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Citation ids other pages cite this page by. Pass one as `cites` to find the pages citing it. Absent when none are known."
+                    },
+                    "lang": {
+                      "type": "string",
+                      "description": "Language code of the page, such as `en`. Absent when unknown."
+                    },
+                    "updatedAt": {
+                      "type": "integer",
+                      "description": "When the page was crawled into the index, in Unix milliseconds. Omitted for results that were never crawled into the index."
+                    }
+                  },
+                  "required": ["url", "title", "description", "position"]
+                }
               }
             }
           }
@@ -12910,7 +13951,7 @@
           },
           {
             "type": "object",
-            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, missingContent, querySuggestions, url, or pageNumbers.",
+            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, valuableResults for search, missingContent, querySuggestions, url, or pageNumbers.",
             "properties": {
               "endpoint": {
                 "type": "string",
