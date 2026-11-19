@@ -53,6 +53,29 @@ describe("fetchAudio lockdown guard", () => {
     expect(result.audio).toBeUndefined();
   });
 
+  it("refuses the audio format under zero data retention without calling avgrab", async () => {
+    const fetchSpy = mockSuccessfulAvgrab();
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      internalOptions: { zeroDataRetention: true },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+    const document: any = {};
+
+    const result = await fetchAudio(meta, document);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.audio).toBeUndefined();
+    expect(result.warning).toBe(
+      "Audio format is not supported with zero data retention.",
+    );
+  });
+
   it("returns early when audio format is not requested regardless of lockdown", async () => {
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
@@ -92,6 +115,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
@@ -140,6 +164,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
 
@@ -175,6 +200,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
 
@@ -195,6 +221,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
+      internalOptions: { zeroDataRetention: false },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};

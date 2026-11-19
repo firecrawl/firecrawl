@@ -38,6 +38,7 @@ describe("research.searchPapers", () => {
       categories: ["cs.LG", "stat.ML"],
       from: "2020-01-01",
       to: "2024-12-31",
+      sort: "date_desc",
     });
     const url = calls[0];
     expect(url.startsWith("/v2/search/research/papers?")).toBe(true);
@@ -48,6 +49,7 @@ describe("research.searchPapers", () => {
     expect(qs.getAll("categories")).toEqual(["cs.LG", "stat.ML"]);
     expect(qs.get("from")).toBe("2020-01-01");
     expect(qs.get("to")).toBe("2024-12-31");
+    expect(qs.get("sort")).toBe("date_desc");
   });
 
   test("omits absent options", async () => {
@@ -135,6 +137,39 @@ describe("research.similarPapers", () => {
     expect(qs.get("k")).toBe("20");
     expect(qs.get("rerank")).toBe("false");
     expect(qs.getAll("anchor")).toEqual(["arxiv:2006.11239", "1503.03585"]);
+  });
+});
+
+describe("research.lookupProtein", () => {
+  test("sends protein and organism to the proteins path", async () => {
+    const { client, calls } = makeClient(() => ({
+      status: 200,
+      data: { success: true, match: "not_found" },
+    }));
+    await client.lookupProtein("RUSD3_HUMAN", { organism: "Homo sapiens" });
+    const [path, query] = calls[0].split("?");
+    expect(path).toBe("/v2/search/research/proteins");
+    const qs = new URLSearchParams(query);
+    expect([...qs.keys()]).toEqual(["protein", "organism", "origin"]);
+    expect(qs.get("protein")).toBe("RUSD3_HUMAN");
+    expect(qs.get("organism")).toBe("Homo sapiens");
+  });
+
+  test("omits organism when absent", async () => {
+    const { client, calls } = makeClient(() => ({
+      status: 200,
+      data: { success: true, match: "not_found" },
+    }));
+    await client.lookupProtein("RPUSD3");
+    const qs = new URLSearchParams(calls[0].split("?")[1]);
+    expect([...qs.keys()]).toEqual(["protein", "origin"]);
+  });
+
+  test("rejects empty protein", async () => {
+    const { client } = makeClient();
+    await expect(client.lookupProtein(" ")).rejects.toThrow(
+      /protein cannot be empty/i,
+    );
   });
 });
 

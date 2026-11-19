@@ -263,6 +263,36 @@ export function keylessLimitPromptForTeam(
   );
 }
 
+function keylessProviderToolsMessage(signupUrl: string): string {
+  return `An API key is required for provider tools. Sign up for a free API key at ${signupUrl}
+
+Then authenticate with:
+Authorization: Bearer YOUR_API_KEY`;
+}
+
+/**
+ * The 403 body for a keyless caller asking for provider tools, with the
+ * caller's own signup link. Reports the prompt.
+ */
+export function keylessProviderToolsBody(
+  teamId: string,
+  req: Parameters<typeof keylessSignupSurface>[0],
+): { success: false; error: string; signup_url: string } {
+  const ip = keylessPromptIp(keylessIpFromTeamId(teamId));
+  const surface = keylessSignupSurface(req);
+  const { url, signupRef } = keylessSignupUrlForIp(
+    ip,
+    surface,
+    "account_only_tool",
+  );
+  reportKeylessPromptShown(ip, surface, "account_only_tool", 403, signupRef);
+  return {
+    success: false,
+    error: keylessProviderToolsMessage(url),
+    signup_url: url,
+  };
+}
+
 /** Structured response for projected-credit reservation exhaustion. */
 export async function keylessLimitBody(
   teamId: string,
@@ -382,7 +412,7 @@ if current + projected > limit then
   return {0, current}
 end
 local total = redis.call("INCRBY", KEYS[1], projected)
-if total == projected then
+if redis.call("TTL", KEYS[1]) < 0 then
   redis.call("EXPIRE", KEYS[1], ttl)
 end
 return {1, total}
@@ -405,6 +435,7 @@ return {1, total}
 /**
  * Reconcile a prior keyless reservation to actual credits. Delta may be
  * negative; the counter is clamped at zero to tolerate retries or races.
+ * The daily window keeps the expiry set on first use.
  */
 export async function adjustKeylessCredits(
   teamId: string,
@@ -423,11 +454,17 @@ export async function adjustKeylessCredits(
 local current = tonumber(redis.call("GET", KEYS[1]) or "0")
 local delta = tonumber(ARGV[1])
 local ttl = tonumber(ARGV[2])
+if delta <= 0 and redis.call("EXISTS", KEYS[1]) == 0 then
+  return 0
+end
 local next = current + delta
 if next < 0 then
   next = 0
 end
-redis.call("SET", KEYS[1], next, "EX", ttl)
+redis.call("SET", KEYS[1], next, "KEEPTTL")
+if redis.call("TTL", KEYS[1]) < 0 then
+  redis.call("EXPIRE", KEYS[1], ttl)
+end
 return next
 `,
     1,
@@ -655,10 +692,18 @@ export async function chargeKeylessCredits(
     const inc = Math.ceil(credits);
     try {
       const key = creditsKey(ip);
-      const total = await redisRateLimitClient.incrby(key, inc);
-      if (total === inc) {
-        await redisRateLimitClient.expire(key, DAY_SECONDS);
-      }
+      await redisRateLimitClient.eval(
+        `
+redis.call("INCRBY", KEYS[1], ARGV[1])
+if redis.call("TTL", KEYS[1]) < 0 then
+  redis.call("EXPIRE", KEYS[1], ARGV[2])
+end
+`,
+        1,
+        key,
+        inc,
+        DAY_SECONDS,
+      );
     } catch {
       // Counter is best-effort; a missed charge just means the IP gets a few
       // extra free credits today.

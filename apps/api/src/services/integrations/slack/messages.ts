@@ -20,6 +20,9 @@ type MonitorSlackPayload = {
   };
   pages: MonitorSlackPage[];
   creditsUsed: number | null;
+  // Changed pages left out of `pages` because judging called them noise.
+  // Only set when this list includes every changed page on the check.
+  noiseOmitted?: number;
 };
 
 const MAX_PAGE_BLOCKS = 8;
@@ -31,7 +34,10 @@ const MAX_LINK_URL_LEN = 2000;
 
 // Slack mrkdwn requires these three characters escaped in text spans.
 export function escapeSlackText(input: string): string {
-  return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export function slackLink(url: string, label?: string): string {
@@ -100,7 +106,9 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
       });
       blocks.push({
         type: "context",
-        elements: [{ type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) }],
+        elements: [
+          { type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) },
+        ],
       });
     } else {
       // No judged description (e.g. unjudged monitor) — the page itself leads.
@@ -127,8 +135,15 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
   ).length;
   const counts: string[] = [];
   if (summary.changed > 0) {
+    const details: string[] = [];
+    if (meaningfulCount > 0) details.push(`${meaningfulCount} meaningful`);
+    if ((payload.noiseOmitted ?? 0) > 0) {
+      details.push(`${payload.noiseOmitted} noise omitted`);
+    }
     counts.push(
-      `${summary.changed} changed${meaningfulCount > 0 ? ` (${meaningfulCount} meaningful)` : ""}`,
+      details.length > 0
+        ? `${summary.changed} changed (${details.join(", ")})`
+        : `${summary.changed} changed`,
     );
   }
   if (summary.new > 0) counts.push(`${summary.new} new`);

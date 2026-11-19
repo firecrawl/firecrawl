@@ -1,5 +1,9 @@
 import { logger } from "../../../../lib/logger";
-import { ExtractResponse, TokenUsage } from "../../../../controllers/v1/types";
+import {
+  ExtractResponse,
+  TeamFlags,
+  TokenUsage,
+} from "../../../../controllers/v1/types";
 import { Document } from "../../../../controllers/v1/types";
 import { generateCompletions_F0 } from "../llmExtract-f0";
 import {
@@ -29,6 +33,7 @@ export async function batchExtractPromise_F0(
     extractId?: string;
     scrapeId?: string;
   },
+  teamFlags?: TeamFlags | null,
 ): Promise<{
   extract: any;
   numTokens: number;
@@ -52,6 +57,7 @@ export async function batchExtractPromise_F0(
     },
     markdown: buildDocument_F0(doc),
     isExtractEndpoint: true,
+    teamFlags,
     metadata: {
       ...metadata,
       functionId: metadata.functionId

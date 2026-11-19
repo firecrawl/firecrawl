@@ -1,6 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { searchRequestSchema, scrapeRequestSchema } from "./types";
 
+describe("searchRequestSchema sources", () => {
+  it("accepts skills as a string or an object", () => {
+    expect(
+      searchRequestSchema.parse({
+        query: "records",
+        sources: ["skills"],
+      }).sources,
+    ).toEqual([{ type: "skills" }]);
+    expect(
+      searchRequestSchema.parse({
+        query: "records",
+        sources: [{ type: "skills" }],
+      }).sources,
+    ).toEqual([{ type: "skills" }]);
+  });
+
+  it("rejects extra fields and unknown sources", () => {
+    expect(
+      searchRequestSchema.safeParse({
+        query: "records",
+        sources: [{ type: "skills", limit: 3 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      searchRequestSchema.safeParse({
+        query: "records",
+        sources: ["not-a-source"],
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("searchRequestSchema highlights", () => {
   it.each(["compact", "summary", "full"])(
     "accepts %s tool detail",

@@ -3,7 +3,7 @@ import {
   concurrentIf,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { expectMapToSucceed, map, idmux, Identity } from "./lib";
+import { describeV1, expectMapToSucceed, map, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -16,7 +16,7 @@ beforeAll(async () => {
 }, 10000);
 
 // TODO: is map meant for self-host?
-describe("Map tests", () => {
+describeV1()("Map tests", () => {
   const base = TEST_SUITE_WEBSITE;
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(

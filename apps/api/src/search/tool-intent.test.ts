@@ -10,6 +10,7 @@ const config = vi.hoisted(() => ({
   ANTHROPIC_API_KEY: undefined as string | undefined,
   TYPESAFE_API_KEY: "key" as string | undefined,
   ALEXANDRIA_AUTO_TOOLS: false,
+  ALEXANDRIA_TOOL_FUSION: false,
 }));
 
 vi.mock("ai", () => ({ generateObject: mocks.generateObject }));
@@ -28,6 +29,7 @@ import {
   inferToolIntent,
   parseSearchQuery,
   queryInferenceEnabled,
+  toolFusionEnabled,
   verifyTools,
 } from "./tool-intent";
 
@@ -124,6 +126,15 @@ describe("feature gates", () => {
     expect(queryInferenceEnabled()).toBe(false);
     config.TYPESAFE_API_KEY = "key";
   });
+
+  it("keep tool fusion off unless the config or team flag turns it on", () => {
+    expect(toolFusionEnabled({})).toBe(false);
+    expect(toolFusionEnabled(null)).toBe(false);
+    expect(toolFusionEnabled({ alexandriaToolFusion: true })).toBe(true);
+    config.ALEXANDRIA_TOOL_FUSION = true;
+    expect(toolFusionEnabled({})).toBe(true);
+    config.ALEXANDRIA_TOOL_FUSION = false;
+  });
 });
 
 it("sends no semantic query for an operator-only query", async () => {
@@ -157,4 +168,17 @@ it("keeps only the tools Jev judges to fit, and drops unjudged ones", async () =
   expect(await verifyTools("who owns apple stock", tools, logger)).toEqual([
     tools[0],
   ]);
+});
+
+it("keeps tools at or above a lower fit threshold when one is given", async () => {
+  const tools = [
+    { provider: "fiscal-ai", capability: "ownership/holders", description: "" },
+    { provider: "sec-gov", capability: "filings/filings", description: "" },
+  ];
+  systemOne
+    .mockResolvedValueOnce({ answers: { fits: { noul: 0.2 } } })
+    .mockResolvedValueOnce({ answers: { fits: { noul: 0.1 } } });
+  expect(await verifyTools("who owns apple stock", tools, logger, 0.2)).toEqual(
+    [tools[0]],
+  );
 });

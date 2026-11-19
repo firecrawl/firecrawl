@@ -4,6 +4,7 @@ import {
   Document,
   ExtractOptions,
   ExtractOptionsInput,
+  TeamFlags,
   TokenUsage,
 } from "../../../controllers/v1/types";
 import { Logger } from "winston";
@@ -13,6 +14,7 @@ import { generateObject, generateText, LanguageModel } from "ai";
 import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
+import { aiTelemetry } from "../../ai-telemetry";
 
 // Get max tokens from model prices
 const getModelLimits_F0 = (model: string) => {
@@ -179,10 +181,12 @@ export async function generateCompletions_F0({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o-mini"),
+  teamFlags,
+  model = getModel("gpt-4o-mini", undefined, { teamFlags, feature: "Extract" }),
   mode = "object",
   metadata,
 }: {
+  teamFlags?: TeamFlags | null;
   model?: LanguageModel;
   modelName?: string;
   logger: Logger;
@@ -250,7 +254,7 @@ export async function generateCompletions_F0({
             },
           },
         },
-        experimental_telemetry: {
+        telemetry: aiTelemetry({
           isEnabled: true,
           functionId: metadata.functionId,
           metadata: {
@@ -268,7 +272,7 @@ export async function generateCompletions_F0({
                 }
               : {}),
           },
-        },
+        }),
       });
 
       extract = result.text;
@@ -355,7 +359,7 @@ export async function generateCompletions_F0({
               },
             },
           },
-          experimental_telemetry: {
+          telemetry: aiTelemetry({
             isEnabled: true,
             functionId: metadata.functionId,
             metadata: {
@@ -373,7 +377,7 @@ export async function generateCompletions_F0({
                   }
                 : {}),
             },
-          },
+          }),
         });
         return fixedText;
       },
@@ -404,7 +408,7 @@ export async function generateCompletions_F0({
           },
         },
       },
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: true,
         functionId: metadata.functionId,
         metadata: {
@@ -422,7 +426,7 @@ export async function generateCompletions_F0({
               }
             : {}),
         },
-      },
+      }),
     } satisfies Parameters<typeof generateObject>[0];
 
     const result = await generateObject(generateObjectConfig);
@@ -510,8 +514,12 @@ function removeDefaultProperty_F0(schema: any): any {
 export async function generateSchemaFromPrompt_F0(
   prompt: string,
   metadata: { teamId: string; functionId?: string; extractId?: string },
+  teamFlags?: TeamFlags | null,
 ): Promise<any> {
-  const model = getModel("gpt-4o-mini");
+  const model = getModel("gpt-4o-mini", undefined, {
+    teamFlags,
+    feature: "Extract",
+  });
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
 

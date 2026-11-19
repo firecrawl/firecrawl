@@ -7,7 +7,6 @@ import {
   firebillLock,
   firebillTrack,
   processFirebillTrackRetry,
-  shouldRouteToFirebill,
 } from "../firebill";
 import { logger } from "../../../lib/logger";
 import {
@@ -24,19 +23,21 @@ const { configState } = vi.hoisted(() => ({
   configState: {
     FIREBILL_URL: "https://firebill.test",
     FIREBILL_SECRET: "secret",
-    FIREBILL_ORG_IDS: ["allow-listed-org"] as string[] | undefined,
-    FIREBILL_ROLLOUT_PERCENT: 0,
     FIRECRAWL_BUILD_SHA: undefined as string | undefined,
   },
 }));
 
 vi.mock("../../../config", () => ({ config: configState }));
 
-const { retryQueueAdd } = vi.hoisted(() => ({
+const { retryQueueAdd, retryQueueGetJob } = vi.hoisted(() => ({
   retryQueueAdd: vi.fn(),
+  retryQueueGetJob: vi.fn(),
 }));
 vi.mock("../../queue-service", () => ({
-  getFirebillTrackRetryQueue: () => ({ add: retryQueueAdd }),
+  getFirebillTrackRetryQueue: () => ({
+    add: retryQueueAdd,
+    getJob: retryQueueGetJob,
+  }),
 }));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -78,8 +79,6 @@ const params = {
 beforeEach(() => {
   configState.FIREBILL_URL = "https://firebill.test";
   configState.FIREBILL_SECRET = "secret";
-  configState.FIREBILL_ORG_IDS = ["allow-listed-org"];
-  configState.FIREBILL_ROLLOUT_PERCENT = 0;
   configState.FIRECRAWL_BUILD_SHA = undefined;
   firebillTrackTotal.reset();
   firebillRetryTotal.reset();
@@ -88,51 +87,17 @@ beforeEach(() => {
   firebillTrackRetryTotal.reset();
   firebillTrackRetryExhaustedValueTotal.reset();
   retryQueueAdd.mockReset();
-  retryQueueAdd.mockResolvedValue(undefined);
+  retryQueueAdd.mockImplementation(async (_name, _data, opts) => ({
+    id: opts.jobId,
+    timestamp: 1_000,
+  }));
+  retryQueueGetJob.mockReset();
+  retryQueueGetJob.mockResolvedValue({ timestamp: 1_000 });
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
-
-describe("shouldRouteToFirebill", () => {
-  it("routes the allowlist even at 0 percent", () => {
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(true);
-  });
-
-  it("routes nobody else at 0 percent — the kill switch", () => {
-    const others = Array.from({ length: 200 }, (_, i) => `other-${i}`);
-    expect(others.some(orgId => shouldRouteToFirebill(orgId))).toBe(false);
-  });
-
-  it("routes roughly the configured share once ramped", () => {
-    const orgs = Array.from({ length: 1000 }, (_, i) => `ramp-${i}`);
-    configState.FIREBILL_ROLLOUT_PERCENT = 30;
-    const share =
-      (orgs.filter(orgId => shouldRouteToFirebill(orgId)).length /
-        orgs.length) *
-      100;
-    expect(Math.abs(share - 30)).toBeLessThan(6);
-  });
-
-  it("ignores a non-object second argument, so callback use cannot route everyone", () => {
-    // `orgs.filter(shouldRouteToFirebill)` would pass the array index as the
-    // options argument. TypeScript rejects that now, but the runtime must be
-    // safe too: destructuring a field off a number yields undefined.
-    configState.FIREBILL_ROLLOUT_PERCENT = 0;
-    const asCallback = shouldRouteToFirebill as unknown as (
-      orgId: string,
-      index: number,
-    ) => boolean;
-    expect(asCallback("not-allow-listed", 7)).toBe(false);
-  });
-
-  it("stays off entirely when firebill is not configured", () => {
-    configState.FIREBILL_ROLLOUT_PERCENT = 100;
-    configState.FIREBILL_SECRET = "";
-    expect(shouldRouteToFirebill("allow-listed-org")).toBe(false);
-  });
-});
 
 /**
  * The outcome counter alone — the one the alerts read, which must keep exactly
@@ -699,6 +664,34 @@ describe("firebillTrack durable retry", () => {
     );
   });
 
+  it("counts an add that matched an existing job as a duplicate, not a new retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueGetJob.mockResolvedValueOnce({ timestamp: 500 });
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(retryQueueGetJob).toHaveBeenCalledWith(
+      "firebill|fc%3Atrack%3Ascrape%3Ajob-1",
+    );
+    expect(await retryOutcomes()).toEqual({ "track/enqueue_duplicate": 1 });
+    expect(logCalls("error")[0][1]).toMatchObject({ handedToRetry: true });
+  });
+
+  it("counts a landed add as enqueued when the duplicate check cannot read it back", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueGetJob.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueued": 1 });
+  });
+
   it("logs and counts an enqueue that fails, still reporting false", async () => {
     vi.stubGlobal(
       "fetch",
@@ -894,6 +887,46 @@ describe("firebillCheck", () => {
       remaining: 25,
     });
   });
+
+  // What a 402 names as the time credits come back.
+  it("passes through the balance's reset time", async () => {
+    answer({
+      success: true,
+      allowed: false,
+      remaining: 0,
+      resets_at: 1_798_761_600_000,
+    });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 0,
+      resetsAt: 1_798_761_600_000,
+    });
+  });
+
+  // A reset time is decoration on the answer, never a reason to fail open.
+  it.each([
+    ["a string", "2026-12-01T00:00:00Z"],
+    ["a fraction", 1.5],
+    ["zero", 0],
+    ["past what a Date can hold", 8_640_000_000_000_001],
+    ["null", null],
+  ])(
+    "drops a resets_at that is %s and keeps the answer",
+    async (_label, resetsAt) => {
+      answer({
+        success: true,
+        allowed: false,
+        remaining: 0,
+        resets_at: resetsAt,
+      });
+      await expect(firebillCheck(checkParams)).resolves.toEqual({
+        status: "answered",
+        allowed: false,
+        remaining: 0,
+      });
+    },
+  );
 
   it("treats an absent remaining on an ALLOWED check as unbounded, not zero", async () => {
     answer({ success: true, allowed: true });

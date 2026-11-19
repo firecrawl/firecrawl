@@ -278,6 +278,7 @@ export async function runSearchTarget(params: {
   knownPages: Map<string, KnownPage>;
   knownEvents: KnownEvent[];
   zeroDataRetention: boolean;
+  usOnly?: boolean;
   logger: Logger;
 }): Promise<SearchTargetRunResult> {
   const { target, knownPages, goalVersion, logger } = params;
@@ -324,6 +325,7 @@ export async function runSearchTarget(params: {
         logger,
         num_results: target.maxResults,
         tbs,
+        usOnly: params.usOnly,
       },
       logger,
     );

@@ -81,6 +81,55 @@ describe("exchangeRequest", () => {
     expect(headersOf()).not.toHaveProperty("x-exchange-billing-country");
   });
 
+  it("sends the billing organization only when known, apart from the terms identity", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      billingOrganizationId: "org",
+    });
+    expect(headersOf()["x-exchange-billing-organization-id"]).toBe("org");
+    expect(headersOf()).not.toHaveProperty("x-exchange-organization-id");
+    expect(headersOf()).not.toHaveProperty("x-exchange-api-key-id");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      termsIdentity: { organizationId: "org", apiKeyId: "key" },
+    });
+    expect(headersOf()).toMatchObject({
+      "x-exchange-organization-id": "org",
+      "x-exchange-api-key-id": "key",
+    });
+    expect(headersOf()).not.toHaveProperty(
+      "x-exchange-billing-organization-id",
+    );
+  });
+
+  it("marks the team Alexandria Verified only when set", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      alexandriaVerified: true,
+    });
+    expect(headersOf()["x-exchange-alexandria-verified"]).toBe("true");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-alexandria-verified");
+  });
+
   it("sends no connectors grant by default", async () => {
     await exchangeRequest({
       teamId: "team",
@@ -111,6 +160,64 @@ describe("exchangeRequest", () => {
     });
     expect(headersOf()).not.toHaveProperty("x-exchange-zero-data-retention");
   });
+
+  it("says whether feedback may be stored only when told", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      feedbackStorage: "opted_out",
+    });
+    expect(headersOf()["x-exchange-feedback-storage"]).toBe("opted_out");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-feedback-storage");
+  });
+
+  it.each([
+    ["mcp-cursor", "mcp-cursor"],
+    [" MCP-Claude-Code@3.40.0 ", "mcp-claude-code-3.40.0"],
+    ["cli.codex/1_2", "cli.codex/1_2"],
+    ["a\r\nx-injected: 1", "a-x-injected-1"],
+    ["a".repeat(80), "a".repeat(64)],
+  ])(
+    "sends the caller's origin and integration as short tokens (%j)",
+    async (sent, token) => {
+      await exchangeRequest({
+        teamId: "team",
+        path: "/v1/retrieve",
+        body: {},
+        timeoutMs: 1000,
+        clientOrigin: sent,
+        clientIntegration: sent,
+      });
+      expect(headersOf()["x-exchange-client-origin"]).toBe(token);
+      expect(headersOf()["x-exchange-client-integration"]).toBe(token);
+    },
+  );
+
+  it.each([undefined, null, "", "   ", "@@@", "--"])(
+    "sends no origin or integration when it is unknown (%j)",
+    async sent => {
+      await exchangeRequest({
+        teamId: "team",
+        path: "/v1/retrieve",
+        body: {},
+        timeoutMs: 1000,
+        clientOrigin: sent,
+        clientIntegration: sent,
+      });
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-origin");
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-integration");
+    },
+  );
 
   it("sends the deadline as a whole number of milliseconds", async () => {
     await exchangeRequest({

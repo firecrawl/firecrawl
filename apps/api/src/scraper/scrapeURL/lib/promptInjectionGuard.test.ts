@@ -11,6 +11,9 @@ vi.mock("ai", async importOriginal => ({
   ...(await importOriginal<typeof import("ai")>()),
   generateObject: vi.fn(),
 }));
+vi.mock("../../../lib/ai-telemetry", () => ({
+  aiTelemetry: (options: unknown) => options,
+}));
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn().mockReturnValue({ modelId: "gpt-4o-mini" }),
 }));
@@ -204,7 +207,7 @@ describe("checkForPromptInjection", () => {
 
     const telemetry = vi
       .mocked(generateObject)
-      .mock.calls.map(([args]) => args.experimental_telemetry);
+      .mock.calls.map(([args]) => args.telemetry as any);
     expect(telemetry).toHaveLength(3);
     for (const t of telemetry) {
       expect(t?.recordInputs).toBe(false);
@@ -222,7 +225,7 @@ describe("checkForPromptInjection", () => {
     await run(new CostTracking(), "short page");
 
     const [[args]] = vi.mocked(generateObject).mock.calls;
-    expect(args.experimental_telemetry?.metadata).toEqual({
+    expect((args.telemetry as any)?.metadata).toEqual({
       teamId: "test-team",
     });
   });

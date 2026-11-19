@@ -25,6 +25,7 @@ export async function performPromptInjectionGuard(
         scrapeId: meta.id,
       },
       zeroDataRetention: !!meta.internalOptions.zeroDataRetention,
+      teamFlags: meta.internalOptions.teamFlags,
     }));
 
   if (scannedFully) {

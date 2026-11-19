@@ -72,26 +72,29 @@ export const detectFrameworkHints = (): string[] => {
 };
 
 export const detectColorScheme = (): "dark" | "light" => {
-  const body = document.body;
-  const html = document.documentElement;
+  // Either root may be null when the script runs mid-navigation, before the
+  // document (or its <body>) has been parsed. Fall back to whichever exists,
+  // then to prefers-color-scheme.
+  const html: Element | null = document.documentElement;
+  const body: Element | null = document.body;
+  const roots = [html, body].filter((el): el is Element => el != null);
+
+  const hasClass = (name: string): boolean =>
+    roots.some(el => el.classList.contains(name));
+  const hasAttr = (attr: string, value: string): boolean =>
+    roots.some(el => el.getAttribute(attr) === value);
 
   const hasDarkIndicator =
-    html.classList.contains("dark") ||
-    body.classList.contains("dark") ||
-    html.classList.contains("dark-mode") ||
-    body.classList.contains("dark-mode") ||
-    html.getAttribute("data-theme") === "dark" ||
-    body.getAttribute("data-theme") === "dark" ||
-    html.getAttribute("data-bs-theme") === "dark";
+    hasClass("dark") ||
+    hasClass("dark-mode") ||
+    hasAttr("data-theme", "dark") ||
+    html?.getAttribute("data-bs-theme") === "dark";
 
   const hasLightIndicator =
-    html.classList.contains("light") ||
-    body.classList.contains("light") ||
-    html.classList.contains("light-mode") ||
-    body.classList.contains("light-mode") ||
-    html.getAttribute("data-theme") === "light" ||
-    body.getAttribute("data-theme") === "light" ||
-    html.getAttribute("data-bs-theme") === "light";
+    hasClass("light") ||
+    hasClass("light-mode") ||
+    hasAttr("data-theme", "light") ||
+    html?.getAttribute("data-bs-theme") === "light";
 
   let prefersDark = false;
   try {
@@ -129,8 +132,8 @@ export const detectColorScheme = (): "dark" | "light" => {
     return null;
   };
 
-  const bodyBg = getEffectiveBackground(body);
-  const htmlBg = getEffectiveBackground(html);
+  const bodyBg = body ? getEffectiveBackground(body) : null;
+  const htmlBg = html ? getEffectiveBackground(html) : null;
   const effectiveBg = bodyBg || htmlBg;
 
   if (effectiveBg) {
@@ -153,25 +156,79 @@ export const extractBrandName = (): string => {
   const title = document.title;
   const h1 = document.querySelector("h1")?.textContent?.trim();
 
+  let hostname = "";
   let domainName = "";
   try {
-    const hostname = window.location.hostname;
+    hostname = window.location.hostname;
     domainName = hostname.replace(/^www\./, "").split(".")[0];
     domainName = domainName.charAt(0).toUpperCase() + domainName.slice(1);
   } catch (e) {
     // location not available
   }
 
-  let titleBrand = "";
-  if (title) {
-    titleBrand = title
-      .replace(/\s*[-|–|—]\s*.*$/, "")
-      .replace(/\s*:\s*.*$/, "")
-      .replace(/\s*\|.*$/, "")
-      .trim();
-  }
+  return (
+    ogSiteName || brandFromTitle(title, hostname) || h1 || domainName || ""
+  );
+};
 
-  return ogSiteName || titleBrand || h1 || domainName || "";
+// Second-level labels under a country TLD that are part of the public suffix
+// (example.co.uk, example.com.br), not the brand.
+const COUNTRY_SECOND_LEVELS = new Set([
+  "co",
+  "com",
+  "net",
+  "org",
+  "ac",
+  "gov",
+  "edu",
+  "ne",
+  "or",
+]);
+
+/**
+ * The brand part of a title such as "Brand | Tagline" or "Tagline - Brand":
+ * the part whose words spell a hostname label, trying the label nearest the
+ * registrable domain first, else the first part. A hyphen only separates
+ * parts when spaced, so "Coca-Cola" stays whole.
+ */
+export const brandFromTitle = (
+  title: string | null | undefined,
+  hostname: string,
+): string => {
+  const parts = (title ?? "")
+    .split(/\s*[|–—·•]\s*|\s+-\s+|:\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  const hostLabels = hostname.toLowerCase().split(".");
+  const secondLevel = hostLabels[hostLabels.length - 2];
+  const suffixLength =
+    hostLabels[hostLabels.length - 1]?.length === 2 &&
+    COUNTRY_SECOND_LEVELS.has(secondLevel)
+      ? 2
+      : 1;
+  const labels = hostLabels
+    .slice(0, -suffixLength)
+    .filter(label => label !== "www")
+    .map(label => label.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean)
+    .reverse();
+  const spells = (part: string, label: string) => {
+    const words = part.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    for (let start = 0; start < words.length; start++) {
+      let joined = "";
+      for (let end = start; end < words.length; end++) {
+        joined += words[end];
+        if (joined === label) return true;
+        if (joined.length >= label.length) break;
+      }
+    }
+    return false;
+  };
+  for (const label of labels) {
+    const match = parts.find(part => spells(part, label));
+    if (match) return match;
+  }
+  return parts[0] ?? "";
 };
 
 export const normalizeColor = (
@@ -287,10 +344,12 @@ export const getBackgroundCandidates = (): BackgroundCandidate[] => {
     }
   });
 
-  const bodyBg = getComputedStyleCached(document.body).backgroundColor;
-  const htmlBg = getComputedStyleCached(
-    document.documentElement,
-  ).backgroundColor;
+  // body/html may be null mid-navigation; a missing root contributes no
+  // candidate rather than silently aliasing the other root's background.
+  const bodyEl: Element | null = document.body;
+  const htmlEl: Element | null = document.documentElement;
+  const bodyBg = bodyEl ? getComputedStyleCached(bodyEl).backgroundColor : "";
+  const htmlBg = htmlEl ? getComputedStyleCached(htmlEl).backgroundColor : "";
 
   if (isValidBackgroundColor(bodyBg)) {
     const normalized = normalizeColor(bodyBg);
@@ -332,7 +391,9 @@ export const getBackgroundCandidates = (): BackgroundCandidate[] => {
   }
 
   try {
-    const rootStyle = getComputedStyleCached(document.documentElement);
+    const rootStyle = getComputedStyleCached(
+      document.documentElement as Element,
+    );
 
     const cssVars = [
       "--background",

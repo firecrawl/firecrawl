@@ -20,6 +20,10 @@ public final class ResearchModels {
         public Double score;
         public Integer year;
         public List<String> authors;
+        @JsonProperty("createdDate")
+        public String createdDate;
+        @JsonProperty("updateDate")
+        public String updateDate;
         public String venue;
         public String url;
         public Map<String, Object> signals;
@@ -76,6 +80,91 @@ public final class ResearchModels {
         public String note;
     }
 
+    /**
+     * {@code match} is "found" with {@code protein} set, "ambiguous" with
+     * {@code candidates} and {@code candidateCount} set, or "not_found".
+     */
+    public static class ProteinLookupResponse {
+        public boolean success;
+        public String release;
+        public String match;
+        public ProteinEntry protein;
+        public List<ProteinCandidate> candidates;
+        @JsonProperty("candidateCount")
+        public Integer candidateCount;
+        /** UniProt's credit and CC BY 4.0 license. Show it with any results you display to a person. */
+        public String notice;
+    }
+
+    public static class ProteinEntry {
+        public String accession;
+        @JsonProperty("entryName")
+        public String entryName;
+        public String gene;
+        public List<String> synonyms;
+        public String name;
+        public ProteinOrganism organism;
+        @JsonProperty("matchedBy")
+        public String matchedBy;
+        public String url;
+        @JsonProperty("subcellularLocation")
+        public List<ProteinStatement> subcellularLocation;
+        public List<ProteinStatement> function;
+        @JsonProperty("goCellularComponent")
+        public List<ProteinGoTerm> goCellularComponent;
+        @JsonProperty("paperIds")
+        public List<String> paperIds;
+    }
+
+    public static class ProteinCandidate {
+        public String accession;
+        @JsonProperty("entryName")
+        public String entryName;
+        public String gene;
+        public String name;
+        public ProteinOrganism organism;
+        @JsonProperty("matchedBy")
+        public String matchedBy;
+    }
+
+    public static class ProteinOrganism {
+        @JsonProperty("taxonId")
+        public int taxonId;
+        @JsonProperty("scientificName")
+        public String scientificName;
+        @JsonProperty("commonName")
+        public String commonName;
+    }
+
+    public static class ProteinStatement {
+        public String text;
+        public boolean note;
+        public String molecule;
+        public String topology;
+        public String orientation;
+        public List<ProteinEvidence> evidence;
+    }
+
+    /** {@code paperId} is a "pmid:" paper ID that {@code inspectPaper} and {@code readPaper} accept. */
+    public static class ProteinEvidence {
+        public String kind;
+        public String eco;
+        @JsonProperty("paperId")
+        public String paperId;
+        @JsonProperty("fromProtein")
+        public String fromProtein;
+    }
+
+    public static class ProteinGoTerm {
+        public String id;
+        public String term;
+        public String code;
+        @JsonProperty("assignedBy")
+        public String assignedBy;
+        @JsonProperty("paperIds")
+        public List<String> paperIds;
+    }
+
     public static class GitHubSearchItem {
         public String resultType;
         public String repo;
@@ -101,6 +190,12 @@ public final class ResearchModels {
         public List<String> categories;
         public String from;
         public String to;
+        /**
+         * "relevance" (default) or "date_desc", which returns the newest of the most
+         * relevant matches, newest first by created date. It does not list every paper
+         * in a date range. Set {@code from} (and {@code to}) for that.
+         */
+        public String sort;
     }
 
     public static class ReadPaperOptions {
@@ -112,6 +207,11 @@ public final class ResearchModels {
         public Integer k;
         public Boolean rerank;
         public List<String> anchor;
+    }
+
+    public static class LookupProteinOptions {
+        /** NCBI taxon ID, scientific name or UniProt common name (default "9606"). */
+        public String organism;
     }
 
     public static class SearchGitHubOptions {

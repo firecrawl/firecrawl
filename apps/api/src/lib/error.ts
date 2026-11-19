@@ -41,14 +41,17 @@ export type ErrorCodes =
   | "SCRAPE_VIDEO_UNSUPPORTED_URL"
   | "SCRAPE_MEDIA_ACCESS_DENIED"
   | "SCRAPE_PROMPT_INJECTION_DETECTED"
+  | "SCRAPE_PAYWALLED_CONTENT"
   | "SCRAPE_JSON_CONTENT_TOO_LARGE"
-  | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
+  | "US_ONLY_UNAVAILABLE"
+  | "RESERVED_CAPACITY_UNAVAILABLE"
   | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
   | "UNSUPPORTED_SITE"
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
+  | "CATEGORY_REMOVED"
   | "CONCURRENCY_QUEUE_TIMEOUT"
   | "SAFE_MODE_BLOCKED"
   | "SCRAPE_SITE_RESTRICTION_BLOCKED"
@@ -61,11 +64,16 @@ export type ErrorCodes =
   | "thread_expired"
   | "threads_disabled"
   | "exchange_not_enabled"
+  // GET /v2/agent/:jobId. The job id is unknown, or the status service
+  // could not be read and the caller should retry.
+  | "agent_not_found"
+  | "agent_status_unavailable"
   // Agent zero data retention. Lowercase to match the agent service's codes.
   | "zdr_threads_unsupported"
   | "zdr_expired"
   | "zdr_no_snapshots"
-  | "zdr_not_enabled";
+  | "zdr_not_enabled"
+  | "zdr_retention_misconfigured";
 
 export class TransportableError extends Error {
   public readonly code: ErrorCodes;

@@ -10,6 +10,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
+import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 import {
@@ -58,10 +59,22 @@ export async function extractStatusController(
         agent = await getExtractV3AgentStatus(req.params.jobId);
       } catch (error) {
         if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+        if (error.retryAfterSeconds !== undefined) {
+          res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        }
         return res.status(error.status).json({
           success: false,
           code: error.code,
           error: error.message,
+        });
+      }
+
+      const expiry = agentJobExpiry(access, agent);
+      if (expiry.zeroDataRetentionExpired) {
+        return res.status(410).json({
+          success: false,
+          code: "zdr_expired",
+          error: ZDR_EXPIRED_ERROR,
         });
       }
 
@@ -70,7 +83,7 @@ export async function extractStatusController(
         status: agent.status === "success" ? "completed" : agent.status,
         error: agent.error,
         data: agent.data,
-        expiresAt: new Date(access.expiresAtMs).toISOString(),
+        expiresAt: new Date(expiry.expiresAtMs).toISOString(),
         creditsUsed: agent.creditsUsed,
       });
     }

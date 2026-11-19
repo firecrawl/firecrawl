@@ -5,6 +5,13 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.7] - 2026-11-04
+
+### Changed
+- `searchGithub()`: the research index GitHub search endpoint it calls was
+  removed after 2026-11-03. Use `developerSearch()` instead. The method
+  remains in the SDK until the next major release.
+
 ## [1.16.6] - 2026-10-20
 
 ### Added

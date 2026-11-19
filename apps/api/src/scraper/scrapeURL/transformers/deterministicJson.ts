@@ -1,6 +1,8 @@
 import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
+import { hasCustomRequestContext } from "../lib/request-context";
 import { eq } from "drizzle-orm";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -104,6 +106,13 @@ export async function performDeterministicJson(
     return document;
   }
 
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    warn(
+      "Deterministic JSON mode is not supported for teams restricted to US-only processing.",
+    );
+    return document;
+  }
+
   const sandbox = flareSandboxRunner();
   if (!sandbox) {
     warn("Deterministic JSON mode is not configured on this instance.");
@@ -125,6 +134,9 @@ export async function performDeterministicJson(
       cache,
       sandbox,
       costTracking: meta.costTracking,
+      cacheScope: hasCustomRequestContext(meta.options)
+        ? meta.internalOptions.teamId
+        : undefined,
     });
   } catch (error) {
     meta.logger.error("Deterministic JSON extraction failed", { error });

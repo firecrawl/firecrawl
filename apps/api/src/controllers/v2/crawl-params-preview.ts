@@ -8,14 +8,16 @@ import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
 const crawlParamsPreviewRequestSchema = z.object({
   url: z.url(),
   prompt: z.string().max(10000),
-  // Only keeps the preview's own LLM call out of traces, so unlike a crawl it
-  // needs no ZDR permission check.
+  // Only keeps the preview's site search and LLM call on the zero data
+  // retention path and out of traces, so unlike a crawl it needs no ZDR
+  // permission check.
   zeroDataRetention: z.boolean().optional(),
 });
 
@@ -93,6 +95,7 @@ export async function crawlParamsPreviewController(
             allowExternalLinks: false,
             useIndex: true,
             maxFireEngineResults: 500,
+            zeroDataRetention,
           });
 
         // Generate crawler options from enhanced prompt
@@ -102,6 +105,7 @@ export async function crawlParamsPreviewController(
           new CostTracking(),
           { teamId: req.auth.team_id },
           zeroDataRetention,
+          req.acuc?.flags,
         );
         return { extract, websiteUrls };
       },
@@ -147,6 +151,14 @@ export async function crawlParamsPreviewController(
       error: error.message,
       prompt: req.body.prompt,
     });
+
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
 
     return res.status(400).json({
       success: false,

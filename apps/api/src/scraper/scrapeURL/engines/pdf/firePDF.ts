@@ -6,6 +6,8 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
+import { isUsOnly, US_DATA_REGION } from "../../../../lib/us-only";
+import { isReservedCapacity } from "../../../../lib/reserved-capacity";
 import {
   maybeSaveResult,
   provenanceFromResponse,
@@ -18,6 +20,12 @@ import {
   firePdfTableFormat,
   type FirePdfSourceKind,
 } from "./fire-pdf/request-metadata";
+import {
+  firePdfReservedRefused,
+  firePdfReservedCapacityRefusal,
+  firePdfRegionRefused,
+  firePdfUsOnlyRefusal,
+} from "./fire-pdf/data-region";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -107,10 +115,14 @@ export async function scrapePDFWithFirePDF(
   });
 
   const zdr = meta.internalOptions.zeroDataRetention === true;
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+  const reservedCapacity = isReservedCapacity(
+    meta.internalOptions.teamFlags ?? undefined,
+  );
   const pdfSha256 = createPdfCacheKey(base64Content);
   const tableFormat = firePdfTableFormat(meta);
 
-  // Explicit deadline contract with fire-pdf (mirrors mineru-api):
+  // Explicit deadline contract with fire-pdf:
   //   timeout    — remaining scrape-tier budget in ms (from AbortManager)
   //   created_at — epoch ms when we handed the budget over to fire-pdf
   //
@@ -157,6 +169,8 @@ export async function scrapePDFWithFirePDF(
       zdr,
       training_capture: buildFirePdfTrainingCapture(meta),
       ...deadlineFields,
+      ...(usOnly && { data_region: US_DATA_REGION }),
+      ...(reservedCapacity && { reserved: true }),
     },
     logger,
     schema: z.object({
@@ -177,10 +191,40 @@ export async function scrapePDFWithFirePDF(
       // the echo is the only proof the fire-pdf build understood the
       // option — older builds ignore unknown request fields and omit it.
       page_markers: z.literal(true).optional(),
+      data_region_applied: z.unknown().optional(),
+      reserved_applied: z.unknown().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
+  }).catch(error => {
+    const body = (error as { cause?: { response?: { body?: unknown } } })?.cause
+      ?.response?.body;
+    if (usOnly && firePdfRegionRefused(body)) {
+      throw firePdfUsOnlyRefusal(meta, "region_unavailable", sourceKind);
+    }
+    if (reservedCapacity && firePdfReservedRefused(body)) {
+      throw firePdfReservedCapacityRefusal(
+        meta,
+        "reserved_unavailable",
+        sourceKind,
+      );
+    }
+    throw error;
   });
+  // A build that ignores the pin answers without the echo; its result may
+  // have come from GPU capacity outside the US.
+  if (usOnly && resp.data_region_applied !== US_DATA_REGION) {
+    throw firePdfUsOnlyRefusal(meta, "region_unconfirmed", sourceKind);
+  }
+  // Likewise, without the reserved echo the result may have come from other
+  // capacity.
+  if (reservedCapacity && resp.reserved_applied !== true) {
+    throw firePdfReservedCapacityRefusal(
+      meta,
+      "reserved_unconfirmed",
+      sourceKind,
+    );
+  }
 
   const durationMs = Date.now() - startedAt;
   if (includePageMarkdown && resp.pages === undefined) {

@@ -1,6 +1,7 @@
 import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { getModel } from "../../../lib/generic-ai";
 import { config } from "../../../config";
+import type { TeamFlags } from "../../../controllers/v2/types";
 
 // Vertex billing labels so every LLM call is traceable at the billing level by
 // function, team, monitor, and monitor check (mirrors the Extract code). The
@@ -38,15 +39,18 @@ function geminiApiKey(): string | undefined {
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted).
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
 }
 
 export function hasLlmProvider(): boolean {
   return hasVertex() || Boolean(geminiApiKey());
 }
 
-export function googleModel(modelId: string) {
-  return getModel(modelId, hasVertex() ? "vertex" : "google");
+export function googleModel(
+  modelId: string,
+  options?: { teamFlags?: TeamFlags | null; feature?: string },
+) {
+  return getModel(modelId, hasVertex() ? "vertex" : "google", options);
 }
 
 export function googleProviderOptions(

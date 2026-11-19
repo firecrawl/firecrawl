@@ -155,6 +155,27 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
       "/exchange/team-skills/references?q=fred",
       "/v1/team-skills/references?q=fred",
     ],
+    ["get", "/exchange/provider-skills", "/v1/provider-skills"],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief/file",
+      "/v1/provider-skills/acme/research/brief/file",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research",
+      "/v1/provider-skills/acme/research",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
   ] as const)(
     "forwards %s %s for a team with exchangeRetrieve, granting connectors",
     async (method, path, upstreamPath) => {
@@ -217,6 +238,68 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
         "x-exchange-team-id": "team-connectors",
       });
       expect(init.headers).not.toHaveProperty("x-exchange-connectors");
+    },
+  );
+
+  it.each([
+    ["get", "/exchange/provider-skills", "/v1/provider-skills"],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+    [
+      "get",
+      "/exchange/provider-skills/acme/research/brief/file",
+      "/v1/provider-skills/acme/research/brief/file",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research",
+      "/v1/provider-skills/acme/research",
+    ],
+    [
+      "patch",
+      "/exchange/provider-skills/acme/research/brief",
+      "/v1/provider-skills/acme/research/brief",
+    ],
+  ] as const)(
+    "forwards %s %s for any team, stamping the team and preserving method and body",
+    async (method, path, upstreamPath) => {
+      keyResolvesAs({});
+      const body = { enabled: false };
+      let req = request(app)
+        [method](path)
+        .set("authorization", `Bearer ${KEY}`);
+      if (method === "patch") req = req.send(body);
+      const response = await req;
+      expect(response.status).toBe(200);
+      expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
+      const { url, init } = upstream();
+      expect(url).toBe(`https://exchange.test${upstreamPath}`);
+      expect(init.method).toBe(method.toUpperCase());
+      expect(init.headers).toMatchObject({
+        "x-exchange-team-id": "team-connectors",
+      });
+      expect(init.headers).not.toHaveProperty("x-exchange-connectors");
+      if (method === "patch") {
+        expect(JSON.parse(String(init.body))).toEqual(body);
+      } else {
+        expect(init.body).toBeUndefined();
+      }
+    },
+  );
+
+  it.each(["post", "put", "delete"] as const)(
+    "does not forward %s /exchange/provider-skills",
+    async method => {
+      keyResolvesAs({ exchangeRetrieve: true });
+      const response = await request(app)
+        [method]("/exchange/provider-skills/acme/research")
+        .set("authorization", `Bearer ${KEY}`)
+        .send({ enabled: true });
+      expect(response.status).toBe(404);
+      expect(mocks.upstreamFetch).not.toHaveBeenCalled();
     },
   );
 

@@ -30,6 +30,52 @@ describe("agentStatusController", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 404 when the job id is unknown", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue(null);
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+    expect(getExtractV3AgentStatus).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the job belongs to another team", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-other",
+      expiresAtMs: Date.now() + 60_000,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+  });
+
+  it("returns 404 when the job access row has expired", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() - 1_000,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Agent job not found",
+    });
+  });
+
   it("returns model from agent options", async () => {
     (getAgentJobAccess as Mock).mockResolvedValue({
       teamId: "team-123",
@@ -117,6 +163,47 @@ describe("agentStatusController", () => {
     const body = (res.json as Mock).mock.calls[0][0];
     expect(body.model).toBe("spark-2");
     expect(body.effort).toBeUndefined();
+  });
+
+  it("returns safe for a run that filtered its searches", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "processing",
+      model: "spark-2",
+      safe: true,
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "processing", safe: true }),
+    );
+  });
+
+  it("leaves safe undefined when the run did not set it", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "success",
+      model: "spark-2",
+      data: { result: "ok" },
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect((res.json as Mock).mock.calls[0][0].safe).toBeUndefined();
   });
 
   it("returns terminal state and result metadata from extract-v3", async () => {
@@ -519,5 +606,84 @@ describe("agentStatusController terms-required passthrough", () => {
     const body = (res.json as Mock).mock.calls[0][0];
     expect(body.exchange).toEqual(exchange);
     expect(body.pendingApproval).toEqual(pendingApproval);
+  });
+
+  describe("expiresAt for zero data retention runs", () => {
+    const MINUTE = 60 * 1000;
+    const completedAt = new Date(Date.now() - 5 * MINUTE).toISOString();
+    const rowExpiresAtMs = Date.now() + 23 * 60 * MINUTE;
+    const baseReq = {
+      params: { jobId: "job-123" },
+      auth: { team_id: "team-123" },
+    } as RequestWithAuth<{ jobId: string }, any, any>;
+    const buildRes = () =>
+      ({
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      }) as unknown as Response;
+
+    function status(access: Record<string, unknown>, req = baseReq) {
+      (getAgentJobAccess as Mock).mockResolvedValue({
+        teamId: "team-123",
+        expiresAtMs: rowExpiresAtMs,
+        ...access,
+      });
+      (getExtractV3AgentStatus as Mock).mockResolvedValue({
+        id: "job-123",
+        success: true,
+        status: "success",
+        completedAt,
+      });
+      const res = buildRes();
+      return agentStatusController(req, res).then(() => res);
+    }
+
+    it("reports completion plus the 15 minute tier", async () => {
+      const res = await status({ zeroDataRetentionMinutes: 15 });
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiresAt: new Date(
+            Date.parse(completedAt) + 15 * MINUTE,
+          ).toISOString(),
+        }),
+      );
+    });
+
+    it("keeps the retention recorded at start when the flag changed mid-run", async () => {
+      const res = await status({ zeroDataRetentionMinutes: 15 }, {
+        ...baseReq,
+        acuc: { flags: { agentZdrRetentionMinutes: 1440 } },
+      } as any);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiresAt: new Date(
+            Date.parse(completedAt) + 15 * MINUTE,
+          ).toISOString(),
+        }),
+      );
+    });
+
+    it("answers 410 zdr_expired past the recorded retention", async () => {
+      const res = await status({ zeroDataRetentionMinutes: 1 });
+
+      expect(res.status).toHaveBeenCalledWith(410);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, code: "zdr_expired" }),
+      );
+    });
+
+    it("keeps the access row's expiry for a legacy row with no retention", async () => {
+      const res = await status({});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiresAt: new Date(rowExpiresAtMs).toISOString(),
+        }),
+      );
+    });
   });
 });

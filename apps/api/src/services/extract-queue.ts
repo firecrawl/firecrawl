@@ -19,32 +19,62 @@ export type ExtractJobData = {
 
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.Channel | null = null;
+let channelPromise: Promise<amqp.Channel> | null = null;
 
-async function getChannel(): Promise<amqp.Channel> {
-  if (channel) return channel;
+function getChannel(): Promise<amqp.Channel> {
+  channelPromise ??= openChannel().catch(err => {
+    channelPromise = null;
+    throw err;
+  });
+  return channelPromise;
+}
 
+async function openChannel(): Promise<amqp.Channel> {
   const url = config.NUQ_RABBITMQ_URL;
   if (!url) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
-  connection = await amqp.connect(url);
-  channel = await connection.createChannel();
+  if (!connection) {
+    const conn = await amqp.connect(url);
+    conn.on("error", err => {
+      _logger.error("Extract queue connection error", { error: err });
+    });
+    conn.on("close", () => {
+      _logger.warn("Extract queue connection closed");
+      if (connection !== conn) return;
+      connection = null;
+      channel = null;
+      channelPromise = null;
+    });
+    connection = conn;
+  }
+
+  const ch = await connection.createChannel();
+  ch.on("error", err => {
+    _logger.error("Extract queue channel error", { error: err });
+  });
+  ch.on("close", () => {
+    if (channel !== ch) return;
+    channel = null;
+    channelPromise = null;
+  });
+  channel = ch;
 
   // Set up the dead letter exchange
-  await channel.assertExchange(EXTRACT_DLX, "direct", { durable: true });
+  await ch.assertExchange(EXTRACT_DLX, "direct", { durable: true });
 
   // Set up the dead letter queue
-  await channel.assertQueue(EXTRACT_DLQ, {
+  await ch.assertQueue(EXTRACT_DLQ, {
     durable: true,
     arguments: {
       "x-queue-type": "quorum",
     },
   });
-  await channel.bindQueue(EXTRACT_DLQ, EXTRACT_DLX, EXTRACT_QUEUE);
+  await ch.bindQueue(EXTRACT_DLQ, EXTRACT_DLX, EXTRACT_QUEUE);
 
   // Set up the main queue with DLX - no retries (messages go straight to DLQ on reject/crash)
-  await channel.assertQueue(EXTRACT_QUEUE, {
+  await ch.assertQueue(EXTRACT_QUEUE, {
     durable: true,
     arguments: {
       "x-queue-type": "quorum",
@@ -54,17 +84,7 @@ async function getChannel(): Promise<amqp.Channel> {
     },
   });
 
-  connection.on("close", () => {
-    _logger.warn("Extract queue connection closed");
-    connection = null;
-    channel = null;
-  });
-
-  connection.on("error", err => {
-    _logger.error("Extract queue connection error", { error: err });
-  });
-
-  return channel;
+  return ch;
 }
 
 export async function addExtractJob(

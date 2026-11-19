@@ -5,7 +5,7 @@ export const ANCHOR_MODEL = config.EXTRACT_ANCHOR_MODEL;
 export const LIGHT_MODEL = config.EXTRACT_LIGHT_MODEL;
 
 // Bump to invalidate every cached extractor at once.
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 
 export const MARKDOWN_BUDGET = 50_000;
 export const HTML_BUDGET = 40_000;

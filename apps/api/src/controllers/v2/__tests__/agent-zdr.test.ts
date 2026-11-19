@@ -151,6 +151,40 @@ describe("agentController zero data retention", () => {
     expect(logRequest).not.toHaveBeenCalled();
   });
 
+  const zdrFlags = { scrapeZDR: "forced", searchZDR: "forced-zdr" };
+
+  it("forwards the team's ZDR retention tier", async () => {
+    const res = await run({}, { ...zdrFlags, agentZdrRetentionMinutes: 30 });
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(forwardedBody()).toMatchObject({
+      zeroDataRetention: true,
+      zeroDataRetentionMinutes: 30,
+    });
+  });
+
+  it("leaves the retention to the agent service's default when the flag is unset", async () => {
+    await run({}, zdrFlags);
+
+    expect(forwardedBody()).not.toHaveProperty("zeroDataRetentionMinutes");
+  });
+
+  it("does not forward a retention for a run without ZDR", async () => {
+    await run({}, { agentZdrRetentionMinutes: 30 });
+
+    expect(forwardedBody()).not.toHaveProperty("zeroDataRetentionMinutes");
+  });
+
+  it("refuses a ZDR run whose retention flag is not a tier, rather than keep it longer", async () => {
+    const res = await run({}, { ...zdrFlags, agentZdrRetentionMinutes: 45 });
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "zdr_retention_misconfigured" }),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("leaves a run that does not ask for ZDR alone, whatever the search flag", async () => {
     const res = await run({}, { scrapeZDR: "allowed" });
 
@@ -218,6 +252,35 @@ describe("agentController zero data retention", () => {
       }),
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the team's tier", { agentZdrRetentionMinutes: 15 }, 15],
+    ["24 hours when the flag is unset", {}, 24 * 60],
+  ])(
+    "records %s on the job access row",
+    async (_name, retentionFlags, minutes) => {
+      const res = await run(
+        {},
+        { scrapeZDR: "forced", searchZDR: "forced-zdr", ...retentionFlags },
+      );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          zeroDataRetention: true,
+          jobAccessZeroDataRetentionMinutes: minutes,
+        }),
+      );
+    },
+  );
+
+  it("records no retention for a run without ZDR", async () => {
+    await run({}, { agentZdrRetentionMinutes: 15 });
+
+    expect(vi.mocked(logRequest).mock.calls[0][0]).not.toHaveProperty(
+      "jobAccessZeroDataRetentionMinutes",
+    );
   });
 
   it("forwards exchange options unchanged without ZDR", async () => {

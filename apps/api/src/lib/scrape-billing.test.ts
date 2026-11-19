@@ -66,7 +66,7 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(16);
   });
 
-  it("bills X/Twitter scrapes at 30 credits", async () => {
+  it("bills an X/Twitter scrape at the Exchange's price, with no X surcharge", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
         formats: [{ type: "markdown" }],
@@ -79,16 +79,18 @@ describe("calculateCreditsToBeBilled", () => {
         metadata: {
           statusCode: 200,
           proxyUsed: "basic",
-          postprocessorsUsed: ["x-twitter"],
         },
       } as any,
       {
         totalCost: 0,
       } as any,
       {} as any,
+      undefined,
+      undefined,
+      { provider: { id: "x-com", creditsCost: 5, steps: [] } },
     );
 
-    expect(credits).toBe(30);
+    expect(credits).toBe(5);
   });
 
   it("bills enhanced proxy scrapes the same as basic ones", async () => {
@@ -480,6 +482,16 @@ describe("calculateCreditsToBeBilled — zero data retention", () => {
   it("is not added on top of lockdown", async () => {
     expect(await bill({ lockdown: true }, true)).toBe(5);
   });
+
+  it.each(["audio", "video"])(
+    "drops the %s surcharge it refuses, but not under lockdown",
+    async type => {
+      const media = { formats: [{ type }] };
+      expect(await bill(media, false)).toBe(5);
+      expect(await bill(media, true)).toBe(2);
+      expect(await bill({ ...media, lockdown: true }, true)).toBe(9);
+    },
+  );
 });
 
 describe("calculateThreatScanCredits", () => {

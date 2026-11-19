@@ -3,6 +3,7 @@ import type { BrowserCookie, Meta } from "..";
 import type { Postprocessor } from ".";
 import type { EngineScrapeResult } from "../engines";
 import { throwIfMediaAccessDenied } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
 
 // Transcript enrichment is best-effort: the postprocessor loop swallows its
 // errors and returns the page without a transcript. But an unbounded fetch to
@@ -168,6 +169,15 @@ export const youtubePostprocessor: Postprocessor = {
   run: async (meta: Meta, engineResult: EngineScrapeResult) => {
     if (meta.options.lockdown) {
       return engineResult;
+    }
+
+    // Uses the same media service as the audio and video formats.
+    if (isUsOnly(meta.internalOptions?.teamFlags ?? undefined)) {
+      return {
+        ...engineResult,
+        warning:
+          "YouTube metadata and transcripts are not available for teams restricted to US-only processing.",
+      };
     }
 
     if (!config.AVGRAB_SERVICE_URL) {

@@ -2,6 +2,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { isUsOnly } from "../../../lib/us-only";
 
 export async function fetchMenu(
   meta: Meta,
@@ -16,6 +17,13 @@ export async function fetchMenu(
   // no error, and no engine call.
   if (meta.internalOptions?.teamFlags?.menuBeta !== true) {
     meta.logger.info("menu format requested without menuBeta flag; skipping");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Menu format is not supported for teams restricted to US-only processing." +
+      (document.warning ? " " + document.warning : "");
     return document;
   }
 
