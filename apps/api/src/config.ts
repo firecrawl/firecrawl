@@ -826,6 +826,10 @@ const configSchema = z.object({
     })
     .optional(),
 
+  // Per-request internal JWTs; replaces AGENT_INTEROP_SECRET once rolled out.
+  INTERNAL_JWT_ENABLED: z.stringbool().default(false),
+  INTERNAL_JWT_PUBLIC_KEYS: z.string().optional(),
+
   // Wikipedia Enterprise API
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
