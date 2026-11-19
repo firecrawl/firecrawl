@@ -1,0 +1,24 @@
+apps/api/src/lib/logger.ts
+  s_58d0bcd54097a6::t_0355c9950473bb 82-94
+  s_58d0bcd54097a6::t_3a460fd0cef1eb 40-73,79-81,95-96
+apps/api/src/lib/logger-redaction.test.ts
+  s_58d0bcd54097a6::t_024aff5007eaa6 1
+  s_58d0bcd54097a6::t_3a460fd0cef1eb 2-21,25-51
+  s_58d0bcd54097a6::t_0355c9950473bb 22-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "81b722aa6d8c22fd9ac769d7a546eb195dfa901f",
+  "prompts": {},
+  "sessions": {
+    "s_58d0bcd54097a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4efc12a-bc44-43b9-baa0-d644b41a0677",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
