@@ -65,12 +65,13 @@ func WithTimeout(d time.Duration) RequestOption {
 	}
 }
 
-// WithHeader adds an extra header to all requests.
+// WithHeader adds an extra header to all requests. Header names are
+// case-insensitive; the last option for a name replaces earlier values.
 func WithHeader(key, value string) RequestOption {
 	return func(c *RequestConfig) {
 		if c.ExtraHeaders == nil {
 			c.ExtraHeaders = make(map[string]string)
 		}
-		c.ExtraHeaders[key] = value
+		c.ExtraHeaders[http.CanonicalHeaderKey(key)] = value
 	}
 }
