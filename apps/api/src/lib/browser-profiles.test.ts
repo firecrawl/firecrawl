@@ -44,5 +44,25 @@ describe("scrapeRequestsProfileOnRenderBrowser", () => {
         formats: [{ type: "screenshot" }],
       }),
     ).toBe(false);
+    expect(
+      scrapeRequestsProfileOnRenderBrowser({
+        profile: { name: "login" },
+        formats: [{ type: "branding" }],
+        actions: [{ type: "click" }],
+      }),
+    ).toBe(false);
+    expect(
+      scrapeRequestsProfileOnRenderBrowser({
+        profile: { name: "login" },
+        formats: [{ type: "branding" }],
+        actions: [{ type: "pdf" }],
+      }),
+    ).toBe(true);
+    expect(
+      scrapeRequestsProfileOnRenderBrowser({
+        profile: { name: "login" },
+        formats: [{ type: "branding" }, { type: "audio" }],
+      }),
+    ).toBe(true);
   });
 });

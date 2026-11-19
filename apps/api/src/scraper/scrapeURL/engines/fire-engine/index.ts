@@ -495,7 +495,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       profileWouldLeaveChromeCdp({
         profile: meta.options.profile !== undefined,
         actions,
-        blockMediaFalse: shouldAllowMedia,
+        blockMediaFalse: Boolean(shouldAllowMedia),
         forceNonRender,
       })
     ) {
