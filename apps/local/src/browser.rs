@@ -15,7 +15,7 @@ use chromiumoxide::{
   cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, ResourceType,
   },
-  page::ScreenshotParams,
+  page::{Page, ScreenshotParams},
 };
 use futures::StreamExt;
 use tokio::sync::{Mutex, Semaphore};
@@ -215,6 +215,27 @@ struct Launched {
   _proxy: crate::netguard::GuardProxy,
 }
 
+impl Launched {
+  fn is_running(&mut self) -> bool {
+    !self.handler.is_finished() && matches!(self.browser.try_wait(), Ok(None))
+  }
+
+  async fn shutdown(&mut self) {
+    let grace = Duration::from_secs(3);
+    if !self.handler.is_finished() {
+      let _ = tokio::time::timeout(grace, self.browser.close()).await;
+    }
+    if tokio::time::timeout(grace, self.browser.wait())
+      .await
+      .is_err()
+    {
+      let _ = self.browser.kill().await;
+    }
+    self.handler.abort();
+    let _ = std::fs::remove_dir_all(&self.profile);
+  }
+}
+
 pub struct BrowserPool {
   chrome: PathBuf,
   policy: NetworkPolicy,
@@ -277,18 +298,12 @@ impl BrowserPool {
     }))
   }
 
-  async fn ensure_launched(&self) -> Result<(), String> {
-    let mut guard = self.launched.lock().await;
-    if guard.is_some() {
-      return Ok(());
-    }
+  async fn launch(&self) -> Result<Launched, String> {
     let profile = std::env::temp_dir().join(format!(
       "firecrawl-local-chrome-{}-{}",
       std::process::id(),
       uuid::Uuid::new_v4().simple()
     ));
-    std::fs::create_dir_all(&profile)
-      .map_err(|e| format!("could not create a browser profile: {e}"))?;
     // Chrome does its own networking, so it is sent through a loopback proxy
     // that applies the network policy to every connection it opens: the
     // page, its redirects, subresources, scripts' requests and WebSockets.
@@ -314,9 +329,15 @@ impl BrowserPool {
       .args(proxy.chrome_args())
       .build()
       .map_err(|e| format!("browser configuration failed: {e}"))?;
-    let (browser, mut handler) = Browser::launch(config)
-      .await
-      .map_err(|e| chrome_start_error(&self.chrome, &e.to_string()))?;
+    std::fs::create_dir_all(&profile)
+      .map_err(|e| format!("could not create a browser profile: {e}"))?;
+    let (browser, mut handler) = match Browser::launch(config).await {
+      Ok(launched) => launched,
+      Err(error) => {
+        let _ = std::fs::remove_dir_all(&profile);
+        return Err(chrome_start_error(&self.chrome, &error.to_string()));
+      }
+    };
     let handler = tokio::spawn(async move {
       while let Some(event) = handler.next().await {
         if event.is_err() {
@@ -324,13 +345,29 @@ impl BrowserPool {
         }
       }
     });
-    *guard = Some(Launched {
+    Ok(Launched {
       browser,
       handler,
       profile,
       _proxy: proxy,
-    });
-    Ok(())
+    })
+  }
+
+  async fn new_page(&self) -> Result<Page, String> {
+    let mut guard = self.launched.lock().await;
+    if !guard.as_mut().is_some_and(Launched::is_running) {
+      if let Some(stale) = guard.as_mut() {
+        stale.shutdown().await;
+      }
+      *guard = None;
+      *guard = Some(self.launch().await?);
+    }
+    let launched = guard.as_ref().ok_or("browser is not running")?;
+    launched
+      .browser
+      .new_page("about:blank")
+      .await
+      .map_err(|e| format!("could not open a tab: {e}"))
   }
 
   /// Load a page, let it settle, and return its rendered HTML.
@@ -343,17 +380,7 @@ impl BrowserPool {
   ) -> Result<Rendered, String> {
     guard::check_url(url, self.policy).map_err(|e| e.0)?;
     let _permit = self.pages.acquire().await.map_err(|e| e.to_string())?;
-    self.ensure_launched().await?;
-
-    let page = {
-      let guard = self.launched.lock().await;
-      let launched = guard.as_ref().ok_or("browser is not running")?;
-      launched
-        .browser
-        .new_page("about:blank")
-        .await
-        .map_err(|e| format!("could not open a tab: {e}"))?
-    };
+    let page = self.new_page().await?;
 
     let result = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)).await;
     let _ = page.close().await;
@@ -488,11 +515,10 @@ impl BrowserPool {
 
   /// Stop Chrome and delete its throwaway profile.
   pub async fn shutdown(&self) {
-    if let Some(mut launched) = self.launched.lock().await.take() {
-      let _ = launched.browser.close().await;
-      let _ = tokio::time::timeout(Duration::from_secs(3), launched.browser.wait()).await;
-      launched.handler.abort();
-      let _ = std::fs::remove_dir_all(&launched.profile);
+    let mut guard = self.launched.lock().await;
+    if let Some(launched) = guard.as_mut() {
+      launched.shutdown().await;
+      *guard = None;
     }
   }
 }
@@ -778,6 +804,31 @@ fn chrome_start_error(chrome: &std::path::Path, detail: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  #[ignore = "requires a sandbox-capable Chromium installation"]
+  async fn reopens_tabs_after_the_browser_process_dies() {
+    let pool = BrowserPool::new(NetworkPolicy::PublicOnly, "firecrawl-local-test", 2)
+      .expect("install Chromium or set FIRECRAWL_CHROME_PATH");
+    pool.new_page().await.unwrap().close().await.unwrap();
+    let dead_profile = {
+      let mut guard = pool.launched.lock().await;
+      let launched = guard.as_mut().unwrap();
+      launched.browser.kill().await.unwrap().unwrap();
+      launched.profile.clone()
+    };
+
+    let (first, second) = tokio::join!(pool.new_page(), pool.new_page());
+    let replacement = pool.launched.lock().await.as_ref().unwrap().profile.clone();
+    let first = first.unwrap();
+    let second = second.unwrap();
+    first.close().await.unwrap();
+    second.close().await.unwrap();
+    pool.shutdown().await;
+    assert_ne!(dead_profile, replacement);
+    assert!(!dead_profile.exists());
+    assert!(!replacement.exists());
+  }
 
   #[test]
   fn a_sandbox_failure_is_explained() {
