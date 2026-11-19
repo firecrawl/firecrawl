@@ -190,21 +190,17 @@ export function assembleAnswer(
     indices.filter(i => i >= 0 && i < sentences.length),
   );
 
-  const tableHeaderIncluded = new Set<number>();
+  const tableHeadersNeeded = new Set<number>();
   for (const i of selectedIndices) {
     const s = sentences[i];
-    if (
-      s.source === "table" &&
-      !s.isHeader &&
-      !tableHeaderIncluded.has(s.blockId)
-    ) {
-      const headerIdx = sentences.findIndex(
-        h => h.blockId === s.blockId && h.isHeader,
-      );
-      if (headerIdx !== -1) {
-        selectedIndices.add(headerIdx);
-        tableHeaderIncluded.add(s.blockId);
-      }
+    if (s.source === "table" && !s.isHeader) {
+      tableHeadersNeeded.add(s.blockId);
+    }
+  }
+  for (let i = 0; i < sentences.length && tableHeadersNeeded.size > 0; i++) {
+    const s = sentences[i];
+    if (s.isHeader && tableHeadersNeeded.delete(s.blockId)) {
+      selectedIndices.add(i);
     }
   }
 
