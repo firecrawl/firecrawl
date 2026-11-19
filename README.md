@@ -131,7 +131,7 @@ Scraping, crawling and mapping run on your machine, except that by default a pag
 
 ## Firecrawl Cloud
 
-Firecrawl Cloud runs everything Firecrawl Local does without a browser or machine of your own. It adds search, Alexandria, Interact and Agent through a single API.
+Firecrawl Cloud runs everything Firecrawl Local does at scale, with no browser or machine of your own to look after. It also gives your AI agents access to far more knowledge than scraping alone, with search, Alexandria, Interact and Agent all through a single API.
 
 - **Works on the real web.** Covers 96% of the web, including JS-heavy pages and dynamic apps ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25)).
 - **Fast.** P95 latency of 3.4s across millions of pages, built for real-time AI agents and dynamic apps.
