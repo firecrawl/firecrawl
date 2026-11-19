@@ -119,7 +119,7 @@ The [Firecrawl Local README](apps/local) covers every command and option, the se
 | [Alexandria](#alexandria) | Through Firecrawl Cloud after `firecrawl-local login` | ✅ |
 | [Interact](#interact), [Agent](#agent) and [Monitor](https://docs.firecrawl.dev/features/monitoring) | | ✅ |
 
-Scraping, crawling and mapping on Firecrawl Local send nothing to Firecrawl. By default a page that won't load on your machine is fetched by Firecrawl Cloud instead, and the result is marked `"source": "firecrawl-cloud"`. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine, or `FIRECRAWL_CLOUD=search` to send only search.
+Scraping, crawling and mapping run on your machine, except that by default a page that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
 
 ---
 
@@ -524,7 +524,7 @@ results.data.web.forEach(result => {
 | Language | Install | Guide |
 |----------|---------|-------|
 | Go | `go get github.com/firecrawl/firecrawl/apps/go-sdk` | [Go SDK](https://docs.firecrawl.dev/sdks/go) |
-| Java | `com.github.firecrawl:firecrawl-java-sdk:2.0` from JitPack | [Java SDK](https://docs.firecrawl.dev/sdks/java) |
+| Java | `com.firecrawl:firecrawl-java` from Maven Central | [Java SDK](https://docs.firecrawl.dev/sdks/java) |
 | Rust | `cargo add firecrawl` | [Rust SDK](https://docs.firecrawl.dev/sdks/rust) |
 | Ruby | `gem install firecrawl-sdk` | [Ruby SDK](https://docs.firecrawl.dev/sdks/ruby) |
 | .NET | `dotnet add package firecrawl-sdk` | [.NET SDK](https://docs.firecrawl.dev/sdks/dotnet) |
