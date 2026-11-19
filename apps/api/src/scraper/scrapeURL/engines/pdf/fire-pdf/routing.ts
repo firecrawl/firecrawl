@@ -56,6 +56,17 @@ export function deterministicPercentage(key: string): number {
   return (prefix / 2 ** 32) * 100;
 }
 
+/** Identity for a PDF engine cohort. Repeated scrapes of one document URL
+ * stay on one engine. A missing URL falls back to the scrape id. */
+export function pdfCohortKey(meta: {
+  id: string;
+  url: string;
+  rewrittenUrl?: string;
+}): string {
+  const url = (meta.rewrittenUrl ?? meta.url).trim();
+  return url || meta.id;
+}
+
 export function decideFirePdfAsyncRoute(
   input: FirePdfAsyncRouteInput,
 ): FirePdfAsyncRouteDecision {

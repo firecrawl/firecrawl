@@ -10,7 +10,7 @@ import {
   getPDFPageMarkdown,
   getPDFPageMarkers,
 } from "../../../../../controllers/v2/types";
-import { deterministicPercentage } from "./routing";
+import { deterministicPercentage, pdfCohortKey } from "./routing";
 import { storage } from "../../../../../lib/gcs-jobs";
 import { isProcessingRestricted } from "../../../../../lib/reserved-capacity";
 import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
@@ -197,19 +197,20 @@ export function largePdfLimitBytes(meta: Meta): number {
   return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
-/** Whether this request is diverted to MinerU. Deterministic on the scrape
- * id (same distribution as a random draw) precisely so every gate — the
+/** Whether this request is diverted to MinerU. Deterministic on the document
+ * URL (same distribution as a random draw across URLs) so every gate — the
  * fire-engine handoff grant, the download admission, and the PDF engine's
- * routing — sees the SAME verdict; a per-call random draw would let them
- * drift. Keyed apart from the async-cohort hash. Parse requests that must
- * reach FirePDF (parseAlwaysFirePdf) and teams whose processing is restricted
+ * routing — sees the SAME verdict, and a later scrape of that URL does too.
+ * Keyed apart from the async-cohort hash. Parse requests that must reach
+ * FirePDF (parseAlwaysFirePdf) and teams whose processing is restricted
  * (isProcessingRestricted) are never diverted. */
 export function mineruDiverted(meta: Meta): boolean {
   return (
     config.MINERU_PERCENT > 0 &&
     !parseAlwaysFirePdf(meta) &&
     !isProcessingRestricted(meta.internalOptions.teamFlags ?? undefined) &&
-    deterministicPercentage(`mineru:${meta.id}`) < config.MINERU_PERCENT
+    deterministicPercentage(`mineru:${pdfCohortKey(meta)}`) <
+      config.MINERU_PERCENT
   );
 }
 
