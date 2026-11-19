@@ -388,6 +388,49 @@ function makeJsonMeta(internalOptions: Record<string, unknown> = {}) {
   } as any;
 }
 
+describe("performLLMExtract source HTTP failures", () => {
+  it.each([404, 429, 503])(
+    "does not call extraction for HTTP %i",
+    async statusCode => {
+      (extractData as Mock).mockClear();
+      const document = {
+        markdown: "Not Found",
+        metadata: { statusCode, error: "Source unavailable" },
+        warning: "Existing source warning.",
+      } as any;
+      const result = await performLLMExtract(makeJsonMeta(), document);
+      expect(result.json).toBeNull();
+      expect(result.warning).toContain(`source returned HTTP ${statusCode}`);
+      expect(result.warning).toContain("Existing source warning.");
+    expect(result.metadata).toEqual({ statusCode, error: "Source unavailable" });
+      expect(result.markdown).toBe("Not Found");
+      expect(extractData).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains the v1 extract field when skipping an error page", async () => {
+    const result = await performLLMExtract(
+      makeJsonMeta({ v1OriginalFormat: "extract" }),
+      { markdown: "Not Found", metadata: { statusCode: 404 } } as any,
+    );
+    expect(result.extract).toBeNull();
+    expect(result.json).toBeUndefined();
+  });
+
+  it("still extracts JSON from a successful source", async () => {
+    (extractData as Mock).mockResolvedValueOnce({
+      extractedDataArray: [{ version: "2.0.0" }],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    });
+    const result = await performLLMExtract(makeJsonMeta(), {
+      markdown: "Release version 2.0.0",
+      metadata: { statusCode: 200 },
+    } as any);
+    expect(result.json).toEqual({ version: "2.0.0" });
+  });
+});
+
 describe("performLLMExtract telemetry attribution", () => {
   beforeEach(() => {
     (extractData as Mock).mockClear();

@@ -1015,6 +1015,21 @@ export async function performLLMExtract(
   }
 
   if (jsonFormat) {
+    // A successful scrape envelope can still contain an unsuccessful source
+    // response. Do not ask a model to fill a factual schema from an error page.
+    const sourceStatus = document.metadata.statusCode;
+    if (typeof sourceStatus === "number" && sourceStatus >= 400) {
+      document.warning =
+        `JSON extraction skipped because the source returned HTTP ${sourceStatus}.` +
+        (document.warning ? " " + document.warning : "");
+      if (meta.internalOptions.v1OriginalFormat === "extract") {
+        document.extract = null;
+      } else {
+        document.json = null;
+      }
+      return document;
+    }
+
     const useAgent = isAgentExtractModelValid(
       meta.internalOptions.v1JSONAgent?.model,
     );
