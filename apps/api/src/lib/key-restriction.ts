@@ -129,8 +129,8 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["slack"], "account"],
 ];
 
-// Metadata/support endpoints that never access team resources or fetch web
-// content; always reachable regardless of the endpoint allowlist.
+// Metadata/support endpoints that never fetch web content; always reachable
+// regardless of the endpoint allowlist.
 const ALWAYS_ALLOWED_PREFIXES = ["feedback", "support", "keyless"];
 
 function matchSegments(segments: string[], pattern: string[]): boolean {
