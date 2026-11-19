@@ -211,7 +211,17 @@ impl Client {
 
         // Auto-paginate if completed
         if status.status == JobStatus::Completed {
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(
+                self.pin_to_api_origin(&self.url(&format!("/batch/scrape/{}", id.as_ref())))?
+                    .to_string(),
+            );
             while let Some(next) = status.next.take() {
+                if !visited.insert(self.pin_to_api_origin(&next)?.to_string()) {
+                    return Err(FirecrawlError::Misuse(
+                        "repeated pagination cursor".to_string(),
+                    ));
+                }
                 let next_status = self.get_batch_scrape_status_next(&next).await?;
                 status.data.extend(next_status.data);
                 status.next = next_status.next;
