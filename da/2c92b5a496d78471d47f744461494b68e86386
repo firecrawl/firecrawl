@@ -1,0 +1,639 @@
+apps/api/src/controllers/v2/mcp-action-logs.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 5,25
+apps/api/src/controllers/v2/types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2133-2134,2152,2160-2162,2192-2199,3080-3081
+apps/api/src/lib/error.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 44,67-70
+apps/api/src/controllers/v2/crawl.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 255
+apps/api/src/scraper/scrapeURL/lib/__tests__/rewriteUrl.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 5,9,17,37,43,47
+apps/api/src/service/testing.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-37
+apps/api/audit-ci.jsonc
+  s_ebed3335e17158::t_7e86348c2ff9ae 4-12
+apps/api/src/controllers/v2/computer-session-files.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-481
+apps/api/src/lib/change-tracking-store.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-108
+apps/api/src/services/alexandria/access.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 46,58
+apps/elixir-sdk/lib/firecrawl.ex
+  s_ebed3335e17158::t_7e86348c2ff9ae 374-403
+apps/local/src/scrape.rs
+  s_ebed3335e17158::t_7e86348c2ff9ae 693,740,1030
+apps/api/src/__tests__/routes/exchange-alexandria-verified.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-167
+apps/api/src/lib/__tests__/fresh-feed-config.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-15
+apps/api/src/lib/openai-federation.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-36
+apps/api/src/__tests__/routes/research-keyless.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 40,145-154,202
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 46
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/aio/test_aio_research.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 165-174,203,232,249,286-289
+  s_ebed3335e17158::t_6eb7ad6ea0b853 164,290
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 122,188,222
+apps/api/src/scraper/WebScraper/utils/__tests__/engine-forcing.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 69-70,96,103
+apps/api/src/scraper/scrapeURL/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 45,66,138,205-208,913,1001-1011,1226-1233,2034-2036
+apps/api/src/controllers/v2/parse-upload.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7,16,349,372-380,560
+apps/api/src/lib/extract/fire-0/completions/analyzeSchemaAndPrompt-f0.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7-9,62,91-92,115-118,137
+apps/api/src/controllers/v2/search.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 32,572
+apps/api/src/services/worker/nuq-reconciler-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,14,17,22,41,47-53,117-118,151-155
+apps/api/src/controllers/v1/search.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 50,69,75,333
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFRetry.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-294
+apps/php-sdk/tests/Unit/ProteinLookupTest.php
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-29
+apps/api/src/controllers/v2/research-proxy.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1,53,122-127,638,724-739
+  s_ebed3335e17158::t_25df762ecf2fa4 740
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 34,1007-1082,1411-1413,1419-1421,1437-1439,1485-1527,1656-1661,1663-1667,1671-1675,1677-1688
+apps/api/src/lib/team-plan-class.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-166
+apps/js-sdk/firecrawl/audit-ci.jsonc
+  s_ebed3335e17158::t_7e86348c2ff9ae 4-12
+apps/js-sdk/firecrawl/src/v2/methods/research.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 9-10,16,60,217-242
+  s_ebed3335e17158::t_48ca5639c3cefe 243-245
+apps/api/src/lib/gcs-jobs.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-128
+apps/api/src/routes/exchange.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 5,11-16,18-22,31,34-35,40,42,54-74,187,202-212,253,350-524,547-563,567-568,578
+apps/api/src/services/webhook/queue.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-103
+apps/ruby-sdk/lib/firecrawl/client.rb
+  s_ebed3335e17158::t_7e86348c2ff9ae 134-144
+apps/api/src/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 35,53,160,267-268,272-273,387-390
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 26,161
+apps/api/src/services/billing/__tests__/credit_billing.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 30
+apps/api/src/__tests__/snips/v2/scrape-paywall.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-100
+apps/api/src/lib/alexandria-verified.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-20
+apps/api/src/scraper/WebScraper/__tests__/utils.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 16-29,32-36,39-41,45,49-50,53-55
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7,313,315,338,345
+apps/api/src/controllers/admin/index-queue-prometheus.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-17
+apps/api/src/__tests__/lib/branding/processor-fonts.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 66-70,89-93,105-107,115-121,123-126,142-148
+apps/api/native/src/html.rs
+  s_ebed3335e17158::t_7e86348c2ff9ae 48,104,157,448,464,726-732,775,841,848-850
+apps/api/src/__tests__/lib/branding/llm-telemetry.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4-6,49
+apps/api/src/lib/engpicker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 76,93
+apps/api/src/lib/alexandria-feedback-storage.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-32
+apps/api/src/lib/zdr-queue.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 97-101,106-107,125,142,159-179,201,217,242-254,260,268-284,288,291-306,308-309,311-424,427-428,430-433,435-441
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 14,117,130
+apps/api/knip.config.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 24
+apps/api/src/lib/change-tracking-store.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 6-8,96-97,123-125,127-134,137-138
+apps/api/src/lib/anthropic-federation.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-55
+apps/api/src/services/indexing/index-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 20,43,601-605,607-611,693-694,700,749-761,811,813-817
+apps/api/src/service/service.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-190
+apps/api/src/routes/admin.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4-10,15-17
+apps/api/src/services/monitoring/search/tuning.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 42
+apps/api/src/main/runWebScraper.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1,125
+apps/api/src/services/rate-limiter.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 43
+apps/api/src/types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 9,137
+apps/api/src/lib/alexandria-feedback-storage.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-66
+apps/api/vitest.core.config.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-156
+apps/api/src/lib/mcp-action-log-config.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 6,46-47
+apps/api/src/__tests__/snips/v2/monitor.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 131-267
+apps/python-sdk/firecrawl/v2/methods/research.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 39,156-167
+  s_ebed3335e17158::t_5b4ea98771621e 168-170
+apps/test-site/audit-ci.jsonc
+  s_ebed3335e17158::t_7e86348c2ff9ae 3-12
+apps/api/src/controllers/admin/metrics.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-56
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2,11-12,17-20,40-46,91,95-172,178-179,182-183,196-202,205-206,222-232,251,284-287,309-312,403,484-490,507-528,541-543
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 36,524,530,604,610,745,751,814,818
+apps/elixir-sdk/generate.exs
+  s_ebed3335e17158::t_7e86348c2ff9ae 37
+apps/api/src/controllers/admin/key-restriction-cache-clear.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-29
+apps/python-sdk/firecrawl/client.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 31,37,420-423,585-587
+  s_ebed3335e17158::t_cbbb40d7433e2b 588
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3-5,182,198,212,237
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/brand-utils.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 159,162,169-172,174-231
+apps/api/src/search/v2/fireEngine-v2.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 10,54,79-81
+apps/api/src/services/worker/nuq-fdb-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 15,135,156-160
+apps/api/src/controllers/v2/__tests__/scrape-browser.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 524,528
+apps/api/src/__tests__/snips/v2/research.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 247-262
+apps/api/src/controllers/v1/scrape.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 409-416
+apps/api/src/controllers/exchange-credit-grant.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-231
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/truncatedHandoff.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-449
+apps/api/src/controllers/v2/feedback/alexandria.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 14,42-44,51,58,66-67,73-74,240
+apps/api/src/lib/extract-v3-status.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3,39,46-86,98-177,193-202,208
+apps/api/src/services/alexandria/client.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3,23-32,42-43,56-57,60-66,70-71,91-95,106-121
+apps/api/src/controllers/v2/__tests__/agent-zdr-passthrough.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 50,89-244
+  s_ebed3335e17158::t_25ad34bb70ec65 245
+apps/api/src/controllers/__tests__/auth.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2043-2107,2299-2380
+  s_ebed3335e17158::t_f77ab74cdb747e 2381
+apps/go-sdk/protein_lookup_test.go
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-54
+apps/api/src/db/pool-profiles.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-27
+apps/api/src/search/v2/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 8,30,51-52,77
+apps/python-sdk/firecrawl/v2/methods/aio/research.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 40,157-168
+  s_ebed3335e17158::t_ad2b8dd0a74c69 169-171
+apps/api/src/services/zdr-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4,6,20-21,34-38
+apps/api/src/controllers/v2/__tests__/computer-session-files.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-586
+apps/api/src/controllers/v2/__tests__/search-team-plan-class.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-151
+apps/api/src/__tests__/routes/exchange-zero-data-retention.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 158-168,170
+apps/api/src/config.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 145-146,149,272-275,278-281,297-298,406-413,417-418,474-482,499-504,625-627,761-762,894-902
+  s_ebed3335e17158::t_655b3d7a08da8a 903
+apps/api/src/controllers/v2/monitor.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 30,32,70,72-73,193,299,442
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/retry.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-68
+apps/api/src/services/autumn/metrics.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 57-58,72-73
+apps/api/src/__tests__/lib/branding/brand-name.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-82
+apps/go-sdk/models.go
+  s_ebed3335e17158::t_7e86348c2ff9ae 265-339,387-392
+  s_ebed3335e17158::t_3aff0e64294fb7 393
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 63-75,271
+apps/api/vitest.core.setup.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-15
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 15-18,56-60,63,89-106,120,559-583,599-629,903-1421
+apps/api/src/__tests__/routes/exchange-proof.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-388
+apps/api/src/__tests__/snips/v2/zdr.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1,7,13-17,24,283-300,441-620
+  s_ebed3335e17158::t_f86a28b6e2c0d0 621
+apps/api/src/controllers/v1/types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 32,1353-1358,1386,1394-1396,1420-1421,1433-1437
+apps/api/src/search/tool-intent.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,32-34,215-217,222
+apps/api/src/services/monitoring/judgeChange.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4,151,160,192
+apps/api/src/lib/alexandria-feedback-hint.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-88
+CONTRIBUTING.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 55-64
+.github/scripts/start-entry-files.mjs
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-196
+apps/api/src/lib/deterministicJson/llm/client.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 53-65,74,93,226-227
+apps/api/src/lib/zdrcleaner.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3,7,15-18,25-41,43,108-131
+apps/api/src/service/service.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-223
+apps/api/src/services/alexandria/option-types.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-93
+apps/api/src/scraper/scrapeURL/lib/accessibleForFree.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-106
+apps/go-sdk/firecrawl.go
+  s_ebed3335e17158::t_7e86348c2ff9ae 767,771-788
+  s_ebed3335e17158::t_cf5070de0ef439 766,768-770
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/research.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 143-175
+.github/workflows/warm-ci-cache.yml
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-139
+apps/api/src/lib/crawl-redis.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 8,31,50,69
+apps/api/src/lib/__tests__/generic-ai-empty-base-url.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-30
+apps/js-sdk/firecrawl/src/__tests__/e2e/v2/utils/idmux.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 17-26,50
+apps/api/src/search/v2/index.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-55
+apps/api/native/Cargo.toml
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,14,28
+apps/api/src/controllers/auth.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 31,82-83,352,839-841,846-849
+apps/api/src/services/worker/crawl-logic.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 124
+apps/api/src/services/monitoring/scheduler.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2,4-6,15,29-34,40-51,97-127
+  s_ebed3335e17158::t_f5ccc8da8106c9 128-129
+apps/api/src/services/extract-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 24,216-219,221-224,226,243-247
+apps/api/src/lib/gcs-jobs.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 14,112-116,452,455-458
+  s_ebed3335e17158::t_451ded9abff4f9 459
+apps/api/src/controllers/admin/check-fire-engine.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-76
+apps/api/src/services/alexandria/retrieve.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 28-29,90-91,93-131,189-195,265-274,283-284,351-353,376-377,500,556-557,579-587,697-699,702-704,754-758
+apps/api/src/lib/extract/fire-0/extraction-service-f0.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 47,141-144,150
+apps/api/src/lib/alexandria-query.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-206
+apps/api/src/scraper/scrapeURL/engines/pdf/truncatedHandoff.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-245
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 16-17,202-209
+  s_ebed3335e17158::t_0c2e54f6cee426 210
+apps/api/src/controllers/v2/extract-status.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 62-64
+apps/api/src/services/agent-sponsor.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3-4
+apps/api/src/scraper/scrapeURL/lib/accessibleForFree.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-47
+apps/api/src/controllers/v2/agent-status.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 13,64-77,82-90,108
+apps/api/src/controllers/v1/map.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 32,111-116
+apps/api/src/lib/map-utils.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 10,102,124-125,151-156,243,273,409,422,438
+apps/api/src/__tests__/snips/v2/lib.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 122-125
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 10,40,43-45,79
+apps/api/src/lib/safe-mode.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 91,106,229-230,247
+apps/python-sdk/setup.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 28
+apps/dot-net-sdk/Firecrawl/FirecrawlClient.cs
+  s_ebed3335e17158::t_7e86348c2ff9ae 628-647
+  s_ebed3335e17158::t_ab830e730bdd98 627
+apps/api/src/service/core-parts.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-28
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 50,501-649,904-1137,1203-1300
+apps/api/src/routes/fresh-feed.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-261
+apps/api/src/services/autumn/__tests__/firebill.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 32,34,37-40,90-95,667-693
+  s_ebed3335e17158::t_34a1f8e5deb98b 694
+apps/api/src/services/billing/types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 8,30
+apps/python-sdk/firecrawl/v2/methods/research_docs.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 5-7,183-211,238-239,334-354,380-381
+apps/api/src/controllers/v2/map.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 176
+apps/api/src/controllers/admin/crawl-monitor.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-140
+apps/api/src/services/queue-metrics.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-120
+apps/api/src/service/hooks.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-179
+apps/api/src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 258-277
+apps/api/src/__tests__/snips/v1/deep-research.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2,4,51-96
+apps/api/pnpm-workspace.yaml
+  s_ebed3335e17158::t_7e86348c2ff9ae 10-11
+apps/api/src/controllers/v2/feedback/alexandria-refund.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 10,39-44,76-92,99,112,127,180,300-402
+apps/elixir-sdk/mix.exs
+  s_ebed3335e17158::t_7e86348c2ff9ae 4
+apps/api/src/controllers/v2/__tests__/extract-status-agent.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-76
+apps/python-sdk/firecrawl/__init__.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 52
+apps/java-sdk/src/main/java/com/firecrawl/client/FirecrawlClient.java
+  s_ebed3335e17158::t_7e86348c2ff9ae 650-662,1183-1185
+  s_ebed3335e17158::t_614fb088ef22a9 1186
+apps/api/src/lib/ai-telemetry.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-77
+apps/api/src/lib/scrape-interact/browser-agent.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4,30,394,408,419,443
+apps/api/src/services/autumn/firebill.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1,3-5,60-121,472-491,508-513,614,616,731,813,815,911-916,941,943,1052,1097,1099,1197
+apps/api/src/controllers/admin/redis-health.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-85
+apps/api/src/lib/zdrcleaner.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 3-22,24-45,52-53,65,146-185,204-262
+apps/api/src/controllers/admin/precrawl.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-7
+apps/api/src/services/queue-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 35,222-225,227-230,438,497-501
+apps/api/src/lib/branding/processor.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,365,397-398,401,540
+README.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 42,85,319,488
+apps/api/src/lib/operational-job-access.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 28,39-41,63,65
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 18-20,98
+apps/api/src/controllers/v2/__tests__/crawl-prompt-zdr.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 150
+apps/api/src/services/cclog-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,44,84-85,129-133
+apps/api/src/services/autumn/__tests__/autumn.service.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 643,696-750,964,1030,1275-1279,1757-1761,1939,1966,2023-2027,2053-2057
+apps/api/src/lib/zdr-helpers.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 6,23-43
+  s_ebed3335e17158::t_46b897ca6f8c5b 44
+apps/api/src/controllers/admin/concurrency-queue-backfill.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-27
+apps/api/src/lib/index-daily-limit.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 88-90
+apps/api/src/services/worker/scrape-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 956,1217
+  s_ebed3335e17158::t_d14d2599a9b68c 755-763,776-781,794
+apps/api/src/lib/error-serde.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 43,99,121-122,136-139,144,147-170
+apps/api/src/lib/branding/jev.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 31,285,289,294-315,317-323,351-354
+apps/api/src/services/alexandria/option-types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-93
+apps/api/src/__tests__/snips/v2/us-only.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 18-22
+apps/java-sdk/src/test/java/com/firecrawl/ProteinLookupMockTest.java
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-81
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 230-242
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2427-2524,2618-2625
+  s_ebed3335e17158::t_e743c85dfb748b 2626
+apps/api/src/services/webhook/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 11,26
+apps/api/src/search/index.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-86
+apps/api/src/services/notification/email_notification.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 322-351
+apps/api/src/service/core-parts.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-67
+apps/api/src/services/queue-metrics.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-128
+.github/workflows/test-api-core.yml
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-99
+apps/api/src/lib/alexandria-query.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-187
+apps/local/src/markdown.rs
+  s_ebed3335e17158::t_7e86348c2ff9ae 804
+apps/api/src/lib/logger.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 4,40-42,66
+apps/python-sdk/firecrawl/v2/client.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 90,359-361
+  s_ebed3335e17158::t_7750be3ef0ff8a 362
+apps/api/src/__tests__/lib/branding/element-text.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-37
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 56,73,177-180,182-197,199-200,206,289-299,301-302,312,752,792,834-889,891-907,1110
+apps/python-sdk/README.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 342-349
+apps/api/src/controllers/v2/feedback/alexandria-refund.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1,10,22,34,105-156,165,182-184,199-201,209-210,213,253,314-323,325-328
+apps/api/src/lib/team-plan-class.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-237
+apps/local/Cargo.toml
+  s_ebed3335e17158::t_7e86348c2ff9ae 3,34-35,58,61
+apps/api/src/controllers/admin/acuc-cache-clear.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-30
+apps/api/src/lib/extract/fire-0/url-processor-f0.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 17,40,52
+apps/api/src/lib/generic-ai.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-3,7,15-16,37-65,68,72,90-93,97,99-105,124
+apps/api/src/controllers/admin/ip-restriction-cache-clear.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-28
+apps/js-sdk/firecrawl/package.json
+  s_ebed3335e17158::t_7e86348c2ff9ae 3
+apps/api/src/services/mcp/action-logs-controller.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 59-83
+apps/python-sdk/pyproject.toml
+  s_ebed3335e17158::t_7e86348c2ff9ae 80-81
+apps/elixir-sdk/README.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 14
+apps/api/src/controllers/v2/__tests__/crawl-errors.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-143
+apps/api/src/service/hooks.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-126
+apps/api/src/lib/ai-usage-telemetry.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 11,15-18,133,195,268,279,306,313-314,321,371
+apps/api/src/services/autumn/__tests__/firebill.transport.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-133
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_tools.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 196-206
+apps/api/src/controllers/v2/__tests__/agent-status.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 33-78
+apps/api/src/lib/safe-mode.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 25,154-175
+  s_ebed3335e17158::t_dd75bbf0009cc9 176
+apps/api/src/scraper/scrapeURL/error.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 276-306,734-751,754-755
+  s_ebed3335e17158::t_0b990dab11e214 752-753,756
+apps/api/src/service/testing.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-51
+apps/api/src/services/autumn/autumn.service.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 8,48-59,90-91,249,363,440-442,474,496-498,538,565-568
+apps/api/src/lib/branding/llm.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 12,215-219,235,246
+apps/api/src/services/autumn/__tests__/mcp-credits.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 241-325
+apps/dot-net-sdk/Firecrawl/Models/ResearchModels.cs
+  s_ebed3335e17158::t_7e86348c2ff9ae 95-175,288-292
+  s_ebed3335e17158::t_d5a6d9b1af60ba 293
+apps/local/README.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 3,5,7-16,18,20-31,33,36,38-39,41,43-46,49,51-53,55-58,61-63,65,67,71-86,88,90,92-100,104-114,116-129,131,133,135-146,148,150-154,156,158,160-164,166-211,215-218,220-221,225-228,230,232-234,236,238,240,242,245,247,249-251
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 16,76
+apps/api/src/services/monitoring/scheduler.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2-3,5-9,17,24-27,38,90-146,178-179,228-313
+  s_ebed3335e17158::t_9e9bd582d0aff6 314
+apps/api/src/__tests__/routes/research-proteins.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-168
+apps/api/src/lib/error-serde.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-153
+apps/api/src/controllers/v2/scrape.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 593-603
+apps/api/src/lib/operational-job-access.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 10,106-118
+  s_ebed3335e17158::t_4b40698c569193 119
+apps/api/src/lib/permissions.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 16
+apps/rust-sdk/src/research.rs
+  s_ebed3335e17158::t_7e86348c2ff9ae 87-184,234-239,493-522,657-795
+  s_ebed3335e17158::t_d88a674c6ae226 796-797
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 14-16,210,228
+apps/api/src/lib/research-keyless.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 9-11
+apps/api/src/services/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 390,406
+apps/api/src/services/monitoring/judgeChange.telemetry.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 111
+apps/api/src/controllers/v2/feedback/alexandria.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 127,616,626-628,916-953
+  s_ebed3335e17158::t_d4197dfdb662a5 954
+apps/api/src/lib/alexandria-verified.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-24
+apps/api/src/services/webhook/queue.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7-8,45,94-97,104-108,111-113
+apps/api/src/lib/zdr-helpers.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-6,49-69
+  s_ebed3335e17158::t_49c1adee24b5fa 70
+apps/api/src/services/alexandria/client.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 84-132,164-220
+  s_ebed3335e17158::t_6e00cbde5ac74f 221
+apps/python-sdk/firecrawl/v2/client_async.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 85,222-224
+  s_ebed3335e17158::t_de635199728077 225
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 16,27,203,214,333,341
+apps/api/src/search/execute.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 100,299,301,1418-1448
+  s_ebed3335e17158::t_85f68473bef8e4 1449
+apps/api/src/lib/zdr-queue.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 2,15,25-27,31-35,91-102,250-258,261,263,272,277,281,296-300,302,308,310,314-316,330,333-335,338,343-344,360-367,369-378,395,402,431,433-438,440-477,484-485
+apps/java-sdk/src/main/java/com/firecrawl/models/ResearchModels.java
+  s_ebed3335e17158::t_7e86348c2ff9ae 83-167,212-215
+  s_ebed3335e17158::t_33f74d2cffe68f 216
+apps/api/src/services/logging/log_job.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 670-672
+apps/test-site/package.json
+  s_ebed3335e17158::t_7e86348c2ff9ae 19
+apps/api/src/search/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7,24,39,47-65
+  s_ebed3335e17158::t_c22a123c25e04b 66-67
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/helpers.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 154-160
+apps/ruby-sdk/test/firecrawl/client_test.rb
+  s_ebed3335e17158::t_7e86348c2ff9ae 733-749
+apps/api/src/services/webhook/delivery.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 49-55,59,65,150-152
+apps/api/src/main.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-20
+apps/dot-net-sdk/Firecrawl.Tests/ProteinLookupTests.cs
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-58
+apps/api/src/lib/alexandria-feedback-hint.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-61
+apps/api/src/controllers/exchange-credit-grant.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-140
+.github/workflows/test-server.yml
+  s_ebed3335e17158::t_7e86348c2ff9ae 114,153,242,246-247,249,266-271,288-292,344-348,438-448,483-494,656-664
+  s_ebed3335e17158::t_d9fc04e9858a07 665
+apps/api/src/routes/exchange-internal.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-24
+apps/api/package.json
+  s_ebed3335e17158::t_7e86348c2ff9ae 6-27,29-33,35-36,39-40,42-61,94-103,112,120,157-158
+apps/api/src/routes/v2.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 6,13-16,33,263-289,313-331,782,832-839
+apps/api/src/__tests__/routes/fresh-feed.routes.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-565
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 20-21,304-311
+  s_ebed3335e17158::t_0c5e62ede95024 312
+apps/api/src/db/pool-profiles.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 85-94,135-136
+apps/api/src/lib/ai-usage-telemetry.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 8-9,40,44
+apps/api/src/lib/extract/fire-0/llmExtract-f0.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 17,257,275,362,380,411,429
+apps/api/src/services/logging/log_job.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 173-177,235,435-436,578,829
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_research.py
+  s_ebed3335e17158::t_7e86348c2ff9ae 226-244,294,332,343,392-399,423,425
+apps/api/src/services/worker/nuq-prefetch-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 13,15,51-52,79-83
+apps/api/src/search/execute.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 68-69,105-109,217,219,430,783-788
+apps/js-sdk/firecrawl/README.md
+  s_ebed3335e17158::t_7e86348c2ff9ae 318-326
+apps/api/src/harness.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 7,13-14,833-839,842,851,861,871-872,876,886,900-903,914,1118-1119,1202-1203,1241-1253
+apps/api/src/lib/branding/font-names.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 5,47-52,66-68,82,89,116,124,134,137-193,195-197,199-238
+apps/api/src/services/worker/nuq-worker.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 5,7,15-19
+apps/api/src/db/schema/public.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 180-199
+apps/api/src/services/integrations/slack/commands.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 13-17,62-71,342-347,395-400,657-658,697-698
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/tools.unit.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 63-68,152,236-246
+  s_ebed3335e17158::t_dda064dc974ca0 247
+apps/php-sdk/src/Client/FirecrawlClient.php
+  s_ebed3335e17158::t_7e86348c2ff9ae 185-199
+  s_ebed3335e17158::t_b0917f4b52e663 184
+apps/api/src/service/index.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 1-19
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/siteProtection.test.ts
+  s_ebed3335e17158::t_7e86348c2ff9ae 15-20,58-63,89,91-92,110-144,148
+  s_ebed3335e17158::t_a0189afdc6c4c8 145-147
+apps/api/native/Cargo.lock
+  s_ebed3335e17158::t_2a9299b0dab4d9 113,115,247-252,301-302,304-307,409,411,415-416,428,450,852,854,858,1024,1099,1101,1103,1105-1107,1164,1187-1188,1209,1211,1215,1219-1220,1222-1227,1304,1318,1340-1351,1354-1355,1460,1462,1464-1465,1481,1483,1485-1486,1521,1523,1525-1526,1529,1551,1560,1677,1834,1836,1838-1840,1842-1844,1846-1847,1859,1866,1912,2236,2238,2398-2409,2560-2579,2615,2617,2619,2622-2624,2626,2628-2629
+apps/api/pnpm-lock.yaml
+  s_ebed3335e17158::t_8c6c1d53fa4274 69-70,72-73,75-76,78-79,81-82,84-85,87-91,93-97,123-124,147-148,247,258-262,429-431,435-437,441-443,447-449,453-455,459-461,465-467,471-473,477-479,483-485,487-489,493-495,497-499,503-505,508-510,527-530,1476-1478,1480,2254-2255,2287-2289,2306-2308,3144-3147,3160-3163,3209-3212,3233-3236,3446-3449,3840-3842,3844,3865-3891,4560-4562,4909,4911-4912,4915,4917-4919,4922,4924-4926,4929,4931-4933,4936,4938-4943,4948,4950-4951,4954,4956-4957,4960,4962-4963,4966,4968-4969,4972,4974-4978,4980,4982,4984,4988,4992,4994-4996,4998,5000-5003,5026-5027,5866,5868,6421,6464-6465,6483,6485-6487,7259-7266,7292-7299,7371-7381,7416-7417,7653-7657,7721,7728,8006,8008-8010,8031-8037,8793-8794
+apps/local/Cargo.lock
+  s_ebed3335e17158::t_48172ccb5d5f84 128,130,227,599-600,602-605,717,719,723-724,736,758,946,1144,1186,1218,1220,1224,1234,1296,1496,1634,1636,1638,1640-1642,1704,1709,1724,1732-1733,1760,1762,1766,1770-1771,1773-1778,1840,1856,1881,1894,1915-1926,1929-1930,2041,2043,2045-2046,2062,2064,2066-2067,2102,2104,2106-2107,2110,2132,2141,2259,2321,2408,2641,2660,2662,2664-2666,2668-2670,2672-2673,2683,2685,2692,2739-2740,2753,2765,3139,3229,3231,3456-3467,3734-3747,3784,3786,3788,3791-3793,3795,3797-3798
+apps/rust-sdk/Cargo.lock
+  s_ebed3335e17158::t_f80f1d91d745da 1201,1203
+apps/test-site/pnpm-lock.yaml
+  s_ebed3335e17158::t_a4978eacbcfa62 35,43-44,58-59,64-65,70-71,76-77,83-84,90-91,97-98,104-106,109-110,115-116,121-122,125-126,135-136,141-142,158-161,165-167,171-178,197-203,207-208,212-218,223-224,229-230,235-236,241-242,246-247,251-252,274-276,283-285,292-293,463-464,467-475,483-490,492-493,498-499,504-505,510-511,516-517,522-523,529-530,536-537,543-544,550-551,557-558,564-565,570-572,575-576,581-582,594-595,602-603,610-611,618-619,626-627,634-635,642-643,649-651,708-709,736-738,800-801,890-892,956-958,971-972,1002-1004,1143-1144,1150-1152,1325-1328,1361-1362,1378-1380,1416-1417,1513-1514,1524-1525,1553-1554,1569-1572,1584-1586,1613-1614,1625-1627,1656-1657,1689-1690,1700,1751-1752,1764-1765,1770,1829-1832,1846,1849,1852,1855,1858,1861,1864,1867,1869-1871,1874,1877,1880,1882-1891,1893,1895,1910,1916-1917,1919,1943,1945-1946,1948,1950,1956,1974-1977,1984-1988,1995,2002-2014,2028-2034,2037,2040,2043,2046,2049,2052,2056,2059,2062,2093,2095,2099,2104,2109,2114-2116,2119-2121,2124-2126,2267-2274,2281,2292-2295,2297,2300,2303,2306,2309,2312,2315,2318,2321,2324,2327,2330,2333,2335-2337,2340,2343,2356,2358-2360,2362,2370,2372-2373,2381,2383-2384,2390,2392,2400,2402-2403,2410,2412,2419,2421,2426-2427,2483,2504,2506-2511,2515,2519,2523,2526,2531,2533,2536,2538,2542-2544,2546,2549,2551-2555,2579,2627,2707-2708,2790-2791,2803,2900-2913,3047,3053-3056,3504-3505,3528,3548,3587,3745,3747,3750-3765,3773,3780-3790,3842,3844-3850,3864-3865,3872-3873,3909,3918-3919,3947,3950-3951,4000,4006,4011,4028,4032-4033,4038,4040,4042,4052
+examples/scrape_and_analyze_airbnb_data_e2b/package-lock.json
+  s_ebed3335e17158::t_911b22b3363c78 819-821,825-826,829,833-835,1333-1336,1342-1345,1347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da2c92b5a496d78471d47f744461494b68e86386",
+  "prompts": {},
+  "sessions": {
+    "s_ebed3335e17158": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51673b54-d6f0-4ca1-b756-22f5f909ee70",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
