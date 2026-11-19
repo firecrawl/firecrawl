@@ -49,7 +49,7 @@ _Pst. Hey, you, join our stargazers :)_
 
 ---
 
-## Quick Start
+## Firecrawl Local
 
 Firecrawl Local installs from crates.io. You need Rust and a C compiler, which on macOS means `xcode-select --install` and on Debian or Ubuntu means `build-essential`.
 
@@ -416,17 +416,13 @@ for doc in job.data:
     print(doc.metadata.source_url)
 ```
 
----
-
-## Alexandria
+### Alexandria
 
 [Firecrawl Alexandria](https://alexandria.firecrawl.dev) gives your AI agents 550+ data providers in one library (250M+ people, 75M+ companies, 41M+ research papers), plus specialized indexes and the live web, through one API, MCP or CLI. AI agents discover a tool alongside their web results, inspect its inputs and pricing, then run it to get structured data. Discovery is free, and running a tool uses the credits listed on it.
 
 Install it in your AI agent from [alexandria.firecrawl.dev](https://alexandria.firecrawl.dev), or see the [Alexandria documentation](https://docs.firecrawl.dev/features/alexandria) for CLI, MCP, SDK and API usage. Alexandria runs on Firecrawl Cloud, and Firecrawl Local can use it once you sign in with `firecrawl-local login`.
 
----
-
-## Connect your AI agent to Firecrawl Cloud
+### Connect your AI agent
 
 The Firecrawl CLI gives your AI agent every Cloud tool with one command. It works with [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google), [OpenCode](https://opencode.ai) and more, so restart your agent after installing.
 
@@ -458,13 +454,11 @@ curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 
 See the [Skill and CLI documentation](https://docs.firecrawl.dev/sdks/cli) for every command, and [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server) for MCP.
 
----
-
-## SDKs
+### SDKs
 
 The SDKs cover every Firecrawl feature and poll async jobs for you. They work with Firecrawl Cloud, and with Firecrawl Local once you set the API URL to `http://localhost:3002`.
 
-### Python
+#### Python
 
 ```bash
 pip install firecrawl
@@ -493,7 +487,7 @@ results = app.search("best AI data tools 2024", limit=10)
 print(results)
 ```
 
-### Node.js
+#### Node.js
 
 ```bash
 npm install firecrawl
@@ -525,7 +519,7 @@ results.data.web.forEach(result => {
 });
 ```
 
-### More languages
+#### More languages
 
 | Language | Install | Guide |
 |----------|---------|-------|
@@ -537,9 +531,7 @@ results.data.web.forEach(result => {
 | PHP | `composer require firecrawl/firecrawl-sdk` | [PHP SDK](https://docs.firecrawl.dev/sdks/php) |
 | Elixir | `{:firecrawl, "~> 1.0"}` in `mix.exs` | [Elixir SDK](https://docs.firecrawl.dev/sdks/elixir) |
 
----
-
-## Integrations
+### Integrations
 
 **AI agents and tools**
 - [Firecrawl Skills Catalog](https://github.com/firecrawl/skills), installed with `npx skills add firecrawl/skills`
@@ -557,9 +549,7 @@ The build skills for integrating Firecrawl into product code live in this repo u
 
 **Missing your favorite tool?** [Open an issue](https://github.com/firecrawl/firecrawl/issues) and let us know!
 
----
-
-## Resources
+### Resources
 
 - [Documentation](https://docs.firecrawl.dev)
 - [API Reference](https://docs.firecrawl.dev/api-reference/introduction)
@@ -568,17 +558,11 @@ The build skills for integrating Firecrawl into product code live in this repo u
 
 ---
 
-## Ways to run Firecrawl
+## Self-hosting
 
-Firecrawl is open source under the AGPL-3.0 license, and you can run it three ways.
+Run the full Firecrawl server on your own infrastructure when you want queues, workers and every format in one deployment. It runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
 
-| | Firecrawl Local | Self-hosted server | Firecrawl Cloud |
-|---|---|---|---|
-| **Setup** | One binary with `cargo install firecrawl-local` | Docker Compose with Redis, PostgreSQL and a browser service | None, sign up at [firecrawl.dev](https://firecrawl.dev) |
-| **Best for** | Your own machine and your AI agent | A full Firecrawl server on your own infrastructure | Search, Alexandria and every feature at scale |
-| **Guide** | [Firecrawl Local README](apps/local) | [Self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) | [Documentation](https://docs.firecrawl.dev) |
-
-To work on Firecrawl itself, see the [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md).
+[SELF_HOST.md](SELF_HOST.md) lists the services and settings for the revision you checked out, and larger deployments can start from the [Kubernetes manifests](examples/kubernetes/cluster-install) or the [Helm chart](examples/kubernetes/firecrawl-helm). Alexandria runs on Firecrawl Cloud, so the self-hosted server does not include it.
 
 ---
 
