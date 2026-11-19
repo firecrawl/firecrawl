@@ -21,7 +21,7 @@ def test_large_batch_rejects_nonpositive_size_before_starting_jobs(chunk_size):
         with pytest.raises(ValueError, match="chunk_size must be positive"):
             process_large_batch(client, ["https://example.com"], chunk_size=chunk_size)
     scrape.assert_not_called()
-    client.assert_not_called()
+    assert client.mock_calls == []
 
 
 def test_large_batch_processes_every_url_in_order():
