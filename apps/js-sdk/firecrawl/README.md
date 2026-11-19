@@ -218,6 +218,10 @@ const results = await app.search('nanopore basecalling accuracy', {
 
 ### Developer search
 
+Search public repositories, GitHub issues, merged pull requests, READMEs and
+code documentation. It replaces the research index GitHub search, which was
+removed after 2026-11-03.
+
 Use `developerSearch` for the dedicated developer index and its complete filter
 and response contract. Generic `search(..., { categories: ['developer'] })`
 returns developer results inside `.web` in the ordinary web-result shape
@@ -311,15 +315,16 @@ const related = await app.research.similarPapers('pmid:<id>', {
   intent: 'replication attempts in larger cohorts',
   k: 20,
 });
-```
 
-> **`app.research.searchGithub` is deprecated.** The research index GitHub
-> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
-> instead: it searches GitHub issues, pull requests and readmes plus curated
-> documentation sources, returns matched passages, and adds filters for repo,
-> language, license and stars. It does not carry over the `scores` breakdown
-> or the `resultType: "web"` fallback results. See
-> [the developer index docs](https://docs.firecrawl.dev/features/developer).
+// Look up a protein's UniProt location, function and GO terms. Cited papers
+// come back as pmid: ids that getPaper accepts. Print `notice` with the
+// results. It is UniProt's CC BY 4.0 credit.
+const protein = await app.research.lookupProtein('RPUSD3', { organism: '9606' });
+if (protein.match === 'found') {
+  console.log(protein.protein.subcellularLocation[0]?.text);
+}
+console.log(protein.notice);
+```
 
 ### Scrape-bound interactive browsing (v2)
 
@@ -484,3 +489,24 @@ uses its published price. A provider whose data terms have not been accepted rej
 call with a 403 whose `SdkError` carries `code: "THIRD_PARTY_DATA_TERMS_REQUIRED"` and a
 `requiresAction: { type: "accept_terms", terms, version, url }` pointing at the page where
 an organization admin can accept them.
+
+Each Alexandria call result can carry an opaque `feedbackToken`, valid for 24 hours. It is
+absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandriaFeedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `callRatings` (at most 20) rate individual calls. The response includes
+`rejectedTokens` when some tokens failed verification.
+
+```ts
+import { collectFeedbackTokens } from "@mendable/firecrawl-js";
+
+const response = await firecrawl.alexandriaFeedback({
+  rating: "partial",
+  requestedWebsite: { url: "https://example.com", requestedFunctionality: "Find episodes" },
+  rationale: "Found the episodes but the dates were missing",
+  tokens: collectFeedbackTokens(result.alexandria),
+  callRatings: result.alexandria[0].feedbackToken
+    ? [{ token: result.alexandria[0].feedbackToken, rating: "bad" }]
+    : undefined,
+});
+console.log(response.rejectedTokens ?? 0);
+```

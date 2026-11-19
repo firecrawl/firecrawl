@@ -40,8 +40,10 @@ import {
   VideoUnsupportedUrlError,
   MediaAccessDeniedError,
   PromptInjectionDetectedError,
+  PaywalledContentError,
   JsonExtractionContentTooLargeError,
-  XTwitterConfigurationError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -94,8 +96,10 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
   SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
   SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
+  SCRAPE_PAYWALLED_CONTENT: PaywalledContentError,
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
-  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
+  US_ONLY_UNAVAILABLE: UsOnlyUnavailableError,
+  RESERVED_CAPACITY_UNAVAILABLE: ReservedCapacityUnavailableError,
   MAP_FAILED: MapFailedError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
@@ -103,6 +107,7 @@ const errorMap: Record<ErrorCodes, any> = {
   // Zod errors
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
+  CATEGORY_REMOVED: null,
   INDEX_DAILY_LIMIT: null,
   TOOL_DISCOVERY_UNAVAILABLE: null,
   PARSE_UNSUPPORTED_OPTIONS: null,
@@ -113,25 +118,54 @@ const errorMap: Record<ErrorCodes, any> = {
   thread_expired: null,
   threads_disabled: null,
   exchange_not_enabled: null,
+  agent_not_found: null,
+  agent_status_unavailable: null,
 
   // Agent zero data retention rejections are API-level too.
   zdr_threads_unsupported: null,
   zdr_expired: null,
   zdr_no_snapshots: null,
   zdr_not_enabled: null,
+  zdr_retention_misconfigured: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {
   return `${error.code}|${JSON.stringify(error.serialize())}`;
 }
 
+/**
+ * Returns null when `data` is not a serialized error; callers also pass plain
+ * error messages. A code with no class here gives a plain TransportableError.
+ */
 export function deserializeTransportableError(
   data: string,
 ): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
   const [code, ...serialized] = data.split("|");
-  const x = errorMap[code];
-  if (!x) {
+  if (serialized.length === 0) {
     return null;
   }
-  return x.deserialize(code, JSON.parse(serialized.join("|")));
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serialized.join("|"));
+  } catch {
+    return null;
+  }
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const x = Object.hasOwn(errorMap, code) ? errorMap[code] : null;
+  if (x) {
+    return x.deserialize(code, payload);
+  }
+
+  const { message, stack, cause } = payload as Record<string, unknown>;
+  if (!/^\S+$/.test(code) || typeof message !== "string") {
+    return null;
+  }
+  return TransportableError.deserialize(code as ErrorCodes, {
+    message,
+    stack: typeof stack === "string" ? stack : undefined,
+    cause,
+  });
 }

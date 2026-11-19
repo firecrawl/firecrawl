@@ -144,7 +144,7 @@ const monitorNotificationInner = z
     email: z
       .strictObject({
         enabled: z.boolean().optional().default(false),
-        recipients: z.array(z.email()).max(25).optional().default([]),
+        recipients: z.array(z.email().max(320)).max(25).optional().default([]),
         includeDiffs: z.boolean().optional().default(false),
       })
       .optional(),

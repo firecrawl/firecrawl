@@ -1,7 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import { generateObject } from "ai";
-import { APITimeoutError, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APITimeoutError,
+  InternalServerError,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 
 const mocks = vi.hoisted(() => ({ systemOne: vi.fn() }));
 
@@ -22,12 +26,12 @@ vi.mock("../../../lib/generic-ai", () => ({
 import { config } from "../../../config";
 import {
   buildJevRequest,
-  cleanFontFamily,
   describeColor,
   loadFirstScreen,
   resetJevBreaker,
   wantsBrandingScreenshot,
 } from "../../../lib/branding/jev";
+import { cleanFontFamily } from "../../../lib/branding/font-names";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { brandingJevScreenshotTotal } from "../../../lib/branding/metrics";
 import {
@@ -582,6 +586,131 @@ describe("branding with Jev", () => {
         result.buttonClassification.primaryButtonIndex,
       ).toBeGreaterThanOrEqual(0);
     });
+
+    const callCount = async (outcome: string) =>
+      (await brandingJevCallsTotal.get()).values.find(
+        v => v.labels.outcome === outcome,
+      )?.value ?? 0;
+    const refused = (status: number, message: string) =>
+      new InternalServerError(status, {}, new Headers(), message);
+    const withScreen = () => {
+      const input = baseInput(new CostTracking());
+      input.firstScreen = `data:image/png;base64,${PNG}`;
+      return input;
+    };
+
+    it("asks again from the text alone when TypeSafe refuses the image, instead of paying for the LLM", async () => {
+      for (const refusal of [
+        refused(503, "503 Image processing is unavailable."),
+        refused(
+          529,
+          "529 We are currently experiencing high traffic and cannot process your request.",
+        ),
+      ]) {
+        mocks.systemOne.mockReset();
+        mocks.systemOne
+          .mockRejectedValueOnce(refusal)
+          .mockResolvedValueOnce(jevResponse());
+        const before = {
+          rejected: await callCount("image_rejected"),
+          ok: await callCount("ok"),
+        };
+
+        const result = await enhanceBrandingWithLLM(withScreen());
+
+        expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+        const [first, firstOptions] = mocks.systemOne.mock.calls[0];
+        const [second, secondOptions] = mocks.systemOne.mock.calls[1];
+        expect(first.assets).toBeDefined();
+        expect(firstOptions.headers).toEqual({
+          "TypeSafe-Danger-Zone-Images": "true",
+        });
+        expect(second.assets).toBeUndefined();
+        expect(second.state.page.first_screen).toBeUndefined();
+        expect(second.questions.primary_button.instructions).not.toContain(
+          "<screenshot>",
+        );
+        expect(secondOptions.headers).toBeUndefined();
+        expect(generateObject).not.toHaveBeenCalled();
+        expect(
+          result.buttonClassification.primaryButtonIndex,
+        ).toBeGreaterThanOrEqual(0);
+        expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+        expect(await callCount("ok")).toBe(before.ok + 1);
+      }
+    });
+
+    it("does not count a refused image toward the breaker", async () => {
+      // Five failures in a row would open it; five refused images must not.
+      mocks.systemOne.mockReset();
+      for (let i = 0; i < 5; i++) {
+        mocks.systemOne
+          .mockRejectedValueOnce(
+            refused(503, "503 Image processing is unavailable."),
+          )
+          .mockResolvedValueOnce(jevResponse());
+      }
+      for (let i = 0; i < 5; i++) await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(10);
+      expect(wantsBrandingScreenshot(true, "team-jev", false)).toBe("flag");
+
+      mocks.systemOne.mockResolvedValueOnce(jevResponse());
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(11);
+      expect(generateObject).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the LLM when the text-only retry fails too, and that failure counts toward the breaker", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne
+        .mockRejectedValueOnce(
+          refused(503, "503 Image processing is unavailable."),
+        )
+        .mockRejectedValueOnce(refused(500, "500 Internal server error"));
+      const before = {
+        rejected: await callCount("image_rejected"),
+        error: await callCount("error"),
+      };
+
+      await enhanceBrandingWithLLM(withScreen());
+
+      expect(mocks.systemOne).toHaveBeenCalledTimes(2);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(await callCount("image_rejected")).toBe(before.rejected + 1);
+      expect(await callCount("error")).toBe(before.error + 1);
+
+      // That failure was the first of five: four more plain failures open
+      // the breaker, which a refused image alone would not have done.
+      mocks.systemOne.mockRejectedValue(
+        refused(500, "500 Internal server error"),
+      );
+      for (let i = 0; i < 4; i++) {
+        await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      }
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(6);
+      expect(generateObject).toHaveBeenCalledTimes(6);
+    });
+
+    it("still falls back to the LLM on a server error that is not about the image, or a refusal without one", async () => {
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(500, "500 Internal server error"),
+      );
+      await enhanceBrandingWithLLM(withScreen());
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(1);
+
+      // A 529 on a text-only call is TypeSafe asking us to back off: no retry.
+      mocks.systemOne.mockReset();
+      mocks.systemOne.mockRejectedValueOnce(
+        refused(529, "529 We are currently experiencing high traffic"),
+      );
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+      expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+      expect(generateObject).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("fails fast when TypeSafe asks to back off, and retries a 503 or a timeout once, quickly", async () => {
@@ -873,6 +1002,82 @@ describe("branding with Jev", () => {
     // A paragraph font nothing else places is still body text.
     input.jsAnalysis.typography.fontStacks!.paragraph = ["Lato"];
     expect(buildJevRequest(input).fonts[2].role).toBe("body");
+  });
+
+  it("does not report a site builder's default on <body> as the body font", () => {
+    // Wix sets body{font-family:Arial} and styles paragraphs in the brand face.
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Arial", heading: "Madefor Display" },
+      fontStacks: {
+        body: ["Arial", "Helvetica", "sans-serif"],
+        heading: [
+          "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41",
+          "wf_e1b10df92bd244baba1e35d63",
+          "orig_madefor_display",
+        ],
+        paragraph: [
+          "wfont_2feeec_a1b10df92bd244baba1e35d632c6fa41",
+          "wf_a1b10df92bd244baba1e35d63",
+          "orig_madefor_text",
+        ],
+      },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Madefor Text", count: 30 },
+      { family: "Madefor Display", count: 8 },
+      { family: "Arial", count: 1 },
+    ];
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", "body"],
+      ["Madefor Display", "heading"],
+      ["Arial", undefined],
+    ]);
+
+    // The same face in headings and paragraphs is the body font, not Arial.
+    input.jsAnalysis.typography.fontStacks!.paragraph =
+      input.jsAnalysis.typography.fontStacks!.heading;
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", undefined],
+      ["Madefor Display", "body"],
+      ["Arial", undefined],
+    ]);
+
+    // A page with no h1 measures <body> as its heading: the default is neither.
+    input.jsAnalysis.typography.fontStacks!.heading =
+      input.jsAnalysis.typography.fontStacks!.body;
+    input.jsAnalysis.typography.fontFamilies!.heading = "Arial";
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", undefined],
+      ["Madefor Display", "body"],
+      ["Arial", undefined],
+    ]);
+  });
+
+  it("never gives a role to a currency glyph face", () => {
+    const ikea = [
+      "Omani Rial",
+      "Emirati Dirham",
+      "Saudi Riyal",
+      "Noto IKEA",
+      "Noto Sans",
+      "sans-serif",
+    ];
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Noto IKEA", heading: "Noto IKEA" },
+      fontStacks: { body: ikea, heading: ikea, paragraph: ikea },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Omani Rial", count: 40 },
+      { family: "Emirati Dirham", count: 40 },
+      { family: "Saudi Riyal", count: 40 },
+      { family: "Noto IKEA", count: 40 },
+      { family: ikea.join(", "), count: 10 },
+    ];
+    expect(buildJevRequest(input).fonts).toEqual([
+      { family: "Noto IKEA", count: 50, role: "body" },
+    ]);
   });
 
   it("drops the browser's default font when a real face is the body text", async () => {
@@ -1195,6 +1400,52 @@ describe("Jev request building", () => {
     expect(describeColor("#1A73E8")).toBe("vivid blue");
   });
 
+  it("names the family a stack renders, not its alias or its system fallbacks", () => {
+    // Wix serves a licensed face under a per-site alias and keeps the real
+    // name further down the stack.
+    expect(
+      cleanFontFamily(
+        "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
+      ),
+    ).toBe("Libre Baskerville");
+    expect(
+      cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd"),
+    ).toBeUndefined();
+    // Monotype spellings on Wix.
+    expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
+    expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
+    expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
+    expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe(
+      "DIN Neuzeit Grotesk",
+    );
+    // Self-hosted builds and a weight glued onto a lowercase alias.
+    expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
+    expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
+    expect(cleanFontFamily("orig_graphikextralight")).toBe("Graphik");
+    expect(cleanFontFamily("Cooper Black")).toBe("Cooper Black");
+    // A weight alone is still no family, and a known family is matched
+    // once its glued weight is gone.
+    expect(cleanFontFamily("semibold")).toBeUndefined();
+    expect(cleanFontFamily("proximanovabold")).toBe("Proxima Nova");
+    // Non-Latin faces are families too, and title case works past ASCII.
+    expect(cleanFontFamily("思源黑体, sans-serif")).toBe("思源黑体");
+    expect(cleanFontFamily("über grotesk")).toBe("Über Grotesk");
+    // A system stack asks for the visitor's font: Segoe UI and Roboto are
+    // its spellings per platform, not the brand's choice.
+    expect(
+      cleanFontFamily(
+        "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+      ),
+    ).toBeUndefined();
+    expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
+    // A real face ahead of the system stack is still that face (hyphenated
+    // self-hosted names keep their spelling).
+    expect(
+      cleanFontFamily("Salesforce-Sans, system-ui, -apple-system, Segoe UI"),
+    ).toBe("Salesforce-Sans");
+  });
+
   it("cleans font names in code", () => {
     expect(cleanFontFamily("__Roboto_Mono_c8ca7d")).toBe("Roboto Mono");
     expect(cleanFontFamily("__suisse_6d5c28")).toBe("Suisse");
@@ -1229,6 +1480,49 @@ describe("Jev request building", () => {
     // Acronyms aren't split.
     expect(cleanFontFamily("TIActuBeta")).toBe("TIActuBeta");
     expect(cleanFontFamily("HardwoodLP")).toBe("HardwoodLP");
+  });
+
+  it("keeps brand words whole and splits only a trailing style word", () => {
+    expect(cleanFontFamily("GitLabSans")).toBe("GitLab Sans");
+    expect(cleanFontFamily("HubSpotSans")).toBe("HubSpot Sans");
+    expect(cleanFontFamily("PayPalPro")).toBe("PayPal Pro");
+    expect(cleanFontFamily("figmaSans")).toBe("Figma Sans");
+    expect(cleanFontFamily("eBaySans")).toBe("eBay Sans");
+    expect(cleanFontFamily("SourceSansPro")).toBe("Source Sans Pro");
+    // Already-clean names come back unchanged.
+    expect(cleanFontFamily("GitLab Sans")).toBe("GitLab Sans");
+    expect(cleanFontFamily("HubSpot Sans")).toBe("HubSpot Sans");
+    // A name that already has spaces still splits a run-together word.
+    expect(cleanFontFamily("BasicCommercial LT Std")).toBe(
+      "Basic Commercial LT Std",
+    );
+    expect(cleanFontFamily("PayPal Pro Text")).toBe("PayPal Pro Text");
+  });
+
+  it("strips next/font hashes and glued weights before underscores become spaces", () => {
+    expect(cleanFontFamily("__hashicorpSans_96f0ca")).toBe("Hashicorp Sans");
+    expect(cleanFontFamily("__GitLabSans_1a2b3c")).toBe("GitLab Sans");
+    expect(
+      cleanFontFamily(["__figmaSans_d65c78", "__figmaSans_Fallback_d65c78"]),
+    ).toBe("Figma Sans");
+    expect(cleanFontFamily("nb_international_proregular")).toBe(
+      "Nb International Pro",
+    );
+  });
+
+  it("skips symbol faces listed ahead of the text face", () => {
+    expect(
+      cleanFontFamily(
+        "Omani Rial, Emirati Dirham, Saudi Riyal, Noto IKEA, Noto Sans, sans-serif",
+      ),
+    ).toBe("Noto IKEA");
+    expect(cleanFontFamily("Noto Color Emoji, Inter")).toBe("Inter");
+  });
+
+  it("strips a spaced compound weight", () => {
+    expect(cleanFontFamily("Inter Extra Bold")).toBe("Inter");
+    expect(cleanFontFamily("Inter Semi Bold")).toBe("Inter");
+    expect(cleanFontFamily("Extra Bold")).toBeUndefined();
   });
 
   it("merges a family listed with and without spaces", () => {
@@ -1344,5 +1638,95 @@ describe("branding metrics", () => {
     expect(await value(brandingRoutedTotal, noKey)).toBe(noKeyBefore + 1);
     expect(await value(brandingRoutedTotal, off)).toBe(offBefore);
     expect(mocks.systemOne).not.toHaveBeenCalled();
+  });
+});
+
+describe("logo candidates as Jev sees them", () => {
+  const candidates = (input: BrandingLLMInput) =>
+    buildJevRequest(input).state.logo_candidates as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+  it("names a link's path instead of trusting the scan's homepage flag", () => {
+    const input = baseInput(new CostTracking());
+    input.pageUrl = "https://acme.test/";
+    input.logoCandidates = [
+      LOGO,
+      {
+        ...LOGO,
+        src: "https://acme.test/home.svg",
+        alt: "home",
+        href: "/home/",
+      },
+      { ...LOGO, src: "https://acme.test/cart.svg", alt: "", href: "/cart" },
+      {
+        ...LOGO,
+        src: "https://acme.test/www.svg",
+        href: "https://www.acme.test/?ref=nav",
+      },
+      { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
+      { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
+      // The scan resolved these as the home link; we can't tell from the href.
+      {
+        ...LOGO,
+        src: "https://acme.test/sibling.svg",
+        href: "https://acme.io/",
+      },
+      { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
+      {
+        ...LOGO,
+        src: "https://acme.test/mail.svg",
+        href: "mailto:hi@acme.test",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
+      {
+        ...LOGO,
+        src: "https://acme.test/other.svg",
+        href: "https://acme.io/pricing",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
+    ];
+    expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
+      "links to the homepage",
+      "links to /home on this site",
+      "links to /cart on this site",
+      "links to the homepage",
+      "links to another website (x.com)",
+      "no link",
+      "links to the homepage",
+      "links to the homepage",
+      "mailto: link",
+      "links to another website (acme.io)",
+    ]);
+  });
+
+  it("shows a declared mark as metadata, not as a rendered header logo", () => {
+    const input = baseInput(new CostTracking());
+    input.logoCandidates = [
+      LOGO,
+      {
+        ...LOGO,
+        src: "https://acme.test/apple-touch-icon.png",
+        isSvg: false,
+        position: { top: 0, left: 0, width: 180, height: 180 },
+        href: undefined,
+        source: "apple-touch-icon",
+      },
+    ];
+    const [rendered, declared] = Object.values(candidates(input));
+    expect(rendered).toMatchObject({
+      where: "header",
+      visible: true,
+      link: "links to the homepage",
+    });
+    expect(declared).toMatchObject({
+      where: "page metadata, not rendered",
+      visible: false,
+      size: "unknown",
+      shape: "unknown",
+      link: "no link",
+      found_via: "apple-touch-icon",
+    });
   });
 });

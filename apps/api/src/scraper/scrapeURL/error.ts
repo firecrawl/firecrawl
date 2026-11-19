@@ -9,23 +9,35 @@ export class EngineError extends Error {
   }
 }
 
-export class XTwitterConfigurationError extends TransportableError {
-  constructor() {
-    super(
-      "SCRAPE_X_TWITTER_CONFIGURATION_ERROR",
-      "X/Twitter scraping requires XAI_API_KEY to be configured.",
-    );
-  }
-
-  serialize() {
-    return super.serialize();
+/** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
+export class UsOnlyUnavailableError extends TransportableError {
+  constructor(message: string) {
+    super("US_ONLY_UNAVAILABLE", message);
   }
 
   static deserialize(
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new XTwitterConfigurationError();
+    const x = new UsOnlyUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+/** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
+export class ReservedCapacityUnavailableError extends TransportableError {
+  constructor(
+    message = "PDF processing is unavailable for this team's configuration. Please retry later.",
+  ) {
+    super("RESERVED_CAPACITY_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ReservedCapacityUnavailableError(data.message);
     x.stack = data.stack;
     return x;
   }
@@ -259,6 +271,37 @@ export class SiteRestrictionError extends TransportableError {
     x.stack = data.stack;
     return x;
   }
+}
+
+// Fire Engine failed the scrape on a site block that it marked as not worth
+// retrying on another exit or tier: an instant-block rule with
+// retryWithStealth false, such as a sign-in wall a site shows every signed-out
+// visitor. The other engines get the same page, so the waterfall ends the
+// scrape on it with the usual NoEnginesLeftError instead of trying them.
+// Internal only; it never reaches the API response.
+export class SiteBlockNoRetryError extends Error {
+  constructor(public fireEngineError: string) {
+    super(
+      `Fire Engine reported a site block that a retry does not get past: ${fireEngineError}`,
+    );
+  }
+}
+
+// Whether a failed Fire Engine job is such a block. Fire Engine sends
+// retryWithStealth only when true, so "no retry" is site_protection without it,
+// limited to instant-block failures: other site_protection failures that skip
+// the stealth retry (a challenge solver at capacity, say) still go through the
+// waterfall.
+export function isNoRetrySiteBlock(
+  failed: { failureReason?: "site_protection"; retryWithStealth?: boolean },
+  error: unknown,
+): error is string {
+  return (
+    failed.failureReason === "site_protection" &&
+    !failed.retryWithStealth &&
+    typeof error === "string" &&
+    error.includes("instant-block:")
+  );
 }
 
 export class ActionError extends TransportableError {
@@ -683,6 +726,29 @@ export class PromptInjectionDetectedError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PromptInjectionDetectedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class PaywalledContentError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_PAYWALLED_CONTENT",
+      message ??
+        "The page is marked as paywalled (schema.org isAccessibleForFree is false), so Safe Mode refused the scrape.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PaywalledContentError(data.message);
     x.stack = data.stack;
     return x;
   }

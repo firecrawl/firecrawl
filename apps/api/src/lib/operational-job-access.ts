@@ -11,6 +11,7 @@ type OperationalJobAccess = {
   kind: ApiJobKind;
   clientOrigin?: string;
   expiresAtMs: number;
+  zeroDataRetentionMinutes?: number;
 };
 
 /**
@@ -24,6 +25,7 @@ type OperationalJobAccess = {
 async function resolveOperationalJobAccess(params: {
   id: string;
   kinds: readonly ApiJobKind[];
+  teamId?: string;
 }): Promise<OperationalJobAccess | null> {
   // An id that is not a UUIDv7 names no row: not found, not an outage.
   if (!isUuidV7Id(params.id)) return null;
@@ -34,6 +36,9 @@ async function resolveOperationalJobAccess(params: {
     logger.error("Bigtable job access read failed", {
       error,
       jobId: params.id,
+      ...(params.teamId !== undefined
+        ? { teamId: params.teamId, team_id: params.teamId }
+        : {}),
     });
     throw error;
   }
@@ -55,8 +60,9 @@ export function getExtractJobAccess(
 
 export function getAgentJobAccess(
   id: string,
+  teamId?: string,
 ): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({ id, kinds: ["agent"] });
+  return resolveOperationalJobAccess({ id, kinds: ["agent"], teamId });
 }
 
 export function getCrawlJobAccess(

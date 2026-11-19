@@ -1,18 +1,6 @@
 import { Counter } from "prom-client";
 
 /**
- * Which path a usage event took. The ratio of `firebill` to `direct` is the
- * live read on the rollout percentage — during a ramp it is the first thing to
- * look at, because a routing bug shows up here long before it shows up in a
- * balance.
- */
-export const billingRouteTotal = new Counter({
-  name: "firecrawl_billing_route_total",
-  help: "Usage events by the path they took to Autumn",
-  labelNames: ["route"] as const, // firebill | direct
-});
-
-/**
  * What firebill said. `refused` is an explicit `success: false` — firebill does
  * not own the event and nobody else does, so usage is being dropped.
  * `ambiguous` is a transport failure: firebill may have accepted it before the
@@ -66,6 +54,8 @@ export const firebillFailureCauseTotal = new Counter({
  * retry worker.
  *
  * - `enqueued` — handed to the retry queue instead of being dropped.
+ * - `enqueue_duplicate` — a job with the same idempotency key was already in
+ *   the queue, so no new job was created; that job owns the event.
  * - `enqueue_failed` — the queue rejected the hand-off; the event is
  *   unbilled unless someone replays it from the log line.
  * - `enqueue_timeout` — the hand-off did not confirm in time and may still
@@ -79,7 +69,8 @@ export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Durable retries of usage events firebill did not confirm",
   // operation: track|refund
-  // outcome: enqueued|enqueue_failed|enqueue_timeout|retried|settled|exhausted
+  // outcome: enqueued|enqueue_duplicate|enqueue_failed|enqueue_timeout|
+  //          retried|settled|exhausted
   labelNames: ["operation", "outcome"] as const,
 });
 
@@ -111,28 +102,4 @@ export const firebillCheckTotal = new Counter({
   name: "firecrawl_firebill_check_total",
   help: "Outcomes of credit checks sent to firebill",
   labelNames: ["outcome"] as const, // allowed | denied | unavailable
-});
-
-/**
- * Entities the request path had to create for itself, by the method that did
- * it. Provisioning is meant to happen at team creation, so anything counted
- * here is the back-fill still being needed, and is what the per-request
- * provisioning prefix is buying. A 409 is not counted: the entity was already
- * there.
- */
-export const autumnEntityCreatedInlineTotal = new Counter({
-  name: "firecrawl_autumn_entity_created_inline_total",
-  help: "Autumn entities created inline on a billing path",
-  labelNames: ["path"] as const, // the method that created it
-});
-
-/**
- * Calls to `customers.get_or_create` attempted against Autumn, counted before
- * the response so a failure counts too. Deliberately not "created": the
- * endpoint answers 200 either way and autumn-js parses only the customer body,
- * so nothing in the response tells a creation from a get.
- */
-export const autumnCustomerGetOrCreateTotal = new Counter({
-  name: "firecrawl_autumn_customer_get_or_create_total",
-  help: "Autumn customers.get_or_create calls attempted from a billing path",
 });

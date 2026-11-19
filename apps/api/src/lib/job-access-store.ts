@@ -35,6 +35,12 @@ export type ApiJobAccess = {
   kind: ApiJobKind;
   expiresAtMs: number;
   clientOrigin?: string;
+  /**
+   * An agent run's zero data retention, in minutes, fixed when the run
+   * started. Set only on ZDR agent runs; rows written before it existed have
+   * none.
+   */
+  zeroDataRetentionMinutes?: number;
 };
 
 export function isApiJobKind(kind: string): kind is ApiJobKind {
@@ -53,7 +59,11 @@ function parseApiJobAccess(value: Buffer | string): ApiJobAccess {
     !isApiJobKind(row.kind) ||
     typeof row.expiresAtMs !== "number" ||
     !Number.isFinite(row.expiresAtMs) ||
-    (row.clientOrigin !== undefined && typeof row.clientOrigin !== "string")
+    (row.clientOrigin !== undefined && typeof row.clientOrigin !== "string") ||
+    (row.zeroDataRetentionMinutes !== undefined &&
+      (typeof row.zeroDataRetentionMinutes !== "number" ||
+        !Number.isFinite(row.zeroDataRetentionMinutes) ||
+        row.zeroDataRetentionMinutes <= 0))
   ) {
     throw new Error("Invalid Bigtable job access row");
   }
@@ -104,6 +114,7 @@ export async function writeApiJobAccess(params: {
   expiresAt: Date;
   clientOrigin?: string | null;
   zeroDataRetention?: boolean;
+  zeroDataRetentionMinutes?: number;
 }): Promise<boolean> {
   const tableId = config.BIGTABLE_JOB_ACCESS_TABLE;
   if (!tableId) return false;
@@ -125,6 +136,11 @@ export async function writeApiJobAccess(params: {
           expiresAtMs: params.expiresAt.getTime(),
           ...(params.kind === "agent" && params.clientOrigin
             ? { clientOrigin: params.clientOrigin }
+            : {}),
+          ...(params.kind === "agent" &&
+          params.zeroDataRetention &&
+          params.zeroDataRetentionMinutes !== undefined
+            ? { zeroDataRetentionMinutes: params.zeroDataRetentionMinutes }
             : {}),
         }),
       );

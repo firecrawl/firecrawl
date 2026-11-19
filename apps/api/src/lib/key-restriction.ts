@@ -124,7 +124,6 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["developer"], "research"],
   [["llmstxt"], "llmstxt"],
   [["deep-research"], "deep-research"],
-  [["fireclaw"], "fireclaw"],
 ];
 
 // Account/metadata endpoints that never fetch web content; always reachable
@@ -153,7 +152,8 @@ type EndpointClassification =
 // Classifies a request path into an allowlistable endpoint group. Returns
 // null for paths outside the versioned API surface (health, admin, ...).
 export function classifyEndpoint(rawUrl: string): EndpointClassification {
-  const pathname = rawUrl.split("?")[0];
+  // Express routes case-insensitively, so classify the same way.
+  const pathname = rawUrl.split("?")[0].toLowerCase();
   const segments = pathname.split("/").filter(s => s.length > 0);
   const version = segments[0];
   if (version === "v0") {

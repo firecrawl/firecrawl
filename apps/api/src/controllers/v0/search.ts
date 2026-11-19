@@ -32,6 +32,9 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { isUsOnly } from "../../lib/us-only";
+import { ipWhitelistRefusal } from "../../lib/permissions";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 async function searchHelper(
   jobId: string,
@@ -76,6 +79,7 @@ async function searchHelper(
     lang: searchOptions.lang ?? "en",
     country: searchOptions.country ?? "us",
     location: searchOptions.location,
+    usOnly: isUsOnly(flags),
   });
 
   let justSearch = pageOptions.fetchPageContent === false;
@@ -88,6 +92,9 @@ async function searchHelper(
     team_id,
   );
   internalOptions.orgId = org_id;
+  if (isUsOnly(flags)) {
+    internalOptions.teamFlags = flags;
+  }
 
   if (justSearch) {
     const searchCredits = Math.ceil(res.length / 10) * 2;
@@ -269,6 +276,14 @@ export async function searchController(req: Request, res: Response) {
     };
     const origin = req.body.origin ?? "api";
 
+    const ipWhitelistError =
+      pageOptions.fetchPageContent !== false
+        ? ipWhitelistRefusal(chunk?.flags, pageOptions?.geolocation?.country)
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({ error: ipWhitelistError });
+    }
+
     const searchOptions = req.body.searchOptions ?? { limit: 5 };
 
     try {
@@ -326,6 +341,9 @@ export async function searchController(req: Request, res: Response) {
   } catch (error) {
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({ error: error.message });
+    }
+    if (error instanceof UsOnlyUnavailableError) {
+      return res.status(403).json({ code: error.code, error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", { error });

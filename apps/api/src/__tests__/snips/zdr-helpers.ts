@@ -87,10 +87,15 @@ export async function getLogs() {
 
 type JobRow = Record<string, unknown>;
 
+// A failed ZDR scrape keeps at most an error code, never the error's text.
+const ZDR_STORED_ERROR =
+  /^(?:[A-Za-z_]*|<redacted due to zero data retention>)$/;
+
 // Scrape and crawl options are stored as a JSON string; ZDR rows carry none.
 function expectNoStoredContent(row: JobRow) {
   expect(String(row.url)).not.toContain("://"); // no url stored
   expect(row.options ?? null).toBeNull();
+  expect(String(row.error ?? "")).toMatch(ZDR_STORED_ERROR);
 }
 
 export async function expectScrapeIsCleanedUp(scrapeId: string) {

@@ -19,7 +19,12 @@ import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "./metrics";
-import { cacheServiceConfigured, lookupCachedResult } from "./cache-service";
+import {
+  cacheServiceConfigured,
+  lookupCachedResult,
+  recordFirePdfCacheKey,
+} from "./cache-service";
+import { isReservedCapacity } from "../../../../../lib/reserved-capacity";
 import { firePdfTableFormat } from "./request-metadata";
 import { consumeRefresh, refreshDecisionFor } from "./refresh-budget";
 import {
@@ -206,6 +211,15 @@ export async function tryGetCached(
     pageMarkers,
   );
   if (!cacheable) return null;
+  // A stored result may have been produced on other capacity, so a team
+  // restricted to reserved capacity is always parsed afresh. Its own
+  // results are still written, and the key is still recorded for the index.
+  if (isReservedCapacity(meta.internalOptions.teamFlags ?? undefined)) {
+    if (viaService && !isRasterImagePayload(base64Content)) {
+      await recordFirePdfCacheKey(meta, base64Content, "pdf");
+    }
+    return null;
+  }
   if (viaService) {
     // The service probes the variants, applies the read-time rules and
     // budgets `refresh`; a failed lookup is a miss.

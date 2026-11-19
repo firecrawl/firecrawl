@@ -27,7 +27,7 @@ covering physics, mathematics and computer science.
    ``articleRank``, ``seedOverlap``, ``poolSize`` and so on.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import quote
 import warnings
 
@@ -37,6 +37,7 @@ from ...utils.get_version import get_version
 from ..research_docs import (
     GITHUB_SEARCH_DEPRECATION_MSG,
     AIO_INSPECT_PAPER_DOC,
+    AIO_LOOKUP_PROTEIN_DOC,
     AIO_READ_PAPER_DOC,
     AIO_RELATED_PAPERS_DOC,
     AIO_SEARCH_GITHUB_DOC,
@@ -82,6 +83,7 @@ async def search_papers(
     categories: Optional[List[str]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    sort: Optional[Literal["relevance", "date_desc"]] = None,
 ) -> Dict[str, Any]:
     return await _get(
         client,
@@ -95,6 +97,7 @@ async def search_papers(
                 "categories": categories,
                 "from": from_date,
                 "to": to_date,
+                "sort": sort,
                 "origin": _origin(client),
             }
         ),
@@ -148,6 +151,21 @@ async def related_papers(
                 "origin": _origin(client),
             }
         ),
+    )
+
+
+@doc(AIO_LOOKUP_PROTEIN_DOC)
+async def lookup_protein(
+    client: AsyncHttpClient,
+    protein: str,
+    *,
+    organism: Optional[str] = None,
+) -> Dict[str, Any]:
+    return await _get(
+        client,
+        BASE
+        + "/proteins"
+        + _query({"protein": protein, "organism": organism, "origin": _origin(client)}),
     )
 
 

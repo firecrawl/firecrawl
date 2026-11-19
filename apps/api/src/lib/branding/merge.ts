@@ -1,10 +1,12 @@
 import { BrandingProfile } from "../../types/branding";
 import {
   colorDistance,
+  fitsColorScheme,
   isBrowserLinkColor,
   isGrayish,
   isNearBlack,
   isNeutralDark,
+  isUsableAccent,
   isUsableBrandPrimary,
   normalizeRoleHex,
   shouldApplyLlmColorRoles,
@@ -21,6 +23,12 @@ export function mergeBrandingResults(
   logoCandidates?: LogoCandidate[],
 ): BrandingProfile {
   const merged: BrandingProfile = { ...js };
+  // The heuristic link is the accent's stand-in when the page's links gave
+  // no color of their own; such a link follows the accent through every
+  // change below. One measured on the page's links is the brand's and stays,
+  // even when it happens to equal the heuristic accent.
+  const linkFollowsAccent =
+    !!js.colors?.link && (js as any).__link_measured !== true;
 
   // Handle logo selection only when we had logo candidates; ignore logoSelection when there were none
   const hasLogoCandidates = !!(logoCandidates && logoCandidates.length > 0);
@@ -291,12 +299,21 @@ export function mergeBrandingResults(
     const llmPrimary = brandHex(llm.colorRoles.primaryColor);
     const llmSecondary = brandHex(llm.colorRoles.secondaryColor);
     const llmAccent = brandHex(llm.colorRoles.accentColor);
-    const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
+    // A dark background on a light page is a hero or a footer, not the page.
+    const llmBackgroundHex = normalizeRoleHex(llm.colorRoles.backgroundColor);
+    const llmBackground =
+      llmBackgroundHex && fitsColorScheme(llmBackgroundHex, merged.colorScheme)
+        ? llmBackgroundHex
+        : undefined;
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
     const usablePrimary =
       llmPrimary && isUsableBrandPrimary(llmPrimary, merged.colorScheme)
         ? llmPrimary
         : undefined;
+    // A pale tint or a gray can't call attention to anything: the measured
+    // accent stays, or the primary when that is pale too.
+    const usableAccent = (hex?: string) =>
+      hex && isUsableAccent(hex, merged.colorScheme) ? hex : undefined;
     const rawSecondary = llm.colorRoles.secondaryColor;
     const omittedSecondary =
       rawSecondary == null || String(rawSecondary).trim() === "";
@@ -305,7 +322,11 @@ export function mergeBrandingResults(
       ...merged.colors,
       primary: usablePrimary || merged.colors?.primary,
       ...(llmSecondary ? { secondary: llmSecondary } : {}),
-      accent: llmAccent || merged.colors?.accent,
+      accent:
+        usableAccent(llmAccent) ||
+        usableAccent(merged.colors?.accent) ||
+        usablePrimary ||
+        merged.colors?.primary,
       background: llmBackground || merged.colors?.background,
       // Body text is written in a neutral; a saturated pick is usually the
       // link color, so the measured neutral text color stays.
@@ -313,6 +334,7 @@ export function mergeBrandingResults(
         ? merged.colors?.textPrimary
         : llmText || merged.colors?.textPrimary,
     };
+    if (linkFollowsAccent) merged.colors.link = merged.colors.accent;
 
     // When the LLM omits secondaryColor, remove the JS-heuristic secondary
     // to avoid propagating spurious colors from CSS presets (e.g. WordPress themes).
@@ -369,6 +391,7 @@ export function mergeBrandingResults(
     buttonSnapshots,
     logoCandidates,
     displaced,
+    linkFollowsAccent,
   );
 
   if (llm.personality) {
@@ -483,6 +506,7 @@ function applyLogoAndMonochromeColors(
   buttonSnapshots: ButtonSnapshot[],
   logoCandidates: LogoCandidate[] | undefined,
   displaced: string | undefined,
+  linkFollowsAccent: boolean,
 ): void {
   if (!merged.colors) return;
   const scheme = merged.colorScheme;
@@ -532,7 +556,7 @@ function applyLogoAndMonochromeColors(
   };
   const colors = { ...merged.colors, primary: neutral };
   if (incidental(colors.accent)) colors.accent = neutral;
-  if (incidental(colors.link)) colors.link = colors.accent;
+  if (linkFollowsAccent) colors.link = colors.accent;
   if (incidental(colors.secondary)) delete colors.secondary;
   merged.colors = colors;
 }

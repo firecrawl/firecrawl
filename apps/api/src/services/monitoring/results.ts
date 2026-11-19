@@ -259,6 +259,7 @@ export async function recordMonitorScrapeSuccess(
           ? monitorForRun.goal
           : null,
       extractionPrompt: targetCtFormat?.prompt ?? null,
+      teamFlags: job.data.internalOptions?.teamFlags,
     });
   } catch (error) {
     // A transient diff/persist failure (e.g. GCS) must not strand the check:

@@ -3,6 +3,7 @@ import { Document, VideoItem } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { throwIfMediaAccessDenied } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
 
 // Video downloads can be large; generous but bounded so a hung fetch can't
 // silently consume the whole scrape budget.
@@ -208,6 +209,20 @@ export async function fetchVideo(
   // Lockdown forbids outbound requests that touch the target URL. avgrab
   // fetches the source on our behalf, so skip it here.
   if (meta.options.lockdown) {
+    return document;
+  }
+
+  if (meta.internalOptions.zeroDataRetention) {
+    document.warning =
+      "Video format is not supported with zero data retention." +
+      (document.warning ? " " + document.warning : "");
+    return document;
+  }
+
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    document.warning =
+      "Video format is not supported for teams restricted to US-only processing." +
+      (document.warning ? " " + document.warning : "");
     return document;
   }
 

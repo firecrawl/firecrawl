@@ -9,6 +9,12 @@ import { scrapePDFWithFirePDF } from "../firePDF";
 import { cancelJob } from "./cancel";
 import { maybeSaveResult, provenanceFromResponse, tryGetCached } from "./cache";
 import { resolvePdfCacheKey } from "../../../../../lib/gcs-pdf-cache";
+import { isUsOnly, US_DATA_REGION } from "../../../../../lib/us-only";
+import { isReservedCapacity } from "../../../../../lib/reserved-capacity";
+import {
+  firePdfReservedCapacityRefusal,
+  firePdfUsOnlyRefusal,
+} from "./data-region";
 import {
   firePdfAsyncAbandonedTotal,
   firePdfAsyncTotalDurationSeconds,
@@ -327,7 +333,9 @@ export async function scrapePDFWithFirePDFAsync(
       error instanceof FirePdfAsyncFailure &&
       (error.reason === "terminal_failed" ||
         error.reason === "terminal_expired" ||
-        error.reason === "terminal_cancelled");
+        error.reason === "terminal_cancelled" ||
+        error.reason === "region_unavailable" ||
+        error.reason === "reserved_unavailable");
     if ((jobAlreadyTerminal || terminalReached) && meta.largePdfProcessing) {
       // The job is dead — a "processing continues" message would lie.
       meta.largePdfProcessing.current = undefined;
@@ -371,6 +379,18 @@ export async function scrapePDFWithFirePDFAsync(
     ) {
       await cancelJob({ baseUrl, scrapeId: meta.id, meta, fetchImpl });
     }
+    if (
+      error instanceof FirePdfAsyncFailure &&
+      error.reason === "region_unavailable"
+    ) {
+      throw firePdfUsOnlyRefusal(meta, "region_unavailable");
+    }
+    if (
+      error instanceof FirePdfAsyncFailure &&
+      error.reason === "reserved_unavailable"
+    ) {
+      throw firePdfReservedCapacityRefusal(meta, "reserved_unavailable");
+    }
     throw submitMayHaveBeenAccepted ? error.originalError : error;
   }
 
@@ -379,6 +399,21 @@ export async function scrapePDFWithFirePDFAsync(
   // failAsync throws must not leave stale processing state behind).
   if (meta.largePdfProcessing) {
     meta.largePdfProcessing.current = undefined;
+  }
+
+  // Adopted jobs included: a job that ran before the pin existed carries no
+  // echo, and its result may have come from GPU capacity outside the US.
+  if (
+    isUsOnly(meta.internalOptions.teamFlags ?? undefined) &&
+    fetched.data_region_applied !== US_DATA_REGION
+  ) {
+    throw firePdfUsOnlyRefusal(meta, "region_unconfirmed");
+  }
+  if (
+    isReservedCapacity(meta.internalOptions.teamFlags ?? undefined) &&
+    fetched.reserved_applied !== true
+  ) {
+    throw firePdfReservedCapacityRefusal(meta, "reserved_unconfirmed");
   }
 
   // ── Assemble + cache save ─────────────────────────────────────────────

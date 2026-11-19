@@ -70,7 +70,7 @@ describe("pickDeclaredLogo", () => {
             },
           },
         ],
-        "https://x.com/jsonld.png",
+        { src: "https://x.com/jsonld.png", source: "logo-jsonld" },
       ),
     ).toBe(false);
   });
@@ -92,7 +92,7 @@ describe("pickDeclaredLogo", () => {
             },
           },
         ],
-        "https://x.com/jsonld.png",
+        { src: "https://x.com/jsonld.png", source: "logo-jsonld" },
       ),
     ).toBe(true);
   });
@@ -114,7 +114,7 @@ describe("pickDeclaredLogo", () => {
             },
           },
         ],
-        "https://x.com/jsonld.png",
+        { src: "https://x.com/jsonld.png", source: "logo-jsonld" },
       ),
     ).toBe(true);
   });
@@ -136,7 +136,7 @@ describe("pickDeclaredLogo", () => {
             },
           },
         ],
-        "https://x.com/jsonld.png",
+        { src: "https://x.com/jsonld.png", source: "logo-jsonld" },
       ),
     ).toBe(false);
   });
@@ -158,7 +158,57 @@ describe("pickDeclaredLogo", () => {
             },
           },
         ],
-        "https://x.com/jsonld.png",
+        { src: "https://x.com/jsonld.png", source: "logo-jsonld" },
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps an apple-touch icon out when anything visible looks like a logo", () => {
+    const bodyLogo = {
+      src: "https://x.com/portal/wikimedia_logo.png",
+      isVisible: true,
+      location: "body" as const,
+      indicators: {
+        inHeader: false,
+        altMatch: false,
+        srcMatch: true,
+        classMatch: false,
+        hrefMatch: false,
+      },
+    };
+    expect(
+      shouldAddDeclaredLogoCandidate([bodyLogo], {
+        src: "https://x.com/touch.png",
+        source: "apple-touch-icon",
+      }),
+    ).toBe(false);
+    // The site's own JSON-LD declaration still competes with a body image.
+    expect(
+      shouldAddDeclaredLogoCandidate([bodyLogo], {
+        src: "https://x.com/jsonld.png",
+        source: "logo-jsonld",
+      }),
+    ).toBe(true);
+  });
+
+  it("injects an apple-touch icon when no visible candidate looks like a logo", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/hero.png",
+            isVisible: true,
+            location: "body",
+            indicators: {
+              inHeader: false,
+              altMatch: false,
+              srcMatch: false,
+              classMatch: false,
+              hrefMatch: true,
+            },
+          },
+        ],
+        { src: "https://x.com/touch.png", source: "apple-touch-icon" },
       ),
     ).toBe(true);
   });

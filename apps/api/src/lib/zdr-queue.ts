@@ -1,5 +1,5 @@
 import amqp from "amqplib";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { config } from "../config";
 import { logger as _logger } from "./logger";
 import {
@@ -12,17 +12,27 @@ const DELAY_MS = 24 * 60 * 60 * 1000;
 const EXCHANGE = "zdr.cleanup";
 const DELAY_QUEUE = "zdr.cleanup.delayed.24h";
 const READY_QUEUE = "zdr.cleanup.ready";
+const RETRY_QUEUE = "zdr.cleanup.retry";
 const DLQ = "zdr.cleanup.dlq";
 const READY_ROUTING_KEY = "ready";
 const DLQ_ROUTING_KEY = "dead";
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+// 5 attempts of at most 5s each, with 1+2+4+8s between them: at most 40s,
+// well inside the API pod's shutdown grace.
+const PUBLISH_MAX_ATTEMPTS = 5;
+const PUBLISH_ATTEMPT_TIMEOUT_MS = 5_000;
+const RETRY_DELAY_MS = 5 * 60 * 1000;
+const MAX_ATTEMPTS = 24;
+const ATTEMPT_HEADER = "zdr-attempt";
 
 const logger = _logger.child({ module: "zdr-queue" });
 
-type ZdrCleanupJob = {
-  requestId: string;
-};
+// A request-level job resolves its blobs from ClickHouse; the others name one object.
+export type ZdrCleanupJob =
+  | { requestId: string }
+  | { blobId: string }
+  | { parseUploadPath: string };
 
 type CleanupHandler = (job: ZdrCleanupJob) => Promise<void>;
 
@@ -73,6 +83,18 @@ async function assertTopology(ch: amqp.Channel): Promise<void> {
       "x-queue-type": "quorum",
       "x-overflow": "reject-publish",
       "x-message-ttl": DELAY_MS,
+      "x-dead-letter-strategy": "at-least-once",
+      "x-dead-letter-exchange": EXCHANGE,
+      "x-dead-letter-routing-key": READY_ROUTING_KEY,
+    },
+  });
+
+  await ch.assertQueue(RETRY_QUEUE, {
+    durable: true,
+    arguments: {
+      "x-queue-type": "quorum",
+      "x-overflow": "reject-publish",
+      "x-message-ttl": RETRY_DELAY_MS,
       "x-dead-letter-strategy": "at-least-once",
       "x-dead-letter-exchange": EXCHANGE,
       "x-dead-letter-routing-key": READY_ROUTING_KEY,
@@ -225,9 +247,20 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
   return consumeChannelPromise;
 }
 
+function jobId(job: ZdrCleanupJob): string {
+  if ("blobId" in job) return job.blobId;
+  // AMQP caps messageId at 255 bytes; the path includes a client filename.
+  if ("parseUploadPath" in job) {
+    return createHash("sha256").update(job.parseUploadPath).digest("hex");
+  }
+  return job.requestId;
+}
+
 function publishConfirmed(
   ch: amqp.ConfirmChannel,
+  queue: string,
   job: ZdrCleanupJob,
+  attempt: number,
 ): Promise<void> {
   const correlationId = randomUUID();
   const publish = { returned: false };
@@ -236,15 +269,16 @@ function publishConfirmed(
 
   return new Promise((resolve, reject) => {
     ch.sendToQueue(
-      DELAY_QUEUE,
+      queue,
       Buffer.from(JSON.stringify(job)),
       {
         persistent: true,
         contentType: "application/json",
-        messageId: job.requestId,
+        messageId: jobId(job),
         correlationId,
         timestamp: Math.floor(Date.now() / 1000),
         mandatory: true,
+        headers: { [ATTEMPT_HEADER]: attempt },
       },
       error => {
         setImmediate(() => {
@@ -259,33 +293,55 @@ function publishConfirmed(
   });
 }
 
-export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
-  if (!config.NUQ_RABBITMQ_URL) {
-    throw new Error("NUQ_RABBITMQ_URL is not configured");
-  }
-
+async function publishUntilConfirmed(
+  queue: string,
+  job: ZdrCleanupJob,
+  attempt: number,
+): Promise<void> {
   let delayMs = RECONNECT_BASE_DELAY_MS;
-  while (!closed) {
+  for (let publishAttempt = 1; !closed; publishAttempt++) {
+    let attemptTimer: NodeJS.Timeout | undefined;
     try {
       await withSpan("zdr.rabbitmq.publish", async span => {
         setSpanAttributes(span, {
           "messaging.system": "rabbitmq",
-          "messaging.destination.name": DELAY_QUEUE,
+          "messaging.destination.name": queue,
           "messaging.operation.name": "publish",
-          "messaging.message.id": requestId,
+          "messaging.message.id": jobId(job),
           "zdr.rabbitmq.retry_delay_ms": delayMs,
         });
-        const ch = await getPublishChannel();
-        await publishConfirmed(ch, { requestId });
+        await Promise.race([
+          getPublishChannel().then(ch =>
+            publishConfirmed(ch, queue, job, attempt),
+          ),
+          new Promise<never>((_, reject) => {
+            attemptTimer = setTimeout(
+              () => reject(new Error("ZDR publish attempt timed out")),
+              PUBLISH_ATTEMPT_TIMEOUT_MS,
+            );
+          }),
+        ]);
         setSpanAttributes(span, {
           "zdr.rabbitmq.outcome": "confirmed",
         });
       });
       return;
     } catch (error) {
+      if (publishAttempt >= PUBLISH_MAX_ATTEMPTS) {
+        logger.error("Failed to enqueue ZDR cleanup job; giving up", {
+          error,
+          queue,
+          messageId: jobId(job),
+          attempts: publishAttempt,
+        });
+        throw new Error(
+          `ZDR cleanup job not confirmed after ${publishAttempt} attempts`,
+        );
+      }
       logger.error("Failed to durably enqueue ZDR cleanup job; retrying", {
         error,
-        requestId,
+        queue,
+        messageId: jobId(job),
         delayMs,
       });
       await publishChannel?.close().catch(() => {});
@@ -293,19 +349,33 @@ export async function enqueueZdrCleanupJob(requestId: string): Promise<void> {
       publishChannelPromise = null;
       await new Promise(resolve => setTimeout(resolve, delayMs));
       delayMs = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+    } finally {
+      clearTimeout(attemptTimer);
     }
   }
 
   throw new Error("ZDR queue closed before the cleanup job was confirmed");
 }
 
+/** Schedules a cleanup job 24 hours out; throws if the broker never confirms it. */
+export async function enqueueZdrCleanupJob(job: ZdrCleanupJob): Promise<void> {
+  if (!config.NUQ_RABBITMQ_URL) {
+    throw new Error("NUQ_RABBITMQ_URL is not configured");
+  }
+  await publishUntilConfirmed(DELAY_QUEUE, job, 1);
+}
+
 function isZdrCleanupJob(value: unknown): value is ZdrCleanupJob {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Partial<ZdrCleanupJob>).requestId === "string" &&
-    (value as ZdrCleanupJob).requestId.length > 0
-  );
+  if (typeof value !== "object" || value === null) return false;
+  const id =
+    "blobId" in value
+      ? value.blobId
+      : "requestId" in value
+        ? value.requestId
+        : "parseUploadPath" in value
+          ? value.parseUploadPath
+          : undefined;
+  return typeof id === "string" && id.length > 0;
 }
 
 async function subscribe(
@@ -322,13 +392,14 @@ async function subscribe(
         scheduleReconnect();
         return;
       }
+      const messageId = msg.properties.messageId;
       try {
         await withSpan("zdr.rabbitmq.consume", async span => {
           setSpanAttributes(span, {
             "messaging.system": "rabbitmq",
             "messaging.destination.name": READY_QUEUE,
             "messaging.operation.name": "process",
-            "messaging.message.id": msg.properties.messageId,
+            "messaging.message.id": messageId,
             "messaging.rabbitmq.delivery_tag": msg.fields.deliveryTag,
             "messaging.rabbitmq.redelivered": msg.fields.redelivered,
           });
@@ -357,21 +428,61 @@ async function subscribe(
             return;
           }
 
+          const attempt = Number(msg.properties.headers?.[ATTEMPT_HEADER]) || 1;
           setSpanAttributes(span, {
-            "zdr.request_id": job.requestId,
+            ...("blobId" in job
+              ? { "zdr.blob_id": job.blobId }
+              : "parseUploadPath" in job
+                ? { "zdr.parse_upload_id": jobId(job) }
+                : { "zdr.request_id": job.requestId }),
+            "zdr.attempt": attempt,
           });
-          await handler(job);
+
+          try {
+            // An unsettled earlier delivery (worker died, channel closed) counts as a failed attempt.
+            if (msg.fields.redelivered) {
+              throw new Error("ZDR cleanup job was redelivered unsettled");
+            }
+            await handler(job);
+          } catch (error) {
+            recordSpanException(span, error);
+            if (attempt >= MAX_ATTEMPTS) {
+              logger.error(
+                "ZDR cleanup job failed its last attempt; dead-lettering",
+                {
+                  error,
+                  messageId,
+                  attempt,
+                },
+              );
+              ch.nack(msg, false, false);
+              setSpanAttributes(span, {
+                "zdr.rabbitmq.outcome": "dead_lettered",
+              });
+              return;
+            }
+            logger.warn("ZDR cleanup job failed; scheduling a retry", {
+              error,
+              messageId,
+              attempt,
+              retryDelayMs: RETRY_DELAY_MS,
+            });
+            await publishUntilConfirmed(RETRY_QUEUE, job, attempt + 1);
+            ch.ack(msg);
+            setSpanAttributes(span, {
+              "zdr.rabbitmq.outcome": "retry_scheduled",
+            });
+            return;
+          }
+
           ch.ack(msg);
           setSpanAttributes(span, {
             "zdr.rabbitmq.outcome": "acknowledged",
           });
         });
       } catch (error) {
-        logger.error("ZDR cleanup job failed; requeueing", {
-          error,
-          messageId: msg.properties.messageId,
-        });
-        ch.nack(msg, false, true);
+        // Left unacked, the broker redelivers it once this channel closes.
+        logger.error("Could not settle ZDR cleanup job", { error, messageId });
       }
     },
     { noAck: false },

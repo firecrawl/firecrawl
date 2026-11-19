@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { config } from "../../../config";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -17,6 +18,15 @@ import {
 } from "./internal-types";
 
 type DbError = { code?: string } & Record<string, unknown>;
+
+/**
+ * Drizzle wraps a failed query in DrizzleQueryError and keeps the PostgreSQL
+ * error, with its SQLSTATE `code`, as the cause. Callers branch on that code,
+ * for example a unique violation on a second submission for the same job.
+ */
+function dbError(error: unknown): DbError {
+  return (error instanceof DrizzleQueryError ? error.cause : error) as DbError;
+}
 
 type ExistingFeedback = {
   id: string;
@@ -334,7 +344,7 @@ export async function insertFeedback(params: {
     });
     return null;
   } catch (error) {
-    return error as DbError;
+    return dbError(error);
   }
 }
 
@@ -411,6 +421,6 @@ export async function updateFeedbackRefundDetails(
       .where(eq(schema.search_feedback.id, feedbackId));
     return null;
   } catch (error) {
-    return error as DbError;
+    return dbError(error);
   }
 }

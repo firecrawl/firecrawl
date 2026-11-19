@@ -11,7 +11,12 @@ import { formatHex, hsl, parse, wcagContrast } from "culori";
 import { config } from "../../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
 import { getTypeSafeClient } from "../typesafe";
-import { APITimeoutError, Image, RateLimitError } from "@typesafe-ai/sdk";
+import {
+  APIError,
+  APITimeoutError,
+  Image,
+  RateLimitError,
+} from "@typesafe-ai/sdk";
 import {
   brandingJevBreakerOpensTotal,
   brandingJevCallsTotal,
@@ -23,6 +28,7 @@ import {
   JevScreenshotOutcome,
 } from "./metrics";
 import { sampled } from "../rollout";
+import { cleanFontFamily } from "./font-names";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -65,6 +71,20 @@ let breakerOpenUntil = 0;
 
 function isJevBreakerOpen(now = Date.now()): boolean {
   return now < breakerOpenUntil;
+}
+
+/**
+ * TypeSafe turning the image away: a 529 (it sheds load on the image lane
+ * first, text calls keep answering) or a 5xx whose message names the image,
+ * such as "503 Image processing is unavailable". A plain 5xx or a timeout
+ * is a failure of the call itself and is handled as before.
+ */
+function isImageRejection(error: unknown): error is APIError {
+  return (
+    error instanceof APIError &&
+    (error.status === 529 ||
+      (error.status >= 500 && /\bimage/i.test(error.message)))
+  );
 }
 
 function recordJevFailure(input: BrandingLLMInput): void {
@@ -220,25 +240,6 @@ function collectColors(input: BrandingLLMInput): ColorCandidate[] {
 // Fonts. Name cleanup is deterministic; Jev only judges which are brand fonts
 // and what role they play.
 
-const GENERIC_FONTS = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "-apple-system",
-  "blinkmacsystemfont",
-  "inherit",
-  "initial",
-  "emoji",
-  "math",
-]);
-
 // Fonts pages list as fallbacks in their stacks. They are only reported when
 // the page's typography uses them, or when nothing else is left.
 const FALLBACK_FONTS = new Set([
@@ -268,62 +269,6 @@ const FALLBACK_FONTS = new Set([
   "noto color emoji",
 ]);
 
-// Families can end in a heavy weight ("Cooper Black", "Arial Black"), so
-// after a space only the weights no family name ends in are stripped. After a
-// hyphen or underscore ("Roboto-Black") the name is a self-hosted face.
-const SPACED_WEIGHTS =
-  "regular|reg|medium|semi-?bold|demi-?bold|bold|extra-?bold|ultra-?bold|light|extra-?light|ultra-?light|thin|hairline|italic|oblique";
-const WEIGHTS = `${SPACED_WEIGHTS}|book|black|heavy`;
-const FONT_WEIGHT = new RegExp(`^\\s*(?:(?:${WEIGHTS})\\s*)+$`, "i");
-const DELIMITED_WEIGHT_SUFFIX = new RegExp(`(?<=\\S)[_-]+(?:${WEIGHTS})$`, "i");
-const FONT_WEIGHT_SUFFIX = new RegExp(
-  `(?<=\\S)(?:[_-]+(?:${WEIGHTS})|\\s+(?:${SPACED_WEIGHTS}))$`,
-  "i",
-);
-
-// "GlacialIndifference" → "Glacial Indifference". Only words made of whole
-// capitalized parts split, so "TIActuBeta" and "HardwoodLP" stay.
-const splitCamelCase = (name: string) =>
-  name
-    .split(" ")
-    .map(word =>
-      /^(?:[A-Z][a-z]{2,}){2,}$/.test(word)
-        ? word.replace(/(?<=[a-z])(?=[A-Z])/g, " ")
-        : word,
-    )
-    .join(" ");
-
-export function cleanFontFamily(raw: string): string | undefined {
-  // A whole stack ("system-ui, sans-serif") reports its first family.
-  let name = raw
-    .split(",")[0]
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name || /^var\(/i.test(name)) return undefined;
-  if (/fallback/i.test(name)) return undefined;
-  // next/font obfuscation: "__Roboto_Mono_c8ca7d" → "Roboto Mono"
-  name = name.replace(/^_+/, "").replace(/_[0-9a-f]{6}$/i, "");
-  // "Roboto_Black": the weight goes before underscores turn into spaces.
-  while (DELIMITED_WEIGHT_SUFFIX.test(name))
-    name = name.replace(DELIMITED_WEIGHT_SUFFIX, "");
-  name = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  // Variable-font builds name the same family: "Newsreader Variable".
-  name = name.replace(/\s+(variable|vf)$/i, "");
-  // Self-hosted faces carry their weight: "OpenSans--Regular", "Inter Bold".
-  // A name that is only a weight ("Regular") is not a family.
-  if (FONT_WEIGHT.test(name)) return undefined;
-  // Before and after the weight goes: "GmarketSansMedium", "OpenSans--Regular".
-  name = splitCamelCase(name);
-  while (FONT_WEIGHT_SUFFIX.test(name))
-    name = name.replace(FONT_WEIGHT_SUFFIX, "");
-  name = splitCamelCase(name);
-  if (!name || GENERIC_FONTS.has(name.toLowerCase())) return undefined;
-  if (name === name.toLowerCase()) {
-    name = name.replace(/\b\w/g, ch => ch.toUpperCase());
-  }
-  return name;
-}
-
 type FontRole = BrandingEnhancement["cleanedFonts"][number]["role"];
 type FontCandidate = { family: string; count: number; role?: FontRole };
 
@@ -337,26 +282,45 @@ const familyKey = (family: string) =>
 function typographyRole(
   family: string,
   input: BrandingLLMInput,
+  counts: Map<string, FontCandidate>,
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
-    const raw = Array.isArray(value) ? value[0] : value;
-    const cleaned = raw ? cleanFontFamily(raw) : undefined;
+    const cleaned = value ? cleanFontFamily(value) : undefined;
     return cleaned ? familyKey(cleaned) : undefined;
   };
   const name = familyKey(family);
   if (/\b(mono|code)\b|consolas|menlo/i.test(family)) return "monospace";
-  const body = [first(t?.fontFamilies?.primary), first(t?.fontStacks?.body)];
-  const heading = [
-    first(t?.fontFamilies?.heading),
-    first(t?.fontStacks?.heading),
-  ];
+  const isFallback = (key?: string) =>
+    !!key && [...FALLBACK_FONTS].some(f => familyKey(f) === key);
+  const bodyEl = first(t?.fontStacks?.body) ?? first(t?.fontFamilies?.primary);
+  const heading =
+    first(t?.fontStacks?.heading) ?? first(t?.fontFamilies?.heading);
+  const paragraph = first(t?.fontStacks?.paragraph);
+  // A site builder's default on <body> (Wix's Arial) is not the body font
+  // when the paragraphs are set in a real face that more text uses.
+  // With no h1 the heading stack is <body>'s, so the default goes there too.
+  const builderDefault =
+    !!bodyEl &&
+    isFallback(bodyEl) &&
+    !!paragraph &&
+    paragraph !== bodyEl &&
+    !isFallback(paragraph) &&
+    (counts.get(bodyEl)?.count ?? 0) <= (counts.get(paragraph)?.count ?? 0);
+  const bodyElIsBody = !!bodyEl && !builderDefault;
+  // The first paragraph is often a styled lead in the heading face; it is
+  // body text when <body> names that face too or only a builder default.
+  const paragraphIsBody =
+    !!paragraph &&
+    (paragraph !== heading || heading === bodyEl || builderDefault);
   // A family used for both is reported as body, the page's primary font.
-  if (body.includes(name)) return "body";
-  if (heading.includes(name)) return "heading";
-  // The first paragraph is often a styled lead in the heading face, so it
-  // only names a body font the other measurements don't place.
-  if (first(t?.fontStacks?.paragraph) === name) return "body";
+  if (
+    (bodyElIsBody && name === bodyEl) ||
+    (paragraphIsBody && name === paragraph)
+  )
+    return "body";
+  if (name === heading && !(builderDefault && heading === bodyEl))
+    return "heading";
   return undefined;
 }
 
@@ -384,22 +348,44 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
   return [...byFamily.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_FONTS)
-    .map(font => ({ ...font, role: typographyRole(font.family, input) }));
+    .map(font => ({
+      ...font,
+      role: typographyRole(font.family, input, byFamily),
+    }));
 }
 
 // ---------------------------------------------------------------------------
 // State + questions
 
+/** The site's own marks that the scan didn't see rendered: JSON-LD logo, apple-touch icon. */
+const DECLARED_SOURCES = new Set(["logo-jsonld", "apple-touch-icon"]);
+
+/**
+ * Where a candidate's link goes, read from the link itself: a `/home` or
+ * `/cart` path is named rather than trusted as the homepage, so a nav glyph
+ * labelled "home" doesn't read like the logo. `home`, the scan's verdict, is
+ * kept for links it resolved and we can't: a sibling brand domain's root, a
+ * `javascript:` link labelled as the home link, an unparseable href.
+ */
 function hrefKind(href: string | undefined, pageUrl: string, home: boolean) {
   if (!href?.trim()) return "no link";
-  if (home) return "links to the homepage";
   try {
     const target = new URL(href, pageUrl);
-    return target.hostname === new URL(pageUrl).hostname
-      ? "links to another page on this site"
-      : "links to another website";
+    if (!/^https?:$/.test(target.protocol)) {
+      return home ? "links to the homepage" : `${target.protocol} link`;
+    }
+    const host = (url: URL) => url.hostname.replace(/^www\./, "");
+    const path = target.pathname.replace(/\/+$/, "") || "/";
+    const root = path === "/" || /^\/index(?:\.html?)?$/i.test(path);
+    if (host(target) !== host(new URL(pageUrl))) {
+      return root && home
+        ? "links to the homepage"
+        : `links to another website (${host(target)})`;
+    }
+    if (root) return "links to the homepage";
+    return `links to ${clip(path, 60)} on this site`;
   } catch {
-    return "unknown link";
+    return home ? "links to the homepage" : "unknown link";
   }
 }
 
@@ -704,21 +690,29 @@ export function buildJevRequest(
       logos.map((logo, i) => {
         const width = Math.round(logo.position?.width ?? 0);
         const height = Math.round(logo.position?.height ?? 0);
+        // A declared mark was never rendered: say so instead of the
+        // placeholder geometry the heuristic ranks it with.
+        const rendered = !DECLARED_SOURCES.has(logo.source);
         return [
           `logo_${i}`,
           {
-            where: logo.location,
-            visible: logo.isVisible,
-            size: `${width}x${height} px (${sizeLabel(width, height)})`,
-            shape:
-              width && height && width / height >= 3
+            where: rendered ? logo.location : "page metadata, not rendered",
+            visible: rendered && logo.isVisible,
+            size: rendered
+              ? `${width}x${height} px (${sizeLabel(width, height)})`
+              : "unknown",
+            shape: rendered
+              ? width && height && width / height >= 3
                 ? "wide, wordmark-shaped"
-                : "compact",
+                : "compact"
+              : "unknown",
             kind: logo.isSvg ? "SVG" : "image",
             alt: clip(logo.alt, 100),
             aria_label: clip(logo.ariaLabel, 100),
             title: clip(logo.title, 100),
-            link: hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch),
+            link: rendered
+              ? hrefKind(logo.href, pageUrl, !!logo.indicators?.hrefMatch)
+              : "no link",
             file: fileName(logo.src),
             found_via: logo.source,
             heuristic_pick: i === heuristic,
@@ -795,7 +789,7 @@ export function buildJevRequest(
     questions.logo = {
       type: "choice",
       instructions:
-        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, social, partner, customer and payment icons are not the brand logo." +
+        "Which entry in `logo_candidates` is this website's own primary brand logo: the mark of the brand named by `page` (title, URL, brand_name_hint), normally visible in the header and linking to the homepage? Menu, hamburger, close, search, cart, account, social, partner, customer and payment icons are not the brand logo, nor are flags, maps and country or language selectors. A candidate found via `logo-jsonld` is the logo the site declares for itself; one found via `apple-touch-icon` is only its app icon, the answer only when no rendered candidate shows the brand's mark." +
         look(
           "the brand logo is the mark it shows for this site, usually top left.",
         ),
@@ -841,7 +835,7 @@ export function buildJevRequest(
     questions.accent_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the accent color used for calls to action, highlights and links?",
+        "Which entry in `colors` is the accent color: the saturated color used for calls to action, highlights and links, standing out against the page background? A pale tint, a gray or the background itself is not an accent; when the brand uses a single color, answer the main color.",
       criteria: options(colorIds),
     };
     questions.secondary_color = {
@@ -853,7 +847,7 @@ export function buildJevRequest(
     questions.background_color = {
       type: "choice",
       instructions:
-        "Which entry in `colors` is the main page background color?",
+        "Which entry in `colors` is the main page background color, the one behind most of the body text? A hero, a footer or a dialog's backdrop is not the page background.",
       criteria: options(colorIds),
     };
     questions.text_color = {
@@ -1204,24 +1198,24 @@ export async function enhanceBrandingWithJev(
   let request: JevRequest;
   let response: JevResponse;
   let called = false;
-  try {
-    request = buildJevRequest(input, screenshot);
-    response = await withSpan(
+  let imageRetried = false;
+  const callJev = (req: JevRequest) =>
+    withSpan(
       "typesafe.systemone",
       async span => {
         called = true;
         const result = await typesafe.systemOne(
           {
             model: JEV_MODEL,
-            state: request.state,
-            questions: request.questions,
-            ...(request.assets ? { assets: request.assets } : {}),
+            state: req.state,
+            questions: req.questions,
+            ...(req.assets ? { assets: req.assets } : {}),
           },
           {
             timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
             retry: JEV_RETRY,
             // Image input is opt-in per request.
-            ...(request.assets
+            ...(req.assets
               ? { headers: { "TypeSafe-Danger-Zone-Images": "true" } }
               : {}),
           },
@@ -1240,8 +1234,8 @@ export async function enhanceBrandingWithJev(
         zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
-          "branding.jev.questions": Object.keys(request.questions).length,
-          "branding.jev.screenshot": !!screenshot,
+          "branding.jev.questions": Object.keys(req.questions).length,
+          "branding.jev.screenshot": !!req.assets,
           "branding.jev.screenshot_outcome": firstScreen.outcome,
           ...(firstScreen.bytes !== undefined
             ? { "branding.jev.screenshot_bytes": firstScreen.bytes }
@@ -1249,11 +1243,39 @@ export async function enhanceBrandingWithJev(
           ...(firstScreen.outcome !== "none"
             ? { "branding.jev.screenshot_load_ms": firstScreen.loadMs }
             : {}),
+          ...(imageRetried ? { "branding.jev.image_retry": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
           ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
+  try {
+    request = buildJevRequest(input, screenshot);
+    try {
+      response = await callJev(request);
+    } catch (error) {
+      if (!called || !screenshot || !isImageRejection(error)) throw error;
+      error satisfies APIError;
+      // TypeSafe's image lane is the part that is overloaded (its text calls
+      // keep answering), so ask again from the text alone. Jev without the
+      // first screen is still a far better answer per dollar than the LLM
+      // fallback, and a refused image says nothing about Jev's health, so
+      // it doesn't count toward the breaker.
+      count("image_rejected");
+      // A warning with a fixed message and the vendor's status, so a log
+      // metric can count refusals and page us before the fallback bill does.
+      input.logger.warn("TypeSafe refused the first screen", {
+        vendor: "typesafe",
+        status: error.status,
+        error: error.message,
+        elapsedMs: Date.now() - started,
+        ...screenshotLog,
+      });
+      imageRetried = true;
+      called = false;
+      request = buildJevRequest(input, undefined);
+      response = await callJev(request);
+    }
   } catch (error) {
     // Only TypeSafe's own failures say anything about its health.
     if (called) {
@@ -1274,6 +1296,7 @@ export async function enhanceBrandingWithJev(
       error,
       elapsedMs: Date.now() - started,
       ...screenshotLog,
+      ...(imageRetried ? { imageRetried } : {}),
     });
     return null;
   }
@@ -1315,6 +1338,7 @@ export async function enhanceBrandingWithJev(
     questions: Object.keys(request.questions).length,
     logoConfidence: result.logoConfidence,
     ...screenshotLog,
+    ...(imageRetried ? { imageRetried } : {}),
   });
   return result;
 }

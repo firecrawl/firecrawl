@@ -33,6 +33,44 @@ it("refuses a provider the Exchange does not know before any quote or execution"
   );
 });
 
+it("forwards caller location when the ledger shows the current agreement", async () => {
+  mocks.request.mockImplementation(async ({ path }) =>
+    String(path).includes("requirements")
+      ? requirement(true)
+      : {
+          status: 200,
+          body: {
+            providers: [
+              {
+                provider: "fred",
+                revoked: false,
+                version: "2026-01",
+                textHash: null,
+                acceptedAt: "2026-10-08T12:00:00Z",
+              },
+            ],
+          },
+        },
+  );
+  expect(
+    await authorizeProviders("team", calls, {}, "org", "203.0.113.7", "DE"),
+  ).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/provider-terms/requirements",
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+  expect(mocks.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/provider-terms/status?organizationId=org",
+      clientIp: "203.0.113.7",
+      billingCountry: "DE",
+    }),
+  );
+});
+
 it("requires the organization to hold the current agreement when terms are required", async () => {
   mocks.request.mockResolvedValue(requirement(true));
   const stale = {
