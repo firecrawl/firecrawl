@@ -1070,7 +1070,8 @@ export async function extractRaw(
 
 export async function zdrcleaner(teamId: string) {
   const res = await request(TEST_API_URL)
-    .get(`/admin/${config.BULL_AUTH_KEY}/zdrcleaner`)
+    .get("/admin/ops/zdrcleaner")
+    .set("Authorization", `Bearer ${config.BULL_AUTH_KEY}`)
     .query({ teamId });
 
   expect(res.statusCode).toBe(200);
