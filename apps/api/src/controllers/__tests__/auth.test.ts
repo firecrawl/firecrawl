@@ -755,13 +755,11 @@ describe("authenticateUser", () => {
     vi.mocked(redlock.using).mockImplementation(
       async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
     );
+    const redisError = new Error("Reached the max retries per request limit");
     vi.mocked(getAutumnRateLimiter).mockReturnValue({
-      consume: vi
-        .fn()
-        .mockRejectedValue(
-          new Error("Reached the max retries per request limit"),
-        ),
+      consume: vi.fn().mockRejectedValue(redisError),
     } as never);
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     const auth = await authenticateUser(
       {
@@ -780,6 +778,10 @@ describe("authenticateUser", () => {
       status: 503,
       retryAfterSeconds: 5,
     });
+    expect(error).toHaveBeenCalledWith(
+      "Rate limiter unavailable",
+      expect.objectContaining({ error: redisError }),
+    );
   });
 
   it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
