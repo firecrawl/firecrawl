@@ -590,8 +590,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // buffering and base64-encoding hundreds of MB here would only burn
       // worker memory.
       // Unforced traffic is sampled here, before the read, so a PDF outside
-      // the FIRE_PDF_PERCENT sample is never encoded. The draw is fixed for
-      // the document URL, so a repeat scrape stays on the same engine.
+      // the FIRE_PDF_PERCENT sample is never encoded.
       const firePdfInlineUsable = forceFirePDF
         ? fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE
         : !!config.FIRE_PDF_ENABLE &&
