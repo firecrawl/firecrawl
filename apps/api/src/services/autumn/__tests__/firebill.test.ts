@@ -29,11 +29,15 @@ const { configState } = vi.hoisted(() => ({
 
 vi.mock("../../../config", () => ({ config: configState }));
 
-const { retryQueueAdd } = vi.hoisted(() => ({
+const { retryQueueAdd, retryQueueGetJob } = vi.hoisted(() => ({
   retryQueueAdd: vi.fn(),
+  retryQueueGetJob: vi.fn(),
 }));
 vi.mock("../../queue-service", () => ({
-  getFirebillTrackRetryQueue: () => ({ add: retryQueueAdd }),
+  getFirebillTrackRetryQueue: () => ({
+    add: retryQueueAdd,
+    getJob: retryQueueGetJob,
+  }),
 }));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -83,7 +87,12 @@ beforeEach(() => {
   firebillTrackRetryTotal.reset();
   firebillTrackRetryExhaustedValueTotal.reset();
   retryQueueAdd.mockReset();
-  retryQueueAdd.mockResolvedValue(undefined);
+  retryQueueAdd.mockImplementation(async (_name, _data, opts) => ({
+    id: opts.jobId,
+    timestamp: 1_000,
+  }));
+  retryQueueGetJob.mockReset();
+  retryQueueGetJob.mockResolvedValue({ timestamp: 1_000 });
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
@@ -653,6 +662,34 @@ describe("firebillTrack durable retry", () => {
     expect(logCalls("error").map(c => c[0])).toContain(
       "firebill durable retry enqueue timed out; the retry may or may not have been queued",
     );
+  });
+
+  it("counts an add that matched an existing job as a duplicate, not a new retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueGetJob.mockResolvedValueOnce({ timestamp: 500 });
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(retryQueueGetJob).toHaveBeenCalledWith(
+      "firebill|fc%3Atrack%3Ascrape%3Ajob-1",
+    );
+    expect(await retryOutcomes()).toEqual({ "track/enqueue_duplicate": 1 });
+    expect(logCalls("error")[0][1]).toMatchObject({ handedToRetry: true });
+  });
+
+  it("counts a landed add as enqueued when the duplicate check cannot read it back", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+    retryQueueGetJob.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "track/enqueued": 1 });
   });
 
   it("logs and counts an enqueue that fails, still reporting false", async () => {
