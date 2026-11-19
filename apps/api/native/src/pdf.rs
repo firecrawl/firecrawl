@@ -81,7 +81,7 @@ pub async fn process_pdf(
       let mut mapped = to_napi_result(result);
       if let Some(markdown) = mapped.markdown.take() {
         mapped.markdown = Some(match std::fs::read(&path) {
-          Ok(bytes) => crate::pdf_table_align::realign_tagged_tables(&bytes, markdown),
+          Ok(bytes) => crate::pdf_table_align::realign_tagged_tables(&bytes, markdown, max_pages),
           Err(_) => markdown,
         });
       }

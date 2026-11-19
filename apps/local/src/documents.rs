@@ -85,8 +85,11 @@ pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
     DocKind::Pdf => {
       let result =
         pdf_inspector::process_pdf_mem(body).map_err(|e| format!("could not read the PDF: {e}"))?;
-      let markdown =
-        crate::pdf_table_align::realign_tagged_tables(body, result.markdown.unwrap_or_default());
+      let markdown = crate::pdf_table_align::realign_tagged_tables(
+        body,
+        result.markdown.unwrap_or_default(),
+        None,
+      );
       Ok(ParsedDocument {
         markdown,
         title: result.title.filter(|t| !t.trim().is_empty()),
@@ -213,5 +216,28 @@ mod tests {
     let md = parsed.markdown;
     assert!(md.contains("sentence") || md.contains("tabular"), "{md}");
     assert!(!md.contains('|'), "{md}");
+  }
+
+  #[test]
+  fn two_pages_keep_their_own_empty_cells() {
+    let pdf = include_bytes!("fixtures/two-page-tables.pdf");
+    let raw = pdf_inspector::process_pdf_mem(pdf)
+      .expect("pdf parses")
+      .markdown
+      .unwrap_or_default();
+    let capped = crate::pdf_table_align::realign_tagged_tables(pdf, raw.clone(), Some(1));
+    let all = crate::pdf_table_align::realign_tagged_tables(pdf, raw, None);
+    assert!(
+      capped.contains("|10/01|LOAN PMT|2,675.12||15,777.25|"),
+      "{capped}"
+    );
+    assert!(capped.contains("|A1|9||"), "{capped}");
+    assert!(!capped.contains("|A1||9|"), "{capped}");
+    assert!(
+      all.contains("|10/01|LOAN PMT|2,675.12||15,777.25|"),
+      "{all}"
+    );
+    assert!(all.contains("|A1||9|"), "{all}");
+    assert!(!all.contains("|A1|9||"), "{all}");
   }
 }

@@ -1,18 +1,30 @@
-use pdf_inspector::{extract_text_with_positions_mem, TextItem};
+use std::collections::HashSet;
+
+use pdf_inspector::{
+  extract_text_with_positions_mem, extract_text_with_positions_mem_with_options, PositionOptions,
+  TextItem,
+};
 
 const ROW_SLACK: f32 = 3.0;
 const NEXT_ROW_LIMIT: f32 = 48.0;
+const WORD_GAP: f32 = 0.12;
+const CELL_GAP: f32 = 0.35;
 
 struct PdfRow {
+  page: u32,
   y: f32,
   cells: Vec<(f32, String)>,
 }
 
-pub(crate) fn realign_tagged_tables(pdf: &[u8], markdown: String) -> String {
+pub(crate) fn realign_tagged_tables(
+  pdf: &[u8],
+  markdown: String,
+  max_pages: Option<u32>,
+) -> String {
   if pdf.is_empty() || !has_pipe_table(&markdown) {
     return markdown;
   }
-  let items = match extract_text_with_positions_mem(pdf) {
+  let items = match positioned_text(pdf, max_pages) {
     Ok(items) => items,
     Err(_) => return markdown,
   };
@@ -21,6 +33,19 @@ pub(crate) fn realign_tagged_tables(pdf: &[u8], markdown: String) -> String {
     return markdown;
   }
   replace_matching_tables(&markdown, &grids)
+}
+
+fn positioned_text(
+  pdf: &[u8],
+  max_pages: Option<u32>,
+) -> Result<Vec<TextItem>, pdf_inspector::PdfError> {
+  match max_pages {
+    Some(limit) if limit > 0 => {
+      let pages: HashSet<u32> = (1..=limit).collect();
+      extract_text_with_positions_mem_with_options(pdf, Some(&pages), PositionOptions::new())
+    }
+    _ => extract_text_with_positions_mem(pdf),
+  }
 }
 
 fn has_pipe_table(markdown: &str) -> bool {
@@ -49,16 +74,17 @@ fn pdf_rows(items: &[TextItem]) -> Vec<PdfRow> {
     .filter(|item| !item.text.trim().is_empty())
     .collect();
   ordered.sort_by(|left, right| {
-    right
-      .line_y()
-      .total_cmp(&left.line_y())
+    left
+      .page
+      .cmp(&right.page)
+      .then(right.line_y().total_cmp(&left.line_y()))
       .then(left.x.total_cmp(&right.x))
   });
 
   let mut rows: Vec<Vec<&TextItem>> = Vec::new();
   for item in ordered {
     if let Some(row) = rows.last_mut() {
-      if (row[0].line_y() - item.line_y()).abs() <= ROW_SLACK {
+      if row[0].page == item.page && (row[0].line_y() - item.line_y()).abs() <= ROW_SLACK {
         row.push(item);
         continue;
       }
@@ -69,6 +95,7 @@ fn pdf_rows(items: &[TextItem]) -> Vec<PdfRow> {
   rows
     .into_iter()
     .map(|row| PdfRow {
+      page: row[0].page,
       y: row[0].line_y(),
       cells: merge_row(row),
     })
@@ -89,18 +116,41 @@ fn merge_row(mut parts: Vec<&TextItem>) -> Vec<(f32, String)> {
     } else {
       item.font_size * 0.5 * piece.chars().count() as f32
     };
-    let join = cells
-      .last()
-      .is_some_and(|(_, _, right)| item.x - *right <= (item.font_size * 0.35).max(1.5));
-    if join {
-      let (_, text, right) = cells.last_mut().expect("join checks last");
-      text.push_str(piece);
-      *right = item.x + advance;
+    let em = item.font_size.max(1.0);
+    let attached = if let Some((_, text, right)) = cells.last_mut() {
+      let gap = item.x - *right;
+      if gap <= (em * WORD_GAP).max(0.4) {
+        text.push_str(piece);
+        *right = item.x + advance;
+        true
+      } else if gap <= (em * CELL_GAP).max(1.5) {
+        if word_boundary(text, piece) {
+          text.push(' ');
+        }
+        text.push_str(piece);
+        *right = item.x + advance;
+        true
+      } else {
+        false
+      }
     } else {
+      false
+    };
+    if !attached {
       cells.push((item.x, piece.to_string(), item.x + advance));
     }
   }
   cells.into_iter().map(|(x, text, _)| (x, text)).collect()
+}
+
+fn word_boundary(previous: &str, next: &str) -> bool {
+  let previous_end = previous.chars().last();
+  let next_start = next.chars().next();
+  !matches!(previous_end, Some('-' | '(' | '[' | '{'))
+    && !matches!(
+      next_start,
+      Some('-' | ')' | ']' | '}' | ',' | '.' | ';' | ':' | '!' | '?')
+    )
 }
 
 fn align_table(
@@ -121,10 +171,11 @@ fn align_table(
         .then_some(index)
     })?;
   let mut body = Vec::new();
+  let header_page = pdf_rows[start].page;
   let mut previous_y = pdf_rows[start].y;
   for offset in 1..parsed.len() {
     let row = pdf_rows.get(start + offset)?;
-    if (previous_y - row.y).abs() > NEXT_ROW_LIMIT {
+    if row.page != header_page || (previous_y - row.y).abs() > NEXT_ROW_LIMIT {
       return None;
     }
     previous_y = row.y;
@@ -443,5 +494,69 @@ After\n";
       vec!["1".to_string(), "2".to_string()],
     ];
     assert_eq!(replace_matching_tables(markdown, &[grid]), markdown);
+  }
+
+  fn text_item(text: &str, x: f32, width: f32, y: f32, page: u32) -> TextItem {
+    TextItem {
+      text: text.to_string(),
+      x,
+      y,
+      width,
+      height: 12.0,
+      font: "F1".to_string(),
+      font_tag: String::new(),
+      legacy_symbol_rewrite: false,
+      font_size: 12.0,
+      page,
+      is_bold: false,
+      is_italic: false,
+      font_weight: None,
+      bold_source: None,
+      fixed_pitch: None,
+      fill_color: None,
+      stroke_color: None,
+      render_mode: None,
+      is_underline: false,
+      is_strikeout: false,
+      rotation: 0.0,
+      advance_known: true,
+      item_type: pdf_inspector::types::ItemType::Text,
+      mcid: None,
+      baseline_shift: 0.0,
+    }
+  }
+
+  #[test]
+  fn a_word_gap_keeps_a_space_and_kerning_does_not() {
+    let mobile = text_item("MOBILE", 100.0, 48.0, 700.0, 1);
+    let deposit = text_item("DEPOSIT", 151.0, 52.0, 700.0, 1);
+    let with = text_item("With", 100.0, 24.0, 680.0, 1);
+    let drawals = text_item("drawals", 124.2, 40.0, 680.0, 1);
+    let words = merge_row(vec![&mobile, &deposit]);
+    let kerned = merge_row(vec![&with, &drawals]);
+    assert_eq!(words, vec![(100.0, "MOBILE DEPOSIT".to_string())]);
+    assert_eq!(kerned, vec![(100.0, "Withdrawals".to_string())]);
+  }
+
+  #[test]
+  fn rows_on_different_pages_stay_apart() {
+    let page_one_header = text_item("Date", 40.0, 26.0, 700.0, 1);
+    let page_one_value = text_item("10/01", 40.0, 28.0, 680.0, 1);
+    let page_two_header = text_item("Date", 40.0, 26.0, 700.0, 2);
+    let page_two_value = text_item("10/02", 40.0, 28.0, 680.0, 2);
+    let rows = pdf_rows(&[
+      page_one_header,
+      page_two_header,
+      page_one_value,
+      page_two_value,
+    ]);
+    let labels: Vec<(&str, u32)> = rows
+      .iter()
+      .map(|row| (row.cells[0].1.as_str(), row.page))
+      .collect();
+    assert_eq!(
+      labels,
+      vec![("Date", 1), ("10/01", 1), ("Date", 2), ("10/02", 2)]
+    );
   }
 }
