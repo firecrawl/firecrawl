@@ -27,6 +27,20 @@ public class JobStatusIdTests
     [Theory]
     [InlineData("crawl")]
     [InlineData("batch")]
+    public async Task StatusWithEmptyIdKeepsTheKnownJobId(string jobType)
+    {
+        using var handler = new StatusHandler("""
+            {"success":true,"id":"","status":"completed","data":[]}
+            """);
+        using var http = new HttpClient(handler);
+        var client = new FirecrawlClient("fc-test", "https://api.test", httpClient: http);
+
+        Assert.Equal("job-started", await ReadJobId(client, jobType, autoPoll: true));
+    }
+
+    [Theory]
+    [InlineData("crawl")]
+    [InlineData("batch")]
     public async Task StatusWithIdKeepsTheServerValue(string jobType)
     {
         using var handler = new StatusHandler("{\"success\":true,\"id\":\"job-echoed\",\"status\":\"completed\",\"data\":[]}");

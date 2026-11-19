@@ -180,7 +180,8 @@ public class FirecrawlClient
 
         var job = await _http.GetAsync<CrawlJob>(
             $"/v2/crawl/{jobId}", cancellationToken);
-        job.Id ??= jobId;
+        if (string.IsNullOrEmpty(job.Id))
+            job.Id = jobId;
         return job;
     }
 
@@ -283,7 +284,8 @@ public class FirecrawlClient
 
         var job = await _http.GetAsync<BatchScrapeJob>(
             $"/v2/batch/scrape/{jobId}", cancellationToken);
-        job.Id ??= jobId;
+        if (string.IsNullOrEmpty(job.Id))
+            job.Id = jobId;
         return job;
     }
 
