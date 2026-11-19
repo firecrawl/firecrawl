@@ -63,7 +63,9 @@ const unquote = (family: string) =>
  * For reporting a page's typography.
  */
 export const genericFamily = (stack: readonly string[]): string | undefined => {
-  const first = stack.map(unquote).find(Boolean);
+  const first = stack
+    .map(unquote)
+    .find(family => family && !SYMBOL_FACE.test(family));
   if (!first) return undefined;
   const head = first.toLowerCase();
   if (head === "-apple-system" || head === "blinkmacsystemfont") {
@@ -136,7 +138,7 @@ const titleCase = (name: string): string =>
 // after a space only the weights no family name ends in are stripped. After a
 // hyphen or underscore ("Roboto-Black") the name is a self-hosted face.
 const SPACED_WEIGHTS =
-  "regular|reg|medium|semi-?bold|demi-?bold|bold|extra-?bold|ultra-?bold|light|extra-?light|ultra-?light|thin|hairline|italic|oblique";
+  "regular|reg|medium|(?:semi|demi|extra|ultra)[-_\\s]?bold|bold|(?:extra|ultra)[-_\\s]?light|light|thin|hairline|italic|oblique";
 const WEIGHTS = SPACED_WEIGHTS + "|book|black|heavy";
 const FONT_WEIGHT = new RegExp("^\\s*(?:(?:" + WEIGHTS + ")\\s*)+$", "i");
 const DELIMITED_WEIGHT_SUFFIX = new RegExp(

@@ -1512,6 +1512,12 @@ describe("Jev request building", () => {
     expect(cleanFontFamily("Noto Color Emoji, Inter")).toBe("Inter");
   });
 
+  it("strips a spaced compound weight", () => {
+    expect(cleanFontFamily("Inter Extra Bold")).toBe("Inter");
+    expect(cleanFontFamily("Inter Semi Bold")).toBe("Inter");
+    expect(cleanFontFamily("Extra Bold")).toBeUndefined();
+  });
+
   it("merges a family listed with and without spaces", () => {
     const input = baseInput(new CostTracking());
     input.jsAnalysis.fonts = [
