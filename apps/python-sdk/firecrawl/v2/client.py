@@ -65,6 +65,8 @@ from .types import (
     MonitorSchedule,
     MonitorTarget,
     MonitorUpdateRequest,
+    _UNSET,
+    _Unset,
 )
 from .utils.http_client import HttpClient
 from .utils.error_handler import FirecrawlError
@@ -1208,12 +1210,13 @@ class FirecrawlClient:
         notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None,
         targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None,
         retention_days: Optional[int] = None,
-        goal: Optional[str] = None,
+        goal: Union[str, None, _Unset] = _UNSET,
         judge_enabled: Optional[bool] = None,
     ) -> Monitor:
-        """Update a monitor."""
+        """Update a monitor. Omit goal to keep it, or pass None to clear it."""
         if isinstance(schedule, dict):
             schedule = MonitorSchedule(**schedule)
+        goal_options = {} if isinstance(goal, _Unset) else {"goal": goal}
         request = MonitorUpdateRequest(
             name=name,
             status=status,
@@ -1222,8 +1225,8 @@ class FirecrawlClient:
             notification=notification,
             targets=targets,
             retention_days=retention_days,
-            goal=goal,
             judge_enabled=judge_enabled,
+            **goal_options,
         )
         return monitor_module.update_monitor(self.http_client, monitor_id, request)
 
