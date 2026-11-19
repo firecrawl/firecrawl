@@ -167,14 +167,22 @@ const splitWord = (word: string): string => {
   return [stem.charAt(0).toUpperCase() + stem.slice(1), ...tail].join(" ");
 };
 
-// "GlacialIndifference" → "Glacial Indifference": a one-word name made only
-// of whole capitalized parts splits. "TIActuBeta" and "HardwoodLP" stay.
+// "GlacialIndifference" → "Glacial Indifference", "BasicCommercial LT Std" →
+// "Basic Commercial LT Std": a word made only of whole capitalized parts
+// splits, unless a style word follows it ("GitLab Sans", "PayPal Pro").
+// "TIActuBeta" and "HardwoodLP" stay.
+const STYLE_WORD =
+  /^(?:Sans|Serif|Mono|Display|Text|Grotesk|Grotesque|Pro|Condensed|Rounded|Slab)$/;
 const splitCamelCase = (name: string): string => {
-  const words = name.split(" ").map(splitWord);
-  if (words.length === 1 && /^(?:[A-Z][a-z]{2,}){2,}$/.test(words[0])) {
-    return words[0].replace(/(?<=[a-z])(?=[A-Z])/g, " ");
-  }
-  return words.join(" ");
+  const words = name.split(" ").map(splitWord).join(" ").split(" ");
+  return words
+    .map((word, i) =>
+      /^(?:[A-Z][a-z]{2,}){2,}$/.test(word) &&
+      !STYLE_WORD.test(words[i + 1] ?? "")
+        ? word.replace(/(?<=[a-z])(?=[A-Z])/g, " ")
+        : word,
+    )
+    .join(" ");
 };
 
 /**

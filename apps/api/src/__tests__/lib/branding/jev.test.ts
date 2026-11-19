@@ -1485,6 +1485,11 @@ describe("Jev request building", () => {
     // Already-clean names come back unchanged.
     expect(cleanFontFamily("GitLab Sans")).toBe("GitLab Sans");
     expect(cleanFontFamily("HubSpot Sans")).toBe("HubSpot Sans");
+    // A name that already has spaces still splits a run-together word.
+    expect(cleanFontFamily("BasicCommercial LT Std")).toBe(
+      "Basic Commercial LT Std",
+    );
+    expect(cleanFontFamily("PayPal Pro Text")).toBe("PayPal Pro Text");
   });
 
   it("strips next/font hashes and glued weights before underscores become spaces", () => {
