@@ -1,0 +1,32 @@
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_1be6cc1f3026df::t_5d8cf4c48c14a4 135-141,145
+  s_1be6cc1f3026df::t_1200cb66cef7f3 83-88,90-93
+  s_1be6cc1f3026df::t_00cee3ff185716 2
+  s_1be6cc1f3026df::t_07764782a295e5 111
+  s_1be6cc1f3026df::t_508854f2a9cfff 122
+apps/api/src/routes/v2.ts
+  s_1be6cc1f3026df::t_4a0ce1bfd94b92 297-299
+  s_1be6cc1f3026df::t_1acaeb8ee6d54d 14
+  s_1be6cc1f3026df::t_49a5450f847a63 289
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_1be6cc1f3026df::t_2227b28bf3fdf3 84-98
+  s_1be6cc1f3026df::t_e5fdfc1897b49d 642-660
+  s_1be6cc1f3026df::t_33e37f7ac9c7cb 579-580,584-595
+  s_1be6cc1f3026df::t_e61b1d9c25cc41 53,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fc891d4e4bb5f67a335aa37314c9748da11dd789",
+  "prompts": {},
+  "sessions": {
+    "s_1be6cc1f3026df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfc6bc96-eeaf-42a1-9b33-60eee9165010",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
