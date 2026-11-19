@@ -63,6 +63,10 @@ const emptyNonMainFrames = [
   '[data-original-tag="iframe"][src*="youtube-nocookie.com/embed/"]',
 ];
 
+// CMSs such as CivicPlus wrap ordinary content blocks in `.widget`, so these
+// are only removed outside the page's main region.
+const excludeOutsideMainOnlyTags = [".widget", "#widget"];
+
 const forceIncludeMainTags = [
   "#main",
   ".swoogo-cols",
@@ -178,9 +182,15 @@ export const htmlTransform = async (
 
   if (scrapeOptions.onlyMainContent) {
     excludeNonMainTags.forEach(tag => {
-      const elementsToRemove = soup(tag).filter(
+      let elementsToRemove = soup(tag).filter(
         forceIncludeMainTags.map(x => ":not(:has(" + x + "))").join(""),
       );
+
+      if (excludeOutsideMainOnlyTags.includes(tag)) {
+        elementsToRemove = elementsToRemove.filter(
+          (_, el) => soup(el).closest('main, [role="main"]').length === 0,
+        );
+      }
 
       elementsToRemove.remove();
     });
