@@ -129,7 +129,7 @@ The [Firecrawl Local README](apps/local) covers every command and option, the se
 | [Alexandria](#alexandria) | Through Firecrawl Cloud after `firecrawl-local login` | ✅ |
 | [Interact](#interact), [Agent](#agent) and [Monitor](https://docs.firecrawl.dev/features/monitoring) | | ✅ |
 
-Scraping, crawling and mapping run on your machine, except that by default a page that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Those Cloud calls work without an account at a limited rate, and `firecrawl-local login` puts them on your Firecrawl account. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
+Scraping, crawling and mapping run on your machine. By default a single-page scrape that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Those Cloud calls work without an account at a limited rate, and `firecrawl-local login` puts them on your Firecrawl account. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
 
 ---
 
