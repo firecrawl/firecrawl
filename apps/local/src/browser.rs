@@ -227,6 +227,12 @@ struct Launched {
   _proxy: crate::netguard::GuardProxy,
 }
 
+impl Drop for Launched {
+  fn drop(&mut self) {
+    self.handler.abort();
+  }
+}
+
 impl Launched {
   fn is_running(&mut self) -> bool {
     !self.handler.is_finished() && matches!(self.browser.try_wait(), Ok(None))
@@ -236,12 +242,15 @@ impl Launched {
     let grace = Duration::from_secs(3);
     let disconnected = !self.is_running();
     let force = if disconnected {
-      matches!(self.browser.try_wait(), Ok(None))
+      !matches!(self.browser.try_wait(), Ok(Some(_)))
     } else {
-      let _ = tokio::time::timeout(grace, self.browser.close()).await;
-      tokio::time::timeout(grace, self.browser.wait())
-        .await
-        .is_err()
+      !matches!(
+        tokio::time::timeout(grace, self.browser.close()).await,
+        Ok(Ok(_))
+      ) || !matches!(
+        tokio::time::timeout(grace, self.browser.wait()).await,
+        Ok(Ok(_))
+      )
     };
     if force {
       let _ = tokio::time::timeout(grace, self.browser.kill()).await;
@@ -251,6 +260,13 @@ impl Launched {
       tokio::time::sleep(Duration::from_millis(150)).await;
     }
     self.handler.abort();
+    for _ in 0..2 {
+      match tokio::fs::remove_dir_all(&self.profile.0).await {
+        Ok(()) => break,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+        Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+      }
+    }
   }
 }
 
@@ -375,27 +391,42 @@ impl BrowserPool {
     if self.closed.load(Ordering::Relaxed) {
       return Err("the browser pool is closed".into());
     }
-    if !guard.as_mut().is_some_and(Launched::is_running) {
-      if let Some(stale) = guard.as_mut() {
-        stale.shutdown().await;
+    let mut may_retry = true;
+    loop {
+      if !guard.as_mut().is_some_and(Launched::is_running) {
+        if let Some(mut stale) = guard.take() {
+          stale.shutdown().await;
+        }
+        *guard = Some(self.launch().await?);
+        // A freshly launched browser has already exercised the recovery path.
+        may_retry = false;
       }
-      *guard = None;
-      *guard = Some(self.launch().await?);
-    }
-    let launched = guard.as_ref().ok_or("browser is not running")?;
-    let result = launched.browser.new_page("about:blank").await;
-    if matches!(
-      &result,
-      Err(
-        CdpError::Timeout | CdpError::NoResponse | CdpError::ChannelSendError(_) | CdpError::Ws(_)
+      let launched = guard.as_ref().ok_or("browser is not running")?;
+      let result = tokio::time::timeout(
+        Duration::from_secs(8),
+        launched.browser.new_page("about:blank"),
       )
-    ) {
-      if let Some(stale) = guard.as_mut() {
+      .await
+      .unwrap_or(Err(CdpError::Timeout));
+      if !matches!(
+        &result,
+        Err(
+          CdpError::Timeout
+            | CdpError::NoResponse
+            | CdpError::ChannelSendError(_)
+            | CdpError::Ws(_)
+        )
+      ) {
+        return result.map_err(|error| format!("could not open a tab: {error}"));
+      }
+      if let Some(mut stale) = guard.take() {
         stale.shutdown().await;
       }
-      *guard = None;
+      if !may_retry {
+        return result.map_err(|error| format!("could not open a tab: {error}"));
+      }
+      may_retry = false;
     }
-    result.map_err(|error| format!("could not open a tab: {error}"))
   }
 
   /// Load a page, let it settle, and return its rendered HTML.
@@ -407,15 +438,19 @@ impl BrowserPool {
     screenshot: bool,
   ) -> Result<Rendered, String> {
     guard::check_url(url, self.policy).map_err(|e| e.0)?;
-    let _permit = self.pages.acquire().await.map_err(|e| e.to_string())?;
-    let page = self.new_page().await?;
-
-    let result = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)).await;
-    let _ = page.close().await;
-    match result {
-      Ok(r) => r,
-      Err(_) => Err("the page did not finish loading in time".to_string()),
-    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    let timeout_error = || "the page did not finish loading in time".to_string();
+    let _permit = tokio::time::timeout_at(deadline, self.pages.acquire())
+      .await
+      .map_err(|_| timeout_error())?
+      .map_err(|error| error.to_string())?;
+    let page = tokio::time::timeout_at(deadline, self.new_page())
+      .await
+      .map_err(|_| timeout_error())??;
+    let result =
+      tokio::time::timeout_at(deadline, self.drive(&page, url, wait_for, screenshot)).await;
+    let _ = tokio::time::timeout(Duration::from_secs(1), page.close()).await;
+    result.map_err(|_| timeout_error())?
   }
 
   async fn drive(
@@ -545,9 +580,8 @@ impl BrowserPool {
   pub async fn shutdown(&self) {
     let mut guard = self.launched.lock().await;
     self.closed.store(true, Ordering::Relaxed);
-    if let Some(launched) = guard.as_mut() {
+    if let Some(mut launched) = guard.take() {
       launched.shutdown().await;
-      *guard = None;
     }
   }
 }
