@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Give your AI agents web data and beyond, starting on your own machine.** [Firecrawl Local](apps/local) is one binary that turns websites into clean markdown, plugs into your AI agent as an MCP server and serves the Firecrawl API on localhost without a database, queue or container. When your AI agents need search or the 550+ data providers in [Firecrawl Alexandria](https://alexandria.firecrawl.dev), the same tools reach [Firecrawl Cloud](https://firecrawl.dev/?ref=github).
+**Knowledge infrastructure to make your agents smarter. 🔥** [Firecrawl Local](apps/local) is one binary that turns websites into clean markdown, plugs into your AI agent as an MCP server and serves the Firecrawl API on localhost without a database, queue or container. When your AI agents need search or the 550+ data providers in [Firecrawl Alexandria](https://alexandria.firecrawl.dev), the same tools reach [Firecrawl Cloud](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
