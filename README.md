@@ -39,7 +39,11 @@
 
 # **🔥 Firecrawl**
 
-**Knowledge infrastructure to make your agents smarter. 🔥** [Firecrawl Local](apps/local) is one binary that turns websites into clean markdown, plugs into your AI agent as an MCP server and serves the Firecrawl API on localhost without a database, queue or container. When your AI agents need search or the 550+ data providers in [Firecrawl Alexandria](https://alexandria.firecrawl.dev), the same tools reach [Firecrawl Cloud](https://firecrawl.dev/?ref=github).
+**Knowledge infrastructure to make your agents smarter. 🔥** You can use Firecrawl three ways. This repo holds the code for Firecrawl Local and the self-hosted server, along with SDKs that work with all three.
+
+- **[Firecrawl Local](#firecrawl-local).** Run Firecrawl on your own machine as one binary that turns websites into clean markdown, plugs into your AI agent as an MCP server and serves the Firecrawl API on localhost.
+- **[Firecrawl Cloud](#firecrawl-cloud).** Use the hosted service at [firecrawl.dev](https://firecrawl.dev/?ref=github) for everything Local does at scale with nothing to run, plus search and the 550+ data providers in [Firecrawl Alexandria](https://alexandria.firecrawl.dev) for far more knowledge than scraping alone.
+- **[Self-hosting](#self-hosting).** Deploy the full Firecrawl server from `apps/api` with its own queues, workers and databases on your own infrastructure.
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -51,7 +55,7 @@ _Pst. Hey, you, join our stargazers :)_
 
 ## Firecrawl Local
 
-Firecrawl Local installs from crates.io. You need Rust and a C compiler, which on macOS means `xcode-select --install` and on Debian or Ubuntu means `build-essential`.
+[Firecrawl Local](apps/local) scrapes, crawls and maps from your own machine without a database, queue or container, and it reaches Firecrawl Cloud when your AI agents need search or Alexandria. It installs from crates.io. You need Rust and a C compiler, which on macOS means `xcode-select --install` and on Debian or Ubuntu means `build-essential`.
 
 ```bash
 cargo install firecrawl-local
