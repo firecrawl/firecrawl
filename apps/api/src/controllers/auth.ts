@@ -1,4 +1,4 @@
-import { RateLimiterRedis } from "rate-limiter-flexible";
+import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
@@ -1314,6 +1314,20 @@ async function supaAuthenticateUser(
   try {
     await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
+    if (!(rateLimiterRes instanceof RateLimiterRes)) {
+      logger.error("Rate limiter store error", {
+        teamId,
+        mode,
+        error: rateLimiterRes,
+      });
+      return {
+        success: false,
+        error: "Rate limiting is temporarily unavailable, please retry",
+        status: 503,
+        retryAfterSeconds: 1,
+      };
+    }
+
     logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
       teamId,
       mode,
