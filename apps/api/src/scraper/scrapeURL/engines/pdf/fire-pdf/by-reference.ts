@@ -197,8 +197,9 @@ export function largePdfLimitBytes(meta: Meta): number {
   return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
-/** Whether this request is diverted to MinerU. Deterministic on the document
- * URL (same distribution as a random draw across URLs) so every gate — the
+/** Whether this request is diverted to MinerU. Deterministic on the cohort
+ * key (the document URL, or the scrape id for a parse upload; same
+ * distribution as a random draw across keys) so every gate — the
  * fire-engine handoff grant, the download admission, and the PDF engine's
  * routing — sees the SAME verdict, and a later scrape of that URL does too.
  * Keyed apart from the async-cohort hash. Parse requests that must reach

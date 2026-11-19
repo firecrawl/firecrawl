@@ -271,7 +271,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     meta.internalOptions.teamFlags ?? undefined,
   );
 
-  // The MinerU diversion is deterministic on the document URL (see
+  // The MinerU diversion is deterministic on the cohort key (see
   // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
   // one inside byReferenceReachableForRequest() — and the same one
   // fire-engine used when granting the handoff. Forced Fire PDF takes
@@ -699,8 +699,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
 
       // Route a percentage of traffic to Fire PDF instead of MinerU.
-      // The draw is fixed for a document URL, same as the MinerU diversion,
-      // so a repeat scrape of unchanged bytes does not change engines.
+      // The draw is fixed for a document URL (scrape id for a parse upload),
+      // same as the MinerU diversion, so a repeat scrape of unchanged bytes
+      // does not change engines.
       // forceFirePDF always wins; skip percentage-based Fire PDF when
       // we explicitly routed to MinerU via MINERU_PERCENT.
       const useFirePDF =

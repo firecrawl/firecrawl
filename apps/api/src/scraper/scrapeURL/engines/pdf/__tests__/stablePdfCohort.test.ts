@@ -5,7 +5,7 @@ import { detectPdf, processPdf } from "@mendable/firecrawl-rs";
 import { config } from "../../../../../config";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { scrapePDFWithParsePDF } from "../pdfParse";
-import { deterministicPercentage } from "../fire-pdf/routing";
+import { deterministicPercentage, pdfCohortKey } from "../fire-pdf/routing";
 import { scrapePDF } from "../index";
 
 vi.mock("@mendable/firecrawl-rs", () => ({
@@ -54,7 +54,11 @@ function setConfig(
 
 const tempDirs: string[] = [];
 
-async function makeMeta(id: string, url: string) {
+async function makeMeta(
+  id: string,
+  url: string,
+  internalOptions: Record<string, unknown> = {},
+) {
   const dir = await mkdtemp(path.join(tmpdir(), "stable-pdf-cohort-"));
   tempDirs.push(dir);
   const filePath = path.join(dir, "doc.pdf");
@@ -69,6 +73,7 @@ async function makeMeta(id: string, url: string) {
   return {
     id,
     url,
+    rewrittenUrl: url,
     options: { parsers: ["pdf"] },
     logger,
     featureFlags: new Set(["pdf"]),
@@ -83,7 +88,7 @@ async function makeMeta(id: string, url: string) {
       asSignal: vi.fn(() => new AbortController().signal),
       scrapeTimeout: vi.fn(() => 60_000),
     },
-    internalOptions: { teamId: "team-test" },
+    internalOptions: { teamId: "team-test", ...internalOptions },
   } as any;
 }
 
@@ -120,6 +125,26 @@ function splitUrls(prefix: string, percent: number) {
   }
   return { inside, outside };
 }
+
+function splitIds(prefix: string, percent: number) {
+  let inside = "";
+  let outside = "";
+  for (let i = 0; i < 500 && (!inside || !outside); i++) {
+    const id = `${prefix}-${i}`;
+    if (deterministicPercentage(`${prefix}:${id}`) < percent) {
+      inside ||= id;
+    } else {
+      outside ||= id;
+    }
+  }
+  if (!inside || !outside) {
+    throw new Error(`could not split ${prefix} ids`);
+  }
+  return { inside, outside };
+}
+
+const sameFilenameUpload =
+  "https://parse.firecrawl.dev/uploads/quarterly-report.pdf";
 
 describe("stable PDF engine cohort", () => {
   beforeEach(() => {
@@ -220,5 +245,73 @@ describe("stable PDF engine cohort", () => {
     expect(new Set(markdowns).size).toBe(1);
     const diverted = deterministicPercentage(`mineru:${url}`) < 50;
     expect(markdowns[0]).toBe(diverted ? "pdf-parse" : "direct extraction");
+  });
+
+  it("cohorts same-filename uploads by scrape id and keeps one URL stable", () => {
+    const upload = {
+      url: sameFilenameUpload,
+      rewrittenUrl: sameFilenameUpload,
+      internalOptions: { isParse: true },
+    };
+    expect(pdfCohortKey({ id: "upload-a", ...upload })).toBe("upload-a");
+    expect(pdfCohortKey({ id: "upload-b", ...upload })).toBe("upload-b");
+    expect(
+      pdfCohortKey({
+        id: "upload-c",
+        url: sameFilenameUpload,
+        rewrittenUrl: sameFilenameUpload,
+        internalOptions: {
+          uploadedFile: {
+            buffer: Buffer.from("%PDF"),
+            filename: "quarterly-report.pdf",
+          },
+        },
+      }),
+    ).toBe("upload-c");
+
+    const url = "https://example.com/same.pdf";
+    const zdrScrape = {
+      id: "scrape-b",
+      url,
+      rewrittenUrl: url,
+      internalOptions: { zeroDataRetention: true },
+    };
+    expect(pdfCohortKey({ id: "scrape-a", url, rewrittenUrl: url })).toBe(url);
+    expect(pdfCohortKey(zdrScrape)).toBe(url);
+  });
+
+  it("sends two same-filename parse uploads to different FirePDF cohorts", async () => {
+    const { inside, outside } = splitIds("fire-pdf", 50);
+    const upload = { isParse: true };
+
+    expect(
+      (await scrapePDF(await makeMeta(inside, sameFilenameUpload, upload)))
+        .markdown,
+    ).toBe("fire-pdf");
+    expect(
+      (await scrapePDF(await makeMeta(outside, sameFilenameUpload, upload)))
+        .markdown,
+    ).toBe("pdf-parse");
+  });
+
+  it("sends two same-filename parse uploads to different MinerU cohorts", async () => {
+    setConfig({
+      FIRE_PDF_ENABLE: false,
+      FIRE_PDF_BASE_URL: undefined,
+      FIRE_PDF_PERCENT: 0,
+      MINERU_PERCENT: 50,
+    });
+    mockedProcessPdf.mockResolvedValue(eligibleTextPdf as any);
+    const { inside, outside } = splitIds("mineru", 50);
+    const upload = { isParse: true };
+
+    expect(
+      (await scrapePDF(await makeMeta(inside, sameFilenameUpload, upload)))
+        .markdown,
+    ).toBe("pdf-parse");
+    expect(
+      (await scrapePDF(await makeMeta(outside, sameFilenameUpload, upload)))
+        .markdown,
+    ).toBe("direct extraction");
   });
 });
