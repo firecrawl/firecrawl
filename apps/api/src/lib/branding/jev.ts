@@ -282,6 +282,7 @@ const familyKey = (family: string) =>
 function typographyRole(
   family: string,
   input: BrandingLLMInput,
+  counts: Map<string, FontCandidate>,
 ): FontRole | undefined {
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
@@ -297,14 +298,15 @@ function typographyRole(
     first(t?.fontStacks?.heading) ?? first(t?.fontFamilies?.heading);
   const paragraph = first(t?.fontStacks?.paragraph);
   // A site builder's default on <body> (Wix's Arial) is not the body font
-  // when the paragraphs are set in a real face.
+  // when the paragraphs are set in a real face that more text uses.
   // With no h1 the heading stack is <body>'s, so the default goes there too.
   const builderDefault =
     !!bodyEl &&
     isFallback(bodyEl) &&
     !!paragraph &&
     paragraph !== bodyEl &&
-    !isFallback(paragraph);
+    !isFallback(paragraph) &&
+    (counts.get(bodyEl)?.count ?? 0) <= (counts.get(paragraph)?.count ?? 0);
   const bodyElIsBody = !!bodyEl && !builderDefault;
   // The first paragraph is often a styled lead in the heading face; it is
   // body text when <body> names that face too or only a builder default.
@@ -346,7 +348,10 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
   return [...byFamily.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_FONTS)
-    .map(font => ({ ...font, role: typographyRole(font.family, input) }));
+    .map(font => ({
+      ...font,
+      role: typographyRole(font.family, input, byFamily),
+    }));
 }
 
 // ---------------------------------------------------------------------------
