@@ -47,6 +47,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
+import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
 const call = {
@@ -897,6 +898,214 @@ it("keeps and replays the response without zero data retention", async () => {
     status: 200,
     body: answer,
     executed: false,
+  });
+});
+
+describe("providers whose responses are not kept", () => {
+  const particle = {
+    provider: "particle",
+    capability: "podcasts/transcript",
+    options: { episode_id: "e1" },
+  };
+  const apollo = {
+    provider: "apollo",
+    capability: "people/match",
+    options: { email: "a@example.com" },
+  };
+  const notRetained = (provider: string, capability: string) => ({
+    provider,
+    capability,
+    error: expect.objectContaining({
+      code: "response_not_retained",
+      status: 409,
+    }),
+  });
+  const stored = () => [...mocks.store.values()].map(raw => JSON.parse(raw))[0];
+  const charges = () => ({
+    executions: executions().length,
+    confirms: mocks.finalize.mock.calls.length,
+    ledger: mocks.billAdd.mock.calls.length,
+  });
+
+  it.each([
+    ["Particle", particle],
+    ["Apollo", apollo],
+  ])(
+    "keeps no %s data in the record and replays a coded error without charging again",
+    async (_name, restricted) => {
+      const answered = {
+        success: true,
+        creditsCost: 4,
+        results: [
+          {
+            ...restricted,
+            creditsCost: 4,
+            data: { secret: "provider body" },
+          },
+        ],
+      };
+      exchangeAnswers(answered);
+      expect(await run({ calls: [restricted] })).toEqual({
+        status: 200,
+        body: answered,
+        executed: true,
+        scrapeId: "scrape-1",
+      });
+      const record = stored();
+      expect(record).toMatchObject({
+        phase: "done",
+        lockId: "held",
+        maximumCredits: 5,
+      });
+      expect(JSON.stringify(record)).not.toContain("provider body");
+      expect(record.response.body).toEqual({
+        success: true,
+        creditsCost: 4,
+        results: [notRetained(restricted.provider, restricted.capability)],
+      });
+      const before = charges();
+      expect(before).toEqual({ executions: 1, confirms: 1, ledger: 1 });
+
+      const replay = await run({ calls: [restricted], scrapeId: "scrape-2" });
+      expect(replay).toMatchObject({ status: 200, executed: false });
+      expect(answerSchema.safeParse(replay.body).success).toBe(true);
+      expect(JSON.stringify(replay)).not.toContain("provider body");
+      expect(charges()).toEqual(before);
+    },
+  );
+
+  it("strips only the restricted entries of a mixed batch and replays the rest", async () => {
+    const calls = [call, particle, apollo];
+    const answered = {
+      success: true,
+      creditsCost: 5,
+      results: [
+        { ...call, creditsCost: 3, data: { kept: "fred data" } },
+        { ...particle, creditsCost: 1, data: { secret: "particle body" } },
+        { ...apollo, creditsCost: 1, data: { secret: "apollo body" } },
+      ],
+    };
+    exchangeAnswers(answered);
+    expect(await run({ calls })).toMatchObject({
+      status: 200,
+      body: answered,
+      executed: true,
+    });
+    const record = stored();
+    expect(JSON.stringify(record)).not.toMatch(/particle body|apollo body/);
+    const replayed = {
+      success: true,
+      creditsCost: 5,
+      results: [
+        answered.results[0],
+        notRetained("particle", "podcasts/transcript"),
+        notRetained("apollo", "people/match"),
+      ],
+    };
+    expect(record.response.body).toEqual(replayed);
+    const before = charges();
+
+    const replay = await run({ calls });
+    expect(replay).toMatchObject({
+      status: 200,
+      body: replayed,
+      executed: false,
+    });
+    expect(answerSchema.safeParse(replay.body).success).toBe(true);
+    expect(charges()).toEqual(before);
+  });
+
+  it.each(["enrich", "enrich/auto", "enrich/waterfall", "search/auto"])(
+    "keeps no firecrawl %s data in the record and replays a coded error without charging again",
+    async capability => {
+      const enrich = {
+        provider: "firecrawl",
+        capability,
+        options: { find: ["work_email"], subjects: [{ full_name: "A B" }] },
+      };
+      const answered = {
+        success: true,
+        creditsCost: 4,
+        results: [
+          {
+            ...enrich,
+            creditsCost: 4,
+            data: {
+              results: [{ served_by: "apollo", record: { email: "enriched" } }],
+            },
+          },
+        ],
+      };
+      exchangeAnswers(answered);
+      expect(await run({ calls: [enrich] })).toMatchObject({
+        status: 200,
+        body: answered,
+        executed: true,
+      });
+      const record = stored();
+      expect(record).toMatchObject({ phase: "done", maximumCredits: 5 });
+      expect(JSON.stringify(record)).not.toContain("enriched");
+      expect(record.response.body).toEqual({
+        success: true,
+        creditsCost: 4,
+        results: [notRetained("firecrawl", capability)],
+      });
+      const before = charges();
+      expect(before).toEqual({ executions: 1, confirms: 1, ledger: 1 });
+
+      const replay = await run({ calls: [enrich], scrapeId: "scrape-2" });
+      expect(replay).toMatchObject({ status: 200, executed: false });
+      expect(answerSchema.safeParse(replay.body).success).toBe(true);
+      expect(JSON.stringify(replay)).not.toContain("enriched");
+      expect(charges()).toEqual(before);
+    },
+  );
+
+  it.each([
+    { provider: "acme", capability: "enrich" },
+    { provider: "acme", capability: "search/auto" },
+    { provider: "firecrawl", capability: "search" },
+  ])("keeps $provider $capability whole", async identity => {
+    const other = { ...identity, options: {} };
+    const answered = {
+      success: true,
+      creditsCost: 2,
+      results: [{ ...other, creditsCost: 2, data: { kept: true } }],
+    };
+    exchangeAnswers(answered);
+    await run({ calls: [other] });
+    expect(stored().response).toEqual({ status: 200, body: answered });
+  });
+
+  it("keeps an unrestricted provider's response whole and replays it without charging again", async () => {
+    await run();
+    expect(stored().response).toEqual({ status: 200, body: answer });
+    const before = charges();
+    expect(await run()).toMatchObject({
+      status: 200,
+      body: answer,
+      executed: false,
+    });
+    expect(charges()).toEqual(before);
+  });
+
+  it("withholds a restricted provider's response under zero data retention as before", async () => {
+    exchangeAnswers({
+      success: true,
+      creditsCost: 4,
+      results: [{ ...particle, creditsCost: 4, data: { secret: "x" } }],
+    });
+    await run({ calls: [particle], zeroDataRetention: true });
+    const record = stored();
+    expect(record).toMatchObject({ phase: "done", responseWithheld: true });
+    expect(record).not.toHaveProperty("response");
+    const before = charges();
+    const replay = await run({ calls: [particle], zeroDataRetention: true });
+    expect(replay).toMatchObject({ status: 409, executed: false });
+    expect(replay.body).toEqual(
+      expect.objectContaining({ code: "response_not_retained" }),
+    );
+    expect(charges()).toEqual(before);
   });
 });
 

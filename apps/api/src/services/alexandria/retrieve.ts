@@ -92,6 +92,44 @@ const CATALOGUE_READS = new Set(["find-tools", "library"]);
 const isCatalogueRead = (call: ProviderCall) =>
   call.provider === "firecrawl" && CATALOGUE_READS.has(call.capability);
 
+// Providers whose response bodies are not kept for replay. Matched on the exact provider slug.
+const UNRETAINED_PROVIDERS = new Set(["particle", "apollo"]);
+// Enrichment and people search can answer with records from those providers under the firecrawl
+// slug, so none of their results are kept.
+const isUnretained = (provider: string, capability: string) =>
+  UNRETAINED_PROVIDERS.has(provider) ||
+  (provider === "firecrawl" &&
+    (capability === "enrich" ||
+      capability.startsWith("enrich/") ||
+      capability === "search/auto"));
+
+/** The answer as recorded for replay: each result that may not be stored is kept as a coded
+ *  error, with no data, while every other result and the charge stay as they were. */
+const retainable = (
+  answer: z.infer<typeof answerSchema>,
+  calls: ProviderCall[],
+): ExchangeResponse => ({
+  status: 200,
+  body: {
+    ...answer,
+    results: answer.results.map((item, i) => {
+      const provider = item.provider ?? calls[i].provider;
+      const capability = item.capability ?? calls[i].capability;
+      if (!isUnretained(provider, capability)) return item;
+      return {
+        provider,
+        capability,
+        error: {
+          code: "response_not_retained",
+          message:
+            "This provider request already completed. Its response is not kept, so it cannot be returned again; a new x-request-id runs it again and is charged again.",
+          status: 409,
+        },
+      };
+    }),
+  },
+});
+
 const unresolved = (chargeId: string) =>
   refusal(
     503,
@@ -713,7 +751,11 @@ export async function retrieveProviders(input: {
     await write(
       zeroDataRetention
         ? { ...record, phase: "done", responseWithheld: true }
-        : { ...record, phase: "done", response: done },
+        : {
+            ...record,
+            phase: "done",
+            response: retainable(answer, input.calls),
+          },
     );
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {

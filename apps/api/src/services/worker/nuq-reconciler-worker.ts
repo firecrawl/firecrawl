@@ -9,10 +9,13 @@ import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { Worker } from "bullmq";
 import {
+  getBillingQueue,
   getChangeTrackingPurgeQueue,
   getFirebillTrackRetryQueue,
+  getPrecrawlQueue,
   getRedisConnection,
 } from "../queue-service";
+import { startBullmqQueueMetrics } from "../queue-metrics";
 import {
   firebillConfigured,
   processFirebillTrackRetry,
@@ -46,6 +49,14 @@ export async function start() {
 
   const app = Express();
   startNodeRuntimeMetrics();
+  // Exported here because this deployment runs one replica, so each queue
+  // gets one series, not a copy per app pod.
+  startBullmqQueueMetrics([
+    getFirebillTrackRetryQueue(),
+    getBillingQueue(),
+    getPrecrawlQueue(),
+    getChangeTrackingPurgeQueue(),
+  ]);
 
   app.get("/metrics", async (_, res) => {
     try {

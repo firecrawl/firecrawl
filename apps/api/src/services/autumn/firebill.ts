@@ -469,15 +469,26 @@ async function enqueueFirebillTrackRetry(
   let timer: NodeJS.Timeout | undefined;
   try {
     const added = await Promise.race([
-      getFirebillTrackRetryQueue().add(operation, event, {
-        jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
-        delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
-        attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
-        backoff: {
-          type: "exponential",
-          delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
-        },
-      }),
+      (async () => {
+        const queue = getFirebillTrackRetryQueue();
+        const job = await queue.add(operation, event, {
+          jobId: `firebill|${encodeURIComponent(event.idempotencyKey)}`,
+          delay: FIREBILL_DURABLE_RETRY_FIRST_DELAY_MS,
+          attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+          backoff: {
+            type: "exponential",
+            delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
+          },
+        });
+        // For a jobId that already exists, add() creates nothing and returns a
+        // Job built from this call, so only the stored timestamp tells a
+        // duplicate apart from a new job. The add has landed either way, so a
+        // failed read counts as enqueued rather than as a failure.
+        const stored = await queue.getJob(job.id!).catch(() => undefined);
+        return stored && stored.timestamp !== job.timestamp
+          ? "duplicate"
+          : "enqueued";
+      })(),
       new Promise<typeof timedOut>(resolve => {
         timer = setTimeout(
           () => resolve(timedOut),
@@ -494,7 +505,12 @@ async function enqueueFirebillTrackRetry(
       firebillTrackRetryTotal.labels(operation, "enqueue_timeout").inc();
       return false;
     }
-    firebillTrackRetryTotal.labels(operation, "enqueued").inc();
+    firebillTrackRetryTotal
+      .labels(
+        operation,
+        added === "duplicate" ? "enqueue_duplicate" : "enqueued",
+      )
+      .inc();
     return true;
   } catch (error) {
     logger.error(
