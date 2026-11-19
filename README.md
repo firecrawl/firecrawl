@@ -560,7 +560,11 @@ The build skills for integrating Firecrawl into product code live in this repo u
 
 ## Self-hosting
 
-Run the full Firecrawl server on your own infrastructure when you want queues, workers and every format in one deployment. It runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
+![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
+
+[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server on your own infrastructure, with its own queues, workers and databases, all of it still lives in this repo and you can run it.
+
+The server runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
 
 [SELF_HOST.md](SELF_HOST.md) lists the services and settings for the revision you checked out, and larger deployments can start from the [Kubernetes manifests](examples/kubernetes/cluster-install) or the [Helm chart](examples/kubernetes/firecrawl-helm). Alexandria runs on Firecrawl Cloud, so the self-hosted server does not include it.
 
