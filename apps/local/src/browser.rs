@@ -6,7 +6,10 @@
 
 use std::{
   path::PathBuf,
-  sync::{Arc, Mutex as StdMutex},
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex as StdMutex,
+  },
   time::{Duration, Instant},
 };
 
@@ -15,6 +18,7 @@ use chromiumoxide::{
   cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, ResourceType,
   },
+  error::CdpError,
   page::{Page, ScreenshotParams},
 };
 use futures::StreamExt;
@@ -207,10 +211,18 @@ pub struct Rendered {
   pub screenshot_png: Option<Vec<u8>>,
 }
 
+struct TemporaryProfile(PathBuf);
+
+impl Drop for TemporaryProfile {
+  fn drop(&mut self) {
+    let _ = std::fs::remove_dir_all(&self.0);
+  }
+}
+
 struct Launched {
   browser: Browser,
   handler: tokio::task::JoinHandle<()>,
-  profile: PathBuf,
+  profile: TemporaryProfile,
   /// Every connection Chrome makes goes through this; dropped with Chrome.
   _proxy: crate::netguard::GuardProxy,
 }
@@ -222,17 +234,23 @@ impl Launched {
 
   async fn shutdown(&mut self) {
     let grace = Duration::from_secs(3);
-    if !self.handler.is_finished() {
+    let disconnected = !self.is_running();
+    let force = if disconnected {
+      matches!(self.browser.try_wait(), Ok(None))
+    } else {
       let _ = tokio::time::timeout(grace, self.browser.close()).await;
+      tokio::time::timeout(grace, self.browser.wait())
+        .await
+        .is_err()
+    };
+    if force {
+      let _ = tokio::time::timeout(grace, self.browser.kill()).await;
     }
-    if tokio::time::timeout(grace, self.browser.wait())
-      .await
-      .is_err()
-    {
-      let _ = self.browser.kill().await;
+    if disconnected || force {
+      // Chromium's network process can finish writing after its parent exits.
+      tokio::time::sleep(Duration::from_millis(150)).await;
     }
     self.handler.abort();
-    let _ = std::fs::remove_dir_all(&self.profile);
   }
 }
 
@@ -241,6 +259,7 @@ pub struct BrowserPool {
   policy: NetworkPolicy,
   user_agent: String,
   launched: Mutex<Option<Launched>>,
+  closed: AtomicBool,
   pages: Semaphore,
 }
 
@@ -294,6 +313,7 @@ impl BrowserPool {
       policy,
       user_agent: user_agent.to_string(),
       launched: Mutex::new(None),
+      closed: AtomicBool::new(false),
       pages: Semaphore::new(max_pages.max(1)),
     }))
   }
@@ -331,13 +351,10 @@ impl BrowserPool {
       .map_err(|e| format!("browser configuration failed: {e}"))?;
     std::fs::create_dir_all(&profile)
       .map_err(|e| format!("could not create a browser profile: {e}"))?;
-    let (browser, mut handler) = match Browser::launch(config).await {
-      Ok(launched) => launched,
-      Err(error) => {
-        let _ = std::fs::remove_dir_all(&profile);
-        return Err(chrome_start_error(&self.chrome, &error.to_string()));
-      }
-    };
+    let profile = TemporaryProfile(profile);
+    let (browser, mut handler) = Browser::launch(config)
+      .await
+      .map_err(|error| chrome_start_error(&self.chrome, &error.to_string()))?;
     let handler = tokio::spawn(async move {
       while let Some(event) = handler.next().await {
         if event.is_err() {
@@ -355,6 +372,9 @@ impl BrowserPool {
 
   async fn new_page(&self) -> Result<Page, String> {
     let mut guard = self.launched.lock().await;
+    if self.closed.load(Ordering::Relaxed) {
+      return Err("the browser pool is closed".into());
+    }
     if !guard.as_mut().is_some_and(Launched::is_running) {
       if let Some(stale) = guard.as_mut() {
         stale.shutdown().await;
@@ -363,11 +383,19 @@ impl BrowserPool {
       *guard = Some(self.launch().await?);
     }
     let launched = guard.as_ref().ok_or("browser is not running")?;
-    launched
-      .browser
-      .new_page("about:blank")
-      .await
-      .map_err(|e| format!("could not open a tab: {e}"))
+    let result = launched.browser.new_page("about:blank").await;
+    if matches!(
+      &result,
+      Err(
+        CdpError::Timeout | CdpError::NoResponse | CdpError::ChannelSendError(_) | CdpError::Ws(_)
+      )
+    ) {
+      if let Some(stale) = guard.as_mut() {
+        stale.shutdown().await;
+      }
+      *guard = None;
+    }
+    result.map_err(|error| format!("could not open a tab: {error}"))
   }
 
   /// Load a page, let it settle, and return its rendered HTML.
@@ -516,6 +544,7 @@ impl BrowserPool {
   /// Stop Chrome and delete its throwaway profile.
   pub async fn shutdown(&self) {
     let mut guard = self.launched.lock().await;
+    self.closed.store(true, Ordering::Relaxed);
     if let Some(launched) = guard.as_mut() {
       launched.shutdown().await;
       *guard = None;
@@ -808,18 +837,42 @@ mod tests {
   #[tokio::test]
   #[ignore = "requires a sandbox-capable Chromium installation"]
   async fn reopens_tabs_after_the_browser_process_dies() {
+    assert_recovers(false).await;
+  }
+
+  #[tokio::test]
+  #[ignore = "requires a sandbox-capable Chromium installation"]
+  async fn reopens_tabs_after_the_handler_disconnects() {
+    assert_recovers(true).await;
+  }
+
+  async fn assert_recovers(disconnect_only: bool) {
     let pool = BrowserPool::new(NetworkPolicy::PublicOnly, "firecrawl-local-test", 2)
       .expect("install Chromium or set FIRECRAWL_CHROME_PATH");
     pool.new_page().await.unwrap().close().await.unwrap();
     let dead_profile = {
       let mut guard = pool.launched.lock().await;
       let launched = guard.as_mut().unwrap();
-      launched.browser.kill().await.unwrap().unwrap();
-      launched.profile.clone()
+      if disconnect_only {
+        launched.handler.abort();
+        assert!((&mut launched.handler).await.unwrap_err().is_cancelled());
+        assert!(launched.browser.try_wait().unwrap().is_none());
+      } else {
+        launched.browser.kill().await.unwrap().unwrap();
+      }
+      launched.profile.0.clone()
     };
 
     let (first, second) = tokio::join!(pool.new_page(), pool.new_page());
-    let replacement = pool.launched.lock().await.as_ref().unwrap().profile.clone();
+    let replacement = pool
+      .launched
+      .lock()
+      .await
+      .as_ref()
+      .unwrap()
+      .profile
+      .0
+      .clone();
     let first = first.unwrap();
     let second = second.unwrap();
     first.close().await.unwrap();
@@ -828,6 +881,7 @@ mod tests {
     assert_ne!(dead_profile, replacement);
     assert!(!dead_profile.exists());
     assert!(!replacement.exists());
+    assert!(pool.new_page().await.is_err());
   }
 
   #[test]
