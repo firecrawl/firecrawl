@@ -4,8 +4,8 @@ import type { NextFunction, Request, Response } from "express";
 import { config } from "../config";
 import { logger } from "./logger";
 
-export const INTERNAL_JWT_HEADER = "x-firecrawl-internal-token";
-export const INTERNAL_JWT_AUDIENCE = "firecrawl-api";
+const INTERNAL_JWT_HEADER = "x-firecrawl-internal-token";
+const INTERNAL_JWT_AUDIENCE = "firecrawl-api";
 const MAX_TTL_SECONDS = 60;
 const CLOCK_SKEW_SECONDS = 5;
 
@@ -35,7 +35,7 @@ function loadIssuers(): Map<string, IssuerKeys> {
   return issuers;
 }
 
-export class InternalJwtError extends Error {
+class InternalJwtError extends Error {
   constructor(
     readonly status: 401 | 403,
     message: string,
