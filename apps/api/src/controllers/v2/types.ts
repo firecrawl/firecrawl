@@ -4,7 +4,11 @@ import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
-import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import {
+  browserProfileNameSchema,
+  PROFILE_RENDER_UNSUPPORTED_MESSAGE,
+  scrapeRequestsProfileOnRenderBrowser,
+} from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
@@ -884,6 +888,10 @@ const scrapeOptionFields = z.strictObject({
 const baseScrapeOptions = scrapeOptionFields
   .refine(options => !(options.profile && options.lockdown), {
     message: "Profiles require live browsing and cannot be used with lockdown.",
+    path: ["profile"],
+  })
+  .refine(options => !scrapeRequestsProfileOnRenderBrowser(options), {
+    message: PROFILE_RENDER_UNSUPPORTED_MESSAGE,
     path: ["profile"],
   })
   .refine(

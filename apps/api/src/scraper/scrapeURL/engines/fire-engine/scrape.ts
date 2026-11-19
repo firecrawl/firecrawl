@@ -20,6 +20,8 @@ import {
   SiteBlockNoRetryError,
   isNoRetrySiteBlock,
   UnsupportedFileError,
+  isProfileRenderRejection,
+  ProfileUnsupportedError,
 } from "../../error";
 import { Meta } from "../..";
 import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
@@ -373,6 +375,9 @@ export async function fireEngineScrape<
     ) {
       throw new ProxySelectionError();
     } else {
+      if (isProfileRenderRejection(status.error)) {
+        throw new ProfileUnsupportedError();
+      }
       throw new EngineError("Scrape job failed", {
         cause: {
           status,

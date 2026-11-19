@@ -12,3 +12,20 @@ export const browserProfileNameSchema = z
 export function browserProfileDeletedKey(teamId: string, name: string): string {
   return `browser-profile-deleted:${JSON.stringify([teamId, name])}`;
 }
+
+// Screenshot capture and blockMedia: false are served by fire-engine's render
+// browser. That browser rejects saved profiles ("Profiles require chrome-cdp").
+export const PROFILE_RENDER_UNSUPPORTED_MESSAGE =
+  "Profiles cannot be used with screenshots or with options that require the render browser. Saved profiles run on the standard browser, which does not support that path yet. Remove the screenshot format or screenshot action, or omit the profile.";
+
+export function scrapeRequestsProfileOnRenderBrowser(options: {
+  profile?: unknown;
+  formats?: Array<{ type?: string }>;
+  actions?: Array<{ type?: string }>;
+}): boolean {
+  if (options.profile === undefined) return false;
+  return (
+    options.formats?.some(format => format.type === "screenshot") === true ||
+    options.actions?.some(action => action.type === "screenshot") === true
+  );
+}

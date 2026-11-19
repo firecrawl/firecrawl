@@ -799,6 +799,41 @@ describe("V2 Types Validation", () => {
           "Profiles require live browsing and cannot be used with lockdown.",
         );
       });
+
+      it("should reject a profile with the screenshot format", () => {
+        expect(() =>
+          scrapeRequestSchema.parse({
+            url: "https://example.com",
+            formats: ["html", "links", "rawHtml", "screenshot"],
+            profile: { name: "login" },
+          }),
+        ).toThrow(/cannot be used with screenshots/);
+      });
+
+      it("should reject a profile with a screenshot action", () => {
+        expect(() =>
+          scrapeRequestSchema.parse({
+            url: "https://example.com",
+            actions: [{ type: "screenshot" }],
+            profile: { name: "login" },
+          }),
+        ).toThrow(/cannot be used with screenshots/);
+      });
+
+      it("should allow a profile with scroll and wait actions and no screenshot", () => {
+        const result = scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: ["html", "links", "rawHtml"],
+          actions: [
+            { type: "scroll", direction: "down" },
+            { type: "wait", milliseconds: 1000 },
+          ],
+          profile: { name: "login" },
+          proxy: "auto",
+          location: { country: "TR" },
+        });
+        expect(result.profile?.name).toBe("login");
+      });
     });
   });
 

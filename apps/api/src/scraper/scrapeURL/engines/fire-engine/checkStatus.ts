@@ -15,6 +15,8 @@ import {
   SiteRestrictionError,
   SiteBlockNoRetryError,
   isNoRetrySiteBlock,
+  isProfileRenderRejection,
+  ProfileUnsupportedError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
@@ -270,6 +272,9 @@ export async function fireEngineCheckStatus(
         : status.error;
       throw new ActionError(errorMessage);
     } else {
+      if (isProfileRenderRejection(status.error)) {
+        throw new ProfileUnsupportedError();
+      }
       throw new EngineError("Scrape job failed", {
         cause: {
           status,
