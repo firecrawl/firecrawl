@@ -1068,9 +1068,15 @@ describe("branding with Jev", () => {
       fontFamilies: { primary: "Noto IKEA", heading: "Noto IKEA" },
       fontStacks: { body: ikea, heading: ikea, paragraph: ikea },
     };
-    input.jsAnalysis.fonts = [{ family: ikea.join(", "), count: 40 }];
-    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
-      ["Noto IKEA", "body"],
+    input.jsAnalysis.fonts = [
+      { family: "Omani Rial", count: 40 },
+      { family: "Emirati Dirham", count: 40 },
+      { family: "Saudi Riyal", count: 40 },
+      { family: "Noto IKEA", count: 40 },
+      { family: ikea.join(", "), count: 10 },
+    ];
+    expect(buildJevRequest(input).fonts).toEqual([
+      { family: "Noto IKEA", count: 50, role: "body" },
     ]);
   });
 

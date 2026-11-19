@@ -156,7 +156,7 @@ const GLUED_WEIGHT =
 // ("GitLabSans", "figmaSans", "GmarketSansMedium") they are split off and the
 // rest is kept as written, so brand words like GitLab and HubSpot stay whole.
 const TRAILING_WORD =
-  /(?<=\p{Ll})(Sans|Serif|Mono|Display|Text|Grotesk|Grotesque|Pro|Condensed|Rounded|Slab|(?:Extra|Ultra|Semi|Demi)?(?:Bold|Light)|Regular|Medium|Thin|Black|Heavy|Book|Italic)$/u;
+  /(?<=\p{Ll})(Sans|Serif|Mono|Display|Text|Grotesk|Grotesque|Pro|Condensed|Rounded|Slab|(?:Extra|Ultra|Semi|Demi)?(?:Bold|Light)|Regular|Medium|Thin|Black|Heavy|Book|Italic|Oblique)$/u;
 
 const splitWord = (word: string): string => {
   const tail: string[] = [];
