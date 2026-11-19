@@ -265,12 +265,25 @@ def resolve_refs(obj: Any, defs: Dict[str, Any], visited: Optional[set] = None, 
     try:
         if isinstance(obj, dict):
             if "$ref" in obj and isinstance(obj["$ref"], str):
+                # Preserve assertions and applicators beside $ref. Merging them
+                # into the definition can change how both schemas validate.
+                allowed_keys = {"$ref", "title", "description"}
+                if depth == 0:
+                    allowed_keys.add("$defs")
+                if not obj.keys() <= allowed_keys:
+                    return obj
+
                 ref_path = obj["$ref"].split("/")
-                if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
-                    def_name = ref_path[-1]
-                    if def_name in defs:
-                        return resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
-                return obj
+                if len(ref_path) != 3 or ref_path[:2] != ["#", "$defs"]:
+                    return obj
+                def_name = ref_path[2]
+                # Only inline direct, unescaped pointers to top-level definitions.
+                if "~" in def_name or "%" in def_name or def_name not in defs:
+                    return obj
+
+                resolved = resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
+                annotations = {key: obj[key] for key in ("title", "description") if key in obj}
+                return {**resolved, **annotations}
             
             resolved = {}
             for key, value in obj.items():
