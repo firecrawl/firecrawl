@@ -893,6 +893,7 @@ mod tests {
     assert_eq!(cancelled.status(), StatusCode::CONFLICT);
     let error: Value = cancelled.json().await.unwrap();
     assert_eq!(error["success"], false);
+    assert_eq!(error["code"], "JOB_ALREADY_FINISHED");
     let job: Value = http
       .get(&job_url)
       .send()
