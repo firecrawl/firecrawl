@@ -26,7 +26,9 @@ def collect_feedback_tokens(results: Iterable[Any]) -> List[str]:
         if token in tokens:
             tokens.remove(token)
         tokens.append(token)
-    return tokens[-MAX_FEEDBACK_TOKENS:]
+        if len(tokens) > MAX_FEEDBACK_TOKENS:
+            tokens.pop(0)
+    return tokens
 
 
 def prepare_alexandria_feedback_request(

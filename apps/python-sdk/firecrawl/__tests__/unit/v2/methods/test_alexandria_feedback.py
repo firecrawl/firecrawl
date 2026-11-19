@@ -96,6 +96,25 @@ def test_collect_feedback_tokens_accepts_plain_dicts():
     assert collect_feedback_tokens(results) == ["b", "a"]
 
 
+def test_collect_feedback_tokens_bounds_duplicate_work_for_long_iterables():
+    class CountedToken(str):
+        comparisons = 0
+        __hash__ = str.__hash__
+
+        def __eq__(self, other):
+            type(self).comparisons += 1
+            return super().__eq__(other)
+
+    count = 1000
+    results = ({"feedbackToken": CountedToken(f"token-{i}")} for i in range(count))
+
+    collected = collect_feedback_tokens(results)
+    comparisons = CountedToken.comparisons
+
+    assert collected == [f"token-{i}" for i in range(count - 20, count)]
+    assert comparisons <= count * 20
+
+
 def test_alexandria_feedback_accepts_token_of_exactly_1024_chars(monkeypatch):
     sent = []
     monkeypatch.setattr(
