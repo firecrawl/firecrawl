@@ -48,6 +48,7 @@ const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
 const ANALYTICS_TIMEOUT_MS = 20_000;
 const APPLICATIONS_TIMEOUT_MS = 15_000;
+const ONBOARDING_TIMEOUT_MS = 15_000;
 const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
@@ -84,6 +85,7 @@ const FORWARDED_PATH_ROOTS = new Set([
   "discover",
   "enrichment",
   "ingest",
+  "onboarding",
   "platform",
   "provider-skills",
   "provider-terms",
@@ -806,6 +808,32 @@ exchangeRouter.post(
   "/applications/:id/withdraw",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+// Provider onboarding (the alexandria_onboard MCP interview and the key page on firecrawl.dev).
+// Creating a code is scoped to the caller's team; the ob_ code itself authorizes the rest.
+exchangeRouter.post(
+  "/onboarding",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ONBOARDING_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/onboarding/:code",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ONBOARDING_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.put(
+  "/onboarding/:code",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ONBOARDING_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/onboarding/:code/credentials",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ONBOARDING_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.get(
