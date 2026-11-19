@@ -31,6 +31,10 @@ spec:
                 name: {{ include "firecrawl.fullname" . }}-secret
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-playwright-config
+          {{- if and .Values.resources.enabled .Values.playwright.resources }}
+          resources:
+            {{- toYaml .Values.playwright.resources | nindent 12 }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /health

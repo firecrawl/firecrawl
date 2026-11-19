@@ -24,7 +24,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=3072", "dist/src/services/worker/nuq-worker.js" ]
+          args: [ '--max-old-space-size={{ include "firecrawl.nodeHeapSize" (tuple .Values "nuqWorker" 3072) }}', "dist/src/services/worker/nuq-worker.js" ]
           ports:
             - containerPort: {{ .Values.nuqWorker.port | int }}
           env:
