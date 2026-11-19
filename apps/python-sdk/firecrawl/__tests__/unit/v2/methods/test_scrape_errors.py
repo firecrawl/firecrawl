@@ -86,14 +86,15 @@ def _structured_error_body(code):
 def _assert_structured_error(error, response, body):
     assert error.response is response
     assert error.status_code == response.status_code
-    assert error.code == body["code"]
+    assert error.code is None
+    assert error.response.json()["code"] == body["code"]
     assert error.charge_id == body["chargeId"]
     assert error.agent_hints == body["agent_hints"]
     assert body["error"] in str(error)
     assert body["details"] in str(error)
 
 
-@pytest.mark.parametrize("code", [[], {}, ["SCRAPE_SSL_ERROR"], {"source": "proxy"}])
+@pytest.mark.parametrize("code", [[], {}, ["SCRAPE_SSL_ERROR"], {"source": "proxy"}, 123, True, None])
 @pytest.mark.parametrize("status_code,error_type", [
     (400, BadRequestError),
     (429, RateLimitError),

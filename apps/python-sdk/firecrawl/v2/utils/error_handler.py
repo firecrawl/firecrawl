@@ -145,6 +145,8 @@ def handle_response_error(response: requests.Response, action: str) -> None:
         error_details = response_json.get('details', 'No additional error details provided.')
         # Exchange-mediated scrape errors: { success: false, error, code?, chargeId?, requiresAction? }
         code = response_json.get('code')
+        if not isinstance(code, str):
+            code = None
         charge_id = response_json.get('chargeId')
         requires_action = RequiresAction.from_payload(response_json.get('requiresAction'))
     except:
@@ -161,7 +163,7 @@ def handle_response_error(response: requests.Response, action: str) -> None:
             error_message = f"Server returned unreadable response with status {response.status_code}"
             error_details = "No additional details available"
 
-    error_class = ERROR_CODE_CLASSES.get(code) if isinstance(code, str) else None
+    error_class = ERROR_CODE_CLASSES.get(code)
     if error_class is not None:
         message = f"Failed to {action}. {error_message}"
         if error_details != 'No additional error details provided.':
