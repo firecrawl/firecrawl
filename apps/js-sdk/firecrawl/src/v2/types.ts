@@ -2424,6 +2424,104 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
+export type ProteinMatchedBy =
+  | "accession"
+  | "secondary_accession"
+  | "entry_name"
+  | "gene"
+  | "synonym"
+  | "name";
+
+export type ProteinEvidenceKind =
+  | "experimental"
+  | "large_scale_experimental"
+  | "author_statement"
+  | "curator_inference"
+  | "by_similarity"
+  | "sequence_analysis"
+  | "imported"
+  | "untagged";
+
+export interface ProteinOrganism {
+  taxonId: number;
+  scientificName: string;
+  commonName?: string;
+}
+
+export interface ProteinEvidence {
+  kind: ProteinEvidenceKind;
+  eco?: string;
+  /** `pmid:<id>`, accepted by `getPaper`. */
+  paperId?: string;
+  /** Accession of the protein a `by_similarity` statement was inferred from. */
+  fromProtein?: string;
+}
+
+export interface ProteinStatement {
+  text: string;
+  note: boolean;
+  molecule?: string;
+  topology?: string;
+  orientation?: string;
+  evidence: ProteinEvidence[];
+}
+
+export interface ProteinGoTerm {
+  id: string;
+  term: string;
+  code: string;
+  assignedBy: string;
+  paperIds: string[];
+}
+
+export interface ProteinCandidate {
+  accession: string;
+  entryName: string;
+  gene?: string;
+  name: string;
+  organism: ProteinOrganism;
+  matchedBy: ProteinMatchedBy;
+}
+
+export interface ProteinEntry extends ProteinCandidate {
+  synonyms: string[];
+  url: string;
+  subcellularLocation: ProteinStatement[];
+  function: ProteinStatement[];
+  goCellularComponent: ProteinGoTerm[];
+  paperIds: string[];
+}
+
+interface ProteinLookupBase {
+  success: boolean;
+  /** UniProtKB release, such as `2026_04`. */
+  release: string;
+  /** UniProt's CC BY 4.0 credit. Print it with any results you show to a person. */
+  notice: string;
+}
+
+export interface ProteinLookupFound extends ProteinLookupBase {
+  match: "found";
+  protein: ProteinEntry;
+}
+
+export interface ProteinLookupAmbiguous extends ProteinLookupBase {
+  match: "ambiguous";
+  /** At most 10 of the `candidateCount` matches. */
+  candidates: ProteinCandidate[];
+  candidateCount: number;
+}
+
+export interface ProteinLookupNotFound extends ProteinLookupBase {
+  match: "not_found";
+}
+
+/** Narrow on `match`. */
+export type ProteinLookupResponse =
+  | ProteinLookupFound
+  | ProteinLookupAmbiguous
+  | ProteinLookupNotFound;
+
 /**
  * Component scores.
  *
@@ -2515,6 +2613,15 @@ export interface SimilarPapersOptions {
   rerank?: boolean;
   /** Additional seed paper reference(s), same format as `id`. */
   anchor?: string[];
+}
+
+/** Options for `research.lookupProtein`. */
+export interface LookupProteinOptions {
+  /**
+   * NCBI taxon ID, scientific name or UniProt common name of the organism in
+   * which a gene symbol or protein name is looked up first (default `9606`).
+   */
+  organism?: string;
 }
 
 /**

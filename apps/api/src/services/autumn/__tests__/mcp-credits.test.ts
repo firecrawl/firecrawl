@@ -238,5 +238,90 @@ describe("the entity a charge is made against", () => {
         }),
       ]);
     });
+
+    // An MCP charge has no entity, so its properties are the only place that
+    // says which team made it.
+    it("names the team in the properties of every call, with or without an entity", async () => {
+      mockFetch.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              success: true,
+              allowed: true,
+              remaining: 100,
+              lock_id: "lock-1",
+            }),
+          ),
+      );
+      const service = new AutumnService();
+      const mcp = { ...charge, featureId: MCP_CREDITS_FEATURE_ID };
+
+      for (const params of [mcp, charge]) {
+        await service.checkCredits(params);
+        await service.lockCredits({ ...params, lockId: "lock-1" });
+        await service.trackCredits(params);
+        await service.refundCredits(params);
+      }
+
+      const named = (entityId: string, featureId: string, source?: string) =>
+        expect.objectContaining({
+          entity_id: entityId,
+          feature_id: featureId,
+          properties: {
+            ...charge.properties,
+            ...(source ? { source } : {}),
+            teamId: "team-1",
+          },
+        });
+      for (const path of ["/v1/check", "/v1/lock", "/v1/track"]) {
+        expect(bodies(path)).toEqual([
+          named("", MCP_CREDITS_FEATURE_ID),
+          named("team-1", "SEARCH_CREDITS"),
+        ]);
+      }
+      expect(bodies("/v1/refund")).toEqual([
+        named("", MCP_CREDITS_FEATURE_ID, "autumn_refund"),
+        named("team-1", "SEARCH_CREDITS", "autumn_refund"),
+      ]);
+    });
+
+    it("keeps the billed team over a teamId the caller passed", async () => {
+      mockFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ success: true })),
+      );
+
+      await new AutumnService().trackCredits({
+        ...charge,
+        featureId: MCP_CREDITS_FEATURE_ID,
+        properties: { ...charge.properties, teamId: "someone-else" },
+      });
+
+      expect(bodies("/v1/track")[0].properties.teamId).toBe("team-1");
+    });
+
+    it("names the team on a settle that knows it", async () => {
+      mockFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ success: true })),
+      );
+
+      await new AutumnService().finalizeCreditsLock({
+        lockId: "lock-1",
+        action: "confirm",
+        overrideValue: 3,
+        properties: { source: "alexandria", endpoint: "scrape" },
+        team: { teamId: "team-1", orgId: "org-1" },
+        featureId: MCP_CREDITS_FEATURE_ID,
+      });
+
+      expect(bodies("/v1/finalize")).toEqual([
+        expect.objectContaining({
+          properties: {
+            source: "alexandria",
+            endpoint: "scrape",
+            teamId: "team-1",
+          },
+        }),
+      ]);
+    });
   });
 });

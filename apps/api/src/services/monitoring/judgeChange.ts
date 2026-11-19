@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import type { Logger } from "winston";
 import { withUsageTelemetry } from "../../lib/ai-usage-telemetry";
+import { aiTelemetry } from "../../lib/ai-telemetry";
 import { isZeroDataRetentionActive } from "../../lib/otel-tracer";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
@@ -147,7 +148,7 @@ function judgeTelemetry(
   zeroDataRetention: boolean | undefined,
   functionId: string,
 ) {
-  return {
+  return aiTelemetry({
     isEnabled: !(zeroDataRetention || isZeroDataRetentionActive()),
     functionId: `monitor/${functionId}`,
     metadata: monitorTelemetryMetadata(
@@ -156,7 +157,7 @@ function judgeTelemetry(
         : "monitor_judge_validation_retry",
       labels,
     ),
-  };
+  });
 }
 
 async function callGemini(args: {
@@ -188,7 +189,7 @@ async function callGemini(args: {
         temperature: 0,
         abortSignal: controller.signal,
         // Each attempt is its own provider call, so each gets its own span.
-        experimental_telemetry: judgeTelemetry(
+        telemetry: judgeTelemetry(
           args.labels,
           args.zeroDataRetention,
           functionId,

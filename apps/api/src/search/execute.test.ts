@@ -97,6 +97,7 @@ const context = {
   origin: "api",
   apiKeyId: 1,
   flags: {},
+  teamPlanClass: undefined,
   requestId: "request-1",
   jobId: "job-1",
   apiVersion: "v2",
@@ -295,7 +296,9 @@ describe("executeSearch tool intent", () => {
   it.each([
     [{ scrapeZDR: "forced" }, true],
     [{ forceZDR: true }, true],
+    [{ alexandriaZDR: "forced" }, true],
     [{ scrapeZDR: "allowed" }, false],
+    [{ alexandriaZDR: "allowed" }, false],
     [{}, false],
   ])(
     "asks tool and skill discovery for zero-data-retention providers by team flags (%o)",
@@ -1410,5 +1413,37 @@ describe("executeSearch skill cards", () => {
       expect.objectContaining({ usOnly: true }),
       logger,
     );
+  });
+});
+
+describe("executeSearch team plan class", () => {
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "An example page.",
+  };
+
+  it("states the caller's plan class on the web search call", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(
+      options([]),
+      { ...context, teamPlanClass: "self_serve" },
+      logger,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ teamPlanClass: "self_serve" }),
+    );
+  });
+
+  it("states nothing when the caller knows no plan class", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(options([]), context, logger);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][0].teamPlanClass).toBeUndefined();
   });
 });

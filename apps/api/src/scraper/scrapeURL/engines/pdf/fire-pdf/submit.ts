@@ -60,6 +60,19 @@ type SubmitArgs = {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 };
 
+/** fire-pdf already holds a job under this scrape_id with different inputs,
+ * e.g. when the same scrape submits again after re-fetching the document.
+ * That job belongs to the earlier submit and must be left alone; the request
+ * can still be served by the synchronous endpoint, which has no job id. */
+export class FirePdfScrapeIdConflictError extends Error {
+  constructor() {
+    super(
+      "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
+    );
+    this.name = "FirePdfScrapeIdConflictError";
+  }
+}
+
 /**
  * The submit request may have reached FirePDF even though Firecrawl could not
  * observe a valid success response. The caller should best-effort DELETE the
@@ -255,9 +268,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
         body: json,
       },
     );
-    throw new Error(
-      "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
-    );
+    throw new FirePdfScrapeIdConflictError();
   }
 
   if (status === 400) {

@@ -59,6 +59,9 @@ export async function extractStatusController(
         agent = await getExtractV3AgentStatus(req.params.jobId);
       } catch (error) {
         if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+        if (error.retryAfterSeconds !== undefined) {
+          res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        }
         return res.status(error.status).json({
           success: false,
           code: error.code,

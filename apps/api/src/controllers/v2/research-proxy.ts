@@ -1,3 +1,4 @@
+import compression from "compression";
 import express, { Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { z } from "zod";
@@ -49,6 +50,7 @@ const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
 const PAPER_READ_TIMEOUT_MS = 120_000;
+const PROTEIN_LOOKUP_TIMEOUT_MS = 5_000;
 
 // The paper endpoints, all served by the Research Index and limited by its
 // daily budget.
@@ -114,6 +116,12 @@ const similarPapersSchema = z.strictObject({
     .optional()
     .transform(value => (value === undefined ? undefined : value === "true")),
   anchor: multiString,
+  ...commonQuery,
+});
+
+const proteinLookupSchema = z.strictObject({
+  protein: z.string().trim().min(1).max(200),
+  organism: z.string().trim().min(1).optional(),
   ...commonQuery,
 });
 
@@ -627,6 +635,7 @@ function paperId(req: Request) {
 
 export function createResearchRouter(options: { legacy?: boolean } = {}) {
   const router = express.Router();
+  router.use(compression({ threshold: 1024 }));
 
   if (options.legacy) {
     router.use((req, _res, next) => {
@@ -711,6 +720,23 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       return controller(authedReq, res);
     }),
   );
+
+  if (!options.legacy) {
+    router.get(
+      "/proteins",
+      wrap(
+        createResearchController(proteinLookupSchema, ["protein", "organism"], {
+          kind: "research_paper_inspect",
+          table: "research_paper_inspects",
+          action: "lookupProtein",
+          targetHint: params => `protein:${params.protein}`,
+          upstreamPath: () => "/v2/research/proteins",
+          timeoutMs: PROTEIN_LOOKUP_TIMEOUT_MS,
+          billAs: "scrape",
+        }),
+      ),
+    );
+  }
 
   return router;
 }

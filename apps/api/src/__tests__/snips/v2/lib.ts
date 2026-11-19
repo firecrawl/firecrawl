@@ -119,6 +119,10 @@ export type MonitorCreateInput = {
         crawlOptions?: Record<string, unknown>;
         scrapeOptions?: Record<string, unknown>;
       }
+    | {
+        type: "search";
+        queries: string[];
+      }
   >;
   retentionDays?: number;
   goal?: string;
