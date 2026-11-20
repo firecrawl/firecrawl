@@ -105,8 +105,9 @@ async function closeListenerResource(
   try {
     await closeAmqpResource(close, resource);
   } catch (err) {
-    logger.warn(`NuQ failed to close ${resource}`, {
+    logger.warn("NuQ failed to close listener resource", {
       module: "nuq/rabbitmq",
+      resource,
       err,
     });
   }
