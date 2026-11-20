@@ -1,4 +1,6 @@
 import {
+  MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES,
+  MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES,
   threatProtectionConfigSchema,
   threatProtectionOverrideSchema,
   threatProtectionPolicySchema,
@@ -158,6 +160,42 @@ describe("threatProtectionConfigSchema", () => {
       threatProtectionConfigSchema.parse({
         mode: "normal",
         siem: { url: "https://siem.example.com/ingest" },
+      }),
+    ).toThrow();
+  });
+
+  it("allows up to 10,000 blacklist/whitelist entries on org policy and caps overrides at 1,000", () => {
+    const orgEntries = Array.from(
+      { length: MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES },
+      (_, i) => `d${i}.example.com`,
+    );
+    expect(
+      threatProtectionConfigSchema.parse({
+        mode: "normal",
+        blacklist: orgEntries,
+      }).blacklist,
+    ).toHaveLength(MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES);
+
+    expect(() =>
+      threatProtectionConfigSchema.parse({
+        mode: "normal",
+        blacklist: [...orgEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    const overrideEntries = orgEntries.slice(
+      0,
+      MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES,
+    );
+    expect(
+      threatProtectionOverrideSchema.parse({
+        blacklist: overrideEntries,
+      }).blacklist,
+    ).toHaveLength(MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES);
+
+    expect(() =>
+      threatProtectionOverrideSchema.parse({
+        blacklist: [...overrideEntries, "overflow.example.com"],
       }),
     ).toThrow();
   });
