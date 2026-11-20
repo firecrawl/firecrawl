@@ -1,7 +1,10 @@
+import { EXPECTED_ERROR } from "./otel-tracer";
+
 const QUEUE_FULL_ERROR_NAME = "QueueFullError";
 
 export class QueueFullError extends Error {
   statusCode = 429;
+  [EXPECTED_ERROR] = true;
 
   constructor(queueSize: number, queueLimit: number) {
     super(

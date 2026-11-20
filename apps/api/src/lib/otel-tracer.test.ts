@@ -8,9 +8,14 @@ import {
   InMemorySpanExporter,
   type NodeTracerProvider,
 } from "@opentelemetry/sdk-trace-node";
+import { ZodError } from "zod";
 import {
   createTracerProvider,
+  EXPECTED_ERROR,
+  isExpectedError,
+  markExpectedError,
   recordSpanException,
+  recordUnhandledException,
   serializeTraceContext,
   setSpanAttributes,
   SpanKind,
@@ -103,6 +108,68 @@ describe("otel-tracer", () => {
       message: "boom",
     });
     expect(span.events.map(event => event.name)).toContain("exception");
+  });
+
+  it("flags unexpected errors as such and keeps their type", async () => {
+    await expect(
+      withSpan("test.unexpected", async () => {
+        throw new TypeError("null deref");
+      }),
+    ).rejects.toThrow("null deref");
+
+    const [span] = await exportedSpans();
+    expect(span.attributes["error.expected"]).toBe(false);
+    expect(span.attributes["error.code"]).toBeUndefined();
+    expect(span.events[0].attributes?.["exception.type"]).toBe("TypeError");
+  });
+
+  it("flags expected errors and records their code", async () => {
+    class CodedError extends Error {
+      code = "SCRAPE_SITE_ERROR";
+      [EXPECTED_ERROR] = true;
+    }
+
+    await expect(
+      withSpan("test.expected", async () => {
+        throw new CodedError("site down");
+      }),
+    ).rejects.toThrow("site down");
+
+    const [span] = await exportedSpans();
+    expect(span.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span.attributes["error.expected"]).toBe(true);
+    expect(span.attributes["error.code"]).toBe("SCRAPE_SITE_ERROR");
+    // The SDK names the exception after `code` when there is one.
+    expect(span.events[0].attributes?.["exception.type"]).toBe(
+      "SCRAPE_SITE_ERROR",
+    );
+  });
+
+  it("treats instance-marked errors and request validation as expected", () => {
+    expect(isExpectedError(markExpectedError(new Error("carrier")))).toBe(true);
+    expect(isExpectedError(new ZodError([]))).toBe(true);
+    expect(isExpectedError(new Error("plain"))).toBe(false);
+    expect(isExpectedError("not an object")).toBe(false);
+  });
+
+  it("records an unhandled error on the active span, or on a span of its own", async () => {
+    await withSpan("test.request", async () => {
+      recordUnhandledException(new Error("inside"), { "error.id": "a" });
+    });
+    recordUnhandledException(new Error("outside"), { "error.id": "b" });
+
+    const spans = await exportedSpans();
+    expect(spans.map(span => span.name)).toEqual([
+      "test.request",
+      "api.unhandled_error",
+    ]);
+    expect(spans[0].attributes["error.id"]).toBe("a");
+    expect(spans[0].events[0].attributes?.["exception.message"]).toBe("inside");
+    expect(spans[1].attributes["error.id"]).toBe("b");
+    expect(spans[1].attributes["error.expected"]).toBe(false);
+    expect(spans[1].events[0].attributes?.["exception.message"]).toBe(
+      "outside",
+    );
   });
 
   it("keeps the error status of a failure the span handled and returned from", async () => {
