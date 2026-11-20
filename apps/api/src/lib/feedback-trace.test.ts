@@ -247,6 +247,20 @@ describe("lineageIds", () => {
     ).toEqual({});
   });
 
+  it("names no conversation when the thread id was taken from the session", () => {
+    const borrowed = {
+      ...lineage,
+      thread_id: lineage.session_id,
+      thread_source: "session",
+    };
+    expect(ids(borrowed)).toEqual({ sessionId: "sess_01HZX" });
+    // The feedback trace keeps the thread as it was sent.
+    expect(trace(borrowed)).toMatchObject({
+      thread_id: "sess_01HZX",
+      thread_source: "session",
+    });
+  });
+
   it("drops an id that is malformed, looks like a secret or names no known source", () => {
     expect(ids({ ...lineage, session_id: "two words" })).toEqual({
       threadId: "thread:42.a-b",

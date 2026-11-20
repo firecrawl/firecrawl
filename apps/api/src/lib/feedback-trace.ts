@@ -63,14 +63,19 @@ function lineagePair<T extends string>(
   return { id, source: source as T };
 }
 
-/** The session and conversation ids of a hosted MCP call, when it sent usable ones. */
+/**
+ * The session and conversation ids of a hosted MCP call, when it sent usable
+ * ones. No conversation is named when its id is the session's own.
+ */
 export function lineageIds(req: TraceRequest): {
   sessionId?: string;
   threadId?: string;
 } {
   const lineage = mcpLineage(req);
   const sessionId = lineagePair(lineage, "session", SESSION_SOURCES).id;
-  const threadId = lineagePair(lineage, "thread", THREAD_SOURCES).id;
+  const thread = lineagePair(lineage, "thread", THREAD_SOURCES);
+  // A thread id borrowed from the session is not a conversation of its own.
+  const threadId = thread.source === "session" ? null : thread.id;
   return {
     ...(sessionId ? { sessionId } : {}),
     ...(threadId ? { threadId } : {}),
