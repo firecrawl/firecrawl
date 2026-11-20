@@ -545,7 +545,11 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
     }
     
     # Convert to dict and handle manual snake_case to camelCase conversion
-    options_data = validated_options.model_dump(exclude_none=True)
+    # Formats are converted from their original objects below. Do not serialize
+    # their schemas and options here only to discard that copy.
+    options_data = validated_options.model_dump(exclude_none=True, exclude={"formats"})
+    if validated_options.formats is not None:
+        options_data["formats"] = validated_options.formats
     
     # Apply defaults for None fields
     for field, default_value in default_values.items():
