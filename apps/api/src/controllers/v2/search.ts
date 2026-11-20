@@ -28,7 +28,11 @@ import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  getSearchForcedKind,
+  getSearchZDR,
+  isAlexandriaZDRForced,
+} from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
@@ -156,7 +160,10 @@ async function searchControllerInner(
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     const headerOrigin = req.headers["x-origin"];
-    const lineage = lineageIds(req);
+    // A team held to Alexandria zero data retention names no session or conversation.
+    const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
+      ? {}
+      : lineageIds(req);
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {

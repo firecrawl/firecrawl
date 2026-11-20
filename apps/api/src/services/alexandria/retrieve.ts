@@ -267,6 +267,7 @@ export async function retrieveProviders(input: {
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
   const ultrasearch = input.ultrasearch === true;
+  const catalogueOnly = input.calls.every(isCatalogueRead);
   // Sent with every execution. Outside the fingerprint, so a repeat of the id replays its answer.
   const caller = {
     feedbackStorage: alexandriaFeedbackStorage(input.teamId, input.flags),
@@ -276,6 +277,8 @@ export async function retrieveProviders(input: {
       : {}),
     ...(input.clientSession ? { clientSession: input.clientSession } : {}),
     ...(input.clientThread ? { clientThread: input.clientThread } : {}),
+    // A request made only of catalogue reads is one on whichever path runs it.
+    ...(catalogueOnly ? { searchRoute: "catalogue" as const } : {}),
   };
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
@@ -361,7 +364,7 @@ export async function retrieveProviders(input: {
   // and deadline. The answer is recorded like any other, so a repeat of the id replays it.
   const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
   if (
-    input.calls.every(isCatalogueRead) &&
+    catalogueOnly &&
     (!firecrawlAccess || firecrawlAccess.status === "enabled")
   ) {
     const read = await exchangeRequest({
@@ -380,7 +383,6 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...caller,
-      searchRoute: "catalogue",
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {

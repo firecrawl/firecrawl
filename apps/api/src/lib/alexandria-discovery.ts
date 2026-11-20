@@ -55,12 +55,14 @@ const LIBRARY_CONTRACT = new RegExp(
 
 /**
  * The tools whose contracts a library command named or listed, ranked by first
- * appearance: paths in the command, then paths in its output.
+ * appearance: paths in the command, then paths in its output. None while the
+ * switch is off.
  */
 export function libraryCommandTools(
   command: unknown,
   stdout: unknown,
 ): (ToolRef & { rank: number })[] {
+  if (!config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED) return [];
   const tools = new Map<string, ToolRef & { rank: number }>();
   for (const text of [command, stdout]) {
     if (typeof text !== "string") continue;

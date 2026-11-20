@@ -353,6 +353,15 @@ describe("the search that led to a call", () => {
       expect(mget.mock.calls[0][0]).toHaveLength(3);
     });
 
+    it("reads no tools out of a library command", () => {
+      expect(
+        libraryCommandTools(
+          "cat /library/weather/open-meteo/forecast/daily.md",
+          "/library/weather/open-meteo/geocoding/search.md\n",
+        ),
+      ).toEqual([]);
+    });
+
     it("names no search for entries recorded while it was on", async () => {
       config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = true;
       recordAt(0, "team", "search", "search-1", [forecast]);
