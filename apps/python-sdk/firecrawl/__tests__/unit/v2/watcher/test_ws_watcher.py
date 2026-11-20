@@ -510,7 +510,7 @@ def test_async_status_frame_skips_invalid_document_without_exposing_input(monkey
     assert [doc.markdown for doc in status.data] == ["valid status result"]
     assert [doc.markdown for doc in progress.data] == ["streamed"]
     assert final.status == "completed"
-    assert "Skipping invalid WebSocket document" in caplog.text
+    assert "Skipping invalid WebSocket document (string_type)" in caplog.text
     assert "private page content" not in caplog.text
 
 

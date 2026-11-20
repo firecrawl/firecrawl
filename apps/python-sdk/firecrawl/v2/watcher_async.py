@@ -214,8 +214,9 @@ class AsyncWatcher:
                 continue
             try:
                 documents.append(Document(**normalize_document_input(doc)))
-            except ValidationError:
-                logger.warning("Skipping invalid WebSocket document")
+            except ValidationError as exc:
+                error_type = exc.errors(include_input=False, include_context=False, include_url=False)[0]["type"]
+                logger.warning("Skipping invalid WebSocket document (%s)", error_type)
 
     def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Document]] = None):
         if docs_override is not None:
