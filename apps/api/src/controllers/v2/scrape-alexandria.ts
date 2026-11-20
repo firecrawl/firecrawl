@@ -9,7 +9,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+import { hasHostedMcpProxySecret } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -224,16 +224,14 @@ export async function providerScrapeController(
         .json({ success: false, error: "Invalid agent interop." });
   }
   // Trusted internal marker for zero-priced provider lines: honoured only with
-  // the proxy secret and never for `fco_` tokens, otherwise ignored.
+  // the hosted MCP proxy secret (or KEYLESS_PROXY_SECRET during rollout) and
+  // never for `fco_` tokens, otherwise ignored.
   const token = req.get("authorization")?.split(" ")[1];
   const ultrasearch =
     req.get("x-firecrawl-ultrasearch") === "true" &&
     !!token &&
     !token.startsWith("fco_") &&
-    timingSafeSecretEqual(
-      req.get("x-firecrawl-keyless-secret"),
-      config.KEYLESS_PROXY_SECRET,
-    );
+    hasHostedMcpProxySecret(req.headers, config);
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);

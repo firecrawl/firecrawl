@@ -159,6 +159,9 @@ const configSchema = z.object({
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
   KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Shared secret that lets the hosted MCP server identify authenticated
+  // API-key requests it relays without holding KEYLESS_PROXY_SECRET.
+  HOSTED_MCP_PROXY_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   // Dedicated HMAC key for joining keyless quota-exhaustion events to the
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
