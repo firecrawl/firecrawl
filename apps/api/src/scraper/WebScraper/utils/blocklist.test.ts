@@ -265,4 +265,115 @@ describe("isUrlBlocked", () => {
       );
     });
   });
+
+  describe("domain lookup work and exemptions", () => {
+    it("does not scan every entry when a URL is absent from a large list", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: {
+            blocklist: Array.from(
+              { length: 2000 },
+              (_, i) => `blocked-${i}.com`,
+            ),
+            allowedKeywords: [],
+          },
+        },
+      ];
+      await initializeBlocklist();
+
+      const startsWith = vi.spyOn(String.prototype, "startsWith");
+      const endsWith = vi.spyOn(String.prototype, "endsWith");
+      let blocked: boolean;
+      let comparisons: number;
+      try {
+        blocked = isUrlBlocked("https://unlisted.example.org/path", null);
+        comparisons = startsWith.mock.calls.length + endsWith.mock.calls.length;
+      } finally {
+        startsWith.mockRestore();
+        endsWith.mockRestore();
+      }
+
+      expect(blocked!).toBe(false);
+      expect(comparisons!).toBeLessThan(100);
+    });
+
+    it("keeps another TLD blocked when only one entry is exempt", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: {
+            blocklist: ["example.com", "example.net"],
+            allowedKeywords: [],
+          },
+        },
+      ];
+      await initializeBlocklist();
+
+      const oneExempt = { unblockedDomains: ["example.com"] } as TeamFlags;
+      expect(isUrlBlocked("https://example.com", oneExempt)).toBe(true);
+      expect(isUrlBlocked("https://example.org", oneExempt)).toBe(true);
+      const bothExempt = {
+        unblockedDomains: ["example.com", "example.net"],
+      } as TeamFlags;
+      expect(isUrlBlocked("https://example.org", bothExempt)).toBe(false);
+    });
+
+    it("preserves suffix matches and the short base-name restriction", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: { blocklist: ["co.uk", "ab.com"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+
+      expect(isUrlBlocked("https://shop.example.co.uk", null)).toBe(true);
+      expect(
+        isUrlBlocked("https://shop.example.co.uk", {
+          unblockedDomains: ["co.uk"],
+        } as TeamFlags),
+      ).toBe(false);
+      expect(isUrlBlocked("https://ab.com", null)).toBe(true);
+      expect(isUrlBlocked("https://ab.net", null)).toBe(false);
+    });
+
+    it("replaces global and org lookup data on reload", async () => {
+      dbState.rows = [
+        GLOBAL_ROW,
+        {
+          org_id: ORG_A,
+          data: { blocklist: ["old-org.example"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+      expect(isUrlBlocked("https://old-org.example", null, ctx(ORG_A))).toBe(
+        true,
+      );
+
+      dbState.rows = [
+        {
+          org_id: null,
+          data: { blocklist: ["new-global.com"], allowedKeywords: [] },
+        },
+        {
+          org_id: ORG_A,
+          data: { blocklist: ["new-org.example"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+      expect(isUrlBlocked("https://facebook.com", null, ctx(ORG_A))).toBe(
+        false,
+      );
+      expect(isUrlBlocked("https://old-org.example", null, ctx(ORG_A))).toBe(
+        false,
+      );
+      expect(isUrlBlocked("https://new-global.com", null, ctx(ORG_A))).toBe(
+        true,
+      );
+      expect(isUrlBlocked("https://new-org.example", null, ctx(ORG_A))).toBe(
+        true,
+      );
+    });
+  });
 });
