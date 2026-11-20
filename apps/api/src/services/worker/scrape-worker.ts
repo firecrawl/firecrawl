@@ -1627,9 +1627,8 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     zeroDataRetention: job.data.zeroDataRetention ?? false,
   });
 
-  const sc = await getCrawl(job.data.crawl_id);
-
   try {
+    const sc = await getCrawl(job.data.crawl_id);
     if (!sc) {
       logger.error("Crawl not found");
       return { success: false, error: "Crawl not found" };
