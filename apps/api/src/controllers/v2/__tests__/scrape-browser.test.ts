@@ -46,6 +46,7 @@ import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { scrapeQueue } from "../../../services/worker/nuq-router";
 import { redlock } from "../../../services/redlock";
 import { updateKeylessBrowserCredits } from "../../../lib/keyless";
+import { checkKeyProfileRestriction } from "../../../lib/key-restriction";
 
 vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
 vi.mock("../../../services/rate-limiter", () => ({
@@ -93,6 +94,9 @@ vi.mock("../../../lib/operational-job-access", () => ({
     teamId: "team-123",
     expiresAtMs: Date.now() + 60_000,
   })),
+}));
+vi.mock("../../../lib/key-restriction", () => ({
+  checkKeyProfileRestriction: vi.fn(async () => ({ allowed: true })),
 }));
 vi.mock("../../../lib/job-state-store", () => ({
   readScrapeJobState: vi.fn(async () => null),
@@ -809,6 +813,102 @@ describe("scrapeInteractController", () => {
     );
     expect(res.status).toHaveBeenCalledWith(status);
     expect(getHangarRecording).not.toHaveBeenCalled();
+  });
+
+  describe("saved browser profiles on a restricted key", () => {
+    const refusal = {
+      allowed: false as const,
+      status: 403,
+      error: "Request blocked: this API key cannot use saved browser profiles.",
+    };
+    const buildRequest = (extra: Record<string, unknown>) =>
+      ({
+        body: {},
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: {},
+        ...extra,
+      }) as any;
+    const session = {
+      id: "session-456",
+      team_id: "team-123",
+      browser_id: "br_profile",
+      status: "active",
+    };
+
+    it("refuses to open a session with a profile", async () => {
+      vi.mocked(checkKeyProfileRestriction).mockResolvedValueOnce(refusal);
+      const res = buildRes();
+      await browserCreateController(
+        buildRequest({ body: { profile: { name: "work" } } }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: refusal.error,
+      });
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
+
+    it("refuses a session another key opened with a profile", async () => {
+      vi.mocked(checkKeyProfileRestriction).mockResolvedValueOnce(refusal);
+      vi.mocked(getBrowserSession).mockResolvedValue({
+        ...session,
+        profile_name: "work",
+      } as any);
+      const res = buildRes();
+      await browserExecuteController(
+        buildRequest({
+          params: { sessionId: session.id },
+          body: { code: "console.log('ok')" },
+        }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(executeHangarBrowser).not.toHaveBeenCalled();
+    });
+
+    it("does not check a session that has no profile", async () => {
+      vi.mocked(getBrowserSession).mockResolvedValue(session as any);
+      vi.mocked(executeHangarBrowser).mockResolvedValue({
+        stdout: "ok",
+        result: "",
+        stderr: "",
+        exitCode: 0,
+        killed: false,
+      });
+      await browserExecuteController(
+        buildRequest({
+          params: { sessionId: session.id },
+          body: { code: "console.log('ok')" },
+        }),
+        buildRes(),
+      );
+      expect(checkKeyProfileRestriction).not.toHaveBeenCalled();
+      expect(executeHangarBrowser).toHaveBeenCalled();
+    });
+
+    it("refuses interact on a scrape that used a profile", async () => {
+      vi.mocked(checkKeyProfileRestriction).mockResolvedValueOnce(refusal);
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        profile: { name: "work", saveChanges: true },
+      } as any);
+      const res = buildRes();
+      await scrapeInteractController(
+        buildRequest({
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('ok')", url: "https://example.com" },
+        }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
   });
 
   describe("US-only teams", () => {

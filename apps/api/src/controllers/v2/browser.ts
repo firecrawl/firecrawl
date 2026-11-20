@@ -114,6 +114,20 @@ export function browserError(
   });
 }
 
+// A saved browser profile is refused for a key whose endpoint allowlist does
+// not name "profiles". Answers the request and returns true when refused.
+export async function refuseProfileForKey(
+  req: RequestWithAuth<any, any, any>,
+  res: Response,
+): Promise<boolean> {
+  const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+  if (keyRestriction.allowed) return false;
+  res
+    .status(keyRestriction.status)
+    .json({ success: false, error: keyRestriction.error });
+  return true;
+}
+
 export async function browserCreateController(
   req: RequestWithAuth<{}, any, any>,
   res: Response,
@@ -134,14 +148,7 @@ export async function browserCreateController(
       .status(403)
       .json({ success: false, error: "Invalid agent interop." });
   }
-  if (body.profile) {
-    const keyRestriction = await checkKeyProfileRestriction(req.acuc);
-    if (!keyRestriction.allowed) {
-      return res
-        .status(keyRestriction.status)
-        .json({ success: false, error: keyRestriction.error });
-    }
-  }
+  if (body.profile && (await refuseProfileForKey(req, res))) return;
   try {
     const { session, expiresAt } = await createBrowserSession(req, {
       ...body,
@@ -174,6 +181,8 @@ async function resolveBrowserSession(
     res.status(403).json({ success: false, error: "Forbidden." });
     return;
   }
+  // The session may have been opened with a profile by another key.
+  if (session.profile_name && (await refuseProfileForKey(req, res))) return;
   return session;
 }
 

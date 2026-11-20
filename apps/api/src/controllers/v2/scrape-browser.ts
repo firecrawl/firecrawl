@@ -22,7 +22,11 @@ import {
   browserSessionLinks,
   invalidAgentInteropError,
 } from "../../lib/browser-lifecycle";
-import { browserCreateRequestSchema, browserError } from "./browser";
+import {
+  browserCreateRequestSchema,
+  browserError,
+  refuseProfileForKey,
+} from "./browser";
 import {
   buildReplayContextFromScrape,
   estimateReplayTimeoutSeconds,
@@ -54,7 +58,6 @@ import { integrationSchema } from "../../utils/integration";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
-import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import {
   type BrowserOptions,
   browserOptionsFromScrape,
@@ -239,6 +242,8 @@ async function scrapeInteractInternal(
   // --- Ensure a browser session exists (create + replay if needed) ---
 
   let session = storedSession;
+  // A session to reuse may have been opened with a profile by another key.
+  if (session?.profile_name && (await refuseProfileForKey(req, res))) return;
 
   if (!session && req.body.existingSessionId) {
     const existing = await withZeroDataRetention(true, () =>
@@ -249,6 +254,8 @@ async function scrapeInteractInternal(
       existing.team_id === req.auth.team_id &&
       existing.status === "active"
     ) {
+      if (existing.profile_name && (await refuseProfileForKey(req, res)))
+        return;
       zeroDataRetention = getBrowserZDR(req, existing, zeroDataRetention);
       logger = logger.child({ zeroDataRetention });
       await withZeroDataRetention(zeroDataRetention, () =>
@@ -295,14 +302,7 @@ async function scrapeInteractInternal(
           : { profile: state?.profile },
       );
     // The scrape may have been started by another key of the team.
-    if (browserOptions.profile) {
-      const keyRestriction = await checkKeyProfileRestriction(req.acuc);
-      if (!keyRestriction.allowed) {
-        return res
-          .status(keyRestriction.status)
-          .json({ success: false, error: keyRestriction.error });
-      }
-    }
+    if (browserOptions.profile && (await refuseProfileForKey(req, res))) return;
     const created = await createSessionForScrape(
       req,
       scrapeId,
@@ -493,6 +493,7 @@ export async function scrapeStopInteractiveBrowserController(
       .json({ success: false, error: "Browser session not found." });
   if (session.team_id !== req.auth.team_id)
     return res.status(403).json({ success: false, error: "Forbidden." });
+  if (session.profile_name && (await refuseProfileForKey(req, res))) return;
   try {
     return res.json(await stopBrowserSession(session));
   } catch (error) {
