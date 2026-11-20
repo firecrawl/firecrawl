@@ -14,6 +14,9 @@ vi.mock("@dqbd/tiktoken", async importOriginal => {
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn((name: string) => ({ modelId: name })),
 }));
+// Cost accounting is outside these query behavior tests. Importing the full
+// extraction module also initializes unrelated native document backends.
+vi.mock("./llmExtract", () => ({ calculateCost: vi.fn(() => 0) }));
 
 import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
@@ -109,6 +112,30 @@ describe("keepWholeLines", () => {
 });
 
 describe("performQuery highlights", () => {
+  it.each(["highlights", "directQuote"])(
+    "preserves selected code indentation in %s without changing model lines",
+    async mode => {
+      respond("[0,1]");
+      const markdown = "```python\nif active:\n    run()\n```";
+      const document: any = { markdown, metadata: {} };
+      const format =
+        mode === "highlights"
+          ? { type: "highlights", query: "How is the task run?" }
+          : { type: "query", prompt: "How is the task run?", mode };
+
+      await performQuery(makeMeta([format]), document);
+
+      expect(sentLines(calls()[0].prompt)).toEqual([
+        "0: if active:",
+        "1: run()",
+      ]);
+      expect(document[mode === "highlights" ? "highlights" : "answer"]).toBe(
+        markdown,
+      );
+      expect(document.warning).toBeUndefined();
+    },
+  );
+
   it("keeps whole lines within the model's context window", async () => {
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
