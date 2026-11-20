@@ -13,11 +13,20 @@ export function parseWithSchema(value: unknown, jsonSchema: unknown): unknown {
   return dedupeArrays(cleaned);
 }
 
-const normalizeKey = (k: string): string =>
-  k
-    .normalize("NFC")
-    .replace(/[^\p{L}\p{N}\p{M}]/gu, "")
-    .toLowerCase();
+const normalizeKey = (k: string): string => {
+  let folded = "";
+  // Removing separators can bring a combining mark back beside its base.
+  for (const char of k.replace(/[^\p{L}\p{N}\p{M}]/gu, "").normalize("NFC")) {
+    // Fold each code point independently so sigma does not depend on word
+    // position. Default caseless matching keeps dotless i distinct; capital
+    // sharp S lowers to ß and needs the same expansion as lowercase sharp S.
+    folded +=
+      char === "ı"
+        ? char
+        : char.toUpperCase().toLowerCase().replace(/ß/g, "ss");
+  }
+  return folded.normalize("NFC");
+};
 
 function remapKeys(value: unknown, schema: unknown): unknown {
   if (!isObject(schema)) return value;

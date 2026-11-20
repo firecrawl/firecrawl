@@ -141,3 +141,70 @@ describe("schema key aliases", () => {
     expect(JSON.stringify({ input, schema })).toBe(before);
   });
 });
+
+describe("Unicode casing and separator order", () => {
+  it.each([
+    ["ΟΣ", "οσ"],
+    ["ΟΣ", "ος"],
+    ["οσ", "ΟΣ"],
+    ["ος", "οσ"],
+    ["Straße", "STRASSE"],
+    ["STRAẞE", "Straße"],
+    ["Strasse", "Straße"],
+    ["μg", "µG"],
+    ["st", "ﬅ"],
+    ["st", "ﬆ"],
+    ["é", "e-\u0301"],
+    ["ΐ", "ι-\u0308\u0301"],
+  ])("maps the caseless alias %s <- %s", (canonical, alias) => {
+    expect(
+      parseWithSchema(
+        { [alias]: "value" },
+        { properties: { [canonical]: { type: "string" } } },
+      ),
+    ).toEqual({ [canonical]: "value" });
+  });
+
+  it.each([
+    ["ΟΣ", "οσ", "ο-σ"],
+    ["οσ", "ΟΣ", "ο-σ"],
+    ["Straße", "Strasse", "STRASSE"],
+    ["Strasse", "Straße", "STRASSE"],
+  ])("retains ambiguous caseless input for %s / %s", (first, second, alias) => {
+    const input = { [alias]: "keep" };
+    expect(
+      parseWithSchema(input, {
+        properties: {
+          [first]: { type: "string" },
+          [second]: { type: "string" },
+        },
+      }),
+    ).toEqual(input);
+  });
+
+  it("preserves exact spelling even when case folding creates collisions", () => {
+    const input = { ΟΣ: "one", οσ: "two", Straße: "three", Strasse: "four" };
+    expect(
+      parseWithSchema(input, {
+        properties: Object.fromEntries(
+          Object.keys(input).map(key => [key, { type: "string" }]),
+        ),
+      }),
+    ).toEqual(input);
+  });
+
+  it("keeps dotless, dotted and ordinary i keys distinct", () => {
+    expect(
+      parseWithSchema(
+        { ID: "ordinary", ıd: "dotless", İD: "dotted" },
+        {
+          properties: {
+            id: { type: "string" },
+            ıd: { type: "string" },
+            "i\u0307d": { type: "string" },
+          },
+        },
+      ),
+    ).toEqual({ id: "ordinary", ıd: "dotless", "i\u0307d": "dotted" });
+  });
+});
