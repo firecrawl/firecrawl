@@ -63,6 +63,20 @@ function lineagePair<T extends string>(
   return { id, source: source as T };
 }
 
+/** The session and conversation ids of a hosted MCP call, when it sent usable ones. */
+export function lineageIds(req: TraceRequest): {
+  sessionId?: string;
+  threadId?: string;
+} {
+  const lineage = mcpLineage(req);
+  const sessionId = lineagePair(lineage, "session", SESSION_SOURCES).id;
+  const threadId = lineagePair(lineage, "thread", THREAD_SOURCES).id;
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(threadId ? { threadId } : {}),
+  };
+}
+
 /**
  * The ids that tie a feedback row to the request and conversation it came
  * from. The lineage header is read for hosted MCP calls only. Anything

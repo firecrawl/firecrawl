@@ -1258,6 +1258,60 @@ it("keeps who is calling out of the request fingerprint", async () => {
   expect(executions()).toHaveLength(1);
 });
 
+it.each(["find-tools", "library"])(
+  "marks a %s read as a catalogue read and passes on the caller's session and conversation",
+  async capability => {
+    const read = { provider: "firecrawl", capability, options: {} };
+    free([{ ...read, creditsCost: 0, data: {} }]);
+    await run({
+      calls: [read],
+      clientSession: "sess_01A",
+      clientThread: "thread:42.a-b",
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(executions()[0][0]).toMatchObject({
+      searchRoute: "catalogue",
+      clientSession: "sess_01A",
+      clientThread: "thread:42.a-b",
+    });
+  },
+);
+
+it("names no session or conversation on a catalogue read that carried none", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  free([{ ...read, creditsCost: 0, data: {} }]);
+  await run({ calls: [read] });
+  expect(executions()[0][0].searchRoute).toBe("catalogue");
+  expect(executions()[0][0]).not.toHaveProperty("clientSession");
+  expect(executions()[0][0]).not.toHaveProperty("clientThread");
+});
+
+it("passes the session and conversation on a provider execution, with no route, and never on the quote", async () => {
+  await run({ clientSession: "sess_01A", clientThread: "thread:42.a-b" });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0]).toMatchObject({
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  });
+  expect(executions()[0][0]).not.toHaveProperty("searchRoute");
+  for (const [arg] of mocks.request.mock.calls.filter(
+    ([arg]) => arg.path !== "/v1/retrieve",
+  )) {
+    expect(arg).not.toHaveProperty("clientSession");
+    expect(arg).not.toHaveProperty("clientThread");
+    expect(arg).not.toHaveProperty("searchRoute");
+  }
+});
+
+it("keeps the session and conversation out of the request fingerprint", async () => {
+  expect((await run({ clientThread: "thread:42.a-b" })).executed).toBe(true);
+  expect(await run({ clientThread: "thread:43" })).toMatchObject({
+    status: 200,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
 it("runs a free Firecrawl capability without a hold or a charge and returns its answer whole", async () => {
   const report = {
     provider: "firecrawl",

@@ -67,6 +67,7 @@ import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
 import type { TeamPlanClass } from "../lib/team-plan-class";
 import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
 
 interface SearchOptions {
   query: string;
@@ -100,6 +101,10 @@ interface SearchContext {
   orgId?: string | null;
   origin: string;
   integration?: string | null;
+  /** The origin as the caller named it, and its session and conversation ids. Labels for Exchange only. */
+  clientOrigin?: string;
+  clientSession?: string;
+  clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
   /**
@@ -254,6 +259,20 @@ export async function executeSearch(
     raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
     rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
   };
+  // Tells Exchange who is searching and how; sent with each find-tools lookup.
+  const exchangeCaller = config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED
+    ? {
+        feedbackStorage: alexandriaFeedbackStorage(teamId, flags),
+        clientOrigin: context.clientOrigin,
+        clientIntegration: context.integration,
+        searchRoute: wantsTools
+          ? ("search_source" as const)
+          : ("search_auto" as const),
+        clientSession: context.clientSession,
+        clientThread: context.clientThread,
+        query,
+      }
+    : undefined;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -276,6 +295,7 @@ export async function executeSearch(
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
               exchangeRequestIds: toolRequestIds.rewrite,
+              exchangeCaller,
             },
             logger,
           );
@@ -327,6 +347,7 @@ export async function executeSearch(
                   }),
             timeoutMs: options.timeout,
             exchangeRequestIds: toolRequestIds.raw,
+            exchangeCaller,
           },
           logger,
         )

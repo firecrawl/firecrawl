@@ -193,6 +193,9 @@ export async function retrieveProviders(input: {
   /** The caller's origin and integration, when the request named them. Labels only. */
   clientOrigin?: string;
   clientIntegration?: string;
+  /** The caller's session and conversation ids, when the request carried them. Labels only. */
+  clientSession?: string;
+  clientThread?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -271,6 +274,8 @@ export async function retrieveProviders(input: {
     ...(input.clientIntegration
       ? { clientIntegration: input.clientIntegration }
       : {}),
+    ...(input.clientSession ? { clientSession: input.clientSession } : {}),
+    ...(input.clientThread ? { clientThread: input.clientThread } : {}),
   };
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
@@ -375,6 +380,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...caller,
+      searchRoute: "catalogue",
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
