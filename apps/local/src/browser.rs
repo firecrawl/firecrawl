@@ -6,7 +6,10 @@
 
 use std::{
   path::PathBuf,
-  sync::{Arc, Mutex as StdMutex},
+  sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex as StdMutex,
+  },
   time::{Duration, Instant},
 };
 
@@ -15,7 +18,8 @@ use chromiumoxide::{
   cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, ResourceType,
   },
-  page::ScreenshotParams,
+  error::CdpError,
+  page::{Page, ScreenshotParams},
 };
 use futures::StreamExt;
 use tokio::sync::{Mutex, Semaphore};
@@ -207,12 +211,63 @@ pub struct Rendered {
   pub screenshot_png: Option<Vec<u8>>,
 }
 
+struct TemporaryProfile(PathBuf);
+
+impl Drop for TemporaryProfile {
+  fn drop(&mut self) {
+    let _ = std::fs::remove_dir_all(&self.0);
+  }
+}
+
 struct Launched {
   browser: Browser,
   handler: tokio::task::JoinHandle<()>,
-  profile: PathBuf,
+  profile: TemporaryProfile,
   /// Every connection Chrome makes goes through this; dropped with Chrome.
   _proxy: crate::netguard::GuardProxy,
+}
+
+impl Drop for Launched {
+  fn drop(&mut self) {
+    self.handler.abort();
+  }
+}
+
+impl Launched {
+  fn is_running(&mut self) -> bool {
+    !self.handler.is_finished() && matches!(self.browser.try_wait(), Ok(None))
+  }
+
+  async fn shutdown(&mut self) {
+    let grace = Duration::from_secs(3);
+    let disconnected = !self.is_running();
+    let force = if disconnected {
+      !matches!(self.browser.try_wait(), Ok(Some(_)))
+    } else {
+      !matches!(
+        tokio::time::timeout(grace, self.browser.close()).await,
+        Ok(Ok(_))
+      ) || !matches!(
+        tokio::time::timeout(grace, self.browser.wait()).await,
+        Ok(Ok(_))
+      )
+    };
+    if force {
+      let _ = tokio::time::timeout(grace, self.browser.kill()).await;
+    }
+    if disconnected || force {
+      // Chromium's network process can finish writing after its parent exits.
+      tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    self.handler.abort();
+    for _ in 0..2 {
+      match tokio::fs::remove_dir_all(&self.profile.0).await {
+        Ok(()) => break,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+        Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+      }
+    }
+  }
 }
 
 pub struct BrowserPool {
@@ -220,6 +275,7 @@ pub struct BrowserPool {
   policy: NetworkPolicy,
   user_agent: String,
   launched: Mutex<Option<Launched>>,
+  closed: AtomicBool,
   pages: Semaphore,
 }
 
@@ -273,22 +329,17 @@ impl BrowserPool {
       policy,
       user_agent: user_agent.to_string(),
       launched: Mutex::new(None),
+      closed: AtomicBool::new(false),
       pages: Semaphore::new(max_pages.max(1)),
     }))
   }
 
-  async fn ensure_launched(&self) -> Result<(), String> {
-    let mut guard = self.launched.lock().await;
-    if guard.is_some() {
-      return Ok(());
-    }
+  async fn launch(&self) -> Result<Launched, String> {
     let profile = std::env::temp_dir().join(format!(
       "firecrawl-local-chrome-{}-{}",
       std::process::id(),
       uuid::Uuid::new_v4().simple()
     ));
-    std::fs::create_dir_all(&profile)
-      .map_err(|e| format!("could not create a browser profile: {e}"))?;
     // Chrome does its own networking, so it is sent through a loopback proxy
     // that applies the network policy to every connection it opens: the
     // page, its redirects, subresources, scripts' requests and WebSockets.
@@ -314,9 +365,12 @@ impl BrowserPool {
       .args(proxy.chrome_args())
       .build()
       .map_err(|e| format!("browser configuration failed: {e}"))?;
+    std::fs::create_dir_all(&profile)
+      .map_err(|e| format!("could not create a browser profile: {e}"))?;
+    let profile = TemporaryProfile(profile);
     let (browser, mut handler) = Browser::launch(config)
       .await
-      .map_err(|e| chrome_start_error(&self.chrome, &e.to_string()))?;
+      .map_err(|error| chrome_start_error(&self.chrome, &error.to_string()))?;
     let handler = tokio::spawn(async move {
       while let Some(event) = handler.next().await {
         if event.is_err() {
@@ -324,13 +378,55 @@ impl BrowserPool {
         }
       }
     });
-    *guard = Some(Launched {
+    Ok(Launched {
       browser,
       handler,
       profile,
       _proxy: proxy,
-    });
-    Ok(())
+    })
+  }
+
+  async fn new_page(&self) -> Result<Page, String> {
+    let mut guard = self.launched.lock().await;
+    if self.closed.load(Ordering::Relaxed) {
+      return Err("the browser pool is closed".into());
+    }
+    let mut may_retry = true;
+    loop {
+      if !guard.as_mut().is_some_and(Launched::is_running) {
+        if let Some(mut stale) = guard.take() {
+          stale.shutdown().await;
+        }
+        *guard = Some(self.launch().await?);
+        // A freshly launched browser has already exercised the recovery path.
+        may_retry = false;
+      }
+      let launched = guard.as_ref().ok_or("browser is not running")?;
+      let result = tokio::time::timeout(
+        Duration::from_secs(8),
+        launched.browser.new_page("about:blank"),
+      )
+      .await
+      .unwrap_or(Err(CdpError::Timeout));
+      if !matches!(
+        &result,
+        Err(
+          CdpError::Timeout
+            | CdpError::NoResponse
+            | CdpError::ChannelSendError(_)
+            | CdpError::Ws(_)
+        )
+      ) {
+        return result.map_err(|error| format!("could not open a tab: {error}"));
+      }
+      if let Some(mut stale) = guard.take() {
+        stale.shutdown().await;
+      }
+      if !may_retry {
+        return result.map_err(|error| format!("could not open a tab: {error}"));
+      }
+      may_retry = false;
+    }
   }
 
   /// Load a page, let it settle, and return its rendered HTML.
@@ -342,25 +438,19 @@ impl BrowserPool {
     screenshot: bool,
   ) -> Result<Rendered, String> {
     guard::check_url(url, self.policy).map_err(|e| e.0)?;
-    let _permit = self.pages.acquire().await.map_err(|e| e.to_string())?;
-    self.ensure_launched().await?;
-
-    let page = {
-      let guard = self.launched.lock().await;
-      let launched = guard.as_ref().ok_or("browser is not running")?;
-      launched
-        .browser
-        .new_page("about:blank")
-        .await
-        .map_err(|e| format!("could not open a tab: {e}"))?
-    };
-
-    let result = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)).await;
-    let _ = page.close().await;
-    match result {
-      Ok(r) => r,
-      Err(_) => Err("the page did not finish loading in time".to_string()),
-    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    let timeout_error = || "the page did not finish loading in time".to_string();
+    let _permit = tokio::time::timeout_at(deadline, self.pages.acquire())
+      .await
+      .map_err(|_| timeout_error())?
+      .map_err(|error| error.to_string())?;
+    let page = tokio::time::timeout_at(deadline, self.new_page())
+      .await
+      .map_err(|_| timeout_error())??;
+    let result =
+      tokio::time::timeout_at(deadline, self.drive(&page, url, wait_for, screenshot)).await;
+    let _ = tokio::time::timeout(Duration::from_secs(1), page.close()).await;
+    result.map_err(|_| timeout_error())?
   }
 
   async fn drive(
@@ -488,11 +578,10 @@ impl BrowserPool {
 
   /// Stop Chrome and delete its throwaway profile.
   pub async fn shutdown(&self) {
-    if let Some(mut launched) = self.launched.lock().await.take() {
-      let _ = launched.browser.close().await;
-      let _ = tokio::time::timeout(Duration::from_secs(3), launched.browser.wait()).await;
-      launched.handler.abort();
-      let _ = std::fs::remove_dir_all(&launched.profile);
+    let mut guard = self.launched.lock().await;
+    self.closed.store(true, Ordering::Relaxed);
+    if let Some(mut launched) = guard.take() {
+      launched.shutdown().await;
     }
   }
 }
@@ -778,6 +867,56 @@ fn chrome_start_error(chrome: &std::path::Path, detail: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  #[ignore = "requires a sandbox-capable Chromium installation"]
+  async fn reopens_tabs_after_the_browser_process_dies() {
+    assert_recovers(false).await;
+  }
+
+  #[tokio::test]
+  #[ignore = "requires a sandbox-capable Chromium installation"]
+  async fn reopens_tabs_after_the_handler_disconnects() {
+    assert_recovers(true).await;
+  }
+
+  async fn assert_recovers(disconnect_only: bool) {
+    let pool = BrowserPool::new(NetworkPolicy::PublicOnly, "firecrawl-local-test", 2)
+      .expect("install Chromium or set FIRECRAWL_CHROME_PATH");
+    pool.new_page().await.unwrap().close().await.unwrap();
+    let dead_profile = {
+      let mut guard = pool.launched.lock().await;
+      let launched = guard.as_mut().unwrap();
+      if disconnect_only {
+        launched.handler.abort();
+        assert!((&mut launched.handler).await.unwrap_err().is_cancelled());
+        assert!(launched.browser.try_wait().unwrap().is_none());
+      } else {
+        launched.browser.kill().await.unwrap().unwrap();
+      }
+      launched.profile.0.clone()
+    };
+
+    let (first, second) = tokio::join!(pool.new_page(), pool.new_page());
+    let replacement = pool
+      .launched
+      .lock()
+      .await
+      .as_ref()
+      .unwrap()
+      .profile
+      .0
+      .clone();
+    let first = first.unwrap();
+    let second = second.unwrap();
+    first.close().await.unwrap();
+    second.close().await.unwrap();
+    pool.shutdown().await;
+    assert_ne!(dead_profile, replacement);
+    assert!(!dead_profile.exists());
+    assert!(!replacement.exists());
+    assert!(pool.new_page().await.is_err());
+  }
 
   #[test]
   fn a_sandbox_failure_is_explained() {
