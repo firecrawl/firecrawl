@@ -50,8 +50,9 @@ export const checkUrl = (url: string) => {
     throw new Error("Invalid URL");
   }
 
-  if ((url.split(".")[0].match(/:/g) || []).length !== 1) {
-    throw new Error("Invalid URL. Invalid protocol."); // for this one: http://http://example.com
+  // Reject a second scheme in the authority without counting IPv6 or port colons.
+  if (/^https?:\/\/[^\/?#@\[\]:]+:\/\//i.test(url)) {
+    throw new Error("Invalid URL. Invalid protocol.");
   }
 
   return url;

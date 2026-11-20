@@ -60,4 +60,34 @@ describe.each([
     expect(result.success).toBe(false);
     expect(result.error!.issues[0].message).toContain("top-level domain");
   });
+
+  it.each([
+    "http://[2607:f8b0:4004:c07::71]/",
+    "https://[2607:f8b0:4004:c07::71]:8443/path",
+    "https://[2001:4860:4860::8888]/search?q=test",
+    "https://[::1]/",
+    "https://example.com:8080/",
+    "http://93.184.216.34/",
+    "https://user:pass@example.com/",
+    "https://example.com/docs/http://example.org",
+  ])("accepts valid HTTP(S) URLs: %s", value => {
+    const result = parse({ url: value });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.url).toBe(value);
+  });
+
+  it.each([
+    "http://http://example.com",
+    "https://https://example.com",
+    "http://ftp://example.com",
+    "http://1http://example.com",
+    "http://_x://example.com",
+    "http://\thttp://example.com",
+    "http://\nhttp://example.com",
+    "ftp://example.com/",
+    "https://[::::]/",
+  ])("rejects invalid or repeated schemes: %s", value => {
+    expect(parse({ url: value }).success).toBe(false);
+  });
 });
