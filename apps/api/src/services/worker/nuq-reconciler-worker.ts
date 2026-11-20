@@ -10,6 +10,7 @@ import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { Worker } from "bullmq";
 import {
   getBillingQueue,
+  getChangeTrackingPurgeQueue,
   getFirebillTrackRetryQueue,
   getPrecrawlQueue,
   getRedisConnection,
@@ -19,6 +20,10 @@ import {
   firebillConfigured,
   processFirebillTrackRetry,
 } from "../autumn/firebill";
+import {
+  changeTrackingPurgeConfigured,
+  processChangeTrackingPurge,
+} from "../change-tracking-purge";
 import { startRole } from "../../main";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
@@ -50,6 +55,7 @@ export async function start() {
     getFirebillTrackRetryQueue(),
     getBillingQueue(),
     getPrecrawlQueue(),
+    getChangeTrackingPurgeQueue(),
   ]);
 
   app.get("/metrics", async (_, res) => {
@@ -95,12 +101,32 @@ export async function start() {
     _logger.error("firebill track retry worker error", { error });
   });
 
+  // Deletes the change tracking rows of deleted teams. A pod lost mid-purge
+  // leaves the job stalled; the next consumer reruns it from the start.
+  const changeTrackingPurgeWorker = changeTrackingPurgeConfigured()
+    ? new Worker(
+        getChangeTrackingPurgeQueue().name,
+        processChangeTrackingPurge,
+        {
+          connection: getRedisConnection(),
+          concurrency: 2,
+          maxStalledCount: 10,
+        },
+      )
+    : undefined;
+  changeTrackingPurgeWorker?.on("error", error => {
+    _logger.error("change tracking purge worker error", { error });
+  });
+
   async function shutdown() {
     if (isShuttingDown) return;
     isShuttingDown = true;
     _logger.info("NuQ reconciler worker shutting down");
 
-    await firebillTrackRetryWorker?.close();
+    await Promise.allSettled([
+      firebillTrackRetryWorker?.close(),
+      changeTrackingPurgeWorker?.close(),
+    ]);
 
     while (reconcilerInFlight) {
       _logger.info("Waiting for in-flight reconciliation to complete...");

@@ -10,6 +10,7 @@ import {
   getBillingQueue,
   getPrecrawlQueue,
   getFirebillTrackRetryQueue,
+  getChangeTrackingPurgeQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
 import { livenessController, readinessController } from "./controllers/health";
@@ -115,6 +116,7 @@ const bullBoardQueues = [
   new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
   new BullMQAdapter(getFirebillTrackRetryQueue()),
+  new BullMQAdapter(getChangeTrackingPurgeQueue()),
   // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
   // management UI, not here.
 ];

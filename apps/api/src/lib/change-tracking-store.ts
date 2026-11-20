@@ -26,6 +26,9 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 const FAMILY = "m";
 const QUALIFIER = "job";
 const TABLE_ID = config.BIGTABLE_CHANGE_TRACKING_TABLE || "change_tracking";
+const TEAM_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DELETE_BATCH_ROWS = 1000;
 
 function sha256(data: crypto.BinaryLike): Buffer {
   return crypto.createHash("sha256").update(data).digest();
@@ -137,4 +140,68 @@ export async function changeTrackingGetLastScrape(params: {
     job_id: String(cell.value),
     date_added: dateAdded.toISOString(),
   };
+}
+
+/**
+ * Deletes every change tracking row of a team and returns how many it deleted.
+ * Safe to rerun: a pass that failed partway deletes what is left.
+ */
+export async function changeTrackingDeleteTeam(
+  teamId: string,
+): Promise<number> {
+  // A lowercase UUID is fixed-width, so its prefix is that team's rows and no
+  // other's. Anything shorter, an empty string included, could span the table.
+  if (!TEAM_ID.test(teamId)) {
+    throw new Error(`Expected a lowercase team UUID, received ${teamId}`);
+  }
+
+  const table = await getBigtableTable(TABLE_ID);
+  const prefix = Buffer.from(teamId, "utf8");
+  const prefixEnd = Buffer.from(prefix);
+  prefixEnd[prefixEnd.length - 1]++;
+
+  return withSpan("bigtable.change_tracking.delete_team", async span => {
+    setSpanAttributes(span, {
+      "db.system": "bigtable",
+      "bigtable.table": TABLE_ID,
+      "bigtable.operation": "deleteTeam",
+    });
+    let deleted = 0;
+    let after: Buffer | null = null;
+    for (;;) {
+      const [rows] = await table.getRows({
+        ranges: [
+          {
+            start: after
+              ? { value: after, inclusive: false }
+              : { value: prefix, inclusive: true },
+            end: { value: prefixEnd, inclusive: false },
+          },
+        ],
+        limit: DELETE_BATCH_ROWS,
+        filter: [{ row: { cellLimit: 1 } }, { value: { strip: true } }],
+        // Keys end in raw digest bytes. Decoded as text they would no longer
+        // name the stored rows, and the deletes below would match nothing.
+        decode: false,
+      });
+      if (rows.length === 0) break;
+
+      const keys = rows.map(row => row.id as unknown);
+      if (!keys.every(key => Buffer.isBuffer(key))) {
+        throw new Error(
+          "Bigtable returned decoded row keys; refusing to delete",
+        );
+      }
+      await table.mutate(
+        keys.map(key => ({
+          key: key as unknown as string,
+          method: "delete" as const,
+        })),
+      );
+      deleted += keys.length;
+      after = keys[keys.length - 1];
+    }
+    setSpanAttributes(span, { "bigtable.rows_deleted": deleted });
+    return deleted;
+  });
 }

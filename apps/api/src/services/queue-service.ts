@@ -12,6 +12,7 @@ let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
 let firebillTrackRetryQueue: Queue<FirebillRetryJobData>;
+let changeTrackingPurgeQueue: Queue<ChangeTrackingPurgeJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -31,6 +32,7 @@ const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
 const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
+const changeTrackingPurgeQueueName = "{changeTrackingPurgeQueue}";
 
 /** A usage event firebill never confirmed, re-sent as the identical event. */
 export type FirebillTrackRetryJobData = TrackParams & {
@@ -53,6 +55,9 @@ export type FirebillFinalizeRetryJobData = {
 export type FirebillRetryJobData =
   | FirebillTrackRetryJobData
   | FirebillFinalizeRetryJobData;
+
+/** A deleted team whose change tracking rows are to be removed. */
+export type ChangeTrackingPurgeJobData = { teamId: string };
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -135,6 +140,26 @@ export function getFirebillTrackRetryQueue() {
     );
   }
   return firebillTrackRetryQueue;
+}
+
+export function getChangeTrackingPurgeQueue() {
+  if (!changeTrackingPurgeQueue) {
+    changeTrackingPurgeQueue = new Queue<ChangeTrackingPurgeJobData>(
+      changeTrackingPurgeQueueName,
+      {
+        connection: getRedisConnection(),
+        defaultJobOptions: {
+          removeOnComplete: {
+            age: 7 * 24 * 60 * 60, // 7 days
+          },
+          // A failed job is a deleted team whose rows may remain. It stays
+          // until someone retries it from the queue board.
+          removeOnFail: false,
+        },
+      },
+    );
+  }
+  return changeTrackingPurgeQueue;
 }
 
 export function getPrecrawlQueue() {

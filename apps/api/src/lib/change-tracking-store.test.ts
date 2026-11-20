@@ -1,5 +1,6 @@
-const { getRows } = vi.hoisted(() => ({
+const { getRows, mutate } = vi.hoisted(() => ({
   getRows: vi.fn(),
+  mutate: vi.fn(),
 }));
 
 vi.mock("../config", () => ({
@@ -7,7 +8,7 @@ vi.mock("../config", () => ({
 }));
 
 vi.mock("./bigtable-client", () => ({
-  getBigtableTable: vi.fn(async () => ({ getRows })),
+  getBigtableTable: vi.fn(async () => ({ getRows, mutate })),
 }));
 
 vi.mock("./otel-tracer", () => ({
@@ -17,7 +18,10 @@ vi.mock("./otel-tracer", () => ({
   setSpanAttributes: vi.fn(),
 }));
 
-import { changeTrackingGetLastScrape } from "./change-tracking-store";
+import {
+  changeTrackingDeleteTeam,
+  changeTrackingGetLastScrape,
+} from "./change-tracking-store";
 
 const TEAM_ID = "00000000-0000-4000-8000-000000000001";
 const URL = "https://example.com/a?b=c&d=e";
@@ -104,5 +108,98 @@ describe("changeTrackingGetLastScrape", () => {
     const [request] = getRows.mock.calls[0];
     expect(Buffer.from(request.keys[0]).toString("hex")).toBe(keyHex);
     expect(request.filter).toEqual([{ column: { name: "job", cellLimit: 1 } }]);
+  });
+});
+
+describe("changeTrackingDeleteTeam", () => {
+  beforeEach(() => {
+    getRows.mockReset();
+    mutate.mockReset();
+    mutate.mockResolvedValue([]);
+  });
+
+  // The team's own prefix, ending one past its last character.
+  const prefix = Buffer.from(TEAM_ID, "utf8");
+  const prefixEnd = Buffer.from("00000000-0000-4000-8000-000000000002");
+
+  function keyOf(byte: number): Buffer {
+    return Buffer.concat([prefix, Buffer.alloc(64, byte)]);
+  }
+
+  it("deletes the team's rows batch by batch, resuming after the last key", async () => {
+    getRows
+      .mockResolvedValueOnce([[{ id: keyOf(0x01) }, { id: keyOf(0xff) }]])
+      .mockResolvedValueOnce([[{ id: keyOf(0x80) }]])
+      .mockResolvedValueOnce([[]]);
+
+    await expect(changeTrackingDeleteTeam(TEAM_ID)).resolves.toBe(3);
+
+    const requests = getRows.mock.calls.map(([request]) => request);
+    expect(requests[0]).toMatchObject({
+      ranges: [
+        {
+          start: { value: prefix, inclusive: true },
+          end: { value: prefixEnd, inclusive: false },
+        },
+      ],
+      limit: 1000,
+      decode: false,
+    });
+    expect(requests[1].ranges[0].start).toEqual({
+      value: keyOf(0xff),
+      inclusive: false,
+    });
+    expect(requests[2].ranges[0].start).toEqual({
+      value: keyOf(0x80),
+      inclusive: false,
+    });
+
+    // Keys go back exactly as Bigtable returned them, raw bytes included.
+    expect(mutate.mock.calls.map(([entries]) => entries)).toEqual([
+      [
+        { key: keyOf(0x01), method: "delete" },
+        { key: keyOf(0xff), method: "delete" },
+      ],
+      [{ key: keyOf(0x80), method: "delete" }],
+    ]);
+  });
+
+  it("deletes nothing for a team with no rows", async () => {
+    getRows.mockResolvedValueOnce([[]]);
+
+    await expect(changeTrackingDeleteTeam(TEAM_ID)).resolves.toBe(0);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete when the client hands back decoded keys", async () => {
+    getRows.mockResolvedValueOnce([[{ id: keyOf(0x01).toString("utf8") }]]);
+
+    await expect(changeTrackingDeleteTeam(TEAM_ID)).rejects.toThrow(
+      "decoded row keys",
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("stops at a failed delete so the caller retries the pass", async () => {
+    getRows.mockResolvedValueOnce([[{ id: keyOf(0x01) }]]);
+    mutate.mockRejectedValueOnce(new Error("unavailable"));
+
+    await expect(changeTrackingDeleteTeam(TEAM_ID)).rejects.toThrow(
+      "unavailable",
+    );
+    expect(getRows).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["an empty id", ""],
+    ["an uppercase id", "0000000A-0000-4000-8000-000000000001"],
+    ["a truncated id", TEAM_ID.slice(0, 8)],
+    ["a preview team", "preview_127.0.0.1"],
+  ])("refuses %s without reading the table", async (_label, teamId) => {
+    await expect(changeTrackingDeleteTeam(teamId)).rejects.toThrow(
+      "Expected a lowercase team UUID",
+    );
+    expect(getRows).not.toHaveBeenCalled();
+    expect(mutate).not.toHaveBeenCalled();
   });
 });
