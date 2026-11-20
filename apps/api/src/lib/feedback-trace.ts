@@ -75,7 +75,8 @@ export function lineageIds(req: TraceRequest): {
   const sessionId = lineagePair(lineage, "session", SESSION_SOURCES).id;
   const thread = lineagePair(lineage, "thread", THREAD_SOURCES);
   // A thread id borrowed from the session is not a conversation of its own.
-  const threadId = thread.source === "session" ? null : thread.id;
+  const threadId =
+    thread.source === "session" || thread.id === sessionId ? null : thread.id;
   return {
     ...(sessionId ? { sessionId } : {}),
     ...(threadId ? { threadId } : {}),

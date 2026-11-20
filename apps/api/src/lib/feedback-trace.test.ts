@@ -254,6 +254,9 @@ describe("lineageIds", () => {
       thread_source: "session",
     };
     expect(ids(borrowed)).toEqual({ sessionId: "sess_01HZX" });
+    expect(ids({ ...borrowed, thread_source: "client" })).toEqual({
+      sessionId: "sess_01HZX",
+    });
     // The feedback trace keeps the thread as it was sent.
     expect(trace(borrowed)).toMatchObject({
       thread_id: "sess_01HZX",
