@@ -1484,6 +1484,16 @@ class MonitorCreateRequest(BaseModel):
     judge_enabled: Optional[bool] = Field(default=None, alias="judgeEnabled")
 
 
+class _Unset:
+    """Distinguish an omitted update argument from an explicit None."""
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+_UNSET = _Unset()
+
+
 class MonitorUpdateRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
