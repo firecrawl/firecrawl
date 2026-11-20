@@ -5,6 +5,7 @@ import type { Logger } from "winston";
 const fixture = vi.hoisted(() => {
   const logger = {
     info: vi.fn(),
+    debug: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     child: vi.fn(),
@@ -159,3 +160,29 @@ describe.each(["legacy", "crawler"] as const)(
     });
   },
 );
+
+describe("legacy sitemap URL diagnostics", () => {
+  it.each(["/sitemap.xml.gz", "not a URL", "https://[bad-host/sitemap.xml.gz"])(
+    "logs an invalid URL at error level before fetching: %s",
+    async sitemapUrl => {
+      const result = await getLinksFromSitemap(
+        {
+          sitemapUrl,
+          urlsHandler: vi.fn(),
+          zeroDataRetention: false,
+        },
+        fixture.logger as unknown as Logger,
+        "crawl-fixture",
+        new Set(),
+      );
+      expect(result).toBe(0);
+      expect(fixture.logger.error).toHaveBeenCalledWith(
+        "Invalid sitemap URL",
+        expect.objectContaining({ sitemapUrl, error: expect.any(TypeError) }),
+      );
+      expect(fixture.logger.debug).not.toHaveBeenCalled();
+      expect(fetchFileToBuffer).not.toHaveBeenCalled();
+      expect(scrapeURL).not.toHaveBeenCalled();
+    },
+  );
+});
