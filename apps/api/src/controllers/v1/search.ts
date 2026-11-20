@@ -155,8 +155,7 @@ export async function searchController(
       requestedFormats.length > 0
         ? actionTypesOf(req.body.scrapeOptions?.actions)
         : [],
-      req.acuc?.api_key_id,
-      req.acuc?.flags ?? null,
+      req.acuc,
     );
     if (!keyRestriction.allowed) {
       return res.status(keyRestriction.status).json({

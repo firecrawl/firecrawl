@@ -3,7 +3,7 @@ import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { logger } from "./logger";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk } from "../controllers/v1/types";
 
 // Propagation delay for dashboard edits to key_restriction_config.
 const CONFIG_CACHE_TTL_SECONDS = 60;
@@ -124,6 +124,8 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["developer"], "research"],
   [["llmstxt"], "llmstxt"],
   [["deep-research"], "deep-research"],
+  [["alexandria"], "alexandria"],
+  [["computer"], "computer"],
   [["team"], "account"],
   [["concurrency-check"], "account"],
   [["slack"], "account"],
@@ -294,20 +296,30 @@ export function areFormatsAllowed(
   return { allowed: true };
 }
 
+// The parts of the auth chunk that decide whether a key's config is looked up.
+type RestrictableKey = Pick<
+  AuthCreditUsageChunk,
+  "api_key_id" | "flags" | "is_key_restricted"
+>;
+
 function keyRestrictionApplies(
-  flags: TeamFlags,
-  apiKeyId: number | undefined,
-): apiKeyId is number {
-  // Org-level keyRestriction flag gates everything so unflagged teams pay
-  // zero cost. Preview/keyless tokens have no api_key_id and are never
-  // restricted (they can't be configured in the dashboard).
-  return Boolean(flags?.keyRestriction) && Boolean(apiKeyId);
+  key: RestrictableKey | null | undefined,
+): key is RestrictableKey {
+  // The config is looked up only when the team has the keyRestriction flag
+  // (its admins can restrict any key in the dashboard) or the auth chunk says
+  // this key has a non-empty config, so an unrestricted key on an unflagged
+  // team pays zero cost. Preview/keyless tokens have no api_key_id and are
+  // never restricted.
+  return (
+    Boolean(key?.api_key_id) &&
+    (Boolean(key?.flags?.keyRestriction) || key?.is_key_restricted === true)
+  );
 }
 
 function failClosed(apiKeyId: number, error: unknown): KeyRestrictionResult {
   logger.error("Failed to load key restriction config", { apiKeyId, error });
-  // Fail closed: the team explicitly opted into key restriction, so an
-  // unverifiable request must not slip through.
+  // Fail closed: the key is restricted or its team opted into key
+  // restriction, so an unverifiable request must not slip through.
   return {
     allowed: false,
     error:
@@ -317,25 +329,25 @@ function failClosed(apiKeyId: number, error: unknown): KeyRestrictionResult {
 }
 
 /**
- * Enforces the per-key endpoint allowlist (key_restriction_config table),
- * gated by the keyRestriction team flag. Called during authentication so it
+ * Enforces the per-key endpoint allowlist (key_restriction_config table) for
+ * keys the auth chunk marks as restricted and for teams with the
+ * keyRestriction flag. Called during authentication so it
  * covers every authenticated route uniformly. An empty or missing config
  * means no restriction, so a team can't lock itself out before configuring.
  */
 export async function checkKeyEndpointRestriction(
   rawUrl: string,
-  apiKeyId: number | undefined,
-  flags: TeamFlags,
+  key: RestrictableKey | null | undefined,
 ): Promise<KeyRestrictionResult> {
-  if (!keyRestrictionApplies(flags, apiKeyId)) {
+  if (!keyRestrictionApplies(key)) {
     return { allowed: true };
   }
 
   let config: KeyRestrictionConfig;
   try {
-    config = await getKeyRestrictionConfig(apiKeyId);
+    config = await getKeyRestrictionConfig(key.api_key_id);
   } catch (error) {
-    return failClosed(apiKeyId, error);
+    return failClosed(key.api_key_id, error);
   }
 
   return isEndpointAllowed(rawUrl, config);
@@ -350,18 +362,17 @@ export async function checkKeyEndpointRestriction(
 export async function checkKeyFormatRestriction(
   formats: string[],
   actionTypes: string[],
-  apiKeyId: number | undefined,
-  flags: TeamFlags,
+  key: RestrictableKey | null | undefined,
 ): Promise<KeyRestrictionResult> {
-  if (!keyRestrictionApplies(flags, apiKeyId)) {
+  if (!keyRestrictionApplies(key)) {
     return { allowed: true };
   }
 
   let config: KeyRestrictionConfig;
   try {
-    config = await getKeyRestrictionConfig(apiKeyId);
+    config = await getKeyRestrictionConfig(key.api_key_id);
   } catch (error) {
-    return failClosed(apiKeyId, error);
+    return failClosed(key.api_key_id, error);
   }
 
   return areFormatsAllowed(formats, actionTypes, config);

@@ -135,6 +135,23 @@ describe("classifyEndpoint", () => {
     });
   });
 
+  it("gives data providers and hosted shell session files their own groups", () => {
+    expect(classifyEndpoint("/v2/alexandria")).toMatchObject({
+      group: "alexandria",
+      alwaysAllowed: false,
+    });
+    expect(
+      classifyEndpoint("/v2/alexandria/some-provider/some/capability?q=1"),
+    ).toMatchObject({ group: "alexandria", alwaysAllowed: false });
+    expect(classifyEndpoint("/v2/computer/sessions")).toMatchObject({
+      group: "computer",
+      alwaysAllowed: false,
+    });
+    expect(
+      classifyEndpoint("/v2/computer/sessions/abc/workspace"),
+    ).toMatchObject({ group: "computer", alwaysAllowed: false });
+  });
+
   it("marks metadata/support endpoints as always allowed", () => {
     expect(classifyEndpoint("/v2/feedback")).toMatchObject({
       alwaysAllowed: true,
