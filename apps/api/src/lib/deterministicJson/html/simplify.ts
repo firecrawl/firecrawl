@@ -28,12 +28,48 @@ const REMOVE_TAGS = new Set([
   "NOSCRIPT",
   "TEMPLATE",
   "LINK",
-  "BR",
   "WBR",
   "SOURCE",
   "IFRAME",
 ]);
 const EMPTY_TAGS = new Set(["SVG", "MATH", "CANVAS"]);
+// These elements already delimit text without an inter-element space. Keep
+// separators around inline/unknown elements; their adjacent words may need them.
+const BLOCK_TAGS = new Set([
+  "ADDRESS",
+  "ARTICLE",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "DD",
+  "DETAILS",
+  "DIALOG",
+  "DIV",
+  "DL",
+  "DT",
+  "FIELDSET",
+  "FIGCAPTION",
+  "FIGURE",
+  "FOOTER",
+  "FORM",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "HEADER",
+  "HGROUP",
+  "HR",
+  "LI",
+  "MAIN",
+  "NAV",
+  "OL",
+  "P",
+  "PRE",
+  "SECTION",
+  "TABLE",
+  "UL",
+]);
 
 const DROP_ATTRS = new Set([
   "style",
@@ -180,23 +216,32 @@ function shapeKey(el: Element): string {
 
 function collapseRepeats(parent: Element, opts: Opts): void {
   const groups = new Map<string, Element[]>();
+  const collapseGroups = () => {
+    for (const group of groups.values()) {
+      // Only collapse a genuinely repeating run, not 2-3 incidental look-alikes.
+      if (group.length < Math.max(5, opts.keepRepeats + 1)) continue;
+      const extra = group.slice(opts.keepRepeats);
+      const tag = group[0]!.tagName.toLowerCase();
+      extra[0]!.parentNode?.insertBefore(
+        parent.ownerDocument.createComment(
+          ` ${extra.length} more <${tag}> with the same shape `,
+        ),
+        extra[0]!,
+      );
+      for (const el of extra) el.remove();
+    }
+    groups.clear();
+  };
   for (const el of Array.from(parent.children)) {
+    // Do not sample separate lines as repetitions of the same wrapped text.
+    if (el.tagName === "BR") {
+      collapseGroups();
+      continue;
+    }
     const key = shapeKey(el);
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(el);
   }
-  for (const group of groups.values()) {
-    // Only collapse a genuinely repeating run, not 2-3 incidental look-alikes.
-    if (group.length < Math.max(5, opts.keepRepeats + 1)) continue;
-    const extra = group.slice(opts.keepRepeats);
-    const tag = group[0]!.tagName.toLowerCase();
-    extra[0]!.parentNode?.insertBefore(
-      parent.ownerDocument.createComment(
-        ` ${extra.length} more <${tag}> with the same shape `,
-      ),
-      extra[0]!,
-    );
-    for (const el of extra) el.remove();
-  }
+  collapseGroups();
 }
 
 function walk(node: Element, opts: Opts): void {
@@ -207,7 +252,9 @@ function walk(node: Element, opts: Opts): void {
     ) {
       child.remove();
     } else if (child.nodeType === TEXT_NODE) {
-      const text = collapseSpace(child.textContent ?? "");
+      // Each text node can provide the only separator beside an inline element.
+      // Collapse its whitespace without trimming either edge.
+      const text = (child.textContent ?? "").replace(/\s+/g, " ");
       text
         ? (child.textContent = truncate(text, opts.maxTextLen))
         : child.remove();
@@ -234,10 +281,30 @@ function walk(node: Element, opts: Opts): void {
   collapseRepeats(node, opts);
 }
 
+function removeBlockSpacing(el: Element): void {
+  let previousBlock = false;
+  const gap: ChildNode[] = [];
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === COMMENT_NODE) continue;
+    if (child.nodeType === TEXT_NODE && !(child.textContent ?? "").trim()) {
+      gap.push(child);
+      continue;
+    }
+    const block =
+      child.nodeType === ELEMENT_NODE &&
+      BLOCK_TAGS.has((child as Element).tagName);
+    if (previousBlock && block) for (const space of gap) space.remove();
+    gap.length = 0;
+    previousBlock = block;
+  }
+}
+
 // Drop attribute-less <div>/<span> wrappers that hold a single element child -
 // they add depth without selector value.
 function flattenWrappers(el: Element): void {
   for (const child of Array.from(el.children)) flattenWrappers(child);
+  // Flattened wrappers may leave several adjacent whitespace text nodes.
+  removeBlockSpacing(el);
   if (
     (el.tagName !== "DIV" && el.tagName !== "SPAN") ||
     el.getAttributeNames().length
@@ -248,7 +315,7 @@ function flattenWrappers(el: Element): void {
     n => n.nodeType === TEXT_NODE && (n.textContent ?? "").trim(),
   );
   if (childElements.length === 1 && !hasOwnText)
-    el.replaceWith(childElements[0]!);
+    el.replaceWith(...Array.from(el.childNodes));
 }
 
 function clipMiddle(text: string, max: number): string {
@@ -269,6 +336,6 @@ export function simplifyHtml(
   pruneHead(doc);
   walk(doc.documentElement, opts);
   flattenWrappers(doc.documentElement);
-  const out = doc.documentElement.outerHTML.replace(/>\s+</g, "><");
+  const out = doc.documentElement.outerHTML;
   return clipMiddle(out, opts.maxTotalLen);
 }
