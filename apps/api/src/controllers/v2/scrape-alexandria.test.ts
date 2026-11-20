@@ -901,6 +901,69 @@ describe("feedback tokens", () => {
   });
 });
 
+describe("ultrasearch trusted marker", () => {
+  const proxyConfig = config as {
+    HOSTED_MCP_PROXY_SECRET?: string;
+    KEYLESS_PROXY_SECRET?: string;
+  };
+
+  afterEach(() => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = undefined;
+    proxyConfig.KEYLESS_PROXY_SECRET = undefined;
+  });
+
+  it("honours x-firecrawl-ultrasearch with x-firecrawl-hosted-mcp-secret alone", async () => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = "dedicated-hosted-mcp-secret";
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "dedicated-hosted-mcp-secret")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ultrasearch: true }),
+    );
+  });
+
+  it("ignores x-firecrawl-ultrasearch on wrong secret or fco_ token", async () => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = "dedicated-hosted-mcp-secret";
+    await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "wrong")
+      .send({ alexandria: call });
+    expect(mocks.retrieve).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ ultrasearch: true }),
+    );
+
+    await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fco_oauth_token")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "dedicated-hosted-mcp-secret")
+      .send({ alexandria: call });
+    expect(mocks.retrieve).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ ultrasearch: true }),
+    );
+  });
+
+  it("still honours x-firecrawl-keyless-secret as rollout fallback", async () => {
+    proxyConfig.KEYLESS_PROXY_SECRET = "legacy-keyless-secret";
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-keyless-secret", "legacy-keyless-secret")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ultrasearch: true }),
+    );
+  });
+});
+
 describe("GET /v2/alexandria/:provider/*capability", () => {
   const path = "/v2/alexandria/fred/categories/category";
 

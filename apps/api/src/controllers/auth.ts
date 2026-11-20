@@ -1271,18 +1271,24 @@ async function supaAuthenticateUser(
     // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
     // raised per-minute minimum, and scrape calls a raised concurrency
     // minimum. Two signals prove the hosted MCP made the call: a verified
-    // delegated credential (managed OAuth sessions) or the proxy secret it
-    // shares with the API (sessions that send a plain API key).
-    // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
-    // so a REST call carrying one comes from the client itself. Origin and
-    // integration are client-set, so they never change the limit.
+    // delegated credential (managed OAuth sessions) or the hosted MCP proxy
+    // secret (with KEYLESS_PROXY_SECRET accepted as a rollout fallback) for
+    // plain API-key sessions. `fco_` tokens never qualify: the hosted MCP
+    // keeps those for the issuer, so a REST call carrying one comes from the
+    // client itself. Origin and integration are client-set, so they never
+    // change the limit.
+    const hostedMcpProxySecretValid =
+      timingSafeSecretEqual(
+        req.headers["x-firecrawl-hosted-mcp-secret"],
+        config.HOSTED_MCP_PROXY_SECRET,
+      ) ||
+      timingSafeSecretEqual(
+        req.headers["x-firecrawl-keyless-secret"],
+        config.KEYLESS_PROXY_SECRET,
+      );
     hostedMcpCall =
       hostedMcpDelegation ||
-      (!token.startsWith("fco_") &&
-        timingSafeSecretEqual(
-          req.headers["x-firecrawl-keyless-secret"],
-          config.KEYLESS_PROXY_SECRET,
-        ));
+      (!token.startsWith("fco_") && hostedMcpProxySecretValid);
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not the one trusted
