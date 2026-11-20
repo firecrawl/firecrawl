@@ -44,7 +44,9 @@ class PdfExtractionSemaphore {
   constructor(private readonly max: number) {}
 
   /** Acquire a permit; resolves to a release function (call exactly once). */
-  acquire(): Promise<() => void> {
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+
     // Fast path: free permit and nobody queued (no barging past waiters).
     if (this.inFlight < this.max && this.queue.length === 0) {
       this.inFlight++;
@@ -52,12 +54,25 @@ class PdfExtractionSemaphore {
       return Promise.resolve(this.makeRelease());
     }
 
-    return new Promise<() => void>(resolve => {
-      this.queue.push({
-        resolve: () => resolve(this.makeRelease()),
+    return new Promise<() => void>((resolve, reject) => {
+      const waiter = {
+        resolve: () => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve(this.makeRelease());
+        },
         enqueuedAt: Date.now(),
-      });
+      };
+      const onAbort = () => {
+        const index = this.queue.indexOf(waiter);
+        if (index === -1) return;
+        this.queue.splice(index, 1);
+        waiting.set(this.queue.length);
+        waitSeconds.observe((Date.now() - waiter.enqueuedAt) / 1000);
+        reject(signal!.reason);
+      };
+      this.queue.push(waiter);
       waiting.set(this.queue.length);
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 
@@ -91,9 +106,12 @@ export const pdfExtractionSemaphore = new PdfExtractionSemaphore(
 /** Run `fn` holding a PDF extraction permit. */
 export async function withPdfExtractionPermit<T>(
   fn: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const release = await pdfExtractionSemaphore.acquire();
+  const release = await pdfExtractionSemaphore.acquire(signal);
   try {
+    // A permit can be granted just before cancellation, before this resumes.
+    signal?.throwIfAborted();
     return await fn();
   } finally {
     release();

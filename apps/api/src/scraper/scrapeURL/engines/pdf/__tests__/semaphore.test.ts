@@ -106,4 +106,165 @@ describe("pdfExtractionSemaphore", () => {
     expect(waitCountLine).toBeDefined();
     expect(Number(waitCountLine!.split(" ").pop())).toBeGreaterThan(0);
   });
+
+  it("rejects an already aborted operation without starting work", async () => {
+    const controller = new AbortController();
+    const reason = new Error("scrape expired");
+    controller.abort(reason);
+    const work = vi.fn(async () => "unused");
+
+    await expect(withPdfExtractionPermit(work, controller.signal)).rejects.toBe(
+      reason,
+    );
+    expect(work).not.toHaveBeenCalled();
+  });
+
+  it("removes an aborted waiter before an active extraction finishes", async () => {
+    const releases = await Promise.all([
+      pdfExtractionSemaphore.acquire(),
+      pdfExtractionSemaphore.acquire(),
+    ]);
+    const controller = new AbortController();
+    const reason = new Error("scrape expired while queued");
+    const work = vi.fn(async () => "unused");
+    let rejection: unknown;
+    const queued = withPdfExtractionPermit(work, controller.signal).catch(
+      error => {
+        rejection = error;
+      },
+    );
+
+    try {
+      controller.abort(reason);
+      await vi.waitFor(() => expect(rejection).toBe(reason));
+      const { register } = await import("prom-client");
+      expect(
+        await register.getSingleMetricAsString(
+          "pdf_extraction_semaphore_waiting",
+        ),
+      ).toContain("pdf_extraction_semaphore_waiting 0");
+      expect(
+        await register.getSingleMetricAsString(
+          "pdf_extraction_semaphore_active",
+        ),
+      ).toContain("pdf_extraction_semaphore_active 2");
+      expect(work).not.toHaveBeenCalled();
+    } finally {
+      releases.forEach(release => release());
+      await queued;
+    }
+  });
+
+  it("keeps surviving waiters in FIFO order after a queued abort", async () => {
+    const releases = await Promise.all([
+      pdfExtractionSemaphore.acquire(),
+      pdfExtractionSemaphore.acquire(),
+    ]);
+    const controller = new AbortController();
+    const started: string[] = [];
+    const cancelled = withPdfExtractionPermit(async () => {
+      started.push("cancelled");
+    }, controller.signal).catch(() => {});
+    const first = withPdfExtractionPermit(async () => {
+      started.push("first");
+    });
+    const second = withPdfExtractionPermit(async () => {
+      started.push("second");
+    });
+
+    controller.abort();
+    releases.forEach(release => release());
+    await Promise.all([cancelled, first, second]);
+    expect(started).toEqual(["first", "second"]);
+  });
+
+  it("records a cancelled wait exactly once in the queue-time histogram", async () => {
+    const { register } = await import("prom-client");
+    const metric = "pdf_extraction_semaphore_wait_seconds";
+    const sample = async () => {
+      const lines = (await register.getSingleMetricAsString(metric)).split(
+        "\n",
+      );
+      const value = (suffix: string) =>
+        Number(
+          lines
+            .find(line => line.startsWith(`${metric}_${suffix} `))!
+            .split(" ")
+            .pop(),
+        );
+      return { count: value("count"), sum: value("sum") };
+    };
+    const before = await sample();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const releases = await Promise.all([
+      pdfExtractionSemaphore.acquire(),
+      pdfExtractionSemaphore.acquire(),
+    ]);
+    const controller = new AbortController();
+    const reason = new Error("queued deadline");
+    const queued = pdfExtractionSemaphore.acquire(controller.signal);
+    const settled = queued.catch(() => {});
+    try {
+      clock.mockReturnValue(12_500);
+      controller.abort(reason);
+      await expect(queued).rejects.toBe(reason);
+      const after = await sample();
+      expect(after.count - before.count).toBe(1);
+      expect(after.sum - before.sum).toBeCloseTo(2.5);
+      releases.forEach(release => release());
+      expect(await sample()).toEqual(after);
+    } finally {
+      releases.forEach(release => release());
+      clock.mockRestore();
+      await settled;
+    }
+  });
+
+  it("releases a permit when cancellation wins the grant-to-work race", async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancelled after permit grant");
+    const work = vi.fn(async () => "unused");
+    const operation = withPdfExtractionPermit(work, controller.signal);
+    controller.abort(reason);
+
+    await expect(operation).rejects.toBe(reason);
+    expect(work).not.toHaveBeenCalled();
+    await expect(withPdfExtractionPermit(async () => "next")).resolves.toBe(
+      "next",
+    );
+  });
+
+  it("retains an active permit until non-cancellable native work settles", async () => {
+    const releaseOther = await pdfExtractionSemaphore.acquire();
+    const controller = new AbortController();
+    let finish!: () => void;
+    const blocked = new Promise<void>(resolve => {
+      finish = resolve;
+    });
+    let enter!: () => void;
+    const entered = new Promise<void>(resolve => {
+      enter = resolve;
+    });
+    const activeWork = withPdfExtractionPermit(async () => {
+      enter();
+      await blocked;
+      return "finished";
+    }, controller.signal);
+    await entered;
+    controller.abort();
+
+    const nextWork = vi.fn(async () => "next");
+    const next = withPdfExtractionPermit(nextWork);
+    try {
+      await Promise.resolve();
+      expect(nextWork).not.toHaveBeenCalled();
+      finish();
+      await expect(activeWork).resolves.toBe("finished");
+      await expect(next).resolves.toBe("next");
+    } finally {
+      finish();
+      releaseOther();
+      await Promise.all([activeWork, next]);
+    }
+  });
 });
