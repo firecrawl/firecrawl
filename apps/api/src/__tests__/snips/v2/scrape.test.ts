@@ -71,6 +71,15 @@ describe("Scrape tests", () => {
     return target.toString();
   };
 
+  const createPrivateIpLocalUrl = () => {
+    // Same local test site, addressed by a private IP literal instead of a
+    // hostname: the only way this test exercises the IP-literal branch of
+    // the target check, for the exact shape in #5897.
+    const target = new URL(createSelfHostedLocalUrl());
+    target.hostname = "127.0.0.1";
+    return target.toString();
+  };
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
     async () => {
@@ -353,7 +362,7 @@ describe("Scrape tests", () => {
       // target is a private IP literal, not a hostname.
       const raw = await scrapeRaw(
         {
-          url: createSelfHostedLocalUrl(),
+          url: createPrivateIpLocalUrl(),
           waitFor: 100,
         },
         identity,
