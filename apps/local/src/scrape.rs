@@ -433,14 +433,8 @@ impl Engine {
         if let Some(pages) = doc.pages {
           metadata.insert("numPages".into(), json!(pages));
         }
-        if doc.pages_needing_ocr > 0 {
-          data.insert(
-            "warning".into(),
-            Value::String(format!(
-              "{} page(s) of this PDF are scanned images; the local engine has no OCR, so their text is missing.",
-              doc.pages_needing_ocr
-            )),
-          );
+        if let Some(warning) = doc.ocr_warning() {
+          data.insert("warning".into(), Value::String(warning));
         }
         if formats.contains(&Format::Markdown) {
           data.insert("markdown".into(), Value::String(doc.markdown));
