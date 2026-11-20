@@ -323,6 +323,10 @@ describe("Scrape tests", () => {
   )(
     "playwright blocks local-network targets resolved via DNS",
     async () => {
+      // A target Firecrawl refuses to fetch is a failed scrape, not a
+      // successful scrape of a 403 page: the playwright-service used to
+      // answer these with HTTP 200 and pageStatusCode 403, which the API
+      // returned as success: true (#5897).
       const raw = await scrapeRaw(
         {
           url: createDnsResolvedLocalUrl(),
@@ -331,12 +335,35 @@ describe("Scrape tests", () => {
         identity,
       );
 
-      expect(raw.statusCode).toBe(200);
-      expect(raw.body.success).toBe(true);
-      expect(raw.body.data?.metadata?.statusCode).toBe(403);
-      expect(raw.body.data?.metadata?.error).toContain(
-        "Blocked insecure target URL",
+      expect(raw.statusCode).toBe(500);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_ALL_ENGINES_FAILED");
+      expect(raw.body.error).toContain("All scraping engines failed");
+      expect(raw.body.data).toBeUndefined();
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(
+    TEST_SELF_HOST && HAS_PLAYWRIGHT && !playwrightAllowsLocalTargets,
+  )(
+    "playwright blocks local-network targets given as a private IP literal",
+    async () => {
+      // Same refusal as the DNS case, for the exact shape in #5897: the
+      // target is a private IP literal, not a hostname.
+      const raw = await scrapeRaw(
+        {
+          url: createSelfHostedLocalUrl(),
+          waitFor: 100,
+        },
+        identity,
       );
+
+      expect(raw.statusCode).toBe(500);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_ALL_ENGINES_FAILED");
+      expect(raw.body.error).toContain("All scraping engines failed");
+      expect(raw.body.data).toBeUndefined();
     },
     scrapeTimeout,
   );
