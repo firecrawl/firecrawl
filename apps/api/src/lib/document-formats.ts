@@ -58,11 +58,14 @@ export function documentContentTypeFromExtension(
   return null;
 }
 
-// Matches extensions at the end of the path or mid-path (e.g. file.xlsx/hash).
+// The last filename segment wins over document-like parent directories.
+// Keep supporting trailing download routes (e.g. file.xlsx/hash).
 export function documentExtensionFromUrlPath(urlPath: string): string | null {
-  const lowerPath = urlPath.toLowerCase();
-  for (const ext of EXTENSIONS_BY_LENGTH) {
-    if (lowerPath.endsWith(ext) || lowerPath.includes(ext + "/")) return ext;
+  const segments = urlPath.toLowerCase().split("/");
+  for (let i = segments.length - 1; i >= 0; i--) {
+    for (const ext of EXTENSIONS_BY_LENGTH) {
+      if (segments[i].endsWith(ext)) return ext;
+    }
   }
   return null;
 }
