@@ -1,8 +1,11 @@
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from firecrawl.v1.client import V1CrawlErrorsResponse
 from firecrawl.v2.methods.batch import get_batch_scrape_errors
 from firecrawl.v2.methods.crawl import get_crawl_errors
+from firecrawl.v2.methods.aio.batch import get_batch_scrape_errors as get_async_batch_scrape_errors
 
 REQUIRES_ACTION = {
     "type": "accept_terms",
@@ -59,3 +62,33 @@ def test_v1_crawl_errors_carry_requires_action():
 
     assert result.errors[0].requiresAction == REQUIRES_ACTION
     assert result.errors[1].requiresAction is None
+
+
+@pytest.mark.asyncio
+async def test_async_batch_scrape_errors_normalize_success_payload():
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = ERRORS
+    client = AsyncMock()
+    client.get.return_value = response
+
+    result = await get_async_batch_scrape_errors(client, "batch-1")
+
+    assert result.errors[0].requires_action == REQUIRES_ACTION
+    assert result.errors[1].requires_action is None
+    assert result.robots_blocked == []
+    client.get.assert_awaited_once_with("/v2/batch/scrape/batch-1/errors")
+
+
+@pytest.mark.asyncio
+async def test_async_batch_scrape_errors_accept_nested_data_payload():
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"data": ERRORS}
+    client = AsyncMock()
+    client.get.return_value = response
+
+    result = await get_async_batch_scrape_errors(client, "batch-1")
+
+    assert result.errors[0].requires_action == REQUIRES_ACTION
+    assert result.robots_blocked == []
