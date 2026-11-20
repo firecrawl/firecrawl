@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   imageContentTypeFromExtension,
   imageExtensionFromContentType,
@@ -11,6 +12,19 @@ import {
 const JP2_SIGNATURE = [
   0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a,
 ];
+
+function fileTypeBox(major: string, compatible: string[], extended = false) {
+  const header = extended ? 16 : 8;
+  const bytes = Buffer.alloc(header + 8 + compatible.length * 4);
+  bytes.writeUInt32BE(extended ? 1 : bytes.length, 0);
+  bytes.write("ftyp", 4);
+  if (extended) bytes.writeBigUInt64BE(BigInt(bytes.length), 8);
+  bytes.write(major, header);
+  compatible.forEach((brand, index) =>
+    bytes.write(brand, header + 8 + index * 4),
+  );
+  return bytes;
+}
 
 describe("image-formats", () => {
   it("maps content types to extensions, ignoring parameters and case", () => {
@@ -138,6 +152,96 @@ describe("image-formats", () => {
       sniffImageContentType(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])),
     ).toBeNull();
     expect(sniffImageContentType(Buffer.alloc(0))).toBeNull();
+  });
+
+  it.each(["avif", "avis"])("recognizes %s as a compatible brand", brand => {
+    const bytes = fileTypeBox("mif1", ["miaf", brand]);
+    expect(sniffImageContentType(bytes)).toBe("image/avif");
+    expect(sniffImageContentTypeFromBase64(bytes.toString("base64"))).toBe(
+      "image/avif",
+    );
+  });
+
+  it("recognizes the existing AVIF fixture with a generic major brand", () => {
+    const bytes = readFileSync(
+      new URL("../../../test-site/public/ocr-fixture.avif", import.meta.url),
+    );
+    bytes.write("mif1", 8);
+    expect(sniffImageContentType(bytes)).toBe("image/avif");
+    expect(sniffImageContentTypeFromBase64(bytes.toString("base64"))).toBe(
+      "image/avif",
+    );
+  });
+
+  it("supports extended file-type boxes and Uint8Array views", () => {
+    const box = fileTypeBox("mif1", ["miaf", "avif"], true);
+    const padded = Buffer.concat([Buffer.alloc(7), box]);
+    const bytes = new Uint8Array(
+      padded.buffer,
+      padded.byteOffset + 7,
+      box.length,
+    );
+    expect(sniffImageContentType(bytes)).toBe("image/avif");
+    expect(sniffImageContentTypeFromBase64(box.toString("base64"))).toBe(
+      "image/avif",
+    );
+  });
+
+  it("finds compatible brands beyond the first base64 chunk", () => {
+    const bytes = fileTypeBox("mif1", [...Array(800).fill("miaf"), "avif"]);
+    expect(sniffImageContentType(bytes)).toBe("image/avif");
+    expect(sniffImageContentTypeFromBase64(bytes.toString("base64"))).toBe(
+      "image/avif",
+    );
+  });
+
+  it("keeps base64 decoding bounded to chunks of the file-type box", () => {
+    const box = fileTypeBox("mif1", [...Array(800).fill("miaf"), "avif"]);
+    const base64 = Buffer.concat([box, Buffer.alloc(1024 * 1024)]).toString(
+      "base64",
+    );
+    const decode = vi.spyOn(Buffer, "from");
+    let decodedCharacters: number[];
+    let result: string | null;
+    try {
+      result = sniffImageContentTypeFromBase64(base64);
+      decodedCharacters = decode.mock.calls
+        .filter(args => args[1] === "base64")
+        .map(args => (args[0] as string).length);
+    } finally {
+      decode.mockRestore();
+    }
+    expect(result).toBe("image/avif");
+    expect(Math.max(...decodedCharacters)).toBeLessThanOrEqual(4096);
+    expect(
+      decodedCharacters.reduce((total, size) => total + size, 0),
+    ).toBeLessThanOrEqual(Math.ceil(box.length / 3) * 4);
+  });
+
+  it("does not treat the minor version or later boxes as compatible brands", () => {
+    const box = fileTypeBox("mif1", ["miaf"]);
+    box.write("avif", 12);
+    const bytes = Buffer.concat([
+      box,
+      Buffer.from("\x00\x00\x00\x10mdatavifavis"),
+    ]);
+    expect(sniffImageContentType(bytes)).toBeNull();
+    expect(
+      sniffImageContentTypeFromBase64(bytes.toString("base64")),
+    ).toBeNull();
+  });
+
+  it("rejects incomplete and misaligned compatible brands", () => {
+    const partial = fileTypeBox("mif1", ["avif"]).subarray(0, 19);
+    const unaligned = fileTypeBox("mif1", ["xavi", "fxxx"]);
+    const malformed = fileTypeBox("mif1", ["avif"]);
+    malformed.writeUInt32BE(19, 0);
+    for (const bytes of [partial, unaligned, malformed]) {
+      expect(sniffImageContentType(bytes)).toBeNull();
+      expect(
+        sniffImageContentTypeFromBase64(bytes.toString("base64")),
+      ).toBeNull();
+    }
   });
 
   it("sniffs a base64 payload from its prefix alone", () => {

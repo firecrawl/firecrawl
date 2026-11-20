@@ -163,7 +163,54 @@ const MAGIC_SIGNATURES: Array<{
   },
 ];
 
-const SNIFF_WINDOW = Math.max(...MAGIC_SIGNATURES.map(s => s.bytes.length));
+// Include the largest ftyp header (64-bit box size, major brand and minor
+// version), so compatible brands can be scanned without decoding image data.
+const SNIFF_WINDOW =
+  Math.ceil(Math.max(24, ...MAGIC_SIGNATURES.map(s => s.bytes.length)) / 12) *
+  12;
+
+function fileTypeBox(
+  bytes: Uint8Array,
+): { brandStart: number; end: number } | null {
+  if (
+    bytes.length < 16 ||
+    bytes[4] !== 0x66 ||
+    bytes[5] !== 0x74 ||
+    bytes[6] !== 0x79 ||
+    bytes[7] !== 0x70
+  )
+    return null;
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = view.getUint32(0);
+  let brandStart = 8;
+  if (end === 1) {
+    if (bytes.length < 24) return null;
+    const extendedSize = view.getBigUint64(8);
+    if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    end = Number(extendedSize);
+    brandStart = 16;
+  }
+  if (end < brandStart + 8 || end % 4 !== 0) return null;
+  return { brandStart, end };
+}
+
+function hasAvifBrand(bytes: Uint8Array, start: number, end: number): boolean {
+  for (
+    let offset = start;
+    offset + 4 <= Math.min(end, bytes.length);
+    offset += 4
+  ) {
+    if (
+      bytes[offset] === 0x61 &&
+      bytes[offset + 1] === 0x76 &&
+      bytes[offset + 2] === 0x69 &&
+      (bytes[offset + 3] === 0x66 || bytes[offset + 3] === 0x73)
+    )
+      return true;
+  }
+  return false;
+}
 
 export function sniffImageContentType(bytes: Uint8Array): string | null {
   for (const { contentType, bytes: magic } of MAGIC_SIGNATURES) {
@@ -177,6 +224,16 @@ export function sniffImageContentType(bytes: Uint8Array): string | null {
     }
     if (matches) return contentType;
   }
+  // AVIF can declare avif/avis in compatible_brands while using mif1/msf1
+  // as its major brand. Only aligned brands within ftyp count: minor_version
+  // and subsequent boxes may contain the same bytes without declaring AVIF.
+  const box = fileTypeBox(bytes);
+  if (
+    box &&
+    (hasAvifBrand(bytes, box.brandStart, box.brandStart + 4) ||
+      hasAvifBrand(bytes, box.brandStart + 8, box.end))
+  )
+    return "image/avif";
   return null;
 }
 
@@ -184,5 +241,22 @@ export function sniffImageContentType(bytes: Uint8Array): string | null {
 // encode 3 bytes, so a short prefix covers the longest signature.
 export function sniffImageContentTypeFromBase64(base64: string): string | null {
   const chars = Math.ceil(SNIFF_WINDOW / 3) * 4;
-  return sniffImageContentType(Buffer.from(base64.slice(0, chars), "base64"));
+  const prefix = Buffer.from(base64.slice(0, chars), "base64");
+  const contentType = sniffImageContentType(prefix);
+  if (contentType) return contentType;
+
+  const box = fileTypeBox(prefix);
+  if (!box) return null;
+
+  // 4096 base64 characters decode to 3072 bytes: both are aligned to whole
+  // 4-byte brands. Walk only ftyp, with bounded memory even if its advertised
+  // size is large; do not decode the image payload after the box.
+  const end = Math.min(box.end, Math.floor((base64.length * 3) / 4));
+  for (let offset = SNIFF_WINDOW; offset + 4 <= end; offset += 3072) {
+    const startChar = (offset / 3) * 4;
+    const endChar = Math.ceil(Math.min(offset + 3072, end) / 3) * 4;
+    const chunk = Buffer.from(base64.slice(startChar, endChar), "base64");
+    if (hasAvifBrand(chunk, 0, end - offset)) return "image/avif";
+  }
+  return null;
 }
