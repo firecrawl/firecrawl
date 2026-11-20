@@ -29,14 +29,13 @@ import {
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
-import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
 } from "../pdf/fire-pdf/by-reference";
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
-import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
+import { gunzipBounded } from "../utils/gunzip";
 import { config } from "../../../../config";
 
 /** The handoff additionally requires the inbound allowlist bucket to be
@@ -253,13 +252,11 @@ async function performFireEngineScrape<
     if (status.file?.content !== undefined && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
-      let buffer = Buffer.from(content, "base64");
+      let buffer: Buffer = Buffer.from(content, "base64");
       // transparently decompress gzipped content
       if (buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
         try {
-          buffer = gunzipSync(buffer, {
-            maxOutputLength: MAX_GUNZIPPED_FILE_SIZE,
-          });
+          buffer = await gunzipBounded(buffer);
         } catch (error) {
           if (error instanceof RangeError) {
             throw new UnsupportedFileError("File exceeds size limit");
