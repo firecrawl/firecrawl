@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, dbRr } from "../../db/connection";
@@ -24,6 +25,61 @@ const logger = _logger.child({ module: "threat-protection-store" });
 const CACHE_TTL_SECONDS = 60;
 
 const cacheKey = (orgId: string) => `threat-protection-config:${orgId}`;
+
+// Bounded per-pod LRU cache of parsed org configs, keyed by orgId and
+// validated against the SHA-256 digest of the Redis JSON string on every read.
+// Avoids re-parsing large domain lists on every request, drops the raw string
+// so memory is not doubled, and keeps frozen array references stable so
+// verdict.ts's WeakMap index is reused across requests with zero staleness.
+const MAX_PARSED_CONFIG_CACHE_ENTRIES = 100;
+const MAX_PARSED_CONFIG_CACHE_BYTES = 16 * 1024 * 1024;
+const parsedConfigCache = new Map<
+  string,
+  { hash: string; bytes: number; config: OrgThreatProtectionConfig | null }
+>();
+let parsedConfigCacheBytes = 0;
+
+function hashSerializedConfig(raw: string): string {
+  return createHash("sha256").update(raw).digest("base64");
+}
+
+function freezePolicyLists(
+  config: OrgThreatProtectionConfig | null,
+): OrgThreatProtectionConfig | null {
+  if (!config) return null;
+  Object.freeze(config.policy.blacklist);
+  Object.freeze(config.policy.whitelist);
+  Object.freeze(config.policy.blockedTlds);
+  return config;
+}
+
+function deleteParsedConfigCache(orgId: string): void {
+  const existing = parsedConfigCache.get(orgId);
+  if (existing) {
+    parsedConfigCacheBytes -= existing.bytes;
+    parsedConfigCache.delete(orgId);
+  }
+}
+
+function setParsedConfigCache(
+  orgId: string,
+  hash: string,
+  bytes: number,
+  config: OrgThreatProtectionConfig | null,
+): void {
+  deleteParsedConfigCache(orgId);
+  if (bytes > MAX_PARSED_CONFIG_CACHE_BYTES) return;
+  while (
+    parsedConfigCache.size >= MAX_PARSED_CONFIG_CACHE_ENTRIES ||
+    parsedConfigCacheBytes + bytes > MAX_PARSED_CONFIG_CACHE_BYTES
+  ) {
+    const oldestKey = parsedConfigCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    deleteParsedConfigCache(oldestKey);
+  }
+  parsedConfigCache.set(orgId, { hash, bytes, config });
+  parsedConfigCacheBytes += bytes;
+}
 
 /**
  * Whether an error is Postgres 42P01 (undefined_table) for our config table.
@@ -126,7 +182,7 @@ export function rowToConfig(
 ): OrgThreatProtectionConfig {
   const doc = storedConfigDocumentSchema.parse(row.config ?? {});
   const zscaler = doc.zscaler ?? null;
-  return {
+  return freezePolicyLists({
     orgId: row.org_id,
     policy: {
       mode:
@@ -156,7 +212,7 @@ export function rowToConfig(
     zscaler,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  })!;
 }
 
 /**
@@ -173,7 +229,19 @@ export async function getOrgThreatProtectionConfig(
   try {
     const cached = await getValue(key);
     if (cached !== null) {
-      return JSON.parse(cached) as OrgThreatProtectionConfig | null;
+      const hash = hashSerializedConfig(cached);
+      const mem = parsedConfigCache.get(orgId);
+      if (mem && mem.hash === hash) {
+        // Refresh LRU recency.
+        parsedConfigCache.delete(orgId);
+        parsedConfigCache.set(orgId, mem);
+        return mem.config;
+      }
+      const parsed = freezePolicyLists(
+        JSON.parse(cached) as OrgThreatProtectionConfig | null,
+      );
+      setParsedConfigCache(orgId, hash, Buffer.byteLength(cached), parsed);
+      return parsed;
     }
   } catch (error) {
     logger.warn("Failed to read threat protection config cache", {
@@ -202,9 +270,16 @@ export async function getOrgThreatProtectionConfig(
   }
 
   const config = rows[0] ? rowToConfig(rows[0]) : null;
+  const serialized = JSON.stringify(config);
+  setParsedConfigCache(
+    orgId,
+    hashSerializedConfig(serialized),
+    Buffer.byteLength(serialized),
+    config,
+  );
 
   try {
-    await setValue(key, JSON.stringify(config), CACHE_TTL_SECONDS);
+    await setValue(key, serialized, CACHE_TTL_SECONDS);
   } catch (error) {
     logger.warn("Failed to write threat protection config cache", {
       error,
@@ -299,6 +374,8 @@ export async function upsertOrgThreatProtectionConfig(
       },
     })
     .returning();
+
+  deleteParsedConfigCache(orgId);
 
   try {
     await deleteKey(cacheKey(orgId));

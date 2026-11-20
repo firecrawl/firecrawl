@@ -17,42 +17,136 @@ import { canonicalizeHost, splitUrl } from "./providers/web-risk/canonicalize";
 // only (normalized riskScore + categories) — it never knows which provider
 // produced the verdict, so new providers slot in without touching it.
 
+interface CompiledDomainList {
+  exactDomains: Set<string>;
+  wildcardSuffixes: Set<string>;
+  complexGlobs: RegExp[];
+}
+
+const compiledDomainListCache = new WeakMap<
+  readonly string[],
+  CompiledDomainList
+>();
+
+const compiledTldSetCache = new WeakMap<readonly string[], Set<string>>();
+
 /**
- * Whether `domain` matches a single whitelist/blacklist entry.
+ * Pre-index a whitelist/blacklist array so repeated checks against the same
+ * frozen policy list stay O(labels) per URL for exact and leading-wildcard
+ * entries; inner-`*` globs fall back to a linear regex scan.
  *
- * - Glob entries (containing `*`) match literally with `*` expanding to any
- *   run of characters, e.g. "*.example.com" matches "a.example.com" and
- *   "a.b.example.com" (but not the apex "example.com").
+ * Only frozen arrays are cached in the WeakMap so in-place mutations to a
+ * caller-owned mutable array can never serve stale results.
+ *
  * - Exact entries match the domain itself AND its subdomains — consistent with
  *   how the global blocklist treats domains (see
  *   src/scraper/WebScraper/utils/blocklist.ts), and what users expect from
  *   listing "example.com".
+ * - Leading wildcard entries ("*.example.com") match any strict subdomain
+ *   ("a.example.com", "a.b.example.com") but not the apex ("example.com").
+ * - Any other glob containing "*" falls back to a pre-compiled RegExp.
  */
-function domainMatchesEntry(domain: string, entry: string): boolean {
-  const trimmed = entry.trim().toLowerCase().replace(/\.$/, "");
-  if (!trimmed) return false;
+function compileDomainList(entries: readonly string[]): CompiledDomainList {
+  const isFrozen = Object.isFrozen(entries);
+  if (isFrozen) {
+    const cached = compiledDomainListCache.get(entries);
+    if (cached) return cached;
+  }
 
-  if (trimmed.includes("*")) {
-    const pattern = trimmed
-      .split("*")
-      .map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-      .join(".*");
-    try {
-      return new RegExp(`^${pattern}$`).test(domain);
-    } catch {
-      return false;
+  const exactDomains = new Set<string>();
+  const wildcardSuffixes = new Set<string>();
+  const complexGlobs: RegExp[] = [];
+
+  for (const entry of entries) {
+    const trimmed = entry.trim().toLowerCase().replace(/\.$/, "");
+    if (!trimmed) continue;
+
+    if (trimmed.includes("*")) {
+      if (trimmed.startsWith("*.") && trimmed.length > 2) {
+        const suffix = trimmed.slice(2);
+        if (!suffix.includes("*")) {
+          wildcardSuffixes.add(suffix);
+          continue;
+        }
+      }
+      const pattern = trimmed
+        .split("*")
+        .map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+        .join(".*");
+      try {
+        complexGlobs.push(new RegExp(`^${pattern}$`));
+      } catch {
+        // Ignore invalid patterns.
+      }
+      continue;
+    }
+
+    // Canonicalize non-glob entries the same way as the looked-up domain, so an
+    // entry written in a non-canonical IP form (e.g. "3279880203") still matches
+    // its dotted-quad host and vice versa.
+    const normalized = canonicalizeHost(trimmed);
+    if (normalized) {
+      exactDomains.add(normalized);
     }
   }
 
-  // Canonicalize non-glob entries the same way as the looked-up domain, so an
-  // entry written in a non-canonical IP form (e.g. "3279880203") still matches
-  // its dotted-quad host and vice versa.
-  const normalized = canonicalizeHost(trimmed);
-  return domain === normalized || domain.endsWith(`.${normalized}`);
+  const compiled: CompiledDomainList = {
+    exactDomains,
+    wildcardSuffixes,
+    complexGlobs,
+  };
+  if (isFrozen) {
+    compiledDomainListCache.set(entries, compiled);
+  }
+  return compiled;
 }
 
-export function domainMatchesList(domain: string, entries: string[]): boolean {
-  return entries.some(entry => domainMatchesEntry(domain, entry));
+export function domainMatchesList(
+  domain: string,
+  entries: readonly string[],
+): boolean {
+  if (entries.length === 0) return false;
+  const { exactDomains, wildcardSuffixes, complexGlobs } =
+    compileDomainList(entries);
+
+  if (exactDomains.has(domain)) return true;
+
+  if (exactDomains.size > 0 || wildcardSuffixes.size > 0) {
+    for (
+      let dot = domain.indexOf(".");
+      dot !== -1;
+      dot = domain.indexOf(".", dot + 1)
+    ) {
+      const parent = domain.slice(dot + 1);
+      if (exactDomains.has(parent) || wildcardSuffixes.has(parent)) {
+        return true;
+      }
+    }
+  }
+
+  for (const regex of complexGlobs) {
+    if (regex.test(domain)) return true;
+  }
+
+  return false;
+}
+
+function compileTldSet(blockedTlds: readonly string[]): Set<string> {
+  const isFrozen = Object.isFrozen(blockedTlds);
+  if (isFrozen) {
+    const cached = compiledTldSetCache.get(blockedTlds);
+    if (cached) return cached;
+  }
+
+  const set = new Set<string>();
+  for (const tld of blockedTlds) {
+    const normalized = tld.trim().toLowerCase().replace(/^\./, "");
+    if (normalized) set.add(normalized);
+  }
+  if (isFrozen) {
+    compiledTldSetCache.set(blockedTlds, set);
+  }
+  return set;
 }
 
 /**
@@ -60,12 +154,22 @@ export function domainMatchesList(domain: string, entries: string[]): boolean {
  * lowercase without a leading dot ("zip"); multi-label suffixes ("co.uk")
  * also work since we do a label-boundary suffix match.
  */
-function matchesBlockedTld(domain: string, blockedTlds: string[]): boolean {
-  return blockedTlds.some(tld => {
-    const normalized = tld.trim().toLowerCase().replace(/^\./, "");
-    if (!normalized) return false;
-    return domain === normalized || domain.endsWith(`.${normalized}`);
-  });
+function matchesBlockedTld(
+  domain: string,
+  blockedTlds: readonly string[],
+): boolean {
+  if (blockedTlds.length === 0) return false;
+  const tldSet = compileTldSet(blockedTlds);
+  if (tldSet.size === 0) return false;
+  if (tldSet.has(domain)) return true;
+  for (
+    let dot = domain.indexOf(".");
+    dot !== -1;
+    dot = domain.indexOf(".", dot + 1)
+  ) {
+    if (tldSet.has(domain.slice(dot + 1))) return true;
+  }
+  return false;
 }
 
 /**
