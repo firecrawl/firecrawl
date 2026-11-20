@@ -12,7 +12,7 @@ from ..types import (
     WebhookConfig, CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
 )
 from ..utils import FirecrawlError, HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
-from ..utils.error_handler import CrawlJobTimeoutError
+from ..utils.error_handler import CrawlJobFailedError, CrawlJobTimeoutError
 from ..utils.normalize import normalize_document_input
 
 
@@ -401,6 +401,7 @@ def wait_for_crawl_completion(
     timeout: Optional[int] = None,
     *,
     request_timeout: Optional[float] = None,
+    raise_on_failure: bool = False,
 ) -> CrawlJob:
     """
     Wait for a crawl job to complete, polling for status updates.
@@ -411,12 +412,15 @@ def wait_for_crawl_completion(
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
         request_timeout: Optional timeout (in seconds) for each status request
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False to preserve the historical return behavior.
         
     Returns:
-        CrawlJob when job completes
+        CrawlJob with the terminal status and available data
         
     Raises:
-        Exception: If the job fails
+        CrawlJobFailedError: If raise_on_failure is True and the job fails or is cancelled.
+            The exception retains the terminal job and any partial results.
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
@@ -429,8 +433,13 @@ def wait_for_crawl_completion(
             request_timeout=request_timeout,
         )
         
-        # Check if job is complete
-        if crawl_job.status in ["completed", "failed", "cancelled"]:
+        # Keep historical behavior unless callers opt in to exceptions for
+        # terminal states that did not complete successfully.
+        if crawl_job.status == "completed":
+            return crawl_job
+        if crawl_job.status in ["failed", "cancelled"]:
+            if raise_on_failure:
+                raise CrawlJobFailedError(crawl_job)
             return crawl_job
         
         # Check timeout
@@ -448,6 +457,7 @@ def crawl(
     timeout: Optional[int] = None,
     *,
     request_timeout: Optional[float] = None,
+    raise_on_failure: bool = False,
 ) -> CrawlJob:
     """
     Start a crawl job and wait for it to complete.
@@ -457,15 +467,19 @@ def crawl(
         request: CrawlRequest containing URL and options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
-        request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination 
+        request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination
             requests when fetching results. If there are multiple pages, each page request gets this timeout
+        raise_on_failure: Raise FirecrawlError when the job ends as failed or cancelled.
+            Defaults to False for backward compatibility.
         
     Returns:
-        CrawlJob when job completes
+        CrawlJob with the terminal status and available data
         
     Raises:
         ValueError: If request is invalid
-        Exception: If the crawl fails to start or complete
+        FirecrawlError: If starting the job fails
+        CrawlJobFailedError: If raise_on_failure is True and the job ends as failed
+            or cancelled; the exception retains the terminal job and partial data
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
@@ -483,6 +497,7 @@ def crawl(
         poll_interval,
         timeout,
         request_timeout=effective_request_timeout,
+        raise_on_failure=raise_on_failure,
     )
 
 
