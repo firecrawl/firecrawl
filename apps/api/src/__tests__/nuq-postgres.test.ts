@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import amqp from "amqplib";
 import { Pool } from "pg";
 import { config } from "../config";
 import { nuqShutdown, scrapeQueue } from "../services/worker/nuq";
@@ -74,6 +75,85 @@ describeIf("NuQ Postgres queue", () => {
       }),
     ).resolves.toBeNull();
   });
+
+  test.skipIf(!config.NUQ_RABBITMQ_URL)(
+    "recovers from a broker-rejected subscription and receives a later completion",
+    async () => {
+      let listenChannelId: string | undefined;
+      let rejectedConnectionClosed = false;
+      const connect = amqp.connect;
+      const connectSpy = vi
+        .spyOn(amqp, "connect")
+        .mockImplementationOnce(async (...args) => {
+          const connection = await connect(...args);
+          connection.once("close", () => {
+            rejectedConnectionClosed = true;
+          });
+          const createChannel = connection.createChannel;
+          vi.spyOn(connection, "createChannel").mockImplementationOnce(
+            async () => {
+              const channel = await createChannel.call(connection);
+              const consume = channel.consume;
+              vi.spyOn(channel, "consume").mockImplementationOnce(
+                (queue: string, deliver, options) => {
+                  listenChannelId = queue.slice(
+                    `${scrapeQueue.queueName}.listen.`.length,
+                  );
+                  return consume.call(
+                    channel,
+                    `missing-${randomUUID()}`,
+                    deliver,
+                    options,
+                  );
+                },
+              );
+              return channel;
+            },
+          );
+          return connection;
+        });
+
+      try {
+        await expect(
+          scrapeQueue.waitForJob(randomUUID(), 5_000),
+        ).rejects.toThrow("NOT_FOUND");
+      } finally {
+        connectSpy.mockRestore();
+      }
+      expect(listenChannelId).toBeTruthy();
+      await vi.waitFor(
+        () => expect(rejectedConnectionClosed).toBe(true),
+        2_000,
+      );
+
+      const id = randomUUID();
+      const lock = randomUUID();
+      ids.push(id);
+      await cleanupPool.query(
+        `INSERT INTO nuq.queue_scrape (id, status, lock, locked_at, listen_channel_id)
+         VALUES ($1, 'active', $2, now(), $3)`,
+        [id, lock, listenChannelId],
+      );
+      const getJob = vi.spyOn(scrapeQueue, "getJob");
+      const returnValue = { ok: true };
+
+      try {
+        const result = scrapeQueue.waitForJob(id, 10_000);
+        const completed = expect(result).resolves.toEqual(returnValue);
+        await vi.waitFor(() => expect(getJob).toHaveBeenCalledOnce(), 5_000);
+        await expect(getJob.mock.results[0].value).resolves.toMatchObject({
+          status: "active",
+        });
+        await expect(
+          scrapeQueue.jobFinish(id, lock, returnValue),
+        ).resolves.toBe(true);
+        await completed;
+        expect(getJob).toHaveBeenCalledTimes(2);
+      } finally {
+        getJob.mockRestore();
+      }
+    },
+  );
 
   test("getGroupJobs filters and paginates terminal jobs with payloads", async () => {
     const groupId = randomUUID();
