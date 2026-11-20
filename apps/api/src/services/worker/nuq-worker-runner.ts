@@ -11,6 +11,10 @@ import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import { shutdownPubSubLogging } from "../logging/log_job";
+import {
+  installWorkerLifecycle,
+  retryDependency,
+} from "../../lib/worker-lifecycle";
 
 export type WorkerQueue = {
   getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
@@ -126,10 +130,27 @@ export async function runNuqWorker(options: {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  installWorkerLifecycle(options.serviceName);
+
   let noJobTimeout = 1500;
 
   while (!isShuttingDown) {
-    const job = await options.queue.getJobToProcess();
+    const dequeue = await retryDependency(() =>
+      options.queue.getJobToProcess(),
+    );
+
+    // The queue outlasted the backoff budget. Wait and go round again instead
+    // of letting the rejection take the process down.
+    if (dequeue === null) {
+      _logger.error(
+        "Could not reach the queue after retrying; backing off before the next attempt",
+        { module: options.serviceName },
+      );
+      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      continue;
+    }
+
+    const job = dequeue.value;
 
     if (job === null) {
       _logger.info("No jobs to process", { module: "nuq/metrics" });
@@ -185,37 +206,44 @@ export async function runNuqWorker(options: {
       (job.data as { zeroDataRetention?: boolean } | undefined)
         ?.zeroDataRetention === true;
 
-    await withZeroDataRetention(zeroDataRetention, async () => {
-      if (processResult.ok) {
-        endJobTimer({ status: "success" });
-        if (
-          !(await options.queue.jobFinish(
-            job.id,
-            job.lock!,
-            processResult.data,
-            logger,
-          ))
-        ) {
-          logger.warn("Could not update job status");
+    // Recording the outcome is a dependency call too: if the database is
+    // unreachable the job's lock expires and the queue redelivers it, which is
+    // recoverable — losing the process is not.
+    try {
+      await withZeroDataRetention(zeroDataRetention, async () => {
+        if (processResult.ok) {
+          endJobTimer({ status: "success" });
+          if (
+            !(await options.queue.jobFinish(
+              job.id,
+              job.lock!,
+              processResult.data,
+              logger,
+            ))
+          ) {
+            logger.warn("Could not update job status");
+          }
+        } else {
+          endJobTimer({ status: "failed" });
+          if (
+            !(await options.queue.jobFail(
+              job.id,
+              job.lock!,
+              processResult.error instanceof Error
+                ? processResult.error.message
+                : typeof processResult.error === "string"
+                  ? processResult.error
+                  : JSON.stringify(processResult.error),
+              logger,
+            ))
+          ) {
+            logger.warn("Could not update job status");
+          }
         }
-      } else {
-        endJobTimer({ status: "failed" });
-        if (
-          !(await options.queue.jobFail(
-            job.id,
-            job.lock!,
-            processResult.error instanceof Error
-              ? processResult.error.message
-              : typeof processResult.error === "string"
-                ? processResult.error
-                : JSON.stringify(processResult.error),
-            logger,
-          ))
-        ) {
-          logger.warn("Could not update job status");
-        }
-      }
-    });
+      });
+    } catch (error) {
+      logger.error("Could not record job outcome; continuing", { error });
+    }
   }
 
   _logger.info("NuQ worker shutting down", {

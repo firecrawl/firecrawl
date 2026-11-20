@@ -10,6 +10,10 @@ import {
 } from "./nuq";
 import Express from "express";
 import { logger } from "../../lib/logger";
+import {
+  installWorkerLifecycle,
+  retryDependency,
+} from "../../lib/worker-lifecycle";
 import { startRole } from "../../main";
 
 export async function start() {
@@ -51,28 +55,42 @@ export async function start() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  try {
-    await Promise.all([
-      (async () => {
-        while (true) {
-          await crawlFinishedQueue.prefetchJobs();
-          await new Promise(resolve => setTimeout(resolve, 250));
+  installWorkerLifecycle("nuq-prefetch-worker");
+
+  await Promise.all([
+    (async () => {
+      while (true) {
+        // A prefetch pass against an unreachable database is worth retrying,
+        // not worth losing the process over: the queue fills back up once the
+        // dependency returns.
+        const prefetch = await retryDependency(() =>
+          crawlFinishedQueue.prefetchJobs(),
+        );
+        if (prefetch === null) {
+          logger.error("crawlFinished prefetch failed after retrying", {
+            module: "nuq-prefetch-worker",
+          });
         }
-      })(),
-      (async () => {
-        while (true) {
-          if (config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL) {
-            fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
-          }
-          await scrapeQueue.prefetchJobs();
-          await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    })(),
+    (async () => {
+      while (true) {
+        if (config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL) {
+          fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
         }
-      })(),
-    ]);
-  } catch (error) {
-    logger.error("Error in prefetch worker", { error });
-    process.exit(1);
-  }
+        const prefetch = await retryDependency(() =>
+          scrapeQueue.prefetchJobs(),
+        );
+        if (prefetch === null) {
+          logger.error("NuQ prefetch failed after retrying", {
+            module: "nuq-prefetch-worker",
+          });
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    })(),
+  ]);
 
   logger.info("All prefetch workers exited. Shutting down...");
   await shutdown();

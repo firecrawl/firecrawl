@@ -1,0 +1,59 @@
+import {
+  DEPENDENCY_BACKOFF_MS,
+  installWorkerLifecycle,
+  retryDependency,
+} from "./worker-lifecycle";
+
+const FAST_BACKOFF = [1, 1] as const;
+
+test("retries a rejected dependency call and returns its value", async () => {
+  let calls = 0;
+  const result = await retryDependency(async () => {
+    calls++;
+    if (calls < 3) {
+      throw new Error("connect ECONNREFUSED 10.0.0.1:5432");
+    }
+    return "job";
+  }, FAST_BACKOFF);
+
+  expect(calls).toBe(3);
+  expect(result).toEqual({ value: "job" });
+});
+
+test("gives up after the backoff budget instead of throwing", async () => {
+  let calls = 0;
+  const result = await retryDependency(async () => {
+    calls++;
+    throw new Error("getaddrinfo ENOTFOUND firecrawl-db-rw");
+  }, FAST_BACKOFF);
+
+  expect(calls).toBe(FAST_BACKOFF.length + 1);
+  expect(result).toBeNull();
+});
+
+test("treats a null result as an answer, not a failure", async () => {
+  let calls = 0;
+  const result = await retryDependency(async () => {
+    calls++;
+    return null;
+  }, FAST_BACKOFF);
+
+  expect(calls).toBe(1);
+  expect(result).toEqual({ value: null });
+});
+
+test("waits out a dependency outage for at least five minutes", () => {
+  const totalMs = DEPENDENCY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0);
+
+  expect(totalMs).toBeGreaterThanOrEqual(5 * 60_000);
+});
+
+test("an unhandled rejection is logged, not fatal", () => {
+  const before = process.listenerCount("unhandledRejection");
+  installWorkerLifecycle("test-worker");
+
+  expect(process.listenerCount("unhandledRejection")).toBe(before + 1);
+  expect(() =>
+    process.emit("unhandledRejection", new Error("boom"), Promise.resolve()),
+  ).not.toThrow();
+});

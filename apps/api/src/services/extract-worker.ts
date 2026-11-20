@@ -21,6 +21,7 @@ import {
 import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
+import { installWorkerLifecycle } from "../lib/worker-lifecycle";
 import { startRole } from "../main";
 
 configDotenv();
@@ -233,11 +234,18 @@ export async function start() {
 
   _logger.info("Starting extract worker with RabbitMQ...");
 
-  // Start consuming from both the main queue and the DLQ
+  installWorkerLifecycle("extract-worker");
+
+  // Start consuming from both the main queue and the DLQ. A consumer that
+  // rejects is a dead queue rather than a blip — the AMQP layer reconnects by
+  // itself — so exit and let the supervisor restart the container.
   await Promise.all([
     consumeExtractJobs(processExtractJob),
     consumeExtractDLQ(processDLQJob),
-  ]);
+  ]).catch(error => {
+    _logger.error("A queue consumer stopped; exiting", { error });
+    process.exit(1);
+  });
 
   _logger.info("Extract worker started, consuming from RabbitMQ");
 }
