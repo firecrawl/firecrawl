@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, dbRr } from "../../db/connection";
@@ -25,15 +26,22 @@ const CACHE_TTL_SECONDS = 60;
 
 const cacheKey = (orgId: string) => `threat-protection-config:${orgId}`;
 
-// Bounded per-pod cache of parsed org configs, keyed by orgId and validated
-// against the exact Redis JSON string on every read. Avoids re-parsing large
-// domain lists on every request and keeps frozen array references stable so
+// Bounded per-pod LRU cache of parsed org configs, keyed by orgId and
+// validated against the SHA-256 digest of the Redis JSON string on every read.
+// Avoids re-parsing large domain lists on every request, drops the raw string
+// so memory is not doubled, and keeps frozen array references stable so
 // verdict.ts's WeakMap index is reused across requests with zero staleness.
-const MAX_PARSED_CONFIG_CACHE_ENTRIES = 500;
+const MAX_PARSED_CONFIG_CACHE_ENTRIES = 100;
+const MAX_PARSED_CONFIG_CACHE_BYTES = 16 * 1024 * 1024;
 const parsedConfigCache = new Map<
   string,
-  { raw: string; config: OrgThreatProtectionConfig | null }
+  { hash: string; bytes: number; config: OrgThreatProtectionConfig | null }
 >();
+let parsedConfigCacheBytes = 0;
+
+function hashSerializedConfig(raw: string): string {
+  return createHash("sha256").update(raw).digest("base64");
+}
 
 function freezePolicyLists(
   config: OrgThreatProtectionConfig | null,
@@ -45,19 +53,32 @@ function freezePolicyLists(
   return config;
 }
 
+function deleteParsedConfigCache(orgId: string): void {
+  const existing = parsedConfigCache.get(orgId);
+  if (existing) {
+    parsedConfigCacheBytes -= existing.bytes;
+    parsedConfigCache.delete(orgId);
+  }
+}
+
 function setParsedConfigCache(
   orgId: string,
-  raw: string,
+  hash: string,
+  bytes: number,
   config: OrgThreatProtectionConfig | null,
 ): void {
-  if (
-    !parsedConfigCache.has(orgId) &&
-    parsedConfigCache.size >= MAX_PARSED_CONFIG_CACHE_ENTRIES
+  deleteParsedConfigCache(orgId);
+  if (bytes > MAX_PARSED_CONFIG_CACHE_BYTES) return;
+  while (
+    parsedConfigCache.size >= MAX_PARSED_CONFIG_CACHE_ENTRIES ||
+    parsedConfigCacheBytes + bytes > MAX_PARSED_CONFIG_CACHE_BYTES
   ) {
     const oldestKey = parsedConfigCache.keys().next().value;
-    if (oldestKey !== undefined) parsedConfigCache.delete(oldestKey);
+    if (oldestKey === undefined) break;
+    deleteParsedConfigCache(oldestKey);
   }
-  parsedConfigCache.set(orgId, { raw, config });
+  parsedConfigCache.set(orgId, { hash, bytes, config });
+  parsedConfigCacheBytes += bytes;
 }
 
 /**
@@ -208,14 +229,18 @@ export async function getOrgThreatProtectionConfig(
   try {
     const cached = await getValue(key);
     if (cached !== null) {
+      const hash = hashSerializedConfig(cached);
       const mem = parsedConfigCache.get(orgId);
-      if (mem && mem.raw === cached) {
+      if (mem && mem.hash === hash) {
+        // Refresh LRU recency.
+        parsedConfigCache.delete(orgId);
+        parsedConfigCache.set(orgId, mem);
         return mem.config;
       }
       const parsed = freezePolicyLists(
         JSON.parse(cached) as OrgThreatProtectionConfig | null,
       );
-      setParsedConfigCache(orgId, cached, parsed);
+      setParsedConfigCache(orgId, hash, Buffer.byteLength(cached), parsed);
       return parsed;
     }
   } catch (error) {
@@ -246,7 +271,12 @@ export async function getOrgThreatProtectionConfig(
 
   const config = rows[0] ? rowToConfig(rows[0]) : null;
   const serialized = JSON.stringify(config);
-  setParsedConfigCache(orgId, serialized, config);
+  setParsedConfigCache(
+    orgId,
+    hashSerializedConfig(serialized),
+    Buffer.byteLength(serialized),
+    config,
+  );
 
   try {
     await setValue(key, serialized, CACHE_TTL_SECONDS);
@@ -345,7 +375,7 @@ export async function upsertOrgThreatProtectionConfig(
     })
     .returning();
 
-  parsedConfigCache.delete(orgId);
+  deleteParsedConfigCache(orgId);
 
   try {
     await deleteKey(cacheKey(orgId));
