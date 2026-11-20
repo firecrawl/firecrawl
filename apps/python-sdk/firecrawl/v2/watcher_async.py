@@ -9,6 +9,7 @@ Usage:
 import asyncio
 import inspect
 import json
+import logging
 import time
 from typing import AsyncIterator, Dict, List, Literal, Optional
 
@@ -20,6 +21,7 @@ from .types import BatchScrapeJob, CrawlJob, Document
 from .utils.normalize import normalize_document_input
 
 JobKind = Literal["crawl", "batch"]
+logger = logging.getLogger(__name__)
 
 
 class AsyncWatcher:
@@ -60,6 +62,7 @@ class AsyncWatcher:
 
     async def _iterate(self) -> AsyncIterator[object]:
         status = "scraping"
+        reported_counts: Dict = {}
         streamed_docs: List[Document] = []
         uri = self._build_ws_url()
         headers_list = []
@@ -126,7 +129,6 @@ class AsyncWatcher:
                         return
                     elif msg_type == "catchup":
                         d = body.get("data", {})
-                        status = d.get("status", status)
                         self._append_documents(streamed_docs, d.get("data"))
                         # Fall through to emit a snapshot below
                     elif msg_type == "document":
@@ -139,19 +141,29 @@ class AsyncWatcher:
                         raw_payload = body.get("data", {}) or {}
                         self._append_documents(streamed_docs, raw_payload.get("data"))
                         # Emit final snapshot then end
-                        yield self._make_snapshot(status="completed", payload=raw_payload, docs_override=streamed_docs)
+                        yield self._make_snapshot(
+                            status="completed",
+                            payload={**reported_counts, **raw_payload},
+                            docs_override=streamed_docs,
+                        )
                         return
 
                     # Generic snapshot emit for status messages and periodic progress
-                    payload = body.get("data", body)
-                    status_str = payload.get("status", body.get("status", status))
+                    if msg_type == "document":
+                        payload = reported_counts
+                    else:
+                        payload = body.get("data", body)
+                        for key in ("completed", "total", "creditsUsed"):
+                            if key in payload:
+                                reported_counts[key] = payload[key]
+                    status = payload.get("status", body.get("status", status))
                     snapshot = self._make_snapshot(
-                        status=status_str,
+                        status=status,
                         payload=payload,
                         docs_override=streamed_docs if msg_type in ("catchup", "document") else None,
                     )
                     yield snapshot
-                    if status_str in ("completed", "failed", "cancelled"):
+                    if status in ("completed", "failed", "cancelled"):
                         return
         except Exception:
             # WS connect failure: fallback to HTTP polling loop until terminal/timeout
@@ -203,8 +215,7 @@ class AsyncWatcher:
             try:
                 documents.append(Document(**normalize_document_input(doc)))
             except ValidationError:
-                # One invalid document should not disconnect the stream.
-                continue
+                logger.warning("Skipping invalid WebSocket document")
 
     def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Document]] = None):
         if docs_override is not None:
@@ -212,9 +223,7 @@ class AsyncWatcher:
             docs = [doc.model_copy(deep=True) for doc in docs_override]
         else:
             docs = []
-            for doc in payload.get("data", []) or []:
-                if isinstance(doc, dict):
-                    docs.append(Document(**normalize_document_input(doc)))
+            self._append_documents(docs, payload.get("data"))
 
         if self._kind == "crawl":
             return CrawlJob(

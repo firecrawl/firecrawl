@@ -463,6 +463,57 @@ def test_async_watcher_keeps_streaming_after_an_invalid_document(monkeypatch, ki
     assert [doc.markdown for doc in snapshots[-1].data] == ["first", "second", "last"]
 
 
+@pytest.mark.parametrize("kind", ["crawl", "batch"])
+def test_async_document_progress_keeps_last_reported_job_counts(monkeypatch, kind):
+    import websockets
+    from firecrawl.v2.watcher_async import AsyncWatcher
+
+    messages = [
+        {"type": "catchup", "data": {"status": "scraping", "completed": 1, "total": 4,
+         "creditsUsed": 8, "data": [{"markdown": "first"}]}},
+        {"type": "document", "data": {"markdown": "second", "total": 999}},
+        {"type": "status", "data": {"status": "scraping", "completed": 2, "total": 4,
+         "creditsUsed": 9, "data": [{"markdown": "status only"}]}},
+        {"type": "document", "data": {"markdown": "third"}},
+        {"type": "done", "data": {"completed": 4, "creditsUsed": 10}},
+    ]
+    monkeypatch.setattr(websockets, "connect", lambda *a, **kw: FakeConnect(FakeWebSocket(messages)))
+
+    async def consume():
+        return [snapshot async for snapshot in AsyncWatcher(DummyClient(), "jid", kind=kind)]
+
+    _, first_progress, status, next_progress, final = asyncio.run(consume())
+    assert (first_progress.completed, first_progress.total, first_progress.credits_used) == (1, 4, 8)
+    assert [doc.markdown for doc in status.data] == ["status only"]
+    assert (next_progress.completed, next_progress.total, next_progress.credits_used) == (2, 4, 9)
+    assert [doc.markdown for doc in next_progress.data] == ["first", "second", "third"]
+    assert (final.completed, final.total, final.credits_used) == (4, 4, 10)
+
+
+def test_async_status_frame_skips_invalid_document_without_exposing_input(monkeypatch, caplog):
+    import websockets
+    from firecrawl.v2.watcher_async import AsyncWatcher
+
+    messages = [
+        {"type": "status", "data": {"status": "scraping", "data": [
+            {"markdown": ["private page content"]}, {"markdown": "valid status result"},
+        ]}},
+        {"type": "document", "data": {"markdown": "streamed"}},
+        {"type": "done"},
+    ]
+    monkeypatch.setattr(websockets, "connect", lambda *a, **kw: FakeConnect(FakeWebSocket(messages)))
+
+    async def consume():
+        return [snapshot async for snapshot in AsyncWatcher(DummyClient(), "jid")]
+
+    status, progress, final = asyncio.run(consume())
+    assert [doc.markdown for doc in status.data] == ["valid status result"]
+    assert [doc.markdown for doc in progress.data] == ["streamed"]
+    assert final.status == "completed"
+    assert "Skipping invalid WebSocket document" in caplog.text
+    assert "private page content" not in caplog.text
+
+
 def test_async_watcher_reiteration_starts_with_an_empty_cache(monkeypatch):
     import websockets
     from firecrawl.v2.watcher_async import AsyncWatcher
