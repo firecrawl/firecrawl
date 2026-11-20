@@ -183,12 +183,12 @@ def wait_agent(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
 ) -> AgentResponse:
-    start_ts = time.time()
+    start_ts = time.monotonic()
     while True:
         status = get_agent_status(client, job_id)
         if status.status in ("completed", "failed", "cancelled"):
             return status
-        if timeout is not None and (time.time() - start_ts) > timeout:
+        if timeout is not None and (time.monotonic() - start_ts) > timeout:
             return status
         time.sleep(max(1, poll_interval))
 
