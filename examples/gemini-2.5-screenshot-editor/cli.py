@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Firecrawl + Gemini 2.5 Flash Image CLI Editor
+Firecrawl + Gemini 3.1 Flash-Lite Image CLI Editor
 =============================================
 
 A professional CLI tool that captures website screenshots using Firecrawl
-and applies AI-powered image editing using Google's Gemini 2.5 Flash Image model.
+and applies AI-powered image editing using Google's Gemini 3.1 Flash-Lite Image model.
 
 Features:
 - Website screenshot capture with Firecrawl API
@@ -467,7 +467,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog='cli.py',
         usage='%(prog)s [URL] [MODE] [OPTIONS]',
-        description="Firecrawl + Gemini 2.5 Flash Image CLI - Transform website screenshots with AI",
+        description="Firecrawl + Gemini 3.1 Flash-Lite Image CLI - Transform website screenshots with AI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 EXAMPLES:
