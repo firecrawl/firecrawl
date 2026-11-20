@@ -10,7 +10,12 @@ import {
   normalizeOwnerId,
   decodeI64,
 } from "./keyspace";
-import { bumpTeamActive, newTxContext, releaseSlotsAndPromote } from "./ops";
+import {
+  bumpTeamActive,
+  newTxContext,
+  readDueBuckets,
+  releaseSlotsAndPromote,
+} from "./ops";
 
 // External slots: capacity consumed by things that are not queue jobs (sync
 // scrapes via the team semaphore, browser sessions). Admission can enforce a
@@ -121,11 +126,10 @@ export class NuqFdbExternalSlots {
 
   // Sweeper hook: releases slots whose holders stopped renewing.
   public async sweepExpired(now: number, buckets: number): Promise<void> {
-    for (let b = 0; b < buckets; b++) {
-      const r = this.expiryScanRange(b, now);
-      const due = await this.db.doTn(async tn =>
-        tn.snapshot().getRangeAll(r.begin, r.end, { limit: 50 }),
-      );
+    const dueByBucket = await this.db.doTn(tn =>
+      readDueBuckets(tn, buckets, b => this.expiryScanRange(b, now), 50),
+    );
+    for (const due of dueByBucket) {
       for (const [key, value] of due) {
         const holderId = this.ks.unpackId(key as Buffer);
         const rec = decodeJson<{ t: string }>(value as Buffer);

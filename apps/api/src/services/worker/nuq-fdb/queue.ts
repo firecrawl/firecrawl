@@ -152,6 +152,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   public readonly groupOps: NuqFdbGroupOps | null;
   // worker-local lease expiry tracking so renewLock can stay a blind write
   private leaseExps: Map<string, number> = new Map();
+  // set when the last take found every shard empty, so the next take starts
+  // from the occupancy counters (one read) instead of blind probes
+  private lastTakeEmpty = false;
 
   constructor(
     public readonly queueName: string,
@@ -585,11 +588,12 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   ): Promise<NuQFdbJob<JobData, JobReturnValue> | null> {
     const startedAt = Date.now();
     // blind random probes win at high occupancy (no coordination, conflicts
-    // spread across shards); the occupancy scan below covers the sparse case
+    // spread across shards); the occupancy scan below covers the sparse case,
+    // and goes first when the previous take came back empty (idle workers)
     const PROBES = 4;
     const tried = new Set<number>();
     let randomDropped = 0;
-    while (tried.size < PROBES) {
+    while (!this.lastTakeEmpty && tried.size < PROBES) {
       const shard = Math.floor(Math.random() * READY_SHARDS);
       if (tried.has(shard)) continue;
       const result = await this.takeFromShard(shard);
@@ -651,6 +655,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           continue;
         }
         this.leaseExps.set(result.id, result.leaseExpiresAt!.getTime());
+        this.lastTakeEmpty = false;
         logger.debug("NuQ FDB dequeue attempt", {
           canonicalLog: "nuq-fdb/dequeue",
           queueName: this.queueName,
@@ -684,6 +689,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       fallbackEmptyCount: fallbackEmpty,
       fallbackDroppedCount: fallbackDropped,
     });
+    this.lastTakeEmpty = true;
     return null;
   }
 
