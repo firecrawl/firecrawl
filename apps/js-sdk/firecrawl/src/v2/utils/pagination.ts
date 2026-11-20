@@ -17,10 +17,12 @@ export async function fetchAllPages<T = Document>(
   const maxResults = pagination?.maxResults ?? undefined;
   const maxWaitTime = pagination?.maxWaitTime ?? undefined;
   const started = Date.now();
+  const visited = new Set<string>();
 
-  while (current) {
+  while (current && !visited.has(current)) {
     if (maxPages != null && pageCount >= maxPages) break;
     if (maxWaitTime != null && (Date.now() - started) / 1000 > maxWaitTime) break;
+    visited.add(current);
 
     let payload: { success: boolean; next?: string | null; data?: T[] | { pages?: T[]; next?: string | null } } | null = null;
     try {
@@ -40,8 +42,6 @@ export async function fetchAllPages<T = Document>(
     }
     if (maxResults != null && docs.length >= maxResults) break;
     const next = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
-    // A running job's cursor can point back at itself until new documents land; re-requesting it here only spins.
-    if (next === current) break;
     current = next;
     pageCount += 1;
   }
