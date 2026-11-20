@@ -6,6 +6,7 @@ import { createHmac } from "node:crypto";
 import { config } from "../config";
 import {
   MAX_FEEDBACK_TOKEN_LENGTH,
+  checkFeedbackToken,
   issueFeedbackToken,
   verifyFeedbackToken,
 } from "./alexandria-feedback-token";
@@ -112,4 +113,33 @@ it("changes every token when the key rotates", () => {
   const token = issueFeedbackToken(claims, now)!;
   config.EXCHANGE_INTERNAL_SECRET = "rotated";
   expect(verifyFeedbackToken(token, teamId, now)).toBeNull();
+});
+
+it("names the reason a token is rejected", () => {
+  const token = issueFeedbackToken(claims, now)!;
+  const [version, payload, signature] = token.split(".");
+  const flipped = Buffer.from(signature, "base64url");
+  flipped[0] ^= 1;
+  const reason = (value: string, at = now) =>
+    (checkFeedbackToken(value, teamId, at) as { reason?: string }).reason;
+  expect(checkFeedbackToken(token, teamId, now).claims).not.toBeNull();
+  expect(reason(`${token}.extra`)).toBe("malformed");
+  expect(reason(`${version}.${payload}.${flipped.toString("base64url")}`)).toBe(
+    "bad_signature",
+  );
+  expect(
+    (
+      checkFeedbackToken(
+        token,
+        "01933161-0000-7000-8000-000000000002",
+        now,
+      ) as {
+        reason?: string;
+      }
+    ).reason,
+  ).toBe("bad_signature");
+  expect(reason(token, now + 24 * 3600_000 + 1000)).toBe("expired");
+  expect(reason(token, now - 120_000)).toBe("not_yet_valid");
+  config.EXCHANGE_INTERNAL_SECRET = undefined as never;
+  expect(reason(token)).toBe("no_key");
 });

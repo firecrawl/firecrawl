@@ -29,7 +29,7 @@ import { queryIndex } from "../../lib/map-utils";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -108,7 +108,12 @@ export async function getMapResults({
     resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
   // Lockdown (index-only) is cache-only, which implies zero data retention.
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
+  // The site search is a query sent to a search provider, so it also follows
+  // the team's search zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(flags) === "forced" ||
+    getSearchForcedKind(flags) === "zdr" ||
+    indexOnly;
 
   const sc: StoredCrawl = {
     originUrl: url,

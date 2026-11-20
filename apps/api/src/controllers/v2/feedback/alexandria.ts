@@ -7,10 +7,13 @@ import {
   getRecentAlexandriaCalls,
   hasRecentAlexandriaActivity,
 } from "../../../lib/alexandria-activity";
-import { verifyFeedbackToken } from "../../../lib/alexandria-feedback-token";
+import {
+  checkFeedbackToken,
+  type FeedbackTokenRejection,
+} from "../../../lib/alexandria-feedback-token";
+import { alexandriaFeedbackStorage } from "../../../lib/alexandria-feedback-storage";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
 import { logger } from "../../../lib/logger";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
@@ -36,22 +39,23 @@ export async function recordAlexandriaFeedback(
   req: RequestWithAuth<any, any, any>,
   body: AlexandriaFeedbackRequest,
 ): Promise<FeedbackRecordResult> {
-  if (!config.USE_DB_AUTHENTICATION) {
+  const teamId = req.auth.team_id;
+  const storage = alexandriaFeedbackStorage(teamId, req.acuc?.flags);
+  if (storage === "unavailable") {
     return failure(
       503,
       "DB_DISABLED",
       "Feedback requires database authentication.",
     );
   }
-  const teamId = req.auth.team_id;
-  if (teamId === "preview" || teamId.startsWith("preview_")) {
+  if (storage === "preview_team") {
     return failure(
       403,
       "PREVIEW_TEAM_NOT_ALLOWED",
       "Feedback is not available for preview teams.",
     );
   }
-  if (req.acuc?.flags?.searchFeedbackOptOut === true) {
+  if (storage === "opted_out") {
     return failure(
       403,
       "TEAM_OPTED_OUT",
@@ -59,19 +63,15 @@ export async function recordAlexandriaFeedback(
     );
   }
 
-  // A session can contain both search and scrape data. Honor either forced
-  // retention policy without looking up or recording individual jobs.
-  const searchZdr = getSearchZDR(req.acuc?.flags);
-  if (
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    searchZdr === "forced-zdr" ||
-    searchZdr === "forced-anon"
-  ) {
+  // Accepted without looking up or recording individual jobs.
+  if (storage === "zero_data_retention") {
     return {
       status: 200,
       body: {
         success: true,
         feedbackId: "00000000-0000-0000-0000-000000000000",
+        message:
+          "Feedback accepted. No refund: feedback is not stored under zero data retention.",
         creditsRefunded: 0,
         creditsRefundedToday: 0,
         dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
@@ -88,12 +88,16 @@ export async function recordAlexandriaFeedback(
   ];
   const calls = new Map<string, FeedbackCall>();
   let rejectedTokens = 0;
+  const rejectionReasons: Partial<Record<FeedbackTokenRejection, number>> = {};
   for (const token of submittedTokens) {
-    const claims = verifyFeedbackToken(token, teamId, now);
-    if (!claims) {
+    const checked = checkFeedbackToken(token, teamId, now);
+    if (!checked.claims) {
       rejectedTokens++;
+      rejectionReasons[checked.reason] =
+        (rejectionReasons[checked.reason] ?? 0) + 1;
       continue;
     }
+    const { claims } = checked;
     const key = JSON.stringify([
       claims.requestId,
       claims.provider,
@@ -108,6 +112,15 @@ export async function recordAlexandriaFeedback(
     });
   }
   const attribution = calls.size > 0 ? "token" : "window";
+  if (rejectedTokens > 0) {
+    logger.warn("Alexandria feedback tokens rejected", {
+      teamId,
+      submittedTokens: submittedTokens.length,
+      rejectedTokens,
+      reasons: rejectionReasons,
+      attribution,
+    });
+  }
 
   if (attribution === "window") {
     let withinWindow: boolean;
@@ -224,6 +237,7 @@ export async function recordAlexandriaFeedback(
     orgId: req.acuc?.org_id ?? null,
     rating: body.rating,
     requestedUrl: body.requestedWebsite.url,
+    calls: [...calls.values()],
   });
   void forwardExchangeToolFeedback({
     teamId,

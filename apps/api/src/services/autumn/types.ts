@@ -52,14 +52,15 @@ export type LockDeniedReason =
  * Outcome of an Autumn credit lock attempt.
  *
  * - `denied`: Autumn refused, or a partner's gate did — see `reason`.
- * - `skipped`: billing not in effect; proceed without a lock.
+ * - `skipped`: billing not in effect, or firebill gave no answer (`reason:
+ *   "unavailable"`); proceed without a lock.
  * - `locked`: reserved; finalize with `lockId`. `operationToken` is the
  *   partner's id for this occurrence — hand it back on the finalize.
  */
 export type LockCreditsResult =
   | { status: "locked"; lockId: string; operationToken?: string }
   | { status: "denied"; reason?: LockDeniedReason }
-  | { status: "skipped" };
+  | { status: "skipped"; reason?: "unavailable" };
 
 export type FinalizeCreditsLockParams = {
   lockId: string;
@@ -82,6 +83,9 @@ export type FinalizeCreditsLockParams = {
   /** What the lock reserved. Autumn nets outstanding holds out of a reported
    * balance, so firebill adds this back to see what the ghost can really pay. */
   heldValue?: number | null;
+  /** Hand a settle firebill never answered to the durable retry; see
+   * firebillFinalize. Defaults to off. */
+  durableRetry?: boolean;
 };
 
 export type TrackCreditsParams = {

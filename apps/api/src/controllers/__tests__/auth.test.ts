@@ -2040,6 +2040,71 @@ describe("authenticateUser", () => {
     });
   });
 
+  it("states a keyless request as free, on the chunk keyless auth builds and nowhere else", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+    vi.mocked(consumeKeylessRequest).mockResolvedValue({
+      ok: true,
+      requestsUsed: 1,
+      creditsUsed: 0,
+    });
+
+    const auth = await authenticateUser(
+      {
+        body: { origin: "cli" },
+        headers: {},
+        socket: { remoteAddress: "203.0.113.8" },
+      },
+      {},
+      RateLimiterMode.Search,
+      { allowKeyless: true },
+    );
+
+    expect(auth).toMatchObject({
+      success: true,
+      team_id: "preview_keyless_203.0.113.8",
+      chunk: { team_id: "preview_keyless_203.0.113.8", plan_class: "free" },
+    });
+    // The same team read by id is the preview mock, which states nothing.
+    const byTeamId = await getACUCTeam("preview_keyless_203.0.113.8");
+    expect(byTeamId).not.toBeNull();
+    expect(byTeamId?.plan_class).toBeUndefined();
+  });
+
+  it("states no plan class for the preview token, which gets no chunk", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.PREVIEW_TOKEN = "preview-token";
+    vi.mocked(getRateLimiter).mockReturnValue({
+      consume: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: "Bearer preview-token" },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Search,
+    );
+
+    expect(auth).toMatchObject({ success: true, chunk: null });
+  });
+
+  it("states no plan class on the no-auth bypass chunk", async () => {
+    config.USE_DB_AUTHENTICATION = false;
+
+    const auth = await authenticateUser(
+      { headers: {}, socket: {} },
+      {},
+      RateLimiterMode.Search,
+    );
+
+    expect(auth).toMatchObject({ success: true, team_id: "bypass" });
+    if (!auth.success) throw new Error("expected bypass auth to succeed");
+    expect(auth.chunk).not.toBeNull();
+    expect(auth.chunk?.plan_class).toBeUndefined();
+  });
+
   it("leaves the preview token on the static rate limiter", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.PREVIEW_TOKEN = "preview-token";
@@ -2229,6 +2294,89 @@ describe("authenticateUser", () => {
 
       await expect(getACUCTeam("team-1")).resolves.toMatchObject(known);
       expect(row).toEqual(keyRow);
+    });
+
+    it("puts the plan class Autumn reported on the chunk and its cache entry", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        ...known,
+        plan_class: "self_serve",
+      });
+
+      const auth = await authenticateUser(
+        authRequest,
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth).toMatchObject({
+        success: true,
+        chunk: { plan_class: "self_serve" },
+      });
+      await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+      expect(JSON.parse(vi.mocked(setValue).mock.calls[0][1])).toMatchObject({
+        plan_class: "self_serve",
+      });
+    });
+
+    it("states no plan class on a chunk built while Autumn fails, unlike the limits", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockRejectedValue(
+        new Error("Autumn down"),
+      );
+
+      const auth = await authenticateUser(
+        authRequest,
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth).toMatchObject({ success: true, chunk: failOpen });
+      if (!auth.success) throw new Error("expected auth to succeed");
+      expect(auth.chunk?.plan_class).toBeUndefined();
+      await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+      expect(
+        JSON.parse(vi.mocked(setValue).mock.calls[0][1]),
+      ).not.toHaveProperty("plan_class");
+    });
+
+    it("leaves a cached chunk that predates the plan class without one and asks Autumn nothing", async () => {
+      vi.mocked(getValue).mockResolvedValue(
+        JSON.stringify({ ...keyRow, ...known }),
+      );
+
+      const auth = await authenticateUser(
+        authRequest,
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(true);
+      if (!auth.success) throw new Error("expected auth to succeed");
+      expect(auth.chunk?.plan_class).toBeUndefined();
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
+    });
+
+    it("gives an uncached key chunk the team ACUC's plan class", async () => {
+      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
+      vi.mocked(getValue).mockImplementation(async key =>
+        key === "acuc_team_team-1_scrape"
+          ? JSON.stringify({ ...keyRow, ...known, plan_class: "contract" })
+          : null,
+      );
+
+      const auth = await authenticateUser(
+        {
+          headers: { authorization: `Bearer ${signDelegation()}` },
+          socket: { remoteAddress: "127.0.0.1" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth).toMatchObject({
+        success: true,
+        chunk: { plan_class: "contract" },
+      });
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
     });
 
     it("gives an uncached key chunk the team ACUC's limits without asking Autumn", async () => {

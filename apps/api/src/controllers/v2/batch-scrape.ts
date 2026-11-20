@@ -144,6 +144,23 @@ export async function batchScrapeController(
     });
   }
 
+  // Only batch scrapes can be appended to: crawls (including monitor crawls)
+  // carry their own billing and scope.
+  const appendTarget = req.body.appendToId
+    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl | null)
+    : null;
+  if (
+    req.body.appendToId &&
+    (!appendTarget ||
+      appendTarget.team_id !== req.auth.team_id ||
+      appendTarget.crawlerOptions != null)
+  ) {
+    return res.status(404).json({
+      success: false,
+      error: "Job not found",
+    });
+  }
+
   const id = req.body.appendToId ?? uuidv7();
   const billing: BillingMetadata = {
     ...(req.body.__agentInterop
@@ -425,8 +442,8 @@ export async function batchScrapeController(
     });
   }
 
-  const sc: StoredCrawl = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
+  const sc: StoredCrawl = appendTarget
+    ? appendTarget
     : {
         crawlerOptions: null,
         scrapeOptions: req.body,
@@ -457,12 +474,9 @@ export async function batchScrapeController(
       };
 
   if (req.body.appendToId) {
-    if (!sc || sc.team_id !== req.auth.team_id) {
-      return res.status(404).json({
-        success: false,
-        error: "Job not found",
-      });
-    }
+    sc.internalOptions.bypassBilling = !(
+      req.body.__agentInterop?.shouldBill ?? true
+    );
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
     // first created.

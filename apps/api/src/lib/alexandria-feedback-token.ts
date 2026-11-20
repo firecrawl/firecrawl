@@ -55,28 +55,41 @@ export function issueFeedbackToken(
   return token.length <= MAX_FEEDBACK_TOKEN_LENGTH ? token : undefined;
 }
 
-/** The token's claims if it was issued to teamId, its signature holds and it is under 24 hours old; otherwise null. */
-export function verifyFeedbackToken(
+export type FeedbackTokenRejection =
+  | "no_key"
+  | "malformed"
+  | "bad_signature"
+  | "expired"
+  | "not_yet_valid";
+
+/** Verifies a token for teamId; a token issued to another team fails as bad_signature. */
+export function checkFeedbackToken(
   token: string,
   teamId: string,
   now = Date.now(),
-): FeedbackTokenClaims | null {
+):
+  | { claims: FeedbackTokenClaims }
+  | { claims: null; reason: FeedbackTokenRejection } {
+  const reject = (reason: FeedbackTokenRejection) => ({
+    claims: null,
+    reason,
+  });
   const key = signingKey();
-  if (!key) return null;
+  if (!key) return reject("no_key");
   const [version, payload, signature, ...rest] = token.split(".");
   if (version !== VERSION || !payload || !signature || rest.length > 0)
-    return null;
+    return reject("malformed");
   const expected = sign(key, payload, teamId);
   const given = Buffer.from(signature, "base64url");
   if (given.length !== expected.length || !timingSafeEqual(given, expected))
-    return null;
+    return reject("bad_signature");
   let fields: unknown;
   try {
     fields = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
-    return null;
+    return reject("malformed");
   }
-  if (!Array.isArray(fields) || fields.length !== 4) return null;
+  if (!Array.isArray(fields) || fields.length !== 4) return reject("malformed");
   const [requestId, provider, capability, issuedAt] = fields;
   if (
     typeof requestId !== "string" ||
@@ -85,8 +98,18 @@ export function verifyFeedbackToken(
     typeof issuedAt !== "number" ||
     !Number.isInteger(issuedAt)
   )
-    return null;
+    return reject("malformed");
   const age = now / 1000 - issuedAt;
-  if (age > MAX_AGE_SEC || age < -CLOCK_SKEW_SEC) return null;
-  return { requestId, provider, capability, issuedAt };
+  if (age > MAX_AGE_SEC) return reject("expired");
+  if (age < -CLOCK_SKEW_SEC) return reject("not_yet_valid");
+  return { claims: { requestId, provider, capability, issuedAt } };
+}
+
+/** The token's claims if it was issued to teamId, its signature holds and it is under 24 hours old; otherwise null. */
+export function verifyFeedbackToken(
+  token: string,
+  teamId: string,
+  now = Date.now(),
+): FeedbackTokenClaims | null {
+  return checkFeedbackToken(token, teamId, now).claims;
 }

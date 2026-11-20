@@ -52,6 +52,48 @@ def test_gov_search_posts_body_and_parses_web_results(kwargs, body):
     assert result.data.web[0].position == 1
 
 
+def test_gov_search_sends_sources_and_parses_gov_results():
+    labeled = {
+        "success": True,
+        "data": {
+            "gov": [
+                {
+                    **RESPONSE["data"]["web"][0],
+                    "jurisdiction": "us",
+                    "courtType": "federal-appellate",
+                    "cites": ["us:usc:21:343"],
+                    "citedAs": ["us:cfr:21:101"],
+                    "updatedAt": 1700000000000,
+                }
+            ]
+        },
+    }
+    transport = Mock()
+    transport.post.return_value = _response(labeled)
+    client = FirecrawlClient.__new__(FirecrawlClient)
+    client.http_client = transport
+
+    result = client.gov_search(
+        "food labeling",
+        sources=["gov"],
+        cites=["21 U.S.C. § 343", "us:cfr:21:101"],
+    )
+
+    transport.post.assert_called_once_with(
+        "/v2/search/gov",
+        {
+            "query": "food labeling",
+            "cites": ["21 U.S.C. § 343", "us:cfr:21:101"],
+            "sources": ["gov"],
+        },
+    )
+    assert result.data.web is None
+    hit = result.data.gov[0]
+    assert hit.court_type == "federal-appellate"
+    assert hit.cited_as == ["us:cfr:21:101"]
+    assert hit.updated_at == 1700000000000
+
+
 def test_gov_search_rejects_empty_query():
     transport = Mock()
     client = FirecrawlClient.__new__(FirecrawlClient)

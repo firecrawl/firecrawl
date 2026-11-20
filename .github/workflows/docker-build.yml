@@ -1,0 +1,74 @@
+name: Docker Image Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/api/Dockerfile
+      - apps/api/.dockerignore
+      - apps/api/package.json
+      - apps/api/pnpm-lock.yaml
+      - apps/api/pnpm-workspace.yaml
+      - apps/api/patches/**
+      - apps/api/native/Cargo.toml
+      - apps/api/native/Cargo.lock
+      - apps/api/native/package.json
+      - apps/api/sharedLibs/go-html-to-md/go.mod
+      - apps/api/sharedLibs/go-html-to-md/go.sum
+      - apps/playwright-service-ts/Dockerfile
+      - apps/playwright-service-ts/.dockerignore
+      - apps/playwright-service-ts/package.json
+      - apps/playwright-service-ts/pnpm-lock.yaml
+      - apps/playwright-service-ts/pnpm-workspace.yaml
+      - .github/workflows/deploy-image.yml
+      - .github/workflows/deploy-image-staging.yml
+      - .github/workflows/deploy-playwright.yml
+      - .github/workflows/docker-build.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.image }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, playwright-service-ts]
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            platform_suffix: linux-amd64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: linux/arm64
+            platform_suffix: linux-arm64
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+          - image: api
+            context: ./apps/api
+            cache_from: type=registry,ref=ghcr.io/firecrawl/firecrawl:buildcache-
+          - image: playwright-service-ts
+            context: ./apps/playwright-service-ts
+            cache_from: ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@ef12d5b165b596e3aa44ea8198d8fde563eab402 # v1
+
+      - name: Build image
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: ${{ matrix.cache_from && format('{0}{1}', matrix.cache_from, matrix.platform_suffix) || '' }}
