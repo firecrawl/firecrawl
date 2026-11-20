@@ -955,6 +955,8 @@ dependencies = [
  "encoding_rs",
  "futures",
  "getrandom 0.3.4",
+ "http",
+ "hyper-util",
  "kuchikiki",
  "libmimalloc-sys",
  "lol_html",

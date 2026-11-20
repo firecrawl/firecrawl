@@ -46,6 +46,9 @@ tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net", "t
 
 # --- engine -----------------------------------------------------------------
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "brotli", "zstd", "deflate", "charset", "json", "stream"] }
+# The proxy rules reqwest reads from the environment, applied to Chrome too.
+hyper-util = { version = "0.1", features = ["client-proxy"] }
+http = "1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures = "0.3"

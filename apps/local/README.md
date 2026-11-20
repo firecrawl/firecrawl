@@ -220,6 +220,7 @@ Do not use `seccomp=unconfined` for this. It removes the whole filter from a con
 | `FIRECRAWL_LOCAL_TOKEN` | Bearer token for `serve`, same as `--token` |
 | `FIRECRAWL_LOCAL_ALLOW_PRIVATE` | Let `serve` callers reach private addresses, same as `--allow-private` |
 | `FIRECRAWL_LOCAL_USER_AGENT` | Override the User-Agent |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | Outbound proxy for both the plain fetcher and Chrome. Chrome reaches it with HTTP CONNECT, so it must be an `http://` proxy |
 | `FIRECRAWL_LOCAL_SCROLL` | Scroll rendered pages before reading them |
 | `FIRECRAWL_LOCAL_HOME` | Folder for Firecrawl Local's own files, such as its install ID |
 | `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login, which defaults to the Firecrawl CLI's |
