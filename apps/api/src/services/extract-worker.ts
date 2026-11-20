@@ -233,11 +233,19 @@ export async function start() {
 
   _logger.info("Starting extract worker with RabbitMQ...");
 
-  // Start consuming from both the main queue and the DLQ
+  // Start consuming from both the main queue and the DLQ. A consumer that
+  // rejects is fatal here: the consume callbacks ack and nack on the channel,
+  // and nothing re-subscribes after a channel dies, so a process that stayed
+  // up would hold /liveness at 200 while consuming nothing. No unhandled
+  // rejection handler is installed for that reason — the supervisor has to
+  // see the exit.
   await Promise.all([
     consumeExtractJobs(processExtractJob),
     consumeExtractDLQ(processDLQJob),
-  ]);
+  ]).catch(error => {
+    _logger.error("A queue consumer stopped; exiting", { error });
+    process.exit(1);
+  });
 
   _logger.info("Extract worker started, consuming from RabbitMQ");
 }

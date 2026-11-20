@@ -8,6 +8,7 @@ import {
 } from "./queue-service";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
+import { installWorkerLifecycle } from "../lib/worker-lifecycle";
 import systemMonitor from "./system-monitor";
 import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
@@ -474,11 +475,19 @@ export async function start() {
     );
   }
 
+  installWorkerLifecycle("queue-worker");
+
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
     crawlFinishWorker(),
-  ]);
+  ]).catch(error => {
+    // BullMQ reconnects its own sockets, so a consumer that rejects is broken
+    // rather than blipping: fail loudly and let the supervisor restart it
+    // instead of leaving the process up with a queue nobody drains.
+    _logger.error("A queue consumer stopped; exiting", { error });
+    process.exit(1);
+  });
 
   if (monitorSchedulerInterval) {
     clearInterval(monitorSchedulerInterval);
