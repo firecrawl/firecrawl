@@ -143,8 +143,9 @@ async function removeQuietly(filePath: string): Promise<void> {
  * ends when the response stream does, even when the connection closed
  * before the whole body arrived. Parsing such a prefix finds no pages, or
  * silently loses every page past the cut. When the handoff looks cut off,
- * download the file again directly — once, and only when the request did
- * not ask for a location or a non-basic proxy, and only for the share of
+ * download the file again directly — once, only for a team that is not
+ * US-only, only when the request did not ask for a location or a non-basic
+ * proxy, and only for the share of
  * scrapes in PDF_TRUNCATED_REFETCH_PERCENT — and use that copy if it
  * continues the handoff byte for byte and is a complete PDF (or at least a
  * longer one). Anything else keeps the handoff as it was.
