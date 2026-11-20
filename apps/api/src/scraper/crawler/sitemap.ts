@@ -57,7 +57,7 @@ async function _getSitemapXMLGZ(
 }
 
 async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
-  if (options.url.toLowerCase().endsWith(".gz")) {
+  if (new URL(options.url).pathname.toLowerCase().endsWith(".gz")) {
     return await _getSitemapXMLGZ(options);
   }
 

@@ -61,7 +61,7 @@ export async function getLinksFromSitemap(
   try {
     let content = "";
 
-    const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
+    const isGzip = new URL(sitemapUrl).pathname.toLowerCase().endsWith(".gz");
     if (isGzip) {
       try {
         const { buffer } = await fetchFileToBuffer(
