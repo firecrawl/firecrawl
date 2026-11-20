@@ -34,6 +34,7 @@ try:
     load_dotenv()
 
     from google import genai
+    from google.genai import types
     from PIL import Image
     from io import BytesIO
     from firecrawl import Firecrawl
@@ -71,7 +72,7 @@ class FirecrawlGeminiEditor:
 
         # Initialize Gemini client
         self.client = genai.Client(api_key=gemini_key)
-        self.model_name = "gemini-2.5-flash-image-preview"
+        self.model_name = "gemini-3.1-flash-lite-image"
 
         if self.verbose:
             print(f"Initialized Gemini client with model: {self.model_name}")
@@ -150,14 +151,15 @@ class FirecrawlGeminiEditor:
 
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=enhanced_prompt
+                contents=enhanced_prompt,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
             )
 
             # Extract image data
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
-                if part.inline_data
+                if part.inline_data and not part.thought
             ]
 
             if image_parts:
@@ -204,14 +206,15 @@ class FirecrawlGeminiEditor:
 
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=[prompt, image]
+                contents=[prompt, image],
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
             )
 
             # Extract styled image
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
-                if part.inline_data
+                if part.inline_data and not part.thought
             ]
 
             if image_parts:
@@ -244,14 +247,15 @@ class FirecrawlGeminiEditor:
 
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=contents
+                contents=contents,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
             )
 
             # Extract composite image
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
-                if part.inline_data
+                if part.inline_data and not part.thought
             ]
 
             if image_parts:
@@ -286,14 +290,15 @@ class FirecrawlGeminiEditor:
 
                 response = self.client.models.generate_content(
                     model=self.model_name,
-                    contents=[refinement, current_image]
+                    contents=[refinement, current_image],
+                    config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
                 )
 
                 # Extract refined image
                 image_parts = [
                     part.inline_data.data
                     for part in response.candidates[0].content.parts
-                    if part.inline_data
+                    if part.inline_data and not part.thought
                 ]
 
                 if image_parts:
@@ -375,14 +380,15 @@ class FirecrawlGeminiEditor:
 
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=[quality_enhanced_prompt, image]
+                contents=[quality_enhanced_prompt, image],
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
             )
 
             # Extract edited image data
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
-                if part.inline_data
+                if part.inline_data and not part.thought
             ]
 
             if image_parts:
