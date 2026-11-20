@@ -1386,6 +1386,14 @@ describe("FirePDF cache through the lookup service", () => {
     fetchMock.mockImplementationOnce(async ({ schema }: any) =>
       schema.parse(fixture),
     );
+  // Read a counter value through the real prom-client counter (the
+  // counters describe spies on `inc`, which still calls through).
+  const eventCount = async (event: string) => {
+    const data = await firePdfCacheEventsTotal.get();
+    return data.values
+      .filter(v => v.labels.event === event)
+      .reduce((sum, v) => sum + v.value, 0);
+  };
   const base64 = Buffer.from("%PDF-1.7 service test").toString("base64");
   const rawKey = `raw-${crypto
     .createHash("sha256")
@@ -1699,6 +1707,39 @@ describe("FirePDF cache through the lookup service", () => {
     expect(saveCached).not.toHaveBeenCalled();
   });
 
+  it("treats a served suspiciously sparse entry as a miss, without recording a hit (#5759)", async () => {
+    // The reported #5759 document: 46 pages, ~3,000 chars of repeated
+    // header (~59 non-whitespace chars/page). The GCS read path has the
+    // same guard; this pins the cache-service branch, where the served
+    // entry used to be counted and logged as a hit before being rejected.
+    const sparseMarkdown = "EDITAL CULTURAL\n".repeat(200).slice(0, 3096);
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: { markdown: sparseMarkdown, pages_processed: 46 },
+    });
+    const meta = serviceMeta();
+    const hitsBefore = await eventCount("hit");
+    const missesBefore = await eventCount("miss");
+    expect(
+      await tryGetCached(meta, base64, "auto", undefined, 5, false, false),
+    ).toBeNull();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Ignoring cached suspected-incomplete FirePDF result",
+      expect.objectContaining({
+        reason: expect.stringContaining("low text density"),
+      }),
+    );
+    // The entry was never used, so it must not be logged or counted as a hit.
+    expect(meta.logger.info).not.toHaveBeenCalledWith(
+      "Using cached FirePDF result",
+      expect.anything(),
+    );
+    expect(await eventCount("hit")).toBe(hitsBefore);
+    expect(await eventCount("miss")).toBe(missesBefore + 1);
+  });
+
   describe("lookup span", () => {
     const exporter = new InMemorySpanExporter();
     let provider: NodeTracerProvider;
@@ -1824,6 +1865,25 @@ describe("FirePDF cache through the lookup service", () => {
       expect(span.attributes).toMatchObject({
         "pdf.cache_outcome": "miss",
         "pdf.cache_reason": "unusable",
+      });
+    });
+
+    it("records a served suspiciously sparse entry as a miss", async () => {
+      answerWith({
+        outcome: "hit",
+        key: inlineKey,
+        variant: "base",
+        result: {
+          markdown: "EDITAL CULTURAL\n".repeat(200).slice(0, 3096),
+          pages_processed: 46,
+        },
+      });
+      // toMatchObject, as with the unusable-entry test above: the lookup
+      // first records the service's answer (variant/generation), then the
+      // quality gate overwrites the outcome and reason.
+      expect(await lookupSpanAttributes()).toMatchObject({
+        "pdf.cache_outcome": "miss",
+        "pdf.cache_reason": "suspected_incomplete",
       });
     });
 

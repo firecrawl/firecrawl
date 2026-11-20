@@ -16,6 +16,7 @@ import {
   withSpan,
 } from "../../../../../lib/otel-tracer";
 import { safeMarkdownToHtml } from "../markdownToHtml";
+import { assessPdfExtractionQuality } from "../pdfQuality";
 import type { PDFProcessorResult } from "../types";
 import {
   refreshOptionsForVariant,
@@ -321,6 +322,30 @@ async function lookupWithinSpan(
       "pdf.cache_reason": "unusable",
     });
     firePdfCacheEventsTotal.inc({ event: "miss", variant: ownVariant });
+    return null;
+  }
+  // A degenerate entry written before the write guard existed must not
+  // be served: treat it as a miss so a fresh extraction runs (#5759).
+  // Only judged when the entry reports how many pages it processed.
+  // This check sits here, before the hit/stale outcome is recorded and
+  // logged, so a rejected entry is never counted or logged as used.
+  const servedQuality = assessPdfExtractionQuality(
+    result.markdown,
+    result.pages_processed ?? pagesProcessed,
+  );
+  if (servedQuality.suspicious) {
+    setSpanAttributes(span, {
+      "pdf.cache_outcome": "miss",
+      "pdf.cache_reason": "suspected_incomplete",
+    });
+    firePdfCacheEventsTotal.inc({ event: "miss", variant: answer.variant });
+    meta.logger.info("Ignoring cached suspected-incomplete FirePDF result", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheVariant: answer.variant,
+      reason: servedQuality.reason,
+      pagesProcessed: result.pages_processed ?? pagesProcessed,
+    });
     return null;
   }
   firePdfCacheEventsTotal.inc({

@@ -236,28 +236,10 @@ export async function tryGetCached(
       sourceKind: isRasterImagePayload(base64Content) ? "image" : "pdf",
       ownVariant: ownVariant ?? "base",
     });
-    if (served) {
-      // A degenerate entry written before the write guard existed must not
-      // be served: treat it as a miss so a fresh extraction runs (#5759).
-      // Only judged when the entry reports how many pages it processed.
-      const quality = assessPdfExtractionQuality(
-        served.markdown,
-        served.pagesProcessed,
-      );
-      if (quality.suspicious) {
-        meta.logger.info(
-          "Ignoring cached suspected-incomplete FirePDF result",
-          {
-            scrapeId: meta.id,
-            requestedMode: mode,
-            cacheVariant: ownVariant ?? "base",
-            reason: quality.reason,
-            pagesProcessed: served.pagesProcessed,
-          },
-        );
-        return null;
-      }
-    }
+    // The lookup itself refuses suspiciously sparse entries (see
+    // lookupCachedResult): the outcome is recorded there, so a rejected
+    // entry is never counted or logged as a hit. A served entry needs no
+    // further judging here.
     return served;
   }
   const cacheKey = resolvePdfCacheKey(base64Content);
@@ -476,7 +458,13 @@ export async function maybeSaveResult(args: {
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   if (firePdfTableFormat(meta) !== undefined) return;
-  // With the lookup service in use, fire-pdf writes the result itself.
+  // With the lookup service in use, fire-pdf writes the result itself, so
+  // the write refusals below — including the sparse-result refusal
+  // (#5759) — cover the GCS path only. The service is a separate codebase
+  // and this repo cannot verify it applies the same density rule; sparse
+  // entries it does write are still refused at read time
+  // (lookupCachedResult treats them as a miss), so they are never served
+  // — the cost is a repeated FirePDF run, not a wrong answer.
   if (cacheServiceConfigured()) return;
   if (!pdfCacheConfigured()) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(

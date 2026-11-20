@@ -184,6 +184,25 @@ describe("getRustPdfIneligibleReason", () => {
     ).toMatch(/empty markdown/);
   });
 
+  it("rejects whitespace-only markdown as empty", () => {
+    // No visible text is empty for eligibility purposes: the density
+    // helper deliberately does not judge a zero-character result, so a
+    // whitespace-only TextBased result would otherwise be adopted as-is
+    // and skip the fallback chain.
+    expect(
+      getRustPdfIneligibleReason(rustResult({ markdown: "   \n\t  " }), 10),
+    ).toMatch(/empty markdown/);
+  });
+
+  it("keeps a whitespace-padded dense result eligible", () => {
+    expect(
+      getRustPdfIneligibleReason(
+        rustResult({ markdown: "  \n" + "x".repeat(10_000) }),
+        10,
+      ),
+    ).toBeNull();
+  });
+
   it("does not judge density when the effective page count is unknown", () => {
     expect(
       getRustPdfIneligibleReason(

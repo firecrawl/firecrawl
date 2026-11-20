@@ -67,6 +67,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
 import {
   assessPdfExtractionQuality,
+  effectiveProcessedPages,
   getRustPdfIneligibleReason,
   pickRicherPdfResult,
 } from "./pdfQuality";
@@ -383,9 +384,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         totalPageCount = detection.pageCount;
         detectedPdfType = detection.pdfType;
-        effectivePageCount = maxPages
-          ? Math.min(detection.pageCount, maxPages)
-          : detection.pageCount;
+        effectivePageCount =
+          effectiveProcessedPages(detection.pageCount, maxPages) ??
+          detection.pageCount;
         metadataTitle = detection.title ?? undefined;
       } catch (error) {
         extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
@@ -431,9 +432,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         totalPageCount = pdfResult.pageCount;
         detectedPdfType = pdfResult.pdfType;
-        effectivePageCount = maxPages
-          ? Math.min(pdfResult.pageCount, maxPages)
-          : pdfResult.pageCount;
+        effectivePageCount =
+          effectiveProcessedPages(pdfResult.pageCount, maxPages) ??
+          pdfResult.pageCount;
         metadataTitle = pdfResult.title ?? undefined;
 
         const ineligibleReason = getRustPdfIneligibleReason(
@@ -978,9 +979,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // If pdf-parse is itself suspiciously sparse but an earlier engine
       // extracted more text, keep the longer extraction: every engine was
       // suspicious, so the longest text is the best available answer.
+      // Density is charged against the pages pdf-parse actually
+      // processed, not the document total: a capped run's valid prefix
+      // must not look degenerate. Either way the structured warning is
+      // emitted — a suspicious result is retained, never silently.
       const pdfParseQuality = assessPdfExtractionQuality(
         result.markdown,
-        result.pageCount ?? effectivePageCount,
+        result.pagesProcessed ?? effectivePageCount,
       );
       if (pdfParseQuality.suspicious && suspectPdfFallback) {
         const best = pickRicherPdfResult(suspectPdfFallback, result);
@@ -999,6 +1004,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           effectivePageCount = reconcilePageCountWithPdfParse(
             effectivePageCount,
             result,
+          );
+        } else {
+          meta.logger.warn(
+            "pdf-parse result suspected incomplete -- keeping richer pdf-parse extraction",
+            {
+              method: "scrapePDF/scrapePDFWithParsePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "pdf-parse-fallback",
+              reason: pdfParseQuality.reason,
+              scrape_id: meta.id,
+            },
           );
         }
         suspectPdfFallback = null;

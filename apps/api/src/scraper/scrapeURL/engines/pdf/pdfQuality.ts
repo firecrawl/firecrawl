@@ -128,7 +128,11 @@ export function getRustPdfIneligibleReason(
   if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
   if (result.confidence < 0.95) return `confidence=${result.confidence}`;
   if (result.isComplex) return "complex layout (tables/columns)";
-  if (!result.markdown?.length)
+  // Whitespace-only markdown is empty of visible text: the density
+  // helper deliberately does not judge a zero-character result, so
+  // judging emptiness on raw length would let such a result be adopted
+  // as-is and skip the fallback chain.
+  if (!nonWhitespaceLength(result.markdown))
     return "empty markdown (unexpected for TextBased)";
   const quality = assessPdfExtractionQuality(result.markdown, effectivePages);
   if (quality.suspicious)
