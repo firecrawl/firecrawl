@@ -589,11 +589,16 @@ export class WebCrawler {
     let deliveredCount = 0;
 
     const normalizeUrl = (url: string) => {
+      const protocol = /^https?:\/\//.exec(url)?.[0] ?? "";
+      // Custom-port services must keep their protocol in the sitemap key,
+      // just as they do in the crawl's URL lock.
+      const customProtocol =
+        protocol && new URL(url).port !== "" ? protocol : "";
       url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
       if (url.endsWith("/")) {
         url = url.slice(0, -1);
       }
-      return url;
+      return customProtocol + url;
     };
 
     const _urlsHandler = async (urls: string[]) => {

@@ -649,7 +649,10 @@ export function generateURLPermutations(url: string | URL): URL[] {
 
   // Construct more versions for http/https
   permutations = permutations.flatMap(urlO => {
-    if (!["http:", "https:"].includes(urlO.protocol)) {
+    // Only pair the default HTTP/HTTPS ports. Changing the scheme of a
+    // custom-port URL can erase its port (https:80 -> http), making a
+    // different service share the same crawl lock.
+    if (urlO.port !== "" || !["http:", "https:"].includes(urlO.protocol)) {
       return [urlO];
     }
 
