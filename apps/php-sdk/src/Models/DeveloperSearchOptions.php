@@ -32,7 +32,7 @@ final class DeveloperSearchOptions
     /**
      * @param int|null $k Total ranked results, 1 to 100 (default 10).
      * @param int|null $passages Passages per result, 1 to 5 (default 1).
-     * @param list<string>|null $types Result kinds: "doc", "issue", "pull_request", "readme" (default all).
+     * @param list<string>|null $types Result kinds: "doc", "issue", "pull_request", "readme", "discussion", "release" (default all).
      * @param list<string>|null $repos GitHub owner/name filters, at most 20.
      * @param list<string>|null $sources Developer documentation source IDs, at most 20.
      * @param string|null $language One case-insensitive GitHub Linguist primary language.

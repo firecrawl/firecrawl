@@ -6180,7 +6180,7 @@
             "name": "types",
             "in": "query",
             "required": false,
-            "description": "Result kinds to search. Defaults to all four. Accepts a repeated parameter (`types=issue&types=pull_request`) or one comma-separated value (`types=issue,pull_request`).",
+            "description": "Result kinds to search. Defaults to every kind. Accepts a repeated parameter (`types=issue&types=pull_request`) or one comma-separated value (`types=issue,pull_request`).",
             "schema": {
               "type": "array",
               "items": {
@@ -6189,7 +6189,9 @@
                   "doc",
                   "issue",
                   "pull_request",
-                  "readme"
+                  "readme",
+                  "discussion",
+                  "release"
                 ]
               }
             }
@@ -6401,7 +6403,9 @@
                         "doc",
                         "issue",
                         "pull_request",
-                        "readme"
+                        "readme",
+                        "discussion",
+                        "release"
                       ]
                     }
                   },
