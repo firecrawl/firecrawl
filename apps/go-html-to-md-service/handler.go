@@ -164,7 +164,10 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	encoder := json.NewEncoder(w)
+	// The response is JSON, so Markdown does not need HTML-only escapes.
+	encoder.SetEscapeHTML(false)
+	encoder.Encode(response)
 }
 
 // sendError sends an error response
