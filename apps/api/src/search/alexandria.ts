@@ -91,6 +91,19 @@ export async function discoverTools(
     zeroDataRetention?: boolean;
     /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
     exchangeRequestIds?: { prefix: string; sent: string[] };
+    /** Who is searching and how, sent with each find-tools lookup. */
+    exchangeCaller?: Pick<
+      Parameters<typeof exchangeRequest>[0],
+      | "feedbackStorage"
+      | "clientOrigin"
+      | "clientIntegration"
+      | "searchRoute"
+      | "clientSession"
+      | "clientThread"
+    > & {
+      /** The caller's own query: any other semantic query was written by the platform. */
+      query: string;
+    };
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -110,7 +123,14 @@ export async function discoverTools(
     const ids = input.exchangeRequestIds;
     const requestId = ids ? `${ids.prefix}:${ids.sent.length + 1}` : undefined;
     if (requestId) ids?.sent.push(requestId);
+    const { query: ownQuery, ...caller } = input.exchangeCaller ?? {};
     const result = await exchangeRequest({
+      ...caller,
+      ...(input.exchangeCaller &&
+      typeof options.query === "string" &&
+      options.query !== ownQuery
+        ? { searchRewritten: true }
+        : {}),
       teamId: input.teamId,
       path: "/v1/retrieve",
       requestId,

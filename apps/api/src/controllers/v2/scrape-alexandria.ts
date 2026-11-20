@@ -9,7 +9,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+import { hasHostedMcpProxySecret } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -25,8 +25,10 @@ import {
 } from "../../lib/alexandria-activity";
 import {
   discoveryForCalls,
+  libraryCommandTools,
   recordDiscoveredTools,
 } from "../../lib/alexandria-discovery";
+import { lineageIds } from "../../lib/feedback-trace";
 import {
   callsSchema,
   callSchema,
@@ -60,6 +62,8 @@ const FIND_TOOLS_LOGGED_OPTIONS = [
 
 const isFindTools = (call: { provider?: string; capability?: string }) =>
   call.provider === "firecrawl" && call.capability === "find-tools";
+const isLibrary = (call: { provider?: string; capability?: string }) =>
+  call.provider === "firecrawl" && call.capability === "library";
 
 const findToolsItems = (data: unknown): unknown[] => {
   const items = (data as { items?: unknown } | null)?.items;
@@ -220,16 +224,14 @@ export async function providerScrapeController(
         .json({ success: false, error: "Invalid agent interop." });
   }
   // Trusted internal marker for zero-priced provider lines: honoured only with
-  // the proxy secret and never for `fco_` tokens, otherwise ignored.
+  // the hosted MCP proxy secret (or KEYLESS_PROXY_SECRET during rollout) and
+  // never for `fco_` tokens, otherwise ignored.
   const token = req.get("authorization")?.split(" ")[1];
   const ultrasearch =
     req.get("x-firecrawl-ultrasearch") === "true" &&
     !!token &&
     !token.startsWith("fco_") &&
-    timingSafeSecretEqual(
-      req.get("x-firecrawl-keyless-secret"),
-      config.KEYLESS_PROXY_SECRET,
-    );
+    hasHostedMcpProxySecret(req.headers, config);
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
@@ -274,13 +276,16 @@ export async function providerScrapeController(
       .json({ success: false, error: "This endpoint is not available." });
 
   const target = `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`;
+  const lineage = lineageIds(req);
   const discovery =
     zeroDataRetention || body.__agentInterop
       ? Promise.resolve(null)
-      : discoveryForCalls(req.auth.team_id, body.alexandria).catch(error => {
-          logger.warn("Alexandria discovery lookup failed", { error });
-          return null;
-        });
+      : discoveryForCalls(req.auth.team_id, body.alexandria, lineage).catch(
+          error => {
+            logger.warn("Alexandria discovery lookup failed", { error });
+            return null;
+          },
+        );
   // The origin as the caller named it: the schema default would label every caller "api".
   const sentOrigin = (req.body as { origin?: unknown } | null)?.origin;
   const clientOrigin =
@@ -310,6 +315,8 @@ export async function providerScrapeController(
       ...(ultrasearch ? { ultrasearch } : {}),
       ...(clientOrigin ? { clientOrigin } : {}),
       ...(body.integration ? { clientIntegration: body.integration } : {}),
+      ...(lineage.sessionId ? { clientSession: lineage.sessionId } : {}),
+      ...(lineage.threadId ? { clientThread: lineage.threadId } : {}),
     });
   } catch (error) {
     logger.error("Provider scrape unavailable", {
@@ -352,26 +359,47 @@ export async function providerScrapeController(
     const credits = served.success
       ? served.data.creditsCost
       : failure?.creditsCost;
-    if (served.success && !zeroDataRetention)
+    if (served.success && !zeroDataRetention) {
+      const search = { ...lineage, requestId: usageRequestId };
       recordDiscoveredTools(
         req.auth.team_id,
         "find_tools",
         result.scrapeId,
-        served.data.results.flatMap(item =>
-          isFindTools(item)
-            ? findToolsItems(item.data).flatMap(tool => {
-                const { provider, capability } = (tool ?? {}) as {
-                  provider?: unknown;
-                  capability?: unknown;
-                };
-                return typeof provider === "string" &&
-                  typeof capability === "string"
-                  ? [{ provider, capability }]
-                  : [];
-              })
+        served.data.results.flatMap((item, i) => {
+          if (!isFindTools(item)) return [];
+          const offset = body.alexandria[i]?.options.offset;
+          const first =
+            typeof offset === "number" && Number.isSafeInteger(offset)
+              ? Math.max(0, offset)
+              : 0;
+          return findToolsItems(item.data).flatMap((tool, index) => {
+            const { provider, capability } = (tool ?? {}) as {
+              provider?: unknown;
+              capability?: unknown;
+            };
+            return typeof provider === "string" &&
+              typeof capability === "string"
+              ? [{ provider, capability, rank: first + index + 1 }]
+              : [];
+          });
+        }),
+        search,
+      );
+      recordDiscoveredTools(
+        req.auth.team_id,
+        "library",
+        result.scrapeId,
+        served.data.results.flatMap((item, i) =>
+          isLibrary(item)
+            ? libraryCommandTools(
+                body.alexandria[i]?.options.command,
+                (item.data as { stdout?: unknown } | null)?.stdout,
+              )
             : [],
         ),
+        search,
       );
+    }
     // Preserve parent/child ordering without delaying the provider response.
     void (async () => {
       // Bounded so a slow Redis never holds back the activity log.
@@ -434,8 +462,11 @@ export async function providerScrapeController(
                       : {}),
                   }
                 : {}),
-              ...(discovered && Object.keys(discovered[i]).length
-                ? { discovery: discovered[i] }
+              ...(discovered && Object.keys(discovered[i].discovery).length
+                ? { discovery: discovered[i].discovery }
+                : {}),
+              ...(discovered?.[i].search
+                ? { search: discovered[i].search }
                 : {}),
             }),
           ),

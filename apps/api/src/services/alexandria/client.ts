@@ -1,6 +1,7 @@
 import { Agent, fetch } from "undici";
 import { config } from "../../config";
 import type { AlexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
+import { LINEAGE_ID_PATTERN } from "../../lib/mcp-lineage";
 import type { ExchangeResponse } from "./contracts";
 
 const dispatcher = new Agent({
@@ -29,6 +30,14 @@ const headerToken = (value: string | null | undefined) => {
     .slice(0, 64);
   return /[a-z0-9]/.test(token) ? token : undefined;
 };
+
+const SEARCH_ROUTES = ["search_auto", "search_source", "catalogue"] as const;
+
+// A session or conversation id in the lineage id format, or nothing.
+const lineageId = (value: string | null | undefined) =>
+  typeof value === "string" && LINEAGE_ID_PATTERN.test(value)
+    ? value
+    : undefined;
 
 export async function exchangeRequest(input: {
   teamId: string;
@@ -64,11 +73,27 @@ export async function exchangeRequest(input: {
   /** The caller's origin and integration as the request named them; sent as short tokens. */
   clientOrigin?: string | null;
   clientIntegration?: string | null;
+  /** How a catalogue lookup came about: on the platform's own initiative, from a search that named the source, or asked for by name. */
+  searchRoute?: (typeof SEARCH_ROUTES)[number];
+  /** The lookup's query text was written by the platform, not the caller. */
+  searchRewritten?: boolean;
+  /** The caller's session and conversation ids, when the request carried them. */
+  clientSession?: string | null;
+  clientThread?: string | null;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL)
     throw new Error("Alexandria is not configured");
   const clientOrigin = headerToken(input.clientOrigin);
   const clientIntegration = headerToken(input.clientIntegration);
+  // Search context goes out only while its switch is on, and never names a
+  // session or conversation under zero data retention.
+  const context = config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED ? input : undefined;
+  const searchRoute = SEARCH_ROUTES.find(
+    route => route === context?.searchRoute,
+  );
+  const ids = context?.zeroDataRetention ? undefined : context;
+  const clientSession = lineageId(ids?.clientSession);
+  const clientThread = lineageId(ids?.clientThread);
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const signal = AbortSignal.timeout(Math.max(1, input.timeoutMs));
   const init = {
@@ -119,6 +144,12 @@ export async function exchangeRequest(input: {
       ...(clientIntegration
         ? { "x-exchange-client-integration": clientIntegration }
         : {}),
+      ...(searchRoute ? { "x-exchange-search-route": searchRoute } : {}),
+      ...(context?.searchRewritten === true
+        ? { "x-exchange-search-rewritten": "true" }
+        : {}),
+      ...(clientSession ? { "x-exchange-client-session": clientSession } : {}),
+      ...(clientThread ? { "x-exchange-client-thread": clientThread } : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}

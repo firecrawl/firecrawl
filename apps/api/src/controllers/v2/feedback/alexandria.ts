@@ -13,6 +13,7 @@ import {
 } from "../../../lib/alexandria-feedback-token";
 import { alexandriaFeedbackStorage } from "../../../lib/alexandria-feedback-storage";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
+import { feedbackTrace } from "../../../lib/feedback-trace";
 import { logger } from "../../../lib/logger";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
@@ -175,6 +176,8 @@ export async function recordAlexandriaFeedback(
       requested_functionality: entry.requestedFunctionality ?? null,
     }),
   );
+  // The objective of an Alexandria row comes from the body.
+  const { objective: _objective, ...trace } = feedbackTrace(req);
   try {
     await db.transaction(async tx => {
       await tx.insert(schema.alexandria_feedback).values({
@@ -190,6 +193,7 @@ export async function recordAlexandriaFeedback(
         origin: body.origin,
         integration: body.integration ?? null,
         schema_version: 2,
+        ...trace,
       });
       if (providerRows.length > 0) {
         await tx

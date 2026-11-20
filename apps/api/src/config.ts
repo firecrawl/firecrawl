@@ -159,6 +159,9 @@ const configSchema = z.object({
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
   KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Shared secret that lets the hosted MCP server identify authenticated
+  // API-key requests it relays without holding KEYLESS_PROXY_SECRET.
+  HOSTED_MCP_PROXY_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   // Dedicated HMAC key for joining keyless quota-exhaustion events to the
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
@@ -294,8 +297,16 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  // Feedback window for interact and browser sessions, from their last activity.
+  BROWSER_FEEDBACK_MAX_AGE_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600),
   // Kill switch for the feedback next step on Alexandria answers.
   ALEXANDRIA_FEEDBACK_HINT_ENABLED: z.stringbool().default(true),
+  // Kill switch for search context sent to Exchange and search attribution on provider call logs.
+  ALEXANDRIA_SEARCH_CONTEXT_ENABLED: z.stringbool().default(true),
   ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
     .number()
     .int()

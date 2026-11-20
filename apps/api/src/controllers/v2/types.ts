@@ -2966,11 +2966,15 @@ export type SearchFeedbackResponse =
 // Generic Endpoint Feedback
 // =============================================
 
+// "interact" takes the scrape job id the session was opened on, "browser" the
+// browser session id.
 const endpointFeedbackEndpointSchema = z.enum([
   "search",
   "scrape",
   "parse",
   "map",
+  "interact",
+  "browser",
 ]);
 
 export type EndpointFeedbackEndpoint = z.infer<
