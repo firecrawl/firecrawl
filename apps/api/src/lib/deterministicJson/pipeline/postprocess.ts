@@ -14,7 +14,10 @@ export function parseWithSchema(value: unknown, jsonSchema: unknown): unknown {
 }
 
 const normalizeKey = (k: string): string =>
-  k.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  k
+    .normalize("NFC")
+    .replace(/[^\p{L}\p{N}\p{M}]/gu, "")
+    .toLowerCase();
 
 function remapKeys(value: unknown, schema: unknown): unknown {
   if (!isObject(schema)) return value;
@@ -27,7 +30,14 @@ function remapKeys(value: unknown, schema: unknown): unknown {
   const props = (schema as { properties?: JsonObject }).properties;
   if (!props) return value;
 
-  const canonical = new Map(Object.keys(props).map(k => [normalizeKey(k), k]));
+  const canonical = new Map<string, string | undefined>();
+  for (const key of Object.keys(props)) {
+    const normalized = normalizeKey(key);
+    // Empty or colliding aliases cannot identify one schema property safely.
+    if (normalized) {
+      canonical.set(normalized, canonical.has(normalized) ? undefined : key);
+    }
+  }
   const out: JsonObject = {};
   for (const [key, v] of Object.entries(value)) {
     const target =
