@@ -24,6 +24,7 @@ import {
 import {
   adminAuth,
   adminKeyHeaderAuth,
+  adminSecretPathRouter,
   bearerToken,
   secretsMatch,
 } from "../lib/admin-auth";
@@ -48,77 +49,50 @@ export function countAdminPathRoute(surface: "queues" | "routes") {
 }
 
 if (config.BULL_AUTH_KEY && config.BULL_AUTH_KEY_PATH_ROUTES) {
-  adminRouter.use(
-    `/admin/${config.BULL_AUTH_KEY}`,
-    countAdminPathRoute("routes"),
-  );
+  const pathRoutes = express.Router();
+  pathRoutes.use(countAdminPathRoute("routes"));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/redis-health`,
-    redisHealthController,
-  );
+  pathRoutes.get("/redis-health", redisHealthController);
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/acuc-cache-clear`,
-    wrap(acucCacheClearController),
-  );
+  pathRoutes.post("/acuc-cache-clear", wrap(acucCacheClearController));
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/ip-restriction-cache-clear`,
+  pathRoutes.post(
+    "/ip-restriction-cache-clear",
     wrap(ipRestrictionCacheClearController),
   );
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/key-restriction-cache-clear`,
+  pathRoutes.post(
+    "/key-restriction-cache-clear",
     wrap(keyRestrictionCacheClearController),
   );
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/feng-check`,
-    wrap(checkFireEngine),
-  );
+  pathRoutes.get("/feng-check", wrap(checkFireEngine));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/index-queue-prometheus`,
-    wrap(indexQueuePrometheus),
-  );
+  pathRoutes.get("/index-queue-prometheus", wrap(indexQueuePrometheus));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/precrawl`,
-    wrap(triggerPrecrawl),
-  );
+  pathRoutes.get("/precrawl", wrap(triggerPrecrawl));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/metrics`,
-    wrap(metricsController),
-  );
+  pathRoutes.get("/metrics", wrap(metricsController));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/nuq-metrics`,
-    wrap(nuqMetricsController),
-  );
+  pathRoutes.get("/nuq-metrics", wrap(nuqMetricsController));
 
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/nuq-fdb-metrics`,
-    wrap(nuqFdbMetricsController),
-  );
+  pathRoutes.get("/nuq-fdb-metrics", wrap(nuqFdbMetricsController));
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/fsearch`,
-    wrap(realtimeSearchController),
-  );
+  pathRoutes.post("/fsearch", wrap(realtimeSearchController));
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+  pathRoutes.post(
+    "/concurrency-queue-backfill",
     wrap(concurrencyQueueBackfillController),
   );
 
-  adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
+  pathRoutes.post(
+    "/crawl-monitor",
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
     wrap(crawlMonitorController),
   );
+
+  adminRouter.use("/admin", adminSecretPathRouter(pathRoutes));
 }
 
 if (config.BULL_AUTH_KEY) {
