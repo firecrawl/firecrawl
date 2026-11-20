@@ -3,6 +3,7 @@ import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
+import { InsecureConnectionError } from "../utils/safeFetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 
 export async function scrapeURLWithPlaywright(
@@ -33,6 +34,19 @@ export async function scrapeURLWithPlaywright(
     mock: meta.mock,
     abort: meta.abort.asSignal(),
   });
+
+  // The playwright-service refuses private/internal targets, but older
+  // service builds answer the refusal as a successful page fetch: HTTP 200
+  // with pageStatusCode 403 and pageError "Blocked insecure target URL ...".
+  // A non-2xx status satisfies the engine success-factor check on its own,
+  // so without this the refusal came back as a successful scrape
+  // (success: true, metadata.statusCode 403). Fail the engine instead, the
+  // same way the fetch engine fails it by throwing InsecureConnectionError,
+  // so the scrape fails the same for every engine. Genuine target 403s are
+  // unaffected: those come back with pageError "Forbidden".
+  if (response.pageError?.startsWith("Blocked insecure target URL")) {
+    throw new InsecureConnectionError();
+  }
 
   if (response.contentType?.includes("application/json")) {
     response.content = await getInnerJson(response.content);
