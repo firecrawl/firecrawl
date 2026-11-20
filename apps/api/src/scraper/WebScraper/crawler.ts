@@ -596,49 +596,157 @@ export class WebCrawler {
       return url;
     };
 
-    const _urlsHandler = async (urls: string[]) => {
+    // Several sitemap files can finish together. Reserve capacity in delivery
+    // order so duplicates cannot consume it and concurrent batches cannot each
+    // spend the same remaining slots.
+    let deliveryQueue: Promise<unknown> = Promise.resolve();
+    let deliveryClosed = false;
+    const knownKeys = new Set<string>();
+    let hasStoredDuplicates = false;
+    const deliver = async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
       if (fromMap && onlySitemap) {
         deliveredCount += urls.length;
         return await urlsHandler(urls);
-      } else {
-        let filteredLinksResult = await this.filterLinks(
-          [...new Set(urls)],
-          leftOfLimit,
-          this.maxCrawledDepth,
-          fromMap,
-          fromMap,
-        );
-        let filteredLinks = filteredLinksResult.links;
-        leftOfLimit -= filteredLinks.length;
-        const pipeline = redisEvictConnection.pipeline();
+      }
+      if (deliveryClosed || fetchAbort.aborted || leftOfLimit <= 0) return;
 
-        const normalizedUrls = filteredLinks.map(url => normalizeUrl(url));
-        normalizedUrls.forEach(normalizedUrl => {
-          pipeline.sadd("sitemap:" + this.jobId + ":links", normalizedUrl);
-        });
+      // Filtering before deduplication must not truncate a useful URL behind
+      // already-seen entries. Redis reservations below remain capacity-bounded.
+      const filtered = await this.filterLinks(
+        [...new Set(urls)],
+        urls.length,
+        this.maxCrawledDepth,
+        fromMap,
+        fromMap,
+      );
+      if (deliveryClosed || fetchAbort.aborted) return;
+      let offset = 0;
+      while (offset < filtered.links.length && leftOfLimit > 0) {
+        if (deliveryClosed || fetchAbort.aborted) return;
+        // A nearly full retry can have many URLs already stored in Redis.
+        // Read ahead in bounded batches instead of making one round trip per
+        // duplicate. SADD still decides which remaining slots are reserved.
+        if (hasStoredDuplicates && leftOfLimit < 512) {
+          const lookahead = new Set<string>();
+          for (
+            let i = offset;
+            i < filtered.links.length && lookahead.size < 512;
+            i++
+          ) {
+            const key = normalizeUrl(filtered.links[i]);
+            if (!knownKeys.has(key)) lookahead.add(key);
+          }
+          if (lookahead.size > 0) {
+            const members = [...lookahead];
+            const membership = redisEvictConnection.pipeline();
+            members.forEach(key =>
+              membership.sismember("sitemap:" + this.jobId + ":links", key),
+            );
+            const results = await membership.exec();
+            if (deliveryClosed || fetchAbort.aborted) return;
+            members.forEach((key, index) => {
+              const result = results?.[index];
+              if (result && !result[0] && result[1] === 1) knownKeys.add(key);
+            });
+          }
+        }
+        const candidates: string[] = [];
+        const keys: string[] = [];
+        const pendingKeys = new Set<string>();
+        while (
+          offset < filtered.links.length &&
+          candidates.length < leftOfLimit
+        ) {
+          const url = filtered.links[offset++];
+          const key = normalizeUrl(url);
+          if (knownKeys.has(key) || pendingKeys.has(key)) continue;
+          candidates.push(url);
+          keys.push(key);
+          pendingKeys.add(key);
+        }
+        if (candidates.length === 0) break;
 
-        const results = await pipeline.exec();
-
-        const uniqueURLs = filteredLinks.filter(
-          (_, index) =>
-            results &&
-            results[index] &&
-            !results[index][0] &&
-            results[index][1] === 1,
-        );
-
-        await redisEvictConnection.expire(
-          "sitemap:" + this.jobId + ":links",
-          3600,
-          "NX",
-        );
-
-        if (uniqueURLs.length > 0) {
-          deliveredCount += uniqueURLs.length;
-          return await urlsHandler(uniqueURLs);
+        const redisKey = "sitemap:" + this.jobId + ":links";
+        const inserted = new Set<number>();
+        let pending = keys.map((_, index) => index);
+        let dispatched = false;
+        try {
+          // Retry only failed commands. Successful insertions must keep their
+          // original result, since retrying them would turn them into duplicates.
+          for (let attempt = 0; pending.length > 0 && attempt < 3; attempt++) {
+            if (deliveryClosed || fetchAbort.aborted) return;
+            const pipeline = redisEvictConnection.pipeline();
+            pending.forEach(index => pipeline.sadd(redisKey, keys[index]));
+            const results = await pipeline.exec();
+            const retry: number[] = [];
+            pending.forEach((index, position) => {
+              const result = results?.[position];
+              if (
+                !result ||
+                result[0] ||
+                (result[1] !== 0 && result[1] !== 1)
+              ) {
+                retry.push(index);
+                return;
+              }
+              knownKeys.add(keys[index]);
+              if (result[1] === 1) inserted.add(index);
+              else hasStoredDuplicates = true;
+            });
+            pending = retry;
+          }
+          if (deliveryClosed || fetchAbort.aborted) return;
+          if (pending.length > 0) {
+            this.logger.warn(
+              "Could not reserve sitemap URLs after retrying Redis commands",
+              {
+                method: "tryGetSitemap",
+                failedCount: pending.length,
+                attempts: 3,
+              },
+            );
+          }
+          const uniqueURLs = candidates.filter((_, index) =>
+            inserted.has(index),
+          );
+          await redisEvictConnection.expire(redisKey, 3600, "NX");
+          if (deliveryClosed || fetchAbort.aborted) return;
+          if (uniqueURLs.length > 0) {
+            dispatched = true;
+            leftOfLimit -= uniqueURLs.length;
+            deliveredCount += uniqueURLs.length;
+            await urlsHandler(uniqueURLs);
+          }
+        } finally {
+          // A timeout may win while Redis is still working. Do not leave known
+          // new reservations behind when their consumer was never invoked.
+          if (!dispatched && inserted.size > 0) {
+            const reservedKeys = [...inserted].map(index => keys[index]);
+            reservedKeys.forEach(key => knownKeys.delete(key));
+            try {
+              await redisEvictConnection.srem(redisKey, ...reservedKeys);
+            } catch (error) {
+              this.logger.warn(
+                "Could not release undelivered sitemap reservations",
+                {
+                  method: "tryGetSitemap",
+                  count: reservedKeys.length,
+                  error,
+                },
+              );
+            }
+          }
         }
       }
+    };
+    const _urlsHandler = (urls: string[]) => {
+      if (fromMap && onlySitemap) return deliver(urls);
+      const delivery = deliveryQueue.then(() => deliver(urls));
+      // A failed caller still observes its rejection; later sitemap batches
+      // retain the opportunity to deliver their own successful reservations.
+      deliveryQueue = delivery.catch(() => {});
+      return delivery;
     };
 
     let timeoutHandle: NodeJS.Timeout;
@@ -697,6 +805,7 @@ export class WebCrawler {
 
       count = (await Promise.race([fetchSources(), timeoutPromise]).finally(
         () => {
+          deliveryClosed = true;
           clearTimeout(timeoutHandle);
         },
       )) as number;
