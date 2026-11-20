@@ -17,6 +17,9 @@ interface Sentence {
   blockId: number;
   lang?: string;
   isHeader?: boolean;
+  // Keep model-facing text unchanged; these cells are only for reassembly.
+  tableCells?: string[];
+  tableHeaderCells?: string[];
 }
 
 function extractInlineText(tokens: marked.Token[]): string {
@@ -117,24 +120,32 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
         case "table": {
           const bid = blockId++;
           const table = token as marked.Tokens.Table;
-          const headerText = table.header
-            .map(cell => extractInlineText(cell.tokens).trim())
-            .filter(Boolean)
-            .join(" | ");
+          const headerCells = table.header.map(cell =>
+            extractInlineText(cell.tokens).trim(),
+          );
+          const headerText = headerCells.filter(Boolean).join(" | ");
           if (headerText)
             result.push({
               text: headerText,
               source: "table",
               blockId: bid,
               isHeader: true,
+              tableCells: headerCells,
             });
           for (const row of table.rows) {
-            const rowText = row
-              .map(cell => extractInlineText(cell.tokens).trim())
-              .filter(Boolean)
-              .join(" | ");
+            const cells = row.map(cell =>
+              extractInlineText(cell.tokens).trim(),
+            );
+            const rowText = cells.filter(Boolean).join(" | ");
             if (rowText)
-              result.push({ text: rowText, source: "table", blockId: bid });
+              result.push({
+                text: rowText,
+                source: "table",
+                blockId: bid,
+                tableCells: cells,
+                // A blank header has no candidate span, but still has columns.
+                ...(!headerText ? { tableHeaderCells: headerCells } : {}),
+              });
           }
           break;
         }
@@ -224,20 +235,23 @@ export function assembleAnswer(
 
   let tableRows: string[] | null = null;
 
-  function formatTableRow(text: string): string {
-    return "| " + text.split(" | ").join(" | ") + " |";
+  function getTableCells(cur: Sentence): string[] {
+    return cur.tableCells ?? cur.text.split(" | ");
+  }
+
+  function formatTableRow(cur: Sentence): string {
+    return "| " + getTableCells(cur).join(" | ") + " |";
   }
 
   function startTable(cur: (typeof selected)[number]) {
     tableRows = [];
-    if (cur.isHeader) {
-      const cols = cur.text.split(" | ");
+    const cols = cur.isHeader ? getTableCells(cur) : cur.tableHeaderCells;
+    if (cols) {
       const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
       tableRows.push("| " + escaped.join(" | ") + " |");
       tableRows.push("| " + cols.map(() => "---").join(" | ") + " |");
-    } else {
-      tableRows.push(formatTableRow(cur.text));
     }
+    if (!cur.isHeader) tableRows.push(formatTableRow(cur));
   }
 
   function appendTableRow(cur: (typeof selected)[number]) {
@@ -246,12 +260,12 @@ export function assembleAnswer(
       return;
     }
     if (cur.isHeader) {
-      const cols = cur.text.split(" | ");
+      const cols = getTableCells(cur);
       const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
       tableRows.unshift("| " + escaped.join(" | ") + " |");
       tableRows.splice(1, 0, "| " + cols.map(() => "---").join(" | ") + " |");
     } else {
-      tableRows.push(formatTableRow(cur.text));
+      tableRows.push(formatTableRow(cur));
     }
   }
 
