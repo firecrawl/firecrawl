@@ -27,6 +27,7 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
+import { SearchProviderError } from "../../search/v2";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
@@ -779,6 +780,11 @@ async function searchControllerInner(
           : {}),
         error: error.message,
       });
+    }
+
+    if (error instanceof SearchProviderError) {
+      setSpanAttributes(span, { "search.status_code": 502 });
+      return res.status(502).json({ success: false, error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", {
