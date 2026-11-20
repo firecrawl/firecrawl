@@ -164,6 +164,41 @@ describe("classifyEndpoint", () => {
     });
   });
 
+  it("gives saved browser profiles their own group", () => {
+    expect(classifyEndpoint("/v2/browser/profiles/work")).toMatchObject({
+      group: "profiles",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/interact/profiles/work")).toMatchObject({
+      group: "profiles",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/browser/abc/execute")).toMatchObject({
+      group: "browser",
+    });
+  });
+
+  it("classifies the routers mounted beside the versioned API", () => {
+    expect(classifyEndpoint("/exchange/discover/some/path?q=1")).toEqual({
+      api: "exchange",
+      group: "alexandria",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/exchange/retrieve")).toMatchObject({
+      group: "alexandria",
+    });
+    expect(classifyEndpoint("/exchange/connectors/abc")).toEqual({
+      api: "exchange",
+      group: null,
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/labs/search/configs")).toEqual({
+      api: "labs",
+      group: null,
+      alwaysAllowed: false,
+    });
+  });
+
   it("classifies v0 and non-API paths", () => {
     expect(classifyEndpoint("/v0/scrape")).toEqual({ api: "v0" });
     expect(classifyEndpoint("/admin/xyz/redis-health")).toBeNull();
@@ -277,6 +312,32 @@ describe("isEndpointAllowed", () => {
     const c = config({ allowedFormats: ["markdown"] });
     expect(isEndpointAllowed("/v2/agent", c).allowed).toBe(true);
     expect(isEndpointAllowed("/v2/scrape", c).allowed).toBe(true);
+  });
+
+  it("denies the routers beside the versioned API unless their group is allowed", () => {
+    const scrapeOnly = config({ allowedEndpoints: ["scrape"] });
+    for (const path of [
+      "/exchange/retrieve",
+      "/exchange/discover",
+      "/exchange/connectors/abc",
+      "/labs/search",
+    ]) {
+      expect(isEndpointAllowed(path, scrapeOnly)).toMatchObject({
+        allowed: false,
+        status: 403,
+      });
+    }
+
+    const withProviders = config({ allowedEndpoints: ["alexandria"] });
+    expect(isEndpointAllowed("/exchange/retrieve", withProviders).allowed).toBe(
+      true,
+    );
+    expect(
+      isEndpointAllowed("/exchange/connectors/abc", withProviders).allowed,
+    ).toBe(false);
+
+    const formatsOnly = config({ allowedFormats: ["markdown"] });
+    expect(isEndpointAllowed("/labs/search", formatsOnly).allowed).toBe(true);
   });
 
   it("ignores non-API paths", () => {

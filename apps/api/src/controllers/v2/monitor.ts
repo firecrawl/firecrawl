@@ -4,6 +4,7 @@ import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
+import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import {
   createMonitorSchema,
   listMonitorChecksQuerySchema,
@@ -74,6 +75,26 @@ function rejectZdr(
     return true;
   }
   return false;
+}
+
+// A monitor's checks run with its targets' scrape options, so a saved browser
+// profile is refused for a restricted key wherever it writes or runs them.
+async function rejectProfile(
+  req: RequestWithAuth<any, any, any>,
+  res: Response,
+  targets: { type: string; scrapeOptions?: Record<string, unknown> }[],
+): Promise<boolean> {
+  if (!targets.some(target => target.scrapeOptions?.profile !== undefined)) {
+    return false;
+  }
+  const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+  if (keyRestriction.allowed) {
+    return false;
+  }
+  res
+    .status(keyRestriction.status)
+    .json({ success: false, error: keyRestriction.error });
+  return true;
 }
 
 function serializeMonitor(
@@ -191,6 +212,7 @@ export async function createMonitorController(
 ) {
   const input = createMonitorSchema.parse(req.body);
   if (rejectZdr(req, res, input.targets)) return;
+  if (await rejectProfile(req, res, input.targets)) return;
   let schedule;
   try {
     schedule = validateMonitorCron(
@@ -297,6 +319,7 @@ export async function updateMonitorController(
 
   const mergedTargets = input.targets ?? existing.targets;
   if (rejectZdr(req, res, mergedTargets)) return;
+  if (await rejectProfile(req, res, input.targets ?? [])) return;
   const mergedGoal = input.goal !== undefined ? input.goal : existing.goal;
   const mergedJudgeEnabled =
     input.judgeEnabled !== undefined
@@ -440,6 +463,7 @@ export async function runMonitorController(
     return res.status(404).json({ success: false, error: "Monitor not found" });
   }
   if (rejectZdr(req, res, monitor.targets)) return;
+  if (await rejectProfile(req, res, monitor.targets)) return;
   if (monitor.status === "paused") {
     return res.status(409).json({
       success: false,

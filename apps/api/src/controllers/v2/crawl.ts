@@ -173,6 +173,7 @@ export async function crawlController(
     formatTypesOf(req.body.scrapeOptions?.formats),
     actionTypesOf(req.body.scrapeOptions?.actions),
     req.acuc,
+    req.body.scrapeOptions?.profile,
   );
   if (!keyRestriction.allowed) {
     return res.status(keyRestriction.status).json({

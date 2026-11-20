@@ -216,6 +216,7 @@ async function searchControllerInner(
         ? actionTypesOf(req.body.scrapeOptions?.actions)
         : [],
       req.acuc,
+      requestedFormats.length > 0 ? req.body.scrapeOptions?.profile : undefined,
     );
     if (!keyRestriction.allowed) {
       return res.status(keyRestriction.status).json({

@@ -25,6 +25,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import { ipWhitelistRefusal } from "../../lib/permissions";
+import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { checkExtractAvailable } from "../../lib/extract/fire-0/extraction-service-f0";
 
@@ -70,6 +71,16 @@ export async function extractController(
       success: false,
       error: ipWhitelistError,
     });
+  }
+
+  if (req.body.scrapeOptions?.profile !== undefined) {
+    const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+    if (!keyRestriction.allowed) {
+      return res.status(keyRestriction.status).json({
+        success: false,
+        error: keyRestriction.error,
+      });
+    }
   }
 
   const extractId = uuidv7();

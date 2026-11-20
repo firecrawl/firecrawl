@@ -17,6 +17,7 @@ import { hasFormatOfType } from "../../lib/format-utils";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
@@ -365,6 +366,20 @@ export async function parseController(
           code: permissions.code,
           error: permissions.error,
         });
+      }
+
+      if (req.body.profile !== undefined) {
+        const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+        if (!keyRestriction.allowed) {
+          setSpanAttributes(span, {
+            "parse.error": keyRestriction.error,
+            "parse.status_code": keyRestriction.status,
+          });
+          return res.status(keyRestriction.status).json({
+            success: false,
+            error: keyRestriction.error,
+          });
+        }
       }
 
       const zeroDataRetention =

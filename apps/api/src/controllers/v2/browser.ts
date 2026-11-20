@@ -35,6 +35,7 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
@@ -132,6 +133,14 @@ export async function browserCreateController(
     return res
       .status(403)
       .json({ success: false, error: "Invalid agent interop." });
+  }
+  if (body.profile) {
+    const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+    if (!keyRestriction.allowed) {
+      return res
+        .status(keyRestriction.status)
+        .json({ success: false, error: keyRestriction.error });
+    }
   }
   try {
     const { session, expiresAt } = await createBrowserSession(req, {

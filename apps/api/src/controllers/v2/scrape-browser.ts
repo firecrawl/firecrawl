@@ -54,6 +54,7 @@ import { integrationSchema } from "../../utils/integration";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import { checkKeyProfileRestriction } from "../../lib/key-restriction";
 import {
   type BrowserOptions,
   browserOptionsFromScrape,
@@ -293,6 +294,15 @@ async function scrapeInteractInternal(
           ? nuqJob.data.scrapeOptions
           : { profile: state?.profile },
       );
+    // The scrape may have been started by another key of the team.
+    if (browserOptions.profile) {
+      const keyRestriction = await checkKeyProfileRestriction(req.acuc);
+      if (!keyRestriction.allowed) {
+        return res
+          .status(keyRestriction.status)
+          .json({ success: false, error: keyRestriction.error });
+      }
+    }
     const created = await createSessionForScrape(
       req,
       scrapeId,

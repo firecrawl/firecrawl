@@ -117,6 +117,8 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["extract"], "extract"],
   [["agent"], "agent"],
   [["parse"], "parse"],
+  [["browser", "profiles"], "profiles"],
+  [["interact", "profiles"], "profiles"],
   [["browser"], "browser"],
   [["interact"], "browser"],
   [["monitor"], "monitor"],
@@ -144,11 +146,16 @@ function matchSegments(segments: string[], pattern: string[]): boolean {
 
 type EndpointClassification =
   | { api: "v0" }
-  | { api: "v1" | "v2"; group: string | null; alwaysAllowed: boolean }
+  | {
+      api: "v1" | "v2" | "labs" | "exchange";
+      group: string | null;
+      alwaysAllowed: boolean;
+    }
   | null;
 
 // Classifies a request path into an allowlistable endpoint group. Returns
-// null for paths outside the versioned API surface (health, admin, ...).
+// null for paths outside the key-authenticated API surface (health, admin,
+// ...).
 export function classifyEndpoint(rawUrl: string): EndpointClassification {
   // Express routes case-insensitively, so classify the same way.
   const pathname = rawUrl.split("?")[0].toLowerCase();
@@ -156,6 +163,19 @@ export function classifyEndpoint(rawUrl: string): EndpointClassification {
   const version = segments[0];
   if (version === "v0") {
     return { api: "v0" };
+  }
+  // Key-authenticated routers mounted beside the versioned API. The provider
+  // catalogue and provider calls belong with /v2/alexandria; everything else
+  // on them has no group, so an endpoint allowlist refuses it.
+  if (version === "labs" || version === "exchange") {
+    const providerCall =
+      version === "exchange" &&
+      (segments[1] === "discover" || segments[1] === "retrieve");
+    return {
+      api: version,
+      group: providerCall ? "alexandria" : null,
+      alwaysAllowed: false,
+    };
   }
   if (version !== "v1" && version !== "v2") {
     return null;
@@ -217,6 +237,26 @@ export function isEndpointAllowed(
   return {
     allowed: false,
     error: `Request blocked: this API key is restricted to the following endpoints: ${config.allowedEndpoints.join(", ")}. Team admins can manage key restrictions at ${MANAGE_RESTRICTIONS_URL}`,
+    status: 403,
+  };
+}
+
+// A saved browser profile is a logged-in session, so a key with an endpoint
+// allowlist may load, save or delete one only when "profiles" is on the list.
+// Pure decision, split out for unit testing.
+export function isProfileAllowed(
+  config: KeyRestrictionConfig,
+): KeyRestrictionResult {
+  if (
+    config.allowedEndpoints.length === 0 ||
+    config.allowedEndpoints.includes("profiles")
+  ) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    error: `Request blocked: this API key is restricted and cannot use saved browser profiles. Team admins can manage key restrictions at ${MANAGE_RESTRICTIONS_URL}`,
     status: 403,
   };
 }
@@ -357,11 +397,43 @@ export async function checkKeyEndpointRestriction(
  * Enforces the per-key format allowlist on a parsed scrape-output request.
  * Called by the scrape/batch-scrape/crawl/search controllers after zod
  * parsing, so the checked formats are the normalized ones the job will
- * actually run with — request flags can't sidestep it.
+ * actually run with — request flags can't sidestep it. `profile` is the
+ * request's saved browser profile option, refused as in
+ * checkKeyProfileRestriction.
  */
 export async function checkKeyFormatRestriction(
   formats: string[],
   actionTypes: string[],
+  key: RestrictableKey | null | undefined,
+  profile?: unknown,
+): Promise<KeyRestrictionResult> {
+  if (!keyRestrictionApplies(key)) {
+    return { allowed: true };
+  }
+
+  let config: KeyRestrictionConfig;
+  try {
+    config = await getKeyRestrictionConfig(key.api_key_id);
+  } catch (error) {
+    return failClosed(key.api_key_id, error);
+  }
+
+  if (profile !== undefined) {
+    const profileCheck = isProfileAllowed(config);
+    if (!profileCheck.allowed) {
+      return profileCheck;
+    }
+  }
+
+  return areFormatsAllowed(formats, actionTypes, config);
+}
+
+/**
+ * Refuses a saved browser profile for a key whose endpoint allowlist does not
+ * name "profiles". Called where a request names a profile outside the format
+ * check above (browser sessions, interact, extract, parse, monitors).
+ */
+export async function checkKeyProfileRestriction(
   key: RestrictableKey | null | undefined,
 ): Promise<KeyRestrictionResult> {
   if (!keyRestrictionApplies(key)) {
@@ -375,5 +447,5 @@ export async function checkKeyFormatRestriction(
     return failClosed(key.api_key_id, error);
   }
 
-  return areFormatsAllowed(formats, actionTypes, config);
+  return isProfileAllowed(config);
 }
