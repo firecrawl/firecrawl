@@ -667,32 +667,76 @@ export class WebCrawler {
         }
         if (candidates.length === 0) break;
 
-        const pipeline = redisEvictConnection.pipeline();
-        keys.forEach(key =>
-          pipeline.sadd("sitemap:" + this.jobId + ":links", key),
-        );
-        const results = await pipeline.exec();
-        if (deliveryClosed || fetchAbort.aborted) return;
-        const uniqueURLs = candidates.filter((_, index) => {
-          const result = results?.[index];
-          if (!result || result[0] || (result[1] !== 0 && result[1] !== 1))
-            return false;
-          // A successful duplicate response is also useful for later batches.
-          knownKeys.add(keys[index]);
-          if (result[1] === 0) hasStoredDuplicates = true;
-          return result[1] === 1;
-        });
-        leftOfLimit -= uniqueURLs.length;
-
-        await redisEvictConnection.expire(
-          "sitemap:" + this.jobId + ":links",
-          3600,
-          "NX",
-        );
-        if (deliveryClosed || fetchAbort.aborted) return;
-        if (uniqueURLs.length > 0) {
-          deliveredCount += uniqueURLs.length;
-          await urlsHandler(uniqueURLs);
+        const redisKey = "sitemap:" + this.jobId + ":links";
+        const inserted = new Set<number>();
+        let pending = keys.map((_, index) => index);
+        let dispatched = false;
+        try {
+          // Retry only failed commands. Successful insertions must keep their
+          // original result, since retrying them would turn them into duplicates.
+          for (let attempt = 0; pending.length > 0 && attempt < 3; attempt++) {
+            if (deliveryClosed || fetchAbort.aborted) return;
+            const pipeline = redisEvictConnection.pipeline();
+            pending.forEach(index => pipeline.sadd(redisKey, keys[index]));
+            const results = await pipeline.exec();
+            const retry: number[] = [];
+            pending.forEach((index, position) => {
+              const result = results?.[position];
+              if (
+                !result ||
+                result[0] ||
+                (result[1] !== 0 && result[1] !== 1)
+              ) {
+                retry.push(index);
+                return;
+              }
+              knownKeys.add(keys[index]);
+              if (result[1] === 1) inserted.add(index);
+              else hasStoredDuplicates = true;
+            });
+            pending = retry;
+          }
+          if (deliveryClosed || fetchAbort.aborted) return;
+          if (pending.length > 0) {
+            this.logger.warn(
+              "Could not reserve sitemap URLs after retrying Redis commands",
+              {
+                method: "tryGetSitemap",
+                failedCount: pending.length,
+                attempts: 3,
+              },
+            );
+          }
+          const uniqueURLs = candidates.filter((_, index) =>
+            inserted.has(index),
+          );
+          await redisEvictConnection.expire(redisKey, 3600, "NX");
+          if (deliveryClosed || fetchAbort.aborted) return;
+          if (uniqueURLs.length > 0) {
+            dispatched = true;
+            leftOfLimit -= uniqueURLs.length;
+            deliveredCount += uniqueURLs.length;
+            await urlsHandler(uniqueURLs);
+          }
+        } finally {
+          // A timeout may win while Redis is still working. Do not leave known
+          // new reservations behind when their consumer was never invoked.
+          if (!dispatched && inserted.size > 0) {
+            const reservedKeys = [...inserted].map(index => keys[index]);
+            reservedKeys.forEach(key => knownKeys.delete(key));
+            try {
+              await redisEvictConnection.srem(redisKey, ...reservedKeys);
+            } catch (error) {
+              this.logger.warn(
+                "Could not release undelivered sitemap reservations",
+                {
+                  method: "tryGetSitemap",
+                  count: reservedKeys.length,
+                  error,
+                },
+              );
+            }
+          }
         }
       }
     };

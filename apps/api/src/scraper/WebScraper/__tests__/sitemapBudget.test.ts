@@ -5,8 +5,10 @@ const fake = vi.hoisted(() => ({
   failValue: undefined as string | undefined,
   beforeReply: undefined as (() => Promise<void>) | undefined,
   beforeMembershipReply: undefined as (() => Promise<void>) | undefined,
+  beforeExpire: undefined as (() => Promise<void>) | undefined,
   failMemberValue: undefined as string | undefined,
   pipelineSizes: [] as number[],
+  warnings: [] as string[],
 }));
 
 vi.mock("../../../services/redis", () => {
@@ -20,7 +22,16 @@ vi.mock("../../../services/redis", () => {
   return {
     redisEvictConnection: {
       sadd: async (key: string, value: string) => sadd(key, value),
-      expire: async () => 1,
+      srem: async (key: string, ...values: string[]) =>
+        values.reduce(
+          (removed, value) =>
+            removed + (fake.sets.get(key)?.delete(value) ? 1 : 0),
+          0,
+        ),
+      expire: async () => {
+        await fake.beforeExpire?.();
+        return 1;
+      },
       pipeline: () => {
         const commands: Array<() => [Error | null, number | null]> = [];
         let membership = false;
@@ -81,11 +92,16 @@ beforeEach(() => {
   fake.failValue = undefined;
   fake.beforeReply = undefined;
   fake.beforeMembershipReply = undefined;
+  fake.beforeExpire = undefined;
   fake.failMemberValue = undefined;
   fake.pipelineSizes.length = 0;
+  fake.warnings.length = 0;
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const A = "https://example.com/a";
 const B = "https://example.com/b";
@@ -101,6 +117,11 @@ async function discover(
   timeout = 120000,
 ) {
   const crawler = new WebCrawler({ jobId: "budget", initialUrl: A, limit });
+  vi.spyOn((crawler as any).logger, "warn").mockImplementation(
+    (message: string) => {
+      fake.warnings.push(message);
+    },
+  );
   vi.spyOn(crawler as any, "tryFetchSitemapLinks").mockImplementation(
     async (_source: string, handler: (batch: string[]) => Promise<void>) => {
       if (concurrent) await Promise.all(batches.map(batch => handler(batch)));
@@ -159,6 +180,20 @@ describe("sitemap unique delivery budget", () => {
   it("does not spend delivery capacity on a failed Redis command", async () => {
     fake.failValue = "example.com/b";
     expect(await discover([[A, B, C, D]], 3)).toEqual([A, C, D]);
+    expect(fake.warnings).toContain(
+      "Could not reserve sitemap URLs after retrying Redis commands",
+    );
+    expect(fake.pipelineSizes).toEqual([3, 1, 1, 1]);
+  });
+
+  it("retries a transient per-command reservation failure without losing discovery order", async () => {
+    fake.failValue = "example.com/b";
+    fake.beforeReply = async () => {
+      fake.failValue = undefined;
+    };
+    expect(await discover([[A, B, C]], 3)).toEqual([A, B, C]);
+    expect(fake.pipelineSizes).toEqual([3, 1]);
+    expect(fake.warnings).toEqual([]);
   });
 
   it("keeps valid discovery order and stops at the limit", async () => {
@@ -258,11 +293,37 @@ it("does not deliver a Redis reservation whose reply arrives after the timeout",
   expect(delivered).toEqual([]);
   release.open();
   await vi.runAllTimersAsync();
-  // Already-issued Redis writes are not undone, but no late callback is sent.
+  // Release only this batch's new reservations; a retry can still deliver them.
   expect(fake.sets.get("sitemap:budget:links")?.has("example.com/a")).toBe(
-    true,
+    false,
   );
   expect(delivered).toEqual([]);
+  fake.beforeReply = undefined;
+  expect(await discover([[A, B]], 2)).toEqual([A, B]);
+});
+
+it("releases new reservations when expiration finishes after timeout while preserving existing keys", async () => {
+  vi.useFakeTimers();
+  fake.sets.set("sitemap:budget:links", new Set(["example.com/a"]));
+  const started = gate();
+  const release = gate();
+  fake.beforeExpire = async () => {
+    fake.beforeExpire = undefined;
+    started.open();
+    await release.wait;
+  };
+  const response = discover([[A, B]], 2, false, false, undefined, 10);
+  await started.wait;
+  await vi.advanceTimersByTimeAsync(10);
+  const delivered = await response;
+  expect(delivered).toEqual([]);
+  release.open();
+  await vi.runAllTimersAsync();
+  expect(fake.sets.get("sitemap:budget:links")).toEqual(
+    new Set(["example.com/a"]),
+  );
+  expect(delivered).toEqual([]);
+  expect(await discover([[A, B]], 2)).toEqual([B]);
 });
 
 it("batches membership checks when a small remaining budget follows many stored URLs", async () => {
