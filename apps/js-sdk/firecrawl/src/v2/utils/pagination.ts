@@ -17,10 +17,25 @@ export async function fetchAllPages<T = Document>(
   const maxResults = pagination?.maxResults ?? undefined;
   const maxWaitTime = pagination?.maxWaitTime ?? undefined;
   const started = Date.now();
+  const visited = new Set<string>();
+
+  // HttpClient pins every absolute cursor to the API origin; fragments are not sent in HTTP requests.
+  // Match the path and query actually requested so aliases cannot return the same page twice.
+  const cursorKey = (cursor: string): string => {
+    try {
+      const url = new URL(cursor, "https://pagination.invalid/");
+      return url.pathname + url.search;
+    } catch {
+      return cursor;
+    }
+  };
 
   while (current) {
     if (maxPages != null && pageCount >= maxPages) break;
     if (maxWaitTime != null && (Date.now() - started) / 1000 > maxWaitTime) break;
+    const key = cursorKey(current);
+    if (visited.has(key)) break;
+    visited.add(key);
 
     let payload: { success: boolean; next?: string | null; data?: T[] | { pages?: T[]; next?: string | null } } | null = null;
     try {
@@ -40,8 +55,6 @@ export async function fetchAllPages<T = Document>(
     }
     if (maxResults != null && docs.length >= maxResults) break;
     const next = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
-    // A running job's cursor can point back at itself until new documents land; re-requesting it here only spins.
-    if (next === current) break;
     current = next;
     pageCount += 1;
   }
