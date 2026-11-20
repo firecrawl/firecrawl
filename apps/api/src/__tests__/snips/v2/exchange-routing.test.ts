@@ -115,7 +115,7 @@ describe("Exchange routing", () => {
       internalOptions: { teamId: "team-1", orgId: "org-1", teamFlags },
       featureFlags: new Set(),
       mock: null,
-      abort: { asSignal: () => undefined },
+      abort: { asSignal: () => undefined, scrapeTimeout: () => undefined },
       logger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -434,6 +434,41 @@ describe("Exchange routing", () => {
           accessEventId: "access-1",
           provider: { id: "acme", creditsCost: 12 },
         },
+      });
+    });
+
+    describe("deadline", () => {
+      const served = {
+        success: true,
+        creditsCost: 12,
+        data: { markdown: "# Example Person", source: { provider: "acme" } },
+      };
+
+      it("tells the Exchange when the scrape times out, less a margin to answer", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+        const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
+        meta.abort.scrapeTimeout = () => 40000;
+
+        const before = Date.now();
+        await scrapeURLWithExchange(meta);
+        const after = Date.now();
+
+        const deadline = Number(
+          mocks.robustFetch.mock.calls[0][0].headers["x-exchange-deadline"],
+        );
+        expect(Number.isSafeInteger(deadline)).toBe(true);
+        expect(deadline).toBeGreaterThanOrEqual(before + 38000);
+        expect(deadline).toBeLessThanOrEqual(after + 38000);
+      });
+
+      it("sends no deadline for a scrape without a timeout", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+
+        await scrapeURLWithExchange(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS));
+
+        expect(mocks.robustFetch.mock.calls[0][0].headers).not.toHaveProperty(
+          "x-exchange-deadline",
+        );
       });
     });
 

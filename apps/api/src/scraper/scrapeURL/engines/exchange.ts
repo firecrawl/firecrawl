@@ -193,12 +193,28 @@ export async function scrapeURLWithExchange(
     });
 
     try {
+      const remainingMs = meta.abort.scrapeTimeout();
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
-        ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
-          ? { headers: { "x-exchange-us-only": "true" } }
-          : {}),
+        headers: {
+          ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+            ? { "x-exchange-us-only": "true" }
+            : {}),
+          // Epoch ms the Exchange must answer by, with a margin to answer
+          // before this scrape times out.
+          ...(remainingMs === undefined
+            ? {}
+            : {
+                "x-exchange-deadline": String(
+                  Math.floor(
+                    Date.now() +
+                      remainingMs -
+                      Math.min(2000, Math.max(0, remainingMs) / 10),
+                  ),
+                ),
+              }),
+        },
         body: {
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,
