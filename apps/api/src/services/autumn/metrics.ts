@@ -48,7 +48,8 @@ export const firebillFailureCauseTotal = new Counter({
 });
 
 /**
- * The durable retry behind a track or refund that firebill never confirmed.
+ * The durable retry behind a track, refund or settle that firebill never
+ * confirmed.
  * Counted where each step happens: the `enqueue*` outcomes by the
  * caller that gave up, `retried`, `settled` and `exhausted` by the
  * retry worker.
@@ -68,7 +69,7 @@ export const firebillFailureCauseTotal = new Counter({
 export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Durable retries of usage events firebill did not confirm",
-  // operation: track|refund
+  // operation: track|refund|finalize
   // outcome: enqueued|enqueue_duplicate|enqueue_failed|enqueue_timeout|
   //          retried|settled|exhausted
   labelNames: ["operation", "outcome"] as const,
