@@ -4,6 +4,16 @@ import { authCreditUsageChunkFromTeam } from "../../db/rpc";
 import { clickhouseClient } from "../../lib/clickhouse-client";
 import { logger } from "../../lib/logger";
 import { logMcpActionLog } from "../logging/log_job";
+import {
+  LINEAGE_ID_PATTERN,
+  LINEAGE_ID_SECRET_PATTERN,
+  OBJECTIVE_MAX_LENGTH,
+  SECRET_PATTERN,
+  SECRET_PATTERN_ALL,
+  SESSION_SOURCES,
+  THREAD_SOURCES,
+  redactText,
+} from "../../lib/mcp-lineage";
 
 const STATUSES = ["success", "error"] as const;
 const AUTH_TYPES = ["oauth", "api-key"] as const;
@@ -15,9 +25,6 @@ const RESOURCES = new Set([
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
-const SECRET_PATTERN =
-  /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
-const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
 // After any secret key, a leading auth scheme (Basic, Bearer, Token, ...) is
 // consumed with its credential so no part of "password=>Basic <b64>" survives.
 const DETAIL_SECRET_PAIR = new RegExp(
@@ -32,7 +39,6 @@ const DETAIL_URL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
 const DETAIL_TOKEN_RUN = /[A-Za-z0-9]{16,}/g;
 const DETAIL_TOKEN_PATH =
   /^(?:s|share|shared|invite|invitation|reset|reset[_-]?password|password[_-]?reset|verify|verification|confirm|confirmation|activate|magic|magic[_-]?link|token|auth|login|unsubscribe|callback|otp)$/i;
-const OBJECTIVE_MAX_LENGTH = 1000;
 const ERROR_MESSAGE_MAX_LENGTH = 300;
 const TARGET_MAX_LENGTH = 512;
 const ERROR_CODE_PATTERN = /^(?=.{2,64}$)[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
@@ -44,11 +50,6 @@ const RATE_LIMIT_RETRY_OUTCOMES = [
   "not_retryable",
 ] as const;
 const DURATION_MS_MAX = 2_147_483_647;
-const LINEAGE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
-const SESSION_SOURCES = ["token", "trace", "sse"] as const;
-const THREAD_SOURCES = ["argument", "session", "minted", "client"] as const;
-const LINEAGE_ID_SECRET_PATTERN =
-  /(?:^|[^A-Za-z0-9])(?:sk-|fc-|fco_|fcr_|fcmcp_)/i;
 const INVALID_ARGUMENTS_MAX = 10;
 const INVALID_ARGUMENT_PATTERN =
   /^(?:\(root\)|\*|[A-Za-z0-9_.-]{1,64}):[a-z_]{1,40}$/;
@@ -225,16 +226,7 @@ function redactedText(
 ) {
   if (value == null) return null;
   if (typeof value !== "string") invalid(`${field} must be a string`);
-  const normalized = scrub(
-    value.slice(0, max * 4).replace(/[\u0000-\u001F\u007F-\u009F]+/g, " "),
-  )
-    .replace(SECRET_PATTERN_ALL, "[redacted]")
-    .replace(/\beyJ[A-Za-z0-9_.-]*$/, "[redacted]")
-    .trim()
-    .slice(0, max)
-    .replace(/[\uD800-\uDBFF]$/, "")
-    .trim();
-  return normalized || null;
+  return redactText(value, max, scrub);
 }
 
 function durationMs(value: unknown) {

@@ -241,6 +241,9 @@ jobs:
           src/controllers/v2/feedback/alexandria.test.ts
           src/controllers/v2/feedback/alexandria-refund.test.ts
           src/controllers/v2/feedback/feedback-window.test.ts
+          src/controllers/v2/feedback/refund-policy.test.ts
+          src/controllers/v2/feedback/session-feedback.test.ts
+          src/controllers/v2/feedback/zdr-persistence.test.ts
           src/controllers/v2/scrape-alexandria.test.ts
           src/lib/alexandria-activity.test.ts
           src/lib/alexandria-feedback-hint.test.ts
