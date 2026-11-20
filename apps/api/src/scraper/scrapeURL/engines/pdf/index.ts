@@ -354,8 +354,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const detection = await withSpan("native.pdf.detect", async span => {
-          const result = await withPdfExtractionPermit(() =>
-            detectPdf(tempFilePath, nativeCtx),
+          meta.abort.throwIfAborted();
+          const result = await withPdfExtractionPermit(
+            () => detectPdf(tempFilePath, nativeCtx),
+            meta.abort.asSignal(),
           );
           setSpanAttributes(span, {
             "native.module": "pdf",
@@ -384,6 +386,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           : detection.pageCount;
         metadataTitle = detection.title ?? undefined;
       } catch (error) {
+        if (error instanceof AbortManagerThrownError) throw error;
         extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
         logger.warn("detectPdf failed", {
           error,
@@ -399,8 +402,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const pdfResult = await withSpan("native.pdf.process", async span => {
-          const result = await withPdfExtractionPermit(() =>
-            processPdf(tempFilePath, maxPages ?? undefined, nativeCtx),
+          meta.abort.throwIfAborted();
+          const result = await withPdfExtractionPermit(
+            () => processPdf(tempFilePath, maxPages ?? undefined, nativeCtx),
+            meta.abort.asSignal(),
           );
           setSpanAttributes(span, {
             "native.module": "pdf",
@@ -465,7 +470,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           result = { markdown: pdfResult.markdown, html };
         }
       } catch (error) {
-        if (error instanceof PDFOCRRequiredError) {
+        if (
+          error instanceof PDFOCRRequiredError ||
+          error instanceof AbortManagerThrownError
+        ) {
           throw error;
         }
         extractAndEmitNativeLogs(error, meta.logger, "pdf.process");

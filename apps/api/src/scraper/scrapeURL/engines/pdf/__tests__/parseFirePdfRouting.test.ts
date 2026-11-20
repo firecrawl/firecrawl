@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { detectPdf, processPdf } from "@mendable/firecrawl-rs";
@@ -6,10 +6,18 @@ import { config } from "../../../../../config";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { scrapePDFWithParsePDF } from "../pdfParse";
 import { scrapePDF } from "../index";
+import { AbortManager } from "../../../lib/abortManager";
+import { pdfExtractionSemaphore } from "../semaphore";
 
 vi.mock("@mendable/firecrawl-rs", () => ({
   processPdf: vi.fn(),
   detectPdf: vi.fn(),
+}));
+
+// These routing tests use prefetched files and replace all remote PDF backends.
+// Avoid initializing the unused DNS cache while importing FirePDF's helpers.
+vi.mock("../../../lib/cacheableLookup", () => ({
+  cacheableLookup: { lookup: vi.fn(), install: vi.fn() },
 }));
 
 vi.mock("../firePDF", async importOriginal => ({
@@ -221,4 +229,86 @@ describe("PDF routing for /v2/parse", () => {
     expect(result.markdown).toBe("direct extraction");
     expect(mockedFirePdf).not.toHaveBeenCalled();
   });
+
+  it.each(["fast", "ocr"])(
+    "cancels queued %s work without starting extraction or fallback",
+    async mode => {
+      const meta = await makeMeta({}, [{ type: "pdf", mode }]);
+      const controller = new AbortController();
+      const reason = new Error("scrape deadline expired while queued");
+      meta.abort = new AbortManager({
+        signal: controller.signal,
+        tier: "scrape",
+        throwable: () => reason,
+      });
+      const releases = await Promise.all(
+        Array.from({ length: config.PDF_EXTRACTION_CONCURRENCY }, () =>
+          pdfExtractionSemaphore.acquire(),
+        ),
+      );
+      let outcome: { result?: unknown; error?: unknown } | undefined;
+      const operation = scrapePDF(meta).then(
+        result => {
+          outcome = { result };
+        },
+        error => {
+          outcome = { error };
+        },
+      );
+
+      try {
+        const { register } = await import("prom-client");
+        await vi.waitFor(async () => {
+          expect(
+            await register.getSingleMetricAsString(
+              "pdf_extraction_semaphore_waiting",
+            ),
+          ).toContain("pdf_extraction_semaphore_waiting 1");
+        });
+        controller.abort();
+        await vi.waitFor(() => expect(outcome).toBeDefined());
+        expect(outcome).toMatchObject({
+          error: { tier: "scrape", inner: reason },
+        });
+        expect(mockedProcessPdf).not.toHaveBeenCalled();
+        expect(mockedDetectPdf).not.toHaveBeenCalled();
+        expect(mockedFirePdf).not.toHaveBeenCalled();
+        expect(mockedPdfParse).not.toHaveBeenCalled();
+        await expect(stat(meta.pdfPrefetch.filePath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        releases.forEach(release => release());
+        await operation;
+        meta.abort.dispose();
+      }
+    },
+  );
+
+  it.each(["fast", "ocr"])(
+    "does not queue already cancelled %s work",
+    async mode => {
+      const meta = await makeMeta({}, [{ type: "pdf", mode }]);
+      const controller = new AbortController();
+      const reason = new Error("already cancelled");
+      meta.abort = new AbortManager({
+        signal: controller.signal,
+        tier: "external",
+        throwable: () => reason,
+      });
+      controller.abort();
+      try {
+        await expect(scrapePDF(meta)).rejects.toMatchObject({
+          tier: "external",
+          inner: reason,
+        });
+        expect(mockedProcessPdf).not.toHaveBeenCalled();
+        expect(mockedDetectPdf).not.toHaveBeenCalled();
+        expect(mockedFirePdf).not.toHaveBeenCalled();
+        expect(mockedPdfParse).not.toHaveBeenCalled();
+      } finally {
+        meta.abort.dispose();
+      }
+    },
+  );
 });
