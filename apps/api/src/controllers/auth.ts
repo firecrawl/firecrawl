@@ -2,7 +2,10 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import { timingSafeSecretEqual } from "../lib/secret-compare";
+import {
+  hasHostedMcpProxySecret,
+  timingSafeSecretEqual,
+} from "../lib/secret-compare";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
@@ -1277,18 +1280,10 @@ async function supaAuthenticateUser(
     // keeps those for the issuer, so a REST call carrying one comes from the
     // client itself. Origin and integration are client-set, so they never
     // change the limit.
-    const hostedMcpProxySecretValid =
-      timingSafeSecretEqual(
-        req.headers["x-firecrawl-hosted-mcp-secret"],
-        config.HOSTED_MCP_PROXY_SECRET,
-      ) ||
-      timingSafeSecretEqual(
-        req.headers["x-firecrawl-keyless-secret"],
-        config.KEYLESS_PROXY_SECRET,
-      );
     hostedMcpCall =
       hostedMcpDelegation ||
-      (!token.startsWith("fco_") && hostedMcpProxySecretValid);
+      (!token.startsWith("fco_") &&
+        hasHostedMcpProxySecret(req.headers, config));
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not the one trusted
