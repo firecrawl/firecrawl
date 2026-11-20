@@ -1131,7 +1131,87 @@ describe("scrapePDFWithFirePDFAsync", () => {
     it("submits input_gcs_uri + input_sha256 instead of pdf_b64", async () => {
       vi.mocked(getPdfResultFromCache).mockClear();
       vi.mocked(savePdfResultToCache).mockClear();
+      // Dense body text: the completeness guard (#5759) refuses to cache a
+      // result under ~100 non-whitespace chars/page, so a placeholder like
+      // "# big doc" for a 6,543-page document would never reach the cache.
+      // The cache assertion below is about the raw-sha key, not the text.
+      const bigDocMarkdown = "# big doc\n\n" + "body text ".repeat(90_000);
       const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: { scrape_id: "scrape-id-test", status: "queued", lane: "xl" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: { scrape_id: "x", status: "done", pages_processed: 6543 },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: bigDocMarkdown,
+              pages_processed: 6543,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+
+      const meta = makeMeta();
+      const result = await scrapePDFWithFirePDFAsync(
+        { ...meta, logger: meta.logger },
+        BY_REF,
+        undefined,
+        6543,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      );
+
+      expect(result.markdown).toBe(bigDocMarkdown);
+      // Completed within this scrape — no "processing continues" state
+      // may leak into a later timeout.
+      expect(meta.largePdfProcessing.current).toBeUndefined();
+      // The by-reference LOOKUP happens at the call site before the input
+      // object is uploaded (a hit must skip the transfer, which has already
+      // happened by the time this function runs) — so no lookup here, only
+      // the save, addressed by the raw-byte sha namespaced apart from
+      // inline base64-keyed entries.
+      expect(vi.mocked(getPdfResultFromCache)).not.toHaveBeenCalled();
+      expect(vi.mocked(savePdfResultToCache)).toHaveBeenCalledWith(
+        { key: `raw-${BY_REF.sha256}` },
+        expect.anything(),
+        "firepdf",
+        undefined,
+      );
+      const body = calls[0].body as Record<string, unknown>;
+      expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
+      expect(body.input_sha256).toBe(BY_REF.sha256);
+      expect(body.source).toBe("firecrawl");
+      expect(body.source_endpoint).toBe("scrape");
+      expect(body.source_request_context).toBe("default");
+      expect(body.url).toBe(meta.url);
+      expect(body.pdf_b64).toBeUndefined();
+      expect((body.options as { pages_estimate?: number }).pages_estimate).toBe(
+        6543,
+      );
+    });
+
+    it("returns a suspiciously sparse job result but does not cache it (#5759)", async () => {
+      vi.mocked(getPdfResultFromCache).mockClear();
+      vi.mocked(savePdfResultToCache).mockClear();
+      const { fetchImpl } = makeFetchFromSequence([
         {
           matchUrl: /\/jobs$/,
           matchMethod: "POST",
@@ -1164,9 +1244,8 @@ describe("scrapePDFWithFirePDFAsync", () => {
         },
       ]);
 
-      const meta = makeMeta();
       const result = await scrapePDFWithFirePDFAsync(
-        { ...meta, logger: meta.logger },
+        makeMeta(),
         BY_REF,
         undefined,
         6543,
@@ -1174,33 +1253,11 @@ describe("scrapePDFWithFirePDFAsync", () => {
         { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
       );
 
+      // The result itself is still returned — the guard only ever triggers
+      // verification, never a rejection — but a degenerate entry must not
+      // be cached and re-served to later requests.
       expect(result.markdown).toBe("# big doc");
-      // Completed within this scrape — no "processing continues" state
-      // may leak into a later timeout.
-      expect(meta.largePdfProcessing.current).toBeUndefined();
-      // The by-reference LOOKUP happens at the call site before the input
-      // object is uploaded (a hit must skip the transfer, which has already
-      // happened by the time this function runs) — so no lookup here, only
-      // the save, addressed by the raw-byte sha namespaced apart from
-      // inline base64-keyed entries.
-      expect(vi.mocked(getPdfResultFromCache)).not.toHaveBeenCalled();
-      expect(vi.mocked(savePdfResultToCache)).toHaveBeenCalledWith(
-        { key: `raw-${BY_REF.sha256}` },
-        expect.anything(),
-        "firepdf",
-        undefined,
-      );
-      const body = calls[0].body as Record<string, unknown>;
-      expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
-      expect(body.input_sha256).toBe(BY_REF.sha256);
-      expect(body.source).toBe("firecrawl");
-      expect(body.source_endpoint).toBe("scrape");
-      expect(body.source_request_context).toBe("default");
-      expect(body.url).toBe(meta.url);
-      expect(body.pdf_b64).toBeUndefined();
-      expect((body.options as { pages_estimate?: number }).pages_estimate).toBe(
-        6543,
-      );
+      expect(vi.mocked(savePdfResultToCache)).not.toHaveBeenCalled();
     });
 
     it("clamps an explicit caller timeout to the 30min ceiling", async () => {
@@ -1459,6 +1516,12 @@ describe("scrapePDFWithFirePDFAsync", () => {
     it("polls the adopted scrape_id without submitting anything", async () => {
       vi.mocked(getPdfResultFromCache).mockClear();
       vi.mocked(savePdfResultToCache).mockClear();
+      // Dense body text: the completeness guard (#5759) refuses to cache a
+      // result under ~100 non-whitespace chars/page, so a placeholder like
+      // "# adopted doc" for a 500-page document would never reach the cache.
+      // The cache assertion below is about the raw-sha key, not the text.
+      const adoptedDocMarkdown =
+        "# adopted doc\n\n" + "body text ".repeat(7_000);
       const { fetchImpl, calls } = makeFetchFromSequence([
         {
           matchUrl: /\/jobs\/adopted-123$/,
@@ -1479,7 +1542,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
             status: 200,
             body: {
               schema_version: 1,
-              markdown: "# adopted doc",
+              markdown: adoptedDocMarkdown,
               pages_processed: 500,
               failed_pages: null,
               partial_pages: null,
@@ -1497,7 +1560,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
         { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
       );
 
-      expect(result.markdown).toBe("# adopted doc");
+      expect(result.markdown).toBe(adoptedDocMarkdown);
       // No POST /jobs — the whole point is not duplicating the job.
       expect(calls.map(call => call.method)).toEqual(["GET", "GET"]);
       // The adopted result populates the same raw-sha cache a fresh

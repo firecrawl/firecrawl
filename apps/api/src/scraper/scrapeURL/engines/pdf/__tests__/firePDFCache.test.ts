@@ -1911,3 +1911,150 @@ describe("FirePDF cache and parse table formats", () => {
     expect(saveCached).toHaveBeenCalled();
   });
 });
+
+describe("FirePDF cache suspected-incomplete extraction guard (#5759)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue("saved-key");
+  });
+
+  // The reported #5759 document: 46 pages, ~3,000 chars — a repeated page
+  // header and nothing else (~59 non-whitespace chars/page).
+  const sparseMarkdown = "EDITAL CULTURAL\n".repeat(200).slice(0, 3096);
+  const sparseProvenance = {
+    ...provenance,
+    quality: { ...provenance.quality, total_pages: 46 },
+  };
+
+  it("does not cache a suspiciously sparse result, and says why", async () => {
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: {
+        markdown: sparseMarkdown,
+        html: "<p>header</p>",
+        pagesProcessed: 46,
+      },
+      provenance: sparseProvenance,
+      failedPages: null,
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF result not cached",
+      expect.objectContaining({
+        reason: "suspected_incomplete",
+        cacheKey: "key-of-BASE64",
+      }),
+    );
+  });
+
+  it("still caches a dense result for the same page count", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: {
+        markdown: "body text ".repeat(1000),
+        html: "<p>body</p>",
+        pagesProcessed: 46,
+      },
+      provenance: sparseProvenance,
+      failedPages: null,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
+  });
+
+  it("still caches a result that reports no page count (density cannot be judged)", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: sparseMarkdown, html: "<p>header</p>" },
+      provenance: sparseProvenance,
+      failedPages: null,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a cached suspiciously sparse entry as a miss", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: sparseMarkdown,
+      html: "<p>header</p>",
+      pagesProcessed: 46,
+      provenance: sparseProvenance,
+      cachedAt: "2026-09-17T20:12:01.000Z",
+      variant: "base",
+    });
+    const meta = makeMeta();
+    const result = await tryGetCached(
+      meta,
+      "BASE64",
+      "auto",
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(result).toBeNull();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Ignoring cached suspected-incomplete FirePDF result",
+      expect.objectContaining({
+        reason: expect.stringContaining("low text density"),
+      }),
+    );
+  });
+
+  it("still serves a cached dense entry", async () => {
+    const dense = "body text ".repeat(1000);
+    getCached.mockResolvedValueOnce({
+      markdown: dense,
+      html: "<p>body</p>",
+      pagesProcessed: 46,
+      provenance: sparseProvenance,
+      cachedAt: "2026-09-17T20:12:01.000Z",
+      variant: "base",
+    });
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(result).toMatchObject({ markdown: dense, pagesProcessed: 46 });
+  });
+
+  it("still serves a cached entry that reports no page count", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: sparseMarkdown,
+      html: "<p>header</p>",
+      provenance: sparseProvenance,
+      cachedAt: "2026-09-17T20:12:01.000Z",
+      variant: "base",
+    });
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(result).toMatchObject({ markdown: sparseMarkdown });
+  });
+});

@@ -8,7 +8,7 @@ export const firePdfCacheEventsTotal = new Counter({
 
 export const firePdfCacheRefusedWritesTotal = new Counter({
   name: "firecrawl_fire_pdf_cache_refused_writes_total",
-  help: "fire-pdf results not written to the content cache, by reason; reasons: failed_pages, degraded_pages, missing_quality, malformed_provenance",
+  help: "fire-pdf results not written to the content cache, by reason; reasons: failed_pages, degraded_pages, missing_quality, malformed_provenance, suspected_incomplete",
   labelNames: ["reason"],
 });
 
@@ -31,7 +31,8 @@ export type CacheRefusedReason =
   | "failed_pages"
   | "degraded_pages"
   | "missing_quality"
-  | "malformed_provenance";
+  | "malformed_provenance"
+  | "suspected_incomplete";
 
 export const firePdfAsyncSubmittedTotal = new Counter({
   name: "firecrawl_fire_pdf_async_submitted_total",
