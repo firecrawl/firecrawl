@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { InternalOptions } from "../scraper/scrapeURL";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { WebhookConfig } from "../services/webhook/types";
@@ -997,20 +998,260 @@ export async function lockURLs(
   return res;
 }
 
+// How many URLs one lock script call carries. Each call holds the crawl's two
+// visited keys for its duration, so this bounds how long other writers to the
+// same crawl wait; it also keeps the call far below the store's argument limit
+// (REDIS_COMMAND_ARG_CHUNK_SIZE).
+const LOCK_URLS_BATCH_SIZE = 1000;
+const VISITED_TTL_SECONDS = 24 * 60 * 60;
+// How long a batch's answer is kept for a retry of the same call to read back.
+const LOCK_URLS_REPLAY_TTL_SECONDS = 60;
+
+// Locks a batch of URLs with the same outcome as calling lockURL on each in
+// order, in one atomic step.
+//
+// KEYS: visited, visited_unique, replay. ARGV: limit (-1 for none), TTL of the
+// visited sets, TTL of the replay key, then (lock target, normalized URL)
+// pairs. Returns the 1-based positions of the pairs it locked, comma-joined.
+//
+// Atomic, so the limit check and the adds cannot interleave with another
+// worker's, and there is no state where a URL is marked visited but missing
+// from visited_unique. The answer is also stored under the replay key: if the
+// reply is lost and the caller retries with the same key, it gets that answer
+// back instead of finding every URL already locked and dropping them all.
+const LOCK_URLS_SCRIPT = `
+local replay = redis.call("GET", KEYS[3])
+if replay then
+  return replay
+end
+local limit = tonumber(ARGV[1])
+local count = 0
+if limit >= 0 then
+  count = redis.call("SCARD", KEYS[2])
+end
+local locked = {}
+local position = 0
+for i = 4, #ARGV, 2 do
+  position = position + 1
+  if limit >= 0 and count >= limit then
+    break
+  end
+  if redis.call("SADD", KEYS[1], ARGV[i]) == 1 then
+    count = count + redis.call("SADD", KEYS[2], ARGV[i + 1])
+    locked[#locked + 1] = position
+  end
+end
+redis.call("EXPIRE", KEYS[1], ARGV[2])
+redis.call("EXPIRE", KEYS[2], ARGV[2])
+local result = table.concat(locked, ",")
+redis.call("SET", KEYS[3], result, "EX", ARGV[3])
+return result
+`;
+
+// What a URL is locked under: [member of visited, member of visited_unique].
+function lockPair(url: string, sc: StoredCrawl): [string, string] {
+  const normalizedUrl = normalizeURL(url, sc);
+  const lockTarget = !sc.crawlerOptions?.deduplicateSimilarURLs
+    ? normalizedUrl
+    : generateURLPermutations(normalizedUrl)[0].href;
+  return [lockTarget, normalizedUrl];
+}
+
+/**
+ * Locks many URLs of one crawl and reports which ones this call locked,
+ * aligned with `urls`. A URL is locked when it was not visited before and the
+ * crawl limit still had room, exactly as with lockURL, but the store sees one
+ * read and at most one script call per LOCK_URLS_BATCH_SIZE URLs instead of
+ * three or more commands per URL.
+ *
+ * When it throws, the URLs it had already locked are released first. The batch
+ * that failed is the exception when its stored answer cannot be read either:
+ * its script may have run, and those URLs then stay visited.
+ */
+export async function lockURLsBatch(
+  id: string,
+  sc: StoredCrawl,
+  urls: string[],
+  __logger: Logger = _logger,
+): Promise<boolean[]> {
+  return await withSpan(
+    "firecrawl-redis-lock-urls",
+    async span => {
+      setSpanAttributes(span, {
+        "crawl.id": id,
+        "crawl.team_id": sc.team_id,
+        "crawl.url_count": urls.length,
+        operation: "lock_urls",
+      });
+      const locked = await lockURLsInBatches(id, sc, urls, __logger);
+      setSpanAttributes(span, {
+        "crawl.urls_locked": locked.filter(Boolean).length,
+      });
+      return locked;
+    },
+    { zeroDataRetention: sc.zeroDataRetention },
+  );
+}
+
+async function lockURLsInBatches(
+  id: string,
+  sc: StoredCrawl,
+  urls: string[],
+  __logger: Logger,
+): Promise<boolean[]> {
+  const locked: boolean[] = new Array(urls.length).fill(false);
+  if (urls.length === 0) return locked;
+
+  // -1 tells the script there is no limit, so a negative limit is sent as 0:
+  // it locks nothing, as with lockURL.
+  const limit =
+    typeof sc.crawlerOptions?.limit === "number"
+      ? Math.max(sc.crawlerOptions.limit, 0)
+      : -1;
+  const pairs = urls.map(url => lockPair(url, sc));
+
+  const visitedKey = "crawl:" + id + ":visited";
+
+  for (let start = 0; start < pairs.length; start += LOCK_URLS_BATCH_SIZE) {
+    const all = pairs.slice(start, start + LOCK_URLS_BATCH_SIZE);
+
+    // Most links on a page were seen on earlier pages. One read drops those
+    // before the script runs, and when nothing is left the script is skipped.
+    // It is only a filter: the script decides what gets locked. If the read
+    // fails, every URL goes to the script.
+    let candidates = all.map((_, i) => i);
+    try {
+      const seen = await redisEvictConnection.smismember(
+        visitedKey,
+        ...all.map(pair => pair[0]),
+      );
+      candidates = candidates.filter(i => seen[i] !== 1);
+    } catch (error) {
+      __logger.debug("Could not pre-filter visited URLs", {
+        module: "crawl-redis",
+        method: "lockURLsBatch",
+        crawlId: id,
+        error,
+      });
+    }
+    if (candidates.length === 0) continue;
+
+    const chunk = candidates.map(i => all[i]);
+    // One key per chunk, reused across its retries.
+    const replayKey = "crawl:" + id + ":lock_batch:" + randomUUID();
+
+    let result: string | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = String(
+          await redisEvictConnection.eval(
+            LOCK_URLS_SCRIPT,
+            3,
+            visitedKey,
+            "crawl:" + id + ":visited_unique",
+            replayKey,
+            limit,
+            VISITED_TTL_SECONDS,
+            LOCK_URLS_REPLAY_TTL_SECONDS,
+            ...chunk.flat(),
+          ),
+        );
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        __logger.error("Redis lock script failed", {
+          module: "crawl-redis",
+          method: "lockURLsBatch",
+          crawlId: id,
+          urlCount: chunk.length,
+          attempt,
+          error,
+        });
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+        }
+      }
+    }
+
+    if (result === null) {
+      // The script may have run with only its replies lost. Its stored answer
+      // says whether it did, and is then as good as the reply.
+      result = await redisEvictConnection.get(replayKey).catch(() => null);
+    }
+
+    if (result === null) {
+      await unlockURLs(
+        id,
+        sc,
+        urls.filter((_, i) => locked[i]),
+        __logger,
+      );
+      throw new Error("URL lock script failed after retries", {
+        cause: lastError,
+      });
+    }
+
+    for (const position of result.split(",")) {
+      if (position !== "") {
+        locked[start + candidates[Number(position) - 1]] = true;
+      }
+    }
+  }
+
+  return locked;
+}
+
+/**
+ * Releases URLs this caller locked with lockURLsBatch and then could not queue,
+ * so a retry can lock and queue them. Never throws: it runs while another
+ * error is being handled, and a URL left locked is only skipped, as before.
+ */
+export async function unlockURLs(
+  id: string,
+  sc: StoredCrawl,
+  urls: string[],
+  __logger: Logger = _logger,
+): Promise<void> {
+  if (urls.length === 0) return;
+  try {
+    const pairs = urls.map(url => lockPair(url, sc));
+    for (let i = 0; i < pairs.length; i += REDIS_COMMAND_ARG_CHUNK_SIZE) {
+      const chunk = pairs.slice(i, i + REDIS_COMMAND_ARG_CHUNK_SIZE);
+      await Promise.all([
+        redisEvictConnection.srem(
+          "crawl:" + id + ":visited",
+          ...chunk.map(pair => pair[0]),
+        ),
+        redisEvictConnection.srem(
+          "crawl:" + id + ":visited_unique",
+          ...chunk.map(pair => pair[1]),
+        ),
+      ]);
+    }
+  } catch (error) {
+    __logger.error("Could not release URL locks", {
+      module: "crawl-redis",
+      method: "unlockURLs",
+      crawlId: id,
+      urlCount: urls.length,
+      error,
+    });
+  }
+}
+
 export async function lockURLsIndividually(
   id: string,
   sc: StoredCrawl,
   jobs: { id: string; url: string }[],
 ) {
-  const out: typeof jobs = [];
-
-  for (const job of jobs) {
-    if (await lockURL(id, sc, job.url)) {
-      out.push(job);
-    }
-  }
-
-  return out;
+  const locked = await lockURLsBatch(
+    id,
+    sc,
+    jobs.map(job => job.url),
+  );
+  return jobs.filter((_, i) => locked[i]);
 }
 
 export function crawlToCrawler(
