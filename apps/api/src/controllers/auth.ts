@@ -261,7 +261,9 @@ async function getACUC(
           (error as any).address &&
           (error as any).code &&
           error.name === "Error") ||
-        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
+        (error instanceof Error &&
+          (error.name === "MaxRetriesPerRequestError" ||
+            error.message === "Command timed out"))
       ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
@@ -433,7 +435,9 @@ export async function getACUCTeam(
           (error as any).address &&
           (error as any).code &&
           error.name === "Error") ||
-        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
+        (error instanceof Error &&
+          (error.name === "MaxRetriesPerRequestError" ||
+            error.message === "Command timed out"))
       ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
@@ -1314,6 +1318,20 @@ async function supaAuthenticateUser(
   try {
     await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
+    if (rateLimiterRes instanceof Error) {
+      logger.error("Rate limiter store error", {
+        teamId,
+        mode,
+        error: rateLimiterRes,
+      });
+      return {
+        success: false,
+        error: "Rate limiting is temporarily unavailable, please retry",
+        status: 503,
+        retryAfterSeconds: 1,
+      };
+    }
+
     logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
       teamId,
       mode,

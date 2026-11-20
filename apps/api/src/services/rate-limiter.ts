@@ -6,6 +6,7 @@ import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
   enableAutoPipelining: true,
+  commandTimeout: 1000,
 });
 
 const createRateLimiter = (keyPrefix, points) =>
