@@ -242,6 +242,112 @@ describe("executeSearch tool intent", () => {
     expect(result.response.tools).toEqual([own]);
   });
 
+  it("keeps how each tool matched when the raw query and the rewrite both find it", async () => {
+    const found = (provider: string, match: Record<string, unknown>) => ({
+      provider,
+      capability: "data/get",
+      description: provider,
+      ...match,
+    });
+    mocks.discoverTools.mockImplementation(
+      async (input: { queries?: string[] }) =>
+        input.queries?.[0] === "who owns apple stock"
+          ? {
+              items: [
+                found("a", { matchedBy: ["semantic"], ranked: false }),
+                found("b", { matchedBy: ["semantic"], ranked: false }),
+                found("c", { matchedBy: ["semantic"] }),
+                found("d", { matchedBy: ["semantic"] }),
+                found("e", { matchedBy: ["domain"] }),
+              ],
+              semanticMatches: 4,
+            }
+          : {
+              items: [
+                found("e", { matchedBy: ["semantic"], ranked: true }),
+                found("a", { matchedBy: ["semantic"], ranked: true }),
+                found("b", { matchedBy: ["semantic"] }),
+                found("c", { matchedBy: ["semantic"], ranked: false }),
+                found("d", { matchedBy: ["semantic"] }),
+                found("f", { matchedBy: ["domain"] }),
+              ],
+              semanticMatches: 5,
+            },
+    );
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["institutional holders of a public company"],
+      domains: [],
+      needsTools: true,
+    });
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "who owns apple stock",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      context,
+      logger,
+    );
+    expect(result.response.tools).toStrictEqual([
+      found("a", { matchedBy: ["semantic"], ranked: true }),
+      found("b", { matchedBy: ["semantic"], ranked: false }),
+      found("c", { matchedBy: ["semantic"], ranked: false }),
+      found("d", { matchedBy: ["semantic"] }),
+      found("e", { matchedBy: ["domain", "semantic"], ranked: true }),
+      found("f", { matchedBy: ["domain"] }),
+    ]);
+  });
+
+  it("merges matched URLs only for tools that carry them", async () => {
+    const detailed = (match: Record<string, unknown>) => ({
+      id: "sec-gov/filings/filings",
+      provider: "sec-gov",
+      capability: "filings/filings",
+      ...match,
+    });
+    mocks.discoverTools.mockImplementation(
+      async (input: { queries?: string[] }) => ({
+        items: [
+          input.queries?.[0] === "who owns apple stock"
+            ? detailed({
+                matchedBy: ["semantic"],
+                matchedUrls: [],
+                ranked: false,
+              })
+            : detailed({
+                matchedBy: ["domain"],
+                matchedUrls: ["https://sec.gov/"],
+              }),
+        ],
+        semanticMatches: 1,
+      }),
+    );
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["institutional holders of a public company"],
+      domains: ["sec.gov"],
+      needsTools: true,
+    });
+    const result = await executeSearch(
+      {
+        ...options([]),
+        query: "who owns apple stock",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+        toolDetail: "summary",
+      },
+      context,
+      logger,
+    );
+    expect(result.response.tools).toStrictEqual([
+      detailed({
+        matchedBy: ["semantic", "domain"],
+        matchedUrls: ["https://sec.gov/"],
+        ranked: false,
+      }),
+    ]);
+  });
+
   it("adds tools to a default search when the query needs them", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     mocks.inferToolIntent.mockResolvedValue({
@@ -531,6 +637,45 @@ describe("executeSearch tool intent", () => {
         "Search tool impression",
         expect.anything(),
       );
+    });
+
+    it("keeps how each fused tool matched without changing the order", async () => {
+      const found = (provider: string, match: Record<string, unknown>) => ({
+        ...tool(provider),
+        ...match,
+      });
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? {
+                items: [
+                  found("a", { matchedBy: ["semantic"], ranked: false }),
+                  found("b", { matchedBy: ["semantic"], ranked: false }),
+                  found("c", { matchedBy: ["semantic"], ranked: false }),
+                  found("domain", { matchedBy: ["domain"] }),
+                ],
+                semanticMatches: 3,
+              }
+            : {
+                items: [
+                  found("x", { matchedBy: ["semantic"], ranked: true }),
+                  found("c", { matchedBy: ["semantic"], ranked: true }),
+                  found("y", { matchedBy: ["semantic"] }),
+                  found("domain", { matchedBy: ["domain"] }),
+                ],
+                semanticMatches: 3,
+              },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools).toStrictEqual([
+        found("c", { matchedBy: ["semantic"], ranked: true }),
+        found("a", { matchedBy: ["semantic"], ranked: false }),
+        found("x", { matchedBy: ["semantic"], ranked: true }),
+        found("b", { matchedBy: ["semantic"], ranked: false }),
+        found("y", { matchedBy: ["semantic"] }),
+        found("domain", { matchedBy: ["domain"] }),
+      ]);
     });
 
     it("reports no fusion when the rewrite found no tools", async () => {

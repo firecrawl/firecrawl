@@ -56,7 +56,7 @@ it.each([undefined, "compact", "summary", "full"] as const)(
       },
     });
     if (toolDetail === "compact") {
-      expect(result.items).toEqual([compact]);
+      expect(result.items).toEqual([{ ...compact, matchedBy: ["semantic"] }]);
       return;
     }
     expect(result.items[0]).toMatchObject({
@@ -109,7 +109,9 @@ it.each([undefined, "compact", "full"] as const)(
     );
     expect(result.items).toHaveLength(1);
     if (toolDetail === "compact") {
-      expect(result.items).toEqual([compact]);
+      expect(result.items).toEqual([
+        { ...compact, matchedBy: ["semantic", "domain"] },
+      ]);
       return;
     }
     expect(result.items[0]).toMatchObject({
@@ -349,4 +351,208 @@ it("sends no request id when the caller passes none", async () => {
   });
   await discoverTools(input, logger);
   expect(request.mock.calls[0][0].requestId).toBeUndefined();
+});
+
+describe("how a tool matched", () => {
+  const answer = (items: unknown[], reranking?: unknown) => ({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: { items, ...(reranking === undefined ? {} : { reranking }) },
+    },
+  });
+  const resolved = {
+    status: 200,
+    body: {
+      skills: [
+        {
+          id: "sample",
+          matchedDomains: ["example.com"],
+          domainCapabilities: { "example.com": ["records/search"] },
+        },
+      ],
+    },
+  };
+  const named = (capability: string) => ({ ...tool, capability });
+  const queryOf = (args: { body?: unknown }) =>
+    (args.body as { options: { query?: string } }).options.query;
+
+  it("marks tools the catalogue ranked for the query", async () => {
+    request.mockResolvedValue(
+      answer([tool], { status: "reranked", elapsedMs: 291.5 }),
+    );
+    const result = await discoverTools(
+      { ...input, toolDetail: "compact" },
+      logger,
+    );
+    expect(result.items).toEqual([
+      { ...compact, matchedBy: ["semantic"], ranked: true },
+    ]);
+  });
+
+  it("marks tools that are only the nearest matches", async () => {
+    request.mockResolvedValue(
+      answer([tool], {
+        status: "abstained",
+        elapsedMs: 170.3,
+        ranker: "semantic_fallback",
+      }),
+    );
+    const result = await discoverTools(
+      { ...input, toolDetail: "compact" },
+      logger,
+    );
+    expect(result.items).toEqual([
+      { ...compact, matchedBy: ["semantic"], ranked: false },
+    ]);
+  });
+
+  it("leaves ranked unset when the catalogue does not say", async () => {
+    request.mockResolvedValue(answer([tool]));
+    const result = await discoverTools(
+      { ...input, toolDetail: "compact" },
+      logger,
+    );
+    expect(result.items).toEqual([{ ...compact, matchedBy: ["semantic"] }]);
+    expect(result.items[0]).not.toHaveProperty("ranked");
+  });
+
+  it.each([
+    ["a string", "reranked"],
+    ["null", null],
+    ["a list", []],
+    ["an object without a status", { elapsedMs: 12 }],
+    ["a status that is not a string", { status: 5 }],
+  ])("keeps the lookup when reranking is %s", async (_name, reranking) => {
+    request.mockResolvedValue(answer([tool], reranking));
+    const result = await discoverTools(
+      { ...input, toolDetail: "compact" },
+      logger,
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result.items).toEqual([{ ...compact, matchedBy: ["semantic"] }]);
+    expect(result.items[0]).not.toHaveProperty("ranked");
+    expect(result.warning).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(["summary", "full"] as const)(
+    "adds ranked to %s items beside matchedBy",
+    async toolDetail => {
+      request.mockResolvedValue(answer([tool], { status: "abstained" }));
+      const result = await discoverTools({ ...input, toolDetail }, logger);
+      expect(result.items[0]).toMatchObject({
+        id: "sample/records/search",
+        matchedBy: ["semantic"],
+        matchedUrls: [],
+        ranked: false,
+      });
+    },
+  );
+
+  it("gives a domain-only match no ranked field", async () => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? resolved
+        : answer([tool], { status: "reranked" }),
+    );
+    const result = await discoverTools(
+      {
+        ...input,
+        toolDetail: "compact",
+        queries: [],
+        urls: ["https://example.com/records"],
+      },
+      logger,
+    );
+    expect(result.items).toEqual([{ ...compact, matchedBy: ["domain"] }]);
+    expect(result.items[0]).not.toHaveProperty("ranked");
+    expect(result.items[0]).not.toHaveProperty("matchedUrls");
+    expect(result.semanticMatches).toBe(0);
+  });
+
+  it("names both legs for a tool found by query and by domain", async () => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? resolved
+        : queryOf(args)
+          ? answer([tool], { status: "abstained" })
+          : answer([tool]),
+    );
+    const result = await discoverTools(
+      {
+        ...input,
+        toolDetail: "compact",
+        urls: ["https://example.com/records"],
+      },
+      logger,
+    );
+    expect(result.items).toEqual([
+      { ...compact, matchedBy: ["semantic", "domain"], ranked: false },
+    ]);
+    expect(result.semanticMatches).toBe(1);
+  });
+
+  it("marks a tool ranked when any of several queries ranked it", async () => {
+    request.mockImplementation(async args =>
+      queryOf(args) === "first"
+        ? answer([named("a/one"), named("a/two")], { status: "reranked" })
+        : queryOf(args) === "second"
+          ? answer([named("b/one"), named("a/one")], { status: "abstained" })
+          : answer([named("c/one"), named("b/one")]),
+    );
+    const result = await discoverTools(
+      {
+        ...input,
+        toolDetail: "compact",
+        queries: ["second", "first", "third"],
+      },
+      logger,
+    );
+    expect(
+      result.items.map(item => [
+        item.capability,
+        "ranked" in item ? item.ranked : undefined,
+      ]),
+    ).toEqual([
+      ["b/one", false],
+      ["a/one", true],
+      ["c/one", undefined],
+      ["a/two", true],
+    ]);
+    expect(result.items[2]).not.toHaveProperty("ranked");
+  });
+
+  it("returns the same tools in the same order whatever the ranking says", async () => {
+    const lists = (reranking?: (query?: string) => unknown) =>
+      request.mockImplementation(async args =>
+        queryOf(args) === "first"
+          ? answer([named("a/one"), named("a/two")], reranking?.("first"))
+          : answer([named("b/one"), named("a/one")], reranking?.("second")),
+      );
+    const run = async () =>
+      (
+        await discoverTools(
+          { ...input, toolDetail: "compact", queries: ["first", "second"] },
+          logger,
+        )
+      ).items.map(({ provider, capability, description }) => ({
+        provider,
+        capability,
+        description,
+      }));
+    const expected = ["a/one", "b/one", "a/two"].map(capability => ({
+      ...compact,
+      capability,
+    }));
+    lists();
+    expect(await run()).toEqual(expected);
+    lists(() => ({ status: "reranked" }));
+    expect(await run()).toEqual(expected);
+    lists(() => ({ status: "abstained" }));
+    expect(await run()).toEqual(expected);
+    lists(query => ({ status: query === "first" ? "abstained" : "reranked" }));
+    expect(await run()).toEqual(expected);
+  });
 });

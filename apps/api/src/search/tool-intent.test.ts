@@ -144,21 +144,24 @@ it("sends no semantic query for an operator-only query", async () => {
 });
 
 it("keeps only the tools Jev judges to fit, and drops unjudged ones", async () => {
-  const tools = [
+  const tools: Parameters<typeof verifyTools>[1] = [
     {
       provider: "fiscal-ai",
       capability: "ownership/institutional-holders",
       description: "Holders",
+      matchedBy: ["semantic"],
     },
     {
       provider: "apps-apple-com",
       capability: "apps/app",
       description: "App Store app",
+      matchedBy: ["semantic"],
     },
     {
       provider: "sec-gov",
       capability: "filings/filings",
       description: "Filings",
+      matchedBy: ["semantic"],
     },
   ];
   systemOne
@@ -171,9 +174,19 @@ it("keeps only the tools Jev judges to fit, and drops unjudged ones", async () =
 });
 
 it("keeps tools at or above a lower fit threshold when one is given", async () => {
-  const tools = [
-    { provider: "fiscal-ai", capability: "ownership/holders", description: "" },
-    { provider: "sec-gov", capability: "filings/filings", description: "" },
+  const tools: Parameters<typeof verifyTools>[1] = [
+    {
+      provider: "fiscal-ai",
+      capability: "ownership/holders",
+      description: "",
+      matchedBy: ["semantic"],
+    },
+    {
+      provider: "sec-gov",
+      capability: "filings/filings",
+      description: "",
+      matchedBy: ["semantic"],
+    },
   ];
   systemOne
     .mockResolvedValueOnce({ answers: { fits: { noul: 0.2 } } })

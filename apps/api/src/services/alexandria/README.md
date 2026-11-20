@@ -17,6 +17,15 @@ Search returns contracts in `data.tools`, up to `limit` per discovery source
 `creditsUsed`; web results are billed as before. `domainTools: false` disables
 URL matching only.
 
+Each tool says how it matched. `matchedBy` lists `semantic` (found by the
+query's meaning), `domain` (found by a result URL's domain), or both, at every
+`toolDetail`. A semantic match also carries `ranked` when the catalogue
+reports it: `true` when the catalogue ranked the tool for the query, `false`
+when the tool is only a nearest match by similarity. `ranked` is absent on
+domain-only matches and when the catalogue does not report it. Both fields
+describe the match only; they do not change which tools are returned or their
+order.
+
 `sources` may also include `skills`. That asks Exchange
 `GET /v1/discover/skill-cards` with the search query and returns up to 3 short cards
 on `data.skills` (`id`, `name`, `description`, `source`, and when present

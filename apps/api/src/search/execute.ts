@@ -148,26 +148,35 @@ const toolKey = (tool: DiscoveredTool) => `${tool.provider}/${tool.capability}`;
 function addTool(tools: Map<string, DiscoveredTool>, tool: DiscoveredTool) {
   const key = toolKey(tool);
   const previous = tools.get(key);
-  tools.set(
-    key,
-    previous && "matchedBy" in previous && "matchedBy" in tool
+  if (!(previous && "matchedBy" in previous && "matchedBy" in tool)) {
+    tools.set(key, previous ?? tool);
+    return;
+  }
+  const ranked =
+    previous.ranked === true || tool.ranked === true
+      ? true
+      : previous.ranked === false || tool.ranked === false
+        ? false
+        : undefined;
+  tools.set(key, {
+    ...previous,
+    matchedBy: [
+      ...new Set([...(previous.matchedBy ?? []), ...(tool.matchedBy ?? [])]),
+    ],
+    ...("matchedUrls" in previous || "matchedUrls" in tool
       ? {
-          ...previous,
-          matchedBy: [
-            ...new Set([
-              ...(previous.matchedBy ?? []),
-              ...(tool.matchedBy ?? []),
-            ]),
-          ],
           matchedUrls: [
             ...new Set([
-              ...(previous.matchedUrls ?? []),
-              ...(tool.matchedUrls ?? []),
+              ...("matchedUrls" in previous
+                ? (previous.matchedUrls ?? [])
+                : []),
+              ...("matchedUrls" in tool ? (tool.matchedUrls ?? []) : []),
             ]),
           ],
         }
-      : (previous ?? tool),
-  );
+      : {}),
+    ...(ranked !== undefined ? { ranked } : {}),
+  });
 }
 
 const RRF_K = 60;

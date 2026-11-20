@@ -87,14 +87,23 @@ export const toolSummarySchema = toolSchema
     recordsPerUnit: z.number().positive().optional(),
     zeroDataRetentionCreditsCost: credits.optional(),
   });
+type ToolMatch = {
+  /** How discovery found the tool: by the query's meaning, by a result URL's domain, or both. */
+  matchedBy: ("semantic" | "domain")[];
+  /**
+   * Set on semantic matches when the catalogue reports it: true when the
+   * catalogue ranked the tool for the query, false when the tool is only a
+   * nearest match by similarity. Absent on domain-only matches.
+   */
+  ranked?: boolean;
+};
 export type DetailedDiscoveredTool = (
   | z.infer<typeof toolSchema>
   | z.infer<typeof toolSummarySchema>
 ) & {
   id: string;
-  matchedBy: ("semantic" | "domain")[];
   matchedUrls: string[];
-};
+} & ToolMatch;
 
 export type ExchangeResponse = { status: number; body: unknown };
 export const refusal = (
@@ -109,5 +118,6 @@ export const refusal = (
 type CompactDiscoveredTool = Pick<
   z.infer<typeof toolSummarySchema>,
   "provider" | "capability" | "description"
->;
+> &
+  ToolMatch;
 export type DiscoveredTool = CompactDiscoveredTool | DetailedDiscoveredTool;

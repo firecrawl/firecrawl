@@ -149,16 +149,24 @@ export async function discoverTools(
             .nonnegative()
             .optional()
             .catch(undefined),
+          reranking: z
+            .object({ status: z.string() })
+            .optional()
+            .catch(undefined),
         }),
       })
       .parse(result.body).data;
     usOnlyExcluded = Math.max(usOnlyExcluded, data.usOnlyExcluded ?? 0);
-    return data.items;
+    return {
+      items: data.items,
+      ranked: data.reranking && data.reranking.status === "reranked",
+    };
   };
   const merge = (
     tool: z.infer<typeof toolSchema> | z.infer<typeof toolSummarySchema>,
     source: "semantic" | "domain",
     urls: string[] = [],
+    ranked?: boolean,
   ) => {
     const id = `${tool.provider}/${tool.capability}`;
     const previous = items.get(id);
@@ -180,6 +188,7 @@ export async function discoverTools(
         id,
         matchedBy: [source],
         matchedUrls: [...new Set(urls)],
+        ...(ranked !== undefined ? { ranked } : {}),
       });
     }
   };
@@ -211,11 +220,19 @@ export async function discoverTools(
           result.status === "fulfilled" ? [result.value] : [],
         );
         if (!lists.length) throw (settled[0] as PromiseRejectedResult).reason;
-        const depth = Math.max(...lists.map(list => list.length));
-        const ordered: (typeof lists)[number] = [];
+        const depth = Math.max(...lists.map(list => list.items.length));
+        const ordered: (typeof lists)[number]["items"] = [];
         for (let rank = 0; rank < depth; rank++)
-          for (const list of lists) if (list[rank]) ordered.push(list[rank]);
-        return ordered;
+          for (const list of lists)
+            if (list.items[rank]) ordered.push(list.items[rank]);
+        const ranked = new Map<string, boolean>();
+        for (const list of lists)
+          if (list.ranked !== undefined)
+            for (const tool of list.items) {
+              const id = `${tool.provider}/${tool.capability}`;
+              ranked.set(id, list.ranked || ranked.get(id) === true);
+            }
+        return { ordered, ranked };
       })
     : undefined;
   const domain = (async () => {
@@ -302,7 +319,7 @@ export async function discoverTools(
               },
               deadline,
             );
-            return tools
+            return tools.items
               .filter(tool => tool.provider === match.id)
               .map(tool => ({
                 tool,
@@ -323,7 +340,13 @@ export async function discoverTools(
     return found;
   })();
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
-  for (const tool of semanticTools ?? []) merge(tool, "semantic");
+  for (const tool of semanticTools?.ordered ?? [])
+    merge(
+      tool,
+      "semantic",
+      [],
+      semanticTools?.ranked.get(`${tool.provider}/${tool.capability}`),
+    );
   const semanticMatches = items.size;
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
   return {
@@ -333,6 +356,8 @@ export async function discoverTools(
             provider: tool.provider,
             capability: tool.capability,
             description: tool.description,
+            matchedBy: tool.matchedBy,
+            ...(tool.ranked !== undefined ? { ranked: tool.ranked } : {}),
           }
         : tool,
     ),
