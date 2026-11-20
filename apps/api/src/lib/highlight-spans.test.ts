@@ -15,9 +15,49 @@ describe("parseMarkdownToSentences", () => {
       "| Size | Price |\n| --- | --- |\n| 128GB | $799 |\n| 256GB | $899 |";
     const s = parseMarkdownToSentences(md);
     expect(s).toEqual([
-      { text: "Size | Price", source: "table", blockId: 0, isHeader: true },
-      { text: "128GB | $799", source: "table", blockId: 0 },
-      { text: "256GB | $899", source: "table", blockId: 0 },
+      {
+        text: "Size | Price",
+        source: "table",
+        blockId: 0,
+        isHeader: true,
+        tableCells: ["Size", "Price"],
+      },
+      {
+        text: "128GB | $799",
+        source: "table",
+        blockId: 0,
+        tableCells: ["128GB", "$799"],
+      },
+      {
+        text: "256GB | $899",
+        source: "table",
+        blockId: 0,
+        tableCells: ["256GB", "$899"],
+      },
+    ]);
+  });
+
+  it("preserves model-facing candidate text and indices around empty cells", () => {
+    const markdown = [
+      "Intro.",
+      "| | Result |\n| --- | --- |\n| Ada | |\n| | |\n| Bob | Pass |",
+      "Between.",
+      "| | |\n| --- | --- |\n| | 42 |",
+      "After.",
+    ].join("\n\n");
+
+    const indexedLines = parseMarkdownToSentences(markdown)
+      .map((s, i) => `${i}: ${s.text}`)
+      .join("\n");
+    expect(indexedLines).toBe(
+      "0: Intro.\n1: Result\n2: Ada\n3: Bob | Pass\n4: Between.\n5: 42\n6: After.",
+    );
+  });
+
+  it("does not add model candidates for a fully empty table", () => {
+    const markdown = "| | |\n| --- | --- |\n| | |\n\nAfter.";
+    expect(parseMarkdownToSentences(markdown)).toEqual([
+      { text: "After.", source: "text", blockId: 1 },
     ]);
   });
 });
@@ -66,6 +106,39 @@ describe("assembleAnswer", () => {
     expect(assembleAnswer(sentences, [1])).toBe(
       "| Name | Result |\n| --- | --- |\n| Ada | Pass |",
     );
+  });
+
+  it("keeps empty header columns when only the header is selected", () => {
+    const markdown =
+      "| Name | | Result |\n| --- | --- | --- |\n| Ada | | Pass |";
+    expect(assembleAnswer(parseMarkdownToSentences(markdown), [0])).toBe(
+      "| Name |  | Result |\n| --- | --- | --- |",
+    );
+  });
+
+  it("adds a blank header once for multiple selected rows", () => {
+    const markdown =
+      "| | |\n| --- | --- |\n| Ada | |\n| Bob | Skip |\n| | Pass |";
+    expect(assembleAnswer(parseMarkdownToSentences(markdown), [2, 0])).toBe(
+      "|  |  |\n| --- | --- |\n| Ada |  |\n|  | Pass |",
+    );
+  });
+
+  it("continues accepting table spans without cell metadata", () => {
+    expect(
+      assembleAnswer(
+        [
+          {
+            text: "Name | Result",
+            source: "table",
+            blockId: 0,
+            isHeader: true,
+          },
+          { text: "Ada | Pass", source: "table", blockId: 0 },
+        ],
+        [1],
+      ),
+    ).toBe("| Name | Result |\n| --- | --- |\n| Ada | Pass |");
   });
 
   it("rebuilds a table and auto-includes its header when only a row is selected", () => {
