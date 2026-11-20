@@ -102,3 +102,42 @@ describe("pinToApiOrigin", () => {
     );
   });
 });
+
+describe("v2 pagination cursor aliases", () => {
+  test("does not fetch the same crawl page for different cursor origins and fragments", async () => {
+    const client = new FirecrawlClient({ apiKey: API_KEY, apiUrl: API_URL });
+    const sent: string[] = [];
+    const adapter: AxiosAdapter = async config => {
+      const url = axios.getUri(config);
+      sent.push(url);
+      if (sent.length > 4) throw new Error("fixture request budget exhausted");
+      const isNext = new URL(url).searchParams.has("skip");
+      const next = isNext
+        ? "https://another.example/v2/crawl/abc?skip=10#second"
+        : "https://first.example/v2/crawl/abc?skip=10#first";
+      return {
+        data: {
+          success: true,
+          status: "completed",
+          completed: 2,
+          total: 2,
+          next,
+          data: [{ markdown: isNext ? "page" : "initial" }],
+        },
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config,
+      };
+    };
+    (client as any).http.instance.defaults.adapter = adapter;
+
+    const result = await client.getCrawlStatus("abc");
+    expect(result.data).toEqual([{ markdown: "initial" }, { markdown: "page" }]);
+    expect(result.next).toBeNull();
+    expect(sent).toEqual([
+      `${API_URL}/v2/crawl/abc`,
+      `${API_URL}/v2/crawl/abc?skip=10`,
+    ]);
+  });
+});

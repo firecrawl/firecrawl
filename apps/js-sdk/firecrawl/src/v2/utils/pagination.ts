@@ -19,10 +19,23 @@ export async function fetchAllPages<T = Document>(
   const started = Date.now();
   const visited = new Set<string>();
 
-  while (current && !visited.has(current)) {
+  // HttpClient pins every absolute cursor to the API origin; fragments are not sent in HTTP requests.
+  // Match the path and query actually requested so aliases cannot return the same page twice.
+  const cursorKey = (cursor: string): string => {
+    try {
+      const url = new URL(cursor, "https://pagination.invalid/");
+      return url.pathname + url.search;
+    } catch {
+      return cursor;
+    }
+  };
+
+  while (current) {
     if (maxPages != null && pageCount >= maxPages) break;
     if (maxWaitTime != null && (Date.now() - started) / 1000 > maxWaitTime) break;
-    visited.add(current);
+    const key = cursorKey(current);
+    if (visited.has(key)) break;
+    visited.add(key);
 
     let payload: { success: boolean; next?: string | null; data?: T[] | { pages?: T[]; next?: string | null } } | null = null;
     try {
