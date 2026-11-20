@@ -53,6 +53,15 @@ type NuQOptions = {
   backlog?: boolean;
 };
 
+type RabbitListener = {
+  type: "rabbitmq";
+  connection: amqp.ChannelModel;
+  channel: amqp.Channel;
+  consumerTag: string;
+};
+
+const RABBIT_LISTENER_SHUTDOWN_MS = 5_000;
+
 function isExpectedAmqpCloseError(error: unknown): boolean {
   const message =
     error instanceof Error
@@ -89,14 +98,14 @@ async function closeAmqpResource(
   }
 }
 
-async function closeFailedListenerResource(
-  resource: amqp.Channel | amqp.ChannelModel,
-  kind: "channel" | "connection",
+async function closeListenerResource(
+  close: () => Promise<unknown>,
+  resource: string,
 ) {
   try {
-    await closeAmqpResource(() => resource.close(), `listener ${kind}`);
+    await closeAmqpResource(close, resource);
   } catch (err) {
-    logger.warn(`NuQ failed to close listener ${kind}`, {
+    logger.warn(`NuQ failed to close ${resource}`, {
       module: "nuq/rabbitmq",
       err,
     });
@@ -121,12 +130,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         type: "postgres";
         client: Client;
       }
-    | {
-        type: "rabbitmq";
-        connection: amqp.ChannelModel;
-        channel: amqp.Channel;
-        consumerTag: string;
-      }
+    | RabbitListener
     | null = null;
   private listens: {
     [key: string]: ((status: "completed" | "failed") => void)[];
@@ -136,6 +140,35 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
   private rabbitListenerStarting: Promise<void> | null = null;
   private rabbitListenerClosing: Promise<void> | null = null;
+  private rabbitListenerReconnect: NodeJS.Timeout | null = null;
+
+  private scheduleRabbitListenerReconnect(delay = 250) {
+    if (this.shuttingDown || this.listener || this.rabbitListenerReconnect) {
+      return;
+    }
+
+    this.rabbitListenerReconnect = setTimeout(async () => {
+      this.rabbitListenerReconnect = null;
+      try {
+        await this.startListener();
+      } catch (err) {
+        if (this.shuttingDown) return;
+        logger.error("Error in NuQ listener reconnect", {
+          module: "nuq/rabbitmq",
+          queueName: this.queueName,
+          err,
+        });
+        this.scheduleRabbitListenerReconnect(Math.min(delay * 2, 5_000));
+      }
+    }, delay).unref();
+  }
+
+  private clearRabbitListenerReconnect() {
+    if (this.rabbitListenerReconnect) {
+      clearTimeout(this.rabbitListenerReconnect);
+      this.rabbitListenerReconnect = null;
+    }
+  }
 
   private async startRabbitListener(url: string) {
     let connection: amqp.ChannelModel | undefined;
@@ -158,20 +191,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
       this.listener = null;
       logger.info("NuQ listener channel closed", { module: "nuq/rabbitmq" });
 
-      this.rabbitListenerClosing = closeFailedListenerResource(
-        connection,
-        "connection",
+      this.rabbitListenerClosing = closeListenerResource(
+        () => connection.close(),
+        "listener connection",
       ).finally(() => {
         this.rabbitListenerClosing = null;
-        if (this.shuttingDown) return;
-        setTimeout(() => {
-          this.startListener().catch(err =>
-            logger.error("Error in NuQ listener reconnect", {
-              module: "nuq/rabbitmq",
-              err,
-            }),
-          );
-        }, 250).unref();
+        this.scheduleRabbitListenerReconnect();
       });
     };
 
@@ -184,6 +209,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         });
       });
       connection.on("close", onClose);
+      if (this.shuttingDown) throw new Error("NuQ listener is shutting down");
 
       const consumerChannel = await connection.createChannel();
       channel = consumerChannel;
@@ -194,6 +220,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         });
       });
       channel.on("close", onClose);
+      if (this.shuttingDown) throw new Error("NuQ listener is shutting down");
 
       await channel.prefetch(5);
       const queue = await channel.assertQueue(
@@ -241,9 +268,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
       this.listener = { type: "rabbitmq", connection, channel, consumerTag };
     } catch (err) {
       closed = true;
-      if (channel) await closeFailedListenerResource(channel, "channel");
+      if (channel)
+        await closeListenerResource(
+          channel.close.bind(channel),
+          "listener channel",
+        );
       if (connection)
-        await closeFailedListenerResource(connection, "connection");
+        await closeListenerResource(
+          connection.close.bind(connection),
+          "listener connection",
+        );
       throw err;
     }
   }
@@ -259,7 +293,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
         config.NUQ_RABBITMQ_URL,
       )
         .then(() => {
-          void this.resumeCompletedJobs();
+          this.clearRabbitListenerReconnect();
+          if (!this.shuttingDown) void this.resumeCompletedJobs();
         })
         .finally(() => {
           this.rabbitListenerStarting = null;
@@ -1612,27 +1647,61 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   // === Cleanup
+  private async closeRabbitListener({
+    channel,
+    connection,
+    consumerTag,
+  }: RabbitListener) {
+    await closeListenerResource(
+      () => channel.cancel(consumerTag),
+      "listener channel consumer",
+    );
+    await closeListenerResource(() => channel.close(), "listener channel");
+    await closeListenerResource(
+      () => connection.close(),
+      "listener connection",
+    );
+  }
+
+  private async waitForRabbitListenerShutdown() {
+    const startup = this.rabbitListenerStarting;
+    const closing = this.rabbitListenerClosing;
+    if (!startup && !closing) return;
+
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const closed = await Promise.race([
+        Promise.allSettled([startup, closing]).then(() => true),
+        new Promise<false>(resolve => {
+          timer = setTimeout(() => resolve(false), RABBIT_LISTENER_SHUTDOWN_MS);
+        }),
+      ]);
+      if (!closed) {
+        logger.warn("Timed out waiting for NuQ listener shutdown", {
+          module: "nuq/rabbitmq",
+          queueName: this.queueName,
+        });
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   public async shutdown() {
     this.shuttingDown = true;
-    if (this.listener) {
-      const nl = this.listener;
-      this.listener = null;
-      this.listens = {};
-      if (nl.type === "postgres") {
-        await nl.client.query(`UNLISTEN "${this.queueName}";`);
-        await nl.client.end();
-      } else {
-        await closeAmqpResource(
-          () => nl.channel.cancel(nl.consumerTag),
-          "listener channel consumer",
-        );
-        await closeAmqpResource(() => nl.channel.close(), "listener channel");
-        await closeAmqpResource(
-          () => nl.connection.close(),
-          "listener connection",
-        );
-      }
+    this.clearRabbitListenerReconnect();
+    const nl = this.listener;
+    this.listener = null;
+    this.listens = {};
+    if (nl?.type === "postgres") {
+      await nl.client.query(`UNLISTEN "${this.queueName}";`);
+      await nl.client.end();
+    } else if (nl?.type === "rabbitmq") {
+      this.rabbitListenerClosing = this.closeRabbitListener(nl).finally(() => {
+        this.rabbitListenerClosing = null;
+      });
     }
+    await this.waitForRabbitListenerShutdown();
     if (this.sender) {
       const ns = this.sender;
       this.sender = null;

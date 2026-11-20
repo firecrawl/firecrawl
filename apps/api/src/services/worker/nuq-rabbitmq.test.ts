@@ -168,11 +168,15 @@ describe("NuQ RabbitMQ listener", () => {
     expect(attempt.connection.close).toHaveBeenCalledOnce();
   });
 
-  it("reconciles missed completions after cancellation and ignores stale close events", async () => {
+  it("backs off after repeated reconnect failures and reconciles missed completions", async () => {
     const original = broker();
+    const failed = broker();
     const recovered = broker();
+    failed.channel.consume.mockRejectedValueOnce(new Error("consume failed"));
     connect
       .mockResolvedValueOnce(original.connection)
+      .mockRejectedValueOnce(new Error("broker unavailable"))
+      .mockResolvedValueOnce(failed.connection)
       .mockResolvedValueOnce(recovered.connection);
     const { crawlFinishedQueue: queue } = nuq;
     const waiting = deferred<void>();
@@ -201,6 +205,16 @@ describe("NuQ RabbitMQ listener", () => {
     });
     original.channel.consume.mock.calls[0][1](null);
     await vi.advanceTimersByTimeAsync(250);
+    expect(connect).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(connect).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connect).toHaveBeenCalledTimes(3);
+    expect(failed.channel.close).toHaveBeenCalledOnce();
+    expect(failed.connection.close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(connect).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
 
     await received;
     original.channel.emit("close");
@@ -209,7 +223,7 @@ describe("NuQ RabbitMQ listener", () => {
     expect(original.connection.close).toHaveBeenCalledOnce();
     expect(getJobs).toHaveBeenCalledWith([activeJob.id]);
     expect(recovered.channel.ack).toHaveBeenCalledOnce();
-    expect(connect).toHaveBeenCalledTimes(2);
+    expect(connect).toHaveBeenCalledTimes(4);
     await queue.shutdown();
     expect(recovered.channel.cancel).toHaveBeenCalledWith("recovered");
   });
@@ -229,12 +243,86 @@ describe("NuQ RabbitMQ listener", () => {
       "NuQ listener is shutting down",
     );
     await waiting.promise;
-    await queue.shutdown();
+    let didShutdown = false;
+    const shutdown = queue.shutdown().then(() => {
+      didShutdown = true;
+    });
+    await Promise.resolve();
+    const shutDownDuringStartup = didShutdown;
     subscribed.resolve({ consumerTag: "tag" });
 
-    await result;
+    await shutdown;
+    expect(shutDownDuringStartup).toBe(false);
     expect(attempt.channel.close).toHaveBeenCalledOnce();
     expect(attempt.connection.close).toHaveBeenCalledOnce();
+    await result;
+  });
+
+  it("bounds shutdown while closing a disconnected listener", async () => {
+    const attempt = broker();
+    const closing = deferred<void>();
+    const { crawlFinishedQueue: queue } = nuq;
+    connect.mockResolvedValueOnce(attempt.connection);
+    attempt.connection.close.mockReturnValueOnce(closing.promise);
+    vi.spyOn(queue, "getJob").mockResolvedValue(completedJob);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await queue.waitForJob(activeJob.id, null);
+    attempt.channel.consume.mock.calls[0][1](null);
+
+    let didShutdown = false;
+    const shutdown = queue.shutdown().then(() => {
+      didShutdown = true;
+    });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(didShutdown).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await shutdown;
+
+    closing.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it("closes a connection that arrives after the shutdown deadline without starting a subscription", async () => {
+    const attempt = broker();
+    const connecting = deferred<typeof attempt.connection>();
+    const { crawlFinishedQueue: queue } = nuq;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    connect.mockReturnValueOnce(connecting.promise);
+    const result = expect(queue.waitForJob(activeJob.id, null)).rejects.toThrow(
+      "NuQ listener is shutting down",
+    );
+    expect(connect).toHaveBeenCalledOnce();
+
+    const shutdown = queue.shutdown();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await shutdown;
+    connecting.resolve(attempt.connection);
+
+    await result;
+    expect(attempt.connection.createChannel).not.toHaveBeenCalled();
+    expect(attempt.connection.close).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a scheduled reconnect when the queue shuts down", async () => {
+    const attempt = broker();
+    const { crawlFinishedQueue: queue } = nuq;
+    connect
+      .mockResolvedValueOnce(attempt.connection)
+      .mockRejectedValueOnce(new Error("broker unavailable"));
+    vi.spyOn(queue, "getJob").mockResolvedValue(completedJob);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await queue.waitForJob(activeJob.id, null);
+    attempt.channel.consume.mock.calls[0][1](null);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await queue.shutdown();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(connect).toHaveBeenCalledTimes(2);
   });
 
   it("does not register a waiter that timed out during startup", async () => {

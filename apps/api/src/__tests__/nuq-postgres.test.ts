@@ -2,7 +2,11 @@ import { randomUUID } from "crypto";
 import amqp from "amqplib";
 import { Pool } from "pg";
 import { config } from "../config";
-import { nuqShutdown, scrapeQueue } from "../services/worker/nuq";
+import {
+  crawlFinishedQueue,
+  nuqShutdown,
+  scrapeQueue,
+} from "../services/worker/nuq";
 
 const describeIf = config.NUQ_DATABASE_URL ? describe : describe.skip;
 
@@ -151,6 +155,57 @@ describeIf("NuQ Postgres queue", () => {
         expect(getJob).toHaveBeenCalledTimes(2);
       } finally {
         getJob.mockRestore();
+      }
+    },
+  );
+
+  test.skipIf(!config.NUQ_RABBITMQ_URL)(
+    "reconnects after an interrupted listener and a failed reconnect without a new waiter",
+    async () => {
+      const id = randomUUID();
+      const result = { ok: true };
+      const connect = amqp.connect;
+      let listenerConnection: amqp.ChannelModel | undefined;
+      const connectSpy = vi
+        .spyOn(amqp, "connect")
+        .mockImplementationOnce(async (...args) => {
+          listenerConnection = await connect(...args);
+          return listenerConnection;
+        })
+        .mockRejectedValueOnce(new Error("broker temporarily unavailable"));
+      const getJob = vi.spyOn(crawlFinishedQueue, "getJob");
+
+      try {
+        await cleanupPool.query(
+          "INSERT INTO nuq.queue_crawl_finished (id, status) VALUES ($1, 'active')",
+          [id],
+        );
+        const completed = expect(
+          crawlFinishedQueue.waitForJob(id, 5_000),
+        ).resolves.toEqual(result);
+        await vi.waitFor(
+          () => expect(getJob).toHaveBeenCalledWith(id, expect.anything()),
+          2_000,
+        );
+        await expect(getJob.mock.results[0].value).resolves.toMatchObject({
+          status: "active",
+        });
+
+        await cleanupPool.query(
+          "UPDATE nuq.queue_crawl_finished SET status = 'completed', finished_at = now(), returnvalue = $2 WHERE id = $1",
+          [id, result],
+        );
+        await listenerConnection!.close();
+
+        await completed;
+        expect(connectSpy).toHaveBeenCalledTimes(3);
+      } finally {
+        getJob.mockRestore();
+        connectSpy.mockRestore();
+        await cleanupPool.query(
+          "DELETE FROM nuq.queue_crawl_finished WHERE id = $1",
+          [id],
+        );
       }
     },
   );
