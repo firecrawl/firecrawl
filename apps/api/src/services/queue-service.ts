@@ -11,7 +11,7 @@ let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
-let firebillTrackRetryQueue: Queue<FirebillTrackRetryJobData>;
+let firebillTrackRetryQueue: Queue<FirebillRetryJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -36,6 +36,23 @@ const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
 export type FirebillTrackRetryJobData = TrackParams & {
   idempotencyKey: string;
 };
+
+/** A lock settle firebill never answered, re-sent as the identical request. */
+export type FirebillFinalizeRetryJobData = {
+  lockId: string;
+  action: "confirm" | "release";
+  overrideValue?: number;
+  properties?: Record<string, unknown>;
+  externalRequestId?: string | null;
+  customerId?: string | null;
+  featureId?: string | null;
+  heldValue?: number | null;
+  idempotencyKey: string;
+};
+
+export type FirebillRetryJobData =
+  | FirebillTrackRetryJobData
+  | FirebillFinalizeRetryJobData;
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -100,7 +117,7 @@ export function getBillingQueue() {
 
 export function getFirebillTrackRetryQueue() {
   if (!firebillTrackRetryQueue) {
-    firebillTrackRetryQueue = new Queue<FirebillTrackRetryJobData>(
+    firebillTrackRetryQueue = new Queue<FirebillRetryJobData>(
       firebillTrackRetryQueueName,
       {
         connection: getRedisConnection(),

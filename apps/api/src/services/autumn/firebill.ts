@@ -9,7 +9,8 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import {
   getFirebillTrackRetryQueue,
-  type FirebillTrackRetryJobData,
+  type FirebillFinalizeRetryJobData,
+  type FirebillRetryJobData,
 } from "../queue-service";
 import type { LockDeniedReason, TrackParams } from "./types";
 import {
@@ -414,7 +415,7 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   const handedToRetry =
     outcome === "ambiguous" &&
     durableRetry &&
-    (await enqueueFirebillTrackRetry(attempted));
+    (await enqueueFirebillRetry(attempted));
   logger.error(
     outcome === "refused"
       ? "firebill refused a usage event; it will not be billed"
@@ -448,25 +449,44 @@ function trackOperation(value: number): "track" | "refund" {
   return value < 0 ? "refund" : "track";
 }
 
+/** A settle carries a lock id; a track or refund never does. */
+function retryOperation(
+  event: FirebillRetryJobData,
+): "track" | "refund" | "finalize" {
+  return "lockId" in event ? "finalize" : trackOperation(event.value);
+}
+
+function retryContext(event: FirebillRetryJobData) {
+  return "lockId" in event
+    ? {
+        lockId: event.lockId,
+        action: event.action,
+        overrideValue: event.overrideValue,
+        idempotencyKey: event.idempotencyKey,
+      }
+    : {
+        customerId: event.customerId,
+        entityId: event.entityId,
+        featureId: event.featureId,
+        value: event.value,
+        idempotencyKey: event.idempotencyKey,
+      };
+}
+
 /**
- * Hands an unanswered event to the durable retry queue. The job carries the
- * whole event, key included, so every re-send is byte-for-byte the event the
- * caller sent. Keyed by the idempotency key, so the same event enqueued twice
- * (a stalled job re-running its charge) is one job.
+ * Hands an unanswered event or settle to the durable retry queue. The job
+ * carries the whole request, key included, so every re-send is byte-for-byte
+ * what the caller sent. Keyed by the idempotency key, so the same request
+ * enqueued twice (a stalled job re-running its charge) is one job.
  */
-async function enqueueFirebillTrackRetry(
-  event: FirebillTrackRetryJobData,
+async function enqueueFirebillRetry(
+  event: FirebillRetryJobData,
 ): Promise<boolean> {
-  const operation = trackOperation(event.value);
-  const context = {
-    customerId: event.customerId,
-    entityId: event.entityId,
-    featureId: event.featureId,
-    value: event.value,
-    idempotencyKey: event.idempotencyKey,
-  };
+  const operation = retryOperation(event);
+  const context = retryContext(event);
   const timedOut = Symbol("enqueue timed out");
   let timer: NodeJS.Timeout | undefined;
+  let landed = false;
   try {
     const added = await Promise.race([
       (async () => {
@@ -480,6 +500,7 @@ async function enqueueFirebillTrackRetry(
             delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
           },
         });
+        landed = true;
         // For a jobId that already exists, add() creates nothing and returns a
         // Job built from this call, so only the stored timestamp tells a
         // duplicate apart from a new job. The add has landed either way, so a
@@ -496,8 +517,9 @@ async function enqueueFirebillTrackRetry(
         );
       }),
     ]);
-    // The add is still in flight and may land: unknown, not lost.
-    if (added === timedOut) {
+    // The add is still in flight and may land: unknown, not lost. An add that
+    // landed while only the duplicate read stalled is enqueued.
+    if (added === timedOut && !landed) {
       logger.error(
         "firebill durable retry enqueue timed out; the retry may or may not have been queued",
         { ...context, timeoutMs: FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS },
@@ -525,33 +547,29 @@ async function enqueueFirebillTrackRetry(
 }
 
 /**
- * One durable re-send of an event firebill never confirmed. Throws on any
- * answer but accepted so the queue schedules the next attempt with backoff;
- * the last failed attempt logs and counts the event as exhausted first.
+ * One durable re-send of an event or settle firebill never confirmed. Throws
+ * on any answer but accepted so the queue schedules the next attempt with
+ * backoff; the last failed attempt logs and counts the event as exhausted
+ * first.
  *
  * Any non-accepted answer is retried, a refusal included: an earlier attempt
  * may still have landed, and the shared key makes a late duplicate a no-op.
  */
 export async function processFirebillTrackRetry(
-  job: Job<FirebillTrackRetryJobData>,
+  job: Job<FirebillRetryJobData>,
 ): Promise<void> {
   const event = job.data;
-  const operation = trackOperation(event.value);
+  const operation = retryOperation(event);
   const attempt = job.attemptsMade + 1;
   const attempts = job.opts.attempts ?? 1;
 
   firebillTrackRetryTotal.labels(operation, "retried").inc();
-  const result = await firebillAttempt(`/v1/${operation}`, event);
+  const result =
+    "lockId" in event
+      ? await finalizeAttempt(event)
+      : await firebillAttempt(`/v1/${operation}`, event);
 
-  const context = {
-    customerId: event.customerId,
-    entityId: event.entityId,
-    featureId: event.featureId,
-    value: event.value,
-    idempotencyKey: event.idempotencyKey,
-    attempt,
-    attempts,
-  };
+  const context = { ...retryContext(event), attempt, attempts };
 
   if (result.ok) {
     firebillTrackRetryTotal.labels(operation, "settled").inc();
@@ -561,15 +579,25 @@ export async function processFirebillTrackRetry(
 
   const failure = {
     ...context,
-    reason: result.reason,
+    ...("reason" in result ? { reason: result.reason } : {}),
     cause: result.cause,
     ...(result.status !== undefined ? { status: result.status } : {}),
   };
   if (attempt >= attempts) {
     firebillTrackRetryTotal.labels(operation, "exhausted").inc();
-    firebillTrackRetryExhaustedValueTotal
-      .labels(operation, event.featureId)
-      .inc(Math.abs(event.value));
+    if ("lockId" in event) {
+      firebillTrackRetryExhaustedValueTotal
+        .labels(operation, event.featureId ?? "unknown")
+        .inc(
+          event.action === "release"
+            ? 0
+            : (event.overrideValue ?? event.heldValue ?? 0),
+        );
+    } else {
+      firebillTrackRetryExhaustedValueTotal
+        .labels(operation, event.featureId)
+        .inc(Math.abs(event.value));
+    }
     logger.error(
       "firebill durable retry exhausted; the event may not have been billed",
       failure,
@@ -1068,8 +1096,58 @@ export async function firebillLock({
  * Returns true when firebill accepted the settle for delivery. No
  * direct-Autumn fallback, for the same reason as track: firebill may have
  * durably queued the settle before the call failed.
+ *
+ * With `durableRetry`, a settle firebill never answered (no response, a
+ * timeout, a 5xx, or "I do not know") is handed to the same durable retry
+ * queue as an unanswered track, re-sent under the same idempotency key, and
+ * true is returned once the hand-off lands: the settle is then owned by that
+ * queue, and firebill dedupes a late duplicate of an attempt that did land.
  */
 export async function firebillFinalize({
+  durableRetry = false,
+  ...params
+}: Omit<FirebillFinalizeRetryJobData, "idempotencyKey"> & {
+  durableRetry?: boolean;
+}): Promise<boolean> {
+  // Deterministic per (lock, action): the lock id is itself caller-chosen and
+  // stable (`monitor_${check.id}`), so a re-finalize of the same settle — e.g.
+  // the reconciler re-running a check it raced — dedupes upstream instead of
+  // settling twice.
+  const request: FirebillFinalizeRetryJobData = {
+    ...params,
+    idempotencyKey: `fc:finalize:${params.action}:${params.lockId}`,
+  };
+  const result = await finalizeAttempt(request);
+  if (result.ok) return true;
+
+  firebillFailureCauseTotal.labels("finalize", result.cause).inc();
+  const unanswered =
+    result.cause === "timeout" ||
+    result.cause === "connection" ||
+    result.cause === "ambiguous" ||
+    result.status === 429 ||
+    (result.status !== undefined && result.status >= 500);
+  if (!durableRetry || !unanswered) return false;
+
+  const handedToRetry = await enqueueFirebillRetry(request);
+  if (handedToRetry) {
+    logger.warn(
+      "firebill did not answer the settle; handed it to the durable retry",
+      {
+        lockId: request.lockId,
+        action: request.action,
+        overrideValue: request.overrideValue,
+        idempotencyKey: request.idempotencyKey,
+        cause: result.cause,
+        ...(result.status !== undefined ? { status: result.status } : {}),
+      },
+    );
+  }
+  return handedToRetry;
+}
+
+/** One `/v1/finalize` request, logged; the caller counts the failure cause. */
+async function finalizeAttempt({
   lockId,
   action,
   overrideValue,
@@ -1078,22 +1156,11 @@ export async function firebillFinalize({
   customerId,
   featureId,
   heldValue,
-}: {
-  lockId: string;
-  action: "confirm" | "release";
-  overrideValue?: number;
-  properties?: Record<string, unknown>;
-  externalRequestId?: string | null;
-  customerId?: string | null;
-  featureId?: string | null;
-  heldValue?: number | null;
-}): Promise<boolean> {
+  idempotencyKey,
+}: FirebillFinalizeRetryJobData): Promise<
+  { ok: true } | { ok: false; cause: FirebillCause; status?: number }
+> {
   const url = firebillUrl("/v1/finalize");
-  // Deterministic per (lock, action): the lock id is itself caller-chosen and
-  // stable (`monitor_${check.id}`), so a re-finalize of the same settle — e.g.
-  // the reconciler re-running a check it raced — dedupes upstream instead of
-  // settling twice.
-  const idempotencyKey = `fc:finalize:${action}:${lockId}`;
   const transport = firebillTransport();
   try {
     const response = await transport.fetch(url, {
@@ -1146,10 +1213,11 @@ export async function firebillFinalize({
           : "firebill finalize failed — firebill answered a non-OK status",
         { ...context, status: response.status },
       );
-      firebillFailureCauseTotal
-        .labels("finalize", ambiguous ? "ambiguous" : "non_ok")
-        .inc();
-      return false;
+      return {
+        ok: false,
+        cause: ambiguous ? "ambiguous" : "non_ok",
+        status: response.status,
+      };
     }
 
     const answered = await readJson(response);
@@ -1160,17 +1228,13 @@ export async function firebillFinalize({
         ...context,
         status: response.status,
       });
-      firebillFailureCauseTotal.labels("finalize", "unusable").inc();
-      return false;
+      return { ok: false, cause: "unusable", status: response.status };
     }
     const parsed = usageAnswerSchema.safeParse(answered);
     if (!parsed.success || parsed.data.success !== true) {
       logger.error("firebill finalize did not succeed", context);
-      firebillFailureCauseTotal
-        // Explicit `success: false` is `refused`; an unreadable shape `unusable`.
-        .labels("finalize", parsed.success ? "refused" : "unusable")
-        .inc();
-      return false;
+      // Explicit `success: false` is `refused`; an unreadable shape `unusable`.
+      return { ok: false, cause: parsed.success ? "refused" : "unusable" };
     }
 
     logger.info("firebill finalize succeeded", {
@@ -1183,7 +1247,7 @@ export async function firebillFinalize({
         properties,
       ),
     });
-    return true;
+    return { ok: true };
   } catch (error) {
     const failure = classifyTransportError(error);
     logger.error(
@@ -1198,7 +1262,6 @@ export async function firebillFinalize({
         error,
       },
     );
-    firebillFailureCauseTotal.labels("finalize", failure.cause).inc();
-    return false;
+    return { ok: false, cause: failure.cause };
   }
 }
