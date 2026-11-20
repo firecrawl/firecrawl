@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feedbackTrace } from "./feedback-trace";
+import { feedbackTrace, lineageIds } from "./feedback-trace";
 
 const lineage = {
   session_id: "sess_01HZX",
@@ -218,6 +218,61 @@ describe("feedbackTrace", () => {
       external_request_id: null,
       ...lineage,
       objective: null,
+    });
+  });
+});
+
+describe("lineageIds", () => {
+  const ids = (value: unknown, auth?: { hostedMcp?: boolean }) =>
+    lineageIds(request({ "x-firecrawl-mcp-lineage": encode(value) }, auth));
+
+  it("returns the session and conversation of a hosted MCP call", () => {
+    expect(ids(lineage)).toEqual({
+      sessionId: "sess_01HZX",
+      threadId: "thread:42.a-b",
+    });
+  });
+
+  it.each([false, undefined])(
+    "reads nothing when hostedMcp is %s",
+    hostedMcp => {
+      expect(ids(lineage, { hostedMcp })).toEqual({});
+    },
+  );
+
+  it("reads nothing without the header or from one that does not decode", () => {
+    expect(lineageIds(request({}))).toEqual({});
+    expect(
+      lineageIds(request({ "x-firecrawl-mcp-lineage": "not-json" })),
+    ).toEqual({});
+  });
+
+  it("names no conversation when the thread id was taken from the session", () => {
+    const borrowed = {
+      ...lineage,
+      thread_id: lineage.session_id,
+      thread_source: "session",
+    };
+    expect(ids(borrowed)).toEqual({ sessionId: "sess_01HZX" });
+    expect(ids({ ...borrowed, thread_source: "client" })).toEqual({
+      sessionId: "sess_01HZX",
+    });
+    // The feedback trace keeps the thread as it was sent.
+    expect(trace(borrowed)).toMatchObject({
+      thread_id: "sess_01HZX",
+      thread_source: "session",
+    });
+  });
+
+  it("drops an id that is malformed, looks like a secret or names no known source", () => {
+    expect(ids({ ...lineage, session_id: "two words" })).toEqual({
+      threadId: "thread:42.a-b",
+    });
+    expect(ids({ ...lineage, thread_id: "fc-0123456789abcdef0123" })).toEqual({
+      sessionId: "sess_01HZX",
+    });
+    expect(ids({ ...lineage, thread_source: "elsewhere" })).toEqual({
+      sessionId: "sess_01HZX",
     });
   });
 });

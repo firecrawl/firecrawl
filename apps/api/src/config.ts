@@ -302,6 +302,8 @@ const configSchema = z.object({
     .default(3600),
   // Kill switch for the feedback next step on Alexandria answers.
   ALEXANDRIA_FEEDBACK_HINT_ENABLED: z.stringbool().default(true),
+  // Kill switch for search context sent to Exchange and search attribution on provider call logs.
+  ALEXANDRIA_SEARCH_CONTEXT_ENABLED: z.stringbool().default(true),
   ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
     .number()
     .int()
