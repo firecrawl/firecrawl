@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import {
   DEPENDENCY_BACKOFF_MS,
   guardDependencyCall,
@@ -58,6 +59,22 @@ test("a shutdown cuts the backoff short", async () => {
 
   expect(await pending).toBeNull();
   expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test("repeated backoffs do not pile up abort listeners", async () => {
+  const controller = new AbortController();
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await retryDependency(
+      async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+      [1],
+      controller.signal,
+    );
+  }
+
+  expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
 });
 
 test("waits out a dependency outage for at least five minutes", () => {

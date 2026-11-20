@@ -60,14 +60,17 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
       return;
     }
 
-    const timeoutId = setTimeout(() => {
-      resolve();
-    }, ms);
-
+    // The signal outlives one sleep: a worker passing its shutdown signal would
+    // otherwise keep a listener per backoff step and warn after eleven.
     const abortHandler = () => {
       clearTimeout(timeoutId);
       resolve();
     };
+
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener("abort", abortHandler);
+      resolve();
+    }, ms);
 
     signal?.addEventListener("abort", abortHandler, { once: true });
   });
