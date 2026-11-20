@@ -178,6 +178,48 @@ describe("pdfExtractionSemaphore", () => {
     expect(started).toEqual(["first", "second"]);
   });
 
+  it("records a cancelled wait exactly once in the queue-time histogram", async () => {
+    const { register } = await import("prom-client");
+    const metric = "pdf_extraction_semaphore_wait_seconds";
+    const sample = async () => {
+      const lines = (await register.getSingleMetricAsString(metric)).split(
+        "\n",
+      );
+      const value = (suffix: string) =>
+        Number(
+          lines
+            .find(line => line.startsWith(`${metric}_${suffix} `))!
+            .split(" ")
+            .pop(),
+        );
+      return { count: value("count"), sum: value("sum") };
+    };
+    const before = await sample();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const releases = await Promise.all([
+      pdfExtractionSemaphore.acquire(),
+      pdfExtractionSemaphore.acquire(),
+    ]);
+    const controller = new AbortController();
+    const reason = new Error("queued deadline");
+    const queued = pdfExtractionSemaphore.acquire(controller.signal);
+    const settled = queued.catch(() => {});
+    try {
+      clock.mockReturnValue(12_500);
+      controller.abort(reason);
+      await expect(queued).rejects.toBe(reason);
+      const after = await sample();
+      expect(after.count - before.count).toBe(1);
+      expect(after.sum - before.sum).toBeCloseTo(2.5);
+      releases.forEach(release => release());
+      expect(await sample()).toEqual(after);
+    } finally {
+      releases.forEach(release => release());
+      clock.mockRestore();
+      await settled;
+    }
+  });
+
   it("releases a permit when cancellation wins the grant-to-work race", async () => {
     const controller = new AbortController();
     const reason = new Error("cancelled after permit grant");

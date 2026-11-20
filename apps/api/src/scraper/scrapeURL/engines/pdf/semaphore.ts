@@ -67,6 +67,7 @@ class PdfExtractionSemaphore {
         if (index === -1) return;
         this.queue.splice(index, 1);
         waiting.set(this.queue.length);
+        waitSeconds.observe((Date.now() - waiter.enqueuedAt) / 1000);
         reject(signal!.reason);
       };
       this.queue.push(waiter);
