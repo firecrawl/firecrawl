@@ -155,20 +155,18 @@ impl Client {
                     .map_err(FirecrawlError::ResponseParseError)
             })
             .and_then(|response_value| {
-                // Check for success field, or allow responses without it for status checks
-                if action.as_ref().contains("status")
-                    || action.as_ref().contains("cancel")
-                    || response_value["success"].as_bool().unwrap_or(false)
-                    || response_value.get("success").is_none()
-                {
-                    serde_json::from_value::<T>(response_value)
-                        .map_err(FirecrawlError::ResponseParseError)
-                } else {
+                // Treat the response as an error only when the API explicitly sets
+                // `success: false`. Responses that omit the field (e.g. status and
+                // cancel endpoints) or set it to `true` are parsed as `T`.
+                if response_value["success"].as_bool() == Some(false) {
                     Err(FirecrawlError::APIError(
                         action.as_ref().to_string(),
                         serde_json::from_value(response_value)
                             .map_err(FirecrawlError::ResponseParseError)?,
                     ))
+                } else {
+                    serde_json::from_value::<T>(response_value)
+                        .map_err(FirecrawlError::ResponseParseError)
                 }
             });
 
@@ -348,5 +346,113 @@ mod tests {
             client.pin_to_api_origin("https://evil.example/v2/crawl/abc"),
             Err(FirecrawlError::Misuse(_))
         ));
+    }
+
+    // ── handle_response: success-field routing ────────────────────────────────
+
+    /// A `success: false` body must surface as `APIError` regardless of the
+    /// action name.  Before this fix, actions whose name contained "status" or
+    /// "cancel" silently swallowed the error and returned a `ResponseParseError`
+    /// instead of the actual API error message.
+    #[tokio::test]
+    async fn test_handle_response_surfaces_api_error_for_status_action() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/v2/crawl/no-such-job")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"success":false,"error":"Job not found"}"#,
+            )
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+
+        // `get_crawl_status` calls handle_response with an action that contains
+        // "status".  The result must be an APIError carrying the real message.
+        let err = client
+            .get_crawl_status("no-such-job")
+            .await
+            .expect_err("expected APIError for success:false");
+
+        assert!(
+            matches!(err, FirecrawlError::APIError(_, ref e) if e.error == "Job not found"),
+            "unexpected error variant: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_response_surfaces_api_error_for_cancel_action() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("DELETE", "/v2/crawl/no-such-job")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"success":false,"error":"Job not found"}"#,
+            )
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+
+        // `cancel_crawl` calls handle_response with an action that contains
+        // "cancel".  The result must be an APIError carrying the real message.
+        let err = client
+            .cancel_crawl("no-such-job")
+            .await
+            .expect_err("expected APIError for success:false");
+
+        assert!(
+            matches!(err, FirecrawlError::APIError(_, ref e) if e.error == "Job not found"),
+            "unexpected error variant: {:?}",
+            err
+        );
+    }
+
+    /// A response with no `success` field at all (e.g. `CancelCrawlResponse`
+    /// which only contains `status`) must still parse successfully.
+    #[tokio::test]
+    async fn test_handle_response_ok_when_success_field_absent() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("DELETE", "/v2/crawl/crawl-abc")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"status":"cancelled"}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let resp = client
+            .cancel_crawl("crawl-abc")
+            .await
+            .expect("should succeed when success field is absent");
+
+        assert_eq!(resp.status, "cancelled");
+    }
+
+    /// A response with `success: true` and no other special handling must
+    /// parse normally (regression guard).
+    #[tokio::test]
+    async fn test_handle_response_ok_when_success_true() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("POST", "/v2/crawl")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"success":true,"id":"crawl-xyz","url":"https://api.firecrawl.dev/v2/crawl/crawl-xyz"}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let resp = client
+            .start_crawl("https://example.com", None)
+            .await
+            .expect("should succeed");
+
+        assert_eq!(resp.id, "crawl-xyz");
     }
 }
