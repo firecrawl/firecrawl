@@ -57,6 +57,61 @@ describe("simplified HTML text boundaries", () => {
     ).toBe(lines.join("\n"));
   });
 
+  it.each(["span", "div"])(
+    "keeps every %s-wrapped line between explicit breaks",
+    tag => {
+      const lines = Array.from({ length: 7 }, (_, i) => `Address line ${i}`);
+      const address = sample(
+        `<address>${lines.map(line => `<${tag} class="line">${line}</${tag}>`).join("<br>")}</address>`,
+      ).querySelector("address")!;
+      expect(address.querySelectorAll("br")).toHaveLength(lines.length - 1);
+      expect(
+        [...address.childNodes]
+          .map(node => (node.nodeName === "BR" ? "\n" : node.textContent))
+          .join(""),
+      ).toBe(lines.join("\n"));
+    },
+  );
+
+  it("samples repeated cards separately on each side of a break", () => {
+    const cards = (prefix: string) =>
+      Array.from(
+        { length: 8 },
+        (_, i) => `<article class="card">${prefix} ${i}</article>`,
+      ).join("");
+    const body = sample(`<main>${cards("Before")}<br>${cards("After")}</main>`);
+    expect(
+      [...body.querySelectorAll("article")].map(el => el.textContent),
+    ).toEqual([
+      "Before 0",
+      "Before 1",
+      "Before 2",
+      "After 0",
+      "After 1",
+      "After 2",
+    ]);
+    expect(body.querySelectorAll("br")).toHaveLength(1);
+  });
+
+  it("omits pretty-print whitespace between block elements", () => {
+    const compact =
+      '<main><section id="one">One</section><section id="two">Two</section></main>';
+    const pretty =
+      '<main><section id="one">One</section>\n  <section id="two">Two</section></main>';
+    expect(simplifyHtml(pretty)).toBe(simplifyHtml(compact));
+  });
+
+  it("omits block separators introduced when flattening wrappers", () => {
+    const compact =
+      '<main><section id="one">One</section><section id="two">Two</section></main>';
+    const wrapped =
+      '<main><div> <section id="one">One</section> </div>\n <div> <section id="two">Two</section> </div></main>';
+    const body = sample(wrapped);
+    expect(body.querySelector("main")?.innerHTML.trim()).toBe(
+      sample(compact).querySelector("main")?.innerHTML,
+    );
+  });
+
   it("keeps meaningful boundaries through nested links and emphasis", () => {
     const body = sample(
       '<p>Visit <a href="/guide"><em>our guide</em></a> for <b>more</b> details.</p>',
@@ -87,7 +142,7 @@ describe("simplified HTML text boundaries", () => {
     expect(body.querySelector("script, style, [hidden]")).toBeNull();
   });
 
-  it("still collapses repeated card structures and clips the sample budget", () => {
+  it("still collapses repeated card structures", () => {
     const html =
       "<main>" +
       Array.from(
@@ -105,5 +160,17 @@ describe("simplified HTML text boundaries", () => {
       parseDocument(simplified).querySelectorAll("article.card"),
     ).toHaveLength(3);
     expect(simplified).toContain("47 more <article> with the same shape");
+  });
+
+  it("clips output that exceeds the total budget", () => {
+    const html = `<main><p>${"First paragraph ".repeat(20)}</p><p>${"Last paragraph ".repeat(20)}</p></main>`;
+    const unclipped = simplifyHtml(html);
+    const maxTotalLen = 200;
+    expect(unclipped.length).toBeGreaterThan(maxTotalLen);
+    const clipped = simplifyHtml(html, { maxTotalLen });
+    expect(clipped).toHaveLength(maxTotalLen);
+    expect(clipped).toMatch(/<!-- \.\.\.\d+ chars trimmed\.\.\. -->/);
+    expect(clipped.startsWith(unclipped.slice(0, 30))).toBe(true);
+    expect(clipped.endsWith(unclipped.slice(-30))).toBe(true);
   });
 });
