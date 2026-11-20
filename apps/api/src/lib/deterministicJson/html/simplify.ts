@@ -28,7 +28,6 @@ const REMOVE_TAGS = new Set([
   "NOSCRIPT",
   "TEMPLATE",
   "LINK",
-  "BR",
   "WBR",
   "SOURCE",
   "IFRAME",
@@ -181,6 +180,8 @@ function shapeKey(el: Element): string {
 function collapseRepeats(parent: Element, opts: Opts): void {
   const groups = new Map<string, Element[]>();
   for (const el of Array.from(parent.children)) {
+    // Line breaks separate text, so sampling them would join the remaining lines.
+    if (el.tagName === "BR") continue;
     const key = shapeKey(el);
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(el);
   }
@@ -207,7 +208,9 @@ function walk(node: Element, opts: Opts): void {
     ) {
       child.remove();
     } else if (child.nodeType === TEXT_NODE) {
-      const text = collapseSpace(child.textContent ?? "");
+      // Each text node can provide the only separator beside an inline element.
+      // Collapse its whitespace without trimming either edge.
+      const text = (child.textContent ?? "").replace(/\s+/g, " ");
       text
         ? (child.textContent = truncate(text, opts.maxTextLen))
         : child.remove();
@@ -248,7 +251,7 @@ function flattenWrappers(el: Element): void {
     n => n.nodeType === TEXT_NODE && (n.textContent ?? "").trim(),
   );
   if (childElements.length === 1 && !hasOwnText)
-    el.replaceWith(childElements[0]!);
+    el.replaceWith(...Array.from(el.childNodes));
 }
 
 function clipMiddle(text: string, max: number): string {
@@ -269,6 +272,6 @@ export function simplifyHtml(
   pruneHead(doc);
   walk(doc.documentElement, opts);
   flattenWrappers(doc.documentElement);
-  const out = doc.documentElement.outerHTML.replace(/>\s+</g, "><");
+  const out = doc.documentElement.outerHTML;
   return clipMiddle(out, opts.maxTotalLen);
 }
