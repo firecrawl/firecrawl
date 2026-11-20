@@ -61,7 +61,13 @@ export async function getLinksFromSitemap(
   try {
     let content = "";
 
-    const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
+    let isGzip: boolean;
+    try {
+      isGzip = new URL(sitemapUrl).pathname.toLowerCase().endsWith(".gz");
+    } catch (error) {
+      logger.error("Invalid sitemap URL", { sitemapUrl, error });
+      return 0;
+    }
     if (isGzip) {
       try {
         const { buffer } = await fetchFileToBuffer(
