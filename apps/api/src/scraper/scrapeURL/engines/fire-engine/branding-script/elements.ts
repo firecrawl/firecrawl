@@ -8,11 +8,49 @@ import {
 } from "./helpers";
 import {
   getEffectiveFill,
+  gradientFill,
   isButtonElement,
   isVisibleElement,
   looksFilledOrOutlined,
   pageTop,
 } from "./buttons";
+
+// Consent-manager containers by id or class (Complianz, Cookiebot, OneTrust,
+// Didomi, Osano, iubenda, Quantcast, Termly, Borlabs, CookieYes, Usercentrics,
+// TrustArc) and the generic cookie/consent/gdpr names most custom banners use.
+const CONSENT_CONTAINER = [
+  "cookie",
+  "consent",
+  "gdpr",
+  "cmplz",
+  "cookiebot",
+  "cybotcookiebot",
+  "onetrust",
+  "ot-sdk",
+  "didomi",
+  "osano",
+  "iubenda",
+  "qc-cmp",
+  "termly",
+  "borlabs",
+  // Full prefixes only: "cky-" alone is inside Elementor's "sticky-" classes
+  // and "truste" inside "trusted-by".
+  "cky-consent",
+  "cky-btn",
+  "cky-modal",
+  "usercentrics",
+  "trustarc",
+  "truste-",
+  "privacy-banner",
+  "privacy-notice",
+]
+  .flatMap(n => [`[id*="${n}" i]`, `[class*="${n}" i]`])
+  .concat([
+    '[aria-label*="cookie" i]',
+    '[aria-label*="consent" i]',
+    '[aria-label*="gdpr" i]',
+  ])
+  .join(",");
 
 export const sampleElements = (): Element[] => {
   const picksSet = new Set<Element>();
@@ -100,6 +138,7 @@ export interface StyleSnapshot {
   isInput: boolean;
   inputMetadata: InputMetadata | null;
   isLink: boolean;
+  isConsent: boolean;
 }
 
 interface InputMetadata {
@@ -215,10 +254,11 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     el.tagName.toLowerCase() === "select" ||
     el.tagName.toLowerCase() === "textarea";
 
-  // The visible fill may sit on a pseudo-element or an inner child.
+  // The visible fill may be a gradient, a pseudo-element or an inner child.
   const innerFill =
     (isTransparent || hasZeroAlpha) && !isInputElement
-      ? getEffectiveFill(el)
+      ? gradientFill(cs.getPropertyValue("background-image")) ||
+        getEffectiveFill(el)
       : null;
   if (innerFill) {
     bgColor = innerFill;
@@ -253,6 +293,21 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
 
   let isNavigation = false;
   let hasCTAIndicator = false;
+  // Inside a cookie or privacy consent dialog: page chrome in any language,
+  // never the site's own buttons. Matched on the container, since the
+  // buttons' own text varies ("Voir les préférences", "Alle akzeptieren").
+  let isConsent = false;
+  try {
+    // Consent managers also tag the page itself (Complianz puts cmplz-* on
+    // the body), so only a container below the body counts as the dialog.
+    const container = el.closest(CONSENT_CONTAINER);
+    isConsent =
+      !!container &&
+      container !== document.body &&
+      container !== document.documentElement;
+  } catch (e) {
+    recordError("getStyleSnapshot-consent", e);
+  }
 
   try {
     hasCTAIndicator =
@@ -408,5 +463,6 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     isInput: isInputField,
     inputMetadata: inputMetadata,
     isLink: el.matches("a"),
+    isConsent,
   };
 };

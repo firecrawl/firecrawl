@@ -174,6 +174,8 @@ export interface BrandingScriptReturn {
       label: string;
     } | null;
     isLink: boolean;
+    /** Inside a cookie or privacy consent dialog. */
+    isConsent?: boolean;
   }>;
   images: Array<{ type: string; src: string }>;
   logoCandidates?: Array<{

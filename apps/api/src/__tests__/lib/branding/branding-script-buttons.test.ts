@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { JSDOM } from "jsdom";
 
 import { getBrandingScript } from "../../../scraper/scrapeURL/engines/fire-engine/brandingScript";
+import { gradientFill } from "../../../scraper/scrapeURL/engines/fire-engine/branding-script/buttons";
 
 // jsdom has no layout: elements get a box from data-top / data-w / data-h, and
 // anything without data-top has an empty box (not visible).
@@ -48,6 +49,7 @@ function scan(body: string, scrollY = 0, innerHeight = 1080, bodyAttrs = "") {
     visible: boolean;
     position: { top: number };
     colors: { background: string; text: string };
+    isConsent: boolean;
   }>;
 }
 
@@ -189,6 +191,79 @@ describe("branding script button detection", () => {
       visible: true,
       colors: { background: "rgb(200, 30, 30)", text: "rgb(255, 255, 255)" },
     });
+  });
+
+  it("counts a gradient-filled link as a button, colored by the gradient's end", () => {
+    // Divi and Elementor paint buttons with background-image and a transparent
+    // background-color; Tailwind's bg-gradient-to-r does the same.
+    const snaps = scan(
+      `<a href="/entretien" data-top="560" data-w="240" data-h="37" style="color: rgb(255, 255, 255); padding: 5px 16px; background-image: linear-gradient(90deg, rgb(53, 71, 103) 16%, rgb(197, 82, 41) 90%)">Entretien préventif</a>
+       <a href="/reparation" data-top="560" data-w="256" data-h="37" style="color: rgb(255, 255, 255); padding: 5px 16px; background-image: linear-gradient(90deg, rgb(197, 82, 41) 16%, rgb(53, 71, 103) 80%)">Maintenance curative</a>`,
+    );
+
+    expect(byText(snaps, "Entretien préventif")).toMatchObject({
+      isButton: true,
+      colors: { background: "rgb(197, 82, 41)", text: "rgb(255, 255, 255)" },
+    });
+    expect(byText(snaps, "Maintenance curative")).toMatchObject({
+      isButton: true,
+      colors: { background: "rgb(53, 71, 103)" },
+    });
+    expect(gradientFill("linear-gradient(to right, #FF385C, rgba(0, 0, 0, 0))")).toBe("#FF385C");
+    expect(gradientFill('url("hero.png")')).toBeNull();
+    expect(gradientFill("none")).toBeNull();
+    // Only the top layer shows; alpha counts in hex and modern syntax.
+    expect(gradientFill('linear-gradient(rgb(0, 97, 254), rgb(0, 97, 254)), url("x.png")')).toBe("rgb(0, 97, 254)");
+    expect(gradientFill('url("x.png"), linear-gradient(red, blue)')).toBeNull();
+    expect(gradientFill("linear-gradient(#FF385C00, #FF385C80)")).toBe("#FF385C80");
+    expect(gradientFill("linear-gradient(#FF385C00, #FF385C10)")).toBeNull();
+    expect(gradientFill("linear-gradient(oklch(0.7 0.15 30), oklch(0.5 0.1 250 / 0.05))")).toBe("oklch(0.7 0.15 30)");
+    expect(gradientFill("linear-gradient(color(display-p3 0.9 0.2 0.1), hsl(210 100% 50% / 50%))")).toBe("hsl(210 100% 50% / 50%)");
+
+    // A gradient that ends on the page's own white is still a fill.
+    const fades = scan(
+      `<a href="/go" data-top="300" data-w="200" data-h="40" style="color: rgb(255, 255, 255); padding: 5px 16px; background-image: linear-gradient(90deg, rgb(255, 56, 92), rgb(255, 255, 255))">Fades to white</a>`,
+    );
+    expect(byText(fades, "Fades to white")?.isButton).toBe(true);
+  });
+
+  it("marks buttons inside a consent dialog, whatever language they speak", () => {
+    const cta = (text: string) =>
+      `<button data-top="1079" style="background-color: rgb(53, 71, 103); color: rgb(255, 255, 255)">${text}</button>`;
+    const snaps = scan(
+      `<div id="cmplz-cookiebanner-container"><div class="cmplz-buttons">${cta("Voir les préférences")}</div></div>
+       <div class="ot-sdk-container" role="dialog">${cta("Alle akzeptieren")}</div>
+       <div aria-label="Cookie settings">${cta("Preferencias")}</div>
+       <div aria-label="GDPR settings">${cta("Save")}</div>
+       <main>${cta("Demander un devis")}</main>`,
+    );
+
+    for (const text of ["Voir les préférences", "Alle akzeptieren", "Preferencias", "Save"]) {
+      expect(byText(snaps, text)?.isConsent, text).toBe(true);
+    }
+    expect(byText(snaps, "Demander un devis")?.isConsent).toBe(false);
+
+    // The consent manager also tags the whole page (Complianz adds cmplz-* to
+    // the body): that marks nothing, only a container below the body does.
+    const tagged = scan(
+      `<div id="cmplz-cookiebanner-container">${cta("Accepter")}</div><main>${cta("Demander un devis")}</main>`,
+      0,
+      1080,
+      'class="home cmplz-document cmplz-functional"',
+    );
+    expect(byText(tagged, "Accepter")?.isConsent).toBe(true);
+    expect(byText(tagged, "Demander un devis")?.isConsent).toBe(false);
+
+    // Consent-manager prefixes must not match look-alike classes: Elementor's
+    // sticky sections contain "cky-", and "trusted-by" contains "truste".
+    const lookalike = scan(
+      `<section class="elementor-section elementor-sticky--active">${cta("Order now")}</section>
+       <div class="trusted-by">${cta("View menu")}</div>
+       <div class="cky-consent-container">${cta("Accept all")}</div>`,
+    );
+    expect(byText(lookalike, "Order now")?.isConsent).toBe(false);
+    expect(byText(lookalike, "View menu")?.isConsent).toBe(false);
+    expect(byText(lookalike, "Accept all")?.isConsent).toBe(true);
   });
 
   it("leaves out hidden copies of buttons", () => {
