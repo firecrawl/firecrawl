@@ -96,7 +96,7 @@ type ZscalerConfigInput = z.infer<typeof zscalerConfigSchema>;
 
 export const MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES = 10_000;
 export const MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES = 1_000;
-export const MAX_BLOCKED_TLDS = 1_000;
+const MAX_BLOCKED_TLDS = 1_000;
 
 /**
  * Field-for-field zod schema for {@link ThreatProtectionPolicy}. Every field
