@@ -13,6 +13,7 @@ import time
 from typing import AsyncIterator, Dict, List, Literal, Optional
 
 import websockets
+from pydantic import ValidationError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK, ConnectionClosedError
 
 from .types import BatchScrapeJob, CrawlJob, Document
@@ -46,9 +47,6 @@ class AsyncWatcher:
             self._api_url = getattr(client, "api_url", None)
             self._api_key = getattr(client, "api_key", None)
 
-        self._status: str = "scraping"
-        self._data: List[Document] = []
-
     def __aiter__(self) -> AsyncIterator[object]:
         return self._iterate()
 
@@ -61,6 +59,8 @@ class AsyncWatcher:
         return f"{ws_base}/v2/batch/scrape/{self._job_id}"
 
     async def _iterate(self) -> AsyncIterator[object]:
+        status = "scraping"
+        streamed_docs: List[Document] = []
         uri = self._build_ws_url()
         headers_list = []
         if self._api_key:
@@ -118,7 +118,6 @@ class AsyncWatcher:
 
                     msg_type = body.get("type")
                     if msg_type == "error":
-                        self._status = "failed"
                         # Yield a terminal snapshot
                         if self._kind == "crawl":
                             yield CrawlJob(status="failed", completed=0, total=0, credits_used=0, expires_at=None, next=None, data=[])
@@ -127,34 +126,29 @@ class AsyncWatcher:
                         return
                     elif msg_type == "catchup":
                         d = body.get("data", {})
-                        self._status = d.get("status", self._status)
-                        docs_in = d.get("data", []) or []
-                        self._append_documents(docs_in)
+                        status = d.get("status", status)
+                        self._append_documents(streamed_docs, d.get("data"))
                         # Fall through to emit a snapshot below
                     elif msg_type == "document":
                         doc = body.get("data")
-                        if isinstance(doc, dict):
-                            self._append_documents([doc])
+                        if not isinstance(doc, dict):
+                            continue
+                        self._append_documents(streamed_docs, [doc])
                         # Fall through to emit a snapshot below
                     elif msg_type == "done":
-                        self._status = "completed"
                         raw_payload = body.get("data", {}) or {}
-                        docs_in = raw_payload.get("data", []) or []
-                        if isinstance(docs_in, list) and docs_in:
-                            for doc in docs_in:
-                                if isinstance(doc, dict):
-                                    self._append_documents([doc])
+                        self._append_documents(streamed_docs, raw_payload.get("data"))
                         # Emit final snapshot then end
-                        yield self._make_snapshot(status="completed", payload=raw_payload, docs_override=self._data)
+                        yield self._make_snapshot(status="completed", payload=raw_payload, docs_override=streamed_docs)
                         return
 
                     # Generic snapshot emit for status messages and periodic progress
                     payload = body.get("data", body)
-                    status_str = payload.get("status", body.get("status", self._status))
+                    status_str = payload.get("status", body.get("status", status))
                     snapshot = self._make_snapshot(
                         status=status_str,
                         payload=payload,
-                        docs_override=self._data if msg_type in ("catchup", "document") else None,
+                        docs_override=streamed_docs if msg_type in ("catchup", "document") else None,
                     )
                     yield snapshot
                     if status_str in ("completed", "failed", "cancelled"):
@@ -199,11 +193,18 @@ class AsyncWatcher:
         except Exception:
             return None
 
-    def _append_documents(self, raw_docs: List[Dict]) -> None:
-        # Streamed documents are append-only; normalize and validate each once.
+    @staticmethod
+    def _append_documents(documents: List[Document], raw_docs: object) -> None:
+        if not isinstance(raw_docs, list):
+            return
         for doc in raw_docs:
-            if isinstance(doc, dict):
-                self._data.append(Document(**normalize_document_input(doc)))
+            if not isinstance(doc, dict):
+                continue
+            try:
+                documents.append(Document(**normalize_document_input(doc)))
+            except ValidationError:
+                # One invalid document should not disconnect the stream.
+                continue
 
     def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Document]] = None):
         if docs_override is not None:
@@ -234,4 +235,3 @@ class AsyncWatcher:
             next=payload.get("next"),
             data=docs,
         )
-

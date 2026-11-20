@@ -441,6 +441,51 @@ def test_async_status_frame_preserves_its_document_payload(monkeypatch):
 
 
 @pytest.mark.parametrize("kind", ["crawl", "batch"])
+def test_async_watcher_keeps_streaming_after_an_invalid_document(monkeypatch, kind):
+    import websockets
+    from firecrawl.v2.watcher_async import AsyncWatcher
+
+    messages = [
+        {"type": "catchup", "data": {"status": "scraping", "data": [{"markdown": "first"}]}},
+        {"type": "document", "data": None},
+        {"type": "document", "data": {"markdown": []}},
+        {"type": "document", "data": {"markdown": "second"}},
+        {"type": "done", "data": {"data": [{"markdown": []}, {"markdown": "last"}]}},
+    ]
+    monkeypatch.setattr(websockets, "connect", lambda *a, **kw: FakeConnect(FakeWebSocket(messages)))
+
+    async def consume():
+        return [snapshot async for snapshot in AsyncWatcher(DummyClient(), "jid", kind=kind)]
+
+    snapshots = asyncio.run(consume())
+    assert [doc.markdown for doc in snapshots[-2].data] == ["first", "second"]
+    assert snapshots[-1].status == "completed"
+    assert [doc.markdown for doc in snapshots[-1].data] == ["first", "second", "last"]
+
+
+def test_async_watcher_reiteration_starts_with_an_empty_cache(monkeypatch):
+    import websockets
+    from firecrawl.v2.watcher_async import AsyncWatcher
+
+    messages = [
+        {"type": "catchup", "data": {"status": "scraping", "data": [{"markdown": "first"}]}},
+        {"type": "document", "data": {"markdown": "second"}},
+        {"type": "done"},
+    ]
+    monkeypatch.setattr(websockets, "connect", lambda *a, **kw: FakeConnect(FakeWebSocket(messages)))
+
+    async def consume():
+        watcher = AsyncWatcher(DummyClient(), "jid")
+        first_run = [snapshot async for snapshot in watcher]
+        second_run = [snapshot async for snapshot in watcher]
+        return first_run, second_run
+
+    first_run, second_run = asyncio.run(consume())
+    assert second_run == first_run
+    assert [doc.markdown for doc in second_run[0].data] == ["first"]
+
+
+@pytest.mark.parametrize("kind", ["crawl", "batch"])
 @pytest.mark.parametrize("document_count", [8, 64])
 def test_async_progress_validates_only_new_documents(monkeypatch, kind, document_count):
     from firecrawl.v2 import watcher_async
