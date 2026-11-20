@@ -28,6 +28,7 @@ export async function getLinksFromSitemap(
     mode = "axios",
     maxAge = 0,
     zeroDataRetention,
+    usOnly,
     location,
     headers,
   }: {
@@ -36,6 +37,7 @@ export async function getLinksFromSitemap(
     mode?: "axios" | "fire-engine";
     maxAge?: number;
     zeroDataRetention: boolean;
+    usOnly?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
   },
@@ -126,6 +128,7 @@ export async function getLinksFromSitemap(
               : undefined,
             teamId: "sitemap",
             zeroDataRetention,
+            ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
           },
           new CostTracking(),
         );
@@ -213,6 +216,7 @@ export async function getLinksFromSitemap(
               urlsHandler,
               mode,
               zeroDataRetention,
+              usOnly,
               location,
               headers,
               maxAge,
@@ -246,6 +250,7 @@ export async function getLinksFromSitemap(
                 urlsHandler,
                 mode,
                 zeroDataRetention,
+                usOnly,
                 location,
                 headers,
                 maxAge,
@@ -295,6 +300,7 @@ export async function getLinksFromSitemap(
                 urlsHandler,
                 mode,
                 zeroDataRetention,
+                usOnly,
                 location,
                 headers,
                 maxAge,

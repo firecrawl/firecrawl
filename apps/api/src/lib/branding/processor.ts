@@ -9,7 +9,7 @@ import {
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
-import { displayFamily, genericFamily, renderedFamily } from "./font-names";
+import { cleanFontFamily, genericFamily } from "./font-names";
 import { parse, rgb, formatHex } from "culori";
 
 // Export for testing
@@ -362,8 +362,7 @@ function inferFontsList(
 ): Array<{ family: string; count: number }> {
   const freq: Record<string, number> = {};
   for (const stack of fontStacks) {
-    const rendered = renderedFamily(stack);
-    const f = rendered ? displayFamily(rendered) : undefined;
+    const f = cleanFontFamily(stack);
     if (f) freq[f] = (freq[f] || 0) + 1;
   }
 
@@ -395,14 +394,11 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 
   // Typography: the family each stack renders, or what it is set in when
   // that is the system font or a generic ("-apple-system, …" is system-ui).
-  const familyOf = (stack: string[]) => {
-    const rendered = renderedFamily(stack);
-    return rendered ? displayFamily(rendered) : genericFamily(stack);
-  };
+  const familyOf = (stack: string[]) =>
+    cleanFontFamily(stack) ?? genericFamily(stack);
   const typography = {
     fontFamilies: {
-      primary:
-        familyOf(raw.typography.stacks.body) || "system-ui, sans-serif",
+      primary: familyOf(raw.typography.stacks.body) || "system-ui, sans-serif",
       heading:
         familyOf(raw.typography.stacks.heading) ||
         familyOf(raw.typography.stacks.body) ||
@@ -541,8 +537,7 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
       hexify(button.colors.background, pageBackground) || "transparent";
     const borderHex =
       button.colors.borderWidth && button.colors.borderWidth > 0
-        ? hexify(button.colors.border, pageBackground) ||
-          "transparent-border"
+        ? hexify(button.colors.border, pageBackground) || "transparent-border"
         : "no-border";
     const textKey = (button.text || "").trim().toLowerCase().substring(0, 50);
     const classKey = (button.classes || "")

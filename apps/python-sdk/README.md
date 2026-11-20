@@ -339,6 +339,14 @@ related = firecrawl.related_papers(
     intent="replication attempts in larger cohorts",
     k=20,
 )
+
+# Look up a protein's UniProt location, function and GO terms. Cited papers
+# come back as pmid: ids that inspect_paper accepts. Print `notice` with the
+# results. It is UniProt's CC BY 4.0 credit.
+protein = firecrawl.lookup_protein("RPUSD3", organism="9606")
+if protein["match"] == "found":
+    print(protein["protein"]["subcellularLocation"][0]["text"])
+print(protein["notice"])
 ```
 
 > **Response keys are camelCase.** Unlike the rest of the SDK, the research
@@ -488,3 +496,28 @@ execute a selected tool, or pass a list of up to ten calls. Check each item's
 `error` before using `data`. Results and execution exceptions expose `request_id`;
 reuse it with the identical payload when retrying. Automatic retries retain it.
 The same methods are available with `await` on `AsyncFirecrawl`.
+
+Each Alexandria call result can carry an opaque `feedback_token`, valid for 24 hours. It
+is absent under zero data retention. Pass the tokens of the calls in a session to
+`alexandria_feedback`: `tokens` (at most 20, newest last) are covered by the session
+`rating`, and `call_ratings` (at most 20) rate individual calls. The response includes
+`rejected_tokens` when some tokens failed verification.
+
+```python
+from firecrawl import collect_feedback_tokens
+
+scraped = firecrawl.scrape(alexandria={
+    "provider": "particle",
+    "capability": "podcasts/episodes/search",
+    "options": {"semantic_search": "AI agents"},
+})
+first_token = scraped.alexandria[0].feedback_token
+response = firecrawl.alexandria_feedback({
+    "rating": "partial",
+    "requested_website": {"url": "https://example.com", "requested_functionality": "Find episodes"},
+    "rationale": "Found the episodes but the dates were missing",
+    "tokens": collect_feedback_tokens(scraped.alexandria),
+    "call_ratings": [{"token": first_token, "rating": "bad"}] if first_token else None,
+})
+print(response.rejected_tokens or 0)
+```

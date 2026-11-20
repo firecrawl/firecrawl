@@ -1,7 +1,7 @@
 defmodule Firecrawl.MixProject do
   use Mix.Project
 
-  @version "1.12.8"
+  @version "2.0.0"
   @source_url "https://github.com/firecrawl/firecrawl/tree/main/apps/elixir-sdk"
 
   def project do

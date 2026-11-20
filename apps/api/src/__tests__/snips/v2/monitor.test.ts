@@ -128,6 +128,143 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     expect(del.body.success).toBe(true);
   });
 
+  describe("when the team requires zero data retention for search", () => {
+    let searchZdr: Identity;
+
+    beforeAll(async () => {
+      searchZdr = await idmux({
+        name: "monitor/search-zdr",
+        credits: 10000,
+        flags: { searchZDR: "forced-zdr" },
+      });
+    }, 10000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "search zdr monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a search zdr team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+      expect(create.statusCode).toBe(200);
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          searchZdr,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+
+        const pause = await monitorPatchRaw(
+          id,
+          { status: "paused" },
+          searchZdr,
+        );
+        expect(pause.statusCode).toBe(200);
+        expect(pause.body.data.status).toBe("paused");
+      } finally {
+        await monitorDeleteRaw(id, searchZdr);
+      }
+    });
+  });
+
+  describe("when the team is in Safe Mode lockdown", () => {
+    let lockdown: Identity;
+
+    beforeAll(async () => {
+      lockdown = await idmux({
+        name: "monitor/lockdown",
+        credits: 10000,
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+      });
+    }, 10000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "lockdown search monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a lockdown team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.status).toBe("active");
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          lockdown,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+      } finally {
+        await monitorDeleteRaw(id, lockdown);
+      }
+    });
+  });
+
   it("accepts an origin field in the create body", async () => {
     const create = await monitorCreateRaw(
       {

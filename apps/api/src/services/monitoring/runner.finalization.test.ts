@@ -58,7 +58,11 @@ vi.mock("./store", () => ({
   bulkUpsertMonitorPages: vi.fn(),
 }));
 vi.mock("../autumn/autumn.service", () => ({
-  autumnService: { finalizeCreditsLock: vi.fn(), lockCredits: vi.fn() },
+  autumnService: {
+    finalizeCreditsLock: vi.fn(),
+    lockCredits: vi.fn(),
+    trackCredits: vi.fn(),
+  },
 }));
 vi.mock("../queue-service", () => ({ getBillingQueue: vi.fn() }));
 vi.mock("../redis", () => ({
@@ -158,6 +162,7 @@ describe("monitor check finalization ownership", () => {
       true;
     vi.mocked(getACUCTeam).mockResolvedValue({ org_id: "org-1" } as any);
     vi.mocked(autumnService.finalizeCreditsLock).mockResolvedValue(true);
+    vi.mocked(autumnService.trackCredits).mockResolvedValue(false);
     vi.mocked(getBillingQueue).mockReturnValue({
       add: bill,
     } as unknown as ReturnType<typeof getBillingQueue>);
@@ -517,6 +522,90 @@ describe("monitor check finalization ownership", () => {
       });
     },
   );
+
+  it("settles a held run through the durable retry and never tracks it", async () => {
+    await reconcileRunningMonitorChecks();
+    await reconcileRunningMonitorChecks();
+
+    expect(autumnService.finalizeCreditsLock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        durableRetry: true,
+      }),
+    );
+    expect(autumnService.trackCredits).not.toHaveBeenCalled();
+    expect(bill).toHaveBeenCalledExactlyOnceWith(
+      "bill_team",
+      expect.objectContaining({ credits: 1, autumnTrackInRequest: true }),
+      expect.objectContaining({ jobId: "monitor-bill-check-1" }),
+    );
+  });
+
+  describe("a run that took no hold", () => {
+    beforeEach(() => {
+      current.autumn_lock_id = null;
+      current.reserved_credits = null;
+      current.billing_status = "not_applicable";
+      snapshot = structuredClone(current);
+      vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(3);
+    });
+
+    it("is charged once at settle with a plain track keyed by the check", async () => {
+      vi.mocked(autumnService.trackCredits).mockResolvedValue(true);
+
+      await reconcileRunningMonitorChecks();
+      await reconcileRunningMonitorChecks();
+
+      expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+      expect(autumnService.trackCredits).toHaveBeenCalledExactlyOnceWith({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 3,
+        properties: {
+          source: "monitorCheck",
+          endpoint: "monitor",
+          jobId: "check-1",
+        },
+        idempotencyKey: "fc:track:monitor:check-1",
+        externalRequestId: undefined,
+      });
+      expect(bill).toHaveBeenCalledExactlyOnceWith(
+        "bill_team",
+        expect.objectContaining({ credits: 3, autumnTrackInRequest: true }),
+        expect.objectContaining({ jobId: "monitor-bill-check-1" }),
+      );
+      expect(current).toMatchObject({
+        status: "completed",
+        actual_credits: 3,
+        billing_status: "not_applicable",
+      });
+    });
+
+    it("still debits the ledger, without claiming a charge, when the track is not confirmed", async () => {
+      await reconcileRunningMonitorChecks();
+
+      expect(autumnService.trackCredits).toHaveBeenCalledTimes(1);
+      expect(bill).toHaveBeenCalledExactlyOnceWith(
+        "bill_team",
+        expect.objectContaining({ credits: 3, autumnTrackInRequest: false }),
+        expect.anything(),
+      );
+    });
+
+    it("tracks nothing when there is no org to charge", async () => {
+      vi.mocked(getACUCTeam).mockResolvedValue({ org_id: null } as any);
+
+      await reconcileRunningMonitorChecks();
+
+      expect(autumnService.trackCredits).not.toHaveBeenCalled();
+      expect(bill).toHaveBeenCalledExactlyOnceWith(
+        "bill_team",
+        expect.objectContaining({ org_id: null, autumnTrackInRequest: false }),
+        expect.anything(),
+      );
+    });
+  });
 
   it("records a failed settlement without enqueueing billing", async () => {
     vi.mocked(autumnService.finalizeCreditsLock).mockResolvedValue(false);

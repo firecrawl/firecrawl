@@ -188,6 +188,18 @@ describe("/v2/search/gov", () => {
     ["GET", { query: "rules", k: "101" }],
     ["GET", { query: "rules", magic: "true" }],
     ["POST", { query: "rules", magic: "true" }],
+    ["GET", { query: "rules", sources: "news" }],
+    ["POST", { query: "rules", sources: [] }],
+    ["POST", { query: "rules", sources: ["web", "news"] }],
+    ["POST", { query: "rules", sources: ["law"] }],
+    ["POST", { query: "rules", cites: [] }],
+    [
+      "POST",
+      {
+        query: "rules",
+        cites: Array.from({ length: 33 }, (_, i) => "us:usc:42:" + i),
+      },
+    ],
   ] as const)(
     "rejects invalid %s input %j before the upstream call",
     async (method, input) => {
@@ -202,6 +214,96 @@ describe("/v2/search/gov", () => {
       expect(mocks.fetchGovUpstream).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["GET", ["gov", "gov"]],
+    ["GET", "gov"],
+    ["POST", ["gov"]],
+  ] as const)(
+    "forwards a %s request for gov results and counts them",
+    async (method, sources) => {
+      const labels = {
+        jurisdiction: "us",
+        court: "scotus",
+        cites: ["us:usc:21:343"],
+        lang: "en",
+      };
+      const gov = [
+        {
+          ...WEB_RESULT,
+          ...labels,
+          court_type: "federal-supreme",
+          cited_as: ["us:us-reports:555:223"],
+          updated_at: 1700000000000,
+        },
+      ];
+      mocks.fetchGovUpstream.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => JSON.stringify({ success: true, data: { gov } }),
+      });
+      const res = makeRes();
+      await handler(method === "GET" ? "get" : "post")(
+        makeReq(method, { query: "food labeling rules", sources }),
+        res,
+      );
+      await flush();
+
+      expect(mocks.fetchGovUpstream).toHaveBeenCalledWith(
+        expect.objectContaining({ sources: ["gov"] }),
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          gov: [
+            {
+              ...WEB_RESULT,
+              ...labels,
+              courtType: "federal-supreme",
+              citedAs: ["us:us-reports:555:223"],
+              updatedAt: 1700000000000,
+            },
+          ],
+        },
+      });
+      expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
+        expect.objectContaining({ num_results: 1, credits_cost: 0 }),
+      );
+    },
+  );
+
+  it.each([
+    ["GET", "us:usc:42:1983", "us:usc:42:1983"],
+    [
+      "GET",
+      ["us:usc:42:1983", "us:us-reports:5:137"],
+      ["us:usc:42:1983", "us:us-reports:5:137"],
+    ],
+    ["POST", [" us:usc:42:1983 ", "us:usc:42:1983"], "us:usc:42:1983"],
+  ] as const)(
+    "forwards a %s cites filter %j as %j",
+    async (method, cites, expected) => {
+      const res = makeRes();
+      await handler(method === "GET" ? "get" : "post")(
+        makeReq(method, { query: "civil rights", cites }),
+        res,
+      );
+      await flush();
+
+      expect(mocks.fetchGovUpstream).toHaveBeenCalledWith(
+        expect.objectContaining({ cites: expected }),
+      );
+    },
+  );
+
+  it("leaves sources out of the upstream call unless sent", async () => {
+    const res = makeRes();
+    await handler("post")(makeReq("POST", { query: "zoning variance" }), res);
+    await flush();
+
+    expect(mocks.fetchGovUpstream.mock.calls[0][0].sources).toBeUndefined();
+  });
 
   it("maps an upstream timeout to 504", async () => {
     mocks.fetchGovUpstream.mockRejectedValue(

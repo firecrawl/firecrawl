@@ -119,9 +119,7 @@ describe("performQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
-      "performQuery/highlights",
-    );
+    expect(args.telemetry.functionId).toBe("performQuery/highlights");
     const lines = sentLines(args.prompt);
     expect(lines.length).toBeLessThan(40_000);
     lines.forEach((line, i) =>
@@ -187,9 +185,7 @@ describe("performQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
-      "performQuery/directQuote",
-    );
+    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
   });
@@ -223,9 +219,7 @@ describe("performQuery freeform", () => {
     const miniTokens = countTokens(mini.prompt);
     expect(miniTokens).toBeLessThanOrEqual(budget + 100);
     expect(miniTokens).toBeGreaterThan(budget - 100);
-    expect(mini.experimental_telemetry.functionId).toBe(
-      "performQuery/freeform",
-    );
+    expect(mini.telemetry.functionId).toBe("performQuery/freeform");
     expect(document.answer).toBe("the answer");
     expect(document.warning).toContain(
       "the answer was generated from the first part of it",

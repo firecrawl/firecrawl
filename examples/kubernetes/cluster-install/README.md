@@ -79,7 +79,7 @@ In another terminal, check API reachability:
 
 ```bash
 curl --fail --silent --show-error \
-  http://localhost:3002/v0/health/readiness
+  http://localhost:3002/health/readiness
 ```
 
 Then test the end-to-end scraping path:

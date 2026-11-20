@@ -23,6 +23,7 @@ import {
   Identity,
   scrapeRaw,
   extractRaw,
+  EXTRACT_LIVE,
   creditUsage,
   TEST_API_URL,
 } from "./lib";
@@ -2226,7 +2227,9 @@ describe("Attribute formats", () => {
       scrapeTimeout,
     );
 
-    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    itIf(
+      EXTRACT_LIVE && (TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE)),
+    )(
       "should normalize extract request with additionalProperties in schema",
       async () => {
         const identity = await idmux({ name: "schema-validation-test" });

@@ -9,13 +9,17 @@ import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { Worker } from "bullmq";
 import {
+  getBillingQueue,
   getFirebillTrackRetryQueue,
+  getPrecrawlQueue,
   getRedisConnection,
 } from "../queue-service";
+import { startBullmqQueueMetrics } from "../queue-metrics";
 import {
   firebillConfigured,
   processFirebillTrackRetry,
 } from "../autumn/firebill";
+import { startRole } from "../../main";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
 
@@ -34,12 +38,19 @@ const reconcilerJobsRecoveredTotal = new Counter({
   help: "Total drifted jobs recovered by the reconciler",
 });
 
-(async () => {
+export async function start() {
   let isShuttingDown = false;
   let reconcilerInFlight = false;
 
   const app = Express();
   startNodeRuntimeMetrics();
+  // Exported here because this deployment runs one replica, so each queue
+  // gets one series, not a copy per app pod.
+  startBullmqQueueMetrics([
+    getFirebillTrackRetryQueue(),
+    getBillingQueue(),
+    getPrecrawlQueue(),
+  ]);
 
   app.get("/metrics", async (_, res) => {
     try {
@@ -103,10 +114,8 @@ const reconcilerJobsRecoveredTotal = new Counter({
     });
   }
 
-  if (require.main === module) {
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   while (!isShuttingDown) {
     if (!reconcilerInFlight) {
@@ -139,4 +148,8 @@ const reconcilerJobsRecoveredTotal = new Counter({
 
     await new Promise(resolve => setTimeout(resolve, RECONCILER_INTERVAL_MS));
   }
-})();
+}
+
+if (require.main === module) {
+  void startRole("nuq-reconciler-worker");
+}

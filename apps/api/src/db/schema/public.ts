@@ -177,6 +177,26 @@ export const browser_sessions = pgTable("browser_sessions", {
   profile_name: text("profile_name"),
 });
 
+// Sessions of the hosted MCP shell (see computer_sessions migration). The
+// files live in object storage; a session is live until expires_at.
+export const computer_sessions = pgTable(
+  "computer_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    team_id: uuid("team_id").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    // Null until the session's workspace is first saved.
+    last_saved_at: ts("last_saved_at"),
+    expires_at: ts("expires_at").notNull(),
+  },
+  table => [
+    index("computer_sessions_team_id_expires_at_idx").on(
+      table.team_id,
+      table.expires_at,
+    ),
+  ],
+);
+
 // Index of saved persistent browser profiles (see browser_profiles migration).
 // Contents live in Hangar; reconciliation upserts a row after a confirmed save.
 export const browser_profiles = pgTable(
@@ -602,6 +622,35 @@ export const alexandria_feedback_capabilities = pgTable(
     check(
       "alexandria_feedback_capabilities_requested_functionality_check",
       sql`${table.issue} <> 'new_capability_request' OR ${table.requested_functionality} IS NOT NULL`,
+    ),
+  ],
+);
+
+export const alexandria_feedback_calls = pgTable(
+  "alexandria_feedback_calls",
+  {
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    request_id: text("request_id").notNull(),
+    provider: text("provider"),
+    capability: text("capability"),
+    rating: text("rating"),
+    attribution: text("attribution").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.feedback_id, table.position] }),
+    index("alexandria_feedback_calls_request_id_idx").on(table.request_id),
+    check(
+      "alexandria_feedback_calls_attribution_check",
+      sql`${table.attribution} IN ('token', 'window')`,
+    ),
+    check(
+      "alexandria_feedback_calls_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
     ),
   ],
 );
