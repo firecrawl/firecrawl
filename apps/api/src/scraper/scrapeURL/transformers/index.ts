@@ -31,6 +31,9 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
 import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
+import { CrawlDenialError } from "../../../lib/error";
+import { shouldCheckRobots } from "../shouldCheckRobots";
+import { hasNoindexDirective } from "../lib/noindex";
 
 type Transformer = (
   meta: Meta,
@@ -51,6 +54,14 @@ async function deriveMetadataFromRawHTML(
     ...(await extractMetadata(meta, document.rawHtml)),
     ...document.metadata,
   };
+
+  // Honor noindex under the same policy that decides robots.txt checks.
+  if (shouldCheckRobots(meta.options, meta.internalOptions)) {
+    if (hasNoindexDirective(document.metadata)) {
+      throw new CrawlDenialError("URL blocked by noindex meta tag");
+    }
+  }
+
   return document;
 }
 
@@ -620,6 +631,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 
 // TODO: allow some of these to run in parallel
 const transformerStack: Transformer[] = [
+  deriveMetadataFromRawHTML, // Must run before link extraction to enforce noindex
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
@@ -628,7 +640,6 @@ const transformerStack: Transformer[] = [
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,
-  deriveMetadataFromRawHTML,
   fetchProduct,
   fetchMenu,
   ...(useIndex ? [sendDocumentToIndex] : []),
