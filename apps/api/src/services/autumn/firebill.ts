@@ -486,6 +486,7 @@ async function enqueueFirebillRetry(
   const context = retryContext(event);
   const timedOut = Symbol("enqueue timed out");
   let timer: NodeJS.Timeout | undefined;
+  let landed = false;
   try {
     const added = await Promise.race([
       (async () => {
@@ -499,6 +500,7 @@ async function enqueueFirebillRetry(
             delay: FIREBILL_DURABLE_RETRY_BACKOFF_MS,
           },
         });
+        landed = true;
         // For a jobId that already exists, add() creates nothing and returns a
         // Job built from this call, so only the stored timestamp tells a
         // duplicate apart from a new job. The add has landed either way, so a
@@ -515,8 +517,9 @@ async function enqueueFirebillRetry(
         );
       }),
     ]);
-    // The add is still in flight and may land: unknown, not lost.
-    if (added === timedOut) {
+    // The add is still in flight and may land: unknown, not lost. An add that
+    // landed while only the duplicate read stalled is enqueued.
+    if (added === timedOut && !landed) {
       logger.error(
         "firebill durable retry enqueue timed out; the retry may or may not have been queued",
         { ...context, timeoutMs: FIREBILL_DURABLE_RETRY_ENQUEUE_TIMEOUT_MS },
@@ -1122,6 +1125,7 @@ export async function firebillFinalize({
     result.cause === "timeout" ||
     result.cause === "connection" ||
     result.cause === "ambiguous" ||
+    result.status === 429 ||
     (result.status !== undefined && result.status >= 500);
   if (!durableRetry || !unanswered) return false;
 

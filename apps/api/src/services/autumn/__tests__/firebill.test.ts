@@ -1329,6 +1329,7 @@ describe("firebillFinalize durable retry", () => {
       async () => new Response("unavailable", { status: 503 }),
       "non_ok",
     ],
+    ["a 429", async () => new Response("slow down", { status: 429 }), "non_ok"],
     ["an ambiguous 504", async () => ambiguous(), "ambiguous"],
   ])("hands %s to the retry", async (_label, respond, cause) => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(respond));
@@ -1374,6 +1375,20 @@ describe("firebillFinalize durable retry", () => {
         "durableRetry",
       ),
     ).toBe(false);
+  });
+
+  it("counts a landed hand-off as enqueued when only the duplicate read stalls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(wrapped(connectionError("ECONNREFUSED"))),
+    );
+    retryQueueGetJob.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(true);
+
+    expect(await retryOutcomes()).toEqual({ "finalize/enqueued": 1 });
   });
 
   it("reports false when the hand-off fails", async () => {
