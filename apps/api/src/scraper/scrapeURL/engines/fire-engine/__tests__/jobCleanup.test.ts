@@ -254,9 +254,12 @@ it("does not wait for deletion or alter a successful result", async () => {
 
 it("does not invent an ID for an inline response without a retained job", async () => {
   delete fake.status.jobId;
+  const actual = await vi.importActual<typeof import("../delete")>("../delete");
+  vi.mocked(fireEngineDelete).mockImplementationOnce(actual.fireEngineDelete);
   expect((await scrapeURLWithFireEngineChromeCDP(meta())).html).toBe(
     "document",
   );
+  expect(robustFetch).not.toHaveBeenCalled();
   expect(fireEngineDelete).toHaveBeenCalledExactlyOnceWith(
     logger,
     undefined,
