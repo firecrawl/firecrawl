@@ -5,10 +5,20 @@
 //! redirects, subresources, scripts' own requests and WebSockets. Routing
 //! Chrome through this proxy puts every connection it makes through the same
 //! network policy, applied to the address that is actually dialled.
+//!
+//! When `HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY` is set, the plain fetcher
+//! leaves through that proxy. The guard picks a proxy with the same rules,
+//! `NO_PROXY` included, and reaches each allowed address through it with an
+//! HTTP CONNECT, so a rendered page leaves from the same place. Those rules
+//! depend on the URL's scheme, which SOCKS does not carry, so the guard
+//! listens twice: Chrome sends plain HTTP to one listener and everything else
+//! to the other.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
+use hyper_util::client::proxy::matcher::{Intercept, Matcher};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::Url;
@@ -23,47 +33,51 @@ const REPLY_COMMAND_NOT_SUPPORTED: u8 = 7;
 const REPLY_ADDRESS_NOT_SUPPORTED: u8 = 8;
 
 pub struct GuardProxy {
-  addr: SocketAddr,
-  task: tokio::task::JoinHandle<()>,
+  /// Where Chrome sends `http://` URLs.
+  http: SocketAddr,
+  /// Where Chrome sends every other URL: `https://` and WebSockets.
+  https: SocketAddr,
+  tasks: [tokio::task::JoinHandle<()>; 2],
 }
 
 impl GuardProxy {
-  /// Listen on a free loopback port and start serving.
+  /// Listen on free loopback ports and start serving.
   pub async fn start(policy: NetworkPolicy) -> std::io::Result<Self> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
-    let addr = listener.local_addr()?;
-    let task = tokio::spawn(async move {
-      loop {
-        // A failed accept (too many open files, say) is not a reason to
-        // stop: Chrome would lose its only way out for the rest of the run.
-        let Ok((client, _)) = listener.accept().await else {
-          tokio::time::sleep(Duration::from_millis(50)).await;
-          continue;
-        };
-        tokio::spawn(async move {
-          let _ = serve(client, policy).await;
-        });
-      }
-    });
-    Ok(Self { addr, task })
+    Self::listen(policy, proxy_rules()?).await
   }
 
-  pub fn addr(&self) -> SocketAddr {
-    self.addr
+  /// `proxies` decides which connections go through an upstream proxy.
+  async fn listen(policy: NetworkPolicy, proxies: Matcher) -> std::io::Result<Self> {
+    let http = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let https = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let (http_addr, https_addr) = (http.local_addr()?, https.local_addr()?);
+    let proxies = Arc::new(proxies);
+    Ok(Self {
+      http: http_addr,
+      https: https_addr,
+      tasks: [
+        accept_loop(http, "http", policy, proxies.clone()),
+        accept_loop(https, "https", policy, proxies),
+      ],
+    })
   }
 
   /// The Chrome switches that send every connection through this proxy:
   /// loopback included, no QUIC or other UDP path around it, and no DNS
-  /// lookups of its own.
+  /// lookups of its own. `socks=` is the fallback for every scheme other
+  /// than `http`, so no URL is left to go direct.
   pub fn chrome_args(&self) -> Vec<String> {
     vec![
-      format!("proxy-server=socks5://{}", self.addr),
+      format!(
+        "proxy-server=http=socks5://{};socks=socks5://{}",
+        self.http, self.https
+      ),
       "proxy-bypass-list=<-loopback>".to_string(),
       "disable-quic".to_string(),
       "force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_string(),
       format!(
         "host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE {}",
-        self.addr.ip()
+        self.https.ip()
       ),
     ]
   }
@@ -71,8 +85,66 @@ impl GuardProxy {
 
 impl Drop for GuardProxy {
   fn drop(&mut self) {
-    self.task.abort();
+    for task in &self.tasks {
+      task.abort();
+    }
   }
+}
+
+/// Serve the connections Chrome sends to `listener`, all for `scheme` URLs.
+fn accept_loop(
+  listener: TcpListener,
+  scheme: &'static str,
+  policy: NetworkPolicy,
+  proxies: Arc<Matcher>,
+) -> tokio::task::JoinHandle<()> {
+  tokio::spawn(async move {
+    loop {
+      // A failed accept (too many open files, say) is not a reason to
+      // stop: Chrome would lose its only way out for the rest of the run.
+      let Ok((client, _)) = listener.accept().await else {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        continue;
+      };
+      let proxies = proxies.clone();
+      tokio::spawn(async move {
+        let _ = serve(client, scheme, policy, &proxies).await;
+      });
+    }
+  })
+}
+
+/// The fetcher's proxy rules, read from the environment. They skip a value
+/// they cannot read as if it were unset, which would send Chrome out from the
+/// address the proxy is there to hide, so such a value stops the guard.
+fn proxy_rules() -> std::io::Result<Matcher> {
+  for names in [
+    ["HTTPS_PROXY", "https_proxy"],
+    ["HTTP_PROXY", "http_proxy"],
+    ["ALL_PROXY", "all_proxy"],
+  ] {
+    // The first one set is the one the rules read.
+    let Some((name, value)) = names
+      .into_iter()
+      .find_map(|name| std::env::var(name).ok().map(|value| (name, value)))
+    else {
+      continue;
+    };
+    if !is_readable_proxy(&value) {
+      return Err(std::io::Error::other(format!("{name} is not a proxy URL")));
+    }
+  }
+  Ok(Matcher::from_env())
+}
+
+fn is_readable_proxy(value: &str) -> bool {
+  let any = http::Uri::from_static("http://example.com/");
+  value.is_empty()
+    || Matcher::builder()
+      .all(value)
+      .build()
+      .intercept(&any)
+      .is_some()
 }
 
 async fn reply(client: &mut TcpStream, code: u8) -> std::io::Result<()> {
@@ -173,7 +245,74 @@ pub async fn refusal_reason(url: &Url, policy: NetworkPolicy) -> Option<String> 
     .and_then(|refused| refused.reason)
 }
 
-async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<()> {
+/// The URL the fetcher's proxy rules are matched against for a connection.
+fn destination(scheme: &str, host: &Target, port: u16) -> Option<http::Uri> {
+  let host = match host {
+    Target::Ip(IpAddr::V6(ip)) => format!("[{ip}]"),
+    Target::Ip(ip) => ip.to_string(),
+    Target::Name(name) => name.clone(),
+  };
+  format!("{scheme}://{host}:{port}/").parse().ok()
+}
+
+async fn dial(target: SocketAddr, proxy: Option<&Intercept>) -> std::io::Result<TcpStream> {
+  match proxy {
+    Some(proxy) => tunnel(proxy, target).await,
+    None => TcpStream::connect(target).await,
+  }
+}
+
+/// Open an HTTP CONNECT tunnel to `target` through the upstream proxy. The
+/// tunnel is asked for the address the guard checked, not the name, so the
+/// proxy cannot resolve it to somewhere the policy refuses.
+async fn tunnel(proxy: &Intercept, target: SocketAddr) -> std::io::Result<TcpStream> {
+  // Going direct when the proxy cannot carry the tunnel would leave from the
+  // address the proxy is there to hide.
+  let uri = proxy.uri();
+  let (Some("http"), Some(authority)) = (uri.scheme_str(), uri.authority()) else {
+    return Err(std::io::Error::other(
+      "Chrome can only use an http:// proxy",
+    ));
+  };
+  let host = authority
+    .host()
+    .trim_start_matches('[')
+    .trim_end_matches(']');
+  let mut stream = TcpStream::connect((host, authority.port_u16().unwrap_or(80))).await?;
+
+  let mut request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n").into_bytes();
+  if let Some(credentials) = proxy.basic_auth() {
+    request.extend_from_slice(b"Proxy-Authorization: ");
+    request.extend_from_slice(credentials.as_bytes());
+    request.extend_from_slice(b"\r\n");
+  }
+  request.extend_from_slice(b"\r\n");
+  stream.write_all(&request).await?;
+
+  // One byte at a time, so no byte past the response head is taken from the
+  // tunnel.
+  let mut head = Vec::new();
+  let mut byte = [0u8; 1];
+  while !head.ends_with(b"\r\n\r\n") {
+    if head.len() > 8192 || stream.read(&mut byte).await? == 0 {
+      return Err(std::io::Error::other(
+        "the proxy did not answer the CONNECT",
+      ));
+    }
+    head.push(byte[0]);
+  }
+  match head.split(|&b| b == b' ').nth(1) {
+    Some([b'2', _, _]) => Ok(stream),
+    _ => Err(std::io::Error::other("the proxy refused the CONNECT")),
+  }
+}
+
+async fn serve(
+  mut client: TcpStream,
+  scheme: &str,
+  policy: NetworkPolicy,
+  proxies: &Matcher,
+) -> std::io::Result<()> {
   // Greeting: version, then the auth methods the client offers. No auth is
   // needed on a loopback listener only this process's Chrome is told about.
   let mut head = [0u8; 2];
@@ -224,6 +363,7 @@ async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<
   client.read_exact(&mut port).await?;
   let port = u16::from_be_bytes(port);
 
+  let proxy = destination(scheme, &host, port).and_then(|uri| proxies.intercept(&uri));
   let targets = match allowed_targets(host, port, policy).await {
     Ok(t) => t,
     Err(refused) => return reply(&mut client, refused.code).await,
@@ -231,7 +371,7 @@ async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<
   let mut upstream = None;
   for target in targets {
     if let Ok(Ok(stream)) =
-      tokio::time::timeout(Duration::from_secs(15), TcpStream::connect(target)).await
+      tokio::time::timeout(Duration::from_secs(15), dial(target, proxy.as_ref())).await
     {
       upstream = Some(stream);
       break;
@@ -288,6 +428,162 @@ mod tests {
     port
   }
 
+  /// A plain HTTP proxy that reports the head of each CONNECT it accepts,
+  /// then echoes what comes through the tunnel.
+  async fn upstream_proxy() -> (u16, tokio::sync::mpsc::UnboundedReceiver<String>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (heads, received) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+      while let Ok((mut s, _)) = listener.accept().await {
+        let heads = heads.clone();
+        tokio::spawn(async move {
+          let mut head = Vec::new();
+          let mut byte = [0u8; 1];
+          while !head.ends_with(b"\r\n\r\n") {
+            if s.read(&mut byte).await.unwrap_or(0) == 0 {
+              return;
+            }
+            head.push(byte[0]);
+          }
+          let _ = heads.send(String::from_utf8_lossy(&head).into_owned());
+          let _ = s
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await;
+          let mut buf = [0u8; 5];
+          if s.read_exact(&mut buf).await.is_ok() {
+            let _ = s.write_all(&buf).await;
+          }
+        });
+      }
+    });
+    (port, received)
+  }
+
+  #[tokio::test]
+  async fn allowed_connections_go_through_the_upstream_proxy() {
+    let (port, mut heads) = upstream_proxy().await;
+    let proxies = Matcher::builder()
+      .all(format!("http://us%40er:pass@127.0.0.1:{port}"))
+      .build();
+    let proxy = GuardProxy::listen(NetworkPolicy::AllowPrivate, proxies)
+      .await
+      .unwrap();
+
+    let (code, mut stream) = ask(proxy.https, &[1, 127, 0, 0, 1], 443).await;
+    assert_eq!(code, REPLY_OK);
+    stream.write_all(b"hello").await.unwrap();
+    let mut back = [0u8; 5];
+    stream.read_exact(&mut back).await.unwrap();
+    assert_eq!(&back, b"hello");
+
+    let head = heads.recv().await.unwrap();
+    assert!(
+      head.starts_with("CONNECT 127.0.0.1:443 HTTP/1.1\r\n"),
+      "{head}"
+    );
+    // "us@er:pass": the credentials are decoded as the fetcher decodes them.
+    assert!(
+      head.contains("Proxy-Authorization: Basic dXNAZXI6cGFzcw==\r\n"),
+      "{head}"
+    );
+  }
+
+  #[tokio::test]
+  async fn refused_targets_never_reach_the_upstream_proxy() {
+    let (port, mut heads) = upstream_proxy().await;
+    let proxies = Matcher::builder()
+      .all(format!("http://127.0.0.1:{port}"))
+      .build();
+    let proxy = GuardProxy::listen(NetworkPolicy::PublicOnly, proxies)
+      .await
+      .unwrap();
+    for address in [
+      vec![1, 127, 0, 0, 1],
+      vec![1, 169, 254, 169, 254],
+      name("localhost"),
+    ] {
+      let (code, _) = ask(proxy.https, &address, 443).await;
+      assert_eq!(code, REPLY_NOT_ALLOWED, "{address:?} should be refused");
+    }
+    assert!(heads.try_recv().is_err());
+  }
+
+  #[tokio::test]
+  async fn no_proxy_targets_are_dialled_directly() {
+    let echo = echo_server().await;
+    let (port, mut heads) = upstream_proxy().await;
+    let proxies = Matcher::builder()
+      .all(format!("http://127.0.0.1:{port}"))
+      .no("127.0.0.1")
+      .build();
+    let proxy = GuardProxy::listen(NetworkPolicy::AllowPrivate, proxies)
+      .await
+      .unwrap();
+
+    let (code, mut stream) = ask(proxy.https, &[1, 127, 0, 0, 1], echo).await;
+    assert_eq!(code, REPLY_OK);
+    stream.write_all(b"hello").await.unwrap();
+    let mut back = [0u8; 5];
+    stream.read_exact(&mut back).await.unwrap();
+    assert_eq!(&back, b"hello");
+    assert!(heads.try_recv().is_err());
+  }
+
+  #[tokio::test]
+  async fn the_scheme_comes_from_the_listener_not_the_port() {
+    let echo = echo_server().await;
+    let (port, mut heads) = upstream_proxy().await;
+    let proxies = Matcher::builder()
+      .http(format!("http://127.0.0.1:{port}"))
+      .build();
+    let proxy = GuardProxy::listen(NetworkPolicy::AllowPrivate, proxies)
+      .await
+      .unwrap();
+
+    let (code, _) = ask(proxy.http, &[1, 127, 0, 0, 1], 8443).await;
+    assert_eq!(code, REPLY_OK);
+    let head = heads.recv().await.unwrap();
+    assert!(
+      head.starts_with("CONNECT 127.0.0.1:8443 HTTP/1.1\r\n"),
+      "{head}"
+    );
+
+    let (code, mut stream) = ask(proxy.https, &[1, 127, 0, 0, 1], echo).await;
+    assert_eq!(code, REPLY_OK);
+    stream.write_all(b"hello").await.unwrap();
+    let mut back = [0u8; 5];
+    stream.read_exact(&mut back).await.unwrap();
+    assert_eq!(&back, b"hello");
+    assert!(heads.try_recv().is_err());
+  }
+
+  #[test]
+  fn a_proxy_value_the_rules_would_skip_is_caught() {
+    for readable in [
+      "",
+      "http://127.0.0.1:3128",
+      "127.0.0.1:3128",
+      "socks5://127.0.0.1:1080",
+    ] {
+      assert!(is_readable_proxy(readable), "{readable}");
+    }
+    for unreadable in ["ftp://127.0.0.1:21", "not a proxy"] {
+      assert!(!is_readable_proxy(unreadable), "{unreadable}");
+    }
+  }
+
+  #[tokio::test]
+  async fn a_proxy_chrome_cannot_use_is_not_bypassed() {
+    let echo = echo_server().await;
+    let proxies = Matcher::builder().all("socks5://127.0.0.1:1080").build();
+    let proxy = GuardProxy::listen(NetworkPolicy::AllowPrivate, proxies)
+      .await
+      .unwrap();
+    let (code, _) = ask(proxy.https, &[1, 127, 0, 0, 1], echo).await;
+    assert_eq!(code, REPLY_FAILURE);
+  }
+
   #[tokio::test]
   async fn public_only_refuses_loopback_private_and_local_names() {
     let port = echo_server().await;
@@ -302,7 +598,7 @@ mod tests {
       name("[::1]"),
       name("metadata.google.internal"),
     ] {
-      let (code, _) = ask(proxy.addr(), &address, port).await;
+      let (code, _) = ask(proxy.https, &address, port).await;
       assert_eq!(code, REPLY_NOT_ALLOWED, "{address:?} should be refused");
     }
   }
@@ -314,14 +610,14 @@ mod tests {
       .await
       .unwrap();
 
-    let (code, mut stream) = ask(proxy.addr(), &[1, 127, 0, 0, 1], port).await;
+    let (code, mut stream) = ask(proxy.https, &[1, 127, 0, 0, 1], port).await;
     assert_eq!(code, REPLY_OK);
     stream.write_all(b"hello").await.unwrap();
     let mut back = [0u8; 5];
     stream.read_exact(&mut back).await.unwrap();
     assert_eq!(&back, b"hello");
 
-    let (code, _) = ask(proxy.addr(), &[1, 169, 254, 169, 254], 80).await;
+    let (code, _) = ask(proxy.https, &[1, 169, 254, 169, 254], 80).await;
     assert_eq!(code, REPLY_NOT_ALLOWED);
   }
 
@@ -369,7 +665,7 @@ mod tests {
     let proxy = GuardProxy::start(NetworkPolicy::AllowPrivate)
       .await
       .unwrap();
-    let mut stream = TcpStream::connect(proxy.addr()).await.unwrap();
+    let mut stream = TcpStream::connect(proxy.https).await.unwrap();
     stream.write_all(&[5, 1, 0]).await.unwrap();
     let mut chosen = [0u8; 2];
     stream.read_exact(&mut chosen).await.unwrap();
