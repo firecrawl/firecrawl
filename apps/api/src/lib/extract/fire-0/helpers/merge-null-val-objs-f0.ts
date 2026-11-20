@@ -53,14 +53,7 @@ export function areMergeable_F0(obj1: any, obj2: any): boolean {
  * Merge arrays and remove duplicates
  */
 function mergeArrays(arr1: any[], arr2: any[]): any[] {
-  const combined = [...arr1, ...arr2];
-  return combined.filter((item, index) => {
-    const stringified = JSON.stringify(item);
-    return (
-      combined.findIndex(other => JSON.stringify(other) === stringified) ===
-      index
-    );
-  });
+  return deduplicateObjectsArray_F0({ values: [...arr1, ...arr2] }).values;
 }
 
 /**
