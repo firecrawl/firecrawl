@@ -215,6 +215,29 @@ describe("Map tests", () => {
     60000,
   );
 
+  it.concurrent(
+    "warns about crawl-only options it ignores",
+    async () => {
+      const response = await map(
+        {
+          url: "https://example.com/some/path",
+          useMock: "map-empty",
+          includePaths: ["^/blog/.*"],
+          delay: 1,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.warning).toContain(
+        "have no effect on /map, so remove them from the request: includePaths, delay.",
+      );
+      expect(response.body.warning).toContain("base domain");
+    },
+    60000,
+  );
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "handles redirects correctly",
     async () => {
