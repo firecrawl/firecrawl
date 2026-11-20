@@ -1394,6 +1394,12 @@ describe("FirePDF cache through the lookup service", () => {
       .filter(v => v.labels.event === event)
       .reduce((sum, v) => sum + v.value, 0);
   };
+  const missCountForVariant = async (variant: string) => {
+    const data = await firePdfCacheEventsTotal.get();
+    return data.values
+      .filter(v => v.labels.event === "miss" && v.labels.variant === variant)
+      .reduce((sum, v) => sum + v.value, 0);
+  };
   const base64 = Buffer.from("%PDF-1.7 service test").toString("base64");
   const rawKey = `raw-${crypto
     .createHash("sha256")
@@ -1900,6 +1906,39 @@ describe("FirePDF cache through the lookup service", () => {
         message: "timed out",
       });
     });
+  });
+
+  it("counts a rejected suspected-incomplete entry under the request's own variant", async () => {
+    // A page-markdown request asks for its own variant, but the cached
+    // entry it is served is a base entry: the miss must still be counted
+    // under the request's variant, as the other miss paths do.
+    const ownMissBefore = await missCountForVariant("page-markdown-v1");
+    const entryMissBefore = await missCountForVariant("base");
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: {
+        markdown: "EDITAL CULTURAL\n".repeat(200).slice(0, 3096),
+        pages_processed: 46,
+        pages: [{ page: 1, markdown: "p1" }],
+      },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        46,
+        true,
+        false,
+      ),
+    ).toBeNull();
+    expect(await missCountForVariant("page-markdown-v1")).toBe(
+      ownMissBefore + 1,
+    );
+    expect(await missCountForVariant("base")).toBe(entryMissBefore);
   });
 });
 

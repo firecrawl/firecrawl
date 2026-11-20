@@ -338,7 +338,7 @@ async function lookupWithinSpan(
       "pdf.cache_outcome": "miss",
       "pdf.cache_reason": "suspected_incomplete",
     });
-    firePdfCacheEventsTotal.inc({ event: "miss", variant: answer.variant });
+    firePdfCacheEventsTotal.inc({ event: "miss", variant: ownVariant });
     meta.logger.info("Ignoring cached suspected-incomplete FirePDF result", {
       scrapeId: meta.id,
       requestedMode: mode,
