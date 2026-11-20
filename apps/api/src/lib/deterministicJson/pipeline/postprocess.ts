@@ -170,14 +170,14 @@ function dedupeArrays(value: unknown): unknown {
   return value;
 }
 
-// Characters that ride along from the DOM but are never real content: private-
-// use icon-font glyphs, zero-width joiners / BOM, and C0/C1 control codes.
-// .trim() won't remove them, so we strip them and collapse the doubled spaces
-// they leave behind (newlines preserved so multi-line text keeps its shape).
+// Strip the existing DOM-noise classes: private-use icon glyphs, BOM and
+// C0/C1 controls. Keep ZWSP, ZWNJ, ZWJ and WORD JOINER: they carry word-break,
+// script-shaping and emoji-sequence information even without visible glyphs.
+// Collapse doubled spaces left by removed noise, while preserving newlines.
 // Built via RegExp(string) so the source stays pure ASCII.
 const JUNK_CHARS = new RegExp(
   "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F" +
-    "\\u200B-\\u200D\\u2060\\uFEFF\\uE000-\\uF8FF" +
+    "\\uFEFF\\uE000-\\uF8FF" +
     "\\u{F0000}-\\u{FFFFD}\\u{100000}-\\u{10FFFD}]",
   "gu",
 );
