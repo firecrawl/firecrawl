@@ -9,6 +9,7 @@ import { crawlToCrawler } from "../../../lib/crawl-redis";
 import { getLinksFromSitemap } from "../sitemap";
 import { scrapeSitemap } from "../../crawler/sitemap";
 import { logger } from "../../../lib/logger";
+import { UsOnlyUnavailableError } from "../../scrapeURL/error";
 
 const storedCrawl = (teamFlags?: { usOnly?: boolean }) =>
   ({
@@ -124,5 +125,45 @@ describe("crawl discovery for US-only teams", () => {
         teamFlags: { usOnly: true },
       }),
     ]);
+  });
+
+  it("skips gzipped sitemaps, which are downloaded outside fire-engine", async () => {
+    const sitemapLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    } as any;
+    await expect(
+      getLinksFromSitemap(
+        {
+          sitemapUrl: "https://example.com/sitemap.xml.gz",
+          urlsHandler: () => {},
+          mode: "fire-engine",
+          zeroDataRetention: false,
+          usOnly: true,
+        },
+        sitemapLogger,
+        "crawl-1",
+        new Set(),
+      ),
+    ).resolves.toBe(0);
+    expect(sitemapLogger.warn).toHaveBeenCalledWith(
+      "Skipping gzip sitemap for a US-only team",
+      { sitemapUrl: "https://example.com/sitemap.xml.gz" },
+    );
+    expect(sitemapLogger.error).not.toHaveBeenCalled();
+
+    await expect(
+      scrapeSitemap({
+        url: "https://example.com/sitemap-2.xml.gz",
+        maxAge: 0,
+        zeroDataRetention: false,
+        usOnly: true,
+        location: undefined,
+        crawlId: "crawl-1",
+      }),
+    ).rejects.toBeInstanceOf(UsOnlyUnavailableError);
+    expect(scrapeURL).not.toHaveBeenCalled();
   });
 });
