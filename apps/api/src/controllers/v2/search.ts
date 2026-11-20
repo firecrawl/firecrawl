@@ -215,8 +215,8 @@ async function searchControllerInner(
       requestedFormats.length > 0
         ? actionTypesOf(req.body.scrapeOptions?.actions)
         : [],
-      req.acuc?.api_key_id,
-      req.acuc?.flags ?? null,
+      req.acuc,
+      requestedFormats.length > 0 ? req.body.scrapeOptions?.profile : undefined,
     );
     if (!keyRestriction.allowed) {
       return res.status(keyRestriction.status).json({
@@ -240,8 +240,7 @@ async function searchControllerInner(
     if (indexCategory) {
       const indexRestriction = await checkKeyEndpointRestriction(
         indexCategory.endpoint,
-        req.acuc?.api_key_id,
-        req.acuc?.flags ?? null,
+        req.acuc,
       );
       if (!indexRestriction.allowed) {
         return res.status(indexRestriction.status).json({

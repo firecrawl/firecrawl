@@ -1244,13 +1244,12 @@ async function supaAuthenticateUser(
     }
   }
 
-  if (chunk?.flags?.keyRestriction) {
+  if (chunk?.flags?.keyRestriction || chunk?.is_key_restricted) {
     // Enforced here rather than in route middleware so every authenticated
     // surface (v0/v1/v2, websocket status) goes through the same gate.
     const endpointCheck = await checkKeyEndpointRestriction(
       req.originalUrl ?? req.url ?? "",
-      chunk.api_key_id,
-      chunk.flags,
+      chunk,
     );
     if (!endpointCheck.allowed) {
       return denied(

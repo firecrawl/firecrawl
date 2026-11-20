@@ -3,7 +3,7 @@ import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { logger } from "./logger";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk } from "../controllers/v1/types";
 
 // Propagation delay for dashboard edits to key_restriction_config.
 const CONFIG_CACHE_TTL_SECONDS = 60;
@@ -117,6 +117,8 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["extract"], "extract"],
   [["agent"], "agent"],
   [["parse"], "parse"],
+  [["browser", "profiles"], "profiles"],
+  [["interact", "profiles"], "profiles"],
   [["browser"], "browser"],
   [["interact"], "browser"],
   [["monitor"], "monitor"],
@@ -124,6 +126,8 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["developer"], "research"],
   [["llmstxt"], "llmstxt"],
   [["deep-research"], "deep-research"],
+  [["alexandria"], "alexandria"],
+  [["computer"], "computer"],
   [["team"], "account"],
   [["concurrency-check"], "account"],
   [["slack"], "account"],
@@ -142,11 +146,16 @@ function matchSegments(segments: string[], pattern: string[]): boolean {
 
 type EndpointClassification =
   | { api: "v0" }
-  | { api: "v1" | "v2"; group: string | null; alwaysAllowed: boolean }
+  | {
+      api: "v1" | "v2" | "labs" | "exchange";
+      group: string | null;
+      alwaysAllowed: boolean;
+    }
   | null;
 
 // Classifies a request path into an allowlistable endpoint group. Returns
-// null for paths outside the versioned API surface (health, admin, ...).
+// null for paths outside the key-authenticated API surface (health, admin,
+// ...).
 export function classifyEndpoint(rawUrl: string): EndpointClassification {
   // Express routes case-insensitively, so classify the same way.
   const pathname = rawUrl.split("?")[0].toLowerCase();
@@ -154,6 +163,19 @@ export function classifyEndpoint(rawUrl: string): EndpointClassification {
   const version = segments[0];
   if (version === "v0") {
     return { api: "v0" };
+  }
+  // Key-authenticated routers mounted beside the versioned API. The provider
+  // catalogue and provider calls belong with /v2/alexandria; everything else
+  // on them has no group, so an endpoint allowlist refuses it.
+  if (version === "labs" || version === "exchange") {
+    const providerCall =
+      version === "exchange" &&
+      (segments[1] === "discover" || segments[1] === "retrieve");
+    return {
+      api: version,
+      group: providerCall ? "alexandria" : null,
+      alwaysAllowed: false,
+    };
   }
   if (version !== "v1" && version !== "v2") {
     return null;
@@ -215,6 +237,26 @@ export function isEndpointAllowed(
   return {
     allowed: false,
     error: `Request blocked: this API key is restricted to the following endpoints: ${config.allowedEndpoints.join(", ")}. Team admins can manage key restrictions at ${MANAGE_RESTRICTIONS_URL}`,
+    status: 403,
+  };
+}
+
+// A saved browser profile is a logged-in session, so a key with an endpoint
+// allowlist may load, save or delete one only when "profiles" is on the list.
+// Pure decision, split out for unit testing.
+export function isProfileAllowed(
+  config: KeyRestrictionConfig,
+): KeyRestrictionResult {
+  if (
+    config.allowedEndpoints.length === 0 ||
+    config.allowedEndpoints.includes("profiles")
+  ) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    error: `Request blocked: this API key is restricted and cannot use saved browser profiles. Team admins can manage key restrictions at ${MANAGE_RESTRICTIONS_URL}`,
     status: 403,
   };
 }
@@ -294,20 +336,30 @@ export function areFormatsAllowed(
   return { allowed: true };
 }
 
+// The parts of the auth chunk that decide whether a key's config is looked up.
+type RestrictableKey = Pick<
+  AuthCreditUsageChunk,
+  "api_key_id" | "flags" | "is_key_restricted"
+>;
+
 function keyRestrictionApplies(
-  flags: TeamFlags,
-  apiKeyId: number | undefined,
-): apiKeyId is number {
-  // Org-level keyRestriction flag gates everything so unflagged teams pay
-  // zero cost. Preview/keyless tokens have no api_key_id and are never
-  // restricted (they can't be configured in the dashboard).
-  return Boolean(flags?.keyRestriction) && Boolean(apiKeyId);
+  key: RestrictableKey | null | undefined,
+): key is RestrictableKey {
+  // The config is looked up only when the team has the keyRestriction flag
+  // (its admins can restrict any key in the dashboard) or the auth chunk says
+  // this key has a non-empty config, so an unrestricted key on an unflagged
+  // team pays zero cost. Preview/keyless tokens have no api_key_id and are
+  // never restricted.
+  return (
+    Boolean(key?.api_key_id) &&
+    (Boolean(key?.flags?.keyRestriction) || key?.is_key_restricted === true)
+  );
 }
 
 function failClosed(apiKeyId: number, error: unknown): KeyRestrictionResult {
   logger.error("Failed to load key restriction config", { apiKeyId, error });
-  // Fail closed: the team explicitly opted into key restriction, so an
-  // unverifiable request must not slip through.
+  // Fail closed: the key is restricted or its team opted into key
+  // restriction, so an unverifiable request must not slip through.
   return {
     allowed: false,
     error:
@@ -317,25 +369,25 @@ function failClosed(apiKeyId: number, error: unknown): KeyRestrictionResult {
 }
 
 /**
- * Enforces the per-key endpoint allowlist (key_restriction_config table),
- * gated by the keyRestriction team flag. Called during authentication so it
+ * Enforces the per-key endpoint allowlist (key_restriction_config table) for
+ * keys the auth chunk marks as restricted and for teams with the
+ * keyRestriction flag. Called during authentication so it
  * covers every authenticated route uniformly. An empty or missing config
  * means no restriction, so a team can't lock itself out before configuring.
  */
 export async function checkKeyEndpointRestriction(
   rawUrl: string,
-  apiKeyId: number | undefined,
-  flags: TeamFlags,
+  key: RestrictableKey | null | undefined,
 ): Promise<KeyRestrictionResult> {
-  if (!keyRestrictionApplies(flags, apiKeyId)) {
+  if (!keyRestrictionApplies(key)) {
     return { allowed: true };
   }
 
   let config: KeyRestrictionConfig;
   try {
-    config = await getKeyRestrictionConfig(apiKeyId);
+    config = await getKeyRestrictionConfig(key.api_key_id);
   } catch (error) {
-    return failClosed(apiKeyId, error);
+    return failClosed(key.api_key_id, error);
   }
 
   return isEndpointAllowed(rawUrl, config);
@@ -345,24 +397,55 @@ export async function checkKeyEndpointRestriction(
  * Enforces the per-key format allowlist on a parsed scrape-output request.
  * Called by the scrape/batch-scrape/crawl/search controllers after zod
  * parsing, so the checked formats are the normalized ones the job will
- * actually run with — request flags can't sidestep it.
+ * actually run with — request flags can't sidestep it. `profile` is the
+ * request's saved browser profile option, refused as in
+ * checkKeyProfileRestriction.
  */
 export async function checkKeyFormatRestriction(
   formats: string[],
   actionTypes: string[],
-  apiKeyId: number | undefined,
-  flags: TeamFlags,
+  key: RestrictableKey | null | undefined,
+  profile?: unknown,
 ): Promise<KeyRestrictionResult> {
-  if (!keyRestrictionApplies(flags, apiKeyId)) {
+  if (!keyRestrictionApplies(key)) {
     return { allowed: true };
   }
 
   let config: KeyRestrictionConfig;
   try {
-    config = await getKeyRestrictionConfig(apiKeyId);
+    config = await getKeyRestrictionConfig(key.api_key_id);
   } catch (error) {
-    return failClosed(apiKeyId, error);
+    return failClosed(key.api_key_id, error);
+  }
+
+  if (profile !== undefined) {
+    const profileCheck = isProfileAllowed(config);
+    if (!profileCheck.allowed) {
+      return profileCheck;
+    }
   }
 
   return areFormatsAllowed(formats, actionTypes, config);
+}
+
+/**
+ * Refuses a saved browser profile for a key whose endpoint allowlist does not
+ * name "profiles". Called where a request names a profile outside the format
+ * check above (browser sessions, interact, extract, parse, monitors).
+ */
+export async function checkKeyProfileRestriction(
+  key: RestrictableKey | null | undefined,
+): Promise<KeyRestrictionResult> {
+  if (!keyRestrictionApplies(key)) {
+    return { allowed: true };
+  }
+
+  let config: KeyRestrictionConfig;
+  try {
+    config = await getKeyRestrictionConfig(key.api_key_id);
+  } catch (error) {
+    return failClosed(key.api_key_id, error);
+  }
+
+  return isProfileAllowed(config);
 }

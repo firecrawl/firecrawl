@@ -258,12 +258,7 @@ export async function providerScrapeController(
       code: "AGENT_INDEX_ONLY",
       error: "Verify this API key before executing provider tools.",
     });
-  const restriction = await checkKeyFormatRestriction(
-    ["json"],
-    [],
-    req.acuc.api_key_id,
-    req.acuc.flags,
-  );
+  const restriction = await checkKeyFormatRestriction(["json"], [], req.acuc);
   if (!restriction.allowed)
     return res
       .status(restriction.status)

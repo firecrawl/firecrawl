@@ -28,6 +28,7 @@ import {
 } from "../../lib/safe-mode";
 import {
   actionTypesOf,
+  checkKeyEndpointRestriction,
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
@@ -62,8 +63,21 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  if (req.body && "alexandria" in req.body)
+  if (req.body && "alexandria" in req.body) {
+    // The same provider call as POST /v2/alexandria, so a key's endpoint
+    // allowlist must name that group here too.
+    const keyRestriction = await checkKeyEndpointRestriction(
+      "/v2/alexandria",
+      req.acuc,
+    );
+    if (!keyRestriction.allowed) {
+      return res.status(keyRestriction.status).json({
+        success: false,
+        error: keyRestriction.error,
+      });
+    }
     return providerScrapeController(req, res);
+  }
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise the rejection
@@ -196,8 +210,8 @@ export async function scrapeController(
       const keyRestriction = await checkKeyFormatRestriction(
         formatTypesOf(req.body.formats),
         actionTypesOf(req.body.actions),
-        req.acuc?.api_key_id,
-        req.acuc?.flags ?? null,
+        req.acuc,
+        req.body.profile,
       );
       if (!keyRestriction.allowed) {
         setSpanAttributes(span, {

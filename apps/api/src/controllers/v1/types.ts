@@ -1342,6 +1342,13 @@ export type AuthCreditUsageChunk = {
   // and the bypass/preview mocks omit it (treated as not banned).
   is_banned?: boolean;
 
+  // True when the key has a non-empty key_restriction_config row (from
+  // auth_chunk_3). The restriction is then enforced whether or not the team
+  // has the keyRestriction flag. Optional because ACUC entries cached before
+  // the rollout, team chunks and the bypass/preview mocks omit it (treated as
+  // not restricted, so only the flag decides, as before).
+  is_key_restricted?: boolean;
+
   // appended on JS-side
   is_extract?: boolean;
 

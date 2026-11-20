@@ -137,8 +137,7 @@ async function scrapeControllerInner(
   const keyRestriction = await checkKeyFormatRestriction(
     formatTypesOf(req.body.formats),
     actionTypesOf(req.body.actions),
-    req.acuc?.api_key_id,
-    req.acuc?.flags ?? null,
+    req.acuc,
   );
   if (!keyRestriction.allowed) {
     return res.status(keyRestriction.status).json({
