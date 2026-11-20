@@ -6,7 +6,11 @@ import { redisEvictConnection } from "../services/redis";
 import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
-import { withSpan, setSpanAttributes } from "./otel-tracer";
+import {
+  withSpan,
+  setSpanAttributes,
+  withZeroDataRetention,
+} from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
 import { isUsOnly } from "./us-only";
@@ -709,64 +713,117 @@ export function generateURLPermutations(url: string | URL): URL[] {
   return [...new Set(permutations.map(x => x.href))].map(x => new URL(x));
 }
 
+type URLLockResult = "locked" | "already_visited" | "limit_reached";
+
 export async function lockURL(
   id: string,
   sc: StoredCrawl,
   url: string,
   __logger: Logger = _logger,
 ): Promise<boolean> {
-  return await withSpan(
-    "firecrawl-redis-lock-url",
-    async span => {
-      const normalizedUrl = normalizeURL(url, sc);
-      setSpanAttributes(span, {
-        "crawl.id": id,
-        "crawl.url": normalizedUrl,
-        "crawl.team_id": sc.team_id,
-        operation: "lock_url",
-      });
+  return (await tryLockURL(id, sc, url, __logger)) === "locked";
+}
 
-      if (typeof sc.crawlerOptions?.limit === "number") {
-        if (
-          (await redisEvictConnection.scard(
-            "crawl:" + id + ":visited_unique",
-          )) >= sc.crawlerOptions.limit
-        ) {
-          setSpanAttributes(span, { "crawl.limit_reached": true });
-          return false;
+/**
+ * Locks a URL for a crawl and says why when it could not. A crawl calls this
+ * once per discovered link, so it records no span of its own; callers that
+ * lock in bulk record one summary span instead.
+ */
+export async function tryLockURL(
+  id: string,
+  sc: StoredCrawl,
+  url: string,
+  __logger: Logger = _logger,
+): Promise<URLLockResult> {
+  return await withZeroDataRetention(sc.zeroDataRetention, async () => {
+    const normalizedUrl = normalizeURL(url, sc);
+    if (typeof sc.crawlerOptions?.limit === "number") {
+      if (
+        (await redisEvictConnection.scard("crawl:" + id + ":visited_unique")) >=
+        sc.crawlerOptions.limit
+      ) {
+        return "limit_reached";
+      }
+    }
+
+    const lockTarget = !sc.crawlerOptions?.deduplicateSimilarURLs
+      ? normalizedUrl
+      : generateURLPermutations(normalizedUrl)[0].href;
+
+    // The commands are idempotent, so retry the pipeline on failure: the
+    // SADD may land before a failing command (e.g. a failed EXPIRE), and
+    // giving up then would leave the URL marked visited without being
+    // queued — a caller retry would read SADD=0 and skip it. Track whether
+    // any attempt reported the SADD as newly added, since a retry after a
+    // partial success reads 0.
+    let sawNewLock = false;
+    let locked = false;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      let attemptError: unknown = null;
+      try {
+        const pipeline = redisEvictConnection.pipeline();
+        pipeline.sadd("crawl:" + id + ":visited", lockTarget);
+        pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+        const attemptResults = await pipeline.exec();
+        if (attemptResults?.[0]?.[1] === 1) {
+          sawNewLock = true;
         }
+        attemptError = firstPipelineError(attemptResults);
+      } catch (error) {
+        attemptError = error;
       }
 
-      const lockTarget = !sc.crawlerOptions?.deduplicateSimilarURLs
-        ? normalizedUrl
-        : generateURLPermutations(normalizedUrl)[0].href;
+      if (attemptError === null) {
+        locked = true;
+        lastError = null;
+        break;
+      }
+      lastError = attemptError;
 
-      // The commands are idempotent, so retry the pipeline on failure: the
-      // SADD may land before a failing command (e.g. a failed EXPIRE), and
-      // giving up then would leave the URL marked visited without being
-      // queued — a caller retry would read SADD=0 and skip it. Track whether
-      // any attempt reported the SADD as newly added, since a retry after a
-      // partial success reads 0.
-      let sawNewLock = false;
-      let locked = false;
+      __logger.error("Redis pipeline command failed", {
+        module: "crawl-redis",
+        method: "lockURL",
+        crawlId: id,
+        url: normalizedUrl,
+        attempt,
+        error: attemptError,
+      });
+
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+      }
+    }
+
+    if (!locked) {
+      throw new Error("URL lock pipeline failed after retries", {
+        cause: lastError,
+      });
+    }
+
+    const res = sawNewLock;
+
+    if (res) {
+      // The visited SADD has already landed, so a caller retry would skip
+      // this URL as already-visited and it would be lost from the crawl.
+      // The visited_unique bookkeeping is idempotent — retry it before
+      // exposing the failure.
       let lastError: unknown = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
         let attemptError: unknown = null;
         try {
-          const pipeline = redisEvictConnection.pipeline();
-          pipeline.sadd("crawl:" + id + ":visited", lockTarget);
-          pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
-          const attemptResults = await pipeline.exec();
-          if (attemptResults?.[0]?.[1] === 1) {
-            sawNewLock = true;
-          }
-          attemptError = firstPipelineError(attemptResults);
+          const uniquePipeline = redisEvictConnection.pipeline();
+          uniquePipeline.sadd("crawl:" + id + ":visited_unique", normalizedUrl);
+          uniquePipeline.expire(
+            "crawl:" + id + ":visited_unique",
+            24 * 60 * 60,
+          );
+          attemptError = firstPipelineError(await uniquePipeline.exec());
         } catch (error) {
           attemptError = error;
         }
 
         if (attemptError === null) {
-          locked = true;
           lastError = null;
           break;
         }
@@ -786,42 +843,29 @@ export async function lockURL(
         }
       }
 
-      if (!locked) {
-        throw new Error("URL lock pipeline failed after retries", {
-          cause: lastError,
-        });
-      }
-
-      const res = sawNewLock;
-
-      if (res) {
-        // The visited SADD has already landed, so a caller retry would skip
-        // this URL as already-visited and it would be lost from the crawl.
-        // The visited_unique bookkeeping is idempotent — retry it before
-        // exposing the failure.
-        let lastError: unknown = null;
+      if (lastError !== null) {
+        // Roll back the locks we just acquired, so a caller retry can
+        // re-lock and queue this URL instead of skipping it as
+        // already-visited. visited_unique may have landed during a retried
+        // attempt whose EXPIRE failed, so remove it too — otherwise the
+        // stale member consumes crawl-limit budget for a URL that was
+        // never queued. The rollback itself is retried; if it still fails,
+        // Redis is having a sustained outage and the canonical logs are
+        // the signal.
         for (let attempt = 1; attempt <= 3; attempt++) {
-          let attemptError: unknown = null;
+          let rollbackError: unknown = null;
           try {
-            const uniquePipeline = redisEvictConnection.pipeline();
-            uniquePipeline.sadd(
-              "crawl:" + id + ":visited_unique",
-              normalizedUrl,
-            );
-            uniquePipeline.expire(
-              "crawl:" + id + ":visited_unique",
-              24 * 60 * 60,
-            );
-            attemptError = firstPipelineError(await uniquePipeline.exec());
+            const rollback = redisEvictConnection.pipeline();
+            rollback.srem("crawl:" + id + ":visited", lockTarget);
+            rollback.srem("crawl:" + id + ":visited_unique", normalizedUrl);
+            rollbackError = firstPipelineError(await rollback.exec());
           } catch (error) {
-            attemptError = error;
+            rollbackError = error;
           }
 
-          if (attemptError === null) {
-            lastError = null;
+          if (rollbackError === null) {
             break;
           }
-          lastError = attemptError;
 
           __logger.error("Redis pipeline command failed", {
             module: "crawl-redis",
@@ -829,7 +873,7 @@ export async function lockURL(
             crawlId: id,
             url: normalizedUrl,
             attempt,
-            error: attemptError,
+            error: rollbackError,
           });
 
           if (attempt < 3) {
@@ -838,57 +882,14 @@ export async function lockURL(
             );
           }
         }
-
-        if (lastError !== null) {
-          // Roll back the locks we just acquired, so a caller retry can
-          // re-lock and queue this URL instead of skipping it as
-          // already-visited. visited_unique may have landed during a retried
-          // attempt whose EXPIRE failed, so remove it too — otherwise the
-          // stale member consumes crawl-limit budget for a URL that was
-          // never queued. The rollback itself is retried; if it still fails,
-          // Redis is having a sustained outage and the canonical logs are
-          // the signal.
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            let rollbackError: unknown = null;
-            try {
-              const rollback = redisEvictConnection.pipeline();
-              rollback.srem("crawl:" + id + ":visited", lockTarget);
-              rollback.srem("crawl:" + id + ":visited_unique", normalizedUrl);
-              rollbackError = firstPipelineError(await rollback.exec());
-            } catch (error) {
-              rollbackError = error;
-            }
-
-            if (rollbackError === null) {
-              break;
-            }
-
-            __logger.error("Redis pipeline command failed", {
-              module: "crawl-redis",
-              method: "lockURL",
-              crawlId: id,
-              url: normalizedUrl,
-              attempt,
-              error: rollbackError,
-            });
-
-            if (attempt < 3) {
-              await new Promise(resolve =>
-                setTimeout(resolve, 50 * 2 ** attempt),
-              );
-            }
-          }
-          throw new Error("Unique URL lock pipeline failed after retries", {
-            cause: lastError,
-          });
-        }
+        throw new Error("Unique URL lock pipeline failed after retries", {
+          cause: lastError,
+        });
       }
+    }
 
-      setSpanAttributes(span, { "crawl.url_locked": res });
-      return res;
-    },
-    { zeroDataRetention: sc.zeroDataRetention },
-  );
+    return res ? "locked" : "already_visited";
+  });
 }
 
 /// NOTE: does not check limit. only use if limit is checked beforehand e.g. with sitemap
