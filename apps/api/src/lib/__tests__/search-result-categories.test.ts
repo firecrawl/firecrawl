@@ -107,7 +107,12 @@ describe("collectSearchResultCategories", () => {
     expect(
       countSearchResultsBySource({
         tools: [
-          { provider: "fred", capability: "series/search", description: "" },
+          {
+            provider: "fred",
+            capability: "series/search",
+            description: "",
+            matchedBy: ["semantic"],
+          },
         ],
       }),
     ).toEqual({ web: 0, images: 0, news: 0, tools: 1 });
