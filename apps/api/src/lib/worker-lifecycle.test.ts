@@ -42,6 +42,23 @@ test("treats a null result as an answer, not a failure", async () => {
   expect(result).toEqual({ value: null });
 });
 
+test("a shutdown cuts the backoff short", async () => {
+  const controller = new AbortController();
+  const started = Date.now();
+  const pending = retryDependency(
+    async () => {
+      throw new Error("connect ETIMEDOUT");
+    },
+    DEPENDENCY_BACKOFF_MS,
+    controller.signal,
+  );
+
+  controller.abort();
+
+  expect(await pending).toBeNull();
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
 test("waits out a dependency outage for at least five minutes", () => {
   const totalMs = DEPENDENCY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0);
 

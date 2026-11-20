@@ -23,11 +23,14 @@ export const DEPENDENCY_BACKOFF_MS = [
 export async function retryDependency<T>(
   operation: () => Promise<T>,
   backoffMs: readonly number[] = DEPENDENCY_BACKOFF_MS,
+  signal?: AbortSignal,
 ): Promise<{ value: T } | null> {
   return executeWithRetry(
     () => operation().then(value => ({ value })),
     (result): result is { value: T } => result !== null,
-    undefined,
+    // A shutdown has to cut the backoff short: a six-minute wait that ignores
+    // SIGTERM turns every rollout into a SIGKILL.
+    signal,
     backoffMs.length + 1,
     backoffMs,
   );

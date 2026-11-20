@@ -45,7 +45,10 @@ export async function start() {
     },
   );
 
+  const shutdownController = new AbortController();
+
   async function shutdown() {
+    shutdownController.abort();
     server.close();
     await nuqShutdown();
     await shutdownTracing();
@@ -63,8 +66,10 @@ export async function start() {
         // A prefetch pass against an unreachable database is worth retrying,
         // not worth losing the process over: the queue fills back up once the
         // dependency returns.
-        const prefetch = await retryDependency(() =>
-          crawlFinishedQueue.prefetchJobs(),
+        const prefetch = await retryDependency(
+          () => crawlFinishedQueue.prefetchJobs(),
+          undefined,
+          shutdownController.signal,
         );
         if (prefetch === null) {
           logger.error("crawlFinished prefetch failed after retrying", {
@@ -79,8 +84,10 @@ export async function start() {
         if (config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL) {
           fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
         }
-        const prefetch = await retryDependency(() =>
-          scrapeQueue.prefetchJobs(),
+        const prefetch = await retryDependency(
+          () => scrapeQueue.prefetchJobs(),
+          undefined,
+          shutdownController.signal,
         );
         if (prefetch === null) {
           logger.error("NuQ prefetch failed after retrying", {

@@ -77,6 +77,7 @@ export async function runNuqWorker(options: {
 
   let isShuttingDown = false;
   let shutdownStartedAt: number | undefined;
+  const shutdownController = new AbortController();
 
   const app = Express();
   startNodeRuntimeMetrics();
@@ -122,6 +123,7 @@ export async function runNuqWorker(options: {
     if (isShuttingDown) return;
     isShuttingDown = true;
     shutdownStartedAt = Date.now();
+    shutdownController.abort();
     _logger.info("NuQ worker stopping after active work", {
       module: options.serviceName,
     });
@@ -135,8 +137,10 @@ export async function runNuqWorker(options: {
   let noJobTimeout = 1500;
 
   while (!isShuttingDown) {
-    const dequeue = await retryDependency(() =>
-      options.queue.getJobToProcess(),
+    const dequeue = await retryDependency(
+      () => options.queue.getJobToProcess(),
+      undefined,
+      shutdownController.signal,
     );
 
     // The queue outlasted the backoff budget. Wait and go round again instead
