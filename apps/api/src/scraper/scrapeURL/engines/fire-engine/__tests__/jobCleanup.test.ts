@@ -23,6 +23,7 @@ vi.mock("../../utils/specialtyHandler", () => ({
 }));
 vi.mock("../../../lib/fetch", () => ({
   redactRequestBodyForLog: (body: unknown) => body,
+  robustFetch: vi.fn(async () => ({})),
 }));
 vi.mock("@mendable/firecrawl-rs", () => ({
   getInnerJson: vi.fn(async (content: string) => content),
@@ -51,6 +52,7 @@ import { fireEngineCheckStatus, StillProcessingError } from "../checkStatus";
 import { fireEngineDelete } from "../delete";
 import { specialtyScrapeCheck } from "../../utils/specialtyHandler";
 import { getInnerJson } from "@mendable/firecrawl-rs";
+import { robustFetch } from "../../../lib/fetch";
 import {
   scrapeURLWithFireEngineChromeCDP,
   scrapeURLWithFireEngineTLSClient,
