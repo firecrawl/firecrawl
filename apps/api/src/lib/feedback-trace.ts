@@ -7,10 +7,13 @@ import {
   SECRET_PATTERN,
   SESSION_SOURCES,
   THREAD_SOURCES,
+  redactText,
 } from "./mcp-lineage";
 
 const EXTERNAL_REQUEST_ID_MAX_LENGTH = 128;
 const LINEAGE_HEADER_MAX_BYTES = 4096;
+// Node decodes base64 leniently and skips anything outside the alphabet.
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+={0,2}$/;
 
 export type FeedbackTrace = {
   external_request_id: string | null;
@@ -31,6 +34,7 @@ function mcpLineage(req: TraceRequest): Record<string, unknown> {
   const raw = req.headers["x-firecrawl-mcp-lineage"];
   if (typeof raw !== "string") return {};
   if (Buffer.byteLength(raw) > LINEAGE_HEADER_MAX_BYTES) return {};
+  if (!BASE64URL_PATTERN.test(raw)) return {};
 
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
@@ -69,15 +73,6 @@ export function feedbackTrace(req: TraceRequest): FeedbackTrace {
   const lineage = mcpLineage(req);
   const session = lineagePair(lineage, "session", SESSION_SOURCES);
   const thread = lineagePair(lineage, "thread", THREAD_SOURCES);
-  // PostgreSQL text cannot hold NUL, so control characters become spaces.
-  const objective =
-    typeof lineage.objective === "string"
-      ? lineage.objective
-          .replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ")
-          .trim()
-          .slice(0, OBJECTIVE_MAX_LENGTH)
-          .replace(/[\uD800-\uDBFF]$/, "")
-      : "";
 
   return {
     external_request_id:
@@ -88,6 +83,9 @@ export function feedbackTrace(req: TraceRequest): FeedbackTrace {
     session_source: session.source,
     thread_id: thread.id,
     thread_source: thread.source,
-    objective: objective || null,
+    objective:
+      typeof lineage.objective === "string"
+        ? redactText(lineage.objective, OBJECTIVE_MAX_LENGTH)
+        : null,
   };
 }

@@ -9,8 +9,10 @@ import {
   LINEAGE_ID_SECRET_PATTERN,
   OBJECTIVE_MAX_LENGTH,
   SECRET_PATTERN,
+  SECRET_PATTERN_ALL,
   SESSION_SOURCES,
   THREAD_SOURCES,
+  redactText,
 } from "../../lib/mcp-lineage";
 
 const STATUSES = ["success", "error"] as const;
@@ -23,7 +25,6 @@ const RESOURCES = new Set([
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
-const SECRET_PATTERN_ALL = new RegExp(SECRET_PATTERN.source, "gi");
 // After any secret key, a leading auth scheme (Basic, Bearer, Token, ...) is
 // consumed with its credential so no part of "password=>Basic <b64>" survives.
 const DETAIL_SECRET_PAIR = new RegExp(
@@ -225,16 +226,7 @@ function redactedText(
 ) {
   if (value == null) return null;
   if (typeof value !== "string") invalid(`${field} must be a string`);
-  const normalized = scrub(
-    value.slice(0, max * 4).replace(/[\u0000-\u001F\u007F-\u009F]+/g, " "),
-  )
-    .replace(SECRET_PATTERN_ALL, "[redacted]")
-    .replace(/\beyJ[A-Za-z0-9_.-]*$/, "[redacted]")
-    .trim()
-    .slice(0, max)
-    .replace(/[\uD800-\uDBFF]$/, "")
-    .trim();
-  return normalized || null;
+  return redactText(value, max, scrub);
 }
 
 function durationMs(value: unknown) {

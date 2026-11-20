@@ -301,7 +301,9 @@ export async function lookupFeedbackJob(
 
 /**
  * Interact and browser feedback refers to a browser session, which has no
- * feedback job row. The window runs from the session's last activity.
+ * feedback job row. The window runs from the session's last activity, which
+ * cannot be later than the end of its lifetime: settling a session also
+ * touches updated_at, and that can happen long after the session ended.
  */
 export async function lookupSessionFeedbackJob(
   endpoint: SessionFeedbackEndpoint,
@@ -314,13 +316,18 @@ export async function lookupSessionFeedbackJob(
       : await getBrowserSession(jobId);
   if (!session || session.team_id !== dbTeamId) return null;
 
+  const lifetimeEndMs =
+    new Date(session.created_at).getTime() + session.ttl_total * 1000;
   return {
     endpoint,
     id: jobId,
     request_id: session.request_id,
     team_id: session.team_id,
     credits_cost: 0,
-    created_at: session.updated_at,
+    created_at:
+      new Date(session.updated_at).getTime() > lifetimeEndMs
+        ? new Date(lifetimeEndMs).toISOString()
+        : session.updated_at,
     is_successful: null,
     options: null,
     zero_data_retention: session.zero_data_retention,

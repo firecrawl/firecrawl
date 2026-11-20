@@ -130,6 +130,8 @@ suite("repeated feedback submissions against PostgreSQL", () => {
       team_id: teamId,
       request_id: randomUUID(),
       zero_data_retention: false,
+      ttl_total: 600,
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     fixture.sessions.push(session);

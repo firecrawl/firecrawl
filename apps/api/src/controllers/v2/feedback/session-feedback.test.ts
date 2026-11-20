@@ -108,6 +108,7 @@ function session(overrides: Record<string, unknown> = {}) {
     scrape_id: scrapeId,
     zero_data_retention: false,
     status: "active",
+    ttl_total: 3600,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -279,15 +280,16 @@ describe("feedback for interact and browser sessions", () => {
   it.each(endpoints)(
     "measures the %s window from the session's last activity",
     async endpoint => {
-      // Opened long ago, used ten minutes ago: past the job window, inside
-      // the session window.
+      // Opened half an hour ago, used ten minutes ago: past the job window,
+      // inside the session window.
       haveSession(endpoint, {
-        created_at: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
+        created_at: new Date(Date.now() - 1800 * 1000).toISOString(),
         updated_at: new Date(Date.now() - 600 * 1000).toISOString(),
       });
       expect((await submit(endpoint)).status).toBe(200);
 
       haveSession(endpoint, {
+        created_at: new Date(Date.now() - 7200 * 1000).toISOString(),
         updated_at: new Date(Date.now() - 3660 * 1000).toISOString(),
       });
       const expired = await submit(endpoint);
@@ -299,6 +301,29 @@ describe("feedback for interact and browser sessions", () => {
           "Feedback must be submitted within 3600 seconds of the session's last activity.",
       });
       expect(mocks.values).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(endpoints)(
+    "does not reopen the %s window when the session is settled late",
+    async endpoint => {
+      // Lived ten minutes, three hours ago, and was settled just now.
+      haveSession(endpoint, {
+        created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+        ttl_total: 600,
+        updated_at: new Date().toISOString(),
+      });
+      const expired = await submit(endpoint);
+      expect(expired.status).toBe(409);
+      expect(expired.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+
+      // Ended ten minutes ago and was settled just now: still in the window.
+      haveSession(endpoint, {
+        created_at: new Date(Date.now() - 1200 * 1000).toISOString(),
+        ttl_total: 600,
+        updated_at: new Date().toISOString(),
+      });
+      expect((await submit(endpoint)).status).toBe(200);
     },
   );
 

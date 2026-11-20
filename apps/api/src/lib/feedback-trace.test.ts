@@ -85,6 +85,8 @@ describe("feedbackTrace", () => {
 
   it.each([
     ["malformed base64", "%%%not-base64%%%"],
+    ["a valid payload followed by other characters", `${encode(lineage)}%%%`],
+    ["standard base64 that is not URL-safe", "eyJ4Ijoi+/8ifQ=="],
     ["base64 of text that is not JSON", encode("x").slice(0, 2)],
     ["a JSON string", encode("session")],
     ["a JSON number", encode(7)],
@@ -169,6 +171,35 @@ describe("feedbackTrace", () => {
     expect(trace({ objective: "o".repeat(1500) }).objective).toBe(
       "o".repeat(1000),
     );
+  });
+
+  it.each([
+    [
+      "a bearer token",
+      "Log in with Bearer abc123.def",
+      "Log in with [redacted]",
+    ],
+    [
+      "an API key",
+      "Scrape it using fc-0123456789abcdef0123 please",
+      "Scrape it using [redacted] please",
+    ],
+    [
+      "a JSON web token",
+      "Send eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl",
+      "Send [redacted]",
+    ],
+  ])("redacts %s in the objective", (_label, objective, stored) => {
+    expect(trace({ objective }).objective).toBe(stored);
+  });
+
+  it("accepts a padded base64url header", () => {
+    // 19 bytes of JSON, so standard padding adds "==".
+    const header = Buffer.from('{"objective":"Go!"}').toString("base64");
+    expect(header).toMatch(/^[A-Za-z0-9]+==$/);
+    expect(
+      feedbackTrace(request({ "x-firecrawl-mcp-lineage": header })).objective,
+    ).toBe("Go!");
   });
 
   it("replaces control characters in the objective, which a text column rejects", () => {
