@@ -23,6 +23,51 @@ describe("parseMarkdownToSentences", () => {
 });
 
 describe("assembleAnswer", () => {
+  it.each([
+    {
+      name: "an empty middle cell",
+      markdown:
+        "| Name | Note | Result |\n| --- | --- | --- |\n| Ada | | Pass |",
+      expected:
+        "| Name | Note | Result |\n| --- | --- | --- |\n| Ada |  | Pass |",
+    },
+    {
+      name: "an empty first cell",
+      markdown: "| Name | Score |\n| --- | --- |\n| | 42 |",
+      expected: "| Name | Score |\n| --- | --- |\n|  | 42 |",
+    },
+    {
+      name: "an empty last cell",
+      markdown: "| Model | Cost |\n| --- | --- |\n| Local | |",
+      expected: "| Model | Cost |\n| --- | --- |\n| Local |  |",
+    },
+    {
+      name: "an unnamed header column",
+      markdown: "| | Result |\n| --- | --- |\n| Ada | Pass |",
+      expected: "|  | Result |\n| --- | --- |\n| Ada | Pass |",
+    },
+    {
+      name: "a table whose header cells are all empty",
+      markdown: "| | |\n| --- | --- |\n| Alpha | Beta |",
+      expected: "|  |  |\n| --- | --- |\n| Alpha | Beta |",
+    },
+  ])("keeps column positions for $name", ({ markdown, expected }) => {
+    const sentences = parseMarkdownToSentences(markdown);
+    const row = sentences.findIndex(s => s.source === "table" && !s.isHeader);
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(assembleAnswer(sentences, [row])).toBe(expected);
+  });
+
+  it("still omits table body rows with no visible cell text", () => {
+    const markdown =
+      "| Name | Result |\n| --- | --- |\n| | |\n| Ada | Pass |\n| | |";
+    const sentences = parseMarkdownToSentences(markdown);
+    expect(sentences).toHaveLength(2);
+    expect(assembleAnswer(sentences, [1])).toBe(
+      "| Name | Result |\n| --- | --- |\n| Ada | Pass |",
+    );
+  });
+
   it("rebuilds a table and auto-includes its header when only a row is selected", () => {
     const md =
       "| Size | Price |\n| --- | --- |\n| 128GB | $799 |\n| 256GB | $899 |";

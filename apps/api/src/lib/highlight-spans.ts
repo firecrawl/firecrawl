@@ -119,9 +119,8 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
           const table = token as marked.Tokens.Table;
           const headerText = table.header
             .map(cell => extractInlineText(cell.tokens).trim())
-            .filter(Boolean)
             .join(" | ");
-          if (headerText)
+          if (table.header.length > 0)
             result.push({
               text: headerText,
               source: "table",
@@ -129,12 +128,16 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
               isHeader: true,
             });
           for (const row of table.rows) {
-            const rowText = row
-              .map(cell => extractInlineText(cell.tokens).trim())
-              .filter(Boolean)
-              .join(" | ");
-            if (rowText)
-              result.push({ text: rowText, source: "table", blockId: bid });
+            const cells = row.map(cell =>
+              extractInlineText(cell.tokens).trim(),
+            );
+            // Empty cells still occupy a column. Only omit entirely blank rows.
+            if (cells.some(Boolean))
+              result.push({
+                text: cells.join(" | "),
+                source: "table",
+                blockId: bid,
+              });
           }
           break;
         }
