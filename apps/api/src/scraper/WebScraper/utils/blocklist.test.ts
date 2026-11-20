@@ -50,6 +50,67 @@ function ctx(org_id: string | null) {
   return { team_id: TEAM, org_id, origin: "test" };
 }
 
+function countCollectionEntries<T>(lookup: () => T) {
+  const collections = [[], new Set(), new Map()];
+  const iterators = collections.map(collection => {
+    const prototype = Object.getPrototypeOf(collection[Symbol.iterator]());
+    return { prototype, next: prototype.next };
+  });
+  const callbacks = collections.map(collection => {
+    const prototype = Object.getPrototypeOf(collection);
+    return { prototype, forEach: prototype.forEach };
+  });
+  const arrayPrototype = Object.getPrototypeOf([]);
+  const searches = ["find", "includes", "some"].map(name => ({
+    name,
+    method: arrayPrototype[name],
+  }));
+  let entries = 0;
+  try {
+    // Count consumed entries, including copies subsequently scanned with find/includes
+    // and equality-only loops. String-method call counts miss those linear lookups.
+    for (const { prototype, next } of iterators) {
+      prototype.next = function (this: Iterator<unknown>) {
+        const result = next.call(this) as IteratorResult<unknown>;
+        if (!result.done) entries++;
+        return result;
+      };
+    }
+    for (const { prototype, forEach } of callbacks) {
+      prototype.forEach = function (
+        this: unknown,
+        callback: (...args: unknown[]) => unknown,
+        thisArg?: unknown,
+      ) {
+        return forEach.call(this, (...args: unknown[]) => {
+          entries++;
+          return callback.apply(thisArg, args);
+        });
+      };
+    }
+    for (const { name, method } of searches) {
+      arrayPrototype[name] = function (this: unknown[], ...args: unknown[]) {
+        // Native array searches bypass iterators, including searches on an array
+        // cached at load time. Observe their actual indexed reads instead.
+        const measured = new Proxy(this, {
+          get(target, key, receiver) {
+            if (typeof key === "string" && /^\d+$/.test(key)) entries++;
+            return Reflect.get(target, key, receiver);
+          },
+        });
+        return method.apply(measured, args);
+      };
+    }
+    entries = 0;
+    const result = lookup();
+    return { result, entries };
+  } finally {
+    for (const { prototype, next } of iterators) prototype.next = next;
+    for (const { prototype, forEach } of callbacks) prototype.forEach = forEach;
+    for (const { name, method } of searches) arrayPrototype[name] = method;
+  }
+}
+
 describe("isUrlBlocked", () => {
   describe("global entries", () => {
     beforeAll(async () => {
@@ -282,20 +343,12 @@ describe("isUrlBlocked", () => {
       ];
       await initializeBlocklist();
 
-      const startsWith = vi.spyOn(String.prototype, "startsWith");
-      const endsWith = vi.spyOn(String.prototype, "endsWith");
-      let blocked: boolean;
-      let comparisons: number;
-      try {
-        blocked = isUrlBlocked("https://unlisted.example.org/path", null);
-        comparisons = startsWith.mock.calls.length + endsWith.mock.calls.length;
-      } finally {
-        startsWith.mockRestore();
-        endsWith.mockRestore();
-      }
+      const { result, entries } = countCollectionEntries(() =>
+        isUrlBlocked("https://unlisted.example.org/path", null),
+      );
 
-      expect(blocked!).toBe(false);
-      expect(comparisons!).toBeLessThan(100);
+      expect(result).toBe(false);
+      expect(entries).toBeLessThan(100);
     });
 
     it("keeps another TLD blocked when only one entry is exempt", async () => {
