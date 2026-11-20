@@ -1039,13 +1039,11 @@ export function crawlToCrawler(
     excludes: (sc.crawlerOptions?.excludes ?? []).filter(
       x => x.trim().length > 0,
     ),
-    maxCrawledLinks: sc.crawlerOptions?.maxCrawledLinks ?? 1000,
     maxCrawledDepth: getAdjustedMaxDepth(
       sc.originUrl!,
       sc.crawlerOptions?.maxDepth ?? 10,
     ),
     limit: sc.crawlerOptions?.limit ?? 10000,
-    generateImgAltText: sc.crawlerOptions?.generateImgAltText ?? false,
     allowBackwardCrawling: sc.crawlerOptions?.allowBackwardCrawling ?? false,
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,

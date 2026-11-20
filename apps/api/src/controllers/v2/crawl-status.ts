@@ -360,9 +360,9 @@ export async function crawlStatusController(
     // Get the original crawl URL and options from stored crawl data
     const crawl = await getCrawl(req.params.jobId);
     if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
-      // Don't show warning if user is already using crawlEntireDomain
+      // The stored crawl keeps crawlEntireDomain as allowBackwardCrawling.
       const isUsingCrawlEntireDomain =
-        crawl.crawlerOptions?.crawlEntireDomain === true;
+        crawl.crawlerOptions?.allowBackwardCrawling === true;
       if (!isUsingCrawlEntireDomain) {
         const baseDomain = extractBaseDomain(crawl.originUrl);
         if (baseDomain) {
