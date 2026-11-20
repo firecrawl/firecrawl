@@ -173,6 +173,9 @@ export type EngineScrapeResult = {
   brandingScreenshot?: string;
 
   pdfMetadata?: PdfMetadata;
+  /** The PDF went through an OCR/layout parser (FirePDF or MinerU), which
+   * found no text: a blank or photo-only document, not a failed parse. */
+  parsedEmpty?: boolean;
 
   cacheInfo?: {
     created_at: Date;
