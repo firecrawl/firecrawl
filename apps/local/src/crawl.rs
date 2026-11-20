@@ -88,16 +88,16 @@ fn registrable(host: &str) -> String {
   psl::domain_str(host).unwrap_or(host).to_string()
 }
 
-/// Canonical form used for de-duplication: no fragment, no default port,
-/// no trailing slash except on the root.
+/// Canonical form used for de-duplication. Keep the path and query together
+/// for URLs with a query, and trim a trailing slash from query-free non-root paths.
 pub fn canonical(url: &Url) -> String {
-  let mut u = url.clone();
-  u.set_fragment(None);
-  let mut s = u.to_string();
-  if s.ends_with('/') && u.path() != "/" {
-    s.pop();
+  let mut url = url.clone();
+  url.set_fragment(None);
+  let mut key = url.to_string();
+  if url.query().is_none() && url.path() != "/" && key.ends_with('/') {
+    key.pop();
   }
-  s
+  key
 }
 
 fn has_skipped_extension(url: &Url) -> bool {
@@ -661,6 +661,78 @@ mod tests {
     assert!(!s.allows(&u("https://example.com/private/x")));
     assert!(!s.allows(&u("https://example.com/logo.png")));
     assert!(!s.allows(&u("mailto:a@example.com")));
+  }
+
+  #[tokio::test]
+  async fn map_and_crawl_keep_distinct_query_links() {
+    use axum::{response::Html, routing::get, Router};
+
+    let site = Router::new()
+      .route(
+        "/",
+        get(|| async {
+          Html(r#"<a href="/items?category=docs/">A</a><a href="/items?category=docs">B</a>"#)
+        }),
+      )
+      .route("/items", get(|| async { Html("<p>Documentation</p>") }));
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let start = format!("http://{}/", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, site).await.unwrap() });
+    let engine = Arc::new(
+      Engine::new(crate::scrape::EngineConfig {
+        policy: crate::guard::NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: crate::scrape::BrowserMode::Never,
+      })
+      .unwrap(),
+    );
+    let map_options = MapOptions {
+      sitemap: "skip".into(),
+      ..Default::default()
+    };
+    let crawl_options = CrawlOptions {
+      sitemap: "skip".into(),
+      ignore_robots_txt: true,
+      ..Default::default()
+    };
+    let mapped = map(engine.clone(), &start, &map_options).await;
+    let crawled = crawl(engine, &start, &crawl_options, |_| {}).await;
+    server.abort();
+
+    let mapped = mapped.unwrap();
+    let crawled = crawled.unwrap();
+    assert!(crawled.errors.is_empty(), "{:?}", crawled.errors);
+    for category in ["docs/", "docs"] {
+      let expected = format!("{start}items?category={category}");
+      let in_map = mapped.contains(&expected);
+      let in_crawl = crawled.pages.iter().any(|page| {
+        page.pointer("/metadata/sourceURL").and_then(Value::as_str) == Some(expected.as_str())
+      });
+      assert_eq!((in_map, in_crawl), (true, true), "missing {expected}");
+    }
+  }
+
+  #[test]
+  fn canonical_keeps_distinct_query_values() {
+    let with_slash = canonical(&u("https://a.dev/items?category=docs/"));
+    let without_slash = canonical(&u("https://a.dev/items?category=docs"));
+    assert_eq!(with_slash, "https://a.dev/items?category=docs/");
+    assert_ne!(with_slash, without_slash);
+  }
+
+  #[test]
+  fn canonical_preserves_the_full_path_and_query() {
+    assert_eq!(
+      canonical(&u("https://a.dev:443/items%2F/?q=%2F&tag=a+b/#top")),
+      "https://a.dev/items%2F/?q=%2F&tag=a+b/"
+    );
+    assert_eq!(
+      canonical(&u("https://a.dev/items/?")),
+      "https://a.dev/items/?"
+    );
+    assert_eq!(canonical(&u("https://a.dev/?q=/")), "https://a.dev/?q=/");
   }
 
   #[test]
