@@ -1,5 +1,6 @@
 import {
   DEPENDENCY_BACKOFF_MS,
+  guardDependencyCall,
   installWorkerLifecycle,
   retryDependency,
 } from "./worker-lifecycle";
@@ -63,6 +64,38 @@ test("waits out a dependency outage for at least five minutes", () => {
   const totalMs = DEPENDENCY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0);
 
   expect(totalMs).toBeGreaterThanOrEqual(5 * 60_000);
+});
+
+test("a failing jobFinish is logged, and the loop survives", async () => {
+  const logged: string[] = [];
+  const log = {
+    error: (message: string) => {
+      logged.push(message);
+    },
+  };
+  const queue = {
+    jobFinish: async () => {
+      throw new Error("Connection terminated unexpectedly");
+    },
+  };
+
+  const succeeded = await guardDependencyCall(
+    () => queue.jobFinish(),
+    log,
+    "Could not record job outcome; continuing",
+  );
+
+  expect(succeeded).toBe(false);
+  expect(logged).toEqual(["Could not record job outcome; continuing"]);
+});
+
+test("a successful dependency call reports success and logs nothing", async () => {
+  const log = { error: vi.fn() };
+
+  const succeeded = await guardDependencyCall(async () => "ok", log, "unused");
+
+  expect(succeeded).toBe(true);
+  expect(log.error).not.toHaveBeenCalled();
 });
 
 test("an unhandled rejection is logged, not fatal", () => {

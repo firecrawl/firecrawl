@@ -37,6 +37,25 @@ export async function retryDependency<T>(
 }
 
 /**
+ * Runs a dependency call whose failure is recoverable — recording a job's
+ * outcome, for instance — and logs instead of throwing when it fails. Returns
+ * whether the call succeeded.
+ */
+export async function guardDependencyCall(
+  operation: () => Promise<unknown>,
+  log: { error: (message: string, meta?: unknown) => void },
+  message: string,
+): Promise<boolean> {
+  try {
+    await operation();
+    return true;
+  } catch (error) {
+    log.error(message, { error });
+    return false;
+  }
+}
+
+/**
  * Keeps a worker process alive when a promise rejects outside the call sites
  * that handle their own failures. Install it once the worker has finished
  * starting, so a failure to start still takes the process down and the

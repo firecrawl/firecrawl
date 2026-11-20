@@ -12,6 +12,7 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import { shutdownPubSubLogging } from "../logging/log_job";
 import {
+  guardDependencyCall,
   installWorkerLifecycle,
   retryDependency,
 } from "../../lib/worker-lifecycle";
@@ -213,41 +214,42 @@ export async function runNuqWorker(options: {
     // Recording the outcome is a dependency call too: if the database is
     // unreachable the job's lock expires and the queue redelivers it, which is
     // recoverable — losing the process is not.
-    try {
-      await withZeroDataRetention(zeroDataRetention, async () => {
-        if (processResult.ok) {
-          endJobTimer({ status: "success" });
-          if (
-            !(await options.queue.jobFinish(
-              job.id,
-              job.lock!,
-              processResult.data,
-              logger,
-            ))
-          ) {
-            logger.warn("Could not update job status");
+    await guardDependencyCall(
+      () =>
+        withZeroDataRetention(zeroDataRetention, async () => {
+          if (processResult.ok) {
+            endJobTimer({ status: "success" });
+            if (
+              !(await options.queue.jobFinish(
+                job.id,
+                job.lock!,
+                processResult.data,
+                logger,
+              ))
+            ) {
+              logger.warn("Could not update job status");
+            }
+          } else {
+            endJobTimer({ status: "failed" });
+            if (
+              !(await options.queue.jobFail(
+                job.id,
+                job.lock!,
+                processResult.error instanceof Error
+                  ? processResult.error.message
+                  : typeof processResult.error === "string"
+                    ? processResult.error
+                    : JSON.stringify(processResult.error),
+                logger,
+              ))
+            ) {
+              logger.warn("Could not update job status");
+            }
           }
-        } else {
-          endJobTimer({ status: "failed" });
-          if (
-            !(await options.queue.jobFail(
-              job.id,
-              job.lock!,
-              processResult.error instanceof Error
-                ? processResult.error.message
-                : typeof processResult.error === "string"
-                  ? processResult.error
-                  : JSON.stringify(processResult.error),
-              logger,
-            ))
-          ) {
-            logger.warn("Could not update job status");
-          }
-        }
-      });
-    } catch (error) {
-      logger.error("Could not record job outcome; continuing", { error });
-    }
+        }),
+      logger,
+      "Could not record job outcome; continuing",
+    );
   }
 
   _logger.info("NuQ worker shutting down", {
