@@ -22,7 +22,7 @@ import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
-import { extractData } from "../lib/extractSmartScrape";
+import { extractData, schemaAsSent } from "../lib/extractSmartScrape";
 import {
   findStrictSchemaViolation,
   toRootSchema,
@@ -1043,7 +1043,9 @@ export async function performLLMExtract(
 
     // let generationOptions = { ...originalOptions }; // Start with original options
 
-    const modelSelection = selectModelForSchema(jsonFormat.schema);
+    const modelSelection = selectModelForSchema(
+      schemaAsSent(jsonFormat.schema, meta.logger),
+    );
     const llmFunctionId =
       meta.internalOptions.llmTelemetry?.functionId ?? "performLLMExtract";
 

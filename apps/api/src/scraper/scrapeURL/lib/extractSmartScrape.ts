@@ -264,6 +264,76 @@ function unwrapRootArray(schema: any, extract: any): any {
   return extract;
 }
 
+/**
+ * The reference-normalized form extractData hands to generateCompletions:
+ * every $ref that resolves is inlined and $defs dropped, while a schema
+ * whose refs survive resolution — a recursive one, but also an unresolvable
+ * or depth-limited one — is preserved as-is.
+ *
+ * Model selection for the JSON format runs on this form, so the choice
+ * depends on the schema that is sent after reference normalization, not
+ * on how the caller spelled it.
+ */
+export const schemaAsSent = (schema: any, logger: Logger): any => {
+  if (!schema) return schema;
+
+  const defs = schema.$defs || {};
+  const schemaString = JSON.stringify(schema);
+  const hasAnyRefs =
+    schema.$defs ||
+    schemaString.includes('"$ref"') ||
+    schemaString.includes("#/$defs/");
+
+  if (hasAnyRefs) {
+    logger.info("Detected schema with references, attempting to resolve refs", {
+      hasDefsProperty: !!schema.$defs,
+      hasRefInString: schemaString.includes('"$ref"'),
+      hasRefPathInString: schemaString.includes("#/$defs/"),
+    });
+
+    try {
+      const resolvedSchema = resolveRefs(schema, defs, logger);
+
+      const resolvedString = JSON.stringify(resolvedSchema);
+      const hasRemainingRefs =
+        resolvedString.includes('"$ref"') ||
+        resolvedString.includes("#/$defs/");
+
+      if (!hasRemainingRefs) {
+        if (
+          resolvedSchema &&
+          typeof resolvedSchema === "object" &&
+          resolvedSchema.$defs
+        )
+          delete resolvedSchema.$defs;
+        logger.info("Successfully resolved schema refs", {
+          schema: resolvedSchema,
+        });
+        return resolvedSchema;
+      }
+      logger.info(
+        "Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema",
+      );
+      return schema;
+    } catch (error) {
+      logger.warn("Failed to resolve schema refs, preserving original schema", {
+        error,
+      });
+      return schema;
+    }
+  }
+
+  logger.info("No recursive references detected, resolving refs", {
+    schema,
+  });
+  const resolvedSchema = resolveRefs(schema, defs, logger);
+  delete resolvedSchema.$defs;
+  logger.info("Resolved schema refs", {
+    schema: resolvedSchema,
+  });
+  return resolvedSchema;
+};
+
 export async function extractData({
   extractOptions,
   urls,
@@ -324,59 +394,7 @@ export async function extractData({
   }
 
   if (schema) {
-    const defs = schema.$defs || {};
-    const schemaString = JSON.stringify(schema);
-    const hasAnyRefs =
-      schema.$defs ||
-      schemaString.includes('"$ref"') ||
-      schemaString.includes("#/$defs/");
-
-    if (hasAnyRefs) {
-      logger.info(
-        "Detected schema with references, attempting to resolve refs",
-        {
-          hasDefsProperty: !!schema.$defs,
-          hasRefInString: schemaString.includes('"$ref"'),
-          hasRefPathInString: schemaString.includes("#/$defs/"),
-        },
-      );
-
-      try {
-        const resolvedSchema = resolveRefs(schema, defs, logger);
-
-        const resolvedString = JSON.stringify(resolvedSchema);
-        const hasRemainingRefs =
-          resolvedString.includes('"$ref"') ||
-          resolvedString.includes("#/$defs/");
-
-        if (!hasRemainingRefs) {
-          schema = resolvedSchema;
-          if (schema && typeof schema === "object" && schema.$defs)
-            delete schema.$defs;
-          logger.info("Successfully resolved schema refs", {
-            schema,
-          });
-        } else {
-          logger.info(
-            "Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema",
-          );
-        }
-      } catch (error) {
-        logger.warn(
-          "Failed to resolve schema refs, preserving original schema",
-          { error },
-        );
-      }
-    } else {
-      logger.info("No recursive references detected, resolving refs", {
-        schema,
-      });
-      schema = resolveRefs(schema, defs, logger);
-      delete schema.$defs;
-      logger.info("Resolved schema refs", {
-        schema,
-      });
-    }
+    schema = schemaAsSent(schema, logger);
   }
 
   // The SmartScrape fields only matter when the agent can act on them.
