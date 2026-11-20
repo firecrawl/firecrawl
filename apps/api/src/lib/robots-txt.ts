@@ -147,6 +147,9 @@ export function isUrlAllowedByRobots(
 ): boolean {
   if (!robots) return true;
 
+  const suffixIndex = url.search(/[?#]/);
+  const urlWithoutSuffix = suffixIndex === -1 ? url : url.slice(0, suffixIndex);
+
   for (const userAgent of userAgents) {
     let isAllowed = robots.isAllowed(url, userAgent);
 
@@ -159,10 +162,11 @@ export function isUrlAllowedByRobots(
       isAllowed = true;
     }
 
-    // Also check with trailing slash if URL doesn't have one
+    // Also check with a trailing path slash, preserving the query and fragment.
     // This catches cases like "Disallow: /path/" when user requests "/path"
-    if (isAllowed && !url.endsWith("/")) {
-      const urlWithSlash = url + "/";
+    if (isAllowed && !urlWithoutSuffix.endsWith("/")) {
+      const urlWithSlash =
+        urlWithoutSuffix + "/" + url.slice(urlWithoutSuffix.length);
       let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
 
       if (isAllowedWithSlash == null) {
