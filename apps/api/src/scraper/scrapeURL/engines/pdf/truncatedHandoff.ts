@@ -111,15 +111,13 @@ export async function startsWithSameBytes(
 
 /**
  * Why the file must not be downloaded again outside the browser engine: the
- * team is US-only, the request asked for a location or a non-basic proxy, or
- * the handoff itself came through the stealth proxy. A direct download would
- * leave that network path and could reach a different (or blocked) copy of
- * the file.
+ * request asked for a location or a non-basic proxy, or the handoff itself
+ * came through the stealth proxy. A direct download would leave that network
+ * path and could reach a different (or blocked) copy of the file.
  */
 function networkSetupRequiresBrowser(meta: Meta, prefetch: PdfPrefetch) {
   const proxy = meta.options.proxy;
   return (
-    isUsOnly(meta.internalOptions.teamFlags ?? undefined) ||
     meta.options.location !== undefined ||
     (proxy !== undefined && proxy !== "basic" && proxy !== "auto") ||
     prefetch.proxyUsed !== "basic" ||
@@ -179,6 +177,12 @@ export async function completeTruncatedHandoff(
       scrape_id: meta.id,
       ...extra,
     });
+
+  // A US-only team's direct download can't be pinned to a US exit.
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    report("skipped_us_only");
+    return prefetch;
+  }
 
   if (networkSetupRequiresBrowser(meta, prefetch)) {
     report("skipped_proxy");

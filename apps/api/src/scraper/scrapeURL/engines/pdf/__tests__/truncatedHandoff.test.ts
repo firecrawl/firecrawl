@@ -421,7 +421,7 @@ describe("completeTruncatedHandoff", () => {
     expect(download).not.toHaveBeenCalled();
     expect(meta.logger.warn).toHaveBeenCalledWith(
       "PDF handoff looks truncated",
-      expect.objectContaining({ outcome: "skipped_proxy" }),
+      expect.objectContaining({ outcome: "skipped_us_only" }),
     );
   });
 

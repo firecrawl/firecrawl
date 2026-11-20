@@ -5,7 +5,7 @@
  */
 
 describe("US-only routing with fire-engine (buildFallbackList)", () => {
-  let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let buildFallbackList: typeof import("../engines/index.js").buildFallbackList;
 
   const overrides: Record<string, string | undefined> = {
     FIRE_ENGINE_BETA_URL: "http://test-fire-engine",
@@ -33,9 +33,7 @@ describe("US-only routing with fire-engine (buildFallbackList)", () => {
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
-      "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    ({ buildFallbackList } = await import("../engines/index.js"));
   });
 
   afterAll(() => {
