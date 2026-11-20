@@ -24,6 +24,7 @@ import {
   lookupCachedResult,
   recordFirePdfCacheKey,
 } from "./cache-service";
+import { assessPdfExtractionQuality } from "../pdfQuality";
 import { isReservedCapacity } from "../../../../../lib/reserved-capacity";
 import { firePdfTableFormat } from "./request-metadata";
 import { consumeRefresh, refreshDecisionFor } from "./refresh-budget";
@@ -223,7 +224,7 @@ export async function tryGetCached(
   if (viaService) {
     // The service probes the variants, applies the read-time rules and
     // budgets `refresh`; a failed lookup is a miss.
-    return lookupCachedResult(meta, base64Content, {
+    const served = await lookupCachedResult(meta, base64Content, {
       mode,
       pagesProcessed,
       includePageMarkdown,
@@ -235,6 +236,11 @@ export async function tryGetCached(
       sourceKind: isRasterImagePayload(base64Content) ? "image" : "pdf",
       ownVariant: ownVariant ?? "base",
     });
+    // The lookup itself refuses suspiciously sparse entries (see
+    // lookupCachedResult): the outcome is recorded there, so a rejected
+    // entry is never counted or logged as a hit. A served entry needs no
+    // further judging here.
+    return served;
   }
   const cacheKey = resolvePdfCacheKey(base64Content);
 
@@ -300,6 +306,27 @@ export async function tryGetCached(
               scrapeId: meta.id,
               requestedMode: mode,
               cacheVariant: variant ?? "base",
+            },
+          );
+          continue;
+        }
+        // A degenerate entry written before the write guard existed must
+        // not be served: skip this variant so a fresh extraction runs
+        // (#5759). Only judged when the entry reports how many pages it
+        // processed; an entry without that count is served as-is.
+        const cachedQuality = assessPdfExtractionQuality(
+          cached.markdown,
+          cached.pagesProcessed,
+        );
+        if (cachedQuality.suspicious) {
+          meta.logger.info(
+            "Ignoring cached suspected-incomplete FirePDF result",
+            {
+              scrapeId: meta.id,
+              requestedMode: mode,
+              cacheVariant: variant ?? "base",
+              reason: cachedQuality.reason,
+              pagesProcessed: cached.pagesProcessed,
             },
           );
           continue;
@@ -431,7 +458,13 @@ export async function maybeSaveResult(args: {
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   if (firePdfTableFormat(meta) !== undefined) return;
-  // With the lookup service in use, fire-pdf writes the result itself.
+  // With the lookup service in use, fire-pdf writes the result itself, so
+  // the write refusals below — including the sparse-result refusal
+  // (#5759) — cover the GCS path only. The service is a separate codebase
+  // and this repo cannot verify it applies the same density rule; sparse
+  // entries it does write are still refused at read time
+  // (lookupCachedResult treats them as a miss), so they are never served
+  // — the cost is a repeated FirePDF run, not a wrong answer.
   if (cacheServiceConfigured()) return;
   if (!pdfCacheConfigured()) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
@@ -465,6 +498,32 @@ export async function maybeSaveResult(args: {
         provenance?.quality?.failed_pages ?? 0,
       ),
       degradedPages: provenance?.quality?.degraded_pages ?? 0,
+    });
+    return;
+  }
+
+  // A suspiciously sparse extraction is not worth remembering (#5759): the
+  // next engine may extract far more text, and a cached degenerate entry
+  // would be served to every later request for the document. Only judged
+  // when the result reports how many pages it processed.
+  const quality = assessPdfExtractionQuality(
+    result.markdown,
+    result.pagesProcessed,
+  );
+  if (quality.suspicious) {
+    firePdfCacheRefusedWritesTotal.inc({ reason: "suspected_incomplete" });
+    firePdfCacheEventsTotal.inc({
+      event: "refused_write",
+      variant: ownVariant ?? "base",
+    });
+    meta.logger.info("FirePDF result not cached", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheVariant: ownVariant ?? "base",
+      cacheKey,
+      reason: "suspected_incomplete",
+      qualityReason: quality.reason,
+      pagesProcessed: result.pagesProcessed,
     });
     return;
   }

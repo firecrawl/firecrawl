@@ -65,22 +65,16 @@ import {
 import { parseAlwaysFirePdf } from "./fire-pdf/request-metadata";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
+import {
+  assessPdfExtractionQuality,
+  effectiveProcessedPages,
+  getRustPdfIneligibleReason,
+  pickRicherPdfResult,
+} from "./pdfQuality";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { withPdfExtractionPermit } from "./semaphore";
-
-/** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
-function getIneligibleReason(
-  result: Awaited<ReturnType<typeof processPdf>>,
-): string | null {
-  if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
-  if (result.confidence < 0.95) return `confidence=${result.confidence}`;
-  if (result.isComplex) return "complex layout (tables/columns)";
-  if (!result.markdown?.length)
-    return "empty markdown (unexpected for TextBased)";
-  return null;
-}
 
 /**
  * Guards the pdf engine's direct undici downloads: a proxy tunneling
@@ -334,6 +328,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     let result: PDFProcessorResult | null = null;
+    // Best stage result that was set aside as suspected-incomplete (#5759).
+    // Low text density only ever triggers verification against another
+    // extractor, so a set-aside result stays available: if every engine is
+    // suspicious, the longest extraction is still the best answer and is
+    // returned with a warning instead of an empty result.
+    let suspectPdfFallback: PDFProcessorResult | null = null;
+    const noteSuspectPdfFallback = (
+      candidate: PDFProcessorResult | null | undefined,
+    ) => {
+      suspectPdfFallback = pickRicherPdfResult(suspectPdfFallback, candidate);
+    };
     let effectivePageCount: number = 0;
     // True page count of the document before maxPages capping. Stays undefined
     // when native detection fails, so it can be omitted from the response.
@@ -379,9 +384,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         totalPageCount = detection.pageCount;
         detectedPdfType = detection.pdfType;
-        effectivePageCount = maxPages
-          ? Math.min(detection.pageCount, maxPages)
-          : detection.pageCount;
+        effectivePageCount =
+          effectiveProcessedPages(detection.pageCount, maxPages) ??
+          detection.pageCount;
         metadataTitle = detection.title ?? undefined;
       } catch (error) {
         extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
@@ -427,12 +432,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         totalPageCount = pdfResult.pageCount;
         detectedPdfType = pdfResult.pdfType;
-        effectivePageCount = maxPages
-          ? Math.min(pdfResult.pageCount, maxPages)
-          : pdfResult.pageCount;
+        effectivePageCount =
+          effectiveProcessedPages(pdfResult.pageCount, maxPages) ??
+          pdfResult.pageCount;
         metadataTitle = pdfResult.title ?? undefined;
 
-        const ineligibleReason = getIneligibleReason(pdfResult);
+        const ineligibleReason = getRustPdfIneligibleReason(
+          pdfResult,
+          effectivePageCount,
+        );
         const eligible = !ineligibleReason;
 
         logger.info("Rust PDF eligibility", {
@@ -463,6 +471,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             meta.id,
           );
           result = { markdown: pdfResult.markdown, html };
+        } else if (pdfResult.markdown) {
+          // Not adopted (ineligible, e.g. suspected-incomplete density):
+          // keep the text as the fallback candidate in case every later
+          // engine does worse or fails. A density rejection is only
+          // suspicion — this text may still be the best available answer.
+          const html = await safeMarkdownToHtml(
+            pdfResult.markdown,
+            logger,
+            meta.id,
+          );
+          noteSuspectPdfFallback({ markdown: pdfResult.markdown, html });
         }
       } catch (error) {
         if (error instanceof PDFOCRRequiredError) {
@@ -569,11 +588,51 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }
           if (byRefResult) {
             recordFirePdfRoute(meta, byRefRoute);
-            result = byRefResult;
-            effectivePageCount = reconcilePageCountWithFirePdf(
-              effectivePageCount,
-              result,
+            const quality = assessPdfExtractionQuality(
+              byRefResult.markdown,
+              byRefResult.pagesProcessed ?? effectivePageCount,
             );
+            if (quality.suspicious && !forceFirePDF) {
+              // Suspected-incomplete: do not adopt. Fall through to the
+              // legacy chain (inline FirePDF, then pdf-parse) for
+              // verification, keeping this text as the fallback candidate.
+              meta.logger.warn(
+                "FirePDF by-reference result suspected incomplete -- falling back to legacy chain",
+                {
+                  method: "scrapePDF",
+                  event: "pdf_extraction_suspected_incomplete",
+                  stage: "fire-pdf-by-reference",
+                  reason: quality.reason,
+                  pagesProcessed:
+                    byRefResult.pagesProcessed ?? effectivePageCount,
+                  scrape_id: meta.id,
+                },
+              );
+              noteSuspectPdfFallback(byRefResult);
+            } else {
+              if (quality.suspicious) {
+                // Forced FirePDF (page markdown/blocks/markers requested):
+                // pdf-parse cannot provide those features, so retain the
+                // result and say so rather than silently downgrading.
+                meta.logger.warn(
+                  "FirePDF by-reference result suspected incomplete -- retaining (forced FirePDF features)",
+                  {
+                    method: "scrapePDF",
+                    event: "pdf_extraction_suspected_incomplete",
+                    stage: "fire-pdf-by-reference",
+                    reason: quality.reason,
+                    pagesProcessed:
+                      byRefResult.pagesProcessed ?? effectivePageCount,
+                    scrape_id: meta.id,
+                  },
+                );
+              }
+              result = byRefResult;
+              effectivePageCount = reconcilePageCountWithFirePdf(
+                effectivePageCount,
+                result,
+              );
+            }
           }
         }
       }
@@ -827,20 +886,84 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }
         }
       }
+
+      // A FirePDF result that is suspiciously sparse is verified against
+      // pdf-parse instead of shipping as a successful partial result
+      // (#5759). Forced FirePDF keeps the result: pdf-parse cannot
+      // provide the requested page markdown/blocks/markers.
+      if (result) {
+        const quality = assessPdfExtractionQuality(
+          result.markdown,
+          result.pagesProcessed ?? effectivePageCount,
+        );
+        if (quality.suspicious && !forceFirePDF) {
+          meta.logger.warn(
+            "FirePDF result suspected incomplete -- falling back to pdf-parse",
+            {
+              method: "scrapePDF/firePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "fire-pdf",
+              reason: quality.reason,
+              pagesProcessed: result.pagesProcessed ?? effectivePageCount,
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+            },
+          );
+          noteSuspectPdfFallback(result);
+          result = null;
+        } else if (quality.suspicious) {
+          meta.logger.warn(
+            "FirePDF result suspected incomplete -- retaining (forced FirePDF features)",
+            {
+              method: "scrapePDF/firePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "fire-pdf",
+              reason: quality.reason,
+              pagesProcessed: result.pagesProcessed ?? effectivePageCount,
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+            },
+          );
+        }
+      }
     }
 
     // Final fallback to PdfParse (skipped when Fire PDF is forced).
     if (!result && !forceFirePDF) {
-      result = await scrapePDFWithParsePDF(
-        {
-          ...meta,
-          logger: meta.logger.child({
-            method: "scrapePDF/scrapePDFWithParsePDF",
-          }),
-        },
-        tempFilePath,
-        maxPages ?? undefined,
-      );
+      let pdfParseResult: PDFProcessorResult;
+      try {
+        pdfParseResult = await scrapePDFWithParsePDF(
+          {
+            ...meta,
+            logger: meta.logger.child({
+              method: "scrapePDF/scrapePDFWithParsePDF",
+            }),
+          },
+          tempFilePath,
+          maxPages ?? undefined,
+        );
+      } catch (error) {
+        if (suspectPdfFallback) {
+          // pdf-parse failed, but an earlier engine produced text: return
+          // the best suspected-incomplete extraction rather than failing
+          // the scrape with nothing.
+          meta.logger.warn(
+            "pdf-parse failed -- using best suspected-incomplete extraction",
+            {
+              method: "scrapePDF/scrapePDFWithParsePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "pdf-parse-fallback",
+              scrape_id: meta.id,
+              error,
+            },
+          );
+          pdfParseResult = suspectPdfFallback;
+          suspectPdfFallback = null;
+        } else {
+          throw error;
+        }
+      }
+      result = pdfParseResult;
       // pdf-parse stops at its page cap, so a count from native detection
       // can only come down to the pages it parsed. A failed detection stays
       // at 0 and keeps billing the base credit.
@@ -853,13 +976,58 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (totalPageCount === undefined && result.pageCount !== undefined) {
         totalPageCount = result.pageCount;
       }
+      // If pdf-parse is itself suspiciously sparse but an earlier engine
+      // extracted more text, keep the longer extraction: every engine was
+      // suspicious, so the longest text is the best available answer.
+      // Density is charged against the pages pdf-parse actually
+      // processed, not the document total: a capped run's valid prefix
+      // must not look degenerate. Either way the structured warning is
+      // emitted — a suspicious result is retained, never silently.
+      const pdfParseQuality = assessPdfExtractionQuality(
+        result.markdown,
+        result.pagesProcessed ?? effectivePageCount,
+      );
+      if (pdfParseQuality.suspicious && suspectPdfFallback) {
+        const best = pickRicherPdfResult(suspectPdfFallback, result);
+        if (best !== result) {
+          meta.logger.warn(
+            "pdf-parse result suspected incomplete -- using richer earlier extraction",
+            {
+              method: "scrapePDF/scrapePDFWithParsePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "pdf-parse-fallback",
+              reason: pdfParseQuality.reason,
+              scrape_id: meta.id,
+            },
+          );
+          result = best;
+          effectivePageCount = reconcilePageCountWithPdfParse(
+            effectivePageCount,
+            result,
+          );
+        } else {
+          meta.logger.warn(
+            "pdf-parse result suspected incomplete -- keeping richer pdf-parse extraction",
+            {
+              method: "scrapePDF/scrapePDFWithParsePDF",
+              event: "pdf_extraction_suspected_incomplete",
+              stage: "pdf-parse-fallback",
+              reason: pdfParseQuality.reason,
+              scrape_id: meta.id,
+            },
+          );
+        }
+        suspectPdfFallback = null;
+      }
       // Without GPU OCR a scanned document has no text layer to return.
+      // A null result (every engine failed or was skipped) has no text
+      // layer either, so it takes the same branch.
       if (
         processingRestricted &&
         !skipOCR &&
         (detectedPdfType === "Scanned" ||
           detectedPdfType === "ImageBased" ||
-          !result.markdown?.trim())
+          !result?.markdown?.trim())
       ) {
         if (usOnly) {
           meta.logger.warn(
