@@ -43,6 +43,7 @@ afterEach(async () => {
 function makeMeta(
   options: Record<string, unknown> = {},
   featureFlags: string[] = [],
+  teamFlags?: Record<string, unknown>,
 ) {
   const logger: any = {
     info: vi.fn(),
@@ -62,6 +63,7 @@ function makeMeta(
       ...options,
     },
     featureFlags: new Set(featureFlags),
+    internalOptions: { teamFlags },
     abort: {
       asSignal: () => new AbortController().signal,
       throwIfAborted: vi.fn(),
@@ -402,6 +404,26 @@ describe("completeTruncatedHandoff", () => {
       );
     },
   );
+
+  it("does not download again outside the browser for a US-only team", async () => {
+    const meta = makeMeta({ proxy: "basic" }, [], { usOnly: true });
+    const handoff = await handoffOf(CUT_PDF);
+    const download = downloadReturning(FULL_PDF);
+
+    const result = await completeTruncatedHandoff(
+      meta,
+      handoff,
+      1024,
+      download,
+    );
+
+    expect(result).toBe(handoff);
+    expect(download).not.toHaveBeenCalled();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "PDF handoff looks truncated",
+      expect.objectContaining({ outcome: "skipped_proxy" }),
+    );
+  });
 
   it("downloads again for a request on the basic proxy", async () => {
     const handoff = await handoffOf(CUT_PDF);

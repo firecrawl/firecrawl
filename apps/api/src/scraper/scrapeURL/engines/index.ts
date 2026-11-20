@@ -968,6 +968,9 @@ export async function buildFallbackList(meta: Meta): Promise<
         : [meta.internalOptions.forceEngine]
       : _engines;
 
+  const usOnly = isUsOnly(meta.internalOptions.teamFlags ?? undefined);
+  let refusedForUsOnly = false;
+
   for (const engine of currentEngines) {
     // Zero data retention scrapes, forced engines included, never use the
     // Wikipedia engine: they stay on the engines that fetch the page directly.
@@ -1004,8 +1007,27 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
 
     if (supportScore >= priorityThreshold) {
+      // These engines download outside fire-engine, where a US-only team's
+      // fetch can't be pinned to a US exit, so for such a team they only parse
+      // content that fire-engine or an upload already delivered.
+      if (
+        usOnly &&
+        ((engine === "fetch" && !meta.fetchPrefetch) ||
+          (engine === "pdf" && !meta.pdfPrefetch) ||
+          (engine === "document" && !meta.documentPrefetch) ||
+          (engine === "image" && !meta.imagePrefetch))
+      ) {
+        refusedForUsOnly = true;
+        continue;
+      }
       selectedEngines.push({ engine, supportScore, unsupportedFeatures });
     }
+  }
+
+  if (refusedForUsOnly && selectedEngines.length === 0) {
+    throw new UsOnlyUnavailableError(
+      "Fetching this URL directly isn't available to teams restricted to US-only processing, because pages are fetched only from US exits.",
+    );
   }
 
   // When stealth proxy is explicitly requested (proxy: "stealth" | "enhanced"),

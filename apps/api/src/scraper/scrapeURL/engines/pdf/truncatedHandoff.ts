@@ -3,6 +3,7 @@ import type { Meta } from "../..";
 import { config } from "../../../../config";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import { downloadFile } from "../utils/downloadFile";
+import { isUsOnly } from "../../../../lib/us-only";
 import { deterministicPercentage } from "./fire-pdf/routing";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 
@@ -110,13 +111,15 @@ export async function startsWithSameBytes(
 
 /**
  * Why the file must not be downloaded again outside the browser engine: the
- * request asked for a location or a non-basic proxy, or the handoff itself
- * came through the stealth proxy. A direct download would leave that network
- * path and could reach a different (or blocked) copy of the file.
+ * team is US-only, the request asked for a location or a non-basic proxy, or
+ * the handoff itself came through the stealth proxy. A direct download would
+ * leave that network path and could reach a different (or blocked) copy of
+ * the file.
  */
 function networkSetupRequiresBrowser(meta: Meta, prefetch: PdfPrefetch) {
   const proxy = meta.options.proxy;
   return (
+    isUsOnly(meta.internalOptions.teamFlags ?? undefined) ||
     meta.options.location !== undefined ||
     (proxy !== undefined && proxy !== "basic" && proxy !== "auto") ||
     prefetch.proxyUsed !== "basic" ||

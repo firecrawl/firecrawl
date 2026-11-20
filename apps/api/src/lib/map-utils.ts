@@ -132,9 +132,11 @@ export async function getMapResults({
   const indexOnly =
     resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
-  // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
-  // which the zero-outbound guarantee forbids — use the URL as given.
-  const resolvedUrl = indexOnly ? url : await resolveRedirects(url, abort);
+  // Resolving redirects fetches the target outside fire-engine, which lockdown's
+  // zero-outbound guarantee forbids and a US-only team can't pin to a US exit,
+  // so both take the URL as given.
+  const resolvedUrl =
+    indexOnly || isUsOnly(flags) ? url : await resolveRedirects(url, abort);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {

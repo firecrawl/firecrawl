@@ -63,6 +63,12 @@ export async function getLinksFromSitemap(
 
     const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
     if (isGzip) {
+      // The download runs outside fire-engine, where a US-only team's fetch
+      // can't be pinned to a US exit.
+      if (usOnly) {
+        logger.warn("Skipping gzip sitemap for a US-only team", { sitemapUrl });
+        return 0;
+      }
       try {
         const { buffer } = await fetchFileToBuffer(
           sitemapUrl,

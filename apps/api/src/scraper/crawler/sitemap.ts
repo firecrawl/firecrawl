@@ -15,6 +15,7 @@ import {
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
 import { SitemapError } from "../../lib/error";
+import { UsOnlyUnavailableError } from "../scrapeURL/error";
 import { useIndex } from "../../services";
 
 type SitemapScrapeOptions = {
@@ -36,6 +37,13 @@ type SitemapData = {
 async function _getSitemapXMLGZ(
   options: SitemapScrapeOptions,
 ): Promise<string> {
+  // The download runs outside fire-engine, where a US-only team's fetch can't
+  // be pinned to a US exit.
+  if (options.usOnly) {
+    throw new UsOnlyUnavailableError(
+      "Gzipped sitemaps aren't available to teams restricted to US-only processing, because pages are fetched only from US exits.",
+    );
+  }
   const { buffer } = await fetchFileToBuffer(
     options.url,
     false,
