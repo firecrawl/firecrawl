@@ -1,6 +1,4 @@
 import {
-  MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES,
-  MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES,
   threatProtectionConfigSchema,
   threatProtectionOverrideSchema,
   threatProtectionPolicySchema,
@@ -166,15 +164,16 @@ describe("threatProtectionConfigSchema", () => {
 
   it("allows up to 10,000 blacklist/whitelist entries on org policy and caps overrides at 1,000", () => {
     const orgEntries = Array.from(
-      { length: MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES },
+      { length: 10_000 },
       (_, i) => `d${i}.example.com`,
     );
-    expect(
-      threatProtectionConfigSchema.parse({
-        mode: "normal",
-        blacklist: orgEntries,
-      }).blacklist,
-    ).toHaveLength(MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES);
+    const parsedOrg = threatProtectionConfigSchema.parse({
+      mode: "normal",
+      blacklist: orgEntries,
+      whitelist: orgEntries,
+    });
+    expect(parsedOrg.blacklist).toHaveLength(10_000);
+    expect(parsedOrg.whitelist).toHaveLength(10_000);
 
     expect(() =>
       threatProtectionConfigSchema.parse({
@@ -183,19 +182,30 @@ describe("threatProtectionConfigSchema", () => {
       }),
     ).toThrow();
 
-    const overrideEntries = orgEntries.slice(
-      0,
-      MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES,
-    );
-    expect(
-      threatProtectionOverrideSchema.parse({
-        blacklist: overrideEntries,
-      }).blacklist,
-    ).toHaveLength(MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES);
+    expect(() =>
+      threatProtectionConfigSchema.parse({
+        mode: "normal",
+        whitelist: [...orgEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    const overrideEntries = orgEntries.slice(0, 1_000);
+    const parsedOverride = threatProtectionOverrideSchema.parse({
+      blacklist: overrideEntries,
+      whitelist: overrideEntries,
+    });
+    expect(parsedOverride.blacklist).toHaveLength(1_000);
+    expect(parsedOverride.whitelist).toHaveLength(1_000);
 
     expect(() =>
       threatProtectionOverrideSchema.parse({
         blacklist: [...overrideEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      threatProtectionOverrideSchema.parse({
+        whitelist: [...overrideEntries, "overflow.example.com"],
       }),
     ).toThrow();
   });

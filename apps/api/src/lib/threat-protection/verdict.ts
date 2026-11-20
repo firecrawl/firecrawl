@@ -32,7 +32,11 @@ const compiledTldSetCache = new WeakMap<readonly string[], Set<string>>();
 
 /**
  * Pre-index a whitelist/blacklist array so repeated checks against the same
- * policy list stay O(labels) per URL instead of scanning all entries.
+ * frozen policy list stay O(labels) per URL for exact and leading-wildcard
+ * entries; inner-`*` globs fall back to a linear regex scan.
+ *
+ * Only frozen arrays are cached in the WeakMap so in-place mutations to a
+ * caller-owned mutable array can never serve stale results.
  *
  * - Exact entries match the domain itself AND its subdomains — consistent with
  *   how the global blocklist treats domains (see
@@ -43,8 +47,11 @@ const compiledTldSetCache = new WeakMap<readonly string[], Set<string>>();
  * - Any other glob containing "*" falls back to a pre-compiled RegExp.
  */
 function compileDomainList(entries: readonly string[]): CompiledDomainList {
-  const cached = compiledDomainListCache.get(entries);
-  if (cached) return cached;
+  const isFrozen = Object.isFrozen(entries);
+  if (isFrozen) {
+    const cached = compiledDomainListCache.get(entries);
+    if (cached) return cached;
+  }
 
   const exactDomains = new Set<string>();
   const wildcardSuffixes = new Set<string>();
@@ -88,7 +95,9 @@ function compileDomainList(entries: readonly string[]): CompiledDomainList {
     wildcardSuffixes,
     complexGlobs,
   };
-  compiledDomainListCache.set(entries, compiled);
+  if (isFrozen) {
+    compiledDomainListCache.set(entries, compiled);
+  }
   return compiled;
 }
 
@@ -123,15 +132,20 @@ export function domainMatchesList(
 }
 
 function compileTldSet(blockedTlds: readonly string[]): Set<string> {
-  const cached = compiledTldSetCache.get(blockedTlds);
-  if (cached) return cached;
+  const isFrozen = Object.isFrozen(blockedTlds);
+  if (isFrozen) {
+    const cached = compiledTldSetCache.get(blockedTlds);
+    if (cached) return cached;
+  }
 
   const set = new Set<string>();
   for (const tld of blockedTlds) {
     const normalized = tld.trim().toLowerCase().replace(/^\./, "");
     if (normalized) set.add(normalized);
   }
-  compiledTldSetCache.set(blockedTlds, set);
+  if (isFrozen) {
+    compiledTldSetCache.set(blockedTlds, set);
+  }
   return set;
 }
 

@@ -564,4 +564,23 @@ describe("domainMatchesList — large lists", () => {
       localOnlyDecision("https://allowed-site.example.com/", p),
     ).toBeNull();
   });
+
+  test("reflects in-place mutations on unfrozen lists", () => {
+    const blacklist = ["first.example.com"];
+    const p = policy({ blacklist });
+
+    expect(localOnlyDecision("https://first.example.com/", p)).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+    });
+
+    blacklist.push("second.example.com");
+    expect(localOnlyDecision("https://second.example.com/", p)).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+    });
+
+    blacklist.shift();
+    expect(localOnlyDecision("https://first.example.com/", p)).toBeNull();
+  });
 });
