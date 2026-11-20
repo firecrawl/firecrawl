@@ -75,7 +75,6 @@ const outsideCoreSuite = [
   "src/lib/exchange.test.ts",
   "src/lib/fire-privacy-*.test.ts",
   "src/lib/gcs-jobs.test.ts",
-  "src/lib/hosted-bash/**",
   "src/lib/infer-integration.test.ts",
   "src/lib/ip-restriction.test.ts",
   "src/lib/job-operational-stores.test.ts",

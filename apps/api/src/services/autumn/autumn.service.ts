@@ -412,6 +412,7 @@ export class AutumnService {
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
+    durableRetry,
   }: FinalizeCreditsLockParams): Promise<boolean> {
     // Without firebill no hold was ever taken, so nothing can have gone
     // unsettled.
@@ -422,11 +423,10 @@ export class AutumnService {
     // does neither, so it does not carry one.
     //
     // A gated caller that cannot name the org passes no team and the settle
-    // still lands, without the label. There is no durable retry on this path —
-    // `billMonitorCheck`'s only caller catches, writes
-    // `billing_status: "failed"`, and moves on, and nothing ever reads that
-    // back — so refusing would abandon the finalize entirely: the hold
-    // expires and the run goes unbilled at Autumn as well as unreported.
+    // still lands, without the label. The durable retry only re-sends a settle
+    // firebill never answered, not one that was never sent, so refusing would
+    // abandon the finalize entirely: the hold expires and the run goes
+    // unbilled at Autumn as well as unreported.
     // Settling and losing the label is the lesser loss, and firebill counts
     // the lost label as `partner_events_total{outcome="no_customer"}`.
     const customerId = externalRequestId && team ? team.orgId : null;
@@ -444,6 +444,7 @@ export class AutumnService {
       customerId,
       featureId: customerId ? featureId : null,
       heldValue: customerId ? heldValue : null,
+      durableRetry,
     });
   }
 

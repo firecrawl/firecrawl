@@ -39,7 +39,11 @@
 
 # **🔥 Firecrawl**
 
-**Knowledge infrastructure to make your agents smarter. 🔥** Search, scrape, and interact with the web at scale, and reach 550+ data providers through [Firecrawl Alexandria](https://alexandria.firecrawl.dev). Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**Knowledge infrastructure to make your agents smarter. 🔥** You can use Firecrawl three ways. This repo holds the code for Firecrawl Local and the self-hosted server, along with SDKs that work with all three.
+
+- **[Firecrawl Local](#firecrawl-local).** Run Firecrawl on your own machine as one binary that turns websites into clean markdown, plugs into your AI agent as an MCP server and serves the Firecrawl API on localhost.
+- **[Firecrawl Cloud](#firecrawl-cloud).** Use the hosted service at [firecrawl.dev](https://firecrawl.dev/?ref=github) for everything Local does at scale with nothing to run, plus search and the 550+ data providers in [Firecrawl Alexandria](https://alexandria.firecrawl.dev) for far more knowledge than scraping alone.
+- **[Self-hosting](#self-hosting).** Deploy the full Firecrawl server from `apps/api` with its own queues, workers and databases on your own infrastructure.
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -49,46 +53,95 @@ _Pst. Hey, you, join our stargazers :)_
 
 ---
 
-## Why Firecrawl?
+## Firecrawl Local
 
-- **Industry-leading reliability**: Covers 96% of the web, including JS-heavy pages — no proxy headaches, just clean data ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25))
-- **Blazingly fast**: P95 latency of 3.4s across millions of pages, built for real-time agents and dynamic apps
-- **LLM-ready output**: Clean markdown, structured JSON, screenshots, and more — spend fewer tokens, build better AI apps
-- **We handle the hard stuff**: Rotating proxies, orchestration, rate limits, JS-blocked content, and more — zero configuration
-- **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
-- **Document parsing**: Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON
-- **Actions**: Click, scroll, write, wait, and press before extracting content
-- **Open source**: Developed transparently and collaboratively — [join our community](https://discord.gg/firecrawl)
+[Firecrawl Local](apps/local) scrapes, crawls and maps from your own machine without a database, queue or container, and it reaches Firecrawl Cloud when your AI agents need search or Alexandria. It installs from crates.io. You need Rust and a C compiler, which on macOS means `xcode-select --install` and on Debian or Ubuntu means `build-essential`.
+
+```bash
+cargo install firecrawl-local
+```
+
+If you don't have Rust, [Firecrawl Cloud](#firecrawl-cloud) runs the same scrape with nothing to build and no signup.
+
+```bash
+npx -y firecrawl-cli@latest scrape https://firecrawl.dev
+```
+
+Scrape a page and print its markdown.
+
+```bash
+firecrawl-local scrape https://firecrawl.dev --markdown
+```
+
+Crawl a site and save one markdown file per page.
+
+```bash
+firecrawl-local crawl https://docs.firecrawl.dev --limit 50 --out ./pages
+```
+
+List every URL on a site.
+
+```bash
+firecrawl-local map https://firecrawl.dev
+```
+
+Pages that need JavaScript render in the Chrome or Chromium already on your machine, and PDFs and Office documents are parsed locally too. Without a browser, static pages still work and a page that needed one comes back with a warning.
+
+### Add it to your AI agent
+
+`init` finds Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI and Codex on your machine and adds Firecrawl Local to each one as an MCP server. It backs up every config file first, and the MCP server itself needs Node.js 22 or newer.
+
+```bash
+firecrawl-local init
+```
+
+Restart your AI tool afterwards. Its scrape, crawl, map and batch scrape tools run on your machine, and the other Firecrawl tools go to Firecrawl Cloud.
+
+### Run the Firecrawl API on localhost
+
+`serve` answers the Firecrawl v2 API on port 3002, so code written for Firecrawl runs against it unchanged and local routes need no API key.
+
+```bash
+firecrawl-local serve
+```
+
+Point any Firecrawl SDK at it by setting the API URL.
+
+```python
+from firecrawl import Firecrawl
+
+app = Firecrawl(api_url="http://localhost:3002")
+print(app.scrape("https://firecrawl.dev").markdown)
+```
+
+The [Firecrawl Local README](apps/local) covers every command and option, the security defaults for `serve` and running it in Docker. Move to [Firecrawl Cloud](#firecrawl-cloud) when you need structured JSON, Interact, the Agent or scale beyond one machine.
 
 ---
 
-## Feature Overview
+## What runs where
 
-**Core Endpoints**
+| Feature | Firecrawl Local | Firecrawl Cloud |
+|---------|-----------------|-----------------|
+| [Scrape](#scrape) | Markdown, HTML, raw HTML and links | Adds structured JSON, summaries, screenshots and browser actions |
+| [Crawl](#crawl), [Map](#map) and [Batch Scrape](#batch-scrape) | ✅ | ✅ |
+| PDFs and Office documents | ✅ | ✅, plus [Parse](https://docs.firecrawl.dev/features/parse) for uploaded files |
+| [Search](#search) | Through Firecrawl Cloud, no account needed | ✅ |
+| [Alexandria](#alexandria) | Through Firecrawl Cloud after `firecrawl-local login` | ✅ |
+| [Interact](#interact), [Agent](#agent) and [Monitor](https://docs.firecrawl.dev/features/monitoring) | | ✅ |
 
-| Feature | Description |
-|---------|-------------|
-| [**Search**](#search) | Search the web and get full page content from results |
-| [**Scrape**](#scrape) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
-| [**Interact**](#interact) | Scrape a page, then interact with it using AI prompts or code |
-
-**More**
-
-| Feature | Description |
-|---------|-------------|
-| [**Parse**](https://docs.firecrawl.dev/features/parse) | Turn PDFs, DOCX, and other documents into clean Markdown or structured JSON |
-| [**Agent**](#agent) | Automated data gathering, just describe what you need |
-| [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
-| [**Map**](#map) | Discover all URLs on a website instantly |
-| [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
-| [**Monitor**](https://docs.firecrawl.dev/features/monitoring) | Get notified when content on a website changes |
-| [**Firecrawl Alexandria**](#alexandria) | Give your agent 550+ data providers and specialized indexes (via Firecrawl Cloud) |
+Scraping, crawling and mapping run on your machine. By default a single-page scrape that won't load there is fetched by Firecrawl Cloud instead and marked `"source": "firecrawl-cloud"` in the result. Those Cloud calls work without an account at a limited rate, and `firecrawl-local login` puts them on your Firecrawl account. Set `FIRECRAWL_CLOUD=off` to keep everything on your machine.
 
 ---
 
-## Quick Start
+## Firecrawl Cloud
 
-Sign up at [firecrawl.dev](https://firecrawl.dev) to get your API key. Try the [playground](https://firecrawl.dev/playground) to test it out.
+Firecrawl Cloud runs everything Firecrawl Local does at scale, with no browser or machine of your own to look after. It also gives your AI agents access to far more knowledge than scraping alone, with search, Alexandria, Interact and Agent all through a single API.
+
+- **Works on the real web.** Covers 96% of the web, including JS-heavy pages and dynamic apps ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25)).
+- **Fast.** P95 latency of 3.4s across millions of pages, built for real-time AI agents and dynamic apps.
+- **LLM-ready output.** Clean markdown, structured JSON, screenshots and more, so your AI agents spend fewer tokens.
+
+[Firecrawl Keyless](https://www.firecrawl.dev/blog/firecrawl-keyless-launch) gives you 1,000 free credits a month with no API key or signup across MCP, the CLI and the API. For an API key, sign up at [firecrawl.dev](https://firecrawl.dev) and try it in the [playground](https://firecrawl.dev/playground).
 
 ### Search
 
@@ -131,7 +184,6 @@ firecrawl search "firecrawl" --limit 5
 ```
 </details>
 
-Output:
 ```json
 [
   {
@@ -149,7 +201,7 @@ Output:
 
 ### Scrape
 
-Get LLM-ready context from any website — markdown, JSON, screenshots, and more.
+Get LLM-ready context from any website as markdown, JSON, screenshots and more.
 
 ```python
 from firecrawl import Firecrawl
@@ -188,7 +240,6 @@ firecrawl https://firecrawl.dev --only-main-content
 ```
 </details>
 
-Output:
 ```
 # Firecrawl
 
@@ -259,7 +310,6 @@ firecrawl interact exec --prompt "Click the first result"
 ```
 </details>
 
-Output:
 ```json
 {
   "success": true,
@@ -268,69 +318,10 @@ Output:
 }
 ```
 
----
-
-## Power Your Agent
-
-Connect Firecrawl to any AI agent or MCP client in minutes.
-
-### Skill
-
-Give your agent easy access to real-time web data with one command.
-
-```bash
-npx -y firecrawl-cli@latest init --all --browser
-```
-
-Restart your agent after installing. Works with [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google), [OpenCode](https://opencode.ai), and more.
-
-### MCP
-
-Connect any MCP-compatible client to the web in seconds.
-
-```json
-{
-  "mcpServers": {
-    "firecrawl-mcp": {
-      "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
-      "env": {
-        "FIRECRAWL_API_KEY": "fc-YOUR_API_KEY"
-      }
-    }
-  }
-}
-```
-
-### Agent Onboarding
-
-Are you an AI agent? Fetch this skill to sign up your user, get an API key, and start building with Firecrawl.
-
-```bash
-curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
-```
-
-See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all available commands. For MCP, see [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server).
-
----
-
-## Alexandria
-
-[Firecrawl Alexandria](https://alexandria.firecrawl.dev) is knowledge infrastructure to make your agents smarter: 550+ data providers in one library (250M+ people, 75M+ companies, 41M+ research papers), plus specialized indexes and the live web, through one API, MCP, or CLI. Agents discover a tool alongside their web results, inspect its inputs and pricing, then run it to get structured data. Discovery is free; execution uses the credits listed on the tool.
-
-Install it in your agent from [alexandria.firecrawl.dev](https://alexandria.firecrawl.dev), or see the [Alexandria documentation](https://docs.firecrawl.dev/features/alexandria) for CLI, MCP, SDK, and API usage.
-
-> **Note:** Alexandria runs on [Firecrawl Cloud](https://firecrawl.dev). [Firecrawl Local](apps/local) can use it once you sign in with `firecrawl-local login`. The self-hosted server does not include it.
-
----
-
-## More Endpoints
-
 ### Agent
 
-**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and retrieves it. No URLs required.
+Describe what you need, and our AI agent searches, navigates and retrieves it with no URLs required.
 
-Agent is the evolution of our `/extract` endpoint: faster, more reliable, and doesn't require you to know the URLs upfront.
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/agent' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -340,7 +331,6 @@ curl -X POST 'https://api.firecrawl.dev/v2/agent' \
   }'
 ```
 
-Response:
 ```json
 {
   "success": true,
@@ -351,9 +341,8 @@ Response:
 }
 ```
 
-#### Agent with Structured Output
+Pass a schema to get structured data back.
 
-Use a schema to get structured data:
 ```python
 from firecrawl import Firecrawl
 from pydantic import BaseModel, Field
@@ -375,57 +364,13 @@ result = app.agent(
 
 print(result.data)
 ```
-```json
-{
-  "founders": [
-    {"name": "Eric Ciarla", "role": "Co-founder"},
-    {"name": "Nicolas Camara", "role": "Co-founder"},
-    {"name": "Caleb Peffer", "role": "Co-founder"}
-  ]
-}
-```
 
-#### Agent with URLs (Optional)
-
-Focus the agent on specific pages:
-```python
-result = app.agent(
-    urls=["https://docs.firecrawl.dev", "https://firecrawl.dev/pricing"],
-    prompt="Compare the features and pricing information"
-)
-```
-
-#### Effort Selection
-
-Set how much reasoning the agent spends on the task:
-
-| Effort | Best For |
-|--------|----------|
-| `low` | Simple lookups on one site |
-| `medium` | Multi-step tasks on a few pages |
-| `high` | Deep research, complex navigation, critical data |
-
-```python
-result = app.agent(
-    prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
-    effort="high"
-)
-```
-
-Every effort level runs the `spark-2` model. Effort changes the reasoning
-budget, not the model.
-
-#### Model
-
-Every agent run executes on `spark-2`, the default, so you don't need to set
-`model`. The retired `spark-1-pro` and `spark-1-mini` names are still accepted
-for backwards compatibility, but they are deprecated and run `spark-2`.
-
-Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
+The [Agent documentation](https://docs.firecrawl.dev/features/agent) covers starting URLs, effort levels and the `spark-2` model.
 
 ### Crawl
 
 Crawl an entire website and get content from all pages.
+
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/crawl' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -439,7 +384,8 @@ curl -X POST 'https://api.firecrawl.dev/v2/crawl' \
   }'
 ```
 
-Returns a job ID:
+It returns a job ID, and the [SDKs](#sdks) poll it for you until the crawl finishes.
+
 ```json
 {
   "success": true,
@@ -448,53 +394,10 @@ Returns a job ID:
 }
 ```
 
-#### Check Crawl Status
-```bash
-curl -X GET 'https://api.firecrawl.dev/v2/crawl/123-456-789' \
-  -H 'Authorization: Bearer fc-YOUR_API_KEY'
-```
-```json
-{
-  "status": "completed",
-  "total": 50,
-  "completed": 50,
-  "creditsUsed": 50,
-  "data": [
-    {
-      "markdown": "# Page Title\n\nContent...",
-      "metadata": {"title": "Page Title", "sourceURL": "https://..."}
-    }
-  ]
-}
-```
-
-**Note:** The [SDKs](#sdks) handle polling automatically for a better developer experience.
-
 ### Map
 
 Discover all URLs on a website instantly.
-```bash
-curl -X POST 'https://api.firecrawl.dev/v2/map' \
-  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
-  -H 'Content-Type: application/json' \
-  -d '{"url": "https://firecrawl.dev"}'
-```
 
-Response:
-```json
-{
-  "success": true,
-  "links": [
-    {"url": "https://firecrawl.dev", "title": "Firecrawl", "description": "Knowledge infrastructure to make your agents smarter"},
-    {"url": "https://firecrawl.dev/pricing", "title": "Pricing", "description": "Firecrawl pricing plans"},
-    {"url": "https://firecrawl.dev/blog", "title": "Blog", "description": "Firecrawl blog"}
-  ]
-}
-```
-
-#### Map with Search
-
-Find specific URLs within a site:
 ```python
 from firecrawl import Firecrawl
 
@@ -506,7 +409,8 @@ result = app.map("https://firecrawl.dev", search="pricing")
 
 ### Batch Scrape
 
-Scrape multiple URLs at once:
+Scrape many URLs at once.
+
 ```python
 from firecrawl import Firecrawl
 
@@ -522,18 +426,54 @@ for doc in job.data:
     print(doc.metadata.source_url)
 ```
 
----
+### Alexandria
 
-## SDKs
+[Firecrawl Alexandria](https://alexandria.firecrawl.dev) gives your AI agents 550+ data providers in one library (250M+ people, 75M+ companies, 41M+ research papers), plus specialized indexes and the live web, through one API, MCP or CLI. AI agents discover a tool alongside their web results, inspect its inputs and pricing, then run it to get structured data. Discovery is free, and running a tool uses the credits listed on it.
 
-Our SDKs provide a convenient way to use all Firecrawl features and automatically handle polling for async operations.
+Install it in your AI agent from [alexandria.firecrawl.dev](https://alexandria.firecrawl.dev), or see the [Alexandria documentation](https://docs.firecrawl.dev/features/alexandria) for CLI, MCP, SDK and API usage. Alexandria runs on Firecrawl Cloud, and Firecrawl Local can use it once you sign in with `firecrawl-local login`.
 
-### Python
+### Connect your AI agent
 
-Install the SDK:
+The Firecrawl CLI gives your AI agent every Cloud tool with one command. It works with [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google), [OpenCode](https://opencode.ai) and more, so restart your agent after installing.
+
+```bash
+npx -y firecrawl-cli@latest init --all --browser
+```
+
+Any MCP client can connect with this config.
+
+```json
+{
+  "mcpServers": {
+    "firecrawl-mcp": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "fc-YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+An AI agent can sign up its user and get an API key by fetching the onboarding skill.
+
+```bash
+curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
+```
+
+See the [Skill and CLI documentation](https://docs.firecrawl.dev/sdks/cli) for every command, and [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server) for MCP.
+
+### SDKs
+
+The SDKs cover every Firecrawl feature and poll async jobs for you. They work with Firecrawl Cloud, and with Firecrawl Local once you set the API URL to `http://localhost:3002`.
+
+#### Python
+
 ```bash
 pip install firecrawl
 ```
+
 ```python
 from firecrawl import Firecrawl
 
@@ -557,12 +497,12 @@ results = app.search("best AI data tools 2024", limit=10)
 print(results)
 ```
 
-### Node.js
+#### Node.js
 
-Install the SDK:
 ```bash
 npm install firecrawl
 ```
+
 ```javascript
 import { Firecrawl } from 'firecrawl';
 
@@ -589,292 +529,26 @@ results.data.web.forEach(result => {
 });
 ```
 
-### Go
+#### More languages
 
-Install the SDK:
-```bash
-go get github.com/firecrawl/firecrawl/apps/go-sdk
-```
-```go
-package main
+| Language | Install | Guide |
+|----------|---------|-------|
+| Go | `go get github.com/firecrawl/firecrawl/apps/go-sdk` | [Go SDK](https://docs.firecrawl.dev/sdks/go) |
+| Java | `com.firecrawl:firecrawl-java` from Maven Central | [Java SDK](https://docs.firecrawl.dev/sdks/java) |
+| Rust | `cargo add firecrawl` | [Rust SDK](https://docs.firecrawl.dev/sdks/rust) |
+| Ruby | `gem install firecrawl-sdk` | [Ruby SDK](https://docs.firecrawl.dev/sdks/ruby) |
+| .NET | `dotnet add package firecrawl-sdk` | [.NET SDK](https://docs.firecrawl.dev/sdks/dotnet) |
+| PHP | `composer require firecrawl/firecrawl-sdk` | [PHP SDK](https://docs.firecrawl.dev/sdks/php) |
+| Elixir | `{:firecrawl, "~> 1.0"}` in `mix.exs` | [Elixir SDK](https://docs.firecrawl.dev/sdks/elixir) |
 
-import (
-	"context"
-	"fmt"
-	"log"
+### Integrations
 
-	firecrawl "github.com/firecrawl/firecrawl/apps/go-sdk"
-	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
-)
-
-func main() {
-	// Create a client (reads FIRECRAWL_API_KEY from environment)
-	client, err := firecrawl.NewClient(option.WithAPIKey("fc-YOUR_API_KEY"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ctx := context.Background()
-
-	// Scrape a single URL
-	doc, err := client.Scrape(ctx, "https://firecrawl.dev", &firecrawl.ScrapeOptions{
-		Formats: []string{"markdown"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(doc.Markdown)
-
-	// Use the Agent for autonomous data gathering
-	agent, err := client.Agent(ctx, &firecrawl.AgentOptions{
-		Prompt: "Find the founders of Stripe",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(agent.Data)
-
-	// Crawl a website (automatically waits for completion)
-	job, err := client.Crawl(ctx, "https://docs.firecrawl.dev", &firecrawl.CrawlOptions{
-		Limit: firecrawl.Int(50),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Crawled %d pages\n", len(job.Data))
-
-	// Search the web
-	results, err := client.Search(ctx, "best AI data tools 2024", &firecrawl.SearchOptions{
-		Limit: firecrawl.Int(10),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(results)
-}
-```
-
-### Java
-
-Add the dependency ([Gradle/Maven](https://docs.firecrawl.dev/sdks/java#installation)):
-```groovy
-repositories {
-    mavenCentral()
-    maven { url 'https://jitpack.io' }
-}
-
-dependencies {
-    implementation 'com.github.firecrawl:firecrawl-java-sdk:2.0'
-}
-```
-```java
-import dev.firecrawl.client.FirecrawlClient;
-import dev.firecrawl.model.*;
-
-FirecrawlClient client = new FirecrawlClient(
-    System.getenv("FIRECRAWL_API_KEY"), null, null
-);
-
-// Scrape a single URL
-ScrapeParams scrapeParams = new ScrapeParams();
-scrapeParams.setFormats(new String[]{"markdown"});
-FirecrawlDocument doc = client.scrapeURL("https://firecrawl.dev", scrapeParams);
-System.out.println(doc.getMarkdown());
-
-// Use the Agent for autonomous data gathering
-AgentParams agentParams = new AgentParams("Find the founders of Stripe");
-AgentResponse start = client.createAgent(agentParams);
-AgentStatusResponse result = client.getAgentStatus(start.getId());
-System.out.println(result.getData());
-
-// Crawl a website (polls until completion)
-CrawlParams crawlParams = new CrawlParams();
-crawlParams.setLimit(50);
-CrawlStatusResponse job = client.crawlURL("https://docs.firecrawl.dev", crawlParams, null, 10);
-for (FirecrawlDocument page : job.getData()) {
-    System.out.println(page.getMetadata().get("sourceURL"));
-}
-
-// Search the web
-SearchParams searchParams = new SearchParams("best AI data tools 2024");
-searchParams.setLimit(10);
-SearchResponse results = client.search(searchParams);
-for (SearchResult r : results.getResults()) {
-    System.out.println(r.getTitle() + ": " + r.getUrl());
-}
-```
-
-### Elixir
-
-Add the dependency:
-```elixir
-def deps do
-  [
-    {:firecrawl, "~> 1.0"}
-  ]
-end
-```
-```elixir
-# Scrape a URL
-{:ok, response} = Firecrawl.scrape_and_extract_from_url(
-  url: "https://firecrawl.dev",
-  formats: ["markdown"]
-)
-
-# Crawl a website
-{:ok, response} = Firecrawl.crawl_urls(
-  url: "https://docs.firecrawl.dev",
-  limit: 50
-)
-
-# Search the web
-{:ok, response} = Firecrawl.search_and_scrape(
-  query: "best AI data tools 2024",
-  limit: 10
-)
-
-# Map URLs
-{:ok, response} = Firecrawl.map_urls(url: "https://example.com")
-```
-
-### Rust
-
-Add the dependency:
-```toml
-[dependencies]
-firecrawl = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-```
-```rust
-use firecrawl::{Client, ScrapeOptions, Format, CrawlOptions};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new("fc-YOUR_API_KEY")?;
-
-    // Scrape a URL
-    let document = client.scrape("https://firecrawl.dev", None).await?;
-    println!("{:?}", document.markdown);
-
-    // Crawl a website
-    let options = CrawlOptions {
-        limit: Some(50),
-        ..Default::default()
-    };
-    let result = client.crawl("https://docs.firecrawl.dev", options).await?;
-    println!("Crawled {} pages", result.data.len());
-
-    // Search the web
-    let response = client.search("best web scraping tools 2024", None).await?;
-    println!("{:?}", response.data);
-
-    Ok(())
-}
-```
-
-### Ruby
-
-Install the SDK:
-```bash
-gem install firecrawl-sdk
-```
-```ruby
-require "firecrawl"
-
-client = Firecrawl::Client.new(api_key: "fc-YOUR_API_KEY")
-
-# Scrape a single URL
-doc = client.scrape("https://firecrawl.dev",
-  Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"]))
-puts doc.markdown
-
-# Use the Agent for autonomous data gathering
-result = client.agent(
-  Firecrawl::Models::AgentOptions.new(prompt: "Find the founders of Stripe"))
-puts result.data
-
-# Crawl a website (automatically waits for completion)
-job = client.crawl("https://docs.firecrawl.dev",
-  Firecrawl::Models::CrawlOptions.new(limit: 50))
-job.data.each { |d| puts d.metadata.source_url }
-
-# Search the web
-results = client.search("best AI data tools 2024",
-  Firecrawl::Models::SearchOptions.new(limit: 10))
-puts results
-```
-
-### .NET
-
-Install the SDK:
-```bash
-dotnet add package firecrawl-sdk
-```
-```csharp
-using Firecrawl;
-using Firecrawl.Models;
-
-var client = new FirecrawlClient("fc-YOUR_API_KEY");
-
-// Scrape a single URL
-var doc = await client.ScrapeAsync("https://firecrawl.dev",
-    new ScrapeOptions { Formats = new List<object> { "markdown" } });
-Console.WriteLine(doc.Markdown);
-
-// Crawl a website (automatically waits for completion)
-var job = await client.CrawlAsync("https://docs.firecrawl.dev",
-    new CrawlOptions { Limit = 50 });
-Console.WriteLine($"Crawled {job.Data.Count} pages");
-
-// Search the web
-var results = await client.SearchAsync("best AI data tools 2024",
-    new SearchOptions { Limit = 10 });
-Console.WriteLine(results);
-```
-
-### PHP
-
-Install the SDK:
-```bash
-composer require firecrawl/firecrawl-sdk
-```
-```php
-<?php
-
-use Firecrawl\Client\FirecrawlClient;
-use Firecrawl\Models\ScrapeOptions;
-use Firecrawl\Models\CrawlOptions;
-use Firecrawl\Models\SearchOptions;
-
-$client = FirecrawlClient::create(apiKey: 'fc-YOUR_API_KEY');
-
-// Scrape a single URL
-$doc = $client->scrape('https://firecrawl.dev', ScrapeOptions::with(
-    formats: ['markdown'],
-));
-echo $doc->getMarkdown();
-
-// Crawl a website (automatically waits for completion)
-$job = $client->crawl('https://docs.firecrawl.dev', CrawlOptions::with(limit: 50));
-foreach ($job->getData() as $page) {
-    echo $page->getMetadata()['sourceURL'] . "\n";
-}
-
-// Search the web
-$results = $client->search('best AI data tools 2024', SearchOptions::with(limit: 10));
-print_r($results);
-```
-
----
-
-## Integrations
-
-**Agents & AI Tools**
-- [Firecrawl Skills Catalog](https://github.com/firecrawl/skills) — install with `npx skills add firecrawl/skills`
+**AI agents and tools**
+- [Firecrawl Skills Catalog](https://github.com/firecrawl/skills), installed with `npx skills add firecrawl/skills`
 - [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli)
 - [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)
 
-The build skills (integrating Firecrawl into product code) are authored in this repo under [`skills/`](./skills) and mirrored into the catalog by CI. Contributing skills? CLI skills (including the research/developer index skills) → PR [`firecrawl/cli`](https://github.com/firecrawl/cli). Build/SDK skills → PR this repo (`skills/`). Workflow skills → PR [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog ([`firecrawl/skills`](https://github.com/firecrawl/skills)) is read-only — never PR it directly.
+The build skills for integrating Firecrawl into product code live in this repo under [`skills/`](./skills), and CI mirrors them into the catalog. To contribute a skill, send CLI skills (including the research and developer index skills) to [`firecrawl/cli`](https://github.com/firecrawl/cli), build and SDK skills to this repo's `skills/` folder, and workflow skills to [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog at [`firecrawl/skills`](https://github.com/firecrawl/skills) is read-only, so never open a PR against it directly.
 
 **Platforms**
 - [Lovable](https://docs.lovable.dev/integrations/firecrawl)
@@ -885,9 +559,7 @@ The build skills (integrating Firecrawl into product code) are authored in this 
 
 **Missing your favorite tool?** [Open an issue](https://github.com/firecrawl/firecrawl/issues) and let us know!
 
----
-
-## Resources
+### Resources
 
 - [Documentation](https://docs.firecrawl.dev)
 - [API Reference](https://docs.firecrawl.dev/api-reference/introduction)
@@ -896,13 +568,15 @@ The build skills (integrating Firecrawl into product code) are authored in this 
 
 ---
 
-## Open Source vs Cloud
-
-Firecrawl is open source under the AGPL-3.0 license. The cloud version at [firecrawl.dev](https://firecrawl.dev) includes additional features:
+## Self-hosting
 
 ![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
-To run locally, see the [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md). To self-host, see [Self-Hosting Guide](https://docs.firecrawl.dev/contributing/self-host).
+[Firecrawl Local](#firecrawl-local) is the easiest way to run Firecrawl yourself. If you really want the full Firecrawl server with its own queues, workers and databases, all of it still lives in this repo and you can run it on your own infrastructure. If you'd rather not run anything yourself, [Firecrawl Cloud](#firecrawl-cloud) gives you every feature with no setup.
+
+The server runs with Docker Compose alongside Redis, PostgreSQL and a browser service, and the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) takes you from checkout to your first scrape.
+
+[SELF_HOST.md](SELF_HOST.md) lists the services and settings for the revision you checked out, and larger deployments can start from the [Kubernetes manifests](examples/kubernetes/cluster-install) or the [Helm chart](examples/kubernetes/firecrawl-helm). Alexandria runs on Firecrawl Cloud, so the self-hosted server does not include it.
 
 ---
 

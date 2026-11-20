@@ -17,7 +17,10 @@ import {
   firebillTrackRetryTotal,
   firebillTrackTotal,
 } from "../metrics";
-import type { FirebillTrackRetryJobData } from "../../queue-service";
+import type {
+  FirebillRetryJobData,
+  FirebillTrackRetryJobData,
+} from "../../queue-service";
 
 const { configState } = vi.hoisted(() => ({
   configState: {
@@ -1237,5 +1240,204 @@ describe("firebillFinalize", () => {
     answer({ success: false, ambiguous: true }, 504);
     await expect(firebillFinalize(finalizeParams)).resolves.toBe(false);
     expect(await failureCauses()).toEqual({ "finalize/ambiguous": 1 });
+  });
+});
+
+describe("firebillFinalize durable retry", () => {
+  const settle = {
+    lockId: "monitor_check-1",
+    action: "confirm" as const,
+    overrideValue: 2,
+    heldValue: 5,
+    properties: { source: "monitorCheck", jobId: "check-1" },
+  };
+  const key = "fc:finalize:confirm:monitor_check-1";
+  const jobId = "firebill|fc%3Afinalize%3Aconfirm%3Amonitor_check-1";
+  const finalizeJob = (data: unknown, attemptsMade: number) =>
+    ({
+      data,
+      attemptsMade,
+      opts: { attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS },
+    }) as unknown as Job<FirebillRetryJobData>;
+
+  it("hands a refused connection to the retry queue, which then settles it once under the same key", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(wrapped(connectionError("ECONNREFUSED")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(true);
+
+    expect(retryQueueAdd).toHaveBeenCalledTimes(1);
+    const [name, data, opts] = retryQueueAdd.mock.calls[0];
+    expect(name).toBe("finalize");
+    expect(data).toEqual({ ...settle, idempotencyKey: key });
+    expect(opts).toMatchObject({
+      jobId,
+      attempts: FIREBILL_DURABLE_RETRY_ATTEMPTS,
+      backoff: { type: "exponential" },
+    });
+    expect(await failureCauses()).toEqual({ "finalize/connection": 1 });
+    expect(await retryOutcomes()).toEqual({ "finalize/enqueued": 1 });
+    expect(logCalls("warn").map(c => c[0])).toContain(
+      "firebill did not answer the settle; handed it to the durable retry",
+    );
+
+    // firebill is back: the queued job re-sends the identical settle.
+    fetchMock.mockImplementation(async () => ok());
+    await processFirebillTrackRetry(
+      finalizeJob(JSON.parse(JSON.stringify(data)), 0),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [firstUrl, first] = fetchMock.mock.calls[0];
+    const [retryUrl, retry] = fetchMock.mock.calls[1];
+    expect(firstUrl).toBe("https://firebill.test/v1/finalize");
+    expect(retryUrl).toBe(firstUrl);
+    expect(JSON.parse(retry.body)).toEqual(JSON.parse(first.body));
+    expect(JSON.parse(retry.body)).toMatchObject({
+      lock_id: "monitor_check-1",
+      action: "confirm",
+      override_value: 2,
+      idempotency_key: key,
+    });
+    expect(await retryOutcomes()).toEqual({
+      "finalize/enqueued": 1,
+      "finalize/retried": 1,
+      "finalize/settled": 1,
+    });
+
+    // A re-finalize of the same settle that also goes unanswered finds the
+    // job already there: one job, so one settle.
+    fetchMock.mockRejectedValueOnce(wrapped(connectionError("ECONNREFUSED")));
+    retryQueueGetJob.mockResolvedValueOnce({ timestamp: 500 });
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(true);
+    expect(retryQueueAdd.mock.calls[1][2].jobId).toBe(jobId);
+    expect(await retryOutcomes()).toMatchObject({
+      "finalize/enqueue_duplicate": 1,
+    });
+  });
+
+  it.each([
+    ["a timeout", () => Promise.reject(wrapped(abortError())), "timeout"],
+    [
+      "a 503",
+      async () => new Response("unavailable", { status: 503 }),
+      "non_ok",
+    ],
+    ["a 429", async () => new Response("slow down", { status: 429 }), "non_ok"],
+    ["an ambiguous 504", async () => ambiguous(), "ambiguous"],
+  ])("hands %s to the retry", async (_label, respond, cause) => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(respond));
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(true);
+
+    expect(retryQueueAdd).toHaveBeenCalledTimes(1);
+    expect(await failureCauses()).toEqual({ [`finalize/${cause}`]: 1 });
+  });
+
+  it.each([
+    ["a 400", async () => new Response("bad", { status: 400 })],
+    ["an explicit refusal", async () => refused()],
+    [
+      "an unreadable body",
+      async () => new Response("<html>ok</html>", { status: 200 }),
+    ],
+  ])("does not retry %s, which firebill answered", async (_label, respond) => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(respond));
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(false);
+
+    expect(retryQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unanswered settle out of the retry unless the caller asks for it", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(wrapped(connectionError("ECONNREFUSED")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(firebillFinalize(settle)).resolves.toBe(false);
+
+    expect(retryQueueAdd).not.toHaveBeenCalled();
+    expect(await failureCauses()).toEqual({ "finalize/connection": 1 });
+    expect(
+      Object.hasOwn(
+        JSON.parse(fetchMock.mock.calls[0][1].body),
+        "durableRetry",
+      ),
+    ).toBe(false);
+  });
+
+  it("counts a landed hand-off as enqueued when only the duplicate read stalls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(wrapped(connectionError("ECONNREFUSED"))),
+    );
+    retryQueueGetJob.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(true);
+
+    expect(await retryOutcomes()).toEqual({ "finalize/enqueued": 1 });
+  });
+
+  it("reports false when the hand-off fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(wrapped(connectionError("ECONNREFUSED"))),
+    );
+    retryQueueAdd.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(
+      firebillFinalize({ ...settle, durableRetry: true }),
+    ).resolves.toBe(false);
+
+    expect(await retryOutcomes()).toEqual({ "finalize/enqueue_failed": 1 });
+  });
+
+  it("counts the amount it would have billed when the last re-send fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(wrapped(connectionError("ECONNREFUSED"))),
+    );
+
+    await expect(
+      processFirebillTrackRetry(
+        finalizeJob(
+          { ...settle, idempotencyKey: key },
+          FIREBILL_DURABLE_RETRY_ATTEMPTS - 1,
+        ),
+      ),
+    ).rejects.toThrow(/finalize retry 8\/8 failed/);
+
+    expect(await retryOutcomes()).toEqual({
+      "finalize/retried": 1,
+      "finalize/exhausted": 1,
+    });
+    const [value] = (await firebillTrackRetryExhaustedValueTotal.get()).values;
+    expect(value).toMatchObject({
+      value: 2,
+      labels: { operation: "finalize", feature: "unknown" },
+    });
+    const exhausted = logCalls("error").find(
+      c =>
+        c[0] ===
+        "firebill durable retry exhausted; the event may not have been billed",
+    );
+    expect(exhausted?.[1]).toMatchObject({
+      lockId: "monitor_check-1",
+      idempotencyKey: key,
+      cause: "connection",
+    });
   });
 });
