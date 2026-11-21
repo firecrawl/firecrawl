@@ -234,7 +234,8 @@ const createContext = async (
         console.log(hostname);
         return route.abort();
       }
-      return route.continue();
+      // Let the earlier media route run after the security and ad checks.
+      return route.fallback();
     },
   );
 
