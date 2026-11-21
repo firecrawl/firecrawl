@@ -420,7 +420,7 @@ def wait_for_crawl_completion(
         CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
             that carries ``job_id`` and ``timeout``)
     """
-    start_time = time.monotonic()
+    deadline = time.monotonic() + timeout if timeout is not None else None
     
     while True:
         crawl_job = get_crawl_status(
@@ -433,12 +433,15 @@ def wait_for_crawl_completion(
         if crawl_job.status in ["completed", "failed", "cancelled"]:
             return crawl_job
         
-        # Check timeout
-        if timeout is not None and (time.monotonic() - start_time) > timeout:
+        delay = poll_interval
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CrawlJobTimeoutError(job_id, timeout)
+            delay = min(poll_interval, remaining)
+        time.sleep(delay)
+        if deadline is not None and time.monotonic() >= deadline:
             raise CrawlJobTimeoutError(job_id, timeout)
-        
-        # Wait before next poll
-        time.sleep(poll_interval)
 
 
 def crawl(

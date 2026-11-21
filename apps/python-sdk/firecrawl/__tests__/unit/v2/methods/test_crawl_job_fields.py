@@ -226,3 +226,56 @@ class TestAsyncCrawlJobFields:
         assert isinstance(error, TimeoutError)
         assert error.job_id == JOB_ID
         assert error.timeout == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_client", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize(
+    "timeout,first_status,times_out,expected_sleep",
+    [
+        (1, "scraping", True, 1),
+        (0, "scraping", True, 0),
+        (0, "completed", False, 0),
+        (11, "scraping", False, 10),
+        (None, "scraping", False, 10),
+    ],
+)
+async def test_wait_crawl_poll_deadline(async_client, timeout, first_status, times_out, expected_sleep, monkeypatch):
+    from firecrawl.v2 import client_async
+
+    now = 0
+
+    def sleep(delay):
+        nonlocal now
+        now += delay
+
+    if async_client:
+        client = firecrawl.AsyncFirecrawl(api_key="fc-test")
+        transport = client._v2_client.async_http_client
+        get = AsyncMock()
+        monkeypatch.setattr(client_async, "asyncio", Mock(sleep=AsyncMock(side_effect=sleep)))
+        clock_module = client_async
+    else:
+        client = firecrawl.Firecrawl(api_key="fc-test")
+        transport = client._v2_client.http_client
+        get = Mock()
+        clock_module = crawl_module
+
+    monkeypatch.setattr(clock_module, "time", Mock(monotonic=lambda: now, sleep=sleep))
+    monkeypatch.setattr(transport, "get", get)
+    get.side_effect = [_sync_response(_status_body(status=first_status)), _sync_response(_status_body())]
+
+    async def wait():
+        result = client.wait_crawl(JOB_ID, poll_interval=10, timeout=timeout, request_timeout=3)
+        return await result if async_client else result
+
+    if times_out:
+        with pytest.raises(CrawlJobTimeoutError) as exc:
+            await wait()
+        assert (exc.value.job_id, exc.value.timeout) == (JOB_ID, timeout)
+    else:
+        assert (await wait()).status == "completed"
+
+    assert now == expected_sleep
+    assert get.call_count == (1 if times_out or first_status == "completed" else 2)
+    assert all(call.kwargs["timeout"] == 3 for call in get.call_args_list)
