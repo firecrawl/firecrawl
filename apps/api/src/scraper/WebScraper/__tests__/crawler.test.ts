@@ -181,4 +181,22 @@ describe("WebCrawler", () => {
     );
     expect(sourceValidationResult.links).toEqual([initialUrl]);
   });
+
+  it("should stop sitemap discovery when the configured file limit is reached", async () => {
+    const initialUrl = "https://example.com";
+    crawler = new WebCrawler({
+      jobId: "TEST",
+      initialUrl,
+      sitemapMaxFiles: 1,
+    });
+
+    crawler["sitemapsHit"].add(initialUrl + "/sitemap.xml");
+    const fetchSitemap = vi.fn().mockResolvedValue(0);
+    crawler["tryFetchSitemapLinks"] = fetchSitemap;
+
+    await crawler.tryGetSitemap(vi.fn(), true, true, 1000);
+
+    expect(fetchSitemap).not.toHaveBeenCalled();
+  });
+
 });

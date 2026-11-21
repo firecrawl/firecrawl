@@ -1045,6 +1045,7 @@ export function crawlToCrawler(
       sc.crawlerOptions?.maxDepth ?? 10,
     ),
     limit: sc.crawlerOptions?.limit ?? 10000,
+    sitemapMaxFiles: sc.crawlerOptions?.sitemapMaxFiles,
     generateImgAltText: sc.crawlerOptions?.generateImgAltText ?? false,
     allowBackwardCrawling: sc.crawlerOptions?.allowBackwardCrawling ?? false,
     allowExternalContentLinks:

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../../../config";
 import {
   MAX_PATH_PATTERNS,
   MAX_PATH_PATTERN_LENGTH,
@@ -1344,6 +1345,7 @@ describe("V2 Types Validation", () => {
       expect(result.includeSubdomains).toBe(true);
       expect(result.ignoreQueryParameters).toBe(true);
       expect(result.sitemap).toBe("include");
+      expect(result.sitemapMaxFiles).toBe(config.SITEMAP_MAX_FILES);
       expect(result.filterByPath).toBe(true);
       expect(result.useIndex).toBe(true);
     });
@@ -1374,6 +1376,30 @@ describe("V2 Types Validation", () => {
 
       const result = mapRequestSchema.parse(input);
       expect(result.limit).toBe(10000);
+    });
+
+    it("should accept sitemapMaxFiles within the supported range", () => {
+      const result = mapRequestSchema.parse({
+        url: "https://example.com",
+        sitemapMaxFiles: 66,
+      });
+
+      expect(result.sitemapMaxFiles).toBe(66);
+    });
+
+    it("should reject sitemapMaxFiles outside the supported range", () => {
+      expect(() =>
+        mapRequestSchema.parse({
+          url: "https://example.com",
+          sitemapMaxFiles: 0,
+        }),
+      ).toThrow();
+      expect(() =>
+        mapRequestSchema.parse({
+          url: "https://example.com",
+          sitemapMaxFiles: 1001,
+        }),
+      ).toThrow();
     });
 
     it("should handle sitemap enum values", () => {

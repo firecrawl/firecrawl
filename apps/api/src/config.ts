@@ -110,6 +110,8 @@ const configSchema = z.object({
   ENV: z.string().optional(),
   HOST: z.string().default("localhost"),
   PORT: z.coerce.number().default(3002),
+  // Default sitemap-file budget for map and crawl discovery; /v2/map can override it.
+  SITEMAP_MAX_FILES: z.coerce.number().int().min(1).max(1000).default(25),
   IS_PRODUCTION: z.stringbool().optional(),
   IS_KUBERNETES: z.stringbool().optional(),
   FIRECRAWL_APP_HOST: z.string().default("firecrawl-app-service"),
