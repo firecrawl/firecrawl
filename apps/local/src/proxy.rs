@@ -95,25 +95,19 @@ impl Relay {
       return Ok(None);
     }
 
-    let runtime = tokio::runtime::Handle::try_current()
+    tokio::runtime::Handle::try_current()
       .map_err(|_| "the outbound proxy relay needs an async runtime".to_string())?;
-    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-      .and_then(|l| l.set_nonblocking(true).map(|()| l))
-      .map_err(|e| format!("could not start the outbound proxy relay: {e}"))?;
-    let addr = listener
-      .local_addr()
-      .map_err(|e| format!("could not start the outbound proxy relay: {e}"))?;
+    let listener =
+      bind_loopback().map_err(|e| format!("could not start the outbound proxy relay: {e}"))?;
+    let addr = listener.local_addr().expect("bound listener");
     let shared = Arc::new(Shared {
       policy,
       proxies,
       lookup,
     });
     let task = {
-      let _guard = runtime.enter();
-      let listener = TcpListener::from_std(listener)
-        .map_err(|e| format!("could not start the outbound proxy relay: {e}"))?;
       let shared = shared.clone();
-      runtime.spawn(async move {
+      tokio::spawn(async move {
         loop {
           let Ok((client, _)) = listener.accept().await else {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -144,8 +138,16 @@ impl Relay {
   /// connection, so the fetcher asks here to tell a refusal from an ordinary
   /// network failure.
   pub(crate) async fn explain(&self, url: &Url) -> Option<FetchError> {
+    intercept(&self.shared, url)?;
     vet(url, &self.shared).await.err()
   }
+}
+
+/// `Fetcher::new` is not async, so bind with std and hand the socket to tokio.
+fn bind_loopback() -> std::io::Result<TcpListener> {
+  let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+  listener.set_nonblocking(true)?;
+  TcpListener::from_std(listener)
 }
 
 /// The addresses a request for `url` may reach, or why it may not.
@@ -164,8 +166,8 @@ async fn vet(url: &Url, shared: &Shared) -> Result<Vec<SocketAddr>, FetchError> 
     .await
     .unwrap_or_default();
   if resolved.is_empty() {
-    return Err(FetchError::Network(format!(
-      "'{name}' does not resolve to any address"
+    return Err(FetchError::Network(crate::netguard::name_refusal(
+      &name, false, false,
     )));
   }
   let never_reachable = resolved.iter().any(|a| guard::ip_always_blocked(a.ip()));
@@ -226,6 +228,14 @@ fn is_success(head: &[u8]) -> bool {
   matches!(head.split(|&b| b == b' ').nth(1), Some([b'2', _, _]))
 }
 
+async fn within<T>(
+  step: impl std::future::Future<Output = std::io::Result<T>>,
+) -> std::io::Result<T> {
+  tokio::time::timeout(HANDSHAKE_TIMEOUT, step)
+    .await
+    .map_err(|_| std::io::Error::other("timed out"))?
+}
+
 /// CONNECT to `target` through the upstream proxy. Returns the open tunnel,
 /// or the proxy's response head when it refused.
 async fn tunnel(
@@ -248,9 +258,7 @@ async fn tunnel(
 
 async fn serve(client: TcpStream, shared: &Shared) -> std::io::Result<()> {
   let mut client = BufReader::new(client);
-  let head = tokio::time::timeout(HANDSHAKE_TIMEOUT, read_head(&mut client))
-    .await
-    .map_err(|_| std::io::Error::other("timed out"))??;
+  let head = within(read_head(&mut client)).await?;
   let text = String::from_utf8_lossy(&head).into_owned();
   let mut lines = text.split("\r\n");
   let mut request_line = lines.next().unwrap_or("").split(' ');
@@ -262,51 +270,46 @@ async fn serve(client: TcpStream, shared: &Shared) -> std::io::Result<()> {
     return Ok(());
   };
 
-  if method.eq_ignore_ascii_case("CONNECT") {
-    let Ok(url) = Url::parse(&format!("https://{target}/")) else {
-      return Ok(());
-    };
-    // A refusal closes the connection; the fetcher asks `explain` why.
-    let Ok(addrs) = vet(&url, shared).await else {
-      return Ok(());
-    };
-    let Some(proxy) = intercept(shared, &url) else {
-      return Ok(());
-    };
-    let mut refusal = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".to_vec();
+  let connect = method.eq_ignore_ascii_case("CONNECT");
+  // A forwarded plain-HTTP request names an absolute URL:
+  // `GET http://host/path HTTP/1.1`.
+  let url = if connect {
+    Url::parse(&format!("https://{target}/"))
+  } else {
+    Url::parse(target)
+  };
+  let Ok(url) = url else {
+    return Ok(());
+  };
+  if !connect && url.scheme() != "http" {
+    return Ok(());
+  }
+  // A refusal closes the connection; the fetcher asks `explain` why.
+  let (Ok(addrs), Some(proxy)) = (vet(&url, shared).await, intercept(shared, &url)) else {
+    return Ok(());
+  };
+
+  if connect {
     for addr in addrs {
-      match tokio::time::timeout(HANDSHAKE_TIMEOUT, tunnel(&proxy, addr)).await {
-        Ok(Ok(Ok(mut upstream))) => {
+      match within(tunnel(&proxy, addr)).await {
+        Ok(Ok(mut upstream)) => {
           client
             .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
             .await?;
           let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
           return Ok(());
         }
-        Ok(Ok(Err(head))) => refusal = head,
-        _ => {}
+        // The proxy answered: another address would get the same answer.
+        Ok(Err(refusal)) => return client.write_all(&refusal).await,
+        Err(_) => {}
       }
     }
-    return client.write_all(&refusal).await;
+    return client
+      .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+      .await;
   }
 
-  // A forwarded plain-HTTP request: `GET http://host/path HTTP/1.1`.
-  let Ok(url) = Url::parse(target) else {
-    return Ok(());
-  };
-  if url.scheme() != "http" {
-    return Ok(());
-  }
-  let Ok(addrs) = vet(&url, shared).await else {
-    return Ok(());
-  };
-  let Some(proxy) = intercept(shared, &url) else {
-    return Ok(());
-  };
-  let after_scheme = &target["http://".len().min(target.len())..];
-  let path = &after_scheme[after_scheme.find(['/', '?']).unwrap_or(after_scheme.len())..];
-  let path = if path.is_empty() { "/" } else { path };
-
+  let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
   let mut request = format!("{method} http://{}{path} {version}\r\n", addrs[0]).into_bytes();
   for line in lines.take_while(|l| !l.is_empty()) {
     let name = line.split(':').next().unwrap_or("").trim();
@@ -324,12 +327,11 @@ async fn serve(client: TcpStream, shared: &Shared) -> std::io::Result<()> {
   // reach the proxy with a name that was never checked.
   request.extend_from_slice(b"Connection: close\r\n\r\n");
 
-  let mut upstream = tokio::time::timeout(HANDSHAKE_TIMEOUT, connect_upstream(&proxy))
-    .await
-    .map_err(|_| std::io::Error::other("timed out"))??;
+  let mut upstream = within(connect_upstream(&proxy)).await?;
   upstream.write_all(&request).await?;
+  let mut client = client.into_inner();
   let (mut from_upstream, _) = upstream.split();
-  let (mut from_client, mut to_client) = tokio::io::split(client);
+  let (mut from_client, mut to_client) = client.split();
   tokio::select! {
     _ = tokio::io::copy(&mut from_upstream, &mut to_client) => {}
     _ = until_closed(&mut from_client) => {}
@@ -337,13 +339,11 @@ async fn serve(client: TcpStream, shared: &Shared) -> std::io::Result<()> {
   Ok(())
 }
 
-/// The upstream proxy for `url`, when it is one the relay can use.
+/// The upstream proxy for `url`. `Relay::start` already checked that every
+/// proxy the environment sets is an http:// proxy.
 fn intercept(shared: &Shared, url: &Url) -> Option<Intercept> {
   let uri: http::Uri = url.as_str().parse().ok()?;
-  shared
-    .proxies
-    .intercept(&uri)
-    .filter(|p| p.uri().scheme_str() == Some("http"))
+  shared.proxies.intercept(&uri)
 }
 
 /// Wait for the client to close, dropping anything else it sends: only the

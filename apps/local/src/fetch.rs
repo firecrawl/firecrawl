@@ -221,6 +221,19 @@ impl Fetcher {
     })
   }
 
+  /// A failed send, with the relay's refusal named when the relay closed
+  /// the connection because of the network policy.
+  async fn send_error(&self, e: reqwest::Error) -> FetchError {
+    let url = e.url().cloned();
+    match (classify(e), &self.relay, url) {
+      (FetchError::Network(msg), Some(relay), Some(url)) => relay
+        .explain(&url)
+        .await
+        .unwrap_or(FetchError::Network(msg)),
+      (other, _, _) => other,
+    }
+  }
+
   pub fn policy(&self) -> NetworkPolicy {
     self.policy
   }
@@ -287,21 +300,6 @@ impl Fetcher {
       body: buf.freeze(),
       headers,
     })
-  }
-}
-
-impl Fetcher {
-  /// A failed send, with the relay's refusal named when the relay closed
-  /// the connection because of the network policy.
-  async fn send_error(&self, e: reqwest::Error) -> FetchError {
-    let url = e.url().cloned();
-    match (classify(e), &self.relay, url) {
-      (FetchError::Network(msg), Some(relay), Some(url)) => relay
-        .explain(&url)
-        .await
-        .unwrap_or(FetchError::Network(msg)),
-      (other, _, _) => other,
-    }
   }
 }
 

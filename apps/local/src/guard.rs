@@ -61,35 +61,20 @@ fn v6_embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     return Some(v4);
   }
   let s = ip.segments();
+  let o = ip.octets();
   // 64:ff9b::/96 NAT64, and the deprecated ::a.b.c.d compatible form.
   if (s[0] == 0x64 && s[1] == 0xff9b && s[2..6].iter().all(|x| *x == 0))
     || (s[..6].iter().all(|x| *x == 0) && (s[6] != 0 || s[7] > 1))
   {
-    return Some(Ipv4Addr::new(
-      (s[6] >> 8) as u8,
-      s[6] as u8,
-      (s[7] >> 8) as u8,
-      s[7] as u8,
-    ));
+    return Some(Ipv4Addr::new(o[12], o[13], o[14], o[15]));
   }
   // 2002::/16 6to4 carries the address in the next 32 bits.
   if s[0] == 0x2002 {
-    return Some(Ipv4Addr::new(
-      (s[1] >> 8) as u8,
-      s[1] as u8,
-      (s[2] >> 8) as u8,
-      s[2] as u8,
-    ));
+    return Some(Ipv4Addr::new(o[2], o[3], o[4], o[5]));
   }
   // 2001::/32 Teredo carries the client address inverted in the last 32 bits.
   if s[0] == 0x2001 && s[1] == 0 {
-    let (hi, lo) = (!s[6], !s[7]);
-    return Some(Ipv4Addr::new(
-      (hi >> 8) as u8,
-      hi as u8,
-      (lo >> 8) as u8,
-      lo as u8,
-    ));
+    return Some(Ipv4Addr::new(!o[12], !o[13], !o[14], !o[15]));
   }
   None
 }
