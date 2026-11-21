@@ -472,6 +472,39 @@ describe("Exchange routing", () => {
       });
     });
 
+    describe("work contact details only", () => {
+      const served = {
+        success: true,
+        creditsCost: 12,
+        data: { markdown: "# Example Person", source: { provider: "acme" } },
+      };
+
+      it("asks the Exchange for work contact details only when set", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+        const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
+        (meta.internalOptions as Record<string, unknown>).workContactOnly =
+          true;
+
+        await scrapeURLWithExchange(meta);
+
+        expect(
+          mocks.robustFetch.mock.calls[0][0].headers[
+            "x-exchange-work-contact-only"
+          ],
+        ).toBe("true");
+      });
+
+      it("sends nothing when not set", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+
+        await scrapeURLWithExchange(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS));
+
+        expect(mocks.robustFetch.mock.calls[0][0].headers).not.toHaveProperty(
+          "x-exchange-work-contact-only",
+        );
+      });
+    });
+
     it("reports a provider's missing record as THIRD_PARTY_DATA_NOT_FOUND", async () => {
       mocks.robustFetch.mockResolvedValue(
         failure("not_found", "No matching profile was found."),

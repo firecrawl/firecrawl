@@ -190,6 +190,8 @@ export async function retrieveProviders(input: {
   maxCredits?: number;
   /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
   ultrasearch?: boolean;
+  /** Leave personal email addresses and personal phone numbers out of provider results, and refuse lookups by phone number. */
+  workContactOnly?: boolean;
   /** The caller's origin and integration, when the request named them. Labels only. */
   clientOrigin?: string;
   clientIntegration?: string;
@@ -267,6 +269,7 @@ export async function retrieveProviders(input: {
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
   const ultrasearch = input.ultrasearch === true;
+  const workContactOnly = input.workContactOnly === true;
   const catalogueOnly = input.calls.every(isCatalogueRead);
   // Sent with every execution. Outside the fingerprint, so a repeat of the id replays its answer.
   const caller = {
@@ -290,6 +293,7 @@ export async function retrieveProviders(input: {
     ...(usOnly ? [{ usOnly }] : []),
     ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
     ...(ultrasearch ? [{ ultrasearch }] : []),
+    ...(workContactOnly ? [{ workContactOnly }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -382,6 +386,7 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
       ...caller,
       maximumCredits: 0,
       retryConnection: true,
@@ -563,6 +568,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -709,6 +715,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
       ...caller,
       maximumCredits,
     }).catch(error => {
