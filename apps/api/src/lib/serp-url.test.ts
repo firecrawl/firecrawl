@@ -102,6 +102,8 @@ describe("resolveSerpRedirect", () => {
     "https://example.com/url?q=https://other.com",
     "https://www.google.com/search?q=firecrawl",
     "https://docs.google.com/url?q=https://example.com",
+    "https://google.vercel.app/url?q=https://example.com",
+    "ftp://www.google.com/url?q=https://example.com",
     "https://example.com/article",
     "not a url",
   ])("leaves %s unchanged", url => {

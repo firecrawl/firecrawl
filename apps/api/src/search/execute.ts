@@ -478,16 +478,20 @@ export async function executeSearch(
       : kept?.map((result, index) => ({ ...result, position: index + 1 }));
   };
   // Upstream results can carry a Google redirect link instead of the page.
-  const resolveRedirects = <T extends { url?: string }>(
+  const resolveRedirects = <T extends { url?: string; position?: number }>(
     results: T[] | undefined,
-  ): T[] | undefined =>
-    results?.flatMap(result => {
+  ): T[] | undefined => {
+    const resolved = results?.flatMap(result => {
       if (!result.url) return [result];
       const url = resolveSerpRedirect(result.url);
       return url === null
         ? []
         : [url === result.url ? result : { ...result, url }];
     });
+    return resolved?.length === results?.length
+      ? resolved
+      : resolved?.map((result, index) => ({ ...result, position: index + 1 }));
+  };
   searchResponse.web = keepOperatorMatches(
     resolveRedirects(searchResponse.web),
   );

@@ -113,11 +113,13 @@ export function resolveSerpRedirect(url: string): string | null {
   } catch {
     return url;
   }
-  const { domainWithoutSuffix, subdomain } = parseHostname(
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url;
+  const { domainWithoutSuffix, subdomain, isIcann } = parseHostname(
     parsed.hostname.toLowerCase(),
   );
   const path = parsed.pathname.replace(/\/+$/, "");
   if (
+    isIcann !== true ||
     domainWithoutSuffix !== "google" ||
     (subdomain !== "" && subdomain !== "www") ||
     (path !== "/url" && path !== "/goto")
