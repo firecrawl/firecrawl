@@ -190,6 +190,7 @@ The defaults differ between the tools you run yourself and the API server, becau
 - **`scrape`, `crawl`, `map` and `mcp`** run for the person at the keyboard, so they can reach `localhost` and your private network. `scrape`, `crawl` and `mcp` take `--public-only` to refuse those addresses.
 - **`serve`** listens on `127.0.0.1` and refuses localhost and private addresses unless you pass `--allow-private`. Binding another address with `--host` requires `--token`, and requests are checked against an allowed Host list that `--allowed-host` adds to.
 - **Always refused.** Link-local and cloud metadata addresses are blocked in every mode, including after redirects and DNS resolution.
+- **Proxy environment variables.** The local HTTP fetcher ignores `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` so target hostnames are always resolved and checked by the local address guard rather than delegated to an upstream proxy. Firecrawl Cloud calls (`api.firecrawl.dev`) continue honoring process proxy settings.
 
 An AI agent that reads a page with hidden instructions could be steered into opening an internal URL. If your agent browses sites you do not trust, register the MCP server as `firecrawl-local mcp --public-only`.
 
