@@ -245,16 +245,15 @@ internal class FirecrawlHttpClient
                 }
 
                 var code = (int)response.StatusCode;
-                var errorMessage = ExtractErrorMessage(bodyStr, code);
-                var errorCode = ExtractErrorCode(bodyStr);
+                var (errorMessage, errorCode, details) = ExtractHttpError(bodyStr, code);
 
                 // Non-retryable client errors
                 if (code == 401)
-                    throw new AuthenticationException(errorMessage, errorCode);
+                    throw new AuthenticationException(errorMessage, errorCode, details);
                 if (code == 429)
-                    throw new RateLimitException(errorMessage, errorCode);
+                    throw new RateLimitException(errorMessage, errorCode, details);
                 if (code >= 400 && code < 500 && code != 408 && code != 409)
-                    throw new FirecrawlException(errorMessage, code, errorCode, null);
+                    throw new FirecrawlException(errorMessage, code, errorCode, details);
 
                 // Retryable errors: 408, 409, 502, 5xx
                 if (attempt < _maxRetries)
@@ -264,7 +263,7 @@ internal class FirecrawlHttpClient
                     continue;
                 }
 
-                throw new FirecrawlException(errorMessage, code, errorCode, null);
+                throw new FirecrawlException(errorMessage, code, errorCode, details);
             }
             catch (FirecrawlException)
             {
@@ -298,41 +297,33 @@ internal class FirecrawlHttpClient
         }
     }
 
-    private static string ExtractErrorMessage(string body, int statusCode)
+    private static (string Message, string? Code, JsonElement? Details) ExtractHttpError(
+        string body, int statusCode)
     {
+        var fallback = $"HTTP {statusCode} error";
         try
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return (fallback, null, null);
 
-            if (root.TryGetProperty("error", out var errorProp))
-                return errorProp.GetString() ?? $"HTTP {statusCode} error";
-            if (root.TryGetProperty("message", out var messageProp))
-                return messageProp.GetString() ?? $"HTTP {statusCode} error";
+            var message = GetStringProperty(root, "error") ?? GetStringProperty(root, "message") ?? fallback;
+            var details = root.TryGetProperty("details", out var value) && value.ValueKind != JsonValueKind.Null
+                ? value.Clone()
+                : (JsonElement?)null;
+            return (message, GetStringProperty(root, "code"), details);
         }
-        catch
+        catch (JsonException)
         {
-            // ignored
+            return (fallback, null, null);
         }
-
-        return $"HTTP {statusCode} error";
     }
 
-    private static string? ExtractErrorCode(string body)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("code", out var codeProp))
-                return codeProp.GetString();
-        }
-        catch
-        {
-            // ignored
-        }
-
-        return null;
-    }
+    private static string? GetStringProperty(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private async Task SleepWithBackoffAsync(int attempt, CancellationToken cancellationToken)
     {
