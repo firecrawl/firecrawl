@@ -34,6 +34,8 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
             data["timeout"] = options.timeout
         if options.integration is not None and options.integration.strip():
             data["integration"] = options.integration.strip()
+        if options.origin is not None and options.origin.strip():
+            data["origin"] = options.origin.strip()
         if options.location is not None:
             data["location"] = options.location.model_dump(exclude_none=True)
         if options.threat_protection is not None:

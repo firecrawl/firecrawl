@@ -1370,6 +1370,7 @@ class MapOptions(BaseModel):
     limit: Optional[int] = None
     timeout: Optional[int] = None
     integration: Optional[str] = None
+    origin: Optional[str] = None
     location: Optional["Location"] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
     audit_metadata: Optional[AuditMetadata] = None

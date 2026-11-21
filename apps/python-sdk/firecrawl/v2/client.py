@@ -1121,6 +1121,7 @@ class FirecrawlClient:
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
+        origin: Optional[str] = None,
         location: Optional[Location] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -1135,6 +1136,7 @@ class FirecrawlClient:
             limit: Maximum number of links to return
             sitemap: Sitemap usage mode ("only" | "include" | "skip")
             timeout: Request timeout in milliseconds
+            origin: Attribution tag identifying the calling wrapper or integration
             threat_protection: Enterprise per-request override of the team's
                 threat protection policy
             audit_metadata: Metadata to include in SIEM logging events
@@ -1150,10 +1152,11 @@ class FirecrawlClient:
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
             integration=integration,
+            origin=origin,
             location=location,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
-        ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, timeout, integration, location, threat_protection, audit_metadata]) else None
+        ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, timeout, integration, origin, location, threat_protection, audit_metadata]) else None
 
         return map_module.map(self.http_client, url, options)
 
