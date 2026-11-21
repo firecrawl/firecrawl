@@ -232,6 +232,7 @@ export async function providerScrapeController(
     !!token &&
     !token.startsWith("fco_") &&
     hasHostedMcpProxySecret(req.headers, config);
+  const workContactOnly = req.get("x-firecrawl-work-contact-only") === "true";
   const requestId = req.get("x-request-id") ?? randomUUID();
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
@@ -313,6 +314,7 @@ export async function providerScrapeController(
       rateLimitMultiplier: req.acuc.rate_limit_multiplier,
       ...(body.maxCredits === undefined ? {} : { maxCredits: body.maxCredits }),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
       ...(clientOrigin ? { clientOrigin } : {}),
       ...(body.integration ? { clientIntegration: body.integration } : {}),
       ...(lineage.sessionId ? { clientSession: lineage.sessionId } : {}),
