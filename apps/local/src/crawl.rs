@@ -332,6 +332,10 @@ where
 
   let mut frontier: VecDeque<(Url, u32)> = VecDeque::new();
   let mut visited: HashSet<String> = HashSet::new();
+  // Final URLs already saved. `visited` holds every URL ever queued,
+  // including the requested URL of a page not yet fetched, so it cannot
+  // tell a first save from a duplicate one.
+  let mut saved: HashSet<String> = HashSet::new();
   let mut robots_blocked = Vec::new();
 
   let enqueue = |url: Url,
@@ -410,7 +414,7 @@ where
           .and_then(|u| Url::parse(u).ok())
           .map(|u| canonical(&u));
         if let Some(key) = final_key {
-          if !visited.insert(key) {
+          if !saved.insert(key) {
             // Already saved under this URL; it does not count against the limit.
             started -= 1;
             continue;
@@ -649,6 +653,62 @@ mod tests {
         .and_then(Value::as_str),
       Some(format!("http://127.0.0.1:{port}/introduction").as_str())
     );
+  }
+
+  #[tokio::test]
+  async fn plain_pages_without_redirect_are_saved() {
+    use crate::guard::NetworkPolicy;
+    use crate::scrape::{BrowserMode, Engine, EngineConfig};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = axum::Router::new()
+      .route(
+        "/",
+        axum::routing::get(|| async {
+          axum::response::Html(
+            "<html><head><title>Home</title></head><body><p>Home</p>\
+             <a href=\"/about\">about</a></body></html>",
+          )
+        }),
+      )
+      .route(
+        "/about",
+        axum::routing::get(|| async {
+          axum::response::Html(
+            "<html><head><title>About</title></head><body><p>About</p></body></html>",
+          )
+        }),
+      );
+    tokio::spawn(async move {
+      axum::serve(listener, app).await.unwrap();
+    });
+
+    let engine = Arc::new(
+      Engine::new(EngineConfig {
+        policy: NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: BrowserMode::Never,
+      })
+      .unwrap(),
+    );
+    let opts = CrawlOptions {
+      limit: 20,
+      sitemap: "skip".into(),
+      ignore_robots_txt: true,
+      ..Default::default()
+    };
+    let outcome = crawl(engine, &format!("http://127.0.0.1:{port}/"), &opts, |_| {})
+      .await
+      .unwrap();
+    assert_eq!(outcome.pages.len(), 2, "{:?}", outcome.pages);
+    let urls: Vec<&str> = outcome
+      .pages
+      .iter()
+      .filter_map(|p| p.pointer("/metadata/url").and_then(Value::as_str))
+      .collect();
+    assert!(urls.contains(&format!("http://127.0.0.1:{port}/").as_str()));
+    assert!(urls.contains(&format!("http://127.0.0.1:{port}/about").as_str()));
   }
 
   fn scope(seed: &str, opts: CrawlOptions) -> Scope {
