@@ -386,6 +386,7 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
       ...caller,
       maximumCredits: 0,
       retryConnection: true,
