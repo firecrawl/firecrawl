@@ -278,6 +278,155 @@ class TestResolveRefs(unittest.TestCase):
         result = resolve_refs(None, {})
         self.assertIsNone(result)
 
+    def test_resolve_nested_json_pointer_without_using_only_final_segment(self):
+        """Resolve every JSON Pointer segment instead of matching its final name."""
+        schema = {
+            "type": "object",
+            "properties": {"product": {"$ref": "#/$defs/Product"}},
+        }
+        defs = {
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "unit_price": {"type": "number"},
+                    "price": {
+                        "$ref": "#/$defs/Product/properties/unit_price"
+                    },
+                },
+            },
+            # This same-named top-level definition must not shadow the nested
+            # Product.properties.unit_price target.
+            "unit_price": {"type": "string"},
+        }
+
+        result = resolve_refs(schema, defs)
+
+        self.assertEqual(
+            result["properties"]["product"]["properties"]["price"]["type"],
+            "number",
+        )
+
+    def test_resolve_json_pointer_escapes_and_percent_encoded_tokens(self):
+        """Decode URI fragments and JSON Pointer escapes before traversing."""
+        schema = {
+            "type": "object",
+            "properties": {"product": {"$ref": "#/%24defs/Product"}},
+        }
+        defs = {
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "unit_price": {"type": "number"},
+                    "price": {"$ref": "#/$defs/Product/properties/unit_price"},
+                    "path/key~part": {"type": "boolean"},
+                    "escaped": {
+                        "$ref": "#/%24defs/Product/properties/path~1key~0part"
+                    },
+                },
+            }
+        }
+
+        result = resolve_refs(schema, defs)
+        properties = result["properties"]["product"]["properties"]
+
+        self.assertEqual(properties["price"]["type"], "number")
+        self.assertEqual(properties["escaped"]["type"], "boolean")
+
+    def test_validate_json_format_preserves_ref_sibling_constraints_and_annotations(self):
+        """Keep validation siblings with their ref and preserve local annotations."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "product": {
+                    "$ref": "#/$defs/Product",
+                    "title": "Search result",
+                    "description": "The product selected for this search",
+                    "properties": {"price": {"minimum": 5}},
+                }
+            },
+            "$defs": {
+                "Product": {
+                    "title": "Product",
+                    "description": "A product",
+                    "type": "object",
+                    "properties": {
+                        "price": {"type": "number"},
+                        "name": {"type": "string"},
+                    },
+                }
+            },
+        }
+
+        result = _validate_json_format({"type": "json", "schema": schema})["schema"]
+        product_schema = result["properties"]["product"]
+
+        self.assertEqual(product_schema["$ref"], "#/$defs/Product")
+        self.assertEqual(product_schema["title"], "Search result")
+        self.assertEqual(
+            product_schema["description"], "The product selected for this search"
+        )
+        self.assertEqual(
+            result["$defs"]["Product"]["properties"]["price"]["type"],
+            "number",
+        )
+        self.assertEqual(
+            result["$defs"]["Product"]["properties"]["name"]["type"],
+            "string",
+        )
+        self.assertEqual(
+            product_schema["properties"]["price"]["minimum"],
+            5,
+        )
+
+    def test_array_pointer_tokens_must_be_canonical_ascii_indices(self):
+        """Reject array indices with leading zeroes or non-ASCII digits."""
+        defs = {
+            "Items": {
+                "type": "array",
+                "prefixItems": [{"type": "string"}, {"type": "number"}],
+            }
+        }
+
+        for token, expected_type in (("0", "string"), ("1", "number")):
+            with self.subTest(token=token):
+                result = resolve_refs({"$ref": f"#/$defs/Items/prefixItems/{token}"}, defs)
+                self.assertEqual(result["type"], expected_type)
+
+        for token in ("01", "١"):
+            with self.subTest(token=token):
+                ref = {"$ref": f"#/$defs/Items/prefixItems/{token}"}
+                self.assertEqual(resolve_refs(ref, defs), ref)
+
+    def test_validate_json_format_preserves_local_ref_annotations(self):
+        """Keep field-specific Pydantic descriptions when resolving shared refs."""
+        from pydantic import BaseModel, Field
+
+        class Product(BaseModel):
+            name: str
+
+        class Results(BaseModel):
+            promoted: Product = Field(
+                title="Promoted product", description="Only the sponsored product"
+            )
+            organic: Product = Field(
+                title="Organic product", description="Only the first unpaid product"
+            )
+
+        result = _validate_json_format(
+            {"type": "json", "schema": Results.model_json_schema()}
+        )
+        properties = result["schema"]["properties"]
+
+        self.assertEqual(
+            properties["promoted"]["description"], "Only the sponsored product"
+        )
+        self.assertEqual(
+            properties["organic"]["description"], "Only the first unpaid product"
+        )
+        self.assertEqual(properties["promoted"]["title"], "Promoted product")
+        self.assertEqual(properties["organic"]["title"], "Organic product")
+        self.assertEqual(properties["promoted"]["properties"]["name"]["type"], "string")
+
 
 class TestNormalizeSchemaForOpenAI(unittest.TestCase):
     """Tests for normalize_schema_for_openai function."""
