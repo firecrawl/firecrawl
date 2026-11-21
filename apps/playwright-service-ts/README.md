@@ -29,7 +29,7 @@ npm run dev
 ## USE
 
 ```bash
-curl -X POST http://localhost:3000/scrape \
+curl -X POST http://localhost:3003/scrape \
 -H "Content-Type: application/json" \
 -d '{
   "url": "https://example.com",

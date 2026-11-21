@@ -69,10 +69,12 @@ test("createProxyWarningEmitter does not log when silenced", () => {
     logged.push(msg);
   };
 
+  // Warnings are enabled; only the silence switch can keep this quiet. Leaving
+  // WARN_NO_PROXY false would suppress the message either way and prove nothing.
   const emitter = createProxyWarningEmitter({
     proxyServer: null,
-    warnNoProxy: "false",
-    silenceProxyWarning: "false",
+    warnNoProxy: "true",
+    silenceProxyWarning: "true",
     warnFn,
   });
 
