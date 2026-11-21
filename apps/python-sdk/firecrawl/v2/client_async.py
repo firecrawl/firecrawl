@@ -490,7 +490,7 @@ class AsyncFirecrawlClient:
             - "failed": The crawl finished with an error.
             - "cancelled": The crawl was cancelled.
         """
-        start = time.monotonic()
+        deadline = time.monotonic() + timeout if timeout is not None else None
         while True:
             status = await async_crawl.get_crawl_status(
                 self.async_http_client,
@@ -499,9 +499,15 @@ class AsyncFirecrawlClient:
             )
             if status.status in ["completed", "failed", "cancelled"]:
                 return status
-            if timeout and (time.monotonic() - start) > timeout:
+            delay = poll_interval
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise CrawlJobTimeoutError(job_id, timeout)
+                delay = min(poll_interval, remaining)
+            await asyncio.sleep(delay)
+            if deadline is not None and time.monotonic() >= deadline:
                 raise CrawlJobTimeoutError(job_id, timeout)
-            await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:
         """
