@@ -94,6 +94,7 @@ services:
 
   api:
     <<: *common-service
+    restart: unless-stopped
     environment:
       <<: *common-env
       HOST: "0.0.0.0"
@@ -149,11 +150,11 @@ services:
       - backend
     command: rabbitmq-server
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
-      retries: 3
-      start_period: 5s
+      retries: 12
+      start_period: 20s
     logging:
       driver: "json-file"
       options:
