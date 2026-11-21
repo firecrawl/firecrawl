@@ -1140,7 +1140,16 @@ func (c *Client) GetCreditUsage(ctx context.Context) (*CreditUsage, error) {
 		return nil, err
 	}
 
-	return extractDataAs[CreditUsage](raw)
+	var response struct {
+		Data *CreditUsage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode data: %v", err)}
+	}
+	if response.Data == nil {
+		return nil, &FirecrawlError{Message: "missing credit usage data"}
+	}
+	return response.Data, nil
 }
 
 // ================================================================

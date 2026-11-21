@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
@@ -44,18 +45,28 @@ func TestGetCreditUsageDecodesData(t *testing.T) {
 	}
 }
 
-func TestGetCreditUsageRejectsInvalidBalance(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"success":true,"data":{"remainingCredits":"invalid"}}`)
-	}))
-	defer server.Close()
-	client, err := NewClient(option.WithAPIURL(server.URL), option.WithAPIKey("fc-test"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := client.GetCreditUsage(context.Background())
-	var apiErr *FirecrawlError
-	if got != nil || !errors.As(err, &apiErr) {
-		t.Fatalf("got %+v, error %v; want decode error", got, err)
+func TestGetCreditUsageRejectsInvalidData(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, wantMessage string
+	}{
+		{"missing data", `{"success":true}`, "missing credit usage data"},
+		{"null data", `{"success":true,"data":null}`, "missing credit usage data"},
+		{"invalid balance", `{"success":true,"data":{"remainingCredits":"invalid"}}`, "failed to decode data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			client, err := NewClient(option.WithAPIURL(server.URL), option.WithAPIKey("fc-test"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := client.GetCreditUsage(context.Background())
+			var apiErr *FirecrawlError
+			if got != nil || !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, tc.wantMessage) {
+				t.Fatalf("got %+v, error %v; want nil usage and FirecrawlError containing %q", got, err, tc.wantMessage)
+			}
+		})
 	}
 }
