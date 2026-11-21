@@ -11,7 +11,7 @@ async function main() {
 
   try {
     // Extract story IDs from Hacker News
-    const result = await app.scrapeUrl('https://news.ycombinator.com', {
+    const result = await app.scrape('https://news.ycombinator.com', {
       formats: [
         { type: 'markdown' },
         {
@@ -24,13 +24,13 @@ async function main() {
     });
 
     console.log('✅ Success! Extracted data:');
-    console.log('Story IDs:', result.data.attributes[0].values.slice(0, 5));
-    console.log('Total stories found:', result.data.attributes[0].values.length);
+    console.log('Story IDs:', result.attributes[0].values.slice(0, 5));
+    console.log('Total stories found:', result.attributes[0].values.length);
 
     // Example with GitHub - multiple attributes
     console.log('\n🎯 Extracting multiple attributes from GitHub...');
 
-    const githubResult = await app.scrapeUrl('https://github.com/microsoft/vscode', {
+    const githubResult = await app.scrape('https://github.com/microsoft/vscode', {
       formats: [
         {
           type: 'attributes',
@@ -43,8 +43,8 @@ async function main() {
     });
 
     console.log('✅ GitHub extraction success!');
-    console.log('Test IDs found:', githubResult.data.attributes[0].values.length);
-    console.log('Components found:', githubResult.data.attributes[1].values.length);
+    console.log('Test IDs found:', githubResult.attributes[0].values.length);
+    console.log('Components found:', githubResult.attributes[1].values.length);
 
   } catch (error) {
     console.error('❌ Error:', error.message);
