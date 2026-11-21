@@ -155,10 +155,6 @@ export function isUrlAllowedByRobots(
       isAllowed = true;
     }
 
-    if (isAllowed == null) {
-      isAllowed = true;
-    }
-
     // Also check with trailing slash if URL doesn't have one
     // This catches cases like "Disallow: /path/" when user requests "/path"
     if (isAllowed && !url.endsWith("/")) {
@@ -176,7 +172,6 @@ export function isUrlAllowedByRobots(
     }
 
     if (isAllowed) {
-      //   console.log("isAllowed: true, " + userAgent);
       return true;
     }
   }
