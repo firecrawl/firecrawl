@@ -10,6 +10,7 @@ vi.mock("../config", () => ({ config: mockConfig }));
 
 import {
   detectSerpPage,
+  resolveSerpRedirect,
   serpScrapeWarning,
   serpScrapeWarningEnabled,
 } from "./serp-url";
@@ -68,6 +69,43 @@ describe("detectSerpPage", () => {
     "ftp://www.google.com/search?q=firecrawl",
   ])("ignores %s", url => {
     expect(detectSerpPage(url)).toBeNull();
+  });
+});
+
+describe("resolveSerpRedirect", () => {
+  it.each([
+    [
+      "https://www.google.com/url?q=https://example.com/article%3Fid%3D1&sa=U&ved=abc",
+      "https://example.com/article?id=1",
+    ],
+    [
+      "https://www.google.co.uk/url?sa=t&url=https%3A%2F%2Fexample.com%2Fa",
+      "https://example.com/a",
+    ],
+    [
+      "https://google.com/goto?url=https://example.com/b",
+      "https://example.com/b",
+    ],
+  ])("resolves %s", (url, target) => {
+    expect(resolveSerpRedirect(url)).toBe(target);
+  });
+
+  it.each([
+    "https://www.google.com/url?q=firecrawl",
+    "https://www.google.com/url?q=javascript:alert(1)",
+    "https://www.google.com/goto",
+  ])("drops %s", url => {
+    expect(resolveSerpRedirect(url)).toBeNull();
+  });
+
+  it.each([
+    "https://example.com/url?q=https://other.com",
+    "https://www.google.com/search?q=firecrawl",
+    "https://docs.google.com/url?q=https://example.com",
+    "https://example.com/article",
+    "not a url",
+  ])("leaves %s unchanged", url => {
+    expect(resolveSerpRedirect(url)).toBe(url);
   });
 });
 

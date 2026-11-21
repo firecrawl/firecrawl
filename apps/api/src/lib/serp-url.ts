@@ -99,6 +99,44 @@ export function detectSerpPage(url: string): SerpPage | null {
   return engineAndQuery(parsed);
 }
 
+const REDIRECT_TARGET_PARAMS = ["url", "q", "u"];
+
+/**
+ * Resolves a Google redirect link (google.*\/url?q=..., google.*\/goto?url=...)
+ * to the page it points at. Other URLs come back unchanged; a redirect link
+ * without an http(s) target comes back as null.
+ */
+export function resolveSerpRedirect(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const { domainWithoutSuffix, subdomain } = parseHostname(
+    parsed.hostname.toLowerCase(),
+  );
+  const path = parsed.pathname.replace(/\/+$/, "");
+  if (
+    domainWithoutSuffix !== "google" ||
+    (subdomain !== "" && subdomain !== "www") ||
+    (path !== "/url" && path !== "/goto")
+  ) {
+    return url;
+  }
+  for (const name of REDIRECT_TARGET_PARAMS) {
+    const value = parsed.searchParams.get(name)?.trim();
+    if (!value) continue;
+    try {
+      const target = new URL(value);
+      if (target.protocol === "http:" || target.protocol === "https:") {
+        return target.href;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export function serpScrapeWarning(engine: SerpEngine): string {
   return `This URL is a ${engine} search results page. Firecrawl's /search endpoint returns ranked results for a query without the page's ads and layout, and can scrape each result in the same call: https://docs.firecrawl.dev/features/search`;
 }
