@@ -1,15 +1,19 @@
 const mocks = vi.hoisted(() => {
-  const store = new Map<string, string>();
+  const store = new Map<string, string | Buffer>();
   return {
     store,
     config: { USE_DB_AUTHENTICATION: true, FIRE_EXCHANGE_URL: "https://x" },
     redis: {
-      set: vi.fn(async (key: string, value: string, ...args: unknown[]) => {
-        if (args.includes("NX") && store.has(key)) return null;
-        store.set(key, value);
-        return "OK";
-      }),
-      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      set: vi.fn(
+        async (key: string, value: string | Buffer, ...args: unknown[]) => {
+          if (args.includes("NX") && store.has(key)) return null;
+          store.set(key, value);
+          return "OK";
+        },
+      ),
+      getBuffer: vi.fn(async (key: string) =>
+        store.has(key) ? Buffer.from(store.get(key)!) : null,
+      ),
       del: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
     },
     request: vi.fn(),
@@ -47,6 +51,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
+import { gzipSync } from "node:zlib";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -874,7 +879,9 @@ it("forwards zero data retention to quote and execution and keeps no response", 
   expect(forwarded).toHaveLength(2);
   for (const [request] of forwarded)
     expect(request.zeroDataRetention).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  const [stored] = [...mocks.store.values()].map(raw =>
+    JSON.parse(raw.toString()),
+  );
   expect(stored).toMatchObject({ phase: "done", responseWithheld: true });
   expect(stored).not.toHaveProperty("response");
 
@@ -891,7 +898,9 @@ it("keeps and replays the response without zero data retention", async () => {
   expect(
     mocks.request.mock.calls.every(([r]) => r.zeroDataRetention === undefined),
   ).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  const [stored] = [...mocks.store.values()].map(raw =>
+    JSON.parse(raw.toString()),
+  );
   expect(stored.response).toEqual({ status: 200, body: answer });
   expect(stored).not.toHaveProperty("responseWithheld");
   expect(await run()).toMatchObject({
@@ -899,6 +908,25 @@ it("keeps and replays the response without zero data retention", async () => {
     body: answer,
     executed: false,
   });
+});
+
+it("replays a response whose record is stored gzipped", async () => {
+  const unicode = {
+    ...answer,
+    results: [{ ...call, creditsCost: 3, data: { note: "café ☃ 日本語" } }],
+  };
+  exchangeAnswers(unicode);
+  await run();
+  const [[key, raw]] = [...mocks.store];
+  mocks.store.set(key, gzipSync(raw));
+
+  expect(await run({ scrapeId: "scrape-2" })).toEqual({
+    status: 200,
+    body: unicode,
+    executed: false,
+    scrapeId: "scrape-1",
+  });
+  expect(executions()).toHaveLength(1);
 });
 
 describe("providers whose responses are not kept", () => {
@@ -920,7 +948,8 @@ describe("providers whose responses are not kept", () => {
       status: 409,
     }),
   });
-  const stored = () => [...mocks.store.values()].map(raw => JSON.parse(raw))[0];
+  const stored = () =>
+    [...mocks.store.values()].map(raw => JSON.parse(raw.toString()))[0];
   const charges = () => ({
     executions: executions().length,
     confirms: mocks.finalize.mock.calls.length,
