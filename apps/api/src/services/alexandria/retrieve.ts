@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -62,6 +64,17 @@ type Retrieval = {
   responseWithheld?: boolean;
   failure?: string;
 };
+
+const gunzipAsync = promisify(gunzip);
+// A record is stored as JSON or as gzipped JSON, told apart by the gzip header: JSON never
+// starts with those two bytes.
+const decode = async (raw: Buffer): Promise<Retrieval> =>
+  JSON.parse(
+    (raw[0] === 0x1f && raw[1] === 0x8b
+      ? await gunzipAsync(raw)
+      : raw
+    ).toString("utf8"),
+  );
 
 type ProviderRetrieval = ExchangeResponse & {
   executed: boolean;
@@ -313,8 +326,8 @@ export async function retrieveProviders(input: {
     "NX",
   );
   if (claimed !== "OK") {
-    const raw = await redisRateLimitClient.get(key);
-    const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+    const raw = await redisRateLimitClient.getBuffer(key);
+    const existing = raw ? await decode(raw) : null;
     if (
       existing?.phase === "done" &&
       existing.fingerprint === fingerprint &&
