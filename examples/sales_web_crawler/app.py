@@ -28,8 +28,10 @@ def crawl_and_analyze_url(url, objective):
     # Process each 'markdown' element individually
     combined_results = []
     for item in crawl_status:
-        if 'markdown' in item:
-            content = item['markdown']
+        # the current SDK returns crawl documents as pydantic objects with dict-style
+        # reads, not dicts, so a 'markdown' in item membership test never matches
+        content = item.get('markdown')
+        if content:
             # Analyze the content
             analysis = generate_completion(
                 "website data extractor",
