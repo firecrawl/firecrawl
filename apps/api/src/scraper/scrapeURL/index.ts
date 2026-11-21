@@ -64,6 +64,7 @@ import {
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
   PaywalledContentError,
+  ProfileUnsupportedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import {
@@ -1080,7 +1081,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof UsOnlyUnavailableError ||
               error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
-              error.error instanceof ThirdPartyDataTermsRequiredError
+              error.error instanceof ThirdPartyDataTermsRequiredError ||
+              error.error instanceof ProfileUnsupportedError
             ) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {

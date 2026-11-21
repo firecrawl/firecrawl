@@ -799,6 +799,62 @@ describe("V2 Types Validation", () => {
           "Profiles require live browsing and cannot be used with lockdown.",
         );
       });
+
+      it("should reject a profile with the screenshot format", () => {
+        expect(() =>
+          scrapeRequestSchema.parse({
+            url: "https://example.com",
+            formats: ["html", "links", "rawHtml", "screenshot"],
+            profile: { name: "login" },
+          }),
+        ).toThrow(/cannot be used with screenshots/);
+      });
+
+      it("should reject a profile with a screenshot action", () => {
+        expect(() =>
+          scrapeRequestSchema.parse({
+            url: "https://example.com",
+            actions: [{ type: "screenshot" }],
+            profile: { name: "login" },
+          }),
+        ).toThrow(/cannot be used with screenshots/);
+      });
+
+      it("should allow branding with a DOM action and a profile", () => {
+        const result = scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: [{ type: "branding" }],
+          actions: [{ type: "click", selector: "button" }],
+          profile: { name: "login" },
+        });
+        expect(result.profile?.name).toBe("login");
+      });
+
+      it("should reject branding with a pdf action and a profile", () => {
+        expect(() =>
+          scrapeRequestSchema.parse({
+            url: "https://example.com",
+            formats: [{ type: "branding" }],
+            actions: [{ type: "pdf" }],
+            profile: { name: "login" },
+          }),
+        ).toThrow(/cannot be used with screenshots/);
+      });
+
+      it("should allow a profile with scroll and wait actions and no screenshot", () => {
+        const result = scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: ["html", "links", "rawHtml"],
+          actions: [
+            { type: "scroll", direction: "down" },
+            { type: "wait", milliseconds: 1000 },
+          ],
+          profile: { name: "login" },
+          proxy: "auto",
+          location: { country: "TR" },
+        });
+        expect(result.profile?.name).toBe("login");
+      });
     });
   });
 

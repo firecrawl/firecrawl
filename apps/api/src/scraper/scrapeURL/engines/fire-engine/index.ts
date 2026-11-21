@@ -20,6 +20,7 @@ import {
   ActionError,
   AddFeatureError,
   EngineError,
+  ProfileUnsupportedError,
   DNSResolutionError,
   SiteError,
   SiteRestrictionError,
@@ -38,6 +39,7 @@ import {
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
 import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
 import { config } from "../../../../config";
+import { profileWouldLeaveChromeCdp } from "./profile-render";
 
 /** The handoff additionally requires the inbound allowlist bucket to be
  * configured: without it, a reference fire-engine returned could never be
@@ -162,6 +164,7 @@ async function performFireEngineScrape<
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||
+            error instanceof ProfileUnsupportedError ||
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
             error instanceof ProxySelectionError ||
@@ -484,6 +487,20 @@ export async function scrapeURLWithFireEngineChromeCDP(
       actions: meta.options.actions ?? undefined,
       youtubePostprocessorWillRun: shouldRunYoutubePostprocessor,
     });
+
+    // A screenshot action or blockMedia: false makes fire-engine switch the
+    // job to chrome-cdp-render, which then rejects the profile. Fail here so
+    // the retry engine is not sent the same body.
+    if (
+      profileWouldLeaveChromeCdp({
+        profile: meta.options.profile !== undefined,
+        actions,
+        blockMediaFalse: Boolean(shouldAllowMedia),
+        forceNonRender,
+      })
+    ) {
+      throw new ProfileUnsupportedError();
+    }
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {

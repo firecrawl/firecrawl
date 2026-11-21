@@ -445,6 +445,14 @@ async function scrapeControllerInner(
         });
       }
 
+      if (e.code === "SCRAPE_PROFILE_UNSUPPORTED") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (
         e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL" ||
         e.code === "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"

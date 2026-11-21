@@ -1,4 +1,5 @@
 import { ErrorCodes, TransportableError } from "../../lib/error";
+import { PROFILE_RENDER_UNSUPPORTED_MESSAGE } from "../../lib/browser-profiles";
 import { Meta } from ".";
 import { Engine, FeatureFlag } from "./engines";
 import { isSelfHosted } from "../../lib/deployment";
@@ -7,6 +8,13 @@ export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
     super(message, options);
   }
+}
+
+/** Fire-engine rejected the job because a profile was sent to the render browser. */
+export function isProfileRenderRejection(error: unknown): boolean {
+  return (
+    typeof error === "string" && error.includes("Profiles require chrome-cdp")
+  );
 }
 
 /** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
@@ -68,6 +76,26 @@ export class NoEnginesLeftError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new NoEnginesLeftError(data.fallbackList);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+/** Profile plus a screenshot or render-browser option. Not retried. */
+export class ProfileUnsupportedError extends TransportableError {
+  constructor() {
+    super("SCRAPE_PROFILE_UNSUPPORTED", PROFILE_RENDER_UNSUPPORTED_MESSAGE);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ProfileUnsupportedError();
     x.stack = data.stack;
     return x;
   }
