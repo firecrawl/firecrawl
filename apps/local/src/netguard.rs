@@ -141,7 +141,7 @@ async fn allowed_targets(
 
 /// The reason a hostname is refused. It names the kind of address the name
 /// resolved to and never the address.
-fn name_refusal(name: &str, resolved_any: bool, never_reachable: bool) -> String {
+pub(crate) fn name_refusal(name: &str, resolved_any: bool, never_reachable: bool) -> String {
   if !resolved_any {
     format!("'{name}' does not resolve to any address")
   } else if never_reachable {

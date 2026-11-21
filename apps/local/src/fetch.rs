@@ -1,5 +1,6 @@
 //! Plain HTTP fetch: one shared connection pool, guarded DNS, guarded
-//! redirects, a body size cap and charset-aware decoding.
+//! redirects, a guarded outbound proxy, a body size cap and charset-aware
+//! decoding.
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -12,7 +13,10 @@ use reqwest::{
 };
 use url::Url;
 
-use crate::guard::{self, Blocked, NetworkPolicy};
+use crate::{
+  guard::{self, Blocked, NetworkPolicy},
+  proxy::Relay,
+};
 
 /// Looks like a browser to naive checks, and names itself so a site owner can
 /// find and block it.
@@ -153,6 +157,8 @@ impl Resolve for GuardedResolver {
 pub struct Fetcher {
   client: Client,
   policy: NetworkPolicy,
+  /// Where proxied requests go, when the environment sets a proxy.
+  relay: Option<Arc<Relay>>,
 }
 
 #[derive(Default, Clone)]
@@ -163,6 +169,14 @@ pub struct FetchOptions {
 
 impl Fetcher {
   pub fn new(policy: NetworkPolicy, user_agent: Option<&str>) -> Result<Self, String> {
+    Self::with_relay(policy, user_agent, Relay::from_env(policy)?)
+  }
+
+  pub(crate) fn with_relay(
+    policy: NetworkPolicy,
+    user_agent: Option<&str>,
+    relay: Option<Arc<Relay>>,
+  ) -> Result<Self, String> {
     let mut default_headers = HeaderMap::new();
     default_headers.insert(
       ACCEPT,
@@ -182,7 +196,13 @@ impl Fetcher {
       }
     });
 
-    let client = Client::builder()
+    // reqwest would hand a proxy the target's name, which the proxy then
+    // resolves without the guard. Proxied requests go to the relay instead.
+    let mut builder = Client::builder().no_proxy();
+    if let Some(relay) = &relay {
+      builder = builder.proxy(relay.reqwest_proxy());
+    }
+    let client = builder
       .user_agent(user_agent.unwrap_or(USER_AGENT))
       .default_headers(default_headers)
       .redirect(redirect_policy)
@@ -194,7 +214,11 @@ impl Fetcher {
       .build()
       .map_err(|e| format!("could not build HTTP client: {e}"))?;
 
-    Ok(Self { client, policy })
+    Ok(Self {
+      client,
+      policy,
+      relay,
+    })
   }
 
   pub fn policy(&self) -> NetworkPolicy {
@@ -228,7 +252,10 @@ impl Fetcher {
       }
     }
 
-    let resp = req.send().await.map_err(classify)?;
+    let resp = match req.send().await {
+      Ok(resp) => resp,
+      Err(e) => return Err(self.send_error(e).await),
+    };
     let status = resp.status().as_u16();
     let final_url = resp.url().clone();
     let headers = resp.headers().clone();
@@ -260,6 +287,21 @@ impl Fetcher {
       body: buf.freeze(),
       headers,
     })
+  }
+}
+
+impl Fetcher {
+  /// A failed send, with the relay's refusal named when the relay closed
+  /// the connection because of the network policy.
+  async fn send_error(&self, e: reqwest::Error) -> FetchError {
+    let url = e.url().cloned();
+    match (classify(e), &self.relay, url) {
+      (FetchError::Network(msg), Some(relay), Some(url)) => relay
+        .explain(&url)
+        .await
+        .unwrap_or(FetchError::Network(msg)),
+      (other, _, _) => other,
+    }
   }
 }
 
