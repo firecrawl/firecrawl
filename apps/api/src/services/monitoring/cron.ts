@@ -46,9 +46,10 @@ export function parseMonitorScheduleText(input: string): string {
     }
     assertDivides(interval, 60, "Minute");
     const startMinute = parseMinuteStart(minuteMatch[2]);
-    return startMinute === 0
+    const phase = startMinute % interval;
+    return phase === 0
       ? `*/${interval} * * * *`
-      : `${startMinute}-59/${interval} * * * *`;
+      : `${phase}-59/${interval} * * * *`;
   }
 
   const hourlyMatch = text.match(
