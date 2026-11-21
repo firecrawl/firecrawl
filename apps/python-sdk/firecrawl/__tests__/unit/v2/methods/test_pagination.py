@@ -337,9 +337,10 @@ class TestCrawlPagination:
         self.mock_client.get.side_effect = [mock_response1, mock_response2]
         
         # Should continue with what we have
-        result = _fetch_all_pages(self.mock_client, "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2", [], None)
+        result, next_url = _fetch_all_pages(self.mock_client, "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2", [], None)
         
         assert len(result) == 1  # Should have the first page data
+        assert next_url == mock_response1.json.return_value["next"]
         assert self.mock_client.get.call_count == 2
 
 
@@ -778,7 +779,7 @@ class TestAsyncPagination:
         
         # Test with max_pages=2
         pagination_config = PaginationConfig(max_pages=2)
-        result = await _fetch_all_pages_async(
+        result, next_url = await _fetch_all_pages_async(
             self.mock_client,
             "https://api.firecrawl.dev/v2/crawl/test-async-123?page=2",
             [Document(**self.sample_doc)],  # 1 initial doc
@@ -786,6 +787,7 @@ class TestAsyncPagination:
         )
         
         assert len(result) == 3  # 1 initial + 2 from pages
+        assert next_url is None
         assert self.mock_client.get.call_count == 2
 
 
@@ -885,10 +887,49 @@ class TestPaginationEdgeCases:
         self.mock_client.get.side_effect = [mock_response1, mock_response2]
         
         # Should continue with what we have
-        result = _fetch_all_pages(self.mock_client, "https://api.firecrawl.dev/v2/crawl/test-123?page=2", [], None)
+        result, next_url = _fetch_all_pages(self.mock_client, "https://api.firecrawl.dev/v2/crawl/test-123?page=2", [], None)
         
         assert len(result) == 1  # Should have the first page data
+        assert next_url == mock_response1.json.return_value["next"]
         assert self.mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_client", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("failure", ["http", "invalid_json", "error_payload"])
+async def test_resume_failed_crawl_page(async_client, failure):
+    job_id = "crawl-123"
+    path = f"/v2/crawl/{job_id}"
+    second_url = f"https://api.firecrawl.dev{path}?skip=1"
+    third_url = f"https://api.firecrawl.dev{path}?skip=2"
+
+    def page(markdown, next_url):
+        response = Mock(ok=True, status_code=200)
+        response.json.return_value = {
+            "success": True, "status": "completed", "completed": 3, "total": 3,
+            "data": [{"markdown": markdown}], "next": next_url,
+        }
+        return response
+
+    failed = Mock(ok=failure != "http", status_code=503 if failure == "http" else 200)
+    if failure == "invalid_json":
+        failed.json.side_effect = ValueError("Invalid JSON")
+    elif failure == "error_payload":
+        failed.json.return_value = {"success": False, "error": "Page unavailable"}
+
+    client = AsyncMock() if async_client else Mock()
+    client.get.side_effect = [page("one", second_url), page("two", third_url), failed, page("three", None)]
+    partial = await get_crawl_status_async(client, job_id) if async_client else get_crawl_status(client, job_id)
+    assert partial.status == "completed"
+    assert partial.next == third_url
+
+    if async_client:
+        last = await get_crawl_status_page_async(client, partial.next)
+    else:
+        last = get_crawl_status_page(client, partial.next)
+    assert [doc.markdown for doc in partial.data + last.data] == ["one", "two", "three"]
+    assert last.next is None
+    assert [call.args[0] for call in client.get.call_args_list] == [path, second_url, third_url, third_url]
 
 
 class TestRunningJobPagination:

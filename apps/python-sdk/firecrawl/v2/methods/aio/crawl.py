@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from ...types import (
     CrawlRequest,
     CrawlJob,
@@ -152,12 +152,13 @@ async def get_crawl_status(
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    next_url = None if auto_paginate else payload["next"]
     if auto_paginate and payload["next"] and (documents or payload["status"] == "completed") and not (
         pagination_config
         and pagination_config.max_results is not None
         and len(documents) >= pagination_config.max_results
     ):
-        documents = await _fetch_all_pages_async(
+        documents, next_url = await _fetch_all_pages_async(
             client,
             payload["next"],
             documents,
@@ -172,7 +173,7 @@ async def get_crawl_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         warning=payload["warning"],
         data=documents,
     )
@@ -223,7 +224,7 @@ async def _fetch_all_pages_async(
     pagination_config: Optional[PaginationConfig] = None,
     *,
     request_timeout: Optional[float] = None,
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
     Fetch all pages of crawl results asynchronously.
     
@@ -235,7 +236,7 @@ async def _fetch_all_pages_async(
         request_timeout: Optional timeout (in seconds) for the underlying HTTP request
         
     Returns:
-        List of all documents from all pages
+        Collected documents and the URL of a failed page, if any.
     """
     documents = initial_documents.copy()
     current_url = next_url
@@ -264,13 +265,12 @@ async def _fetch_all_pages_async(
             import logging
             logger = logging.getLogger("firecrawl")
             logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
-            break
+            return documents, current_url
         
-        page_data = response.json()
         try:
-            page_payload = _parse_crawl_status_response(page_data)
+            page_payload = _parse_crawl_status_response(response.json())
         except Exception:
-            break
+            return documents, current_url
         
         # Add documents from this page
         for document in page_payload["data"]:
@@ -289,7 +289,7 @@ async def _fetch_all_pages_async(
         current_url = page_payload["next"]
         page_count += 1
     
-    return documents
+    return documents, None
 
 
 async def cancel_crawl(client: AsyncHttpClient, job_id: str) -> bool:

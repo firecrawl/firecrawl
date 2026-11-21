@@ -4,7 +4,7 @@ Crawling functionality for Firecrawl v2 API.
 
 import re
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from ..types import (
     CrawlRequest,
     CrawlJob,
@@ -220,12 +220,13 @@ def get_crawl_status(
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    next_url = None if auto_paginate else payload["next"]
     if auto_paginate and payload["next"] and (documents or payload["status"] == "completed") and not (
         pagination_config
         and pagination_config.max_results is not None
         and len(documents) >= pagination_config.max_results
     ):
-        documents = _fetch_all_pages(
+        documents, next_url = _fetch_all_pages(
             client,
             payload["next"],
             documents,
@@ -241,7 +242,7 @@ def get_crawl_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         warning=payload["warning"],
         data=documents,
     )
@@ -295,7 +296,7 @@ def _fetch_all_pages(
     pagination_config: Optional[PaginationConfig] = None,
     *,
     request_timeout: Optional[float] = None,
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
     Fetch all pages of crawl results.
 
@@ -307,7 +308,7 @@ def _fetch_all_pages(
         request_timeout: Optional timeout (in seconds) for the underlying HTTP request
 
     Returns:
-        List of all documents from all pages
+        Collected documents and the URL of a failed page, if any.
     """
     documents = initial_documents.copy()
     current_url = next_url
@@ -336,14 +337,12 @@ def _fetch_all_pages(
             import logging
             logger = logging.getLogger("firecrawl")
             logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
-            break
-
-        page_data = response.json()
+            return documents, current_url
 
         try:
-            page_payload = _parse_crawl_status_response(page_data)
+            page_payload = _parse_crawl_status_response(response.json())
         except Exception:
-            break
+            return documents, current_url
 
         # Add documents from this page
         for document in page_payload["data"]:
@@ -362,7 +361,7 @@ def _fetch_all_pages(
         current_url = page_payload["next"]
         page_count += 1
 
-    return documents
+    return documents, None
 
 
 def cancel_crawl(client: HttpClient, job_id: str) -> bool:
