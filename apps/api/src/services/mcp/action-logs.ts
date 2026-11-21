@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import { config } from "../../config";
 import * as schema from "../../db/schema";
 import { authCreditUsageChunkFromTeam } from "../../db/rpc";
 import { clickhouseClient } from "../../lib/clickhouse-client";
@@ -22,6 +23,10 @@ const RESOURCES = new Set([
   "https://mcp.firecrawl.dev/v2/mcp-oauth",
   "https://mcp.firecrawl.dev/v2/mcp-search",
 ]);
+// A deployment under a prefix from MCP_ACTION_LOG_RESOURCE_PREFIXES names its
+// resource as that prefix, its own name and a canonical MCP path.
+const PREFIXED_RESOURCE_SUFFIX =
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\/v2\/mcp(?:-oauth|-search)?$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
@@ -92,6 +97,19 @@ export class McpActionLogUnavailableError extends Error {}
 
 function invalid(message: string): never {
   throw new McpActionLogValidationError(message);
+}
+
+function isAcceptedResource(resource: string): boolean {
+  if (RESOURCES.has(resource)) return true;
+  return (config.MCP_ACTION_LOG_RESOURCE_PREFIXES ?? "")
+    .split(",")
+    .map(prefix => prefix.trim())
+    .some(
+      prefix =>
+        prefix !== "" &&
+        resource.startsWith(prefix) &&
+        PREFIXED_RESOURCE_SUFFIX.test(resource.slice(prefix.length)),
+    );
 }
 
 function isCanonicalApiKeyId(value: unknown): value is string {
@@ -384,7 +402,7 @@ export function normalizeMcpActionLogInput(
     );
   }
   const resource = text(payload.resource, "resource", 128, true)!;
-  if (!RESOURCES.has(resource)) {
+  if (!isAcceptedResource(resource)) {
     invalid("resource must be a canonical hosted MCP URL");
   }
   const session = lineage(payload, "session", SESSION_SOURCES);
