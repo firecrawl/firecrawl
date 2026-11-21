@@ -1,4 +1,8 @@
-import { isSameDomain, removeDuplicateUrls } from "./validateUrl";
+import {
+  isSameDomain,
+  removeDuplicateUrls,
+  resolveRedirects,
+} from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
 
 describe("isSameDomain", () => {
@@ -167,5 +171,13 @@ describe("removeDuplicateUrls", () => {
     const urls = ["https://example.com", "https://example.com/"];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual(["https://example.com"]);
+  });
+});
+
+describe("resolveRedirects", () => {
+  it("should read the redirect target from the mock when one is given", async () => {
+    await expect(
+      resolveRedirects("http://firecrawl.com", undefined, "map-redirect"),
+    ).resolves.toBe("https://www.firecrawl.dev/");
   });
 });
