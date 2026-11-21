@@ -193,6 +193,8 @@ The defaults differ between the tools you run yourself and the API server, becau
 
 An AI agent that reads a page with hidden instructions could be steered into opening an internal URL. If your agent browses sites you do not trust, register the MCP server as `firecrawl-local mcp --public-only`.
 
+An outbound proxy set with `HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY` gets the same checks. Firecrawl Local resolves and checks each target itself, then asks the proxy for the checked address, not the name. The proxy must be an `http://` URL, and a name that only the proxy can resolve is not reached.
+
 The same rules cover the browser. Chrome runs headless and sandboxed with a throwaway profile, behind a loopback proxy inside Firecrawl Local that checks every connection it opens, including redirects, subresources, script requests and WebSockets.
 
 Firecrawl Local identifies itself in its User-Agent and reads `robots.txt` when crawling, where site owners can address it as `FirecrawlLocal`.
