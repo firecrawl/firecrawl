@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import {
-  chromium,
   Browser,
   BrowserContext,
   Route,
@@ -12,6 +11,7 @@ import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
 import { Server } from 'proxy-chain';
 import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
+import { createBrowserLifecycle } from './helpers/browser-lifecycle';
 
 dotenv.config();
 
@@ -158,21 +158,11 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser;
+const lifecycle = createBrowserLifecycle();
+const ensureBrowser = lifecycle.ensureBrowser;
 
 const initializeBrowser = async () => {
-  browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-    ],
-  });
+  await ensureBrowser();
 };
 
 const createContext = async (
@@ -199,7 +189,26 @@ const createContext = async (
     server: `http://127.0.0.1:${ssrfProxyPort}`,
   };
 
-  const newContext = await browser.newContext(contextOptions);
+  const currentBrowser = await ensureBrowser();
+  let newContext: BrowserContext;
+  try {
+    newContext = await currentBrowser.newContext(contextOptions);
+  } catch (error: any) {
+    if (
+      !currentBrowser.isConnected() ||
+      error?.name === 'TargetClosedError' ||
+      error?.message?.includes('Target page, context or browser has been closed')
+    ) {
+      console.warn(
+        'Browser disconnected during context creation, retrying with fresh instance...',
+      );
+      lifecycle.invalidate(currentBrowser);
+      const freshBrowser = await ensureBrowser();
+      newContext = await freshBrowser.newContext(contextOptions);
+    } else {
+      throw error;
+    }
+  }
 
   if (BLOCK_MEDIA) {
     await newContext.route(
@@ -242,9 +251,7 @@ const createContext = async (
 };
 
 const shutdownBrowser = async () => {
-  if (browser) {
-    await browser.close();
-  }
+  await lifecycle.shutdown();
 };
 
 const isValidUrl = (urlString: string): boolean => {
@@ -326,9 +333,7 @@ const scrapePage = async (
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser) {
-      await initializeBrowser();
-    }
+    await ensureBrowser();
 
     const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
@@ -395,9 +400,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     );
   }
 
-  if (!browser) {
-    await initializeBrowser();
-  }
+  await ensureBrowser();
 
   await pageSemaphore.acquire();
 
