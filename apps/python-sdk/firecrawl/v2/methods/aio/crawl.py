@@ -1,4 +1,9 @@
-from typing import Optional, Dict, Any, List
+import logging
+import time
+from typing import Optional, Dict, Any, List, Tuple
+
+import httpx
+
 from ...types import (
     CrawlRequest,
     CrawlJob,
@@ -16,8 +21,9 @@ from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
-from ..crawl import _job_id_from_next_url
-import time
+from ..crawl import _job_id_from_next_url, _parse_crawl_continuation
+
+logger = logging.getLogger("firecrawl")
 
 
 def _prepare_crawl_request(request: CrawlRequest) -> dict:
@@ -152,12 +158,13 @@ async def get_crawl_status(
 
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    next_url = None if auto_paginate else payload["next"]
     if auto_paginate and payload["next"] and (documents or payload["status"] == "completed") and not (
         pagination_config
         and pagination_config.max_results is not None
         and len(documents) >= pagination_config.max_results
     ):
-        documents = await _fetch_all_pages_async(
+        documents, next_url = await _fetch_all_pages_async(
             client,
             payload["next"],
             documents,
@@ -172,7 +179,7 @@ async def get_crawl_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         warning=payload["warning"],
         data=documents,
     )
@@ -223,7 +230,7 @@ async def _fetch_all_pages_async(
     pagination_config: Optional[PaginationConfig] = None,
     *,
     request_timeout: Optional[float] = None,
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
     Fetch all pages of crawl results asynchronously.
     
@@ -235,7 +242,7 @@ async def _fetch_all_pages_async(
         request_timeout: Optional timeout (in seconds) for the underlying HTTP request
         
     Returns:
-        List of all documents from all pages
+        Collected documents and the URL of a failed page, if any.
     """
     documents = initial_documents.copy()
     current_url = next_url
@@ -257,20 +264,19 @@ async def _fetch_all_pages_async(
             break
         
         # Fetch next page
-        response = await client.get(current_url, timeout=request_timeout)
+        try:
+            response = await client.get(current_url, timeout=request_timeout)
+        except httpx.RequestError as exc:
+            logger.warning("Failed to fetch crawl continuation page", extra={"error_type": type(exc).__name__})
+            return documents, current_url
         
         if response.status_code >= 400:
-            # Log error but continue with what we have
-            import logging
-            logger = logging.getLogger("firecrawl")
             logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
-            break
+            return documents, current_url
         
-        page_data = response.json()
-        try:
-            page_payload = _parse_crawl_status_response(page_data)
-        except Exception:
-            break
+        page_payload = _parse_crawl_continuation(response)
+        if page_payload is None:
+            return documents, current_url
         
         # Add documents from this page
         for document in page_payload["data"]:
@@ -289,7 +295,7 @@ async def _fetch_all_pages_async(
         current_url = page_payload["next"]
         page_count += 1
     
-    return documents
+    return documents, None
 
 
 async def cancel_crawl(client: AsyncHttpClient, job_id: str) -> bool:
