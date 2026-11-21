@@ -44,7 +44,6 @@ const excludeNonMainTags = [
   "#breadcrumbs",
   ".share",
   "#share",
-  ".widget",
   "#widget",
   ".cookie",
   "#cookie",
