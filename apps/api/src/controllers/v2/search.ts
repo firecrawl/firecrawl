@@ -596,9 +596,6 @@ async function searchControllerInner(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
-        ...(req.headers["x-firecrawl-work-contact-only"] === "true"
-          ? { workContactOnly: true }
-          : {}),
       },
       logger,
     );

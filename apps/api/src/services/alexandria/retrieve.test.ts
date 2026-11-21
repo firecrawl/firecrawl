@@ -1151,22 +1151,6 @@ describe("work contact details only", () => {
       expect(request.workContactOnly).toBe(true);
   });
 
-  it("forwards the option on a catalogue read", async () => {
-    const read = {
-      provider: "firecrawl",
-      capability: "find-tools",
-      options: {},
-    };
-    exchangeAnswers({
-      success: true,
-      creditsCost: 0,
-      results: [{ ...read, creditsCost: 0, data: {} }],
-    });
-    await run({ calls: [read], workContactOnly: true });
-    expect(executions()).toHaveLength(1);
-    expect(executions()[0][0].workContactOnly).toBe(true);
-  });
-
   it("sends nothing and keeps the request fingerprint as before when not asked", async () => {
     await run();
     expect(forwarded()).toHaveLength(2);

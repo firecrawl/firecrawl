@@ -421,10 +421,6 @@ export async function scrapeController(
                       unnormalizedSourceURL: preNormalizedBody.url,
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
-                      ...(req.headers["x-firecrawl-work-contact-only"] ===
-                      "true"
-                        ? { workContactOnly: true }
-                        : {}),
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
