@@ -116,6 +116,48 @@ describe("planOperatorQuery", () => {
   });
 });
 
+describe("stripSiteOperators", () => {
+  it("removes simple site filters and collapses site-only OR groups", () => {
+    expect(
+      stripSiteOperators("electric vehicles (site:a.com OR site:b.com)"),
+    ).toBe("electric vehicles");
+    expect(
+      stripSiteOperators(
+        "electric vehicles (site:a.com OR site:b.com OR site:c.com)",
+      ),
+    ).toBe("electric vehicles");
+    expect(
+      stripSiteOperators(
+        "electric vehicles site:a.com OR site:b.com OR site:c.com",
+      ),
+    ).toBe("electric vehicles");
+    expect(
+      stripSiteOperators("electric vehicles site:a.com OR ((site:b.com))"),
+    ).toBe("electric vehicles");
+    expect(
+      stripSiteOperators("electric vehicles -site:facebook.com"),
+    ).toBe("electric vehicles");
+  });
+
+  it("preserves path-scoped site filters because structured domains lose paths", () => {
+    expect(
+      stripSiteOperators("electric vehicles site:example.com/news"),
+    ).toBe("electric vehicles site:example.com/news");
+  });
+
+  it("preserves non-site OR expressions and quoted user text", () => {
+    expect(stripSiteOperators('"rock OR roll" cats or dogs site:a.com')).toBe(
+      '"rock OR roll" cats or dogs',
+    );
+    expect(stripSiteOperators("site:a.com OR cats")).toBe(
+      "site:a.com OR cats",
+    );
+    expect(stripSiteOperators("-site:a.com OR site:b.com")).toBe(
+      "-site:a.com OR site:b.com",
+    );
+  });
+});
+
 describe("siteHostnames", () => {
   it("drops paths and duplicates", () => {
     expect(siteHostnames(["a.com/blog", "a.com", "b.com"])).toEqual([
