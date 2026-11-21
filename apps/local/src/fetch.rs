@@ -27,6 +27,12 @@ pub const USER_AGENT: &str = concat!(
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 10;
 
+/// The default Accept advertises text/markdown; some hosts route any request
+/// mentioning it to a markdown variant and 404 the page even though it
+/// exists. A 4xx to a request that advertised it gets one retry with this.
+const ACCEPT_WITHOUT_MARKDOWN: &str =
+  "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
 #[derive(Debug)]
 pub enum FetchError {
   Blocked(String),
@@ -210,6 +216,13 @@ impl Fetcher {
         tokio::time::sleep(Duration::from_millis(250)).await;
         self.fetch_once(url, opts).await
       }
+      Ok(result) if matches!(result.status, 400..=499) && advertised_markdown(opts) => {
+        let mut retry_opts = opts.clone();
+        retry_opts
+          .headers
+          .insert("accept".to_string(), ACCEPT_WITHOUT_MARKDOWN.to_string());
+        self.fetch_once(url, &retry_opts).await
+      }
       other => other,
     }
   }
@@ -270,6 +283,17 @@ fn is_transient(message: &str) -> bool {
   !(lower.contains("certificate") || lower.contains("unsupported protocol"))
 }
 
+/// Did this request advertise text/markdown? A caller-provided Accept wins
+/// over the default, so check whichever applies.
+fn advertised_markdown(opts: &FetchOptions) -> bool {
+  for (k, v) in &opts.headers {
+    if k.eq_ignore_ascii_case("accept") {
+      return v.contains("text/markdown");
+    }
+  }
+  true
+}
+
 fn classify(e: reqwest::Error) -> FetchError {
   if e.is_timeout() {
     return FetchError::Timeout;
@@ -296,6 +320,95 @@ fn classify(e: reqwest::Error) -> FetchError {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+
+  /// A stand-in host that 404s any request advertising text/markdown (the
+  /// react.dev behavior from #5956) and serves the page to anything else.
+  /// With `always_404` it 404s every request. Returns the base URL and a
+  /// counter of requests seen.
+  async fn markdown_host(always_404: bool) -> (String, Arc<AtomicUsize>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(AtomicUsize::new(0));
+    let seen_for_server = seen.clone();
+    tokio::spawn(async move {
+      while let Ok((mut socket, _)) = listener.accept().await {
+        let seen = seen_for_server.clone();
+        tokio::spawn(async move {
+          let mut buf = vec![0u8; 8192];
+          let mut request = Vec::new();
+          loop {
+            let n = socket.read(&mut buf).await.unwrap_or(0);
+            if n == 0 {
+              break;
+            }
+            request.extend_from_slice(&buf[..n]);
+            if request.windows(4).any(|w| w == b"\r\n\r\n") {
+              break;
+            }
+          }
+          seen.fetch_add(1, Ordering::SeqCst);
+          let head = String::from_utf8_lossy(&request).to_ascii_lowercase();
+          let not_found = always_404 || head.contains("text/markdown");
+          let (status, body) = if not_found {
+            ("HTTP/1.1 404 Not Found", "not found")
+          } else {
+            ("HTTP/1.1 200 OK", "<html>ok</html>")
+          };
+          let answer = format!(
+            "{status}\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+          );
+          let _ = socket.write_all(answer.as_bytes()).await;
+        });
+      }
+    });
+    (base, seen)
+  }
+
+  #[tokio::test]
+  async fn markdown_404_retries_without_markdown() {
+    let (base, seen) = markdown_host(false).await;
+    let fetcher = Fetcher::new(NetworkPolicy::AllowPrivate, None).unwrap();
+    let result = fetcher
+      .fetch(&Url::parse(&base).unwrap(), &FetchOptions::default())
+      .await
+      .unwrap();
+    assert_eq!(result.status, 200);
+    assert!(result.text().contains("ok"));
+    assert_eq!(seen.load(Ordering::SeqCst), 2);
+  }
+
+  #[tokio::test]
+  async fn genuine_404_returns_after_one_retry() {
+    let (base, seen) = markdown_host(true).await;
+    let fetcher = Fetcher::new(NetworkPolicy::AllowPrivate, None).unwrap();
+    let result = fetcher
+      .fetch(&Url::parse(&base).unwrap(), &FetchOptions::default())
+      .await
+      .unwrap();
+    assert_eq!(result.status, 404);
+    assert_eq!(seen.load(Ordering::SeqCst), 2);
+  }
+
+  #[tokio::test]
+  async fn caller_accept_without_markdown_is_not_retried() {
+    let (base, seen) = markdown_host(true).await;
+    let fetcher = Fetcher::new(NetworkPolicy::AllowPrivate, None).unwrap();
+    let opts = FetchOptions {
+      headers: HashMap::from([("accept".to_string(), "text/html,*/*;q=0.8".to_string())]),
+      ..Default::default()
+    };
+    let result = fetcher
+      .fetch(&Url::parse(&base).unwrap(), &opts)
+      .await
+      .unwrap();
+    assert_eq!(result.status, 404);
+    assert_eq!(seen.load(Ordering::SeqCst), 1);
+  }
 
   #[test]
   fn charset_header_wins() {
