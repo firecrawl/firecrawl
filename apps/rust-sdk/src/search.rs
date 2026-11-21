@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::scrape::ScrapeOptions;
 use crate::types::{
-    DiscoveredTool, Document, SearchCategory, SearchResultImage, SearchResultNews, SearchResultWeb,
-    SearchSource,
+    DiscoveredTool, Document, Format, SearchCategory, SearchResultImage, SearchResultNews,
+    SearchResultWeb, SearchSource,
 };
 use crate::FirecrawlError;
 
@@ -238,7 +238,7 @@ impl Client {
 
     /// Searches the web and scrapes the results.
     ///
-    /// This is a convenience method that enables scraping for all results.
+    /// This is a convenience method that requests Markdown scraping for web results.
     ///
     /// # Arguments
     ///
@@ -274,7 +274,10 @@ impl Client {
     ) -> Result<Vec<Document>, FirecrawlError> {
         let options = SearchOptions {
             limit: Some(limit),
-            scrape_options: Some(ScrapeOptions::default()),
+            scrape_options: Some(ScrapeOptions {
+                formats: Some(vec![Format::Markdown]),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
@@ -435,6 +438,11 @@ mod tests {
 
         let mock = server
             .mock("POST", "/v2/search")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "query": "test",
+                "limit": 5,
+                "scrapeOptions": { "formats": ["markdown"] }
+            })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -462,6 +470,65 @@ mod tests {
 
         assert_eq!(documents.len(), 1);
         assert!(documents[0].markdown.is_some());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_search_and_scrape_empty_results() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v2/search")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "scrapeOptions": { "formats": ["markdown"] }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "success": true, "data": { "web": [] } }).to_string())
+            .create();
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+
+        assert!(client
+            .search_and_scrape("test", 5)
+            .await
+            .unwrap()
+            .is_empty());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_search_and_scrape_propagates_api_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v2/search")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "scrapeOptions": { "formats": ["markdown"] }
+            })))
+            .with_status(400)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "success": false, "error": "Invalid limit" }).to_string())
+            .create();
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+
+        assert!(client.search_and_scrape("test", 0).await.is_err());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_plain_search_does_not_request_scraping() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v2/search")
+            .match_body(mockito::Matcher::Json(json!({
+                "query": "plain",
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "success": true, "data": { "web": [] } }).to_string())
+            .create();
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+
+        assert!(client.search("plain", None).await.unwrap().success);
         mock.assert();
     }
 
