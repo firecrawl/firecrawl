@@ -52,3 +52,18 @@ class TestMapRequestPreparation:
             _prepare_map_request("")
         with pytest.raises(ValueError):
             _prepare_map_request("   ")
+
+    def test_ignore_cache_forwarded(self):
+        # Regression for issue #4535: ignore_cache is documented in the /v2/map
+        # REST API but was missing from MapOptions. Verify the payload carries it.
+        opts = MapOptions(ignore_cache=True)
+        data = _prepare_map_request("https://example.com", opts)
+        assert data["ignoreCache"] is True
+
+        opts = MapOptions(ignore_cache=False)
+        data = _prepare_map_request("https://example.com", opts)
+        assert data["ignoreCache"] is False
+
+    def test_ignore_cache_omitted_when_unset(self):
+        data = _prepare_map_request("https://example.com", MapOptions(limit=10))
+        assert "ignoreCache" not in data
