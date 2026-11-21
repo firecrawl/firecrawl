@@ -99,8 +99,9 @@ impl CrawlOptions {
 }
 
 /// The wait between requests: the longer of the one asked for and the
-/// site's robots.txt Crawl-delay, so asking for a delay can never make a
-/// crawl faster than the site allows.
+/// robots.txt Crawl-delay the crawl honours (capped at 30 seconds, so a
+/// hostile robots.txt cannot stall a crawl). Asking for a delay can never
+/// make a crawl faster than it would be without one.
 fn request_delay(requested: Option<Duration>, robots: Option<Duration>) -> Option<Duration> {
   match (requested, robots) {
     (Some(asked), Some(site)) => Some(asked.max(site)),

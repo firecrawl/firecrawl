@@ -983,7 +983,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn a_crawl_delay_is_read_in_seconds_and_checked_before_the_job_starts() {
+  async fn a_crawl_delay_is_read_in_seconds_and_validated_up_front() {
     let base = start(cloud::CloudMode::Off).await;
     let http = reqwest::Client::new();
     let crawl = |delay: Value| {
