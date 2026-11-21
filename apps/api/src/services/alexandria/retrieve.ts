@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import { gunzip } from "node:zlib";
+import { gunzip, gzip } from "node:zlib";
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -65,9 +65,15 @@ type Retrieval = {
   failure?: string;
 };
 
+const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
-// A record is stored as JSON or as gzipped JSON, told apart by the gzip header: JSON never
-// starts with those two bytes.
+// A record is stored as JSON or, once it carries a response worth shrinking, as gzipped JSON.
+// The two are told apart by the gzip header: JSON never starts with those two bytes.
+const COMPRESS_FROM_CHARS = 1024;
+const encode = async (record: Retrieval): Promise<string | Buffer> => {
+  const json = JSON.stringify(record);
+  return json.length < COMPRESS_FROM_CHARS ? json : gzipAsync(json);
+};
 const decode = async (raw: Buffer): Promise<Retrieval> =>
   JSON.parse(
     (raw[0] === 0x1f && raw[1] === 0x8b
@@ -310,13 +316,8 @@ export async function retrieveProviders(input: {
     deadline,
     scrapeId: input.scrapeId,
   };
-  const write = (next: Retrieval) =>
-    redisRateLimitClient.set(
-      key,
-      JSON.stringify(next),
-      "EX",
-      RETENTION_SECONDS,
-    );
+  const write = async (next: Retrieval) =>
+    redisRateLimitClient.set(key, await encode(next), "EX", RETENTION_SECONDS);
 
   const claimed = await redisRateLimitClient.set(
     key,

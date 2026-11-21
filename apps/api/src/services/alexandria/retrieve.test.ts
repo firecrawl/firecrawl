@@ -51,7 +51,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -78,6 +78,15 @@ const run = (overrides: Record<string, unknown> = {}) =>
     rateLimitMultiplier: 1,
     ...overrides,
   });
+const gzipped = (raw: string | Buffer) => {
+  const bytes = Buffer.from(raw);
+  return bytes[0] === 0x1f && bytes[1] === 0x8b;
+};
+/** Every stored record, read from whichever form it was stored in. */
+const records = () =>
+  [...mocks.store.values()].map(raw =>
+    JSON.parse((gzipped(raw) ? gunzipSync(Buffer.from(raw)) : raw).toString()),
+  );
 const executions = () =>
   mocks.request.mock.calls.filter(([arg]) => arg.path === "/v1/retrieve");
 const exchangeAnswers = (
@@ -395,7 +404,7 @@ it("allows standalone Bash source loading and forwards credentials only to execu
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(JSON.stringify(records())).not.toContain("Bearer caller");
 });
 
 it.each([
@@ -740,7 +749,7 @@ it("forwards standalone SQL credentials only to execution without retaining them
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(JSON.stringify(records())).not.toContain("Bearer caller");
 });
 it.each([
   { name: "SQL first", calls: [sqlCall, call] },
@@ -798,7 +807,7 @@ it("forwards standalone enrichment credentials only to execution without retaini
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(JSON.stringify(records())).not.toContain("Bearer caller");
 });
 it.each([
   { name: "enrichment first", calls: [enrichmentCall, call] },
@@ -850,7 +859,7 @@ it("forwards credentials with execution for any provider, never to quote or auth
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(JSON.stringify(records())).not.toContain("Bearer caller");
 });
 
 it("sends no credentials when the caller supplied none", async () => {
@@ -879,9 +888,7 @@ it("forwards zero data retention to quote and execution and keeps no response", 
   expect(forwarded).toHaveLength(2);
   for (const [request] of forwarded)
     expect(request.zeroDataRetention).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw =>
-    JSON.parse(raw.toString()),
-  );
+  const [stored] = records();
   expect(stored).toMatchObject({ phase: "done", responseWithheld: true });
   expect(stored).not.toHaveProperty("response");
 
@@ -898,9 +905,7 @@ it("keeps and replays the response without zero data retention", async () => {
   expect(
     mocks.request.mock.calls.every(([r]) => r.zeroDataRetention === undefined),
   ).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw =>
-    JSON.parse(raw.toString()),
-  );
+  const [stored] = records();
   expect(stored.response).toEqual({ status: 200, body: answer });
   expect(stored).not.toHaveProperty("responseWithheld");
   expect(await run()).toMatchObject({
@@ -908,6 +913,47 @@ it("keeps and replays the response without zero data retention", async () => {
     body: answer,
     executed: false,
   });
+});
+
+it("stores a large response gzipped and replays it unchanged", async () => {
+  const large = {
+    ...answer,
+    results: [
+      {
+        ...call,
+        creditsCost: 3,
+        data: {
+          observations: Array.from({ length: 400 }, (_, i) => ({
+            date: `2020-01-${String((i % 28) + 1).padStart(2, "0")}`,
+            value: `café ☃ ${i}`,
+          })),
+        },
+      },
+    ],
+  };
+  exchangeAnswers(large);
+  await run();
+
+  const [raw] = [...mocks.store.values()];
+  expect(gzipped(raw)).toBe(true);
+  const [stored] = records();
+  expect(stored.response).toEqual({ status: 200, body: large });
+  expect(raw.length).toBeLessThan(JSON.stringify(stored).length / 4);
+
+  expect(await run({ scrapeId: "scrape-2" })).toEqual({
+    status: 200,
+    body: large,
+    executed: false,
+    scrapeId: "scrape-1",
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("stores a small record as plain JSON", async () => {
+  await run();
+  const [raw] = [...mocks.store.values()];
+  expect(gzipped(raw)).toBe(false);
+  expect(JSON.parse(raw.toString())).toMatchObject({ phase: "done" });
 });
 
 it("replays a response whose record is stored gzipped", async () => {
@@ -948,8 +994,7 @@ describe("providers whose responses are not kept", () => {
       status: 409,
     }),
   });
-  const stored = () =>
-    [...mocks.store.values()].map(raw => JSON.parse(raw.toString()))[0];
+  const stored = () => records()[0];
   const charges = () => ({
     executions: executions().length,
     confirms: mocks.finalize.mock.calls.length,
