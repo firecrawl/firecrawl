@@ -124,6 +124,8 @@ interface SearchContext {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   /** Set when the request legitimately opted out of Safe Mode at the controller. */
   safeModeBypassed?: boolean;
+  /** Asks third-party data providers behind scraped results to leave personal email addresses and personal phone numbers out. */
+  workContactOnly?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -778,6 +780,7 @@ export async function executeSearch(
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
+        ...(context.workContactOnly ? { workContactOnly: true } : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
