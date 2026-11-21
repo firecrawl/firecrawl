@@ -89,6 +89,12 @@ export function createBrowserLifecycle(
       }
     },
     shutdown: async () => {
+      // A launch already in flight will assign `browser` after this point, so
+      // closing only what the slot holds now would leave that one running with
+      // nothing left to close it.
+      if (browserInitPromise) {
+        await browserInitPromise.catch(() => {});
+      }
       if (browser) {
         const current = browser;
         browser = null;

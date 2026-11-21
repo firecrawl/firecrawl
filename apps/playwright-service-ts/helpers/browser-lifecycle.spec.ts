@@ -217,6 +217,36 @@ test('the service recovers from a real browser process exit', async () => {
   await lifecycle.shutdown();
 });
 
+test('shutdown waits for an in-flight launch instead of leaking it', async () => {
+  const launched: FakeBrowser[] = [];
+  let releaseLaunch: () => void = () => {};
+  const launchGate = new Promise<void>((resolve) => {
+    releaseLaunch = resolve;
+  });
+
+  const lifecycle = createBrowserLifecycle(async () => {
+    const browser = new FakeBrowser();
+    launched.push(browser);
+    await launchGate;
+    return browser.asBrowser();
+  });
+
+  // A relaunch is underway when shutdown arrives — the slot is still empty.
+  const pending = lifecycle.ensureBrowser();
+  const stopping = lifecycle.shutdown();
+  // Let the in-flight launch finish; shutdown is already waiting on it.
+  releaseLaunch();
+  await Promise.all([pending, stopping]);
+
+  assert.equal(launched.length, 1);
+  assert.equal(
+    launched[0].closed,
+    true,
+    'a browser launched during shutdown must still be closed',
+  );
+  assert.equal(lifecycle.current(), null, 'the slot must stay empty after shutdown');
+});
+
 test('shutdown is a no-op when nothing was launched', async () => {
   const lifecycle = createBrowserLifecycle();
   await lifecycle.shutdown();
