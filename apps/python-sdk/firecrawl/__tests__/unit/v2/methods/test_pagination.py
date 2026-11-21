@@ -2,6 +2,8 @@
 Unit tests for Firecrawl v2 pagination functionality.
 """
 
+import httpx
+import requests
 import pytest
 import time
 from unittest.mock import Mock, patch, AsyncMock
@@ -896,8 +898,8 @@ class TestPaginationEdgeCases:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("async_client", [False, True], ids=["sync", "async"])
-@pytest.mark.parametrize("failure", ["http", "invalid_json", "error_payload"])
-async def test_resume_failed_crawl_page(async_client, failure):
+@pytest.mark.parametrize("failure", ["http", "transport", "invalid_json", "error_payload", "invalid_shape"])
+async def test_resume_failed_crawl_page(async_client, failure, caplog):
     job_id = "crawl-123"
     path = f"/v2/crawl/{job_id}"
     second_url = f"https://api.firecrawl.dev{path}?skip=1"
@@ -912,7 +914,11 @@ async def test_resume_failed_crawl_page(async_client, failure):
         return response
 
     failed = Mock(ok=failure != "http", status_code=503 if failure == "http" else 200)
-    if failure == "invalid_json":
+    if failure == "transport":
+        failed = httpx.ConnectError(third_url) if async_client else requests.ConnectionError(third_url)
+    elif failure == "invalid_shape":
+        failed.json.return_value = []
+    elif failure == "invalid_json":
         failed.json.side_effect = ValueError("Invalid JSON")
     elif failure == "error_payload":
         failed.json.return_value = {"success": False, "error": "Page unavailable"}
@@ -922,6 +928,8 @@ async def test_resume_failed_crawl_page(async_client, failure):
     partial = await get_crawl_status_async(client, job_id) if async_client else get_crawl_status(client, job_id)
     assert partial.status == "completed"
     assert partial.next == third_url
+    assert any(record.name == "firecrawl" and record.levelname == "WARNING" for record in caplog.records)
+    assert third_url not in caplog.text
 
     if async_client:
         last = await get_crawl_status_page_async(client, partial.next)
@@ -930,6 +938,30 @@ async def test_resume_failed_crawl_page(async_client, failure):
     assert [doc.markdown for doc in partial.data + last.data] == ["one", "two", "three"]
     assert last.next is None
     assert [call.args[0] for call in client.get.call_args_list] == [path, second_url, third_url, third_url]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_client", [False, True], ids=["sync", "async"])
+async def test_crawl_page_unexpected_errors_propagate(async_client):
+    client = AsyncMock() if async_client else Mock()
+    transport_error = httpx.ConnectError if async_client else requests.ConnectionError
+    client.get.side_effect = transport_error("first page unavailable")
+    with pytest.raises(transport_error):
+        if async_client:
+            await get_crawl_status_async(client, "test")
+        else:
+            get_crawl_status(client, "test")
+
+    first = Mock(ok=True, status_code=200)
+    first.json.return_value = {"success": True, "status": "completed", "next": "/v2/crawl/test?skip=1"}
+    second = Mock(ok=True, status_code=200)
+    second.json.side_effect = RuntimeError("unexpected decoder failure")
+    client.get.side_effect = [first, second]
+    with pytest.raises(RuntimeError, match="unexpected decoder failure"):
+        if async_client:
+            await get_crawl_status_async(client, "test")
+        else:
+            get_crawl_status(client, "test")
 
 
 class TestRunningJobPagination:

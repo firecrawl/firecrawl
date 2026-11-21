@@ -1,4 +1,9 @@
+import logging
+import time
 from typing import Optional, Dict, Any, List, Tuple
+
+import httpx
+
 from ...types import (
     CrawlRequest,
     CrawlJob,
@@ -16,8 +21,9 @@ from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
-from ..crawl import _job_id_from_next_url
-import time
+from ..crawl import _job_id_from_next_url, _parse_crawl_continuation
+
+logger = logging.getLogger("firecrawl")
 
 
 def _prepare_crawl_request(request: CrawlRequest) -> dict:
@@ -258,18 +264,18 @@ async def _fetch_all_pages_async(
             break
         
         # Fetch next page
-        response = await client.get(current_url, timeout=request_timeout)
+        try:
+            response = await client.get(current_url, timeout=request_timeout)
+        except httpx.RequestError:
+            logger.warning("Failed to fetch crawl continuation page")
+            return documents, current_url
         
         if response.status_code >= 400:
-            # Log error but continue with what we have
-            import logging
-            logger = logging.getLogger("firecrawl")
             logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
             return documents, current_url
         
-        try:
-            page_payload = _parse_crawl_status_response(response.json())
-        except Exception:
+        page_payload = _parse_crawl_continuation(response)
+        if page_payload is None:
             return documents, current_url
         
         # Add documents from this page
