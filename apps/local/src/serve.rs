@@ -482,6 +482,11 @@ async fn crawl_handler(
       )
     }
   };
+  // Refuse a bad delay now, as the Firecrawl API does, rather than start a
+  // job that can only fail.
+  if let Err(e) = opts.requested_delay() {
+    return scrape_error(e);
+  }
   let (id, job) = new_job(&state, 0);
   let engine = state.engine.clone();
   let task_job = job.clone();
@@ -975,6 +980,31 @@ mod tests {
       .await
       .unwrap();
     assert_eq!(answer.status().as_u16(), 207);
+  }
+
+  #[tokio::test]
+  async fn a_crawl_delay_is_read_in_seconds_and_checked_before_the_job_starts() {
+    let base = start(cloud::CloudMode::Off).await;
+    let http = reqwest::Client::new();
+    let crawl = |delay: Value| {
+      http
+        .post(format!("{base}/v2/crawl"))
+        .header("content-type", "application/json")
+        .body(json!({ "url": "http://127.0.0.1:9/", "delay": delay }).to_string())
+        .send()
+    };
+    // Fractions of a second are allowed, as on Firecrawl cloud.
+    let half_second = crawl(json!(0.5)).await.unwrap();
+    assert_eq!(half_second.status().as_u16(), 200);
+    // Over a minute is refused up front, as on Firecrawl cloud.
+    let too_long = crawl(json!(61)).await.unwrap();
+    assert_eq!(too_long.status().as_u16(), 400);
+    let body: Value = too_long.json().await.unwrap();
+    assert_eq!(body["success"], false);
+    assert!(
+      body["error"].as_str().unwrap().contains("seconds"),
+      "{body}"
+    );
   }
 
   #[test]
