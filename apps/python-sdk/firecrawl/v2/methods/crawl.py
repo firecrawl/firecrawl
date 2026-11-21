@@ -356,8 +356,8 @@ def _fetch_all_pages(
         # Fetch next page
         try:
             response = client.get(current_url, timeout=request_timeout)
-        except requests.RequestException:
-            logger.warning("Failed to fetch crawl continuation page")
+        except requests.RequestException as exc:
+            logger.warning("Failed to fetch crawl continuation page", extra={"error_type": type(exc).__name__})
             return documents, current_url
 
         if not response.ok:

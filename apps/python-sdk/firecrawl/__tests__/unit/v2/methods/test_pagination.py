@@ -929,6 +929,8 @@ async def test_resume_failed_crawl_page(async_client, failure, caplog):
     assert partial.status == "completed"
     assert partial.next == third_url
     assert any(record.name == "firecrawl" and record.levelname == "WARNING" for record in caplog.records)
+    if failure == "transport":
+        assert caplog.records[-1].error_type == type(failed).__name__
     assert third_url not in caplog.text
 
     if async_client:

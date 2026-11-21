@@ -266,8 +266,8 @@ async def _fetch_all_pages_async(
         # Fetch next page
         try:
             response = await client.get(current_url, timeout=request_timeout)
-        except httpx.RequestError:
-            logger.warning("Failed to fetch crawl continuation page")
+        except httpx.RequestError as exc:
+            logger.warning("Failed to fetch crawl continuation page", extra={"error_type": type(exc).__name__})
             return documents, current_url
         
         if response.status_code >= 400:
