@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import {
-  chromium,
   Browser,
   BrowserContext,
   Route,
@@ -12,6 +11,7 @@ import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
 import { Server } from 'proxy-chain';
 import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
+import { createBrowserLifecycle } from './helpers/browser-lifecycle';
 
 dotenv.config();
 
@@ -158,54 +158,8 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser | null = null;
-let browserInitPromise: Promise<Browser> | null = null;
-
-const ensureBrowser = async (): Promise<Browser> => {
-  if (browser && browser.isConnected()) {
-    return browser;
-  }
-
-  if (!browserInitPromise) {
-    browserInitPromise = (async () => {
-      try {
-        if (browser) {
-          try {
-            await browser.close().catch(() => {});
-          } catch (_) {}
-          browser = null;
-        }
-
-        const newBrowser = await chromium.launch({
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-          ],
-        });
-
-        newBrowser.on('disconnected', () => {
-          console.warn('Browser disconnected, invalidating active instance');
-          if (browser === newBrowser) {
-            browser = null;
-          }
-        });
-
-        browser = newBrowser;
-        return newBrowser;
-      } finally {
-        browserInitPromise = null;
-      }
-    })();
-  }
-
-  return browserInitPromise;
-};
+const lifecycle = createBrowserLifecycle();
+const ensureBrowser = lifecycle.ensureBrowser;
 
 const initializeBrowser = async () => {
   await ensureBrowser();
@@ -248,9 +202,7 @@ const createContext = async (
       console.warn(
         'Browser disconnected during context creation, retrying with fresh instance...',
       );
-      if (browser === currentBrowser) {
-        browser = null;
-      }
+      lifecycle.invalidate(currentBrowser);
       const freshBrowser = await ensureBrowser();
       newContext = await freshBrowser.newContext(contextOptions);
     } else {
@@ -299,11 +251,7 @@ const createContext = async (
 };
 
 const shutdownBrowser = async () => {
-  if (browser) {
-    const current = browser;
-    browser = null;
-    await current.close().catch(() => {});
-  }
+  await lifecycle.shutdown();
 };
 
 const isValidUrl = (urlString: string): boolean => {
