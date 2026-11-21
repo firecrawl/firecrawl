@@ -76,3 +76,5 @@ keywords = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["firecrawl*"]
+exclude = ["tests*", "*.__tests__", "*.__tests__.*"]

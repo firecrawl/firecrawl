@@ -521,10 +521,11 @@ describe("scrapeInteractController", () => {
             openai: {
               store: false,
               reasoningEffort: "medium",
+              reasoningSummary: null,
             },
           },
           temperature: undefined,
-          experimental_telemetry: { isEnabled: false },
+          telemetry: { isEnabled: false },
         }),
       );
     });

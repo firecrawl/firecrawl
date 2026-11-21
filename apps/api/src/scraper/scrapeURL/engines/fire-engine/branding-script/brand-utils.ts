@@ -156,25 +156,79 @@ export const extractBrandName = (): string => {
   const title = document.title;
   const h1 = document.querySelector("h1")?.textContent?.trim();
 
+  let hostname = "";
   let domainName = "";
   try {
-    const hostname = window.location.hostname;
+    hostname = window.location.hostname;
     domainName = hostname.replace(/^www\./, "").split(".")[0];
     domainName = domainName.charAt(0).toUpperCase() + domainName.slice(1);
   } catch (e) {
     // location not available
   }
 
-  let titleBrand = "";
-  if (title) {
-    titleBrand = title
-      .replace(/\s*[-|–|—]\s*.*$/, "")
-      .replace(/\s*:\s*.*$/, "")
-      .replace(/\s*\|.*$/, "")
-      .trim();
-  }
+  return (
+    ogSiteName || brandFromTitle(title, hostname) || h1 || domainName || ""
+  );
+};
 
-  return ogSiteName || titleBrand || h1 || domainName || "";
+// Second-level labels under a country TLD that are part of the public suffix
+// (example.co.uk, example.com.br), not the brand.
+const COUNTRY_SECOND_LEVELS = new Set([
+  "co",
+  "com",
+  "net",
+  "org",
+  "ac",
+  "gov",
+  "edu",
+  "ne",
+  "or",
+]);
+
+/**
+ * The brand part of a title such as "Brand | Tagline" or "Tagline - Brand":
+ * the part whose words spell a hostname label, trying the label nearest the
+ * registrable domain first, else the first part. A hyphen only separates
+ * parts when spaced, so "Coca-Cola" stays whole.
+ */
+export const brandFromTitle = (
+  title: string | null | undefined,
+  hostname: string,
+): string => {
+  const parts = (title ?? "")
+    .split(/\s*[|–—·•]\s*|\s+-\s+|:\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  const hostLabels = hostname.toLowerCase().split(".");
+  const secondLevel = hostLabels[hostLabels.length - 2];
+  const suffixLength =
+    hostLabels[hostLabels.length - 1]?.length === 2 &&
+    COUNTRY_SECOND_LEVELS.has(secondLevel)
+      ? 2
+      : 1;
+  const labels = hostLabels
+    .slice(0, -suffixLength)
+    .filter(label => label !== "www")
+    .map(label => label.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean)
+    .reverse();
+  const spells = (part: string, label: string) => {
+    const words = part.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    for (let start = 0; start < words.length; start++) {
+      let joined = "";
+      for (let end = start; end < words.length; end++) {
+        joined += words[end];
+        if (joined === label) return true;
+        if (joined.length >= label.length) break;
+      }
+    }
+    return false;
+  };
+  for (const label of labels) {
+    const match = parts.find(part => spells(part, label));
+    if (match) return match;
+  }
+  return parts[0] ?? "";
 };
 
 export const normalizeColor = (

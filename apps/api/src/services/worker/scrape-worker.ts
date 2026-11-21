@@ -58,7 +58,6 @@ import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
-import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
@@ -752,8 +751,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
+            const crawlLimit = sc.crawlerOptions?.limit;
+            let remainingLimit =
+              typeof crawlLimit === "number" && discoveredLinks.length > 0
+                ? crawlLimit -
+                  (await redisEvictConnection.scard(
+                    "crawl:" + job.data.crawl_id + ":visited_unique",
+                  ))
+                : Infinity;
+
             for (const link of discoveredLinks) {
+              if (remainingLimit <= 0) break;
               if (await lockURL(job.data.crawl_id, sc, link)) {
+                remainingLimit--;
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
@@ -903,6 +913,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           jobId: job.data.crawl_id,
           webhook: job.data.webhook,
           v0: false,
+          zeroDataRetention: job.data.zeroDataRetention,
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
@@ -1123,10 +1134,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     } else {
       logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
 
-      if (error instanceof CustomError) {
-        // Here we handle the error, then save the failed job
-        logger.error(error.message); // or any other error handling
-      }
       logger.error(error);
       if (error.stack) {
         logger.error(error.stack);
@@ -1167,6 +1174,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         jobId: (job.data.crawl_id ?? job.id) as string,
         webhook: job.data.webhook,
         v0: Boolean(!job.data.v1),
+        zeroDataRetention: job.data.zeroDataRetention,
       });
 
       // at this point we don't have a document, send a minimal payload to let users identify the errored URL

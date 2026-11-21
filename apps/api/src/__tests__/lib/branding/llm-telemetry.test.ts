@@ -1,6 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { Mock } from "vitest";
 
+vi.mock("../../../lib/ai-telemetry", () => ({
+  aiTelemetry: (options: unknown) => options,
+}));
 vi.mock("ai", () => ({
   generateObject: vi.fn(async () => ({
     object: {
@@ -43,7 +46,7 @@ function run(ids: {
 function telemetry() {
   const calls = (generateObject as Mock).mock.calls;
   expect(calls).toHaveLength(1);
-  return calls[0][0].experimental_telemetry;
+  return calls[0][0].telemetry;
 }
 
 describe("branding LLM telemetry", () => {

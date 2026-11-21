@@ -25,7 +25,7 @@ setup(
     description="Python SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
     long_description=long_description_content,
     long_description_content_type="text/markdown",
-    packages=find_packages(),
+    packages=find_packages(include=["firecrawl*"], exclude=["tests*", "*.__tests__", "*.__tests__.*"]),
     install_requires=[
         'requests',
         'certifi>=2026.10.19',

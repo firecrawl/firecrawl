@@ -87,8 +87,23 @@ export async function discoverTools(
     connectors?: boolean;
     /** The team may only be served by US-based providers. */
     usOnly?: boolean;
+    /** The team is held to zero data retention: only providers that support it are returned. */
+    zeroDataRetention?: boolean;
     /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
     exchangeRequestIds?: { prefix: string; sent: string[] };
+    /** Who is searching and how, sent with each find-tools lookup. */
+    exchangeCaller?: Pick<
+      Parameters<typeof exchangeRequest>[0],
+      | "feedbackStorage"
+      | "clientOrigin"
+      | "clientIntegration"
+      | "searchRoute"
+      | "clientSession"
+      | "clientThread"
+    > & {
+      /** The caller's own query: any other semantic query was written by the platform. */
+      query: string;
+    };
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -108,7 +123,14 @@ export async function discoverTools(
     const ids = input.exchangeRequestIds;
     const requestId = ids ? `${ids.prefix}:${ids.sent.length + 1}` : undefined;
     if (requestId) ids?.sent.push(requestId);
+    const { query: ownQuery, ...caller } = input.exchangeCaller ?? {};
     const result = await exchangeRequest({
+      ...caller,
+      ...(input.exchangeCaller &&
+      typeof options.query === "string" &&
+      options.query !== ownQuery
+        ? { searchRewritten: true }
+        : {}),
       teamId: input.teamId,
       path: "/v1/retrieve",
       requestId,
@@ -116,6 +138,7 @@ export async function discoverTools(
       maximumCredits: 0,
       connectors: input.connectors === true,
       usOnly: input.usOnly === true,
+      zeroDataRetention: input.zeroDataRetention === true,
       body: {
         provider: "firecrawl",
         capability: "find-tools",
@@ -245,6 +268,7 @@ export async function discoverTools(
           timeoutMs: remaining(deadline),
           connectors: input.connectors === true,
           usOnly: input.usOnly === true,
+          zeroDataRetention: input.zeroDataRetention === true,
         });
         if (result.status !== 200)
           throw new Error("Domain discovery unavailable");

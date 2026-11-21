@@ -39,12 +39,18 @@ import {
   calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
-import { searchGovCategory, wantsGovCategory } from "./gov";
+import {
+  MAX_ROUTED_LIMIT,
+  searchGovCategory,
+  searchGovIfRouted,
+  wantsGovCategory,
+} from "./gov";
 import { removeExplicitResults } from "./safe-search";
 import {
   matchesQueryOperators,
   planOperatorQuery,
   siteHostnames,
+  usesSearchSyntax,
 } from "./operators";
 import {
   highlightsEnvReady,
@@ -59,6 +65,9 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
+import type { TeamPlanClass } from "../lib/team-plan-class";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
 
 interface SearchOptions {
   query: string;
@@ -92,8 +101,17 @@ interface SearchContext {
   orgId?: string | null;
   origin: string;
   integration?: string | null;
+  /** The origin as the caller named it, and its session and conversation ids. Labels for Exchange only. */
+  clientOrigin?: string;
+  clientSession?: string;
+  clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
+  /**
+   * The team's plan class, stated on the web search call. Required so every
+   * caller decides; undefined states nothing. See teamPlanClass.
+   */
+  teamPlanClass: TeamPlanClass | undefined;
   requestId: string;
   jobId: string;
   apiVersion: string;
@@ -106,6 +124,8 @@ interface SearchContext {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   /** Set when the request legitimately opted out of Safe Mode at the controller. */
   safeModeBypassed?: boolean;
+  /** Asks third-party data providers behind scraped results to leave personal email addresses and personal phone numbers out. */
+  workContactOnly?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -201,6 +221,9 @@ export async function executeSearch(
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
+  // A team held to zero data retention for scrapes or Alexandria still gets tools, but only from providers
+  // that support it. Read from team flags only, never from the request.
+  const toolsZeroDataRetention = isAlexandriaZDRForced(flags);
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
@@ -219,6 +242,7 @@ export async function executeSearch(
             query,
             timeoutMs: Math.min(options.timeout, SKILLS_DISCOVERY_TIMEOUT_MS),
             usOnly,
+            zeroDataRetention: toolsZeroDataRetention,
           },
           logger,
         ).catch(error => {
@@ -237,6 +261,20 @@ export async function executeSearch(
     raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
     rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
   };
+  // Tells Exchange who is searching and how; sent with each find-tools lookup.
+  const exchangeCaller = config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED
+    ? {
+        feedbackStorage: alexandriaFeedbackStorage(teamId, flags),
+        clientOrigin: context.clientOrigin,
+        clientIntegration: context.integration,
+        searchRoute: wantsTools
+          ? ("search_source" as const)
+          : ("search_auto" as const),
+        clientSession: context.clientSession,
+        clientThread: context.clientThread,
+        query,
+      }
+    : undefined;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -248,6 +286,7 @@ export async function executeSearch(
               teamId,
               connectors: flags?.exchangeRetrieve === true,
               usOnly,
+              zeroDataRetention: toolsZeroDataRetention,
               limit,
               queries: wantsTools
                 ? intent.toolQueries
@@ -258,6 +297,7 @@ export async function executeSearch(
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
               exchangeRequestIds: toolRequestIds.rewrite,
+              exchangeCaller,
             },
             logger,
           );
@@ -298,6 +338,7 @@ export async function executeSearch(
             teamId,
             connectors: flags?.exchangeRetrieve === true,
             usOnly,
+            zeroDataRetention: toolsZeroDataRetention,
             limit,
             queries: wantsTools ? [query] : undefined,
             urls:
@@ -308,6 +349,7 @@ export async function executeSearch(
                   }),
             timeoutMs: options.timeout,
             exchangeRequestIds: toolRequestIds.raw,
+            exchangeCaller,
           },
           logger,
         )
@@ -340,29 +382,51 @@ export async function executeSearch(
     : wantsGovCategory(categories)
       ? searchGovCategory
       : null;
-  const indexResultsPromise = indexCategorySearch
-    ? indexCategorySearch(
-        {
-          query,
-          limit,
-          teamId,
-          timeout: options.timeout,
-          zeroDataRetention:
-            zeroDataRetention === true ||
-            options.enterprise?.some(
-              mode => mode === "zdr" || mode === "anon",
-            ) === true,
-          ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
-        },
-        logger,
-      )
+  const indexSearchOptions = {
+    query,
+    limit,
+    teamId,
+    timeout: options.timeout,
+    zeroDataRetention:
+      zeroDataRetention === true ||
+      options.enterprise?.some(mode => mode === "zdr" || mode === "anon") ===
+        true,
+    ...(usOnly ? { usOnly, warnings: usOnlyWarnings } : {}),
+  };
+  // A plain US web search that the search platform classifies as government
+  // is served through the Government Index. Zero data retention and
+  // anonymous searches are never routed, as they skip every other auxiliary
+  // service here, and neither is a page larger than MAX_ROUTED_LIMIT.
+  const plainWebSearch =
+    indexCategorySearch === null &&
+    !indexSearchOptions.zeroDataRetention &&
+    !categories?.length &&
+    searchTypes.length === 1 &&
+    searchTypes[0] === "web" &&
+    !options.includeDomains?.length &&
+    !options.excludeDomains?.length &&
+    !options.tbs &&
+    !options.filter &&
+    (options.country ?? "us").toLowerCase() === "us" &&
+    !options.location &&
+    (options.lang ?? "en").toLowerCase() === "en" &&
+    !usOnly &&
+    query.trim().length > 0 &&
+    limit <= MAX_ROUTED_LIMIT &&
+    !usesSearchSyntax(query);
+  // A plain web search takes the routing decision before the regular web
+  // search, so a routed search never starts it. An unrouted one, or a routed
+  // one whose platform search fails, starts the regular web search after the
+  // decision.
+  const routedResults = plainWebSearch
+    ? await searchGovIfRouted(indexSearchOptions, context.jobId, logger)
     : null;
-
-  const searchResponse =
-    ((wantsTools || wantsSkills) && !searchTypes.length) ||
-    indexResultsPromise !== null
-      ? ({} as SearchV2Response)
-      : ((await search({
+  const webSearchPromise =
+    routedResults !== null ||
+    indexCategorySearch !== null ||
+    ((wantsTools || wantsSkills) && !searchTypes.length)
+      ? null
+      : search({
           query: searchQuery,
           logger,
           requestId: context.requestId,
@@ -386,7 +450,20 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
-        })) as SearchV2Response);
+          teamPlanClass: context.teamPlanClass,
+        });
+  const indexResultsPromise = indexCategorySearch
+    ? indexCategorySearch(indexSearchOptions, logger)
+    : null;
+
+  // Routed results take the regular web search's place as the web results, so
+  // threat protection, safe search, categories, highlights, scraping and
+  // billing treat them as a web search's.
+  const searchResponse: SearchV2Response = routedResults
+    ? { web: routedResults }
+    : webSearchPromise === null || indexResultsPromise !== null
+      ? ({} as SearchV2Response)
+      : ((await webSearchPromise) as SearchV2Response);
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
   >(
@@ -703,6 +780,7 @@ export async function executeSearch(
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
+        ...(context.workContactOnly ? { workContactOnly: true } : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
@@ -726,7 +804,12 @@ export async function executeSearch(
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (zeroDataRetention !== true && !isZDR && highlightsEnvReady()) {
+  if (
+    zeroDataRetention !== true &&
+    !isZDR &&
+    flags?.skipSearchHighlights !== true &&
+    highlightsEnvReady()
+  ) {
     const mode = searchHighlightsMode({
       requested: options.highlights,
       origin: context.origin,

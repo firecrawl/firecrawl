@@ -47,6 +47,7 @@ function makeReq(params: Record<string, string> = {}) {
 function makeRes() {
   return {
     status: vi.fn().mockReturnThis(),
+    setHeader: vi.fn().mockReturnThis(),
     json: vi.fn(),
   } as unknown as Response;
 }
@@ -83,6 +84,163 @@ describe("agent passthroughs for zero data retention runs", () => {
 
     expect(error).not.toBeInstanceOf(ExtractV3AgentStatusError);
     expect(error.message).toContain("500");
+  });
+
+  it("returns the job status when a dropped status lookup succeeds on retry", async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        new globalThis.Response(
+          JSON.stringify({
+            success: true,
+            id: JOB_ID,
+            status: "success",
+            data: { answer: "ready" },
+            model: "spark-2",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ) as any,
+      );
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        status: "completed",
+        data: { answer: "ready" },
+      }),
+    );
+  });
+
+  it("returns 503 instead of an unhandled 500 when the status service cannot be reached", async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError("fetch failed"));
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "agent_status_unavailable",
+      error: "Agent status is temporarily unavailable. Retry the request.",
+    });
+  });
+
+  it("does not retry when reading the status body times out", async () => {
+    const response = new globalThis.Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    vi.spyOn(response, "json").mockRejectedValue(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    vi.mocked(fetch).mockResolvedValue(response as any);
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+  });
+
+  it("does not retry a status lookup that already timed out", async () => {
+    vi.mocked(fetch).mockRejectedValue(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "agent_status_unavailable" }),
+    );
+  });
+
+  it.each([502, 503, 504])(
+    "turns an upstream %s into a retryable 503 after one retry",
+    async status => {
+      upstream(status, { error: "Could not read this run's state; try again" });
+      const res = makeRes();
+
+      await agentStatusController(makeReq(), res);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        code: "agent_status_unavailable",
+        error: "Agent status is temporarily unavailable. Retry the request.",
+      });
+    },
+  );
+
+  it("keeps a 404 when the error body times out", async () => {
+    const response = new globalThis.Response("", { status: 404 });
+    vi.spyOn(response, "text").mockRejectedValue(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    vi.mocked(fetch).mockResolvedValue(response as any);
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "agent_not_found",
+      error: "Agent job not found",
+    });
+  });
+
+  it("returns 404 when the agent service has no such job", async () => {
+    upstream(404, { error: "Extract not found" });
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "agent_not_found",
+      error: "Agent job not found",
+    });
+  });
+
+  it("returns 503 when the job access lookup fails", async () => {
+    vi.mocked(getAgentJobAccess).mockRejectedValue(
+      new Error("Bigtable job access read failed"),
+    );
+    const res = makeRes();
+
+    await agentStatusController(makeReq(), res);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "agent_status_unavailable" }),
+    );
   });
 
   it("status forwards 410 zdr_expired", async () => {

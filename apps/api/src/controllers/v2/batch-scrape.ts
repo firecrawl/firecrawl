@@ -442,6 +442,8 @@ export async function batchScrapeController(
     });
   }
 
+  const workContactOnly =
+    req.headers["x-firecrawl-work-contact-only"] === "true";
   const sc: StoredCrawl = appendTarget
     ? appendTarget
     : {
@@ -455,6 +457,7 @@ export async function batchScrapeController(
             ? true
             : false,
           zeroDataRetention,
+          ...(workContactOnly ? { workContactOnly } : {}),
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
@@ -483,6 +486,7 @@ export async function batchScrapeController(
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    if (workContactOnly) sc.internalOptions.workContactOnly = true;
   }
 
   if (!req.body.appendToId) {

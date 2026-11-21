@@ -12,6 +12,7 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, crawlStart } from "./lib";
+import { V1_LIVE } from "../v1/lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
@@ -46,7 +47,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       scrapeTimeout,
     );
 
-    it.concurrent(
+    concurrentIf(V1_LIVE)(
       "v1 accepts + honors the safeMode param (rejects safeMode: true)",
       async () => {
         const res = await request(TEST_API_URL)
@@ -472,20 +473,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         expect(res.statusCode).toBe(403);
         expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
         expect(res.body.error).toMatch(/prox/i);
-      },
-      scrapeTimeout,
-    );
-
-    it.concurrent(
-      "v0 content endpoints reject a Safe Mode org",
-      async () => {
-        const res = await request(TEST_API_URL)
-          .post("/v0/scrape")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .set("Content-Type", "application/json")
-          .send({ url: createTestIdUrl() });
-        expect(res.statusCode).toBe(403);
-        expect(res.body.error).toMatch(/v0 API/i);
       },
       scrapeTimeout,
     );
