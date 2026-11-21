@@ -2,7 +2,7 @@ import { AxiosError } from "axios";
 import { config } from "../../config";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
-import { getLinksFromSitemap } from "./sitemap";
+import { getLinksFromSitemap, SitemapBudget, sitemapBudget } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
@@ -27,9 +27,19 @@ import {
   isMarkdownContentType,
 } from "../scrapeURL/lib/extractLinksFromMarkdown";
 
-export const SITEMAP_LIMIT = 25;
+const SITEMAP_LIMIT = 25;
+export const MAP_SITEMAP_ONLY_LIMIT = 100;
+export const SITEMAP_MAX_IN_FLIGHT = 25;
 const SITEMAP_FETCH_CONCURRENCY = 3;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+export type SitemapTruncation = "timeout" | "file-limit";
+
+type SitemapOptions = {
+  maxFiles?: number;
+  stopAfter?: number;
+  onTruncated?: (reason: SitemapTruncation) => void;
+};
 
 interface FilterResult {
   allowed: boolean;
@@ -81,7 +91,6 @@ export class WebCrawler {
   private ignoreRobotsTxt: boolean;
   private regexOnFullURL: boolean;
   private logger: typeof _logger;
-  private sitemapsHit: Set<string> = new Set();
   private maxDiscoveryDepth: number | undefined;
   private currentDiscoveryDepth: number;
   private zeroDataRetention: boolean;
@@ -574,6 +583,7 @@ export class WebCrawler {
     abort?: AbortSignal,
     mock?: string,
     maxAge: number = SITEMAP_MAX_AGE,
+    sitemapOptions: SitemapOptions = {},
   ): Promise<number> {
     // Lockdown: no outbound sitemap discovery to the target (index-only crawl).
     if (this.lockdown) {
@@ -598,8 +608,17 @@ export class WebCrawler {
 
     const _urlsHandler = async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
+      if (fetchAbort.aborted) {
+        return;
+      }
       if (fromMap && onlySitemap) {
         deliveredCount += urls.length;
+        if (
+          sitemapOptions.stopAfter !== undefined &&
+          deliveredCount >= sitemapOptions.stopAfter
+        ) {
+          stopController.abort();
+        }
         return await urlsHandler(urls);
       } else {
         let filteredLinksResult = await this.filterLinks(
@@ -649,9 +668,15 @@ export class WebCrawler {
         reject(new Error("Sitemap fetch timeout"));
       }, timeout);
     });
-    const fetchAbort = abort
-      ? AbortSignal.any([abort, timeoutController.signal])
-      : timeoutController.signal;
+    const stopController = new AbortController();
+    const fetchAbort = AbortSignal.any([
+      ...(abort ? [abort] : []),
+      timeoutController.signal,
+      stopController.signal,
+    ]);
+
+    const budget = sitemapBudget(sitemapOptions.maxFiles ?? SITEMAP_LIMIT);
+    let timedOut = false;
 
     let count = 0;
     try {
@@ -665,16 +690,17 @@ export class WebCrawler {
       });
 
       // Fetched in batches so children of early sitemap indexes claim
-      // SITEMAP_LIMIT slots before later top-level sitemaps do.
-      const sitemapSources = [this.initialUrl, ...robotsSitemaps];
+      // budget slots before later top-level sitemaps do.
+      const sitemapSources = [
+        { url: this.initialUrl, fromRobots: false },
+        ...robotsSitemaps.map(url => ({ url, fromRobots: true })),
+      ];
 
       const fetchSources = async () => {
         let linkCount = 0;
         for (
           let i = 0;
-          i < sitemapSources.length &&
-          this.sitemapsHit.size < SITEMAP_LIMIT &&
-          !fetchAbort.aborted;
+          i < sitemapSources.length && !fetchAbort.aborted;
           i += SITEMAP_FETCH_CONCURRENCY
         ) {
           const results = await Promise.all(
@@ -682,7 +708,9 @@ export class WebCrawler {
               .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
               .map(source =>
                 this.tryFetchSitemapLinks(
-                  source,
+                  source.url,
+                  source.fromRobots,
+                  budget,
                   _urlsHandler,
                   fetchAbort,
                   mock,
@@ -702,6 +730,7 @@ export class WebCrawler {
       )) as number;
     } catch (error) {
       if (error instanceof Error && error.message === "Sitemap fetch timeout") {
+        timedOut = true;
         this.logger.warn("Sitemap fetch timed out", {
           method: "tryGetSitemap",
           timeout,
@@ -714,6 +743,12 @@ export class WebCrawler {
         });
       }
       count = deliveredCount;
+    }
+
+    if (timedOut) {
+      sitemapOptions.onTruncated?.("timeout");
+    } else if (budget.capped && !stopController.signal.aborted) {
+      sitemapOptions.onTruncated?.("file-limit");
     }
 
     try {
@@ -914,56 +949,65 @@ export class WebCrawler {
 
   private async tryFetchSitemapLinks(
     url: string,
+    fromRobots: boolean,
+    budget: SitemapBudget,
     urlsHandler: (urls: string[]) => unknown,
     abort?: AbortSignal,
     mock?: string,
     maxAge?: number,
   ): Promise<number> {
-    const sitemapUrl =
-      url.toLowerCase().endsWith(".xml") ||
-      url.toLowerCase().endsWith(".xml.gz")
-        ? url
-        : `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
+    const lowerUrl = url.toLowerCase();
+    const guessedUrl = `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
+    // A robots.txt Sitemap: entry is fetched as written. The /sitemap.xml
+    // guess stays as a fallback for directory-style entries such as /en/.
+    const sitemapUrls =
+      lowerUrl.endsWith(".xml") || lowerUrl.endsWith(".xml.gz")
+        ? [url]
+        : fromRobots
+          ? [url, guessedUrl]
+          : [guessedUrl];
 
     this.logger.debug("Trying to fetch sitemap links", {
       method: "tryFetchSitemapLinks",
       originalUrl: url,
-      sitemapUrl,
+      sitemapUrls,
       maxAge,
-      isXmlUrl: url.endsWith(".xml"),
-      isGzUrl: url.endsWith(".xml.gz"),
     });
 
     let sitemapCount: number = 0;
 
-    // Try to get sitemap from the provided URL first
-    try {
-      sitemapCount = await getLinksFromSitemap(
-        {
-          sitemapUrl,
-          urlsHandler,
-          mode: "fire-engine",
-          maxAge,
-          zeroDataRetention: this.zeroDataRetention,
-          location: this.location,
-          usOnly: this.usOnly,
-          headers: this.headers,
-        },
-        this.logger,
-        this.jobId,
-        this.sitemapsHit,
-        abort,
-        mock,
-      );
-    } catch (error) {
-      if (error instanceof ScrapeJobTimeoutError) {
-        throw error;
-      } else {
-        this.logger.debug(`Failed to fetch sitemap from ${sitemapUrl}`, {
-          method: "tryFetchSitemapLinks",
-          sitemapUrl,
-          error,
-        });
+    for (const sitemapUrl of sitemapUrls) {
+      if (sitemapCount > 0) {
+        break;
+      }
+      try {
+        sitemapCount = await getLinksFromSitemap(
+          {
+            sitemapUrl,
+            urlsHandler,
+            mode: "fire-engine",
+            maxAge,
+            zeroDataRetention: this.zeroDataRetention,
+            location: this.location,
+            usOnly: this.usOnly,
+            headers: this.headers,
+          },
+          this.logger,
+          this.jobId,
+          budget,
+          abort,
+          mock,
+        );
+      } catch (error) {
+        if (error instanceof ScrapeJobTimeoutError) {
+          throw error;
+        } else {
+          this.logger.debug(`Failed to fetch sitemap from ${sitemapUrl}`, {
+            method: "tryFetchSitemapLinks",
+            sitemapUrl,
+            error,
+          });
+        }
       }
     }
 
@@ -1027,7 +1071,7 @@ export class WebCrawler {
               },
               this.logger,
               this.jobId,
-              this.sitemapsHit,
+              budget,
               abort,
               mock,
             );
@@ -1072,7 +1116,7 @@ export class WebCrawler {
           },
           this.logger,
           this.jobId,
-          this.sitemapsHit,
+          budget,
           abort,
           mock,
         );
@@ -1101,7 +1145,7 @@ export class WebCrawler {
               },
               this.logger,
               this.jobId,
-              this.sitemapsHit,
+              budget,
               abort,
               mock,
             );
@@ -1110,7 +1154,7 @@ export class WebCrawler {
       }
     }
 
-    if (this.sitemapsHit.size >= SITEMAP_LIMIT) {
+    if (budget.hit.size >= budget.maxFiles) {
       this.logger.warn("Sitemap limit hit!", {
         crawlId: this.jobId,
         url: this.baseUrl,
@@ -1120,9 +1164,9 @@ export class WebCrawler {
     this.logger.debug("Finished trying to fetch sitemap links", {
       method: "tryFetchSitemapLinks",
       originalUrl: url,
-      sitemapUrl,
+      sitemapUrls,
       linksFound: sitemapCount,
-      totalSitemapsHit: this.sitemapsHit.size,
+      totalSitemapsHit: budget.hit.size,
     });
 
     return sitemapCount;
