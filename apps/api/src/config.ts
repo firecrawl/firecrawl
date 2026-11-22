@@ -601,6 +601,11 @@ const configSchema = z.object({
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
+  HTML_TO_MARKDOWN_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60000),
   SMART_SCRAPE_API_URL: z.string().optional(),
 
   // Fire PDF (OCR fallback for a % of PDFs)
