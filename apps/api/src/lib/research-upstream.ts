@@ -1,5 +1,6 @@
 import { Agent, fetch, type Response } from "undici";
 import { config } from "../config";
+import { sampled } from "./rollout";
 
 const TIMEOUT_MS = 120_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -88,8 +89,8 @@ async function postSearchPlatform(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
+  base = config.SEARCH_PLATFORM_URL,
 ) {
-  const base = config.SEARCH_PLATFORM_URL;
   if (!base) return null;
 
   return fetch(base.replace(/\/+$/, "") + path, {
@@ -113,6 +114,19 @@ export async function fetchQueryFeatures(options: {
     options.headers,
     options.timeoutMs,
   );
+}
+
+/**
+ * GOV_SEARCH_URL for the GOV_SEARCH_PERCENT share of teams, else
+ * SEARCH_PLATFORM_URL. US-only requests stay on SEARCH_PLATFORM_URL, which
+ * serves them.
+ */
+function govSearchBase(headers: Record<string, string>) {
+  const routed =
+    config.GOV_SEARCH_URL !== undefined &&
+    headers["firecrawl-us-only"] !== "true" &&
+    sampled(headers["firecrawl-team-id"] ?? "", config.GOV_SEARCH_PERCENT);
+  return routed ? config.GOV_SEARCH_URL : config.SEARCH_PLATFORM_URL;
 }
 
 export async function fetchGovUpstream(options: {
@@ -141,6 +155,7 @@ export async function fetchGovUpstream(options: {
     },
     options.headers,
     options.timeoutMs,
+    govSearchBase(options.headers),
   );
 }
 
