@@ -1219,6 +1219,51 @@ describe("ultrasearch trusted marker", () => {
   });
 });
 
+describe("work contact details only", () => {
+  it("asks for it when x-firecrawl-work-contact-only is true", async () => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-firecrawl-work-contact-only", "true")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ workContactOnly: true }),
+    );
+  });
+
+  it("asks for it on an agent interop call that carries the header", async () => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-firecrawl-work-contact-only", "true")
+      .send({
+        alexandria: call,
+        __agentInterop: {
+          auth: "test-secret",
+          requestId: "agent-run",
+          shouldBill: true,
+        },
+      });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ workContactOnly: true }),
+    );
+  });
+
+  it.each([undefined, "false", "TRUE", "1"])(
+    "leaves it off when the header is %s",
+    async value => {
+      let req = request(app).post("/v2/scrape");
+      if (value !== undefined)
+        req = req.set("x-firecrawl-work-contact-only", value);
+      const response = await req.send({ alexandria: call });
+      expect(response.status).toBe(200);
+      expect(mocks.retrieve.mock.calls[0][0]).not.toHaveProperty(
+        "workContactOnly",
+      );
+    },
+  );
+});
+
 describe("GET /v2/alexandria/:provider/*capability", () => {
   const path = "/v2/alexandria/fred/categories/category";
 

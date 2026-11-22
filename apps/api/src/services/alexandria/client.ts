@@ -64,6 +64,8 @@ export async function exchangeRequest(input: {
   usOnly?: boolean;
   /** The team carries the Alexandria Verified flag, so Exchange runs its verifiedOnly providers. */
   alexandriaVerified?: boolean;
+  /** Leave personal email addresses and personal phone numbers out of results, and refuse lookups by phone number. */
+  workContactOnly?: boolean;
   /** Send once more when the connection fails before an answer. Only for requests that change nothing. */
   retryConnection?: boolean;
   /** Trusted internal marker for zero-priced provider lines, sent with the internal secret so Exchange can verify it. */
@@ -128,6 +130,9 @@ export async function exchangeRequest(input: {
         ? { "x-exchange-zero-data-retention": "true" }
         : {}),
       ...(input.usOnly ? { "x-exchange-us-only": "true" } : {}),
+      ...(input.workContactOnly
+        ? { "x-exchange-work-contact-only": "true" }
+        : {}),
       ...(input.alexandriaVerified
         ? { "x-exchange-alexandria-verified": "true" }
         : {}),
