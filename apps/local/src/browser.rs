@@ -18,10 +18,12 @@ use chromiumoxide::{
   page::ScreenshotParams,
 };
 use futures::StreamExt;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{oneshot, Mutex, Semaphore};
 use url::Url;
 
 use crate::guard::{self, NetworkPolicy};
+
+const CALLER_GONE: &str = "the caller stopped waiting for the page";
 
 /// Counts fetch and XHR calls still in flight, so "the page has settled" can
 /// mean "nothing is still loading", not just "the text stopped changing".
@@ -334,17 +336,48 @@ impl BrowserPool {
   }
 
   /// Load a page, let it settle, and return its rendered HTML.
+  ///
+  /// A client that hangs up drops this future. The render runs in a task of
+  /// its own so that its tab is still closed then: dropped halfway, the tab
+  /// would stay open, keep its renderer process, and pile up with the next
+  /// ones until Chrome runs the machine out of memory.
   pub async fn render(
-    &self,
+    self: &Arc<Self>,
     url: &Url,
     wait_for: Duration,
     timeout: Duration,
     screenshot: bool,
   ) -> Result<Rendered, String> {
     guard::check_url(url, self.policy).map_err(|e| e.0)?;
-    let _permit = self.pages.acquire().await.map_err(|e| e.to_string())?;
+    // Dropped with this future, which tells the task its caller is gone.
+    let (_caller, gone) = oneshot::channel::<()>();
+    let pool = Arc::clone(self);
+    let url = url.clone();
+    tokio::spawn(async move {
+      pool
+        .render_in_tab(&url, wait_for, timeout, screenshot, gone)
+        .await
+    })
+    .await
+    .map_err(|e| format!("the render task failed: {e}"))?
+  }
+
+  async fn render_in_tab(
+    &self,
+    url: &Url,
+    wait_for: Duration,
+    timeout: Duration,
+    screenshot: bool,
+    mut gone: oneshot::Receiver<()>,
+  ) -> Result<Rendered, String> {
+    let _permit = tokio::select! {
+      permit = self.pages.acquire() => permit.map_err(|e| e.to_string())?,
+      _ = &mut gone => return Err(CALLER_GONE.to_string()),
+    };
     self.ensure_launched().await?;
 
+    // Not raced against `gone`: a tab Chrome opens after the wait was dropped
+    // would have no one left to close it.
     let page = {
       let guard = self.launched.lock().await;
       let launched = guard.as_ref().ok_or("browser is not running")?;
@@ -355,12 +388,14 @@ impl BrowserPool {
         .map_err(|e| format!("could not open a tab: {e}"))?
     };
 
-    let result = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)).await;
+    let result = tokio::select! {
+      r = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)) => {
+        r.unwrap_or_else(|_| Err("the page did not finish loading in time".to_string()))
+      }
+      _ = gone => Err(CALLER_GONE.to_string()),
+    };
     let _ = page.close().await;
-    match result {
-      Ok(r) => r,
-      Err(_) => Err("the page did not finish loading in time".to_string()),
-    }
+    result
   }
 
   async fn drive(
@@ -862,5 +897,58 @@ mod tests {
       "word ".repeat(30)
     );
     assert!(!needs_browser(&small, &"word ".repeat(30)));
+  }
+
+  /// Tabs opened for a render. Chrome's own start tab is left out: it shows
+  /// up at some point after launch, with an empty or chrome:// address.
+  async fn render_tabs(pool: &BrowserPool) -> usize {
+    let guard = pool.launched.lock().await;
+    let launched = guard.as_ref().expect("Chrome is running");
+    let mut count = 0;
+    for page in launched
+      .browser
+      .pages()
+      .await
+      .expect("Chrome lists its tabs")
+    {
+      let url = page.url().await.ok().flatten().unwrap_or_default();
+      if url.starts_with("about:") || url.starts_with("http") {
+        count += 1;
+      }
+    }
+    count
+  }
+
+  /// Needs a Chrome: `cargo test -- --ignored`.
+  #[tokio::test]
+  #[ignore]
+  async fn a_caller_that_hangs_up_leaves_no_tab_open() {
+    // A server that accepts and never answers keeps every page loading.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    tokio::spawn(async move {
+      let mut held = Vec::new();
+      while let Ok((socket, _)) = listener.accept().await {
+        held.push(socket);
+      }
+    });
+    let pool = BrowserPool::new(NetworkPolicy::AllowPrivate, "firecrawl-local-test", 2)
+      .expect("a Chrome is installed");
+
+    // One more render than there are tabs: the last one is still waiting for
+    // a tab when its caller hangs up.
+    for _ in 0..3 {
+      let render = pool.render(&url, Duration::ZERO, Duration::from_secs(60), false);
+      assert!(tokio::time::timeout(Duration::from_secs(2), render)
+        .await
+        .is_err());
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while render_tabs(&pool).await > 0 && Instant::now() < deadline {
+      tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(render_tabs(&pool).await, 0);
+    pool.shutdown().await;
   }
 }
