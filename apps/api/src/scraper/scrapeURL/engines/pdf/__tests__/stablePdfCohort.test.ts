@@ -177,10 +177,11 @@ describe("stable PDF engine cohort", () => {
   });
 
   it("keeps one URL on one engine across scrapes", async () => {
-    const url =
-      "https://www.cms.gov/cciio/resources/forms-reports-and-other-resources/downloads/english-sample-completed-sbc-accessible-format-012825.pdf";
+    const url = "https://example.com/same-document.pdf";
+    using random = vi.spyOn(Math, "random");
     const markdowns: string[] = [];
     for (let i = 0; i < 12; i++) {
+      random.mockReturnValue(i % 2 === 0 ? 0.1 : 0.9);
       markdowns.push(
         (await scrapePDF(await makeMeta(`scrape-${i}`, url))).markdown ?? "",
       );
@@ -241,7 +242,7 @@ describe("stable PDF engine cohort", () => {
       id: "scrape-b",
       url,
       rewrittenUrl: url,
-      internalOptions: { zeroDataRetention: true },
+      internalOptions: { isParse: false, zeroDataRetention: true },
     };
     expect(pdfCohortKey({ id: "scrape-a", url, rewrittenUrl: url })).toBe(url);
     expect(pdfCohortKey(zdrScrape)).toBe(url);
