@@ -1,9 +1,15 @@
+import * as undici from "undici";
 import {
   isSameDomain,
   removeDuplicateUrls,
   resolveRedirects,
 } from "./validateUrl";
 import { isSameSubdomain } from "./validateUrl";
+
+vi.mock("undici", async importOriginal => ({
+  ...(await importOriginal<typeof import("undici")>()),
+  fetch: vi.fn(),
+}));
 
 describe("isSameDomain", () => {
   it("should return true for a subdomain", () => {
@@ -175,9 +181,25 @@ describe("removeDuplicateUrls", () => {
 });
 
 describe("resolveRedirects", () => {
+  beforeEach(() => {
+    vi.mocked(undici.fetch).mockReset();
+  });
+
   it("should read the redirect target from the mock when one is given", async () => {
     await expect(
       resolveRedirects("http://firecrawl.com", undefined, "map-redirect"),
     ).resolves.toBe("https://www.firecrawl.dev/");
+    expect(undici.fetch).not.toHaveBeenCalled();
+  });
+
+  it("should make the request when the mock has no entry for the URL", async () => {
+    vi.mocked(undici.fetch).mockResolvedValueOnce({
+      url: "https://www.example.org/",
+    } as undici.Response);
+
+    await expect(
+      resolveRedirects("http://example.com", undefined, "map-redirect"),
+    ).resolves.toBe("https://www.example.org/");
+    expect(undici.fetch).toHaveBeenCalledTimes(1);
   });
 });
