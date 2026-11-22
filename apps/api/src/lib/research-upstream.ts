@@ -88,8 +88,8 @@ async function postSearchPlatform(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
+  base = config.SEARCH_PLATFORM_URL,
 ) {
-  const base = config.SEARCH_PLATFORM_URL;
   if (!base) return null;
 
   return fetch(base.replace(/\/+$/, "") + path, {
@@ -141,6 +141,9 @@ export async function fetchGovUpstream(options: {
     },
     options.headers,
     options.timeoutMs,
+    config.GOV_SEARCH_VIA_RESEARCH_PROXY
+      ? config.RESEARCH_PROXY_URL
+      : config.SEARCH_PLATFORM_URL,
   );
 }
 
