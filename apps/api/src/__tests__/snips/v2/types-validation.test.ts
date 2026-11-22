@@ -81,6 +81,21 @@ describe("V2 Types Validation", () => {
       expect(result.formats).toEqual([{ type: "markdown" }, { type: "html" }]);
     });
 
+    it("should accept markdown format with stripLinks option", () => {
+      const result = scrapeRequestSchema.parse({
+        url: "https://example.com",
+        formats: [{ type: "markdown", stripLinks: true }],
+      });
+      expect(result.formats).toEqual([{ type: "markdown", stripLinks: true }]);
+
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com",
+          formats: [{ type: "markdown", stripLinks: "yes" as any }],
+        }),
+      ).toThrow();
+    });
+
     it("should accept valid scrape request with string formats (preprocessed)", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

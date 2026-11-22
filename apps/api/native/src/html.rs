@@ -2050,6 +2050,12 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
   res.map_err(to_napi_err)
 }
 
+#[derive(Deserialize, Serialize, Default)]
+#[napi(object)]
+pub struct PostProcessMarkdownOptions {
+  pub strip_links: Option<bool>,
+}
+
 fn parse_fence_line(line: &str) -> Option<(u8, usize, &str)> {
   let bytes = line.as_bytes();
   let mut i = 0;
@@ -2158,7 +2164,7 @@ fn is_permalink_noise_label(label: &str) -> bool {
     )
 }
 
-fn process_prose_segment(input: &str) -> String {
+fn process_prose_segment(input: &str, strip_links: bool) -> String {
   let bytes = input.as_bytes();
   let len = bytes.len();
   let mut out = String::with_capacity(len);
@@ -2197,6 +2203,10 @@ fn process_prose_segment(input: &str) -> String {
       if let Some(close_b) = find_matching_bracket(input, i + 1) {
         if close_b + 1 < len && bytes[close_b + 1] == b'(' {
           if let Some(end_p) = find_link_dest_end(input, close_b + 1) {
+            if strip_links {
+              i = end_p;
+              continue;
+            }
             out.push_str(&input[i..end_p]);
             i = end_p;
             continue;
@@ -2218,6 +2228,17 @@ fn process_prose_segment(input: &str) -> String {
             }
 
             if is_permalink_noise_label(label) {
+              i = end_p;
+              continue;
+            }
+
+            if strip_links {
+              let cleaned = process_prose_segment(label, true);
+              let unescaped = cleaned.replace("\\\n", "\n");
+              let trimmed = unescaped.trim();
+              if !trimmed.is_empty() {
+                out.push_str(trimmed);
+              }
               i = end_p;
               continue;
             }
@@ -2247,8 +2268,56 @@ fn process_prose_segment(input: &str) -> String {
   out
 }
 
-/// The synchronous body of `post_process_markdown`.
-pub fn post_process_markdown_text(markdown: &str) -> String {
+fn collapse_excess_blank_lines(input: &str) -> String {
+  let mut out = String::with_capacity(input.len());
+  let mut active_fence: Option<(u8, usize)> = None;
+  let mut consecutive_blanks = 0usize;
+
+  for segment in input.split_inclusive('\n') {
+    let line_no_nl = segment.trim_end_matches(['\r', '\n']);
+    if let Some((f_char, f_len)) = active_fence {
+      out.push_str(segment);
+      consecutive_blanks = 0;
+      if let Some((c, n, rest)) = parse_fence_line(line_no_nl) {
+        if c == f_char && n >= f_len && rest.trim().is_empty() {
+          active_fence = None;
+        }
+      }
+      continue;
+    }
+
+    if let Some((c, n, rest)) = parse_fence_line(line_no_nl) {
+      if !(c == b'`' && rest.contains('`')) {
+        active_fence = Some((c, n));
+        consecutive_blanks = 0;
+        out.push_str(segment);
+        continue;
+      }
+    }
+
+    if line_no_nl.trim().is_empty() {
+      consecutive_blanks += 1;
+      if consecutive_blanks <= 1 {
+        out.push('\n');
+      }
+    } else {
+      consecutive_blanks = 0;
+      out.push_str(line_no_nl.trim_end());
+      if segment.ends_with('\n') {
+        out.push('\n');
+      }
+    }
+  }
+
+  out.trim().to_string()
+}
+
+pub fn post_process_markdown_with_options(
+  markdown: &str,
+  options: Option<&PostProcessMarkdownOptions>,
+) -> String {
+  let strip_links = options.and_then(|o| o.strip_links).unwrap_or(false);
+
   let mut out = String::with_capacity(markdown.len());
   let mut prose_buf = String::new();
   let mut active_fence: Option<(u8, usize)> = None;
@@ -2268,7 +2337,7 @@ pub fn post_process_markdown_text(markdown: &str) -> String {
         prose_buf.push_str(segment);
       } else {
         if !prose_buf.is_empty() {
-          out.push_str(&process_prose_segment(&prose_buf));
+          out.push_str(&process_prose_segment(&prose_buf, strip_links));
           prose_buf.clear();
         }
         active_fence = Some((c, n));
@@ -2280,23 +2349,36 @@ pub fn post_process_markdown_text(markdown: &str) -> String {
   }
 
   if !prose_buf.is_empty() {
-    out.push_str(&process_prose_segment(&prose_buf));
+    out.push_str(&process_prose_segment(&prose_buf, strip_links));
   }
 
-  out
+  if strip_links {
+    collapse_excess_blank_lines(&out)
+  } else {
+    out
+  }
 }
 
-/// Process multi-line links in markdown.
+/// The synchronous body of `post_process_markdown`.
+pub fn post_process_markdown_text(markdown: &str) -> String {
+  post_process_markdown_with_options(markdown, None)
+}
+
+/// Process multi-line links in markdown, with optional compact link stripping.
 #[napi]
-pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || post_process_markdown_text(&markdown))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("post_process_markdown join error: {e}"),
-      )
-    })?;
+pub async fn post_process_markdown(
+  markdown: String,
+  options: Option<PostProcessMarkdownOptions>,
+) -> napi::Result<String> {
+  let res =
+    task::spawn_blocking(move || post_process_markdown_with_options(&markdown, options.as_ref()))
+      .await
+      .map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("post_process_markdown join error: {e}"),
+        )
+      })?;
 
   Ok(res)
 }
@@ -2334,6 +2416,21 @@ mod tests {
     assert!(!out.contains("[#]"));
     assert!(out.contains("[`foo`](https://example.com/foo)"));
     assert!(out.contains("![icon](https://example.com/i.png)"));
+  }
+
+  #[test]
+  fn post_process_strips_links_and_images_outside_code_when_requested() {
+    let md = "[Skip to content](https://example.com/page#main)\n\n\n\nSee [`foo`](https://example.com/foo) and ![icon](https://example.com/i.png).\n\n```py\nx = \"[keep](https://example.com)\"\n```\n";
+    let compact_out = post_process_markdown_with_options(
+      md,
+      Some(&PostProcessMarkdownOptions {
+        strip_links: Some(true),
+      }),
+    );
+    assert!(compact_out.contains("See `foo` and ."));
+    assert!(!compact_out.contains("https://example.com/foo"));
+    assert!(!compact_out.contains("https://example.com/i.png"));
+    assert!(compact_out.contains("x = \"[keep](https://example.com)\""));
   }
 
   #[test]

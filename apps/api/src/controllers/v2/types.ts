@@ -477,8 +477,17 @@ const brandingFormatWithOptions = z.strictObject({
   __experimental_screenshot: z.boolean().optional(),
 });
 
+const markdownFormatWithOptions = z.strictObject({
+  type: z.literal("markdown"),
+  stripLinks: z.boolean().optional(),
+});
+
+export type MarkdownFormatWithOptions = z.output<
+  typeof markdownFormatWithOptions
+>;
+
 export type FormatObject =
-  | { type: "markdown" }
+  | MarkdownFormatWithOptions
   | { type: "html" }
   | { type: "rawHtml" }
   | { type: "rawBase64" }
@@ -784,7 +793,7 @@ const scrapeOptionFields = z.strictObject({
       },
       z
         .union([
-          z.strictObject({ type: z.literal("markdown") }),
+          markdownFormatWithOptions,
           z.strictObject({ type: z.literal("html") }),
           z.strictObject({ type: z.literal("rawHtml") }),
           z.strictObject({ type: z.literal("rawBase64") }),

@@ -159,10 +159,12 @@ async function deriveMarkdownFromHTML(
 
   // Use scrape ID or crawl ID as request_id for tracing
   const requestId = meta.id || meta.internalOptions.crawlId;
+  const stripLinks = hasMarkdown?.stripLinks === true;
   document.markdown = await parseMarkdown(document.html, {
     logger: meta.logger,
     requestId,
     zeroDataRetention: meta.internalOptions.zeroDataRetention,
+    stripLinks,
   });
 
   if (
@@ -186,6 +188,7 @@ async function deriveMarkdownFromHTML(
       logger: meta.logger,
       requestId,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      stripLinks,
     });
 
     meta.logger.info("Fallback to full content extraction completed", {

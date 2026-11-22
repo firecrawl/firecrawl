@@ -47,4 +47,16 @@ describe("parseMarkdown", () => {
       await expect(parseMarkdown(html)).resolves.toBe(expected);
     }
   });
+
+  it("should preserve links by default and strip them when stripLinks is true", async () => {
+    const html =
+      '<p>Read the <a href="https://example.com/docs">API docs</a> <img src="https://example.com/icon.png" alt="icon" /></p>';
+    const withLinks = await parseMarkdown(html);
+    expect(withLinks).toContain("[API docs](https://example.com/docs)");
+
+    const stripped = await parseMarkdown(html, { stripLinks: true });
+    expect(stripped).toContain("API docs");
+    expect(stripped).not.toContain("https://example.com/docs");
+    expect(stripped).not.toContain("https://example.com/icon.png");
+  });
 });

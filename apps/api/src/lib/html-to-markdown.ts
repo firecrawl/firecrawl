@@ -55,6 +55,7 @@ export async function parseMarkdown(
     logger?: Logger;
     requestId?: string;
     zeroDataRetention?: boolean;
+    stripLinks?: boolean;
   },
 ): Promise<string> {
   if (!html) {
@@ -64,6 +65,9 @@ export async function parseMarkdown(
   const contextLogger = context?.logger || logger;
   const requestId = context?.requestId;
   const zeroDataRetention = context?.zeroDataRetention === true;
+  const postProcessOpts = context?.stripLinks
+    ? { stripLinks: true }
+    : undefined;
 
   // Try HTTP service first if enabled
   if (config.HTML_TO_MARKDOWN_SERVICE_URL) {
@@ -73,7 +77,10 @@ export async function parseMarkdown(
         requestId,
         zeroDataRetention,
       });
-      markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = await postProcessMarkdown(
+        markdownContent,
+        postProcessOpts,
+      );
       return markdownContent;
     } catch (error) {
       contextLogger.error(
@@ -87,7 +94,10 @@ export async function parseMarkdown(
     if (config.USE_GO_MARKDOWN_PARSER) {
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
-      markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = await postProcessMarkdown(
+        markdownContent,
+        postProcessOpts,
+      );
       return markdownContent;
     }
   } catch (error) {
@@ -130,7 +140,10 @@ export async function parseMarkdown(
 
   try {
     let markdownContent = await turndownService.turndown(html);
-    markdownContent = await postProcessMarkdown(markdownContent);
+    markdownContent = await postProcessMarkdown(
+      markdownContent,
+      postProcessOpts,
+    );
 
     return markdownContent;
   } catch (error) {
