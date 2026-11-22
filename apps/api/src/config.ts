@@ -129,12 +129,6 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
-  // Government search only. Unset, it goes to SEARCH_PLATFORM_URL.
-  GOV_SEARCH_URL: z.string().url().optional(),
-  // The share of teams whose government search goes to GOV_SEARCH_URL.
-  GOV_SEARCH_PERCENT: emptyStringAsDefault(
-    z.coerce.number().min(0).max(100).default(0),
-  ),
   // When true, a plain web search that the search platform classifies as
   // government is served through the Government Index. It needs
   // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
