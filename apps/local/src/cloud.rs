@@ -727,6 +727,32 @@ pub fn looks_like_bot_check(markdown: &str) -> bool {
     "captcha",
     "unusual traffic",
     "pardon our interruption",
+    // Cloudflare's current challenge interstitial (#5963): "Just a moment..."
+    // with "Additional Verification Required" and a "Verification
+    // successful. Waiting for ..." line.
+    "additional verification required",
+    "verification successful. waiting for",
+    "just a moment",
+    "your ray id",
+    "troubleshooting cloudflare errors",
+  ]
+  .iter()
+  .any(|needle| lower.contains(needle))
+}
+
+/// True when raw HTML still carries a bot-protection challenge script, so a
+/// rendered page is still a challenge interstitial, not the real page.
+/// Checked on raw HTML, not markdown: the challenge scripts are stripped
+/// when the page is converted to markdown, so the wording list above cannot
+/// see them.
+pub fn looks_like_challenge_markup(html: &str) -> bool {
+  let lower = html.to_ascii_lowercase();
+  [
+    "challenge-platform",
+    "cf-chl",
+    "cf_chl",
+    "datadome",
+    "perimeterx",
   ]
   .iter()
   .any(|needle| lower.contains(needle))
@@ -1145,6 +1171,30 @@ mod tests {
     assert!(looks_like_bot_check("## Performing security verification"));
     assert!(!looks_like_bot_check(
       "A long guide to browser checks. ".repeat(100).as_str()
+    ));
+    // #5963: Cloudflare's current challenge interstitial, which the old
+    // phrase list missed, so the browser render was kept as page content.
+    let interstitial = "# Additional Verification Required\n\nYour Ray ID for this request is 1234567890abcdef\n\nVerification successful. Waiting for www.indeed.com to respond\n\n[Return home →](https://www.indeed.com/)\n\n[Troubleshooting Cloudflare Errors](https://developers.cloudflare.com/support/troubleshooting/cloudflare-errors/)";
+    assert!(looks_like_bot_check(interstitial));
+    assert!(looks_blocked(200, interstitial));
+    assert!(looks_like_bot_check("Just a moment...\n\nPlease wait."));
+  }
+
+  #[test]
+  fn challenge_markup_detection() {
+    // #5963: the challenge script survives in raw HTML even though the
+    // markdown conversion strips it, so it is checked on the HTML itself.
+    assert!(looks_like_challenge_markup(
+      "<script src=\"/cdn-cgi/challenge-platform/h/g/scripts/jsd/abc.js\"></script>"
+    ));
+    assert!(looks_like_challenge_markup(
+      "<script>var cf_chl_opt = {};</script>"
+    ));
+    assert!(looks_like_challenge_markup(
+      "<script src=\"https://client.perimeterx.net/abc/captcha.js\"></script>"
+    ));
+    assert!(!looks_like_challenge_markup(
+      "<html><body><p>A normal article about cloudflare.</p></body></html>"
     ));
   }
 }
