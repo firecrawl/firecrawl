@@ -302,7 +302,7 @@ pub(crate) fn resolve_delay(
 ) -> Option<Duration> {
   let user = user_delay
     .filter(|&d| d.is_finite() && d > 0.0)
-    .map(Duration::from_secs_f64);
+    .map(|d| Duration::from_secs_f64(d.clamp(0.0, 60.0)));
   let robots = robots_delay.map(|d| Duration::from_secs_f32(d.clamp(0.0, 30.0)));
   match (user, robots) {
     (Some(u), Some(r)) => Some(u.max(r)),
@@ -323,6 +323,15 @@ pub async fn crawl<F>(
 where
   F: FnMut(&Value),
 {
+  if let Some(d) = opts.delay {
+    if !d.is_finite() || d <= 0.0 || d > 60.0 {
+      return Err(ScrapeError::new(
+        400,
+        "INVALID_ARGUMENT",
+        "The delay parameter is measured in seconds and cannot exceed 60 seconds.",
+      ));
+    }
+  }
   let seed = parse_url(start)?;
   let scope = Scope::new(&seed, opts)?;
   let limit = opts.limit.max(1);
@@ -699,6 +708,10 @@ mod tests {
     assert_eq!(
       resolve_delay(Some(5.0), Some(3.0)),
       Some(Duration::from_secs(5))
+    );
+    assert_eq!(
+      resolve_delay(Some(120.0), None),
+      Some(Duration::from_secs(60))
     );
     assert_eq!(resolve_delay(Some(0.0), None), None);
     assert_eq!(resolve_delay(Some(-1.0), None), None);
