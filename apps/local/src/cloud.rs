@@ -641,7 +641,12 @@ pub async fn scrape_with_fallback(
         .and_then(Value::as_u64)
         .unwrap_or(200) as u16;
       let md = doc.get("markdown").and_then(Value::as_str).unwrap_or("");
-      looks_blocked(status, md)
+      // The engine may already have marked the page blocked: a challenge
+      // whose only signals are the `cf-mitigated: challenge` header or
+      // challenge markup in the HTML is invisible to `looks_blocked`
+      // (a 200 with near-empty markdown), so the engine says so itself
+      // (#5963).
+      doc.get("blocked").and_then(Value::as_bool).unwrap_or(false) || looks_blocked(status, md)
     }
     Err(e) => matches!(e.code, "FETCH_FAILED" | "SCRAPE_TIMEOUT"),
   };
