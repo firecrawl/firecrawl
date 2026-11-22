@@ -297,6 +297,34 @@ export async function batchScrapeController(
   // whole request is rejected. Any URL that slips through (e.g. via a
   // redirect) is still blocked in the scrape pipeline and its job document
   // gets the unsafe_domain_blocked error.
+  // An append that cannot be accepted has to be refused before anything below
+  // charges for it. Threat scanning bills the URLs it rejected, so a check that
+  // ran afterwards would take a scan fee for an append that never happens and
+  // would answer 403 instead of the 409 the batch status calls for.
+  if (req.body.appendToId) {
+    if (!appendTarget) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    const appendGroup = await crawlGroup.getGroup(req.body.appendToId);
+    if (!appendGroup) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (appendGroup.status !== "active" || appendTarget.cancelled) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot append to a batch with status "${appendTarget.cancelled ? "cancelled" : appendGroup.status}". Please start a new batch without appendToId.`,
+      });
+    }
+  }
+
   if (threatProtection.policy) {
     const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       urls,
