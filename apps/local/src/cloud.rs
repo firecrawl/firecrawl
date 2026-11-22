@@ -693,12 +693,32 @@ pub async fn scrape_with_fallback(
         })
         .collect()
     };
-    let cloud_opts = json!({ "formats": formats, "onlyMainContent": opts.only_main_content });
+    // Build the retry explicitly. Target-site headers may carry credentials
+    // and stay with the local fetch, including when fallback is enabled by default.
+    let mut cloud_opts = json!({ "formats": formats, "onlyMainContent": opts.only_main_content });
+    if !opts.include_tags.is_empty() {
+      cloud_opts["includeTags"] = json!(opts.include_tags);
+    }
+    if !opts.exclude_tags.is_empty() {
+      cloud_opts["excludeTags"] = json!(opts.exclude_tags);
+    }
+    if let Some(wait_for) = opts.wait_for {
+      cloud_opts["waitFor"] = json!(wait_for);
+    }
+    if let Some(timeout) = opts.timeout {
+      cloud_opts["timeout"] = json!(timeout);
+    }
     match cloud.scrape(url, &cloud_opts).await {
       Ok(payload) => {
         if let Some(mut data) = payload.get("data").cloned() {
           if let Some(obj) = data.as_object_mut() {
             obj.insert("source".into(), Value::String("firecrawl-cloud".into()));
+            if !opts.headers.is_empty() {
+              crate::scrape::add_warning(
+                obj,
+                "Custom request headers apply only to the local fetch.",
+              );
+            }
           }
           return Ok(data);
         }
@@ -971,7 +991,7 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn fallback_preserves_requested_formats_and_the_cloud_result() {
+  async fn fallback_preserves_requested_formats_and_scrape_options() {
     let blocked = axum::Router::new().route(
       "/page",
       axum::routing::get(|| async {
@@ -1038,6 +1058,15 @@ mod tests {
       assert_eq!(result["request"]["formats"], expected);
       assert_eq!(result["request"]["onlyMainContent"], false);
       assert_eq!(result["request"]["url"], format!("{site}/page"));
+      for option in [
+        "includeTags",
+        "excludeTags",
+        "waitFor",
+        "timeout",
+        "headers",
+      ] {
+        assert!(result["request"].get(option).is_none(), "{option}");
+      }
       for format in expected.as_array().unwrap() {
         let name = format.as_str().or_else(|| format["type"].as_str()).unwrap();
         assert!(!result[name].is_null(), "missing {name}: {result}");
@@ -1046,6 +1075,23 @@ mod tests {
         assert!(result.get("markdown").is_none());
       }
     }
+    let options = json!({
+      "includeTags": ["article", "main"],
+      "excludeTags": ["nav", ".sidebar"],
+      "waitFor": 100,
+      "timeout": 5000,
+      "headers": { "X-Site-Token": "fixture-only" },
+    });
+    let opts = serde_json::from_value(options.clone()).unwrap();
+    let result = scrape_with_fallback(&engine, &cloud, &format!("{site}/page"), &opts)
+      .await
+      .unwrap();
+    assert_eq!(result["source"], "firecrawl-cloud");
+    for option in ["includeTags", "excludeTags", "waitFor", "timeout"] {
+      assert_eq!(result["request"][option], options[option], "{option}");
+    }
+    assert!(result["request"].get("headers").is_none());
+    assert!(result["warning"].as_str().unwrap().contains("headers"));
     site_server.abort();
     cloud_server.abort();
   }

@@ -165,6 +165,8 @@ Scraping, crawling, mapping and document parsing run on your machine and send no
 
 A page Firecrawl Cloud fetched for you carries `"source": "firecrawl-cloud"`. If the cloud cannot get it either, the result has `"blocked": true` and a warning that says why. Cloud calls carry a random install ID and the name of the tool that made them, which is how Firecrawl counts installs.
 
+When a blocked page is retried in the cloud, the retry uses the requested output formats, main-content setting, tag filters, wait time and timeout. Custom request headers stay with the local fetch because they can contain site credentials.
+
 To sign in, run `login`. It opens the browser and saves your API key in the same place the Firecrawl CLI keeps it, so either tool's login works for both.
 
 ```bash

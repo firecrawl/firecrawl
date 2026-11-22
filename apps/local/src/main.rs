@@ -626,8 +626,9 @@ async fn run(cli: Cli) -> ExitCode {
       println!("What goes to Firecrawl cloud:");
       println!("  - your search queries (there is no search index on a laptop)");
       println!(
-        "  - the URL of a page that blocked this machine, so Firecrawl can fetch it for you"
+        "  - the URL of a blocked page and its scrape options (formats, content filters and timing)"
       );
+      println!("    Custom request headers stay with the local fetch.");
       println!("  - Alexandria data-provider calls, once you sign in");
       println!("  - a random install ID and the name of your AI tool, to count installs");
       println!(
