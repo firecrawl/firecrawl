@@ -88,6 +88,9 @@ enum Command {
     /// Pages fetched at once.
     #[arg(long, short = 'c')]
     concurrency: Option<usize>,
+    /// Delay between requests in seconds (at most 60).
+    #[arg(long)]
+    delay: Option<f64>,
     /// Write one markdown file per page into this directory.
     #[arg(long, short = 'o')]
     out: Option<std::path::PathBuf>,
@@ -385,6 +388,7 @@ async fn run(cli: Cli) -> ExitCode {
       include_paths,
       exclude_paths,
       concurrency,
+      delay,
       out,
       ignore_robots,
       public_only,
@@ -392,6 +396,12 @@ async fn run(cli: Cli) -> ExitCode {
       let Some(engine) = local_engine(public_only, browser) else {
         return ExitCode::FAILURE;
       };
+      if let Some(d) = delay {
+        if !d.is_finite() || d <= 0.0 || d > 60.0 {
+          eprintln!("Error: --delay must be a positive number of seconds, at most 60");
+          return ExitCode::FAILURE;
+        }
+      }
       let opts = CrawlOptions {
         limit,
         max_discovery_depth: max_depth,
@@ -400,6 +410,7 @@ async fn run(cli: Cli) -> ExitCode {
         crawl_entire_domain: entire_domain,
         ignore_robots_txt: ignore_robots,
         max_concurrency: concurrency,
+        delay,
         ..Default::default()
       };
       let started = std::time::Instant::now();

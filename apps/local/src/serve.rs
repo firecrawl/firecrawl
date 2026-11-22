@@ -451,6 +451,15 @@ async fn map_handler(
   }
 }
 
+fn validate_crawl_delay(delay: Option<f64>) -> Result<(), &'static str> {
+  if let Some(d) = delay {
+    if !d.is_finite() || d <= 0.0 || d > 60.0 {
+      return Err("The delay parameter is measured in seconds and cannot exceed 60 seconds.");
+    }
+  }
+  Ok(())
+}
+
 async fn crawl_handler(
   State(state): State<Arc<AppState>>,
   req_uri: axum::http::Uri,
@@ -482,6 +491,9 @@ async fn crawl_handler(
       )
     }
   };
+  if let Err(msg) = validate_crawl_delay(opts.delay) {
+    return error_response(StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.to_string());
+  }
   let (id, job) = new_job(&state, 0);
   let engine = state.engine.clone();
   let task_job = job.clone();
@@ -982,5 +994,19 @@ mod tests {
     assert!(constant_time_eq(b"abc", b"abc"));
     assert!(!constant_time_eq(b"abc", b"abd"));
     assert!(!constant_time_eq(b"abc", b"ab"));
+  }
+
+  #[test]
+  fn crawl_delay_validation() {
+    assert!(validate_crawl_delay(None).is_ok());
+    assert!(validate_crawl_delay(Some(0.5)).is_ok());
+    assert!(validate_crawl_delay(Some(1.0)).is_ok());
+    assert!(validate_crawl_delay(Some(60.0)).is_ok());
+
+    assert!(validate_crawl_delay(Some(0.0)).is_err());
+    assert!(validate_crawl_delay(Some(-1.0)).is_err());
+    assert!(validate_crawl_delay(Some(60.1)).is_err());
+    assert!(validate_crawl_delay(Some(f64::NAN)).is_err());
+    assert!(validate_crawl_delay(Some(f64::INFINITY)).is_err());
   }
 }
