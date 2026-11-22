@@ -33,9 +33,8 @@ describe("map redirect lookup", () => {
 
   it("runs for other teams", async () => {
     await expect(map(null)).rejects.toThrow("stopped before discovery");
-    expect(resolveRedirects).toHaveBeenCalledWith(
+    expect(vi.mocked(resolveRedirects).mock.calls[0][0]).toBe(
       "https://example.com/",
-      expect.anything(),
     );
   });
 });

@@ -201,6 +201,9 @@ export async function scrapeURLWithExchange(
           ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
             ? { "x-exchange-us-only": "true" }
             : {}),
+          ...(meta.internalOptions.workContactOnly
+            ? { "x-exchange-work-contact-only": "true" }
+            : {}),
           // Epoch ms the Exchange must answer by, with a margin to answer
           // before this scrape times out.
           ...(remainingMs === undefined

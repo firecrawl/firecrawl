@@ -130,6 +130,26 @@ describe("exchangeRequest", () => {
     expect(headersOf()).not.toHaveProperty("x-exchange-alexandria-verified");
   });
 
+  it("asks for work contact details only when set", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      workContactOnly: true,
+    });
+    expect(headersOf()["x-exchange-work-contact-only"]).toBe("true");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-work-contact-only");
+  });
+
   it("sends no connectors grant by default", async () => {
     await exchangeRequest({
       teamId: "team",

@@ -91,6 +91,7 @@ export async function getMapResults({
   orgId,
   allowExternalLinks,
   abort = new AbortController().signal,
+  mock,
   filterByPath = true,
   flags,
   useIndex = true,
@@ -136,7 +137,9 @@ export async function getMapResults({
   // zero-outbound guarantee forbids and a US-only team can't pin to a US exit,
   // so both take the URL as given.
   const resolvedUrl =
-    indexOnly || isUsOnly(flags) ? url : await resolveRedirects(url, abort);
+    indexOnly || isUsOnly(flags)
+      ? url
+      : await resolveRedirects(url, abort, mock);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {

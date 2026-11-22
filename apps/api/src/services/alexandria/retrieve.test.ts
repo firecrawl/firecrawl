@@ -47,6 +47,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
+import { createHash } from "node:crypto";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -1134,6 +1135,84 @@ it.each([
     expect(executions()).toHaveLength(1);
   },
 );
+
+describe("work contact details only", () => {
+  const forwarded = () =>
+    mocks.request.mock.calls.filter(
+      ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+    );
+  const storedFingerprint = () =>
+    JSON.parse([...mocks.store.values()][0]).fingerprint;
+
+  it("forwards the option to quote and execution", async () => {
+    await run({ workContactOnly: true });
+    expect(forwarded()).toHaveLength(2);
+    for (const [request] of forwarded())
+      expect(request.workContactOnly).toBe(true);
+  });
+
+  it("forwards the option on a catalogue read", async () => {
+    const read = {
+      provider: "firecrawl",
+      capability: "find-tools",
+      options: {},
+    };
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [{ ...read, creditsCost: 0, data: {} }],
+    });
+    await run({ calls: [read], workContactOnly: true });
+    expect(executions()).toHaveLength(1);
+    expect(executions()[0][0].workContactOnly).toBe(true);
+  });
+
+  it("sends nothing and keeps the request fingerprint as before when not asked", async () => {
+    await run();
+    expect(forwarded()).toHaveLength(2);
+    for (const [request] of forwarded())
+      expect(request).not.toHaveProperty("workContactOnly");
+    const before = createHash("sha256")
+      .update(
+        JSON.stringify([
+          [
+            {
+              capability: call.capability,
+              options: call.options,
+              provider: call.provider,
+            },
+          ],
+          true,
+        ]),
+      )
+      .digest("hex");
+    expect(storedFingerprint()).toBe(before);
+  });
+
+  it("fingerprints a request that asks for it differently", async () => {
+    await run();
+    const without = storedFingerprint();
+    mocks.store.clear();
+    await run({ workContactOnly: true });
+    expect(storedFingerprint()).not.toBe(without);
+  });
+
+  it.each([
+    ["losing", { workContactOnly: true }, {}],
+    ["gaining", {}, { workContactOnly: true }],
+  ])(
+    "refuses the same x-request-id after %s the option, rather than replaying",
+    async (_case, before, after) => {
+      await run(before);
+      const other = await run(after);
+      expect(other.status).toBe(409);
+      expect(other.body).toEqual(
+        expect.objectContaining({ code: "duplicate_request" }),
+      );
+      expect(executions()).toHaveLength(1);
+    },
+  );
+});
 
 it("refuses the same x-request-id with a different zero data retention setting", async () => {
   await run();
