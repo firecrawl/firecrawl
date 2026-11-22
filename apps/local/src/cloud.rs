@@ -397,6 +397,23 @@ impl Cloud {
     }
   }
 
+  fn require_allowed(&self, path: &str) -> Result<(), CloudError> {
+    if self.allows(path) {
+      return Ok(());
+    }
+    let setting = match self.mode {
+      CloudMode::Off => "off",
+      CloudMode::SearchOnly => "search",
+      CloudMode::Fallback => "auto",
+    };
+    Err(CloudError {
+      status: 403,
+      message: format!(
+        "Firecrawl cloud route {path} is blocked by FIRECRAWL_CLOUD={setting}. Set FIRECRAWL_CLOUD=auto to allow this cloud request."
+      ),
+    })
+  }
+
   /// Pass a request Firecrawl Local does not serve itself on to Firecrawl
   /// cloud and return the answer. Its own key is used when it has one;
   /// otherwise the caller's, and with neither the call is keyless. A keyless
@@ -471,6 +488,8 @@ impl Cloud {
     mut body: Value,
     timeout: Duration,
   ) -> Result<Value, CloudError> {
+    // CLI helpers must obey the same policy as forwarded API requests.
+    self.require_allowed(path)?;
     // The scrape route reads the origin from the body only, so it travels
     // there as well as in the header.
     if let Some(obj) = body.as_object_mut() {
@@ -569,12 +588,7 @@ impl Cloud {
   /// or an array of up to ten: `{provider, capability, options}`. Needs an
   /// account: providers cost Firecrawl money per call.
   pub async fn alexandria(&self, calls: &Value) -> Result<Value, CloudError> {
-    if self.mode == CloudMode::Off {
-      return Err(CloudError {
-        status: 403,
-        message: "Alexandria data providers run on Firecrawl cloud, and the cloud is turned off (FIRECRAWL_CLOUD=off).".into(),
-      });
-    }
+    self.require_allowed("/v2/scrape")?;
     if !self.has_key() {
       return Err(CloudError {
         status: 401,
@@ -605,12 +619,7 @@ impl Cloud {
   /// Browse or search the Alexandria catalogue. Tried without a key first,
   /// since browsing costs nothing; the cloud decides whether to allow it.
   pub async fn find_tools(&self, options: &Value) -> Result<Value, CloudError> {
-    if self.mode == CloudMode::Off {
-      return Err(CloudError {
-        status: 403,
-        message: "The Alexandria catalogue lives on Firecrawl cloud, and the cloud is turned off (FIRECRAWL_CLOUD=off).".into(),
-      });
-    }
+    self.require_allowed("/v2/scrape")?;
     let call = json!([{ "provider": "firecrawl", "capability": "find-tools", "options": options }]);
     let mut payload = self
       .post(
@@ -648,7 +657,39 @@ pub async fn scrape_with_fallback(
   // Why the cloud did not take over, when it was asked and could not.
   let mut cloud_refusal: Option<String> = None;
   if blocked && cloud.mode == CloudMode::Fallback {
-    let cloud_opts = json!({ "formats": ["markdown"], "onlyMainContent": opts.only_main_content });
+    let formats = if opts.formats.is_empty() {
+      vec![json!("markdown")]
+    } else {
+      // Keep format options, translating the aliases accepted by the local
+      // engine into the v2 API's spelling.
+      opts
+        .formats
+        .iter()
+        .map(|format| {
+          match format
+            .as_str()
+            .or_else(|| format.get("type").and_then(Value::as_str))
+          {
+            Some("raw_html" | "rawhtml") => {
+              if let Some(mut object) = format.as_object().cloned() {
+                object.insert("type".into(), json!("rawHtml"));
+                Value::Object(object)
+              } else {
+                json!("rawHtml")
+              }
+            }
+            Some("screenshot@fullPage") => {
+              let mut object = format.as_object().cloned().unwrap_or_default();
+              object.insert("type".into(), json!("screenshot"));
+              object.entry("fullPage").or_insert(json!(true));
+              Value::Object(object)
+            }
+            _ => format.clone(),
+          }
+        })
+        .collect()
+    };
+    let cloud_opts = json!({ "formats": formats, "onlyMainContent": opts.only_main_content });
     match cloud.scrape(url, &cloud_opts).await {
       Ok(payload) => {
         if let Some(mut data) = payload.get("data").cloned() {
@@ -822,6 +863,257 @@ pub(crate) async fn refusing_cloud() -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+  };
+
+  async fn fixture_server(app: axum::Router) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+      axum::serve(listener, app).await.unwrap();
+    });
+    (base, server)
+  }
+
+  #[tokio::test]
+  async fn restricted_modes_block_direct_non_search_calls_without_a_request() {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let seen = requests.clone();
+    let app = axum::Router::new().route(
+      "/v2/scrape",
+      axum::routing::post(move || {
+        let seen = seen.clone();
+        async move {
+          seen.fetch_add(1, Ordering::SeqCst);
+          axum::Json(json!({ "success": true, "data": {} }))
+        }
+      }),
+    );
+    let (base, server) = fixture_server(app).await;
+    for mode in [CloudMode::SearchOnly, CloudMode::Off] {
+      let cloud = Cloud::new(base.clone(), Some("fc-test".into()), mode).with_install_id("test");
+      let provider = json!({ "provider": "example", "capability": "lookup", "options": {} });
+      for result in [
+        cloud.alexandria(&provider).await,
+        cloud.find_tools(&json!({ "query": "example" })).await,
+        cloud.scrape("https://example.com", &json!({})).await,
+      ] {
+        let error = result.expect_err("the cloud setting must refuse this call");
+        assert_eq!(error.status, 403);
+        assert!(error.message.contains("FIRECRAWL_CLOUD"), "{error}");
+      }
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    server.abort();
+  }
+
+  #[tokio::test]
+  async fn allowed_direct_cloud_calls_still_reach_the_server() {
+    let base = echo_cloud().await;
+    let search = Cloud::new(base.clone(), None, CloudMode::SearchOnly).with_install_id("test");
+    let found = search.search("example", 2).await.unwrap();
+    assert!(found["request"]
+      .as_str()
+      .unwrap()
+      .starts_with("POST /v2/search "));
+
+    let auto =
+      Cloud::new(base, Some("fc-test".into()), CloudMode::Fallback).with_install_id("test");
+    for result in [
+      auto.find_tools(&json!({ "query": "example" })).await,
+      auto
+        .alexandria(&json!({ "provider": "example", "capability": "lookup" }))
+        .await,
+      auto
+        .scrape("https://example.com", &json!({ "formats": ["html"] }))
+        .await,
+    ] {
+      let payload = result.unwrap();
+      assert!(payload["request"]
+        .as_str()
+        .unwrap()
+        .starts_with("POST /v2/scrape "));
+    }
+    assert_eq!(
+      Cloud::new("http://127.0.0.1:1".into(), None, CloudMode::Off)
+        .search("example", 2)
+        .await
+        .unwrap_err()
+        .status,
+      403
+    );
+  }
+
+  #[tokio::test]
+  async fn fallback_preserves_requested_formats_and_the_cloud_result() {
+    let blocked = axum::Router::new().route(
+      "/page",
+      axum::routing::get(|| async {
+        (
+          axum::http::StatusCode::FORBIDDEN,
+          axum::response::Html("<h1>Blocked</h1>"),
+        )
+      }),
+    );
+    let (site, site_server) = fixture_server(blocked).await;
+    let cloud = axum::Router::new().route(
+      "/v2/scrape",
+      axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
+        let mut data = json!({ "metadata": { "statusCode": 200 }, "request": body });
+        for format in body["formats"].as_array().unwrap() {
+          let name = format.as_str().or_else(|| format["type"].as_str()).unwrap();
+          data[name] = match name {
+            "links" => json!(["https://example.com/article"]),
+            _ => json!(format!("cloud {name}")),
+          };
+        }
+        axum::Json(json!({ "success": true, "data": data }))
+      }),
+    );
+    let (cloud_url, cloud_server) = fixture_server(cloud).await;
+    let cloud = Cloud::new(cloud_url, None, CloudMode::Fallback).with_install_id("test");
+    let engine = crate::scrape::Engine::new(crate::scrape::EngineConfig {
+      policy: crate::guard::NetworkPolicy::AllowPrivate,
+      user_agent: None,
+      browser: crate::scrape::BrowserMode::Never,
+    })
+    .unwrap();
+    for (formats, expected) in [
+      (
+        json!(["markdown", "html", "rawHtml", "links"]),
+        json!(["markdown", "html", "rawHtml", "links"]),
+      ),
+      (json!(["links"]), json!(["links"])),
+      (
+        json!([{ "type": "screenshot", "fullPage": true }]),
+        json!([{ "type": "screenshot", "fullPage": true }]),
+      ),
+      (json!([]), json!(["markdown"])),
+      (json!(["raw_html", "links"]), json!(["rawHtml", "links"])),
+      (json!(["rawhtml"]), json!(["rawHtml"])),
+      (
+        json!([{ "type": "raw_html" }]),
+        json!([{ "type": "rawHtml" }]),
+      ),
+      (
+        json!(["screenshot@fullPage"]),
+        json!([{ "type": "screenshot", "fullPage": true }]),
+      ),
+    ] {
+      let opts: crate::scrape::ScrapeOptions = serde_json::from_value(json!({
+        "formats": formats,
+        "onlyMainContent": false,
+      }))
+      .unwrap();
+      let result = scrape_with_fallback(&engine, &cloud, &format!("{site}/page"), &opts)
+        .await
+        .unwrap();
+      assert_eq!(result["source"], "firecrawl-cloud");
+      assert_eq!(result["request"]["formats"], expected);
+      assert_eq!(result["request"]["onlyMainContent"], false);
+      assert_eq!(result["request"]["url"], format!("{site}/page"));
+      for format in expected.as_array().unwrap() {
+        let name = format.as_str().or_else(|| format["type"].as_str()).unwrap();
+        assert!(!result[name].is_null(), "missing {name}: {result}");
+      }
+      if formats == json!(["links"]) {
+        assert!(result.get("markdown").is_none());
+      }
+    }
+    site_server.abort();
+    cloud_server.abort();
+  }
+
+  #[tokio::test]
+  async fn fallback_keeps_local_results_when_cloud_is_restricted_or_refuses() {
+    let site = axum::Router::new()
+      .route(
+        "/blocked",
+        axum::routing::get(|| async {
+          (
+            axum::http::StatusCode::FORBIDDEN,
+            axum::response::Html("<h1>Blocked</h1>"),
+          )
+        }),
+      )
+      .route(
+        "/article",
+        axum::routing::get(|| async {
+          axum::response::Html("<h1>Example article</h1><p>This article was served locally.</p>")
+        }),
+      );
+    let (site, site_server) = fixture_server(site).await;
+    let requests = Arc::new(AtomicUsize::new(0));
+    let seen = requests.clone();
+    let refusal = axum::Router::new().route(
+      "/v2/scrape",
+      axum::routing::post(move || {
+        let seen = seen.clone();
+        async move {
+          seen.fetch_add(1, Ordering::SeqCst);
+          (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(json!({ "error": "fixture unavailable" })),
+          )
+        }
+      }),
+    );
+    let (cloud_url, cloud_server) = fixture_server(refusal).await;
+    let engine = crate::scrape::Engine::new(crate::scrape::EngineConfig {
+      policy: crate::guard::NetworkPolicy::AllowPrivate,
+      user_agent: None,
+      browser: crate::scrape::BrowserMode::Never,
+    })
+    .unwrap();
+    let opts: crate::scrape::ScrapeOptions = serde_json::from_value(json!({
+      "formats": ["html", "links"],
+    }))
+    .unwrap();
+    for mode in [CloudMode::Off, CloudMode::SearchOnly, CloudMode::Fallback] {
+      let cloud = Cloud::new(cloud_url.clone(), None, mode).with_install_id("test");
+      let article = scrape_with_fallback(&engine, &cloud, &format!("{site}/article"), &opts)
+        .await
+        .unwrap();
+      assert_eq!(article["source"], "local");
+      assert!(article["html"]
+        .as_str()
+        .unwrap()
+        .contains("Example article"));
+      let blocked = scrape_with_fallback(&engine, &cloud, &format!("{site}/blocked"), &opts)
+        .await
+        .unwrap();
+      assert_eq!(blocked["source"], "local");
+      assert_eq!(blocked["blocked"], true);
+      assert!(blocked["html"].as_str().unwrap().contains("Blocked"));
+      if mode == CloudMode::Fallback {
+        assert!(blocked["warning"]
+          .as_str()
+          .unwrap()
+          .contains("fixture unavailable"));
+      } else {
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+      }
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    let public_engine = crate::scrape::Engine::new(crate::scrape::EngineConfig {
+      policy: crate::guard::NetworkPolicy::PublicOnly,
+      user_agent: None,
+      browser: crate::scrape::BrowserMode::Never,
+    })
+    .unwrap();
+    let cloud = Cloud::new(cloud_url, None, CloudMode::Fallback).with_install_id("test");
+    let error = scrape_with_fallback(&public_engine, &cloud, &format!("{site}/blocked"), &opts)
+      .await
+      .unwrap_err();
+    assert_eq!(error.code, "BLOCKED_TARGET");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    site_server.abort();
+    cloud_server.abort();
+  }
 
   #[test]
   fn cli_login_is_picked_up() {

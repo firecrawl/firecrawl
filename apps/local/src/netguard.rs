@@ -373,11 +373,11 @@ mod tests {
     stream.write_all(&[5, 1, 0]).await.unwrap();
     let mut chosen = [0u8; 2];
     stream.read_exact(&mut chosen).await.unwrap();
+    assert_eq!(chosen, [5, 0]);
     // Command 3 is UDP associate.
-    stream
-      .write_all(&[5, 3, 0, 1, 127, 0, 0, 1, 0, 53])
-      .await
-      .unwrap();
+    // The proxy rejects the command header before reading a target. Leaving
+    // unread target bytes can race the reply with a TCP reset on Windows.
+    stream.write_all(&[5, 3, 0, 1]).await.unwrap();
     let mut answer = [0u8; 10];
     stream.read_exact(&mut answer).await.unwrap();
     assert_eq!(answer[1], REPLY_COMMAND_NOT_SUPPORTED);
