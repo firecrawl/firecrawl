@@ -397,20 +397,18 @@ impl Cloud {
     }
   }
 
-  fn require_allowed(&self, path: &str) -> Result<(), CloudError> {
+  fn require_allowed(&self, path: &str, feature: &str) -> Result<(), CloudError> {
     if self.allows(path) {
       return Ok(());
     }
-    let setting = match self.mode {
-      CloudMode::Off => "off",
-      CloudMode::SearchOnly => "search",
-      CloudMode::Fallback => "auto",
+    let restriction = match self.mode {
+      CloudMode::Off => "the cloud is turned off (FIRECRAWL_CLOUD=off).",
+      CloudMode::SearchOnly => "only web search is enabled (FIRECRAWL_CLOUD=search). Set FIRECRAWL_CLOUD=auto to enable this feature.",
+      CloudMode::Fallback => "this request path is not allowed.",
     };
     Err(CloudError {
       status: 403,
-      message: format!(
-        "Firecrawl cloud route {path} is blocked by FIRECRAWL_CLOUD={setting}. Set FIRECRAWL_CLOUD=auto to allow this cloud request."
-      ),
+      message: format!("{feature}, and {restriction}"),
     })
   }
 
@@ -489,7 +487,7 @@ impl Cloud {
     timeout: Duration,
   ) -> Result<Value, CloudError> {
     // CLI helpers must obey the same policy as forwarded API requests.
-    self.require_allowed(path)?;
+    self.require_allowed(path, "This request runs on Firecrawl cloud")?;
     // The scrape route reads the origin from the body only, so it travels
     // there as well as in the header.
     if let Some(obj) = body.as_object_mut() {
@@ -588,7 +586,10 @@ impl Cloud {
   /// or an array of up to ten: `{provider, capability, options}`. Needs an
   /// account: providers cost Firecrawl money per call.
   pub async fn alexandria(&self, calls: &Value) -> Result<Value, CloudError> {
-    self.require_allowed("/v2/scrape")?;
+    self.require_allowed(
+      "/v2/scrape",
+      "Alexandria data providers run on Firecrawl cloud",
+    )?;
     if !self.has_key() {
       return Err(CloudError {
         status: 401,
@@ -619,7 +620,10 @@ impl Cloud {
   /// Browse or search the Alexandria catalogue. Tried without a key first,
   /// since browsing costs nothing; the cloud decides whether to allow it.
   pub async fn find_tools(&self, options: &Value) -> Result<Value, CloudError> {
-    self.require_allowed("/v2/scrape")?;
+    self.require_allowed(
+      "/v2/scrape",
+      "The Alexandria catalogue lives on Firecrawl cloud",
+    )?;
     let call = json!([{ "provider": "firecrawl", "capability": "find-tools", "options": options }]);
     let mut payload = self
       .post(
@@ -894,17 +898,35 @@ mod tests {
       }),
     );
     let (base, server) = fixture_server(app).await;
-    for mode in [CloudMode::SearchOnly, CloudMode::Off] {
-      let cloud = Cloud::new(base.clone(), Some("fc-test".into()), mode).with_install_id("test");
-      let provider = json!({ "provider": "example", "capability": "lookup", "options": {} });
-      for result in [
-        cloud.alexandria(&provider).await,
-        cloud.find_tools(&json!({ "query": "example" })).await,
-        cloud.scrape("https://example.com", &json!({})).await,
-      ] {
-        let error = result.expect_err("the cloud setting must refuse this call");
+    let provider = json!({ "provider": "example", "capability": "lookup", "options": {} });
+    for (mode, setting) in [
+      (CloudMode::SearchOnly, "FIRECRAWL_CLOUD=search"),
+      (CloudMode::Off, "FIRECRAWL_CLOUD=off"),
+    ] {
+      for key in [None, Some("fc-test".into())] {
+        let cloud = Cloud::new(base.clone(), key, mode).with_install_id("test");
+        for (result, feature) in [
+          (
+            cloud.alexandria(&provider).await,
+            "Alexandria data providers",
+          ),
+          (
+            cloud.find_tools(&json!({ "query": "example" })).await,
+            "Alexandria catalogue",
+          ),
+        ] {
+          let error = result.expect_err("the cloud setting must refuse this feature");
+          assert_eq!(error.status, 403);
+          assert!(error.message.contains(feature), "{error}");
+          assert!(error.message.contains(setting), "{error}");
+          assert!(!error.message.contains("/v2/scrape"), "{error}");
+        }
+        let error = cloud
+          .scrape("https://example.com", &json!({}))
+          .await
+          .unwrap_err();
         assert_eq!(error.status, 403);
-        assert!(error.message.contains("FIRECRAWL_CLOUD"), "{error}");
+        assert!(error.message.contains(setting), "{error}");
       }
     }
     assert_eq!(requests.load(Ordering::SeqCst), 0);

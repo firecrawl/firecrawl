@@ -189,7 +189,9 @@ async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<
   let mut request = [0u8; 4];
   client.read_exact(&mut request).await?;
   if request[0] != 5 || request[1] != 1 {
-    return reply(&mut client, REPLY_COMMAND_NOT_SUPPORTED).await;
+    reply(&mut client, REPLY_COMMAND_NOT_SUPPORTED).await?;
+    // Send the reply before closing a socket that may still hold target bytes.
+    return client.shutdown().await;
   }
   let host = match request[3] {
     1 => {
@@ -369,17 +371,20 @@ mod tests {
     let proxy = GuardProxy::start(NetworkPolicy::AllowPrivate)
       .await
       .unwrap();
-    let mut stream = TcpStream::connect(proxy.addr()).await.unwrap();
-    stream.write_all(&[5, 1, 0]).await.unwrap();
-    let mut chosen = [0u8; 2];
-    stream.read_exact(&mut chosen).await.unwrap();
-    assert_eq!(chosen, [5, 0]);
-    // Command 3 is UDP associate.
-    // The proxy rejects the command header before reading a target. Leaving
-    // unread target bytes can race the reply with a TCP reset on Windows.
-    stream.write_all(&[5, 3, 0, 1]).await.unwrap();
-    let mut answer = [0u8; 10];
-    stream.read_exact(&mut answer).await.unwrap();
-    assert_eq!(answer[1], REPLY_COMMAND_NOT_SUPPORTED);
+    // A UDP ASSOCIATE request must be refused whether the target has arrived or not.
+    for request in [&[5, 3, 0, 1, 127, 0, 0, 1, 0, 53][..], &[5, 3, 0, 1]] {
+      let mut stream = TcpStream::connect(proxy.addr()).await.unwrap();
+      stream.write_all(&[5, 1, 0]).await.unwrap();
+      let mut chosen = [0u8; 2];
+      stream.read_exact(&mut chosen).await.unwrap();
+      assert_eq!(chosen, [5, 0]);
+      stream.write_all(request).await.unwrap();
+      let mut answer = [0u8; 10];
+      tokio::time::timeout(Duration::from_secs(3), stream.read_exact(&mut answer))
+        .await
+        .expect("the proxy should refuse the command promptly")
+        .unwrap();
+      assert_eq!(answer[1], REPLY_COMMAND_NOT_SUPPORTED);
+    }
   }
 }
