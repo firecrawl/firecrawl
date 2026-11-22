@@ -21,7 +21,9 @@ function job(refundClass: FeedbackJobRow["refund_class"]): FeedbackJobRow {
 
 describe("precomputed feedback refund classes", () => {
   it("uses the stored PDF policy without scrape options", () => {
-    expect(computeRefundPolicy(job("scrape_pdf"), "bad")).toMatchObject({
+    expect(
+      computeRefundPolicy(job("scrape_pdf"), { rating: "bad" }),
+    ).toMatchObject({
       desiredRefund: 3,
       policy: {
         matchedReason: "scrape_pdf_feedback",
@@ -31,7 +33,9 @@ describe("precomputed feedback refund classes", () => {
   });
 
   it("uses the stored basic scrape policy without scrape options", () => {
-    expect(computeRefundPolicy(job("scrape_basic"), "partial")).toMatchObject({
+    expect(
+      computeRefundPolicy(job("scrape_basic"), { rating: "partial" }),
+    ).toMatchObject({
       desiredRefund: 1,
       policy: { matchedReason: "scrape_feedback" },
     });
@@ -45,7 +49,7 @@ describe("interact and browser session feedback", () => {
       const session = { ...job(undefined), endpoint, credits_cost: 0 };
 
       for (const rating of ["good", "partial", "bad"] as const) {
-        expect(computeRefundPolicy(session, rating)).toMatchObject({
+        expect(computeRefundPolicy(session, { rating })).toMatchObject({
           desiredRefund: 0,
           policy: {
             endpoint,
@@ -61,7 +65,10 @@ describe("interact and browser session feedback", () => {
     "has no refund for %s feedback even if a row carried billed credits",
     endpoint => {
       expect(
-        computeRefundPolicy({ ...job("scrape_basic"), endpoint }, "bad"),
+        computeRefundPolicy(
+          { ...job("scrape_basic"), endpoint },
+          { rating: "bad" },
+        ),
       ).toMatchObject({
         desiredRefund: 0,
         policy: {
@@ -72,4 +79,27 @@ describe("interact and browser session feedback", () => {
       });
     },
   );
+});
+
+describe("search feedback", () => {
+  const search = { ...job("search"), endpoint: "search" as const };
+
+  it("refunds a good rating that names a valuable result", () => {
+    expect(
+      computeRefundPolicy(search, {
+        rating: "good",
+        valuableResults: [{ source: "web", position: 1 }],
+      }),
+    ).toMatchObject({
+      desiredRefund: 1,
+      policy: { matchedReason: "search_feedback" },
+    });
+  });
+
+  it("records a bare good rating without a refund", () => {
+    expect(computeRefundPolicy(search, { rating: "good" })).toMatchObject({
+      desiredRefund: 0,
+      policy: { mode: "none", matchedReason: "search_feedback_without_detail" },
+    });
+  });
 });

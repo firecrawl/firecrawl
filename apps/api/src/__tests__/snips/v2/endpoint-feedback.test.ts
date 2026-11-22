@@ -109,8 +109,8 @@ describeIf(TEST_PRODUCTION)("Generic endpoint feedback tests", () => {
       {
         endpoint: "search",
         jobId: raw.body.id,
-        rating: "good",
-        note: "A good search rating must name a valuable source.",
+        rating: "partial",
+        note: "A partial search rating must name a source or missing content.",
       },
       identity,
     );

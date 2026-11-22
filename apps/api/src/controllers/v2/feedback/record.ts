@@ -413,7 +413,7 @@ async function recordEndpointFeedbackInner(
     const refundedTodayBefore = await sumCreditsRefundedToday(dbTeamId, logger);
     const { desiredRefund, policy } = computeRefundPolicy(
       jobOrFailure,
-      options.feedback.rating,
+      options.feedback,
     );
     const cappedRefund = Math.min(
       desiredRefund,

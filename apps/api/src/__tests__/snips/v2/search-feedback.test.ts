@@ -253,7 +253,28 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
   );
 
   it.concurrent(
-    "rejects 'good' rating without any valuableSources",
+    "records a bare 'good' rating without a refund",
+    async () => {
+      const raw = await searchRawFull(
+        { query: "firecrawl", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+
+      const result = await searchFeedback(
+        raw.body.id,
+        { rating: "good" },
+        identity,
+      );
+      expect(result.success).toBe(true);
+      expect(result.creditsRefunded).toBe(0);
+      expect(typeof result.feedbackId).toBe("string");
+    },
+    90000,
+  );
+
+  it.concurrent(
+    "rejects 'bad' rating that names only content it found",
     async () => {
       const raw = await searchRawFull(
         { query: "firecrawl", limit: 3 },
@@ -264,8 +285,8 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       const failed = await searchFeedbackRaw(
         raw.body.id,
         {
-          rating: "good",
-          missingContent: [{ topic: "Irrelevant for good rating" }],
+          rating: "bad",
+          valuableResults: [{ source: "web", position: 1 }],
         },
         identity,
       );

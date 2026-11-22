@@ -144,10 +144,33 @@ describe("feedback schema", () => {
       endpointFeedbackSchema.safeParse({
         endpoint: "search",
         jobId: "01933161-0000-7000-8000-000000000001",
-        rating: "good",
+        rating: "partial",
         note: "A note alone should not satisfy search feedback rules.",
       }).success,
     ).toBe(false);
+
+    expect(searchFeedbackSchema.safeParse({ rating: "good" }).success).toBe(
+      true,
+    );
+    expect(searchFeedbackSchema.safeParse({ rating: "bad" }).success).toBe(
+      false,
+    );
+    for (const endpoint of ["search", "scrape"] as const) {
+      expect(
+        endpointFeedbackSchema.safeParse({
+          endpoint,
+          jobId: "01933161-0000-7000-8000-000000000001",
+          rating: "good",
+        }).success,
+      ).toBe(true);
+      expect(
+        endpointFeedbackSchema.safeParse({
+          endpoint,
+          jobId: "01933161-0000-7000-8000-000000000001",
+          rating: "partial",
+        }).success,
+      ).toBe(false);
+    }
 
     expect(
       endpointFeedbackSchema.safeParse({

@@ -1,10 +1,12 @@
 import { config } from "../../../config";
 import {
+  FeedbackInput,
   FeedbackJobRow,
   FeedbackRating,
   RefundPolicySnapshot,
   isSessionEndpoint,
 } from "./internal-types";
+import { hasSubstantiveSearchFeedback } from "../types";
 import type { RefundClass } from "../../../lib/feedback-job-store";
 
 type RefundablePolicy =
@@ -138,7 +140,7 @@ function policyFor(job: FeedbackJobRow): RefundablePolicy | null {
 
 export function computeRefundPolicy(
   job: FeedbackJobRow,
-  rating: FeedbackRating,
+  feedback: FeedbackInput,
 ): { desiredRefund: number; policy: RefundPolicySnapshot } {
   const billedCredits = Math.max(0, job.credits_cost ?? 0);
   if (!config.FEEDBACK_REFUND_ENABLED) return none(job, "refunds_disabled");
@@ -146,8 +148,11 @@ export function computeRefundPolicy(
 
   const policy = policyFor(job);
   if (!policy) return none(job, "endpoint_not_refundable");
-  if (!policy.ratings.includes(rating)) {
+  if (!policy.ratings.includes(feedback.rating)) {
     return none(job, "rating_not_refundable", policy.ratings);
+  }
+  if (job.endpoint === "search" && !hasSubstantiveSearchFeedback(feedback)) {
+    return none(job, "search_feedback_without_detail", policy.ratings);
   }
 
   if (policy.mode === "flat") {

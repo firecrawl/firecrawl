@@ -2888,7 +2888,7 @@ const valuableResultSchema = z.strictObject({
 
 const valuableResultsSchema = z.array(valuableResultSchema).max(50);
 
-function hasSubstantiveSearchFeedback(data: {
+export function hasSubstantiveSearchFeedback(data: {
   rating: "good" | "bad" | "partial";
   valuableSources?: unknown[];
   valuableResults?: unknown[];
@@ -2931,10 +2931,13 @@ export const searchFeedbackSchema = z
     origin: z.string().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
-  .refine(data => hasSubstantiveSearchFeedback(data), {
-    message:
-      "Feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
-  });
+  .refine(
+    data => data.rating === "good" || hasSubstantiveSearchFeedback(data),
+    {
+      message:
+        "Feedback must be substantive. 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions. 'good' needs no detail, but earns a refund only with valuableSources or valuableResults.",
+    },
+  );
 
 export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
 export type SearchFeedbackRequestInput = z.input<typeof searchFeedbackSchema>;
@@ -3030,6 +3033,7 @@ export const endpointFeedbackSchema = z
   .refine(
     data => {
       return (
+        data.rating === "good" ||
         (data.issues?.length ?? 0) > 0 ||
         (data.tags?.length ?? 0) > 0 ||
         (data.note?.length ?? 0) > 0 ||
@@ -3043,7 +3047,7 @@ export const endpointFeedbackSchema = z
     },
     {
       message:
-        "Feedback must include at least one substantive signal: issues, note, sources, valuableResults, missingContent, querySuggestions, url, or pageNumbers.",
+        "Partial or bad feedback must include at least one substantive signal: issues, note, sources, valuableResults, missingContent, querySuggestions, url, or pageNumbers.",
     },
   )
   .refine(
@@ -3054,10 +3058,13 @@ export const endpointFeedbackSchema = z
     },
   )
   .refine(
-    data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
+    data =>
+      data.endpoint !== "search" ||
+      data.rating === "good" ||
+      hasSubstantiveSearchFeedback(data),
     {
       message:
-        "Search feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+        "Search feedback must be substantive. 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions. 'good' needs no detail, but earns a refund only with valuableSources or valuableResults.",
     },
   );
 
