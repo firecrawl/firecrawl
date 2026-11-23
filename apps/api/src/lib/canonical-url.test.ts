@@ -99,3 +99,21 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl(url)).toBe(expected);
   });
 });
+
+describe("normalizeUrl scheme and host case", () => {
+  it("should fold an upper-case scheme and host to lower case", () => {
+    expect(normalizeUrl("HTTPS://WWW.Example.com/Path")).toBe("example.com/Path");
+  });
+
+  it("should keep a mixed-case path unchanged", () => {
+    expect(normalizeUrl("https://example.com/Path/To/File")).toBe(
+      "example.com/Path/To/File",
+    );
+  });
+
+  it("should give the same key for both spellings of one page", () => {
+    expect(normalizeUrl("HTTPS://WWW.Example.com/Path/")).toBe(
+      normalizeUrl("https://www.example.com/Path"),
+    );
+  });
+});
