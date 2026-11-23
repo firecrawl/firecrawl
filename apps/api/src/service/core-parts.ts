@@ -1,10 +1,11 @@
 /*
  * The service's own extension, applied first in every service: its process
- * roles.
+ * roles and its error classes.
  *
  * A role's module is loaded when the role runs and not before, so a process
  * loads only the code of the role it runs. For the same reason this file
- * imports nothing at the top but types.
+ * imports nothing at the top but types, and the error classes are loaded the
+ * first time an error is looked up.
  */
 import type { CoreParts, Worker } from "./service";
 
@@ -55,7 +56,13 @@ const workers: Record<string, Worker> = {
 
 export function coreParts(): CoreParts {
   return {
-    core: { name: "core", workers },
+    core: {
+      name: "core",
+      errors: () =>
+        (require("../lib/error-serde") as typeof import("../lib/error-serde"))
+          .coreErrors,
+      workers,
+    },
     logger: {
       error: (message, meta) => {
         (

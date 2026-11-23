@@ -2,6 +2,7 @@
  * The service: what one deployment of the API is made of, built once from a
  * config and read by the rest of the code.
  */
+import type { TransportableErrorClass } from "../lib/error";
 import { assertEnv, describeEnv } from "./env";
 import {
   buildHooks,
@@ -35,6 +36,12 @@ export interface Extension {
   /** The owner of everything listed here, as `describe()` shows it. */
   name: string;
   hooks?: HookHandlers;
+  /**
+   * Error classes that can cross the job queue. A function is called the first
+   * time the service looks an error up, so that listing classes does not load
+   * them when the service is built.
+   */
+  errors?: TransportableErrorClass[] | (() => TransportableErrorClass[]);
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -61,6 +68,8 @@ export interface ServiceDescription {
   modules: string[];
   /** For each hook point with a handler, the owner of each handler, in the order they run. */
   hooks: Record<string, string[]>;
+  /** For each error code with a class, the extension the class comes from. */
+  errors: Record<string, string>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -70,9 +79,16 @@ export interface ServiceDescription {
   env: Record<string, string[]>;
 }
 
+/** The error classes of a service, by the code each carries across the job queue. */
+export interface ErrorRegistry {
+  /** The class registered under a code, or undefined when the service has none. */
+  classFor(code: string): TransportableErrorClass | undefined;
+}
+
 export interface Service {
   readonly modules: Readonly<Modules>;
   readonly hooks: Hooks;
+  readonly errors: ErrorRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   describe(): ServiceDescription;
 }
@@ -98,6 +114,32 @@ export function createService(
     Object.assign({}, ...extensions.map(extension => extension.workers ?? {})),
   );
 
+  type RegisteredError = { owner: string; errorClass: TransportableErrorClass };
+  let errorsByCode: Map<string, RegisteredError> | undefined;
+  const registeredErrors = () => {
+    if (errorsByCode) return errorsByCode;
+    const byCode = new Map<string, RegisteredError>();
+    for (const extension of extensions) {
+      const listed =
+        typeof extension.errors === "function"
+          ? extension.errors()
+          : (extension.errors ?? []);
+      for (const errorClass of listed) {
+        for (const code of errorClass.codes) {
+          const taken = byCode.get(code);
+          if (taken) {
+            throw new Error(
+              `Error code "${code}" is registered by "${taken.owner}" and by "${extension.name}"`,
+            );
+          }
+          byCode.set(code, { owner: extension.name, errorClass });
+        }
+      }
+    }
+    errorsByCode = byCode;
+    return byCode;
+  };
+
   return Object.freeze({
     modules,
     hooks: buildHooks<HookPoints>(
@@ -105,6 +147,9 @@ export function createService(
       (hook, error) =>
         parts.logger.error("Hook handler failed", { hook, error }),
     ),
+    errors: Object.freeze({
+      classFor: (code: string) => registeredErrors().get(code)?.errorClass,
+    }),
     workers,
     describe() {
       const hooks: Record<string, string[]> = {};
@@ -122,10 +167,15 @@ export function createService(
           roles[role] = extension.name;
         }
       }
+      // Built from entries, so that a code is listed whatever its name is.
+      const errors = Object.fromEntries(
+        [...registeredErrors()].map(([code, { owner }]) => [code, owner]),
+      );
       return {
         extensions: names,
         modules: Object.keys(modules).sort(),
         hooks: sortedByKey(hooks),
+        errors: sortedByKey(errors),
         roles: sortedByKey(roles),
         env: sortedByKey(describeEnv()),
       };
@@ -160,6 +210,9 @@ export const service: Service = {
   },
   get hooks() {
     return current().hooks;
+  },
+  get errors() {
+    return current().errors;
   },
   get workers() {
     return current().workers;

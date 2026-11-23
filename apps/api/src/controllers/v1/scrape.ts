@@ -12,7 +12,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
@@ -333,10 +333,10 @@ async function scrapeControllerInner(
     }
 
     const timeoutErr =
-      e instanceof TransportableError &&
+      isTransportableError(e) &&
       (e.code === "SCRAPE_TIMEOUT" || e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
-    if (e instanceof TransportableError) {
+    if (isTransportableError(e)) {
       if (!timeoutErr) {
         logger.error(`Error in scrapeController`, {
           version: "v1",
