@@ -1156,6 +1156,7 @@ async function finalizeAttempt({
   customerId,
   featureId,
   heldValue,
+  entityId,
   idempotencyKey,
 }: FirebillFinalizeRetryJobData): Promise<
   { ok: true } | { ok: false; cause: FirebillCause; status?: number }
@@ -1194,6 +1195,12 @@ async function finalizeAttempt({
         // pay for this run; without it the whole cost falls on the ghost.
         ...(heldValue !== undefined && heldValue !== null
           ? { held_value: heldValue }
+          : {}),
+        // The team the hold was taken against, "" when it named none. With the
+        // three above, this lets firebill bill a confirm that overshot its
+        // hold rather than park it.
+        ...(entityId !== undefined && entityId !== null
+          ? { entity_id: entityId }
           : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),

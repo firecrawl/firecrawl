@@ -130,8 +130,9 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   // When true, a plain web search that the search platform classifies as
-  // government is served through the Government Index. It needs
-  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  // government is served through the Government Index on RESEARCH_PROXY_URL.
+  // It needs SEARCH_PLATFORM_URL for query classification. Unset or empty, no
+  // search is routed.
   GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
   // The longest a plain web search waits for the routing decision before the
   // regular web search starts; a decision that takes longer routes nothing.
@@ -343,6 +344,24 @@ const configSchema = z.object({
   MCP_ACTION_LOG_SECRET: z.string().optional(),
   MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
   MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
+  // Comma-separated https URL prefixes, each ending in "/". Besides the
+  // canonical hosted MCP URLs, an action log may name a resource made of one
+  // of these, a deployment name and a canonical MCP path.
+  MCP_ACTION_LOG_RESOURCE_PREFIXES: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(prefix =>
+              /^https:\/\/[a-z0-9.-]+(?::\d+)?\/(?:[a-z0-9._~-]+\/)*$/.test(
+                prefix.trim(),
+              ),
+            ),
+        "MCP_ACTION_LOG_RESOURCE_PREFIXES must be comma-separated https URL prefixes ending in /",
+      ),
+  ),
   // Autumn feature id of the balance hosted MCP calls spend first (see
   // AutumnService.trackHostedMcpCredits).
   MCP_CREDITS_FEATURE_ID: emptyStringAsDefault(
