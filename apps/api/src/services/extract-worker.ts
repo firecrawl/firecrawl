@@ -213,17 +213,17 @@ async function shutdown() {
   process.exit(0);
 }
 
-process.on("SIGINT", () => {
-  _logger.debug("Received SIGINT. Shutting down gracefully...");
-  shutdown();
-});
-
-process.on("SIGTERM", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
-  shutdown();
-});
-
 export async function start() {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    shutdown();
+  });
+
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    shutdown();
+  });
+
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

@@ -23,7 +23,13 @@ export function testService(
   );
 }
 
-/** Installs a service while `fn` runs, then puts back what was installed before. */
+/**
+ * Installs a service while `fn` runs, then puts back what was installed before.
+ *
+ * A process has one installed service, so two uses must not overlap: one may
+ * sit inside another, but tests that run concurrently in one file cannot each
+ * have their own.
+ */
 export async function withService<T>(
   next: Service,
   fn: () => Promise<T>,

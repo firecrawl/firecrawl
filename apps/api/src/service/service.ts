@@ -90,6 +90,7 @@ export interface Service {
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
+  /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
 }
 
@@ -111,28 +112,44 @@ export function createService(
 
   const modules = Object.freeze({ ...config.modules });
   const workers: Record<string, Worker> = Object.freeze(
-    Object.assign({}, ...extensions.map(extension => extension.workers ?? {})),
+    Object.fromEntries(
+      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
+    ),
   );
+
+  const hooks = buildHooks<HookPoints>(
+    extensions.flatMap(extension => extension.hooks ?? []),
+    (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
+  );
+
+  // Snapshot extension names and error sources at creation so mutating an
+  // extension later cannot change what loads or is described, while keeping
+  // lazy error loaders deferred until first lookup.
+  const errorSources = extensions.map(extension => ({
+    owner: extension.name,
+    errors:
+      typeof extension.errors === "function"
+        ? extension.errors
+        : [...(extension.errors ?? [])],
+  }));
 
   type RegisteredError = { owner: string; errorClass: TransportableErrorClass };
   let errorsByCode: Map<string, RegisteredError> | undefined;
   const registeredErrors = () => {
     if (errorsByCode) return errorsByCode;
     const byCode = new Map<string, RegisteredError>();
-    for (const extension of extensions) {
+    for (const source of errorSources) {
       const listed =
-        typeof extension.errors === "function"
-          ? extension.errors()
-          : (extension.errors ?? []);
+        typeof source.errors === "function" ? source.errors() : source.errors;
       for (const errorClass of listed) {
         for (const code of errorClass.codes) {
           const taken = byCode.get(code);
           if (taken) {
             throw new Error(
-              `Error code "${code}" is registered by "${taken.owner}" and by "${extension.name}"`,
+              `Error code "${code}" is registered by "${taken.owner}" and by "${source.owner}"`,
             );
           }
-          byCode.set(code, { owner: extension.name, errorClass });
+          byCode.set(code, { owner: source.owner, errorClass });
         }
       }
     }
@@ -140,43 +157,51 @@ export function createService(
     return byCode;
   };
 
+  // Worked out here, from the extensions as the handlers and roles above were
+  // just read from them, so it stays true to what the service runs whatever
+  // happens to an extension object later. The two records have no prototype,
+  // so a name such as "constructor" is a key like any other.
+  const handlerOwners: Record<string, string[]> = Object.create(null);
+  const roleOwners: Record<string, string> = Object.create(null);
+  for (const extension of extensions) {
+    for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
+      const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
+      if (count === 0) continue;
+      handlerOwners[point] = [
+        ...(handlerOwners[point] ?? []),
+        ...Array<string>(count).fill(extension.name),
+      ];
+    }
+    for (const role of Object.keys(extension.workers ?? {})) {
+      roleOwners[role] = extension.name;
+    }
+  }
+  const baseDescription = {
+    extensions: names,
+    modules: Object.keys(modules).sort(),
+    hooks: sortedByKey(handlerOwners),
+    roles: sortedByKey(roleOwners),
+  };
+
   return Object.freeze({
     modules,
-    hooks: buildHooks<HookPoints>(
-      extensions.flatMap(extension => extension.hooks ?? []),
-      (hook, error) =>
-        parts.logger.error("Hook handler failed", { hook, error }),
-    ),
+    hooks,
     errors: Object.freeze({
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
     workers,
-    describe() {
-      const hooks: Record<string, string[]> = {};
-      const roles: Record<string, string> = {};
-      for (const extension of extensions) {
-        for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
-          const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
-          if (count === 0) continue;
-          hooks[point] = [
-            ...(hooks[point] ?? []),
-            ...Array<string>(count).fill(extension.name),
-          ];
-        }
-        for (const role of Object.keys(extension.workers ?? {})) {
-          roles[role] = extension.name;
-        }
-      }
+    describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
       const errors = Object.fromEntries(
         [...registeredErrors()].map(([code, { owner }]) => [code, owner]),
       );
+      const copy = structuredClone(baseDescription);
       return {
-        extensions: names,
-        modules: Object.keys(modules).sort(),
-        hooks: sortedByKey(hooks),
+        extensions: copy.extensions,
+        modules: copy.modules,
+        hooks: copy.hooks,
         errors: sortedByKey(errors),
-        roles: sortedByKey(roles),
+        roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
     },
@@ -220,10 +245,14 @@ export const service: Service = {
   describe: () => current().describe(),
 };
 
-/** Swaps the installed service and returns the one it replaced. For tests. */
+/**
+ * Swaps the installed service and returns the one it replaced. The role `run`
+ * started belongs to the service it installed, so it is forgotten. For tests.
+ */
 export function replaceService(next: Service | undefined): Service | undefined {
   const previous = installed;
   installed = next;
+  startedRole = undefined;
   return previous;
 }
 
