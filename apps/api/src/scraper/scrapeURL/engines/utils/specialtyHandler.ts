@@ -111,7 +111,6 @@ async function feResToDocumentPrefetch(
   const inlineText =
     feRes != null &&
     feRes.file == null &&
-    feRes.content !== "" &&
     contentType?.trim().toLowerCase().startsWith("text/");
 
   return feResToFilePrefetch(
