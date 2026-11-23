@@ -1,7 +1,11 @@
 import { config } from "../../../config";
 import { SEARCH_CREDITS_FEATURE_ID } from "../../../services/autumn/autumn.service";
 import type { EndpointFeedbackEndpoint } from "../types";
-import type { FeedbackInput, FeedbackRecordOptions } from "./internal-types";
+import {
+  isSessionEndpoint,
+  type FeedbackInput,
+  type FeedbackRecordOptions,
+} from "./internal-types";
 
 type SearchFeedbackRecordOptionsParams = {
   jobId: string;
@@ -42,6 +46,17 @@ export function endpointFeedbackRecordOptions({
 }: EndpointFeedbackRecordOptionsParams): FeedbackRecordOptions {
   if (endpoint === "search") {
     return searchFeedbackRecordOptions({ jobId, feedback });
+  }
+
+  if (isSessionEndpoint(endpoint)) {
+    return {
+      endpoint,
+      jobId,
+      feedback,
+      windowExpiredMessage: `Feedback must be submitted within ${config.BROWSER_FEEDBACK_MAX_AGE_SEC} seconds of the session's last activity.`,
+      maxAgeSec: config.BROWSER_FEEDBACK_MAX_AGE_SEC,
+      source: "feedback",
+    };
   }
 
   return {

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { clickhouseClient } from "./clickhouse-client";
-import { removeJobFromGCS } from "./gcs-jobs";
+import { removeJobFromGCS, storage } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
@@ -106,9 +106,25 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
   });
 }
 
+async function removeParseUpload(objectPath: string): Promise<void> {
+  if (!config.GCS_PARSE_UPLOAD_BUCKET_NAME) {
+    throw new Error(
+      "GCS_PARSE_UPLOAD_BUCKET_NAME is not configured; cannot delete parse upload",
+    );
+  }
+  await storage
+    .bucket(config.GCS_PARSE_UPLOAD_BUCKET_NAME)
+    .file(objectPath)
+    .delete({ ignoreNotFound: true });
+}
+
 export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
   if ("blobId" in job) {
     await removeJobFromGCS(job.blobId);
+    return;
+  }
+  if ("parseUploadPath" in job) {
+    await removeParseUpload(job.parseUploadPath);
     return;
   }
   await cleanZdrRequest(job.requestId);

@@ -1,5 +1,21 @@
 [
   {
+    "time": 1782145898999,
+    "options": {
+      "url": "http://firecrawl.com",
+      "method": "HEAD",
+      "ignoreResponse": true,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.firecrawl.dev/",
+      "body": "",
+      "status": 200,
+      "headers": []
+    }
+  },
+  {
     "time": 1782145899000,
     "options": {
       "url": "http://www.firecrawl.dev/sitemap.xml",
