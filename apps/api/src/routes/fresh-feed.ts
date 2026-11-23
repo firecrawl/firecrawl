@@ -18,6 +18,10 @@ import {
   type FreshFeedUpstreamUrls,
 } from "../lib/fresh-feed";
 import {
+  freshFeedBillingCountErrorsTotal,
+  freshFeedUpstreamRequestDurationSeconds,
+} from "../lib/fresh-feed-metrics";
+import {
   getRoutePattern,
   httpRequestDurationSeconds,
 } from "../lib/http-metrics";
@@ -30,6 +34,9 @@ import { resolveIntegration } from "../utils/integration";
 import { checkCreditsMiddleware, wrap } from "./shared";
 
 const TIMEOUT_MS = 30_000;
+const DEFAULT_PRECHECK_LIMIT = 50;
+const MAX_CONTENT_PAGE_SIZE = 50;
+const MAX_METADATA_PAGE_SIZE = 500;
 const RESOLVED_TARGET = Symbol("freshFeedResolvedTarget");
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
@@ -107,6 +114,30 @@ function requireFreshFeedFlag(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function getResolvedTarget(res: Response): ResolvedFreshFeedTarget | undefined {
+  return (res.locals as Record<symbol, ResolvedFreshFeedTarget | undefined>)[
+    RESOLVED_TARGET
+  ];
+}
+
+function precheckRecordCount(req: Request): number {
+  const rawContent = req.query.content;
+  const maxLimit =
+    typeof rawContent === "string" && rawContent.toLowerCase() === "false"
+      ? MAX_METADATA_PAGE_SIZE
+      : MAX_CONTENT_PAGE_SIZE;
+
+  const rawLimit = req.query.limit;
+  if (typeof rawLimit !== "string" || !/^\d+$/.test(rawLimit.trim())) {
+    return Math.min(DEFAULT_PRECHECK_LIMIT, maxLimit);
+  }
+  const parsed = Number.parseInt(rawLimit.trim(), 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return Math.min(DEFAULT_PRECHECK_LIMIT, maxLimit);
+  }
+  return Math.min(parsed, maxLimit);
+}
+
 function requireFreshFeedCredits(
   req: Request,
   res: Response,
@@ -114,7 +145,11 @@ function requireFreshFeedCredits(
 ) {
   const rate = creditsPerRecord(req);
   if (rate === 0) return next();
-  return checkCreditsMiddleware(rate)(
+  const resolved = getResolvedTarget(res);
+  const records =
+    resolved?.upstream === "curated" ? precheckRecordCount(req) : 1;
+  const requiredCredits = Math.min(Number.MAX_SAFE_INTEGER, records * rate);
+  return checkCreditsMiddleware(requiredCredits)(
     req as RequestWithAuth<any, any, any>,
     res,
     next,
@@ -127,10 +162,7 @@ function rejectHead(_req: Request, res: Response) {
 
 function rejectVerticalHead(req: Request, res: Response) {
   const vertical = req.params.vertical;
-  if (
-    typeof vertical === "string" &&
-    (resolveFreshFeedVertical(vertical) || isFreshFeedUpstream(vertical))
-  ) {
+  if (typeof vertical === "string" && resolveFreshFeedVertical(vertical)) {
     return rejectHead(req, res);
   }
   return res.status(404).end();
@@ -210,14 +242,22 @@ function resolveFreshFeedTarget(
         typeof rawVertical === "string"
           ? resolveFreshFeedVertical(rawVertical)
           : undefined;
-      if (vertical) {
-        upstream = vertical.upstream;
-        forcedSubcategory = vertical.subcategory;
-      } else if (isFreshFeedUpstream(rawVertical)) {
-        upstream = rawVertical;
-      } else {
+      if (!vertical) {
         return freshFeedError(res, 404, "Unknown fresh feed vertical.");
       }
+      upstream = vertical.upstream;
+      forcedSubcategory = vertical.subcategory;
+    }
+
+    if (
+      spec.kind !== "local" &&
+      authedReq.acuc?.flags?.freshFeedUpstream !== upstream
+    ) {
+      return freshFeedError(
+        res,
+        403,
+        "This endpoint is not enabled for this team.",
+      );
     }
 
     const builtTarget = buildUpstreamTarget(
@@ -266,9 +306,7 @@ function resolveFreshFeedTarget(
 
 function freshFeedController(timeoutMs: number) {
   return async (req: Request, res: Response) => {
-    const resolved = (res.locals as Record<symbol, ResolvedFreshFeedTarget>)[
-      RESOLVED_TARGET
-    ];
+    const resolved = getResolvedTarget(res);
     if (!resolved) {
       return freshFeedError(res, 503, "The feed is temporarily unavailable.");
     }
@@ -312,6 +350,13 @@ function freshFeedController(timeoutMs: number) {
       headers[FRESH_FEED_COLLECTION_HEADER] = collection;
     }
 
+    const upstreamStarted = Date.now();
+    const observeUpstream = (status: string) => {
+      freshFeedUpstreamRequestDurationSeconds
+        .labels(resolved.upstream, status)
+        .observe((Date.now() - upstreamStarted) / 1000);
+    };
+
     let upstream: Dispatcher.ResponseData;
     try {
       // fetch always decodes the body; request hands back the feed's bytes as sent.
@@ -322,11 +367,16 @@ function freshFeedController(timeoutMs: number) {
         signal: callerGone.signal,
       });
     } catch (error: unknown) {
-      if (callerGone.signal.aborted) return;
+      if (callerGone.signal.aborted) {
+        observeUpstream("aborted");
+        return;
+      }
       if ((error as { code?: unknown })?.code === "UND_ERR_HEADERS_TIMEOUT") {
+        observeUpstream("504");
         logger.error("Fresh feed timed out");
         return freshFeedError(res, 504, "The request timed out.");
       }
+      observeUpstream("502");
       logger.error("Fresh feed proxy error", { error });
       return freshFeedError(res, 502, "The request could not be completed.");
     }
@@ -338,6 +388,7 @@ function freshFeedController(timeoutMs: number) {
         seconds: (Date.now() - started) / 1000,
       });
       if (upstream.statusCode === 500 || upstream.statusCode === 503) {
+        observeUpstream("503");
         res.setHeader("Retry-After", "5");
         return freshFeedError(
           res,
@@ -345,6 +396,7 @@ function freshFeedController(timeoutMs: number) {
           "The feed is temporarily unavailable. Retry the same request.",
         );
       }
+      observeUpstream("502");
       return freshFeedError(res, 502, "The request could not be completed.");
     }
 
@@ -375,6 +427,7 @@ function freshFeedController(timeoutMs: number) {
     } catch (error: unknown) {
       logger.warn("Fresh feed stream failed", { error, ...outcome() });
     }
+    observeUpstream(delivered ? String(upstream.statusCode) : "stream_error");
     httpRequestDurationSeconds
       .labels("v2", req.method, getRoutePattern(req), String(res.statusCode))
       .observe((Date.now() - started) / 1000);
@@ -390,6 +443,7 @@ function freshFeedController(timeoutMs: number) {
         );
         credits = records * rate;
       } catch (error: unknown) {
+        freshFeedBillingCountErrorsTotal.inc({ upstream: resolved.upstream });
         logger.error("Fresh feed page could not be counted for billing", {
           reason: error instanceof Error ? error.message : "unknown",
           ...outcome(),
