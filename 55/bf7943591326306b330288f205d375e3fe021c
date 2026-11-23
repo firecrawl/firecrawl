@@ -1,0 +1,1391 @@
+apps/api/src/services/monitoring/judgeChange.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,6-7,97,136-144,149,151,153-160,167-168,170-176,192,195,197,213-320,332,360,363-373,375-391,394-400,403,405,407
+apps/api/native/src/xml.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-177
+apps/api/src/__tests__/lib/search-query-builder.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 37,39,43,45,65,71-72,78-79,83-84,140,143-144,260,267,278-279
+apps/api/src/controllers/v2/feedback/session-feedback.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-633
+apps/api/src/lib/crawl-redis.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,13,21-25,1070
+apps/api/src/services/monitoring/store.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 184
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/data-region.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-96
+apps/api/src/controllers/v2/feedback/zdr-persistence.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-7,34-38
+apps/api/src/services/alexandria/client.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-4,13-41,51-52,63-84,88-98,100-101,103,105,118-122,132-157,174-178
+apps/api/src/__tests__/snips/v2/crawl-errors-terms.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 26-29,31-44
+apps/api/src/scraper/scrapeURL/transformers/product.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,22-24
+  s_6a7201d5c4fd9c::t_d3edfee5b584e0 25-28
+apps/api/native/Cargo.toml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,14,28,31
+apps/api/src/__tests__/snips/v2/safe-mode.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15,50
+apps/api/src/services/webhook/delivery.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 49-55,59,65,150-152
+apps/api/vitest.core.config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-155
+apps/js-sdk/firecrawl/src/v1/typed-event-target.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-40
+apps/api/src/__tests__/snips/v1/crawl.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,30,58
+apps/api/src/scraper/scrapeURL/engines/pdf/pdfParse.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-10,14,16-20,36,44,50-51
+apps/api/src/controllers/v2/__tests__/search-caller-context.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-181
+apps/js-sdk/firecrawl/src/v2/methods/tools.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 144-147
+apps/api/src/__tests__/snips/v2/integration-header.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,50-54
+apps/api/src/scraper/scrapeURL/engines/exchange.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20,200,204-224
+apps/api/src/scraper/scrapeURL/transformers/diff.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,43,47,215,221-226,228-230
+apps/api/src/search/developer.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-8,24-26,38,45-50,59-63,88
+apps/api/src/controllers/v1/map.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 21,32,111-116,184-185,203-204
+apps/api/audit-ci.jsonc
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-12
+apps/api/src/lib/validateUrl.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-6,9-13,182-204
+  s_6a7201d5c4fd9c::t_76d43569de9a64 205
+apps/api/src/routes/v1.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 53,64,76,88,98,108,116,123,131,140,147,154,161,189,222,229,247,254,261,268,275
+apps/api/src/controllers/v2/__tests__/crawl-errors.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-168
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/request-metadata.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 56
+apps/api/src/lib/__tests__/fresh-feed-config.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-15
+apps/rust-sdk/CHANGELOG.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-20
+apps/api/src/__tests__/snips/v2/monitor.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 131-267
+apps/api/src/lib/alexandria-verified.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-20
+apps/api/src/lib/secret-compare.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-31
+apps/api/src/scraper/scrapeURL/engines/pdf/pageCount.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-17
+apps/api/src/db/pool-profiles.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-27
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,16,27,203,214,333,341,400-404
+  s_6a7201d5c4fd9c::t_7e21163e3e2b2d 405-407
+apps/api/src/lib/developer-category.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-14
+apps/api/src/__tests__/snips/v2/scrape-skip-tls.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 98,100,108-114,120,122,125,131-132
+apps/js-sdk/firecrawl/src/v2/methods/research.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9-10,16,58,60,67,93,104-107,125,217-245,250-251
+apps/api/src/search/execute.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,8,16,23,28-33,52-53,82-87,101,129,134,271-331,405-635,645-648,884,937-1046,1257-1543
+apps/api/src/controllers/admin/ip-restriction-cache-clear.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-28
+apps/api/src/controllers/v2/feedback/record.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,22,26-27,36,132-139,228-260,321-325,389,393-397,403-405
+.github/workflows/docker-build.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-74
+apps/api/src/__tests__/snips/v1/billing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,6-7,22,354
+apps/api/src/controllers/exchange-credit-grant.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-140
+apps/api/src/lib/robots-txt.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22,26,30-31,78,95
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16,76
+apps/api/src/services/notification/monitoring_email.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15,240-241,243,251-254,272,280,356-357,362-373,379-553,643-650
+apps/elixir-sdk/mix.exs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4
+apps/api/src/controllers/v1/extract.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-16,38-39,132-153
+  s_6a7201d5c4fd9c::t_8d8a88d37de549 154
+apps/api/src/lib/ai-usage-telemetry.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8-9,40,44
+apps/local/src/markdown.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-947
+apps/api/src/services/autumn/__tests__/firebill.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20-23,35,37,40-43,93-98,670-697,1245-1442
+  s_6a7201d5c4fd9c::t_ce789c753676d4 1443
+apps/php-sdk/src/Client/FirecrawlClient.php
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 185-199,203-204
+  s_6a7201d5c4fd9c::t_16ecb2bbe7ef7f 184
+README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 42-46,56,58,60-115,117,119,121,123-130,132,136,138-144,204,323,344,368,373,387-388,412-413,429,431,433,435-471,476,500,505,532,534-542,544,546-547,551,562,571,575-579
+apps/api/src/controllers/v2/__tests__/research-proxy-zdr.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 169-190
+apps/api/src/lib/generate-llmstxt/generate-llmstxt-service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 18-28,102-105,214-215
+apps/api/src/scraper/scrapeURL/lib/accessibleForFree.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-106
+apps/api/src/services/worker/nuq-prefetch-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13,15,51-52,79-83
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/utils.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 164-165,189-194
+apps/api/src/scraper/WebScraper/crawler.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 88,113,136,161,507-508,949,1025,1070,1099
+apps/api/src/lib/extract/fire-0/completions/batchExtract-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-6,36,60
+apps/local/rustfmt.toml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1
+apps/api/src/__tests__/routes/exchange-zero-data-retention.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-192
+apps/api/pnpm-workspace.yaml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10-11,37-38
+apps/python-sdk/firecrawl/v2/types.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23,333-335,644-646,1127-1128,1133-1134,1163-1164,1181-1270,2548-2549,2561,2563-2577,2581-2582,2680-2692,2702,2715-2717
+apps/java-sdk/build.gradle.kts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7
+apps/go-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 293
+apps/api/src/scraper/scrapeURL/engines/utils/downloadFile.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16,109-112
+apps/api/src/service/testing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-51
+apps/api/src/lib/branding/metrics.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 70-72,90
+apps/api/src/lib/extract/fire-0/reranker-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-5,29,36,118
+apps/python-sdk/setup.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 28
+apps/api/src/__tests__/snips/v2/document-converter.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 32-34,45,48-50,56,59-62,70-71,73
+apps/api/src/scraper/crawler/sitemap.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24,105
+apps/java-sdk/src/test/java/com/firecrawl/ProteinLookupMockTest.java
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-81
+apps/api/src/lib/change-tracking-store.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-8,96-97,123-125,127-134,137-138
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_alexandria_feedback.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-232
+apps/api/src/controllers/v2/__tests__/search-team-plan-class.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-151
+apps/api/src/services/alexandria/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20-30
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,15-20,23-42,46,49,56-57,78,122-123,148,168-174,180,193-194,243,253-256,271,281-284,299,308-338,340-341,357,367-370,386,396-397,407,417-420,434,444-447,467,477-478,494,511-512,525,535-536,549,559-560,576,586-587,603,613-614,628,638-641,654,664-667,681,691-694,708,718-719,732,742-745,758,768-769,783,793-796,810,819-843,845-848,862,895-898,911,921-924,934,980-981,994,1023-1024,1044
+apps/api/src/lib/branding/font-names.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-239
+.github/actions/supersede-waiting-runs/supersede.sh
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-29
+apps/api/src/lib/threat-protection/verdict.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 544-586
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/alexandria-feedback.unit.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-234
+apps/api/src/scraper/scrapeURL/__tests__/usOnly.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-46
+apps/api/src/__tests__/snips/v2/zdr.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,5,7,13-17,24,38,76-112,283-300,441-620
+  s_6a7201d5c4fd9c::t_fa5fe9ca00d5f7 621
+apps/api/src/__tests__/snips/v1/batch-scrape.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,20
+apps/api/src/scraper/scrapeURL/transformers/promptInjectionGuard.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 28
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/buttons.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 18-60,63-67,72-78,81-93
+apps/js-sdk/firecrawl/src/v2/methods/search.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 113,123-124,127
+apps/api/src/lib/hangar.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 116,129
+apps/python-sdk/firecrawl/types.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 73,75,179,181
+apps/api/src/__tests__/snips/v2/parsers-fire-pdf-async.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 25
+apps/api/src/search/v2/index.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-147
+apps/api/requests/v2/search.requests.http
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14
+apps/api/src/__tests__/snips/zdr-helpers.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 90-93,98
+apps/api/src/controllers/v2/research-proxy.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,10-11,13,37-38,53,56,95,122-124,172-177,206-223,225-230,307-326,329-330,338-339,389,508-521,569-571,573-585,632-635,638,662,678,688,690,700,712,714,724-736,738-739,794
+apps/api/src/controllers/v2/mcp-action-logs.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,25
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11,18-20,98,108,155-161
+  s_6a7201d5c4fd9c::t_483204ff93f75c 162
+apps/api/src/services/alexandria/retrieve.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,27-29,33,38,86-132,150-165,189-200,266,269-287,293-296,301,363-453,512-513,518-534,539,563,568-571,581,593-601,647,660-662,711-713,715-719,739,769-773
+apps/api/src/services/queue-jobs.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 25,843
+apps/python-sdk/firecrawl/v2/methods/aio/feedback.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-23
+apps/api/src/services/integrations/slack/messages.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23-25,37-40,109-111,138-142,144-146
+.github/actions/release-summary/action.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-34
+apps/api/src/lib/change-tracking-store.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-108
+apps/api/src/scraper/scrapeURL/waterfallExperiments.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3
+apps/elixir-sdk/generate.exs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 37
+apps/api/src/controllers/v2/__tests__/agent-status.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 33-78
+apps/api/src/lib/branding/processor.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,356-359,365-366,395-398,401,403-404,418-423,425-434,540
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,8-9,11-12,16-20,22-25,28,31,39,42-48,65-66,95,99-176,182-183,186-187,200-206,209-210,226-235,241-244,254,280,284-293,315-321,335-344,364-365,370-399,402,404,433,442-444,467-471,503-504,510-563,573-576
+apps/api/src/__tests__/snips/v2/keyless.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23,397,569
+apps/api/src/__tests__/routes/research-paper-id.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-64
+apps/api/src/scraper/scrapeURL/transformers/menu.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,23-26
+  s_6a7201d5c4fd9c::t_196fd2dd92aa62 27-29
+apps/ruby-sdk/lib/firecrawl/client.rb
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 134-144,147-148
+apps/api/src/service/hooks.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-179
+apps/api/src/search/alexandria.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 260-437
+apps/api/src/services/integrations/slack/slack.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-10,23,42,169-195
+apps/api/src/scraper/scrapeURL/engines/pdf/pdfParse.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-83
+examples/kubernetes/cluster-install/api.yaml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 45,54
+apps/api/src/lib/zdr-helpers.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,23-43
+  s_6a7201d5c4fd9c::t_c2bb97eedb126b 44
+apps/api/src/search/alexandria.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,17-18,21-22,31-45,52-66,68,72-75,88-106,115-116,122-126,128-133,136-137,140-141,158,166-171,174-176,270-271,347,359,363
+apps/api/src/lib/request-context.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-84
+apps/api/src/lib/alexandria-query.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-206
+apps/api/src/routes/exchange-internal.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-24
+apps/api/src/lib/branding/transformer.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,450-453
+apps/api/src/controllers/v2/monitor.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,32,70,72-73,193,299,442
+apps/api/src/lib/alexandria-discovery.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,8-10,12,16-37,40,43,45-80,83-86,90,92-93,95-126,129-133,137-141,144-146,150-157,159-187
+apps/rust-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 239
+apps/api/src/lib/__tests__/generic-ai-empty-base-url.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-30
+apps/local/src/serve.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-986
+apps/api/src/lib/browser-sessions.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,40
+apps/api/src/services/mcp/action-logs-controller.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 59-83
+apps/java-sdk/src/main/java/com/firecrawl/models/ResearchModels.java
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23-26,83-167,193-198,212-215
+  s_6a7201d5c4fd9c::t_865f5a97457ea3 216
+.github/workflows/publish-rust-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 76-122,125,129-131
+apps/api/src/__tests__/lib/branding/processor-fonts.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-150
+apps/api/src/__tests__/snips/v1/product.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-2,20
+apps/api/src/__tests__/snips/v2/scrape.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 26,2230-2232
+apps/api/src/__tests__/snips/v2/research.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 247-262,550-554,557-559,568-569,592-595,598,600,603-604,606,609
+apps/api/src/services/billing/__tests__/credit_billing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,139,188
+apps/api/src/__tests__/routes/fresh-feed.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-565
+.github/workflows/publish-elixir-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 146-203,205,209-211
+apps/api/src/scraper/scrapeURL/waterfallExperiments.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,40-42,46-47
+apps/api/src/scraper/WebScraper/utils/__tests__/engine-forcing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 69-70,96,103
+apps/api/src/routes/exchange.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,10-22,31,33-45,54-74,78,129-132,187,202-212,249-253,302-305,350-524,527-563,567-568,578
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/reservedCapacityPdfRouting.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-201
+apps/api/src/services/queue-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 35,222-225,227-230,438,497-501
+apps/local/src/mem.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-13
+apps/java-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 85,91,100,355,481,488
+apps/api/src/lib/operational-job-access.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,106-118
+  s_6a7201d5c4fd9c::t_49bb1118c3eda7 119
+apps/api/native/src/crawler.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1
+apps/api/src/lib/extract/fire-0/url-processor-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17,22,25-28,40,52,113,240,273,296
+apps/api/src/__tests__/snips/v2/exchange-routing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 118,296-386,440-506
+  s_6a7201d5c4fd9c::t_ffcb432977dbb6 507
+apps/python-sdk/firecrawl/v2/client_async.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24,29-30,82,85,171-176,195,199-208,222-225,399,401,420,422-423,425-426,429-430,441
+apps/test-site/package.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 19
+apps/api/src/lib/fire-privacy-client.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,722-814
+  s_6a7201d5c4fd9c::t_e9900745c784ab 815
+apps/api/src/controllers/v2/feedback/record.integration.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-378
+apps/api/src/service/request-context.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-52
+apps/api/src/services/monitoring/scheduler.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,4-6,15,29-34,40-51,97-127
+  s_6a7201d5c4fd9c::t_c5612bc93dbc6e 128-129
+apps/api/src/lib/browser-options.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 58,73-78,81-85
+.github/workflows/publish-local.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-205
+apps/api/src/controllers/v1/search.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31,49-51,69,74-75,206-236,333,469-471,474-475
+  s_6a7201d5c4fd9c::t_46f9a7a7eae462 472-473,476
+apps/api/src/services/monitoring/diff-orchestrator.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17-18,74,87,181,246,267,280,283-284
+apps/api/src/services/worker/nuq-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,7,15-19
+apps/python-sdk/firecrawl/v2/methods/research.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,39,85,99,156-167
+  s_6a7201d5c4fd9c::t_e67269d0fac7a0 168-170
+apps/api/src/controllers/v2/feedback/refund-policy.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 40-75
+apps/api/src/controllers/v2/__tests__/agent-zdr-passthrough.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 50,89-244
+  s_6a7201d5c4fd9c::t_b4480d0ff4222f 245
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 33-36,43-46,138-141,144-152,156,337
+apps/local/src/main.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-690
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,26,161,492,529,727,744
+examples/kubernetes/firecrawl-helm/templates/deployment.yaml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 48,57
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 147-163,445-448,460,480-482,489
+apps/api/src/lib/deep-research/deep-research-service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 65
+apps/python-sdk/pyproject.toml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 80-81
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23-24,29,57,96-113,131,307-314
+  s_6a7201d5c4fd9c::t_c4fd6d618349b2 315
+apps/api/src/scraper/scrapeURL/transformers/video.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,222-224
+  s_6a7201d5c4fd9c::t_80f0331d7e5ef6 225-228
+apps/api/src/lib/zdr-helpers.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-6,49-69
+  s_6a7201d5c4fd9c::t_5b3cd7e6476ca4 70
+apps/api/src/services/indexing/index-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20,43,601-605,607-611,692,694-695,701,720,726-733,735-754,773-785,835,837-841
+.github/workflows/test-api-core.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-99
+apps/api/src/lib/auth-denied-log.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16-17
+apps/api/src/lib/entities.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,169,180-181,185,196
+apps/api/src/routes/fresh-feed.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-261
+apps/api/src/controllers/admin/redis-health.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-85
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-243
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_b3ca75af9b1376 337-341
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-62,65,67-75,77-87,90,92,97,105-107,117,126-149,256,264-265,281,291-292,304,314,316,345,361-362,375,385-386,396,406-407,420,430-431,441,451-452,473,485-486,496,506-509,519
+  s_6a7201d5c4fd9c::t_00f79325ecc37a 98-104,315,330,351,354-357
+apps/api/src/services/worker/crawl-logic.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 124
+apps/js-sdk/firecrawl/src/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-15
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 50-51,502-650,905-1216,1282-1467
+apps/api/src/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,13,18-23,144
+apps/api/src/__tests__/snips/v2/threat-protection-enforcement.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,17,421
+apps/api/src/lib/generate-llmstxt/generate-llmstxt-supabase.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,23,63
+apps/api/src/lib/extract/fire-0/llmExtract-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,17,184-185,189,257,275,362,380,411,429,517,519-522
+apps/api/src/__tests__/snips/v2/search.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 141-144
+apps/api/src/scraper/scrapeURL/lib/accessibleForFree.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-47
+apps/local/src/guard.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-252
+.github/workflows/publish-ruby-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-70,73,77-79
+apps/api/src/db/pool-profiles.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 85-94,135-136
+apps/api/src/lib/research-keyless.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,15-16
+apps/api/src/controllers/v2/feedback/alexandria.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-15,23-26,44-47,57,74,79,92,98,129,146-150,155,159-225,690,700-702,705-706,734,739,821,847-1127
+apps/api/src/controllers/v2/feedback/zdr-persistence.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 110-157
+apps/api/src/lib/engpicker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 76,93
+.github/scripts/start-entry-files.mjs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-196
+apps/api/src/__tests__/snips/v1/deep-research.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-4,16-20,51-96
+apps/api/src/lib/threat-protection/config.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 164-211
+apps/api/src/services/monitoring/search/run.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 281,328
+apps/local/src/login.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-190
+apps/api/src/__tests__/snips/v2/lib.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,36-38,122-124
+  s_6a7201d5c4fd9c::t_65641decfa5722 125
+apps/api/src/scraper/scrapeURL/transformers/deterministicJson.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5-6,179-185,201-203
+apps/api/src/lib/siem-logging/event.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,116
+apps/api/src/services/cclog-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,44,84-85,129-133
+apps/api/src/scraper/scrapeURL/postprocessors/youtube.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,174-180
+  s_6a7201d5c4fd9c::t_bf451c3b216b45 181-182
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/parseFirePdfRouting.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 100-107,156-157,161,163,166-168,171,178-185
+  s_6a7201d5c4fd9c::t_df0c80d54b657b 186-187
+apps/api/src/services/mcp/action-logs.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,105-142
+  s_6a7201d5c4fd9c::t_61b1da0ef7d053 143-144
+apps/api/src/db/schema/public.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 89-124,180-199,526-533,560-564,642-669
+  s_6a7201d5c4fd9c::t_b7a4a3a23757dc 670
+apps/api/src/__tests__/snips/v2/key-restriction.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-11,149-183
+  s_6a7201d5c4fd9c::t_5139ef834cc273 184-187
+apps/api/src/services/monitoring/results.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 262
+apps/api/src/search/v2/fireEngine-v2.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,53-54,78-81
+apps/api/src/lib/ai-telemetry.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-77
+apps/api/src/controllers/v2/extract-status.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 62-64
+.github/workflows/publish-python-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 61-107,110,114-116
+apps/api/src/lib/fire-privacy-client.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8-9,15,28-30,52-54,245,264,280-282,286-290,321-330,354,363-370,442-464
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 41,255,263,278-284
+apps/api/src/lib/crawl-redis.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,31,50,69
+apps/api/src/__tests__/routes/v1-deprecations.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-134
+apps/api/src/lib/deep-research/research-manager.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,151-160,162-169,181-182,253-254,367-368
+apps/api/src/search/operators.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 57-69,142-160
+  s_6a7201d5c4fd9c::t_dfef89f24e07ad 161
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-14,117,130,195,203,217-220
+apps/go-sdk/firecrawl.go
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 678-680,771-793,796-797
+apps/api/src/lib/threat-protection/config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 97-100,115,119,123,146-154
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15,34,46-49,51,148-150,157,250,264-265,269-270,335-338
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/metrics.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17,26-28,127-129
+apps/java-sdk/src/main/java/com/firecrawl/models/SearchOptions.java
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 63
+apps/local/src/crawl.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-671
+apps/api/src/main.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-20
+apps/rust-sdk/src/types.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1221,1228-1229
+apps/go-sdk/protein_lookup_test.go
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-54
+apps/api/src/lib/validateUrl.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,200,204-211
+  s_6a7201d5c4fd9c::t_3ae8e43b478daa 212
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/usOnlyPdfRouting.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-178
+apps/api/src/controllers/v2/feedback/refund-policy.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,120-121,148
+apps/api/src/controllers/v2/extract.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 27-29,53-73
+  s_6a7201d5c4fd9c::t_d2d76afc0803e8 74
+apps/api/src/service/testing.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-37
+apps/api/src/lib/alexandria-query.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-187
+apps/python-sdk/firecrawl/v2/methods/feedback.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-53
+apps/api/src/lib/browser-lifecycle.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31,44-47,62-63,71,79-84,86,89-131,197-198,204-209,237-243,255-265,267-273,282,300,302,334,479-496,529-541,543-545,590-608,610-621,674-683
+apps/api/src/lib/alexandria-feedback-storage.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-32
+apps/api/src/lib/alexandria-feedback-hint.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-61
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 54,230-242,592-601
+  s_6a7201d5c4fd9c::t_630153413b4c3d 602-604
+apps/api/src/lib/extract-v3-status.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-3,37,39,46-86,98-177,193-202,208
+apps/api/src/lib/reserved-capacity.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-17
+apps/api/src/scraper/scrapeURL/engines/fetch/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,206
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/background-refresh.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-7,112-119,152-154
+apps/api/src/services/autumn/hosted-mcp-gate.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-11
+apps/php-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 246
+apps/python-sdk/firecrawl/v2/__init__.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,9-14,27-32,35
+apps/dot-net-sdk/Firecrawl/FirecrawlClient.cs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 558-559,627-647,651,946
+apps/api/src/services/webhook/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11,26
+apps/api/src/__tests__/routes/research-github-deprecation.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,8-26,28-29,31-36,60-61,63-67,69-77,80-95,107-110,112-119
+apps/api/src/controllers/__tests__/auth-vercel-oidc.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-556
+apps/dot-net-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 310
+apps/js-sdk/firecrawl/src/v2/methods/gov.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31
+apps/api/src/lib/alexandria-feedback-storage.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-66
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22-27,214-222
+apps/api/src/lib/ai-usage-telemetry.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11,15-18,133,195,268,279,306,313-314,321,371
+apps/api/src/types/product.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 26-28
+apps/api/src/__tests__/snips/v1/zdr.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,11,22
+apps/ruby-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 198
+apps/api/src/scraper/scrapeURL/engines/utils/safeFetch.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9-33
+apps/api/src/scraper/WebScraper/sitemap.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31,40,131,219,253,303
+apps/elixir-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14,83-84
+apps/api/src/__tests__/snips/v1/deprecation.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-15,27-44,46-53,55-73,75-239,243-244
+apps/api/src/search/scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 47,92
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/poll.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-6,177-200
+  s_6a7201d5c4fd9c::t_11e8dc6e72627d 201
+apps/api/src/lib/exchange.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,9,32,546-550,552-559,704-707,752,768-771,799,829,924-990
+  s_6a7201d5c4fd9c::t_9ce324c31871fd 991-992
+apps/api/src/__tests__/snips/v1/json-extract-format.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,19
+apps/api/src/scraper/scrapeURL/engines/pdf/pageCount.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-32
+apps/js-sdk/firecrawl/src/v2/client.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-17,70-71,349-360,374,376-377
+  s_6a7201d5c4fd9c::t_d2177f092e03b3 13
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 198-199
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-307
+apps/api/src/controllers/v2/__tests__/search-developer-ledger.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12-19,42-43,79,230,433-563
+  s_6a7201d5c4fd9c::t_f40b04cac64d9f 564
+apps/api/src/controllers/auth.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5-8,34-35,51-55,63-70,85-86,355,526-540,810-834,842-844,849-852,1101-1165,1277-1282,1286
+apps/api/src/search/fireEngine.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 21,37,62-63,82-83
+apps/api/src/lib/mcp-lineage.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-39
+apps/api/src/lib/threat-protection/verdict.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20-32,34-39,45-47,49-123,127-131,134-149,157-172
+apps/api/src/controllers/v2/scrape-browser.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 33,39,102,265-279,303,387,421,502,510,527-537,548-554
+apps/api/src/controllers/v2/parse-upload.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,16,349,372-380,560
+apps/api/src/lib/gcs-jobs.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-128
+apps/api/src/lib/operational-job-access.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 28,39-41,63,65
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 19-20,49-50,54,67,70,173-176,178-193,195-196,202,256,259-266,273-274,278-288,290-291,301,342,347-349,381,429,472,480,494-496,584-600,631,670,695-697,710,746-748,752,754-755,757-794,796-797,799-825,827,842-849,851-886,915
+apps/js-sdk/firecrawl/src/v2/methods/feedback.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-3,9,63-127,129-130
+  s_6a7201d5c4fd9c::t_0ed533846216e0 128
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-8,34,589-713,1007-1082,1403-1448,1485-1527,1656-1661,1663-1667,1671-1675,1677-1688
+apps/api/src/lib/deprecations.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-6,13-14,17-19,28-35,40,43-45,49,52-54,58,61-63,67,70-72,76,83-86,88-89,92-95,97-98,101-103,105-106,109-111,113-114,117-118,120-121,123,126-127,129-130,132,136,138-139,141,145,147-148,150,153-154,156-157,159-279,291,313-373,376-386,388-401,404-439
+apps/api/src/controllers/v2/__tests__/gov-search.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 191-202,218-306
+  s_6a7201d5c4fd9c::t_71ecab1999bd87 307
+apps/api/src/services/zdr-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,6,20-21,34-38
+apps/api/src/lib/permissions.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,19,27,30,58-71,76,191-200,202-208
+apps/api/src/controllers/health.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-11
+apps/api/src/__tests__/snips/v1/menu.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-2,20
+apps/api/src/services/webhook/queue.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-8,45,94-97,104-108,111-113
+apps/python-sdk/firecrawl/v2/client.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 21,27-28,87,90,302-315,334,338-345,359-362,636,638,657,659-660,662-663,666-667,678
+apps/api/src/controllers/v2/feedback/alexandria.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-16,32-38,43-45,52,59,67-68,74-75,83-117,119-122,125-154,158,179-180,196,208-221,244-253,257-262
+apps/api/src/lib/key-restriction.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 127-129,132-134,151-152
+apps/api/src/__tests__/routes/research-keyless.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 38-40,145-146,148-149,151-152,200-202
+apps/api/src/__tests__/snips/v1/search.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-2,15
+apps/api/src/controllers/admin/concurrency-queue-backfill.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-27
+apps/api/src/lib/alexandria-feedback-token.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-145
+apps/api/src/services/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 390,406
+apps/ruby-sdk/lib/firecrawl/version.rb
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17,602,608,611,654-661,665
+  s_6a7201d5c4fd9c::t_699f90f65d385a 662-664,666-667
+apps/api/src/__tests__/snips/v2/us-only.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-374
+apps/js-sdk/firecrawl/src/v1/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4
+apps/js-sdk/firecrawl/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 221-224,319-327,492-512
+apps/php-sdk/CHANGELOG.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8-14
+apps/api/src/lib/__tests__/search-result-categories.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 114-131
+apps/api/src/lib/error-serde.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-725
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference-flow.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-14,156-161
+apps/api/src/services/queue-metrics.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-128
+apps/api/src/__tests__/snips/v1/lib.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20,26,31-44
+  s_6a7201d5c4fd9c::t_acd6312da37672 45
+apps/api/src/search/index.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-86
+apps/api/src/lib/gcs-pdf-cache.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,64,121
+apps/api/src/search/skill-cards.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-277
+apps/local/.gitignore
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-5
+apps/api/src/services/queue-metrics.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-120
+apps/local/build.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-24
+apps/local/src/init.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-352
+apps/local/src/lib.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-44
+apps/php-sdk/tests/Unit/ProteinLookupTest.php
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-29
+.github/workflows/publish-dotnet-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-70,73,77-79
+apps/api/src/services/autumn/__tests__/autumn.service.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 643,696-750,964,1030,1275-1279,1337,1353,1363,1570,1697-1700,1709-1733,1742,1744,1787-1791,1794-1796,1972,1999,2056-2060,2086-2090
+apps/api/src/__tests__/snips/v2/exchange-provider-metadata.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 103
+apps/api/src/controllers/admin/index-queue-prometheus.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-17
+apps/api/src/controllers/v2/__tests__/research-timeouts.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 122,124,152-153,180-181,185
+apps/api/src/lib/team-plan-class.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-237
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_tools.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 196-206
+apps/api/src/controllers/v0/crawl.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 52-53,221-239,277-279
+apps/api/src/services/alexandria/client.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 84-152,184-348
+  s_6a7201d5c4fd9c::t_3d32f16a14407a 349
+apps/api/src/controllers/v2/feedback/alexandria.integration.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 18,45-49
+apps/api/src/search/gov.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-12,15-62,74-76,87,94-99,106-113,115,120-372
+apps/js-sdk/firecrawl/src/v2/utils/feedbackTokens.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-19
+apps/python-sdk/firecrawl/v2/methods/gov.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,5,20,22,36
+apps/python-sdk/firecrawl/v2/methods/research_docs.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5-7,60-61,67,88-91,183-211,217-219,226-227,238-239,250,264-267,334-354,360-361,368-369,380-381
+apps/api/src/controllers/v2/feedback/feedback-store-duplicate.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-59
+apps/api/src/services/extract-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24,216-219,221-224,226,243-247
+apps/api/src/scraper/WebScraper/utils/blocklist.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 239-242
+apps/api/src/controllers/v2/__tests__/research-proxy-us-only.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-172
+apps/api/src/lib/alexandria-activity.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-16,18-23,29,32,34,42-44,100-184
+apps/api/src/controllers/exchange-credit-grant.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-231
+apps/api/src/services/mcp/action-logs.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,8-17,26-29,102-114,247,405
+apps/rust-sdk/src/search.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 21,30-31,90-105
+apps/local/scripts/vendor-native.sh
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-20
+apps/api/src/controllers/v2/agent.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,333
+apps/api/src/services/monitoring/runner.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 79,401-403,429-449,461,915
+.github/workflows/publish-php-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15-71,74,78-80
+apps/api/knip.config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24
+apps/test-site/audit-ci.jsonc
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-12
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,19,58,425-428,475,481,484,549-553,597-607,783,804-811,826
+apps/api/src/lib/anthropic-federation.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-55
+apps/api/src/services/notification/monitoring_alert_pages.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-54
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5-6,63-75,136-139,185-186,271
+apps/api/src/__tests__/routes/labs.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22-31,33-37,113-158
+  s_6a7201d5c4fd9c::t_7cfad1b666a9ce 159
+apps/api/src/lib/zdr-queue.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 97-101,106-107,125,142,159-179,201,217,242-254,260,268-284,288,291-306,308-309,311-424,427-428,430-433,435-441
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/tools.unit.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 63-68,152,236-246
+  s_6a7201d5c4fd9c::t_d2d7e72865bc81 247
+apps/api/src/scraper/scrapeURL/transformers/agent.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,21-23
+  s_6a7201d5c4fd9c::t_ea15c5f34bd9e7 24-27
+.github/workflows/publish-java-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-70,73,77-79
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-5,182,198,212,237
+apps/local/src/cloud.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-1150
+apps/playwright-service-ts/pnpm-workspace.yaml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-9
+apps/api/src/lib/alexandria-feedback-token.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-115
+apps/ruby-sdk/test/firecrawl/client_test.rb
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 733-749
+apps/api/src/__tests__/snips/v1/map.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,19
+apps/api/src/controllers/v2/search-schema.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-35
+apps/api/src/lib/safe-mode.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,91,106,181,229-230,247
+apps/api/src/__tests__/snips/v2/endpoint-feedback.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-7,158-215
+  s_6a7201d5c4fd9c::t_01bbb8962e83c1 216
+apps/api/src/lib/feedback-trace.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-278
+apps/api/src/services/notification/email_notification.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1
+apps/api/src/__tests__/snips/v2/scrape-paywall.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-100
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/truncatedHandoff.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-449
+apps/api/src/services/autumn/metrics.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 51-52,58-59,72-74
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 322-351
+apps/go-sdk/version.go
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12
+apps/api/src/controllers/admin/key-restriction-cache-clear.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-29
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_gov_search.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 55-96
+apps/python-sdk/firecrawl/client.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22,31,37,80,175,299,399-406,420-423,465,564-571,585-587
+  s_6a7201d5c4fd9c::t_fe023b430daccf 588
+apps/api/src/controllers/v2/feedback/record-options.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-8,51-59
+  s_6a7201d5c4fd9c::t_376698c9897113 60-61
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13,29,922,1647,1652-1654,1690,2104,2132-2134,2152,2160-2162,2189-2205,2604,2614-2616,2625,2969-2970,2976-2977,3084-3085
+apps/api/src/lib/permissions.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16
+apps/python-sdk/firecrawl/__init__.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11,20-25,52,120-125,127
+apps/api/src/controllers/v2/__tests__/crawl-prompt-zdr.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 150
+apps/api/src/lib/threat-protection/error.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,13-14,42
+apps/api/src/services/monitoring/runner.finalization.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 61-65,165,526-608
+  s_6a7201d5c4fd9c::t_6f5dc40f2b7f20 609
+apps/api/src/search/gov.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-2,4-10,13-15,18,20-28,62,185-577
+  s_6a7201d5c4fd9c::t_ddcfaddfad2aa8 578
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-31
+.github/actions/release-summary/summary.sh
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-115
+apps/api/src/lib/extract/fire-0/completions/analyzeSchemaAndPrompt-f0.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-9,62,91-92,115-118,137
+apps/api/src/lib/alexandria-feedback-hint.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-88
+.github/workflows/publish-go-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22-71,74,78-80
+apps/api/src/services/monitoring/search/tuning.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,42,49-53
+apps/python-sdk/firecrawl/v2/methods/aio/research.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 30,40,86,100,157-168
+  s_6a7201d5c4fd9c::t_631d22f7153211 169-171
+apps/api/src/lib/branding/llm.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,147-150,215-219,235,246
+apps/local/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-251
+apps/api/src/lib/browser-billing.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24-37
+apps/api/src/search/tool-intent.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,32-34,43-45,215-217,222,275-276,301,323
+examples/kubernetes/firecrawl-helm/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 97
+apps/api/src/lib/exchange.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-11,15,17,24,37,47-59,564-586,1056-1156
+apps/api/src/__tests__/snips/v1/extract.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,5-6,10-17,29,98-116
+  s_6a7201d5c4fd9c::t_a7d944b91c5cf7 117
+apps/js-sdk/firecrawl/package.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3
+apps/api/src/services/autumn/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 55-56,63,86-88
+apps/api/src/services/monitoring/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 147
+apps/api/src/__tests__/snips/v1/concurrency.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,5,11
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 304-305
+apps/api/src/__tests__/snips/v2/scrape-x-twitter.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-3,15-21,28-32,34-42,44-47,52-53,55,57,62-63
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,40,43-45,79
+apps/api/package.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-27,29-33,35-36,39-40,42-61,70,94-103,112,120,131,156-157
+apps/api/src/lib/map-utils.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,19,94,103,125-126,138-140,154-159,233-234,245-246,276,412,425,441
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,38-39,413-414,456-457,460,529,535,609,615,750,756,819,823,1026-1027,1040-1046,1062-1069,1084,1087-1089,1322-1325,1327-1330,1440-1443,1445-1448,1547,1549-1551,1646,1648-1650
+apps/api/src/controllers/v2/browser.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 39,98-104,109-111
+apps/api/src/lib/__tests__/vercel-marketplace-config.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-35
+apps/api/src/lib/scrape-interact/browser-agent.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,9-10,30,233,241-265,274-275,374,391,393-394,408,419,443,516
+apps/api/src/lib/gcs-jobs.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14,112-116,452,455-458
+  s_6a7201d5c4fd9c::t_76780bb811ae75 459
+apps/playwright-service-ts/package.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_search_validation.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 70-74
+apps/api/src/controllers/v2/feedback/feedback-store.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,6-9,14,22,28-36,227,232-234,302-337,351,355-359,364-385,396,404-433,510
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFReservedCapacity.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-628
+.github/workflows/test-local.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-66
+apps/api/src/config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 52,69,132-141,146-147,150,163-165,276-285,292,301-310,327-340,347-364,436-443,447-448,504-512,514-524,529-534,607,629-631,646-648,777-778,893,896,898,910-918
+  s_6a7201d5c4fd9c::t_9b4069ee9e4919 919
+apps/api/src/lib/alexandria-discovery.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,6-7,13,32,35,38,46-55,72,76,92,101-104,120-447
+apps/api/src/lib/safe-mode.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 25,154-175
+  s_6a7201d5c4fd9c::t_ceb81dbfc472bf 176
+apps/playwright-service-ts/Dockerfile
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1
+apps/local/src/netguard.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-385
+apps/api/src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-128
+apps/api/src/lib/deterministicJson/config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9
+apps/api/src/controllers/v2/feedback/feedback-window.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 34
+apps/api/src/search/skill-cards.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-127
+apps/api/src/services/rate-limiter.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 38,43
+examples/kubernetes/cluster-install/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 82
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12-17,336-338,382-393,404-417
+  s_6a7201d5c4fd9c::t_4df601f438bf78 418
+apps/api/src/lib/logger.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,40-42,66
+apps/api/src/services/monitoring/scheduler.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-3,5-9,17,24-27,38,90-146,178-179,228-313
+  s_6a7201d5c4fd9c::t_a0e17625e41a4b 314
+apps/api/src/lib/extract/fire-0/extraction-service-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,45-47,83-89,108-109,139-143,149-150,278-282,310-316,467,516,787
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-23,27,32-33,43-45,55,58-65,73-74,79,92-109,120-121,124,126,128,134-160,443-478,564-588,604-634,709-710,712,736-739,743,795-1784
+apps/api/src/lib/scrape-billing.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,136
+apps/api/src/lib/keyless.signup-prompt.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31,164-201
+  s_6a7201d5c4fd9c::t_1bd4a1d530e06c 202-203
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16-17,203-210
+  s_6a7201d5c4fd9c::t_24c18639601ded 211
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 485
+apps/api/src/lib/deterministicJson/extract.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 25-26,40,45-52
+apps/api/src/services/autumn/__tests__/firebill.transport.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-133
+apps/api/src/services/autumn/__tests__/mcp-credits.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 145-170,267-351
+apps/api/src/controllers/__tests__/auth.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 127,156,412-446,1164,1246-1322,2158-2222,2414-2495
+  s_6a7201d5c4fd9c::t_48c48cd1803969 2496
+apps/api/src/controllers/admin/crawl-monitor.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-140
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_research.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 71,83,226-244,294,299,303,332,343,363,368,392-399,423,425
+apps/dot-net-sdk/Firecrawl.Tests/ProteinLookupTests.cs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-58
+apps/api/src/scraper/scrapeURL/lib/__tests__/rewriteUrl.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5,9,17,37,43,47
+apps/api/src/routes/v2.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,9,13-16,33,66-69,263-289,313-331,725,782,786-791,830-837
+apps/api/src/lib/zdrcleaner.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,7,15-18,25-41,43,108-131
+apps/api/src/__tests__/routes/deprecations-sunset.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-230
+apps/api/src/controllers/v0/search.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 35-37,82,95-97,279-286,345-347
+apps/api/src/lib/extract/fire-0/completions/checkShouldExtract-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-7,25,45-48
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-16,210,228
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/brand-utils.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 75-85,88-91,94-97,135-136,159,162,169-172,174-231,347-352,394-396
+.github/actions/supersede-waiting-runs/action.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-10
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_00f79325ecc37a 1927-1929
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 82,87,485,756-764,766,768,918,1179,1254,1650
+  s_6a7201d5c4fd9c::t_ebef9c09337aba 1931
+apps/api/src/lib/keyless.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 266-295
+apps/local/src/browser.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-866
+apps/local/src/documents.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-175
+apps/local/src/scrape.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-1171
+apps/api/src/controllers/v2/__tests__/computer-session-files.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-586
+.github/workflows/publish-js-sdk.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 61-102,105,109-111,129
+apps/api/src/lib/index-daily-limit.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-7,14-18,40-44,88-90,184-256
+  s_6a7201d5c4fd9c::t_082f5b1cbf0c9f 257-259
+apps/api/src/search/tool-intent.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13,32,129-137,172-183
+  s_6a7201d5c4fd9c::t_a7ba8fb6349d0d 184
+apps/api/src/services/integrations/slack/commands.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-17,62-71,342-347,395-400,657-658,697-698
+apps/java-sdk/src/main/java/com/firecrawl/client/FirecrawlClient.java
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 40,650-662,664-665,673-674,1183-1186,1188-1189
+apps/api/src/services/billing/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,30
+apps/api/src/search/execute.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2-12,15,19,42-47,53,67-70,94-95,104-107,110-114,127-128,132-133,138-141,153-203,223-227,232,236-252,259-277,288-289,299-300,304-328,340-341,351-352,360-362,385-422,424-429,452-466,592-594,599-612,614,616,618-620,622,635,639-660,663-675,677-679,682-733,783,807-812,859-865,906-908,912-913
+apps/api/src/controllers/v0/scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 42-43,57,94-118,128-130
+apps/api/src/lib/mcp-action-log-config.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,46-47
+apps/api/src/lib/error-serde.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 5-6,13,45,47-48,56,58-108,114-128,131,133-152,155-159
+apps/api/src/controllers/v1/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 118-134,356-357,385-386
+examples/blog-articles/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-5
+apps/api/src/__tests__/lib/branding/element-text.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-37
+apps/api/src/lib/us-only.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-52
+apps/api/src/__tests__/snips/v1/scrape.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 26-28,43,54,1630-1632
+apps/api/src/search/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-8,23-24,38-39,41-67,78
+apps/api/src/services/webhook/queue.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-103
+apps/local/src/fetch.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-327
+apps/api/src/__tests__/snips/mocks/map-redirect.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-17
+  s_6a7201d5c4fd9c::t_6a2d4b9ae50a3e 2
+apps/api/src/lib/threat-protection/store.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,29-83,185,215,232-244,273-279,282,378
+  s_6a7201d5c4fd9c::t_d742958e2d6ac6 379
+apps/api/src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 258-277
+apps/api/src/controllers/v2/feedback/alexandria-refund.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,39-44,76-92,99,112,127,180,300-402
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-113
+apps/api/src/__tests__/lib/branding/llm-telemetry.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-6,49
+apps/api/src/lib/browser-options.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16,33,142-169,171-172
+  s_6a7201d5c4fd9c::t_23f2e14c501d3a 170,173-174
+apps/api/src/controllers/admin/acuc-cache-clear.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-30
+apps/api/src/scraper/WebScraper/__tests__/utils.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 16-29,32-36,39-41,45,49-50,53-55
+apps/api/src/services/worker/nuq-fdb-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15,135,156-160
+apps/api/src/scraper/scrapeURL/engines/pdf/truncatedHandoff.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-245
+apps/api/src/main/runWebScraper.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,32,125
+apps/api/src/lib/feedback-trace.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-111
+apps/api/src/services/vercel-marketplace-oidc.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-199
+apps/go-sdk/models.go
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 199-211,265-339,368-371,387-393,813-823
+apps/api/src/services/alexandria/contracts.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-4,23-28,33,43
+apps/api/src/lib/deterministicJson/llm/client.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 53-65,74,93,226-227
+apps/api/src/services/agent-sponsor.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-4
+apps/api/src/lib/alexandria-verified.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-24
+apps/api/src/__tests__/routes/exchange-alexandria-verified.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-167
+apps/api/src/__tests__/routes/interact-agent-concurrency.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 134
+apps/api/src/lib/team-plan-class.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-166
+apps/api/src/service/hooks.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-126
+apps/api/src/__tests__/routes/deprecations-existing-routes.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,5-7,24-27,55-64,67,71-77,79-80,82-89,122-167
+  s_6a7201d5c4fd9c::t_8f6f0e17507d71 168
+apps/api/src/services/alexandria/option-types.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-93
+apps/api/src/lib/scrape-billing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 69,88-90,93
+apps/local/Cargo.toml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-72
+apps/api/src/services/alexandria/option-types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-93
+apps/api/src/lib/zdrcleaner.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3-22,24-45,52-53,65,146-185,204-262
+apps/api/src/routes/admin.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-10,15-17
+apps/api/src/services/alexandria/access.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14,45-46,49,54,57-62,82,100-108,132-140
+apps/api/src/services/notification/monitoring_email.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17-20,26-27,94-100,179-202,250-262,405-408,619-627,643-645
+.github/workflows/warm-ci-cache.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-139
+apps/api/src/services/logging/log_job.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 24,173-177,235,435-436,484-485,487,496-507,578,610-611,740-744,829
+apps/api/src/lib/vercel-marketplace-oidc.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-240
+apps/api/src/__tests__/snips/v2/stealth-routing-fire-engine.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-116
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache-service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11,48-68,218-219,224-226
+apps/dot-net-sdk/Firecrawl/Models/ResearchModels.cs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 20-26,95-175,266-272,288-292
+  s_6a7201d5c4fd9c::t_d7db5432d7c3b4 293
+apps/api/src/services/autumn/firebill.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,3-5,12-13,61-122,418,452-475,477-480,482-483,485-486,489,492-512,520-522,530-535,550-553,559,562,567-572,582,588-600,642,644,759,841,843,939-944,969,971,1080,1099-1104,1107-1150,1159-1163,1165,1167,1199-1204,1223-1227,1238,1243-1244,1257,1268,1272
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFRetry.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-294
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/research.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 41,52,143-173
+  s_6a7201d5c4fd9c::t_02fab918b881b3 174-175
+apps/api/src/services/billing/__tests__/batch_billing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,23,42-43,147-149,155-159,162,168,171-178,182-186,190-200,204-211,214,219,224,227-231,234-262,276-278,302,308-309,323,328,343,348-351,353-354,382,384-386
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFUsOnly.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-438
+apps/api/src/__tests__/snips/v2/stealth-routing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-82
+apps/api/src/lib/openai-federation.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-36
+apps/api/src/routes/labs.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,99-106
+  s_6a7201d5c4fd9c::t_7d0f8fbb8e8629 107-108
+apps/api/src/controllers/admin/metrics.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-56
+apps/api/native/src/html.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 38-43,48,68-94,104-105,157-164,448-457,464,707,726-732,775,841,848-850,1020-1023,1025-1028,1030-1033,1036-1058
+apps/api/Dockerfile
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2
+apps/api/src/controllers/admin/precrawl.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-7
+apps/python-sdk/firecrawl/v2/utils/error_handler.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10,171-173,190-191
+apps/python-sdk/firecrawl/v2/methods/aio/search.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,55-56,120-126
+CONTRIBUTING.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 55-64
+apps/api/src/search/v2/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7-9,30-31,51-53,55-60,77-78,84-90,93-104,108-117
+apps/api/native/src/document.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,12-14,49-51,53-71,115,172-181,210,222,284,327-439
+apps/api/src/controllers/v2/__tests__/browser-mcp-credits.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-15,51,58,102,104,178-195,198-218,338-484
+  s_6a7201d5c4fd9c::t_dc1f2a45fb3e68 485
+apps/api/src/lib/__tests__/vercel-marketplace-oidc.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-311
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/siteProtection.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15-20,58-63,89,91-92,110-144,148
+  s_6a7201d5c4fd9c::t_fecf06f2cf8fe6 145-147
+apps/python-sdk/firecrawl/v2/methods/search.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,48-49,129-135
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/elements.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,116-176,206,313,315,338,345
+apps/api/src/controllers/v2/feedback/internal-types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-21,70-71
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFBackgroundRefresh.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 299-346
+apps/api/src/lib/extract/fire-0/completions/singleAnswer-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-8,17,30,49
+apps/api/src/scraper/scrapeURL/transformers/redactPII.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,105-136
+apps/php-sdk/src/Version.php
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9
+apps/api/native/src/lib.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 18
+apps/elixir-sdk/lib/firecrawl.ex
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 260,264,269-272,374-403,416-417,419,430-431,433,461-462
+apps/api/src/__tests__/lib/branding/branding-script-buttons.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,10,50,96-192
+  s_6a7201d5c4fd9c::t_fc2940ea50a41b 193
+apps/api/src/services/queue-service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14,40-57,121
+apps/python-sdk/firecrawl/v2/methods/aio/gov.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,5,21,23,37
+apps/api/src/lib/__tests__/timeoutProcessing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,12-25,165
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/retry.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-68
+apps/api/src/services/extract-queue.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22,24-30,32,38-62,65,68,74,77,87
+apps/api/src/lib/key-restriction.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 102-122,125-139,142-145,205-236,238-239
+apps/api/src/lib/threat-protection/request.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 202-222,228,236
+apps/api/src/lib/branding/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 113
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/aio/test_aio_research.py
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 62,72,164-174,203,210,214,232,249,266,270,286-289
+  s_6a7201d5c4fd9c::t_e95fb8e59ab11e 290
+apps/api/src/lib/zdr-queue.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 2,15,21-27,31-35,91-102,250-258,261,263,272,277,281,296-300,302-303,308,310,313-323,330-340,343-344,352-353,360-367,369-378,395,402,431,433-438,440-477,484-485
+apps/api/src/lib/request-context.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-170
+apps/api/src/__tests__/snips/v2/wikipedia-zdr-routing.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-118
+apps/api/src/controllers/v2/agent-thread.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,7
+apps/api/src/__tests__/lib/branding/brand-name.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-82
+apps/api/src/lib/alexandria-activity.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6-14,44-119
+apps/api/src/scraper/scrapeURL/engines/fire-engine/branding-script/helpers.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 83-96,102,117-119,123,126,154-159
+  s_6a7201d5c4fd9c::t_65da68b1e12a9f 160
+apps/api/src/scraper/scrapeURL/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 45,63-64,66,136,138,205-208,618,634-636,813,916,1004-1014,1040,1083-1084,1229-1236,1239,1388-1389,1394-1404,1505,1507,2037-2039
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 580-582,859-860,863-882,887-888,918-926,934,1002-1003,1033-1034,1041,1065-1066,1101-1102,1272-1325,2363-2365,2427-2524,2526,2528-2529,2541-2542,2568-2569,2593,2618-2626,2630-2631
+apps/rust-sdk/Cargo.toml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3
+apps/api/src/controllers/v2/feedback/alexandria-schema.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,7-8,47,55-60,74-77
+apps/api/src/controllers/v2/agent-status.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13,64-77,82-90,108
+apps/api/src/__tests__/routes/exchange-proof.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-388
+apps/api/src/controllers/v1/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 22,32,1173,1211,1353-1358,1386,1394-1396,1420-1421,1430-1443
+apps/api/src/controllers/v2/__tests__/extract-status-agent.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-76
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-149
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/indexPdfSupersede.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 43,54,192-246
+  s_6a7201d5c4fd9c::t_c054a139377f25 247
+apps/api/src/services/worker/nuq-reconciler-worker.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12,14,17,22,41,47-53,117-118,151-155
+apps/js-sdk/firecrawl/src/__tests__/e2e/v2/utils/idmux.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 17-26,50
+apps/api/src/controllers/v2/__tests__/scrape-browser.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 37,110,158,175,178,515-516,524,528,675-707,813-890
+.github/workflows/test-server.yml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 114,153,237-256,270-275,292-296,334,336,349-353,366-374,406-453,488-499,513-525,661-669
+  s_6a7201d5c4fd9c::t_263eee724d6ca8 670
+apps/api/src/__tests__/snips/v2/gov.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 3,5,33-109
+apps/api/src/controllers/v2/map.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 176
+apps/api/src/services/autumn/autumn.service.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,48-59,90-91,249,346,363,415,421-428,431-434,437-439,447-449,452-457,485,507-509,549,576-579
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 39,42-43,67,185,493-494,672-686,691-692,724-727,945-952,954-956,972-976,995-997,1018
+apps/api/src/services/logging/log_job.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 670-672
+apps/api/src/services/monitoring/judgeChange.telemetry.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 111,218-253,257,281-307,335-537
+apps/api/src/services/worker/nuq.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 131-136,138-143
+apps/api/src/lib/generic-ai.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-2,4-5,7,15-19,30-65,68,72,86,90-171,175,180-184
+apps/api/src/scraper/scrapeURL/engines/pdf/types.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 46-47,51-56
+apps/api/src/scraper/scrapeURL/transformers/audio.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 6,64-66
+  s_6a7201d5c4fd9c::t_92ee20c7f8cfe5 67-70
+apps/api/src/controllers/v2/feedback/alexandria-refund.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,10,22,34,105-156,165,182-184,199-201,209-210,213,253,314-323,325-328
+apps/api/src/routes/v0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 8,40
+apps/dot-net-sdk/Firecrawl/Firecrawl.csproj
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11
+SELF_HOST.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 90,98
+apps/api/src/scraper/WebScraper/__tests__/robots-denial.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,4,8,11-22
+  s_6a7201d5c4fd9c::t_c2f7dcbe3e9c84 23
+apps/rust-sdk/src/research.rs
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 23-24,87-184,215-218,234-239,381-383,493-522,555-559,657-795
+  s_6a7201d5c4fd9c::t_7e439ef4dd850a 796-797
+apps/api/src/lib/search-query-builder.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,43,70,82
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/refresh-budget.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-16
+apps/api/src/lib/branding/jev.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15-19,31,76-89,285,289,294-315,317-323,351-354,1201-1203,1210-1212,1218,1237-1238,1246,1252-1278,1299,1341
+  s_6a7201d5c4fd9c::t_ba563c4b3806da 14
+apps/api/src/services/notification/monitoring_slack.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 11-14,121-122,143-147
+apps/test-site/pnpm-workspace.yaml
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 10-11
+apps/api/src/lib/us-only.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-82
+apps/api/src/scraper/scrapeURL/lib/extractSmartScrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 21-24,321,422-425,536,547-552
+apps/api/src/__tests__/routes/research-proteins.routes.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-168
+apps/api/src/lib/world-id.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 26-30,311,319-323
+apps/api/src/__tests__/snips/v2/types-validation.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 49,1515,1521,1628
+apps/api/src/service/core-parts.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-74
+apps/api/src/lib/__tests__/world-id.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 25,233-241
+  s_6a7201d5c4fd9c::t_5bcc9848795955 242-251
+apps/api/src/controllers/admin/check-fire-engine.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-76
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/gov.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 45-78
+apps/api/src/scraper/scrapeURL/transformers/redactPII.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4,27
+apps/api/src/lib/extract/fire-0/completions/analyzeSchemaAndPrompt-f0.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,19,28,33-36
+apps/api/src/controllers/v2/computer-session-files.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-481
+apps/api/src/__tests__/snips/v1/json-extract-prompt-injection.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9,39
+apps/api/src/harness.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 7,13-14,833-839,842,851,861,871-872,876,886,900-903,914,1118-1119,1202-1203,1241-1253
+apps/api/src/lib/error.test.ts
+  s_6a7201d5c4fd9c::t_b3ca75af9b1376 4,14,19,94-110
+  s_6a7201d5c4fd9c::t_00f79325ecc37a 9,11,13,90-91
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-3,5,7-8,10,12,20-89
+apps/api/src/__tests__/lib/branding/branding-script-no-body.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-51
+apps/api/src/controllers/v2/search.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,15,31-36,47-50,56,66,74,78,80-82,84-88,162-166,169-182,190-192,194,197-200,202,205-207,210,280-300,334-362,462-465,470,494-511,567,580-585,588,599-601,732,734-736,742,745-751,757,784-802
+  s_6a7201d5c4fd9c::t_31d800123cef8e 803
+apps/api/src/lib/research-upstream.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1,51-117,124,126,130-132,140-161
+apps/api/src/services/notification/monitoring_slack.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-23,25-28,128-356
+  s_6a7201d5c4fd9c::t_b2f6ce82c1a24d 357
+apps/api/vitest.core.setup.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-15
+apps/js-sdk/firecrawl/audit-ci.jsonc
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 4-12
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 122,188,222
+apps/api/src/controllers/v1/generate-llmstxt.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 14-15,42-49
+  s_6a7201d5c4fd9c::t_25e8d9376ab20f 50-52
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 9-10,23-28,118-121,125,172-173,194-195,199-212,214-227
+apps/api/src/services/billing/batch_billing.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 101-103,205-208,218-219,352,354,363
+apps/api/src/controllers/v1/scrape.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 15,336,339,373-377,409
+  s_6a7201d5c4fd9c::t_ab5b3ab13678b3 410-416
+apps/api/src/lib/exchange-request.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 31
+apps/elixir-sdk/openapi.json
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 12682,12701-12732,12736-12740
+apps/python-sdk/README.md
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 231-232,247-250,343-350,499-523
+apps/api/src/lib/x-twitter-url.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 1-135
+apps/api/src/search/developer.test.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 210-264
+apps/api/src/controllers/v1/deep-research.ts
+  s_6a7201d5c4fd9c::t_4edd4a763f3203 13-14,98-105
+  s_6a7201d5c4fd9c::t_d1fb28083a7ebe 106-108
+apps/api/.env.example
+  s_6a7201d5c4fd9c::t_23c78585f41ca1 24-27,31-35
+apps/api/native/Cargo.lock
+  s_6a7201d5c4fd9c::t_fdaba3ec09d398 1-2655
+apps/api/pnpm-lock.yaml
+  s_6a7201d5c4fd9c::t_23d419c0a0bd93 18,69-70,72-73,75-76,78-79,81-82,84-85,87-91,93-97,123-124,147-148,179-181,244,255-259,333-335,426-428,432-434,438-440,444-446,450-452,456-458,462-464,468-470,474-476,480-482,484-486,490-492,494-496,500-502,505-507,524-527,1411-1412,1466-1468,1470,2010-2012,2237-2238,2270-2272,2289-2291,2338-2340,2547-2554,2991-2992,3095-3098,3111-3114,3157-3160,3181-3184,3336-3338,3383-3386,3667-3670,3677,3742-3744,3746,3767-3793,3862-3865,4308-4309,4402-4404,4681-4684,4735,4737-4738,4741,4743-4745,4748,4750-4752,4755,4757-4759,4762,4764-4769,4774,4776-4777,4780,4782-4783,4786,4788-4789,4792,4794-4795,4798,4800-4804,4806,4808,4810,4814,4818,4820-4822,4824,4826-4829,4852-4853,5165,5619,5684,5686,6045-6049,6230,6273-6274,6292,6294-6296,6333-6334,6559-6575,6901,6903,6905-6908,7024-7031,7057-7064,7133-7143,7178-7179,7353-7354,7405-7409,7449,7456,7649-7650,7706,7708-7710,7731-7737,7840-7841,8309,8311,8413-8414,8635-8636
+apps/playwright-service-ts/pnpm-lock.yaml
+  s_6a7201d5c4fd9c::t_f62108860a44cc 29-30,473-474,478-479,976,978,980
+apps/rust-sdk/Cargo.lock
+  s_6a7201d5c4fd9c::t_10d873669992bd 261,1201,1203
+apps/test-site/pnpm-lock.yaml
+  s_6a7201d5c4fd9c::t_a9c866a6b2c082 11,35,43-44,58-59,64-65,70-71,76-77,83-84,90-91,97-98,104-106,109-110,115-116,121-122,125-126,135-136,141-142,158-161,165-167,171-178,197-203,207-208,212-218,223-224,229-230,235-236,241-242,246-247,251-252,274-276,283-285,292-293,463-464,467-468,470-478,483-484,486-493,498-499,504-505,510-511,516-517,522-523,529-530,536-537,543-544,550-551,557-558,564-565,570-572,575-576,581-582,594-595,602-603,610-611,618-619,626-627,634-635,642-643,649-651,708-709,716-718,736-738,800-801,890-892,939-940,956-958,971-972,1002-1004,1056-1058,1143-1144,1150-1152,1325-1328,1361-1362,1378-1380,1398-1401,1416-1417,1513-1514,1524-1525,1553-1554,1569-1572,1584-1586,1593-1594,1613-1614,1625-1627,1656-1657,1689-1690,1700,1751-1752,1764-1765,1770,1822-1825,1829-1832,1846,1849,1852,1855,1858,1861,1864,1867,1869-1871,1874,1877,1880,1882-1891,1893,1895,1910,1916-1917,1919,1943,1945-1946,1948,1950,1956,1974-1977,1980,1984-1988,1995,2002-2014,2028,2031,2034,2037,2040,2043,2046-2052,2056,2059,2062,2093,2095,2099,2104,2109,2114-2116,2119-2121,2124-2126,2267-2274,2281,2288,2292,2294,2297,2300,2303,2306,2309,2312,2315,2318,2321,2324,2327,2330-2333,2335-2337,2340,2343,2356,2358-2360,2362,2370,2372-2373,2381,2383-2384,2390,2392,2400,2402-2403,2410,2412,2419,2421,2426-2427,2483,2492-2493,2504,2506-2511,2515,2519,2523,2526,2531,2533,2536,2538,2542-2544,2546,2549,2551-2555,2579,2627,2707-2708,2775,2777,2779-2782,2790-2791,2803,2900-2913,2988-2989,3047,3053-3056,3504-3505,3528,3548,3577-3578,3587,3745,3747,3750-3765,3773,3780-3790,3842,3844-3850,3864-3865,3872-3873,3881-3883,3909,3918-3919,3947,3950-3951,4000,4006,4011,4028,4032-4033,4038,4040,4042,4048-4049,4052
+examples/scrape_and_analyze_airbnb_data_e2b/package-lock.json
+  s_6a7201d5c4fd9c::t_d925180ac0cf63 819-821,825-826,829,833-835,1333-1336,1342-1345,1347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55bf7943591326306b330288f205d375e3fe021c",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
