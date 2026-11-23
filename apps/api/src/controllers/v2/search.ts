@@ -28,7 +28,11 @@ import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  getSearchForcedKind,
+  getSearchZDR,
+  isAlexandriaZDRForced,
+} from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
@@ -67,6 +71,7 @@ import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
+import { lineageIds } from "../../lib/feedback-trace";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
@@ -154,6 +159,11 @@ async function searchControllerInner(
   try {
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
+    const headerOrigin = req.headers["x-origin"];
+    // A team held to Alexandria zero data retention names no session or conversation.
+    const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
+      ? {}
+      : lineageIds(req);
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {
@@ -567,6 +577,12 @@ async function searchControllerInner(
         orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
         integration: req.body.integration,
+        // The origin as the caller named it: the schema default would label every caller "api".
+        clientOrigin:
+          rawOrigin ??
+          (typeof headerOrigin === "string" ? headerOrigin : undefined),
+        clientSession: lineage.sessionId,
+        clientThread: lineage.threadId,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         teamPlanClass: teamPlanClass(req.acuc),
@@ -580,6 +596,9 @@ async function searchControllerInner(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ...(req.headers["x-firecrawl-work-contact-only"] === "true"
+          ? { workContactOnly: true }
+          : {}),
       },
       logger,
     );
@@ -720,6 +739,7 @@ async function searchControllerInner(
         result.toolsAuto ? "auto_search" : "search",
         jobId,
         result.response.tools,
+        lineage,
       );
     }
     const warning = [

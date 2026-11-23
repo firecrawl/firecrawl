@@ -523,6 +523,14 @@ export const search_feedback = pgTable("search_feedback", {
   origin: text("origin"),
   credits_refunded: integer("credits_refunded").notNull().default(0),
   refund_policy: jsonb("refund_policy"),
+  // The caller's own id for the feedback request, and for hosted MCP calls
+  // the session and conversation ids, as in the MCP action log.
+  external_request_id: text("external_request_id"),
+  session_id: text("session_id"),
+  session_source: text("session_source"),
+  thread_id: text("thread_id"),
+  thread_source: text("thread_source"),
+  objective: text("objective"),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
@@ -549,6 +557,11 @@ export const alexandria_feedback = pgTable(
     schema_version: integer("schema_version").notNull().default(2),
     credits_refunded: integer("credits_refunded").notNull().default(0),
     refund_policy: jsonb("refund_policy"),
+    external_request_id: text("external_request_id"),
+    session_id: text("session_id"),
+    session_source: text("session_source"),
+    thread_id: text("thread_id"),
+    thread_source: text("thread_source"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TransportableErrorClass } from "../lib/error";
 import type { HookHandlers } from "./hooks";
 import {
   createService,
@@ -20,6 +21,10 @@ const parts = (core: Partial<Extension> = {}): CoreParts => ({
 // No hook point exists yet, so a handler can only be listed through a cast.
 const handlers = (listed: Record<string, unknown>) =>
   listed as unknown as HookHandlers;
+
+// A test's codes are not in ErrorCodes, so a class can only be built through a cast.
+const errorClass = (...codes: string[]) =>
+  ({ codes, deserialize: vi.fn() }) as unknown as TransportableErrorClass;
 
 afterEach(() => {
   replaceService(undefined);
@@ -80,8 +85,77 @@ describe("createService", () => {
   });
 });
 
+describe("errors", () => {
+  it("finds the class registered under a code, whichever extension lists it", () => {
+    const timeout = errorClass("TIMEOUT");
+    const refusal = errorClass("NOT_FOUND", "NOT_ENABLED");
+    const built = createService(
+      { modules: {}, extensions: [{ name: "mine", errors: [refusal] }] },
+      parts({ errors: [timeout] }),
+    );
+
+    expect(built.errors.classFor("TIMEOUT")).toBe(timeout);
+    expect(built.errors.classFor("NOT_FOUND")).toBe(refusal);
+    expect(built.errors.classFor("NOT_ENABLED")).toBe(refusal);
+  });
+
+  it("has no class for a code that nobody registered", () => {
+    const built = createService(
+      { modules: {} },
+      parts({ errors: [errorClass("TIMEOUT")] }),
+    );
+
+    expect(built.errors.classFor("SOMETHING_ELSE")).toBeUndefined();
+    expect(built.errors.classFor("constructor")).toBeUndefined();
+    expect(built.errors.classFor("")).toBeUndefined();
+  });
+
+  it("takes any name for a code", () => {
+    const inherited = errorClass("__proto__", "constructor");
+    const built = createService(
+      { modules: {} },
+      parts({ errors: [inherited] }),
+    );
+
+    expect(built.errors.classFor("__proto__")).toBe(inherited);
+    expect(built.errors.classFor("constructor")).toBe(inherited);
+    expect(Object.entries(built.describe().errors)).toEqual([
+      ["__proto__", "core"],
+      ["constructor", "core"],
+    ]);
+  });
+
+  it("calls a function that lists classes on the first lookup, and once", () => {
+    const timeout = errorClass("TIMEOUT");
+    const list = vi.fn(() => [timeout]);
+    const built = createService({ modules: {} }, parts({ errors: list }));
+
+    expect(list).not.toHaveBeenCalled();
+    expect(built.errors.classFor("TIMEOUT")).toBe(timeout);
+    expect(built.errors.classFor("TIMEOUT")).toBe(timeout);
+    built.describe();
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a code that two classes carry", () => {
+    const built = createService(
+      {
+        modules: {},
+        extensions: [{ name: "mine", errors: [errorClass("TIMEOUT")] }],
+      },
+      parts({ errors: [errorClass("TIMEOUT")] }),
+    );
+    const message =
+      'Error code "TIMEOUT" is registered by "core" and by "mine"';
+
+    expect(() => built.errors.classFor("TIMEOUT")).toThrow(message);
+    expect(() => built.errors.classFor("SOMETHING_ELSE")).toThrow(message);
+    expect(() => built.describe()).toThrow(message);
+  });
+});
+
 describe("describe", () => {
-  it("lists the extensions in order, the owner of each handler and of each role", () => {
+  it("lists the extensions in order, the owner of each handler, error code and role", () => {
     const built = createService(
       {
         modules: {},
@@ -92,6 +166,7 @@ describe("describe", () => {
               "b.point": [vi.fn(), vi.fn()],
               "a.point": vi.fn(),
             }),
+            errors: [errorClass("ZEBRA", "ALPHA")],
             workers: { zebra: worker(), api: worker() },
           },
           { name: "third", hooks: handlers({ "b.point": vi.fn() }) },
@@ -99,6 +174,7 @@ describe("describe", () => {
       },
       parts({
         hooks: handlers({ "b.point": vi.fn() }),
+        errors: () => [errorClass("TIMEOUT")],
         workers: { api: worker(), "queue-worker": worker() },
       }),
     );
@@ -112,9 +188,16 @@ describe("describe", () => {
         "a.point": ["second"],
         "b.point": ["core", "second", "second", "third"],
       },
+      errors: { ALPHA: "second", TIMEOUT: "core", ZEBRA: "second" },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
+      env: {},
     });
     expect(Object.keys(description.hooks)).toEqual(["a.point", "b.point"]);
+    expect(Object.keys(description.errors)).toEqual([
+      "ALPHA",
+      "TIMEOUT",
+      "ZEBRA",
+    ]);
     expect(Object.keys(description.roles)).toEqual([
       "api",
       "queue-worker",
@@ -136,6 +219,7 @@ describe("service", () => {
   it("throws while no service is installed", () => {
     expect(() => service.modules).toThrow("No service is installed");
     expect(() => service.hooks).toThrow("No service is installed");
+    expect(() => service.errors).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
   });
@@ -149,6 +233,7 @@ describe("service", () => {
 
     expect(service.modules).toBe(built.modules);
     expect(service.hooks).toBe(built.hooks);
+    expect(service.errors).toBe(built.errors);
     expect(service.workers).toBe(built.workers);
     expect(service.describe()).toEqual(built.describe());
   });

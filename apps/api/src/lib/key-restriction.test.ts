@@ -99,14 +99,50 @@ describe("classifyEndpoint", () => {
     });
   });
 
-  it("marks account/metadata endpoints as always allowed", () => {
-    expect(classifyEndpoint("/v2/team/credit-usage")).toMatchObject({
-      alwaysAllowed: true,
+  it("groups team, concurrency-check, and slack endpoints under account", () => {
+    expect(classifyEndpoint("/v2/team/credit-usage")).toEqual({
+      api: "v2",
+      group: "account",
+      alwaysAllowed: false,
     });
-    expect(classifyEndpoint("/v2/concurrency-check")).toMatchObject({
-      alwaysAllowed: true,
+    expect(classifyEndpoint("/v2/team/activity")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/team/threat-protection")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/team/siem")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
     });
     expect(classifyEndpoint("/v1/team/queue-status")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/concurrency-check")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v1/concurrency-check")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+    expect(classifyEndpoint("/v2/slack/status")).toMatchObject({
+      group: "account",
+      alwaysAllowed: false,
+    });
+  });
+
+  it("marks metadata/support endpoints as always allowed", () => {
+    expect(classifyEndpoint("/v2/feedback")).toMatchObject({
+      alwaysAllowed: true,
+    });
+    expect(classifyEndpoint("/v2/support/ask")).toMatchObject({
+      alwaysAllowed: true,
+    });
+    expect(classifyEndpoint("/v2/keyless/eligibility")).toMatchObject({
       alwaysAllowed: true,
     });
   });
@@ -166,10 +202,41 @@ describe("isEndpointAllowed", () => {
     ).toBe(false);
   });
 
-  it("always allows account/metadata endpoints for restricted keys", () => {
+  it("gates account endpoints on the account group", () => {
+    const withoutAccount = config({ allowedEndpoints: ["scrape"] });
+    for (const path of [
+      "/v2/team/activity",
+      "/v2/team/credit-usage",
+      "/v2/team/threat-protection",
+      "/v2/team/siem",
+      "/v2/concurrency-check",
+      "/v2/slack/status",
+      "/v1/team/queue-status",
+    ]) {
+      expect(isEndpointAllowed(path, withoutAccount)).toMatchObject({
+        allowed: false,
+        status: 403,
+      });
+    }
+
+    const withAccount = config({ allowedEndpoints: ["scrape", "account"] });
+    for (const path of [
+      "/v2/team/activity",
+      "/v2/team/credit-usage",
+      "/v2/team/threat-protection",
+      "/v2/team/siem",
+      "/v2/concurrency-check",
+      "/v2/slack/status",
+      "/v1/team/queue-status",
+    ]) {
+      expect(isEndpointAllowed(path, withAccount).allowed).toBe(true);
+    }
+  });
+
+  it("always allows metadata/support endpoints for restricted keys", () => {
     const c = config({ allowedEndpoints: ["scrape"] });
-    expect(isEndpointAllowed("/v2/team/credit-usage", c).allowed).toBe(true);
-    expect(isEndpointAllowed("/v2/concurrency-check", c).allowed).toBe(true);
+    expect(isEndpointAllowed("/v2/feedback", c).allowed).toBe(true);
+    expect(isEndpointAllowed("/v2/support/ask", c).allowed).toBe(true);
   });
 
   it("denies unknown v2 endpoints when an allowlist is set", () => {

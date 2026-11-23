@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   scrapeLog: vi.fn(),
   discovery: vi.fn(),
   recordDiscovered: vi.fn(),
+  libraryTools: vi.fn(),
   markCalls: vi.fn(),
   providerToolsBody: vi.fn(),
   optionTypes: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("../../lib/alexandria-activity", () => ({
 }));
 vi.mock("../../lib/alexandria-discovery", () => ({
   discoveryForCalls: mocks.discovery,
+  libraryCommandTools: mocks.libraryTools,
   recordDiscoveredTools: mocks.recordDiscovered,
 }));
 vi.mock("../../services/alexandria/retrieve", () => ({
@@ -69,11 +71,12 @@ const call = {
 };
 let flags: Record<string, unknown> = { exchangeRetrieve: true };
 let teamId = "team";
+let hostedMcp = false;
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
-    auth: { team_id: teamId },
+    auth: { team_id: teamId, ...(hostedMcp ? { hostedMcp } : {}) },
     acuc: {
       api_key_id: 12,
       org_id: "org",
@@ -115,12 +118,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   flags = { exchangeRetrieve: true };
   teamId = "team";
+  hostedMcp = false;
   mocks.log.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
   mocks.optionTypes.mockResolvedValue(new Map());
   mocks.discovery.mockImplementation(async (_teamId, calls: unknown[]) =>
-    calls.map(() => ({})),
+    calls.map(() => ({ discovery: {} })),
   );
+  mocks.libraryTools.mockReturnValue([]);
   mocks.retrieve.mockResolvedValue(
     result([{ ...call, creditsCost: 0, data: {} }]),
   );
@@ -701,9 +706,10 @@ it("logs find-tools options and result size, and remembers the tools it showed",
     "find_tools",
     "scrape-1",
     [
-      { provider: "particle", capability: "advertising/sponsors" },
-      { provider: "particle", capability: "podcasts/show" },
+      { provider: "particle", capability: "advertising/sponsors", rank: 1 },
+      { provider: "particle", capability: "podcasts/show", rank: 2 },
     ],
+    { requestId: expect.stringMatching(/^hashed:team:/) },
   );
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
@@ -727,12 +733,14 @@ it("logs find-tools options and result size, and remembers the tools it showed",
 it("attributes each provider call to the discovery that showed it", async () => {
   mocks.discovery.mockResolvedValue([
     {
-      search: { id: "search-1", secondsBefore: 40 },
-      find_tools: { id: "scrape-0", secondsBefore: 12 },
+      discovery: {
+        search: { id: "search-1", secondsBefore: 40 },
+        find_tools: { id: "scrape-0", secondsBefore: 12 },
+      },
     },
   ]);
   await request(app).post("/v2/scrape").send({ alexandria: call });
-  expect(mocks.discovery).toHaveBeenCalledWith("team", [call]);
+  expect(mocks.discovery).toHaveBeenCalledWith("team", [call], {});
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
     alexandria: [
@@ -783,6 +791,253 @@ it("neither reads nor records discovery under zero data retention", async () => 
   await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
   expect(mocks.discovery).not.toHaveBeenCalled();
   expect(mocks.recordDiscovered).not.toHaveBeenCalled();
+});
+
+it.each([
+  {
+    discovery: { search: { id: "search-1", secondsBefore: 40 } },
+    search: {
+      id: "search-1",
+      source: "search",
+      rank: 2,
+      match: "conversation",
+      secondsBefore: 40,
+    },
+  },
+  {
+    discovery: { find_tools: { id: "scrape-0", secondsBefore: 12 } },
+    search: {
+      id: "scrape-0",
+      source: "find_tools",
+      rank: 1,
+      match: "session",
+      secondsBefore: 12,
+      requestId: "hashed:team:find-1",
+    },
+  },
+  {
+    discovery: {},
+    search: {
+      id: "scrape-9",
+      source: "library",
+      rank: 3,
+      match: "team",
+      secondsBefore: 300,
+      requestId: "hashed:team:library-1",
+    },
+  },
+])(
+  "logs the search that led to a provider call beside its discovery ($search.match)",
+  async found => {
+    mocks.discovery.mockResolvedValue([found]);
+    await request(app).post("/v2/scrape").send({ alexandria: call });
+    await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+    expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+      alexandria: [
+        {
+          provider: call.provider,
+          capability: call.capability,
+          code: null,
+          creditsCost: 0,
+          ...(Object.keys(found.discovery).length
+            ? { discovery: found.discovery }
+            : {}),
+          search: found.search,
+        },
+      ],
+    });
+  },
+);
+
+it("logs the call without waiting on a discovery lookup that hangs", async () => {
+  mocks.discovery.mockReturnValue(new Promise(() => {}));
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1), {
+    timeout: 3000,
+  });
+  expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+    alexandria: [
+      {
+        provider: call.provider,
+        capability: call.capability,
+        code: null,
+        creditsCost: 0,
+      },
+    ],
+  });
+});
+
+it("ranks find-tools answers from the offset the call asked for", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        provider: "firecrawl",
+        capability: "find-tools",
+        creditsCost: 0,
+        data: {
+          items: [
+            { provider: "fred", capability: "series/search" },
+            { provider: "fred", id: "fred" },
+            { provider: "fred", capability: "series/observations" },
+          ],
+        },
+      },
+    ]),
+  );
+  await request(app)
+    .post("/v2/scrape")
+    .set("x-request-id", "find-1")
+    .send({
+      alexandria: {
+        provider: "firecrawl",
+        capability: "find-tools",
+        options: { query: "weather in Lisbon", offset: 10 },
+      },
+    });
+  expect(mocks.recordDiscovered).toHaveBeenCalledWith(
+    "team",
+    "find_tools",
+    "scrape-1",
+    [
+      { provider: "fred", capability: "series/search", rank: 11 },
+      { provider: "fred", capability: "series/observations", rank: 13 },
+    ],
+    { requestId: "hashed:team:find-1" },
+  );
+});
+
+describe("a library command", () => {
+  const library = {
+    provider: "firecrawl",
+    capability: "library",
+    options: { command: "grep -rl forecast /library/weather" },
+  };
+  const stdout = "/library/weather/open-meteo/forecast/daily.md\n";
+  const listed = [
+    { provider: "open-meteo", capability: "forecast/daily", rank: 1 },
+  ];
+
+  beforeEach(() => {
+    mocks.libraryTools.mockReturnValue(listed);
+    mocks.retrieve.mockResolvedValue(
+      result([
+        {
+          provider: "firecrawl",
+          capability: "library",
+          creditsCost: 0,
+          data: { stdout, stderr: "", exitCode: 0 },
+        },
+      ]),
+    );
+  });
+
+  it("remembers the tools it listed, with their ranks, and logs only its identifiers", async () => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-request-id", "library-1")
+      .send({ alexandria: library });
+    expect(response.status).toBe(200);
+    expect(mocks.libraryTools).toHaveBeenCalledExactlyOnceWith(
+      library.options.command,
+      stdout,
+    );
+    expect(mocks.recordDiscovered).toHaveBeenCalledWith(
+      "team",
+      "library",
+      "scrape-1",
+      listed,
+      { requestId: "hashed:team:library-1" },
+    );
+    await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+    expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+      alexandria: [
+        {
+          provider: "firecrawl",
+          capability: "library",
+          code: null,
+          creditsCost: 0,
+        },
+      ],
+    });
+  });
+
+  it("records and attributes nothing under zero data retention", async () => {
+    await request(app)
+      .post("/v2/scrape")
+      .send({ alexandria: library, zeroDataRetention: true });
+    await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+    expect(mocks.libraryTools).not.toHaveBeenCalled();
+    expect(mocks.recordDiscovered).not.toHaveBeenCalled();
+    expect(mocks.discovery).not.toHaveBeenCalled();
+    expect(
+      mocks.scrapeLog.mock.calls[0][0].options.alexandria[0],
+    ).not.toHaveProperty("search");
+  });
+});
+
+describe("a hosted MCP caller's session and conversation", () => {
+  const header = Buffer.from(
+    JSON.stringify({
+      session_id: "sess_01A",
+      session_source: "token",
+      thread_id: "thread:42.a-b",
+      thread_source: "client",
+    }),
+  ).toString("base64url");
+
+  it("reach the catalogue read, the discovery lookup and what the read records", async () => {
+    hostedMcp = true;
+    mocks.retrieve.mockResolvedValue(
+      result([
+        {
+          provider: "firecrawl",
+          capability: "find-tools",
+          creditsCost: 0,
+          data: { items: [{ provider: "fred", capability: "series/search" }] },
+        },
+      ]),
+    );
+    await request(app)
+      .post("/v2/alexandria")
+      .set("x-firecrawl-mcp-lineage", header)
+      .set("x-request-id", "find-1")
+      .send(findTools);
+    expect(mocks.retrieve).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        calls: [findTools],
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+      }),
+    );
+    const lineage = { sessionId: "sess_01A", threadId: "thread:42.a-b" };
+    expect(mocks.discovery).toHaveBeenCalledWith("team", [findTools], lineage);
+    expect(mocks.recordDiscovered).toHaveBeenCalledWith(
+      "team",
+      "find_tools",
+      "scrape-1",
+      [{ provider: "fred", capability: "series/search", rank: 1 }],
+      { ...lineage, requestId: "hashed:team:find-1" },
+    );
+  });
+
+  it.each([
+    ["a request without the header", true, undefined],
+    ["a caller that is not the hosted MCP", false, header],
+    ["a header that does not decode", true, "not-json"],
+  ])("are not read from %s", async (_name, hosted, sent) => {
+    hostedMcp = hosted;
+    const post = request(app).post("/v2/scrape");
+    if (sent) post.set("x-firecrawl-mcp-lineage", sent);
+    await post.send({ alexandria: call });
+    expect(mocks.retrieve).toHaveBeenCalledTimes(1);
+    const sentToRetrieve = mocks.retrieve.mock.calls[0][0];
+    expect(sentToRetrieve).not.toHaveProperty("clientSession");
+    expect(sentToRetrieve).not.toHaveProperty("clientThread");
+    expect(mocks.discovery).toHaveBeenCalledWith("team", [call], {});
+  });
 });
 
 it("remembers each provider call under its request id for feedback attribution", async () => {
@@ -899,6 +1154,114 @@ describe("feedback tokens", () => {
       .send({ alexandria: call });
     expect(response.body.data.alexandria[0].feedbackToken).toBeUndefined();
   });
+});
+
+describe("ultrasearch trusted marker", () => {
+  const proxyConfig = config as {
+    HOSTED_MCP_PROXY_SECRET?: string;
+    KEYLESS_PROXY_SECRET?: string;
+  };
+
+  afterEach(() => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = undefined;
+    proxyConfig.KEYLESS_PROXY_SECRET = undefined;
+  });
+
+  it("honours x-firecrawl-ultrasearch with x-firecrawl-hosted-mcp-secret alone", async () => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = "dedicated-hosted-mcp-secret";
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "dedicated-hosted-mcp-secret")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ultrasearch: true }),
+    );
+  });
+
+  it("ignores x-firecrawl-ultrasearch on wrong secret or fco_ token", async () => {
+    proxyConfig.HOSTED_MCP_PROXY_SECRET = "dedicated-hosted-mcp-secret";
+    await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "wrong")
+      .send({ alexandria: call });
+    expect(mocks.retrieve).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ ultrasearch: true }),
+    );
+
+    await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fco_oauth_token")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-hosted-mcp-secret", "dedicated-hosted-mcp-secret")
+      .send({ alexandria: call });
+    expect(mocks.retrieve).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ ultrasearch: true }),
+    );
+  });
+
+  it("still honours x-firecrawl-keyless-secret as rollout fallback", async () => {
+    proxyConfig.KEYLESS_PROXY_SECRET = "legacy-keyless-secret";
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("authorization", "Bearer fc-api-key")
+      .set("x-firecrawl-ultrasearch", "true")
+      .set("x-firecrawl-keyless-secret", "legacy-keyless-secret")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ultrasearch: true }),
+    );
+  });
+});
+
+describe("work contact details only", () => {
+  it("asks for it when x-firecrawl-work-contact-only is true", async () => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-firecrawl-work-contact-only", "true")
+      .send({ alexandria: call });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ workContactOnly: true }),
+    );
+  });
+
+  it("asks for it on an agent interop call that carries the header", async () => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .set("x-firecrawl-work-contact-only", "true")
+      .send({
+        alexandria: call,
+        __agentInterop: {
+          auth: "test-secret",
+          requestId: "agent-run",
+          shouldBill: true,
+        },
+      });
+    expect(response.status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ workContactOnly: true }),
+    );
+  });
+
+  it.each([undefined, "false", "TRUE", "1"])(
+    "leaves it off when the header is %s",
+    async value => {
+      let req = request(app).post("/v2/scrape");
+      if (value !== undefined)
+        req = req.set("x-firecrawl-work-contact-only", value);
+      const response = await req.send({ alexandria: call });
+      expect(response.status).toBe(200);
+      expect(mocks.retrieve.mock.calls[0][0]).not.toHaveProperty(
+        "workContactOnly",
+      );
+    },
+  );
 });
 
 describe("GET /v2/alexandria/:provider/*capability", () => {

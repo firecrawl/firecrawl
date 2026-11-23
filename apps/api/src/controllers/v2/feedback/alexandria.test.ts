@@ -71,11 +71,12 @@ const jobId = "01933161-0000-7000-8000-000000000002";
 const originalDbAuthentication = config.USE_DB_AUTHENTICATION;
 let flags: Record<string, unknown>;
 let authTeam: string;
+let hostedMcp: boolean;
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
-    auth: { team_id: authTeam },
+    auth: { team_id: authTeam, ...(hostedMcp ? { hostedMcp: true } : {}) },
     acuc: { api_key_id: 42, org_id: "org-1", flags },
   });
   next();
@@ -88,6 +89,7 @@ beforeEach(() => {
   config.USE_DB_AUTHENTICATION = true;
   authTeam = teamId;
   flags = {};
+  hostedMcp = false;
   mocks.transaction.mockImplementation(
     async (run: (tx: unknown) => Promise<void>) => run(tx),
   );
@@ -141,6 +143,11 @@ it.each(["good", "partial", "bad"])(
         origin: "api",
         integration: null,
         schema_version: 2,
+        external_request_id: null,
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
       },
     ]);
     expect(providerRows()).toEqual([]);
@@ -148,6 +155,73 @@ it.each(["good", "partial", "bad"])(
     expect(callRows()).toEqual([]);
   },
 );
+
+describe("trace ids on the stored session", () => {
+  const lineage = {
+    session_id: "sess_01HZX",
+    session_source: "sse",
+    thread_id: "thread:42",
+    thread_source: "argument",
+    objective: "The objective the MCP server recorded for the call.",
+  };
+  const headers = {
+    "External-Request-Id": "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+    "X-Firecrawl-Mcp-Lineage": Buffer.from(JSON.stringify(lineage)).toString(
+      "base64url",
+    ),
+  };
+  const { objective: _headerObjective, ...ids } = lineage;
+
+  it("stores the request id and the lineage of a hosted MCP call", async () => {
+    hostedMcp = true;
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+        ...ids,
+        // The objective of an Alexandria row is the one in the body.
+        objective: null,
+      }),
+    ]);
+  });
+
+  it("keeps the objective from the body over the one in the header", async () => {
+    hostedMcp = true;
+    await submit({ ...minimal, objective: "Bid on open IT contracts." }).set(
+      headers,
+    );
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        ...ids,
+        objective: "Bid on open IT contracts.",
+      }),
+    ]);
+  });
+
+  it("stores only the request id for a caller that is not the hosted MCP server", async () => {
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
+        objective: null,
+      }),
+    ]);
+  });
+
+  it("stores no trace under zero data retention", async () => {
+    hostedMcp = true;
+    flags = { scrapeZDR: "forced" };
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+});
 
 it("records the trimmed objective behind the session", async () => {
   const response = await submit({

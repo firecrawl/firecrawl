@@ -350,3 +350,88 @@ it("sends no request id when the caller passes none", async () => {
   await discoverTools(input, logger);
   expect(request.mock.calls[0][0].requestId).toBeUndefined();
 });
+
+describe("who is searching", () => {
+  const labels = {
+    feedbackStorage: "allowed" as const,
+    clientOrigin: "mcp-cursor",
+    clientIntegration: "n8n",
+    searchRoute: "search_auto" as const,
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  };
+  const exchangeCaller = { ...labels, query: "weather in Lisbon" };
+  const answers = () =>
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? {
+            status: 200,
+            body: {
+              skills: [{ id: "sample", matchedDomains: ["example.com"] }],
+            },
+          }
+        : {
+            status: 200,
+            body: { success: true, creditsCost: 0, data: { items: [tool] } },
+          },
+    );
+  const lookups = () =>
+    request.mock.calls
+      .map(([args]) => args)
+      .filter(args => args.path === "/v1/retrieve");
+
+  it("tells Exchange on every lookup and marks only the queries the caller did not write", async () => {
+    answers();
+    await discoverTools(
+      {
+        ...input,
+        queries: ["weather in Lisbon", "city weather forecast"],
+        exchangeCaller,
+      },
+      logger,
+    );
+    expect(lookups()).toHaveLength(2);
+    for (const args of lookups()) {
+      expect(args).toMatchObject(labels);
+      expect(args).not.toHaveProperty("query");
+    }
+    const rewritten = (query: string) =>
+      lookups().find(args => (args.body as any).options.query === query)!
+        .searchRewritten;
+    expect(rewritten("weather in Lisbon")).toBeUndefined();
+    expect(rewritten("city weather forecast")).toBe(true);
+  });
+
+  it("labels a domain lookup without marking it rewritten, and leaves the domain resolve alone", async () => {
+    answers();
+    await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        urls: ["https://example.com/records"],
+        exchangeCaller: { ...exchangeCaller, searchRoute: "search_source" },
+      },
+      logger,
+    );
+    expect(lookups()).toHaveLength(1);
+    expect(lookups()[0]).toMatchObject({
+      ...labels,
+      searchRoute: "search_source",
+    });
+    expect(lookups()[0]).not.toHaveProperty("searchRewritten");
+    const resolve = request.mock.calls
+      .map(([args]) => args)
+      .find(args => args.path === "/v1/skills/resolve")!;
+    for (const key of [...Object.keys(labels), "searchRewritten"])
+      expect(resolve).not.toHaveProperty(key);
+  });
+
+  it("sends the lookups as before when no caller is given", async () => {
+    answers();
+    await discoverTools({ ...input, queries: ["first", "second"] }, logger);
+    expect(lookups()).toHaveLength(2);
+    for (const args of lookups())
+      for (const key of [...Object.keys(labels), "searchRewritten"])
+        expect(args).not.toHaveProperty(key);
+  });
+});

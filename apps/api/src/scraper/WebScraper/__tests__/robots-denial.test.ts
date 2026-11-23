@@ -1,10 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CrawlDenialError } from "../../../lib/error";
 import {
+  coreErrors,
   deserializeTransportableError,
   serializeTransportableError,
 } from "../../../lib/error-serde";
+import { createService, replaceService } from "../../../service/service";
 import { DenialReason, WebCrawler } from "../crawler";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const BASE = "https://example.com";
 const BLOCKED = BASE + "/blocked/page";

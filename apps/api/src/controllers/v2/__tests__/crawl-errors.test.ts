@@ -1,4 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getCrawl: vi.fn(),
@@ -20,10 +28,27 @@ vi.mock("../../../services/redis", () => ({
 }));
 
 import { RacedRedirectError } from "../../../lib/error";
-import { serializeTransportableError } from "../../../lib/error-serde";
+import {
+  coreErrors,
+  serializeTransportableError,
+} from "../../../lib/error-serde";
 import { SiteError } from "../../../scraper/scrapeURL/error";
+import { createService, replaceService } from "../../../service/service";
 import { crawlErrorsController as v1CrawlErrorsController } from "../../v1/crawl-errors";
 import { crawlErrorsController as v2CrawlErrorsController } from "../crawl-errors";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 describe.each([
   ["v1", v1CrawlErrorsController],

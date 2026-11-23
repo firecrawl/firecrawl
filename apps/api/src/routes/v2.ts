@@ -818,9 +818,7 @@ if (config.RESEARCH_PROXY_URL) {
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
   );
-}
 
-if (config.SEARCH_PLATFORM_URL) {
   v2Router.use(
     "/search/gov",
     authMiddleware(RateLimiterMode.GovSearch, {

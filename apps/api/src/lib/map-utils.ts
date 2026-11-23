@@ -91,6 +91,7 @@ export async function getMapResults({
   orgId,
   allowExternalLinks,
   abort = new AbortController().signal,
+  mock,
   filterByPath = true,
   flags,
   useIndex = true,
@@ -134,7 +135,9 @@ export async function getMapResults({
 
   // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
   // which the zero-outbound guarantee forbids — use the URL as given.
-  const resolvedUrl = indexOnly ? url : await resolveRedirects(url, abort);
+  const resolvedUrl = indexOnly
+    ? url
+    : await resolveRedirects(url, abort, mock);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {

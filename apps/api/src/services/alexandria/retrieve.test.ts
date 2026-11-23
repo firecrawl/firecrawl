@@ -47,6 +47,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
+import { createHash } from "node:crypto";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -1135,6 +1136,84 @@ it.each([
   },
 );
 
+describe("work contact details only", () => {
+  const forwarded = () =>
+    mocks.request.mock.calls.filter(
+      ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+    );
+  const storedFingerprint = () =>
+    JSON.parse([...mocks.store.values()][0]).fingerprint;
+
+  it("forwards the option to quote and execution", async () => {
+    await run({ workContactOnly: true });
+    expect(forwarded()).toHaveLength(2);
+    for (const [request] of forwarded())
+      expect(request.workContactOnly).toBe(true);
+  });
+
+  it("forwards the option on a catalogue read", async () => {
+    const read = {
+      provider: "firecrawl",
+      capability: "find-tools",
+      options: {},
+    };
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [{ ...read, creditsCost: 0, data: {} }],
+    });
+    await run({ calls: [read], workContactOnly: true });
+    expect(executions()).toHaveLength(1);
+    expect(executions()[0][0].workContactOnly).toBe(true);
+  });
+
+  it("sends nothing and keeps the request fingerprint as before when not asked", async () => {
+    await run();
+    expect(forwarded()).toHaveLength(2);
+    for (const [request] of forwarded())
+      expect(request).not.toHaveProperty("workContactOnly");
+    const before = createHash("sha256")
+      .update(
+        JSON.stringify([
+          [
+            {
+              capability: call.capability,
+              options: call.options,
+              provider: call.provider,
+            },
+          ],
+          true,
+        ]),
+      )
+      .digest("hex");
+    expect(storedFingerprint()).toBe(before);
+  });
+
+  it("fingerprints a request that asks for it differently", async () => {
+    await run();
+    const without = storedFingerprint();
+    mocks.store.clear();
+    await run({ workContactOnly: true });
+    expect(storedFingerprint()).not.toBe(without);
+  });
+
+  it.each([
+    ["losing", { workContactOnly: true }, {}],
+    ["gaining", {}, { workContactOnly: true }],
+  ])(
+    "refuses the same x-request-id after %s the option, rather than replaying",
+    async (_case, before, after) => {
+      await run(before);
+      const other = await run(after);
+      expect(other.status).toBe(409);
+      expect(other.body).toEqual(
+        expect.objectContaining({ code: "duplicate_request" }),
+      );
+      expect(executions()).toHaveLength(1);
+    },
+  );
+});
+
 it("refuses the same x-request-id with a different zero data retention setting", async () => {
   await run();
   const other = await run({ zeroDataRetention: true });
@@ -1252,6 +1331,94 @@ it.each([
 it("keeps who is calling out of the request fingerprint", async () => {
   expect((await run({ clientOrigin: "cli" })).executed).toBe(true);
   expect(await run({ clientOrigin: "mcp-cursor" })).toMatchObject({
+    status: 200,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it.each(["find-tools", "library"])(
+  "marks a %s read as a catalogue read and passes on the caller's session and conversation",
+  async capability => {
+    const read = { provider: "firecrawl", capability, options: {} };
+    free([{ ...read, creditsCost: 0, data: {} }]);
+    await run({
+      calls: [read],
+      clientSession: "sess_01A",
+      clientThread: "thread:42.a-b",
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(executions()[0][0]).toMatchObject({
+      searchRoute: "catalogue",
+      clientSession: "sess_01A",
+      clientThread: "thread:42.a-b",
+    });
+  },
+);
+
+it("names no session or conversation on a catalogue read that carried none", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  free([{ ...read, creditsCost: 0, data: {} }]);
+  await run({ calls: [read] });
+  expect(executions()[0][0].searchRoute).toBe("catalogue");
+  expect(executions()[0][0]).not.toHaveProperty("clientSession");
+  expect(executions()[0][0]).not.toHaveProperty("clientThread");
+});
+
+it("passes the session and conversation on a provider execution, with no route, and never on the quote", async () => {
+  await run({ clientSession: "sess_01A", clientThread: "thread:42.a-b" });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0]).toMatchObject({
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  });
+  expect(executions()[0][0]).not.toHaveProperty("searchRoute");
+  for (const [arg] of mocks.request.mock.calls.filter(
+    ([arg]) => arg.path !== "/v1/retrieve",
+  )) {
+    expect(arg).not.toHaveProperty("clientSession");
+    expect(arg).not.toHaveProperty("clientThread");
+    expect(arg).not.toHaveProperty("searchRoute");
+  }
+});
+
+it("keeps the catalogue route when Exchange prices the read and the full path runs it", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  const priced = {
+    success: true,
+    creditsCost: 2,
+    results: [{ ...read, creditsCost: 2, data: {} }],
+  };
+  mocks.request.mockImplementation(async arg =>
+    arg.path.endsWith("/quote")
+      ? { status: 200, body: { maximumCredits: 2 } }
+      : arg.maximumCredits === 0
+        ? { status: 402, body: { code: "credit_budget_exceeded" } }
+        : { status: 200, body: priced },
+  );
+  expect(await run({ calls: [read] })).toMatchObject({ executed: true });
+  expect(executions().map(([arg]) => arg.maximumCredits)).toEqual([0, 2]);
+  for (const [arg] of executions()) expect(arg.searchRoute).toBe("catalogue");
+});
+
+it("names no route for a catalogue read sent beside a provider call", async () => {
+  const read = { provider: "firecrawl", capability: "library", options: {} };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 3,
+    results: [
+      { ...call, creditsCost: 3, data: {} },
+      { ...read, creditsCost: 0, data: {} },
+    ],
+  });
+  expect(await run({ calls: [call, read] })).toMatchObject({ executed: true });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0]).not.toHaveProperty("searchRoute");
+});
+
+it("keeps the session and conversation out of the request fingerprint", async () => {
+  expect((await run({ clientThread: "thread:42.a-b" })).executed).toBe(true);
+  expect(await run({ clientThread: "thread:43" })).toMatchObject({
     status: 200,
     executed: false,
   });

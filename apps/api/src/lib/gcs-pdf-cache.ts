@@ -6,7 +6,7 @@ import { config } from "../config";
 import crypto from "crypto";
 import { storage } from "./gcs-jobs";
 
-type PdfCacheProvider = "runpod" | "firepdf";
+type PdfCacheProvider = "firepdf";
 
 // Cache shape — markdown/html are required; pagesProcessed is optional so
 // pre-existing entries (written before the field existed) round-trip cleanly
@@ -30,7 +30,6 @@ export type CachedPdfResult = {
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {
-  runpod: "pdf-cache-v2/",
   firepdf: "pdf-cache-firepdf/",
 };
 
@@ -62,7 +61,7 @@ export function pdfCacheConfigured(): boolean {
 export async function savePdfResultToCache(
   pdfContent: PdfCacheKeyInput,
   result: CachedPdfResult,
-  provider: PdfCacheProvider = "runpod",
+  provider: PdfCacheProvider = "firepdf",
   variant?: string,
 ): Promise<string | null> {
   try {
@@ -119,7 +118,7 @@ export async function savePdfResultToCache(
 
 export async function getPdfResultFromCache(
   pdfContent: PdfCacheKeyInput,
-  provider: PdfCacheProvider = "runpod",
+  provider: PdfCacheProvider = "firepdf",
   variant?: string,
 ): Promise<CachedPdfResult | null> {
   try {

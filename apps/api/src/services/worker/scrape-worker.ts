@@ -60,6 +60,7 @@ import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
+import { crawlContext, jobContext } from "../../lib/request-context";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
@@ -80,12 +81,11 @@ import {
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
+  isTransportableError,
   SitemapError,
-  TransportableError,
-  UnknownError,
   UnsupportedSiteError,
 } from "../../lib/error";
-import { serializeTransportableError } from "../../lib/error-serde";
+import { serializeThrownError } from "../../lib/error-serde";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
@@ -156,15 +156,16 @@ async function billScrapeJob(
   threatDecisions?: ThreatDecision[],
 ) {
   let creditsToBeBilled: number | null = null;
+  const ctx = jobContext(job.data);
   const billing = resolveBillingMetadata({
-    billing: job.data.billing,
+    billing: ctx.billing,
     crawlId: job.data.crawl_id,
     crawlerOptions: job.data.crawlerOptions,
   });
   const autumnProperties = {
     source: "billScrapeJob",
     ...toAutumnBillingProperties(billing),
-    apiKeyId: job.data.apiKeyId,
+    apiKeyId: ctx.apiKeyId,
   };
   // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
   // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
@@ -203,10 +204,7 @@ async function billScrapeJob(
       // The org rides the job payload, snapshotted from the request ACUC at
       // acceptance. The ACUC answers only for a job enqueued without one —
       // the same lookup the billing service used to make on every charge.
-      const orgId = await orgIdForJob(
-        job.data.internalOptions?.orgId,
-        job.data.team_id,
-      );
+      const orgId = await orgIdForJob(ctx.orgId, job.data.team_id);
 
       try {
         trackedInRequest = orgId
@@ -266,7 +264,7 @@ async function billScrapeJob(
                 is_extract: false,
                 timestamp: new Date().toISOString(),
                 originating_job_id: job.id,
-                api_key_id: job.data.apiKeyId,
+                api_key_id: ctx.apiKeyId ?? null,
                 autumnTrackInRequest: trackedInRequest,
                 ...(exchange?.accessEventId === undefined
                   ? {}
@@ -381,6 +379,7 @@ function billThreatBlockedDiscoveries(
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
+  const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJob",
@@ -388,7 +387,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     scrapeId: job.id,
     crawlId: job.data?.crawl_id ?? undefined,
     teamId: job.data?.team_id ?? undefined,
-    zeroDataRetention: job.data?.zeroDataRetention ?? false,
+    zeroDataRetention: ctx.zeroDataRetention,
   });
   logger.info(`🐂 Worker taking job ${job.id}`, { url: job.data.url });
   const start = job.data.startTime ?? Date.now();
@@ -481,16 +480,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     if (
       pipeline.exchange === undefined &&
-      job.data.billing?.endpoint !== "monitor" &&
+      ctx.billing?.endpoint !== "monitor" &&
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&
       doc.metadata.sourceURL !== undefined &&
       canonicalizeUrl(doc.metadata.url) !==
         canonicalizeUrl(doc.metadata.sourceURL)
     ) {
-      let teamFlags = job.data.internalOptions?.teamFlags ?? null;
-      let orgId = job.data.internalOptions?.orgId ?? null;
-      if (job.data.internalOptions?.teamFlags === undefined) {
+      let teamFlags = ctx.flags ?? null;
+      let orgId = ctx.orgId ?? null;
+      if (ctx.flags === undefined) {
         const teamChunk = await getACUCTeam(job.data.team_id);
         teamFlags = teamChunk?.flags ?? null;
         orgId = orgId ?? teamChunk?.org_id ?? null;
@@ -519,7 +518,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     if (
-      job.data.billing?.endpoint === "scrape" &&
+      ctx.billing?.endpoint === "scrape" &&
       (job.data.scrapeOptions.actions?.length ?? 0) > 0
     ) {
       doc.warning =
@@ -527,7 +526,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         (doc.warning ? " " + doc.warning : "");
     }
 
-    const billingEndpoint = job.data.billing?.endpoint;
+    const billingEndpoint = ctx.billing?.endpoint;
     if (billingEndpoint === "scrape" || billingEndpoint === "batch_scrape") {
       const serpPage = detectSerpPage(job.data.url);
       if (serpPage !== null) {
@@ -719,13 +718,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     // A null org here would drop a real charge, so this falls
                     // through the payload, the stored crawl, then the ACUC.
                     orgId: await orgIdForJob(
-                      job.data.internalOptions?.orgId ??
-                        sc.internalOptions?.orgId,
+                      ctx.orgId ?? crawlContext(sc).orgId,
                       job.data.team_id,
                     ),
-                    apiKeyId: job.data.apiKeyId ?? null,
+                    apiKeyId: ctx.apiKeyId ?? null,
                     billing: resolveBillingMetadata({
-                      billing: job.data.billing,
+                      billing: ctx.billing,
                       crawlId: job.data.crawl_id,
                       crawlerOptions: job.data.crawlerOptions,
                     }),
@@ -812,6 +810,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                         {
                           url: link,
                           mode: "single_urls",
+                          ctx: job.data.ctx,
                           team_id: sc.team_id,
                           scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
                           internalOptions: sc.internalOptions,
@@ -863,7 +862,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     "crawl.limit_reached": limitReached,
                   });
                 },
-                { zeroDataRetention: sc.zeroDataRetention },
+                { zeroDataRetention: crawlContext(sc).zeroDataRetention },
               );
             }
           }
@@ -927,7 +926,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         pdf_num_pages: doc.metadata.numPages,
         content_type: doc.metadata.contentType,
         credits_cost: credits_billed ?? 0,
-        zeroDataRetention: job.data.zeroDataRetention,
+        zeroDataRetention: ctx.zeroDataRetention,
         skipNuq: job.data.skipNuq ?? false,
         is_parse: Boolean(job.data.internalOptions?.isParse),
         monitor_id: job.data.monitoring?.monitorId,
@@ -940,11 +939,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         teamId: job.data.team_id,
         url: job.data.url,
         origin: job.data.origin,
-        kind: job.data.billing?.endpoint ?? "unknown",
+        kind: ctx.billing?.endpoint ?? "unknown",
         isSuccessful: true,
         creditsCost: credits_billed ?? 0,
         timeTaken: timeTakenInSeconds,
-        zeroDataRetention: job.data.zeroDataRetention,
+        zeroDataRetention: ctx.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
       if (job.data.v1) {
@@ -953,7 +952,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           jobId: job.data.crawl_id,
           webhook: job.data.webhook,
           v0: false,
-          zeroDataRetention: job.data.zeroDataRetention,
+          zeroDataRetention: ctx.zeroDataRetention,
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
@@ -1036,7 +1035,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           pdf_num_pages: doc.metadata.numPages,
           content_type: doc.metadata.contentType,
           credits_cost: credits_billed ?? 0,
-          zeroDataRetention: job.data.zeroDataRetention,
+          zeroDataRetention: ctx.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
           is_parse: Boolean(job.data.internalOptions?.isParse),
           monitor_id: job.data.monitoring?.monitorId,
@@ -1056,11 +1055,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         teamId: job.data.team_id,
         url: job.data.url,
         origin: job.data.origin,
-        kind: job.data.billing?.endpoint ?? "unknown",
+        kind: ctx.billing?.endpoint ?? "unknown",
         isSuccessful: true,
         creditsCost: credits_billed ?? 0,
         timeTaken: timeTakenInSeconds,
-        zeroDataRetention: job.data.zeroDataRetention,
+        zeroDataRetention: ctx.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
       await recordMonitorScrapeSuccess(job, doc).catch(error =>
@@ -1214,7 +1213,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         jobId: (job.data.crawl_id ?? job.id) as string,
         webhook: job.data.webhook,
         v0: Boolean(!job.data.v1),
-        zeroDataRetention: job.data.zeroDataRetention,
+        zeroDataRetention: ctx.zeroDataRetention,
       });
 
       // at this point we don't have a document, send a minimal payload to let users identify the errored URL
@@ -1289,13 +1288,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           ? error
           : (error.message ??
             "Something went wrong... Contact help@mendable.ai"),
-      error_code: error instanceof TransportableError ? error.code : undefined,
+      error_code: isTransportableError(error) ? error.code : undefined,
       time_taken: timeTakenInSeconds,
       team_id: job.data.team_id,
       options: job.data.scrapeOptions,
       cost_tracking: costTracking.toJSON(),
       credits_cost: credits_billed ?? 0,
-      zeroDataRetention: job.data.zeroDataRetention,
+      zeroDataRetention: ctx.zeroDataRetention,
       skipNuq: job.data.skipNuq ?? false,
       is_parse: Boolean(job.data.internalOptions?.isParse),
       monitor_id: job.data.monitoring?.monitorId,
@@ -1308,11 +1307,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       teamId: job.data.team_id,
       url: job.data.url,
       origin: job.data.origin,
-      kind: job.data.billing?.endpoint ?? "unknown",
+      kind: ctx.billing?.endpoint ?? "unknown",
       isSuccessful: false,
       creditsCost: credits_billed ?? 0,
       timeTaken: timeTakenInSeconds,
-      zeroDataRetention: job.data.zeroDataRetention,
+      zeroDataRetention: ctx.zeroDataRetention,
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
     await recordMonitorScrapeFailure(job, error);
@@ -1388,6 +1387,7 @@ async function addKickoffSitemapJob(
   await _addScrapeJobToBullMQ(
     {
       mode: "kickoff_sitemap" as const,
+      ctx: sourceJob.data.ctx,
       team_id: sourceJob.data.team_id,
       zeroDataRetention:
         sourceJob.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
@@ -1418,6 +1418,7 @@ async function addKickoffSitemapJob(
 }
 
 async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
+  const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffJob",
@@ -1425,7 +1426,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
     scrapeId: job.id,
     crawlId: job.data?.crawl_id ?? undefined,
     teamId: job.data?.team_id ?? undefined,
-    zeroDataRetention: job.data.zeroDataRetention ?? false,
+    zeroDataRetention: ctx.zeroDataRetention,
   });
 
   try {
@@ -1444,6 +1445,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       {
         url: job.data.url,
         mode: "single_urls",
+        ctx: job.data.ctx,
         team_id: job.data.team_id,
         crawlerOptions: job.data.crawlerOptions,
         scrapeOptions: scrapeOptions.parse(job.data.scrapeOptions),
@@ -1563,12 +1565,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             // Kickoff jobs may carry no internalOptions; the stored crawl and
             // then the ACUC answer, since a null org would drop a real charge.
             orgId: await orgIdForJob(
-              job.data.internalOptions?.orgId ?? sc.internalOptions?.orgId,
+              ctx.orgId ?? crawlContext(sc).orgId,
               job.data.team_id,
             ),
-            apiKeyId: job.data.apiKeyId ?? null,
+            apiKeyId: ctx.apiKeyId ?? null,
             billing: resolveBillingMetadata({
-              billing: job.data.billing,
+              billing: ctx.billing,
               crawlId: job.data.crawl_id,
               crawlerOptions: sc.crawlerOptions,
             }),
@@ -1598,6 +1600,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           data: {
             url,
             mode: "single_urls" as const,
+            ctx: job.data.ctx,
             team_id: job.data.team_id,
             crawlerOptions: job.data.crawlerOptions,
             scrapeOptions: job.data.scrapeOptions,
@@ -1658,13 +1661,14 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 }
 
 async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
+  const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffSitemapJob",
     jobId: job.id,
     scrapeId: job.id,
     crawlId: job.data.crawl_id,
-    zeroDataRetention: job.data.zeroDataRetention ?? false,
+    zeroDataRetention: ctx.zeroDataRetention,
   });
 
   const sc = await getCrawl(job.data.crawl_id);
@@ -1684,7 +1688,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     const results = await scrapeSitemap({
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
-      zeroDataRetention: job.data.zeroDataRetention ?? false,
+      zeroDataRetention: ctx.zeroDataRetention,
       usOnly: crawler.usOnly,
       location: job.data.location,
       crawlId: job.data.crawl_id,
@@ -1736,13 +1740,10 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
             teamId: job.data.team_id,
             // Same as the other kickoff path: the ACUC answers when the crawl
             // names no org, so a real charge is not dropped.
-            orgId: await orgIdForJob(
-              sc.internalOptions?.orgId,
-              job.data.team_id,
-            ),
-            apiKeyId: job.data.apiKeyId ?? null,
+            orgId: await orgIdForJob(crawlContext(sc).orgId, job.data.team_id),
+            apiKeyId: ctx.apiKeyId ?? null,
             billing: resolveBillingMetadata({
-              billing: job.data.billing,
+              billing: ctx.billing,
               crawlId: job.data.crawl_id,
               crawlerOptions: sc.crawlerOptions,
             }),
@@ -1768,6 +1769,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         data: {
           url: url,
           mode: "single_urls" as const,
+          ctx: job.data.ctx,
           team_id: job.data.team_id,
           crawlerOptions: sc.crawlerOptions,
           scrapeOptions: sc.scrapeOptions,
@@ -1839,18 +1841,19 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 }
 
 export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
+  const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJobInternal",
     jobId: job.id,
     scrapeId: job.id,
     crawlId: job.data?.crawl_id ?? undefined,
-    zeroDataRetention: job.data?.zeroDataRetention ?? false,
+    zeroDataRetention: ctx.zeroDataRetention,
   });
 
   // Restore trace context if available and execute within span. The ZDR
   // context is applied either way so nothing below records for ZDR jobs.
-  return withZeroDataRetention(job.data.zeroDataRetention === true, () => {
+  return withZeroDataRetention(ctx.zeroDataRetention, () => {
     if (!job.data.traceContext) {
       return processJobWithTracing(job, logger);
     }
@@ -1959,11 +1962,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
     if (job.data.skipNuq) {
       throw error;
     } else {
-      if (error instanceof TransportableError) {
-        throw new Error(serializeTransportableError(error));
-      } else {
-        throw new Error(serializeTransportableError(new UnknownError(error)));
-      }
+      throw new Error(serializeThrownError(error));
     }
   }
 }

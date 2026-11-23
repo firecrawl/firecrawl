@@ -241,8 +241,12 @@ jobs:
           src/controllers/v2/feedback/alexandria.test.ts
           src/controllers/v2/feedback/alexandria-refund.test.ts
           src/controllers/v2/feedback/feedback-window.test.ts
+          src/controllers/v2/feedback/refund-policy.test.ts
+          src/controllers/v2/feedback/session-feedback.test.ts
+          src/controllers/v2/feedback/zdr-persistence.test.ts
           src/controllers/v2/scrape-alexandria.test.ts
           src/lib/alexandria-activity.test.ts
+          src/lib/alexandria-discovery.test.ts
           src/lib/alexandria-feedback-hint.test.ts
           src/lib/alexandria-feedback-storage.test.ts
           src/lib/alexandria-feedback-token.test.ts
@@ -327,6 +331,7 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/search/safe-search.test.ts
+          src/search/alexandria.test.ts
           src/search/execute.test.ts
           src/search/tool-intent.test.ts
           --reporter=default
