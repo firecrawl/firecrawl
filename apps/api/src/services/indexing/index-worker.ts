@@ -716,18 +716,28 @@ export async function start() {
     logger.error("Failed to start the SIEM logging consumer", { error });
   });
 
+  let indexInsertInFlight = false;
   const indexInserterInterval = setInterval(async () => {
-    if (isShuttingDown) {
+    // Skip the tick while the previous insert is still running against a slow DB.
+    if (isShuttingDown || indexInsertInFlight) {
       return;
     }
 
-    await withSpan("firecrawl-index-worker-process-insert-jobs", async span => {
-      setSpanAttributes(span, {
-        "index.worker.operation": "process_insert_jobs",
-        "index.worker.type": "scheduled",
-      });
-      await processIndexInsertJobs();
-    });
+    indexInsertInFlight = true;
+    try {
+      await withSpan(
+        "firecrawl-index-worker-process-insert-jobs",
+        async span => {
+          setSpanAttributes(span, {
+            "index.worker.operation": "process_insert_jobs",
+            "index.worker.type": "scheduled",
+          });
+          await processIndexInsertJobs();
+        },
+      );
+    } finally {
+      indexInsertInFlight = false;
+    }
   }, INDEX_INSERT_INTERVAL);
 
   const webhookInserterInterval = setInterval(async () => {
