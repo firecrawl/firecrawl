@@ -12,13 +12,7 @@ import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { isDeveloperCategoryAlias } from "../../lib/developer-category";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
-import {
-  ExtractorOptions,
-  PageOptions,
-  ScrapeActionContent,
-  Document as V0Document,
-  WebSearchResult,
-} from "../../lib/entities";
+import { ScrapeActionContent, WebSearchResult } from "../../lib/entities";
 import {
   agentOptionsExtract,
   AuthCreditUsageChunk,
@@ -2277,109 +2271,11 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-function fromV0CrawlerOptions(
-  x: any,
-  teamId: string,
-): {
-  crawlOptions: CrawlerOptions;
-  internalOptions: InternalOptions;
-} {
-  return {
-    crawlOptions: crawlerOptions.parse({
-      includePaths: x.includes,
-      excludePaths: x.excludes,
-      limit: x.maxCrawledLinks ?? x.limit,
-      crawlEntireDomain: x.allowBackwardCrawling,
-      allowExternalLinks: x.allowExternalContentLinks,
-      allowSubdomains: x.allowSubdomains,
-      ignoreRobotsTxt: x.ignoreRobotsTxt,
-      sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
-      deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-      ignoreQueryParameters: x.ignoreQueryParameters,
-      regexOnFullURL: x.regexOnFullURL,
-      maxDiscoveryDepth: x.maxDiscoveryDepth,
-      delay: x.delay,
-    }),
-    internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
-      teamId,
-      orgId: null,
-    },
-  };
-}
-
 export interface MapDocument {
   url: string;
   title?: string;
   description?: string;
 }
-export function fromV0ScrapeOptions(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  return {
-    scrapeOptions: scrapeOptions.parse({
-      formats: [
-        (pageOptions.includeMarkdown ?? true) ? ("markdown" as const) : null,
-        (pageOptions.includeHtml ?? false) ? ("html" as const) : null,
-        (pageOptions.includeRawHtml ?? false) ? ("rawHtml" as const) : null,
-        (pageOptions.screenshot ?? false) ? ("screenshot" as const) : null,
-        (pageOptions.fullPageScreenshot ?? false)
-          ? { type: "screenshot" as const, fullPage: true }
-          : null,
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? {
-              type: "json" as const,
-              prompt: extractorOptions.userPrompt,
-              schema: extractorOptions.extractionSchema,
-            }
-          : null,
-        "links",
-      ].filter(x => x !== null),
-      waitFor: pageOptions.waitFor,
-      headers: pageOptions.headers,
-      includeTags:
-        typeof pageOptions.onlyIncludeTags === "string"
-          ? [pageOptions.onlyIncludeTags]
-          : pageOptions.onlyIncludeTags,
-      excludeTags:
-        typeof pageOptions.removeTags === "string"
-          ? [pageOptions.removeTags]
-          : pageOptions.removeTags,
-      onlyMainContent: pageOptions.onlyMainContent ?? false,
-      timeout: timeout,
-      parsers:
-        pageOptions.parsePDF !== undefined
-          ? pageOptions.parsePDF
-            ? ["pdf", "image"]
-            : []
-          : undefined,
-      actions: pageOptions.actions,
-      location: pageOptions.geolocation,
-      skipTlsVerification: pageOptions.skipTlsVerification,
-      removeBase64Images: pageOptions.removeBase64Images,
-      mobile: pageOptions.mobile,
-      fastMode: pageOptions.useFastMode,
-    }),
-    internalOptions: {
-      atsv: pageOptions.atsv,
-      v0DisableJsDom: pageOptions.disableJsDom,
-      teamId,
-      orgId: null,
-      ...(extractorOptions !== undefined &&
-      extractorOptions.mode.includes("llm-extraction")
-        ? {
-            v1JSONSystemPrompt: extractorOptions.extractionPrompt,
-          }
-        : {}),
-    },
-    // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
-  };
-}
-
 export function fromV1ScrapeOptions(
   v1ScrapeOptions: V1ScrapeOptions,
   timeout: number | undefined,
@@ -2494,23 +2390,6 @@ export function fromV1ScrapeOptions(
       v1OriginalFormat,
     },
   };
-}
-
-export function fromV0Combo(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  crawlerOptions: any,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  const { scrapeOptions, internalOptions: i1 } = fromV0ScrapeOptions(
-    pageOptions,
-    extractorOptions,
-    timeout,
-    teamId,
-  );
-  const { internalOptions: i2 } = fromV0CrawlerOptions(crawlerOptions, teamId);
-  return { scrapeOptions, internalOptions: Object.assign(i1, i2) };
 }
 
 // Search source type definitions

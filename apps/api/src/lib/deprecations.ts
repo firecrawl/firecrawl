@@ -2,7 +2,6 @@ import { NextFunction, Request, Response } from "express";
 import { logger } from "./logger";
 import { requestOrigin } from "./request-origin";
 import { resolveIntegration } from "../utils/integration";
-import { getApiKeyTeamFlags } from "../controllers/auth";
 import type { RequestWithMaybeACUC, TeamFlags } from "../controllers/v1/types";
 
 interface Deprecation {
@@ -153,6 +152,15 @@ const DEPRECATIONS = {
     message:
       "/v0/search is deprecated. Use /v2/search instead. See https://docs.firecrawl.dev/migrating-from-v0.",
     replacement: "/v2/search",
+    docs: "https://docs.firecrawl.dev/migrating-from-v0",
+    sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
+    deprecatedAt: "@1778025600",
+    surface: "v0",
+  },
+  v0_key_auth: {
+    message:
+      "/v0/keyAuth is deprecated. Use /v2/team/credit-usage instead. See https://docs.firecrawl.dev/migrating-from-v0.",
+    replacement: "/v2/team/credit-usage",
     docs: "https://docs.firecrawl.dev/migrating-from-v0",
     sunset: "Thu, 10 Dec 2026 15:00:00 GMT",
     deprecatedAt: "@1778025600",
@@ -368,8 +376,8 @@ export function hasSunsetExtension(
 }
 
 /**
- * Mount after authMiddleware where the route has one: past sunset it reads the
- * team's extension from req.acuc, so keyless callers still get 401 first.
+ * Mount after authMiddleware: past sunset it reads the team's extension from
+ * req.acuc, so keyless callers still get 401 first.
  */
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
@@ -381,24 +389,14 @@ export function deprecationMiddleware(key: DeprecationKey) {
   };
 
   return (req: RequestWithMaybeACUC, res: Response, next: NextFunction) => {
-    if (Date.now() < sunsetAt) {
-      annotate(res);
-      return next();
+    if (
+      Date.now() >= sunsetAt &&
+      !hasSunsetExtension(key, dep, req.acuc?.flags)
+    ) {
+      return respondRemoved(req, res, key);
     }
-
-    // v0 controllers authenticate themselves, so their routes have no acuc yet.
-    const lookup = req.acuc
-      ? Promise.resolve(req.acuc.flags)
-      : getApiKeyTeamFlags(req);
-    lookup
-      .then(flags => {
-        if (!hasSunsetExtension(key, dep, flags)) {
-          return respondRemoved(req, res, key);
-        }
-        annotate(res);
-        next();
-      })
-      .catch(next);
+    annotate(res);
+    next();
   };
 }
 

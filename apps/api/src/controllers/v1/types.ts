@@ -9,13 +9,7 @@ import { countries } from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
-import {
-  ExtractorOptions,
-  PageOptions,
-  ScrapeActionContent,
-  Document as V0Document,
-} from "../../lib/entities";
-import { InternalOptions } from "../../scraper/scrapeURL";
+import { ScrapeActionContent } from "../../lib/entities";
 import { getURLDepth } from "../../scraper/WebScraper/utils/maxDepthUtils";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
@@ -392,7 +386,7 @@ const actionSchema = z.union([
   }),
 ]);
 
-export type Action = z.infer<typeof actionSchema>;
+type Action = z.infer<typeof actionSchema>;
 
 export type InternalAction = Action & {
   metadata?: {
@@ -1548,137 +1542,12 @@ export function toNewCrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-function fromLegacyCrawlerOptions(
-  x: any,
-  teamId: string,
-): {
-  crawlOptions: CrawlerOptions;
-  internalOptions: InternalOptions;
-} {
-  return {
-    crawlOptions: crawlerOptions.parse({
-      includePaths: x.includes,
-      excludePaths: x.excludes,
-      limit: x.maxCrawledLinks ?? x.limit,
-      maxDepth: x.maxDepth,
-      allowBackwardLinks: x.allowBackwardCrawling,
-      crawlEntireDomain: x.allowBackwardCrawling,
-      allowExternalLinks: x.allowExternalContentLinks,
-      allowSubdomains: x.allowSubdomains,
-      ignoreRobotsTxt: x.ignoreRobotsTxt,
-      ignoreSitemap: x.ignoreSitemap,
-      deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-      ignoreQueryParameters: x.ignoreQueryParameters,
-      regexOnFullURL: x.regexOnFullURL,
-      maxDiscoveryDepth: x.maxDiscoveryDepth,
-      delay: x.delay,
-    }),
-    internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
-      teamId,
-      orgId: null,
-    },
-  };
-}
-
 // Note: This interface has been transitioned to v2/types.ts while maintaining backwards compatibility
 export interface MapDocument {
   url: string;
   title?: string;
   description?: string;
 }
-export function fromLegacyScrapeOptions(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  return {
-    scrapeOptions: scrapeOptions.parse({
-      formats: [
-        (pageOptions.includeMarkdown ?? true) ? ("markdown" as const) : null,
-        (pageOptions.includeHtml ?? false) ? ("html" as const) : null,
-        (pageOptions.includeRawHtml ?? false) ? ("rawHtml" as const) : null,
-        (pageOptions.screenshot ?? false) ? ("screenshot" as const) : null,
-        (pageOptions.fullPageScreenshot ?? false)
-          ? ("screenshot@fullPage" as const)
-          : null,
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? ("extract" as const)
-          : null,
-        "links",
-      ].filter(x => x !== null),
-      waitFor: pageOptions.waitFor,
-      headers: pageOptions.headers,
-      includeTags:
-        typeof pageOptions.onlyIncludeTags === "string"
-          ? [pageOptions.onlyIncludeTags]
-          : pageOptions.onlyIncludeTags,
-      excludeTags:
-        typeof pageOptions.removeTags === "string"
-          ? [pageOptions.removeTags]
-          : pageOptions.removeTags,
-      onlyMainContent: pageOptions.onlyMainContent ?? false,
-      timeout: timeout,
-      parsePDF: pageOptions.parsePDF,
-      actions: pageOptions.actions,
-      location: pageOptions.geolocation,
-      skipTlsVerification: pageOptions.skipTlsVerification,
-      removeBase64Images: pageOptions.removeBase64Images,
-      extract:
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? {
-              systemPrompt: extractorOptions.extractionPrompt,
-              prompt: extractorOptions.userPrompt,
-              schema: extractorOptions.extractionSchema,
-            }
-          : undefined,
-      mobile: pageOptions.mobile,
-      fastMode: pageOptions.useFastMode,
-    }),
-    internalOptions: {
-      atsv: pageOptions.atsv,
-      v0DisableJsDom: pageOptions.disableJsDom,
-      teamId,
-      orgId: null,
-    },
-    // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
-  };
-}
-
-export function toLegacyDocument(
-  document: Document,
-  internalOptions: InternalOptions,
-): V0Document | { url: string } {
-  if (internalOptions.v0CrawlOnlyUrls) {
-    return { url: document.metadata.sourceURL! };
-  }
-
-  // backwards compatibility to v0 API
-  const markdown = document.markdown ?? "";
-
-  return {
-    content: markdown,
-    markdown: markdown,
-    html: document.html,
-    rawHtml: document.rawHtml,
-    linksOnPage: document.links,
-    llm_extraction: document.extract,
-    metadata: {
-      ...document.metadata,
-      error: undefined,
-      statusCode: undefined,
-      pageError: document.metadata.error,
-      pageStatusCode: document.metadata.statusCode,
-      screenshot: document.screenshot,
-    },
-    actions: document.actions,
-    warning: document.warning,
-  };
-}
-
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),

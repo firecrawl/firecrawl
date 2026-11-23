@@ -20,25 +20,6 @@ const getURLobj = (s: string) => {
   return { error, urlObj };
 };
 
-export const checkAndUpdateURL = (url: string) => {
-  if (!protocolIncluded(url)) {
-    url = `http://${url}`;
-  }
-
-  const { error, urlObj } = getURLobj(url);
-  if (error) {
-    throw new Error("Invalid URL");
-  }
-
-  const typedUrlObj = urlObj as URL;
-
-  if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
-    throw new Error("Invalid URL");
-  }
-
-  return { urlObj: typedUrlObj, url: url };
-};
-
 export const checkUrl = (url: string) => {
   const { error, urlObj } = getURLobj(url);
   if (error) {

@@ -63,7 +63,6 @@
 /apps/api/src/controllers/v1/types.ts           @mogery
 
 ## V0 API, deprecated
-/apps/api/src/controllers/v0/*                  @mogery @nickscamara
 /apps/api/src/routes/v0.ts                      @mogery @nickscamara
 
 # Worker

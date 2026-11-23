@@ -148,7 +148,7 @@ describe("classifyEndpoint", () => {
   });
 
   it("classifies v0 and non-API paths", () => {
-    expect(classifyEndpoint("/v0/scrape")).toEqual({ api: "v0" });
+    expect(classifyEndpoint("/v0/scrape")).toBeNull();
     expect(classifyEndpoint("/admin/xyz/redis-health")).toBeNull();
     expect(classifyEndpoint("/is-production")).toBeNull();
   });
@@ -242,18 +242,6 @@ describe("isEndpointAllowed", () => {
   it("denies unknown v2 endpoints when an allowlist is set", () => {
     const c = config({ allowedEndpoints: ["scrape"] });
     expect(isEndpointAllowed("/v2/some-new-endpoint", c).allowed).toBe(false);
-  });
-
-  it("denies the v0 legacy API to any restricted key", () => {
-    const formatsOnly = config({ allowedFormats: ["markdown"] });
-    const v0 = isEndpointAllowed("/v0/scrape", formatsOnly);
-    expect(v0).toMatchObject({ allowed: false, status: 403 });
-    if (!v0.allowed) {
-      expect(v0.error).toContain("v0");
-    }
-
-    const endpointsOnly = config({ allowedEndpoints: ["scrape"] });
-    expect(isEndpointAllowed("/v0/scrape", endpointsOnly).allowed).toBe(false);
   });
 
   it("does not gate endpoints when only formats are restricted", () => {

@@ -41,24 +41,8 @@ const MODE_RANK: Record<ThreatProtectionMode, number> = {
   zscaler: 2,
 };
 
-export const THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE =
-  "Threat protection is enforced for your team and is not supported on the deprecated v0 API. Please update your code to use the v1 or v2 API.";
-
 const THREAT_PROTECTION_ZSCALER_NOT_CONFIGURED_MESSAGE =
   'Threat protection mode "zscaler" requires a configured Zscaler connection. Configure one via PUT /v2/team/threat-protection first.';
-
-/**
- * The deprecated v0 endpoints never resolve a threat protection policy, so
- * teams whose flag is "forced" must not be able to fetch content through
- * them. Content-fetching v0 controllers (scrape, crawl, search) call this
- * right after auth and reject with 403 when it returns true; crawl-status and
- * crawl-cancel intentionally do not, so existing jobs can drain.
- */
-export function isThreatProtectionForced(
-  flags: TeamFlags | undefined,
-): boolean {
-  return getThreatProtection(flags) === "forced";
-}
 
 interface ResolvedThreatProtection {
   /** Set when the request must be rejected with a 403. */

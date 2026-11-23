@@ -1,12 +1,5 @@
 import express from "express";
 import request from "supertest";
-
-const mocks = vi.hoisted(() => ({ getApiKeyTeamFlags: vi.fn() }));
-
-vi.mock("../../controllers/auth", () => ({
-  getApiKeyTeamFlags: mocks.getApiKeyTeamFlags,
-}));
-
 import {
   deprecationMiddleware,
   hasSunsetExtension,
@@ -43,7 +36,6 @@ function extendedUntil(until: string, surface = SUNSET_KEY) {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
-  mocks.getApiKeyTeamFlags.mockReset();
 });
 
 afterEach(() => {
@@ -183,7 +175,6 @@ describe("deprecationMiddleware sunset gate", () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.warnings).toHaveLength(1);
-    expect(mocks.getApiKeyTeamFlags).not.toHaveBeenCalled();
   });
 
   it("answers 410 once a team's extension has run out", async () => {
@@ -195,36 +186,10 @@ describe("deprecationMiddleware sunset gate", () => {
     expect(res.status).toBe(410);
   });
 
-  it("looks the team up by API key on routes that authenticate later", async () => {
+  it("answers 410 after the sunset to a request without a team", async () => {
     vi.setSystemTime(AFTER_SUNSET);
-    mocks.getApiKeyTeamFlags.mockResolvedValueOnce(
-      extendedUntil("2027-01-31T00:00:00Z"),
-    );
-    const extended = await request(appFor(SUNSET_KEY)).get("/probe");
-
-    expect(extended.status).toBe(200);
-    expect(mocks.getApiKeyTeamFlags).toHaveBeenCalledTimes(1);
-
-    mocks.getApiKeyTeamFlags.mockResolvedValueOnce(null);
-    const unknown = await request(appFor(SUNSET_KEY)).get("/probe");
-
-    expect(unknown.status).toBe(410);
-  });
-
-  it("passes a failed lookup on as an error, not a 410", async () => {
-    vi.setSystemTime(AFTER_SUNSET);
-    mocks.getApiKeyTeamFlags.mockRejectedValueOnce(new Error("lookup down"));
     const res = await request(appFor(SUNSET_KEY)).get("/probe");
 
-    expect(res.status).toBe(500);
-  });
-
-  it("never looks anything up for an entry without a sunset", async () => {
-    vi.setSystemTime(AFTER_SUNSET);
-    const res = await request(appFor("v0_scrape")).get("/probe");
-
-    expect(res.status).toBe(200);
-    expect(res.headers["sunset"]).toBeUndefined();
-    expect(mocks.getApiKeyTeamFlags).not.toHaveBeenCalled();
+    expect(res.status).toBe(410);
   });
 });

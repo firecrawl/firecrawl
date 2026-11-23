@@ -1,8 +1,6 @@
 import express from "express";
 import request from "supertest";
 
-vi.mock("../../controllers/auth", () => ({ getApiKeyTeamFlags: vi.fn() }));
-
 import { deprecationMiddleware } from "../../lib/deprecations";
 
 const V1_DEPRECATED_AT = "@1793923200";

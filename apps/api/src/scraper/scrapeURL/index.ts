@@ -621,7 +621,6 @@ export type InternalOptions = {
   forceEngine?: Engine | Engine[];
   atsv?: boolean; // anti-bot solver, beta
 
-  v0CrawlOnlyUrls?: boolean;
   v0DisableJsDom?: boolean;
   disableSmartWaitCache?: boolean; // Passed along to fire-engine
   externalAbort?: AbortInstance;

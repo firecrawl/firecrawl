@@ -140,10 +140,11 @@ function matchSegments(segments: string[], pattern: string[]): boolean {
   );
 }
 
-type EndpointClassification =
-  | { api: "v0" }
-  | { api: "v1" | "v2"; group: string | null; alwaysAllowed: boolean }
-  | null;
+type EndpointClassification = {
+  api: "v1" | "v2";
+  group: string | null;
+  alwaysAllowed: boolean;
+} | null;
 
 // Classifies a request path into an allowlistable endpoint group. Returns
 // null for paths outside the versioned API surface (health, admin, ...).
@@ -152,9 +153,6 @@ export function classifyEndpoint(rawUrl: string): EndpointClassification {
   const pathname = rawUrl.split("?")[0].toLowerCase();
   const segments = pathname.split("/").filter(s => s.length > 0);
   const version = segments[0];
-  if (version === "v0") {
-    return { api: "v0" };
-  }
   if (version !== "v1" && version !== "v2") {
     return null;
   }
@@ -191,16 +189,6 @@ export function isEndpointAllowed(
   if (classification === null) {
     // Not a versioned API path; nothing to enforce here.
     return { allowed: true };
-  }
-
-  // The v0 legacy API predates format controls entirely (e.g. raw HTML via
-  // pageOptions), so any restricted key loses access to it outright.
-  if (classification.api === "v0") {
-    return {
-      allowed: false,
-      error: `Request blocked: this API key is restricted and cannot use the legacy v0 API. Please use the v2 API instead. Team admins can manage key restrictions at ${MANAGE_RESTRICTIONS_URL}`,
-      status: 403,
-    };
   }
 
   if (

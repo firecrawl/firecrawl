@@ -11,14 +11,9 @@ import {
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
-// v0 content endpoints can't enforce Safe Mode's per-request surface, so a
-// Safe Mode org is rejected there outright (mirrors the threat-protection v0 gate).
-export const SAFE_MODE_V0_UNSUPPORTED_MESSAGE =
-  "Safe Mode is enabled for your organization, which is not supported on the v0 API. Please update your code to use the v1 or v2 API.";
-
 // Interactive browser sessions (browser, scrape interact) run arbitrary code
 // against live sites and can't enforce Safe Mode's controls, so a Safe Mode
-// org is rejected there outright (mirrors the v0 gate).
+// org is rejected there outright.
 export const SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE =
   "Safe Mode is enabled for your organization, which does not support interactive browser sessions.";
 
