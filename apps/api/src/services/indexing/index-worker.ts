@@ -689,6 +689,7 @@ const workerFun = async (
 };
 
 const INDEX_INSERT_INTERVAL = 3000;
+const INDEX_INSERT_MAX_IN_FLIGHT_MS = 5 * 60 * 1000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 // OMCE job inserts are disabled to reduce index DB load.
 // const OMCE_INSERT_INTERVAL = 5000;
@@ -716,14 +717,25 @@ export async function start() {
     logger.error("Failed to start the SIEM logging consumer", { error });
   });
 
-  let indexInsertInFlight = false;
+  let indexInsertStartedAt: number | null = null;
   const indexInserterInterval = setInterval(async () => {
-    // Skip the tick while the previous insert is still running against a slow DB.
-    if (isShuttingDown || indexInsertInFlight) {
+    if (isShuttingDown) {
       return;
     }
 
-    indexInsertInFlight = true;
+    // Skip the tick while the previous insert is still running, unless it looks stuck.
+    if (indexInsertStartedAt !== null) {
+      const inFlightMs = Date.now() - indexInsertStartedAt;
+      if (inFlightMs < INDEX_INSERT_MAX_IN_FLIGHT_MS) {
+        return;
+      }
+      logger.warn("Previous index insert run is stuck, starting a new one", {
+        inFlightMs,
+      });
+    }
+
+    const startedAt = Date.now();
+    indexInsertStartedAt = startedAt;
     try {
       await withSpan(
         "firecrawl-index-worker-process-insert-jobs",
@@ -736,7 +748,9 @@ export async function start() {
         },
       );
     } finally {
-      indexInsertInFlight = false;
+      if (indexInsertStartedAt === startedAt) {
+        indexInsertStartedAt = null;
+      }
     }
   }, INDEX_INSERT_INTERVAL);
 
