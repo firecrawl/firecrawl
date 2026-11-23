@@ -480,6 +480,7 @@ const configSchema = z.object({
   BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
   BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
   BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
+  BIGTABLE_ALEXANDRIA_REPLAY_TABLE: z.string().optional(),
   BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)

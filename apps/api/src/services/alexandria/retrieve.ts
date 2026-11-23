@@ -22,9 +22,9 @@ import {
   recordRequestCredits,
 } from "../../lib/request-credits-store";
 import { getBillingQueue } from "../queue-service";
-import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
+import { replayStore, type Retrieval } from "./replay-store";
 import { cachedResponse, cacheResponse } from "./response-cache";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
@@ -53,7 +53,6 @@ const repeatAgeSeconds = new Histogram({
   labelNames: ["outcome"] as const,
   buckets: [1, 5, 15, 60, 300, 900, 3600, 21600, 86400, 604800],
 });
-const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
 
@@ -63,28 +62,6 @@ const INDEX_PROVIDERS: [IndexName, string][] = [
   ["gov", "firecrawl-gov-index"],
   ["research", "firecrawl-research-index"],
 ];
-
-// One record per charge id (team + x-request-id), written before the provider
-// call so a crash is found as unresolved instead of re-executed, and rewritten
-// when the request completes so a repeat never executes twice. The response
-// itself is kept apart, in the response cache.
-type Retrieval = {
-  fingerprint: string;
-  phase: "executing" | "done";
-  deadline: number;
-  scrapeId: string;
-  lockId?: string;
-  maximumCredits?: number;
-  // When the request completed. Absent on records written before it was recorded.
-  doneAt?: number;
-  // Only on completed records written before responses moved to the response cache.
-  response?: ExchangeResponse;
-  // Whether the response went into the response cache when the request completed.
-  responseKept?: boolean;
-  // Set instead of response under zero data retention.
-  responseWithheld?: boolean;
-  failure?: string;
-};
 
 type ProviderRetrieval = ExchangeResponse & {
   executed: boolean;
@@ -287,7 +264,7 @@ export async function retrieveProviders(input: {
       : undefined;
   const billable = !input.bypassBilling;
   const id = exchangeRequestId(input.teamId, input.requestId);
-  const key = `alexandria:retrieve:${id}`;
+  const store = replayStore(id);
   const zeroDataRetention = input.zeroDataRetention === true;
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
@@ -324,13 +301,7 @@ export async function retrieveProviders(input: {
     deadline,
     scrapeId: input.scrapeId,
   };
-  const write = (next: Retrieval) =>
-    redisRateLimitClient.set(
-      key,
-      JSON.stringify(next),
-      "EX",
-      RETENTION_SECONDS,
-    );
+  const write = (next: Retrieval) => store.write(next);
   // A completed request's response goes to the cache, and its record says only that it
   // completed. The cache is written first, so a repeat that finds the record finds the response.
   const complete = async (response: ExchangeResponse) =>
@@ -343,16 +314,9 @@ export async function retrieveProviders(input: {
         : { responseKept: await cacheResponse(id, response) }),
     });
 
-  const claimed = await redisRateLimitClient.set(
-    key,
-    JSON.stringify(record),
-    "EX",
-    RETENTION_SECONDS,
-    "NX",
-  );
-  if (claimed !== "OK") {
-    const raw = await redisRateLimitClient.get(key);
-    const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+  const claim = await store.claim(record);
+  if (!claim.claimed) {
+    const { existing } = claim;
     const repeat = (outcome: string, response: ProviderRetrieval) => {
       repeatTotal.labels(outcome).inc();
       return response;
@@ -470,7 +434,7 @@ export async function retrieveProviders(input: {
     });
     // A read that did not complete releases the id, so the same request can be sent again.
     const release = async (response: ExchangeResponse) => {
-      await redisRateLimitClient.del(key);
+      await store.release();
       return { ...response, executed: true, scrapeId: input.scrapeId };
     };
     if (!read || read.status >= 500)
@@ -497,7 +461,7 @@ export async function retrieveProviders(input: {
           error,
           chargeId: id,
         });
-        await redisRateLimitClient.del(key).catch(() => {});
+        await store.release().catch(() => {});
       });
       return { ...done, executed: true, scrapeId: input.scrapeId };
     }
@@ -539,7 +503,7 @@ export async function retrieveProviders(input: {
   };
   const refuse = async (response: ExchangeResponse, executed = false) => {
     if (!executed) await releaseIndexCalls();
-    await redisRateLimitClient.del(key);
+    await store.release();
     return { ...response, executed, scrapeId: input.scrapeId };
   };
 
@@ -743,7 +707,7 @@ export async function retrieveProviders(input: {
   } catch (error) {
     if (lockId) await finalize(0).catch(() => false);
     await releaseIndexCalls();
-    await redisRateLimitClient.del(key).catch(() => {});
+    await store.release().catch(() => {});
     throw error;
   }
   const fail = async (reason: string): Promise<ProviderRetrieval> => {

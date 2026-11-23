@@ -95,6 +95,19 @@ reconciliation. A ledger commit or enqueue that fails leaves the durable
 Autumn charge standing, pending reconciliation. Provider tools do not support forced zero data retention;
 those teams are refused before any record is written.
 
+### Bigtable copy
+
+With `BIGTABLE_ALEXANDRIA_REPLAY_TABLE` set, every write of the record is also
+copied to that table: one row per charge id, the record in family `s`, the
+cell's timestamp the instant it expires. The table needs that family, with
+garbage collection that keeps one version and drops a cell once its timestamp
+has passed. Redis still decides. Copies are written behind the request, in
+order, and only to a row the request's own claim reached; one that fails is
+logged and never fails the request, so copies are not trusted. The one Bigtable
+record that is honoured is one not marked as a copy, which only a pod that
+keeps the record in Bigtable alone writes; the claim waits up to half a second
+to find one. Responses are not copied: they stay in the Redis cache.
+
 ## Runtime
 
 API, Redis, Exchange (`FIRE_EXCHANGE_URL`; a non-blank

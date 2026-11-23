@@ -117,6 +117,7 @@ function exactQualifierFilter(qualifier: string) {
 async function checkAndMutateRowOnce(
   table: Table,
   request: Record<string, unknown>,
+  gaxOpts?: { timeout?: number },
 ): Promise<{ predicateMatched?: boolean | null }> {
   return new Promise((resolve, reject) => {
     table.bigtable.request(
@@ -128,6 +129,7 @@ async function checkAndMutateRowOnce(
           appProfileId: table.bigtable.appProfileId,
           ...request,
         },
+        ...(gaxOpts ? { gaxOpts } : {}),
       },
       (
         error: Error | null,
@@ -140,14 +142,16 @@ async function checkAndMutateRowOnce(
   });
 }
 
-async function checkAndMutateRow(
+export async function checkAndMutateRow(
   table: Table,
   request: Record<string, unknown>,
+  // Applies to each attempt.
+  gaxOpts?: { timeout?: number },
 ): Promise<{ predicateMatched?: boolean | null }> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await checkAndMutateRowOnce(table, request);
+      return await checkAndMutateRowOnce(table, request, gaxOpts);
     } catch (error) {
       lastError = error;
       const code =
