@@ -22,8 +22,25 @@ vi.mock("../../../services/redis", () => ({
 
 import { crawlErrorsController } from "../../../controllers/v2/crawl-errors";
 import { ThirdPartyDataTermsRequiredError } from "../../../lib/exchange";
-import { serializeTransportableError } from "../../../lib/error-serde";
+import {
+  coreErrors,
+  serializeTransportableError,
+} from "../../../lib/error-serde";
 import { SiteError } from "../../../scraper/scrapeURL/error";
+import { createService, replaceService } from "../../../service/service";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 describe("v2 crawl errors", () => {
   const TERMS = { key: "acme", version: "2026-01-01" };
