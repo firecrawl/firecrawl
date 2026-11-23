@@ -26,6 +26,7 @@ import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
+import { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
 import {
   answerSchema,
   refusal,
@@ -86,8 +87,48 @@ const hash = (value: unknown) =>
 export const exchangeRequestId = (teamId: string, requestId: string) =>
   hash([teamId, requestId]);
 
+// The catalogue's own free reads: the tool lookup and the library shell.
+const CATALOGUE_READS = new Set(["find-tools", "library"]);
 const isCatalogueRead = (call: ProviderCall) =>
-  call.provider === "firecrawl" && call.capability === "find-tools";
+  call.provider === "firecrawl" && CATALOGUE_READS.has(call.capability);
+
+// Providers whose response bodies are not kept for replay. Matched on the exact provider slug.
+const UNRETAINED_PROVIDERS = new Set(["particle", "apollo"]);
+// Enrichment and people search can answer with records from those providers under the firecrawl
+// slug, so none of their results are kept.
+const isUnretained = (provider: string, capability: string) =>
+  UNRETAINED_PROVIDERS.has(provider) ||
+  (provider === "firecrawl" &&
+    (capability === "enrich" ||
+      capability.startsWith("enrich/") ||
+      capability === "search/auto"));
+
+/** The answer as recorded for replay: each result that may not be stored is kept as a coded
+ *  error, with no data, while every other result and the charge stay as they were. */
+const retainable = (
+  answer: z.infer<typeof answerSchema>,
+  calls: ProviderCall[],
+): ExchangeResponse => ({
+  status: 200,
+  body: {
+    ...answer,
+    results: answer.results.map((item, i) => {
+      const provider = item.provider ?? calls[i].provider;
+      const capability = item.capability ?? calls[i].capability;
+      if (!isUnretained(provider, capability)) return item;
+      return {
+        provider,
+        capability,
+        error: {
+          code: "response_not_retained",
+          message:
+            "This provider request already completed. Its response is not kept, so it cannot be returned again; a new x-request-id runs it again and is charged again.",
+          status: 409,
+        },
+      };
+    }),
+  },
+});
 
 const unresolved = (chargeId: string) =>
   refusal(
@@ -149,6 +190,14 @@ export async function retrieveProviders(input: {
   maxCredits?: number;
   /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
   ultrasearch?: boolean;
+  /** Leave personal email addresses and personal phone numbers out of provider results, and refuse lookups by phone number. */
+  workContactOnly?: boolean;
+  /** The caller's origin and integration, when the request named them. Labels only. */
+  clientOrigin?: string;
+  clientIntegration?: string;
+  /** The caller's session and conversation ids, when the request carried them. Labels only. */
+  clientSession?: string;
+  clientThread?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -220,6 +269,20 @@ export async function retrieveProviders(input: {
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
   const ultrasearch = input.ultrasearch === true;
+  const workContactOnly = input.workContactOnly === true;
+  const catalogueOnly = input.calls.every(isCatalogueRead);
+  // Sent with every execution. Outside the fingerprint, so a repeat of the id replays its answer.
+  const caller = {
+    feedbackStorage: alexandriaFeedbackStorage(input.teamId, input.flags),
+    ...(input.clientOrigin ? { clientOrigin: input.clientOrigin } : {}),
+    ...(input.clientIntegration
+      ? { clientIntegration: input.clientIntegration }
+      : {}),
+    ...(input.clientSession ? { clientSession: input.clientSession } : {}),
+    ...(input.clientThread ? { clientThread: input.clientThread } : {}),
+    // A request made only of catalogue reads is one on whichever path runs it.
+    ...(catalogueOnly ? { searchRoute: "catalogue" as const } : {}),
+  };
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -230,6 +293,7 @@ export async function retrieveProviders(input: {
     ...(usOnly ? [{ usOnly }] : []),
     ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
     ...(ultrasearch ? [{ ultrasearch }] : []),
+    ...(workContactOnly ? [{ workContactOnly }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -296,14 +360,15 @@ export async function retrieveProviders(input: {
     return notExecuted(unresolved(id));
   }
 
-  // A catalogue read is free and idempotent, so once its request id is claimed it skips the
-  // agreement and quote lookups and the credit hold and goes to Exchange with a zero budget.
+  // A catalogue read (the tool lookup or a library command) is free and idempotent, so once its
+  // request id is claimed it skips the agreement and quote lookups and the credit hold and goes
+  // to Exchange with a zero budget.
   // Exchange quotes against that budget itself and refuses with credit_budget_exceeded should
   // the read ever carry a price, in which case the full path below runs under the same claim
   // and deadline. The answer is recorded like any other, so a repeat of the id replays it.
   const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
   if (
-    input.calls.every(isCatalogueRead) &&
+    catalogueOnly &&
     (!firecrawlAccess || firecrawlAccess.status === "enabled")
   ) {
     const read = await exchangeRequest({
@@ -321,6 +386,8 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
+      ...caller,
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
@@ -501,6 +568,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -647,6 +715,8 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
+      ...caller,
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
@@ -696,7 +766,11 @@ export async function retrieveProviders(input: {
     await write(
       zeroDataRetention
         ? { ...record, phase: "done", responseWithheld: true }
-        : { ...record, phase: "done", response: done },
+        : {
+            ...record,
+            phase: "done",
+            response: retainable(answer, input.calls),
+          },
     );
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {

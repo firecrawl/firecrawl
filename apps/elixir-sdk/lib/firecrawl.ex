@@ -2288,47 +2288,6 @@ defmodule Firecrawl do
   end
 
 
-  @search_support_docs_schema NimbleOptions.new!([
-    question: [type: :string, required: true, doc: "Documentation question to answer."]
-  ])
-
-  @search_support_docs_key_mapping %{question: "question"}
-
-  @doc """
-  Search Firecrawl docs with citations
-
-  `POST /support/docs-search`
-
-  Tag: Support
-
-  ## Parameters
-
-  Validated by `NimbleOptions`. Pass params as a keyword list with snake_case keys.
-  See `@search_support_docs_schema` for the full schema.
-
-  ## Returns
-
-    * `{:ok, %Req.Response{}}` on success
-    * `{:error, exception}` on HTTP or validation failure
-  """
-  @spec search_support_docs(keyword(), keyword()) :: response()
-  def search_support_docs(params \\ [], opts \\ []) do
-    with {:ok, params} <- NimbleOptions.validate(params, @search_support_docs_schema) do
-      Req.post(client(opts), url: "/support/docs-search", json: to_body(params, @search_support_docs_key_mapping))
-    end
-  end
-
-
-  @doc """
-  Bang variant of `search_support_docs`. Raises on error.
-  """
-  @spec search_support_docs!(keyword(), keyword()) :: Req.Response.t()
-  def search_support_docs!(params \\ [], opts \\ []) do
-    params = NimbleOptions.validate!(params, @search_support_docs_schema)
-    Req.post!(client(opts), url: "/support/docs-search", json: to_body(params, @search_support_docs_key_mapping))
-  end
-
-
   @start_agent_schema NimbleOptions.new!([
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     effort: [type: {:in, ["low", "medium", "high"]}, doc: "Reasoning budget for the agent task. Every run executes on spark-2, so effort can be sent with or without model."],
