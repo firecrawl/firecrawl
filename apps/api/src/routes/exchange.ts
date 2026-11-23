@@ -868,6 +868,20 @@ exchangeRouter.post(
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
 );
 
+// Provider onboarding: the dashboard's "Your APIs" list and key page. Team-scoped in Exchange;
+// the key the page posts is sealed there and never logged here.
+exchangeRouter.get(
+  "/onboarding{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/onboarding{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.get(
   "/ingest{/*path}",
   authMiddleware(RateLimiterMode.Labs),
