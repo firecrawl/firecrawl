@@ -498,6 +498,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           team_id: job.data.team_id,
           org_id: orgId,
           origin: job.data.origin,
+          zeroDataRetention: job.data.zeroDataRetention,
         })
       ) {
         throw new UnsupportedSiteError();
