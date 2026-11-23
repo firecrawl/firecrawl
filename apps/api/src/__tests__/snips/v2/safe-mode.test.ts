@@ -292,6 +292,55 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         },
         scrapeTimeout,
       );
+
+      const alexandriaCall = {
+        provider: "example",
+        capability: "lookup",
+        options: { url: "https://example.com" },
+      };
+      it.concurrent.each([
+        ["POST /v2/alexandria", "post", "/v2/alexandria", alexandriaCall],
+        [
+          "POST /v2/scrape with an alexandria body",
+          "post",
+          "/v2/scrape",
+          { alexandria: [alexandriaCall] },
+        ],
+        [
+          "POST /exchange/retrieve",
+          "post",
+          "/exchange/retrieve",
+          alexandriaCall,
+        ],
+        [
+          "GET /v2/alexandria/:provider/*capability",
+          "get",
+          "/v2/alexandria/example/lookup?url=https://example.com",
+          undefined,
+        ],
+        ["GET /exchange/discover", "get", "/exchange/discover?q=x", undefined],
+        [
+          "GET /exchange/provider-terms",
+          "get",
+          "/exchange/provider-terms",
+          undefined,
+        ],
+      ] as const)(
+        "refuses %s",
+        async (_name, method, path, body) => {
+          const req = request(TEST_API_URL)
+            [method](path)
+            .set("Authorization", `Bearer ${identity.apiKey}`);
+          const res = body
+            ? await req.set("Content-Type", "application/json").send(body)
+            : await req;
+          expect(res.statusCode).toBe(403);
+          expect(res.body.success).toBe(false);
+          expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
+          expect(res.body.error).toMatch(/lockdown/i);
+        },
+        scrapeTimeout,
+      );
     },
   );
 

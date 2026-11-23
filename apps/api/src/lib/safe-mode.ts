@@ -22,6 +22,21 @@ export const SAFE_MODE_V0_UNSUPPORTED_MESSAGE =
 export const SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE =
   "Safe Mode is enabled for your organization, which does not support interactive browser sessions.";
 
+// Lockdown never forwards a request to an outside service, so Alexandria and
+// the Exchange refuse a lockdown org. These routes take no safeMode param, so
+// no per-request bypass applies.
+export function safeModeLockdownExchangeRefusal(
+  flags: TeamFlags | null | undefined,
+): { success: false; code: ErrorCode; error: string } | null {
+  if (!isLockdownZeroDataRetention(flags, undefined)) return null;
+  return {
+    success: false,
+    code: "SAFE_MODE_BLOCKED",
+    error:
+      "Alexandria and Exchange are unavailable while Safe Mode lockdown is enabled for your organization.",
+  };
+}
+
 // Credential-bearing request headers rejected at request time and stripped at
 // the worker under Safe Mode's disableAuthentication (case-insensitive match).
 export const SAFE_MODE_CREDENTIAL_HEADERS = [

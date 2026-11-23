@@ -33,6 +33,7 @@ import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
 import { alexandriaVerifiedHeader } from "../lib/alexandria-verified";
 import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { safeModeLockdownExchangeRefusal } from "../lib/safe-mode";
 
 // Tells Exchange the team is held to zero data retention, so it only lists and runs
 // providers that support it.
@@ -199,6 +200,9 @@ function exchangeProxy(
       teamId: authedReq.auth.team_id,
     });
 
+    const lockdown = safeModeLockdownExchangeRefusal(authedReq.acuc?.flags);
+    if (lockdown) return res.status(403).json(lockdown);
+
     if (
       options.refusesZeroDataRetention &&
       getSearchForcedKind(authedReq.acuc?.flags) !== null
@@ -282,6 +286,9 @@ async function recommendationsController(req: Request, res: Response) {
     path: req.path,
     teamId,
   });
+
+  const lockdown = safeModeLockdownExchangeRefusal(authedReq.acuc?.flags);
+  if (lockdown) return res.status(403).json(lockdown);
 
   const base = upstreamBase();
   if (!base) {

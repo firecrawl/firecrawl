@@ -5,6 +5,7 @@ import {
   resolveSafeMode,
   ResolvedSafeMode,
   SafeModeConfig,
+  safeModeLockdownExchangeRefusal,
 } from "./safe-mode";
 
 // Every sub-control is polarised so that `true` == the stricter setting.
@@ -82,6 +83,35 @@ describe("isLockdownZeroDataRetention", () => {
     };
     expect(isLockdownZeroDataRetention(bypassable, false)).toBe(false);
     expect(isLockdownZeroDataRetention(bypassable, undefined)).toBe(true);
+  });
+});
+
+describe("safeModeLockdownExchangeRefusal", () => {
+  it("allows teams without lockdown", () => {
+    expect(safeModeLockdownExchangeRefusal(null)).toBeNull();
+    expect(safeModeLockdownExchangeRefusal({ safeMode: true })).toBeNull();
+    expect(
+      safeModeLockdownExchangeRefusal({
+        safeMode: false,
+        safeModeConfig: { lockdown: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a lockdown org, even one that allows per-request bypass", () => {
+    for (const flags of [
+      { safeMode: true, safeModeConfig: { lockdown: true } },
+      {
+        safeMode: true,
+        safeModeConfig: { lockdown: true, allowBypassSafeMode: true },
+      },
+    ]) {
+      expect(safeModeLockdownExchangeRefusal(flags)).toMatchObject({
+        success: false,
+        code: "SAFE_MODE_BLOCKED",
+        error: expect.stringMatching(/lockdown/i),
+      });
+    }
   });
 });
 

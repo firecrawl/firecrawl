@@ -9,6 +9,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { keylessProviderToolsBody } from "../../lib/keyless";
 import { externalRequestId } from "../../lib/external-request-id";
 import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
+import { safeModeLockdownExchangeRefusal } from "../../lib/safe-mode";
 import { hasHostedMcpProxySecret } from "../../lib/secret-compare";
 import { billingCountryForTeam } from "../../lib/billing-country";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
@@ -111,6 +112,8 @@ export async function alexandriaQueryBody(
 ) {
   res.setHeader("Cache-Control", "no-store");
   const { auth, acuc } = req as RequestWithAuth<any, any, any>;
+  const lockdown = safeModeLockdownExchangeRefusal(acuc?.flags);
+  if (lockdown) return res.status(403).json(lockdown);
   const provider = String(req.params.provider);
   const capability = ([] as string[]).concat(req.params.capability).join("/");
   const query = req.query as Record<string, unknown>;
@@ -181,6 +184,8 @@ export async function providerScrapeController(
 ) {
   // A provider answer is for this caller and call only.
   res.setHeader("Cache-Control", "no-store");
+  const lockdown = safeModeLockdownExchangeRefusal(req.acuc?.flags);
+  if (lockdown) return res.status(403).json(lockdown);
   const legacyZeroDataRetention = {
     zeroDataRetention: z.boolean().optional(),
     timeout: z.number().int().positive().optional(),
