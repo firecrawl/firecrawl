@@ -1,0 +1,27 @@
+apps/api/src/services/alexandria/response-cache.ts
+  s_5c00d0c4ec2dfa::t_c7bf1a85e85591 2,11,13-44
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_5c00d0c4ec2dfa::t_0da62652f8a4bb 55,96-97,918,920-921,935,943-950,962-963,975,985-1050,1107-1108,1141,1151,1193-1194,1223,1228,1248
+apps/api/src/services/alexandria/retrieve.ts
+  s_5c00d0c4ec2dfa::t_fdfa198b99ce48 28,45,52,69-70,80,82-83,334-344,495,836
+  s_5c00d0c4ec2dfa::t_167fcb0714e031 386-388
+  s_5c00d0c4ec2dfa::t_8f41b730db0db0 384-385,391-393
+apps/api/src/services/alexandria/README.md
+  s_5c00d0c4ec2dfa::t_c14b842229fcc1 76-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "728d7bd6b54d0d5c545e80ae924995808d048b83",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
