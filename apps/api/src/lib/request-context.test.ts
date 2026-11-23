@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { RequestContext } from "../service/request-context";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
-import { crawlContext, jobContext, requestContext } from "./request-context";
+import {
+  crawlContext,
+  jobContext,
+  requestContext,
+  storedZeroDataRetention,
+} from "./request-context";
 
 const stored = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -166,5 +171,33 @@ describe("crawlContext", () => {
       zeroDataRetention: false,
       orgId: null,
     });
+  });
+});
+
+describe("storedZeroDataRetention", () => {
+  it("prefers the context over the older field", () => {
+    const ctx = { teamId: "team", zeroDataRetention: true };
+
+    expect(
+      storedZeroDataRetention(stored(job({ ctx, zeroDataRetention: false }))),
+    ).toBe(true);
+    expect(storedZeroDataRetention(stored(crawl({ ctx })))).toBe(true);
+  });
+
+  it("reads the older field of a payload or record without a context", () => {
+    expect(
+      storedZeroDataRetention(stored(job({ zeroDataRetention: true }))),
+    ).toBe(true);
+    expect(
+      storedZeroDataRetention(stored(crawl({ zeroDataRetention: true }))),
+    ).toBe(true);
+    expect(storedZeroDataRetention(stored(job({})))).toBe(false);
+  });
+
+  it("does not answer for a payload that does not say, or that is gone", () => {
+    expect(storedZeroDataRetention(stored(crawl({})))).toBeUndefined();
+    expect(storedZeroDataRetention({})).toBeUndefined();
+    expect(storedZeroDataRetention(null)).toBeUndefined();
+    expect(storedZeroDataRetention(undefined)).toBeUndefined();
   });
 });

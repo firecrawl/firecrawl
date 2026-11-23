@@ -4,6 +4,7 @@ export type {
   TransportableErrorClass,
 } from "../lib/error";
 export { coreParts } from "./core-parts";
+export { assertEnv, defineEnv } from "./env";
 export type {
   Await,
   HookHandlers,
@@ -12,6 +13,8 @@ export type {
   Observe,
   Transform,
 } from "./hooks";
+export { authenticate } from "./http";
+export type { RouteKind } from "./http";
 export type {
   BaseCaller,
   BaseRequestContext,

@@ -130,6 +130,7 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+import { internalJwtMiddleware } from "../lib/internal-jwt";
 
 // Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
 // in controllers/auth.ts); /v1 routes do not.
@@ -480,6 +481,7 @@ v2Router.get(
 v2Router.get(
   "/agent",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  internalJwtMiddleware(),
   wrap(agentListController),
 );
 

@@ -33,6 +33,8 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
+import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -343,7 +345,23 @@ export async function crawlController(
 
   const effectiveConcurrency =
     req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+  const billing: BillingMetadata = {
+    endpoint: "crawl",
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+  });
+  req.ctx = ctx;
   const sc: StoredCrawl = {
+    ctx,
     originUrl: req.body.url,
     crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
     scrapeOptions,
@@ -406,18 +424,14 @@ export async function crawlController(
     {
       url: req.body.url,
       mode: "kickoff" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: finalCrawlerOptions,
       scrapeOptions: sc.scrapeOptions,
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
-      billing: {
-        endpoint: "crawl",
-        jobId: id,
-        externalRequestId: externalRequestId(req),
-        hostedMcp: req.auth.hostedMcp,
-      },
+      billing,
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,
