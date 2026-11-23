@@ -18,6 +18,7 @@ import {
 } from "./shared";
 import {
   deprecationMiddleware,
+  logRemovedCall,
   removedEndpointHandler,
 } from "../lib/deprecations";
 
@@ -35,7 +36,8 @@ v1Router.post("/map", removedEndpointHandler("v1_map"));
 v1Router.get("/crawl/ongoing", removedEndpointHandler("v1_crawl_ongoing"));
 v1Router.get("/crawl/active", removedEndpointHandler("v1_crawl_active"));
 v1Router.get("/crawl/:jobId", removedEndpointHandler("v1_crawl_status"));
-v1Router.ws("/crawl/:jobId", ws =>
+v1Router.ws("/crawl/:jobId", (ws, req) => {
+  logRemovedCall(req, "v1_crawl_status");
   ws.close(
     1008,
     JSON.stringify({
@@ -43,8 +45,8 @@ v1Router.ws("/crawl/:jobId", ws =>
       error:
         "/v1/crawl/:jobId was removed. See https://docs.firecrawl.dev/migrate-to-v2",
     }),
-  ),
-);
+  );
+});
 v1Router.get(
   "/batch/scrape/:jobId",
   removedEndpointHandler("v1_batch_scrape_status"),

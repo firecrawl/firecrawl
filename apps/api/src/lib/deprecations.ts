@@ -402,8 +402,7 @@ export function deprecationMiddleware(key: DeprecationKey) {
   };
 }
 
-function respondRemoved(req: Request, res: Response, key: DeprecationKey) {
-  const dep: Deprecation = DEPRECATIONS[key];
+export function logRemovedCall(req: Request, key: DeprecationKey) {
   const { origin, integration } = req.query;
   logger.warn("Removed endpoint called", {
     module: "deprecations",
@@ -420,7 +419,11 @@ function respondRemoved(req: Request, res: Response, key: DeprecationKey) {
       ) ?? null,
     userAgent: req.headers["user-agent"],
   });
+}
 
+function respondRemoved(req: Request, res: Response, key: DeprecationKey) {
+  const dep: Deprecation = DEPRECATIONS[key];
+  logRemovedCall(req, key);
   setDeprecationHeaders(res, dep);
   res.status(410).json({
     success: false,
