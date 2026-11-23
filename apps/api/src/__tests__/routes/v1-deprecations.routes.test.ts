@@ -48,6 +48,7 @@ describe("removed v1 routes", () => {
         replacement,
         documentation_url: GUIDE,
       });
+      expect(res.headers["deprecation"]).toBe("@1793923200");
       expect(res.headers["sunset"]).toBe(V1_SUNSET);
       expect(res.headers["link"]).toBe(
         `<${GUIDE}>; rel="deprecation", <${replacement}>; rel="successor-version"`,

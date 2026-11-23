@@ -33,6 +33,7 @@ async function expectRemoved(
   expect(res.body.replacement).toBe(replacement);
   expect(res.body.documentation_url).toBe(docs);
   expect(res.headers["sunset"]).toBe(new Date(sunsetOf(key)).toUTCString());
+  return res;
 }
 
 describe("Deprecation warnings on legacy endpoints", () => {
@@ -129,12 +130,16 @@ describe("Deprecation warnings on legacy endpoints", () => {
   ] as const)(
     "%s: %s %s answers 410",
     async (key, method, path, replacement) => {
-      await expectRemoved(
+      const res = await expectRemoved(
         key,
         method,
         path,
         replacement,
         "https://docs.firecrawl.dev/migrate-to-v2",
+      );
+      expect(res.headers["deprecation"]).toBe("@1793923200");
+      expect(res.headers["link"]).toBe(
+        `<https://docs.firecrawl.dev/migrate-to-v2>; rel="deprecation", <${replacement}>; rel="successor-version"`,
       );
     },
     30000,
