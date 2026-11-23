@@ -275,22 +275,8 @@ const extractOptionsWithAgent = z
   })
   .transform(data => ({
     ...data,
-    systemPrompt: isAgentExtractModelValid(data.agent?.model)
-      ? `You are an expert web data extractor. Your task is to analyze the provided markdown content from a web page and generate a JSON object based *strictly* on the provided schema.
-
-Key Instructions:
-1.  **Schema Adherence:** Populate the JSON object according to the structure defined in the schema.
-2.  **Content Grounding:** Extract information *only* if it is explicitly present in the provided markdown. Do NOT infer or fabricate information.
-3.  **Missing Information:** If a piece of information required by the schema cannot be found in the markdown, use \`null\` for that field's value.
-4.  **SmartScrape Recommendation:**
-    *   Assess if the *full* required data seems unavailable in the current markdown likely because:
-        - Content requires user interaction to reveal (e.g., clicking buttons, hovering, scrolling)
-        - Content uses pagination (e.g., "Load More" buttons, numbered pagination, infinite scroll)
-        - Content is dynamically loaded after user actions
-    *   If the content requires user interaction or pagination to be fully accessible, set \`shouldUseSmartscrape\` to \`true\` in your response and provide a clear \`reasoning\` and \`prompt\` for the SmartScrape tool.
-    *   If the content is simply JavaScript rendered but doesn't require interaction, set \`shouldUseSmartscrape\` to \`false\`.
-5.  **Output Format:** Your final output MUST be a single, valid JSON object conforming precisely to the schema. Do not include any explanatory text outside the JSON structure.`
-      : "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
+    systemPrompt:
+      "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
 export type ExtractOptions = z.infer<typeof extractOptions>;
@@ -576,9 +562,9 @@ const baseScrapeOptions = z.strictObject({
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
-const fire1RefineOpts = {
+export const agentRemovedRefineOpts = {
   message:
-    "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
+    "The 'agent' option (FIRE-1) has been removed. Use /v2/agent for tasks that need navigation, or a 'json' format on /v2/scrape for structured data from a page. See https://docs.firecrawl.dev/features/agent.",
 } as const;
 
 const waitForRefineOpts = {
@@ -635,10 +621,6 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  if ((obj as ScrapeOptions).agent) {
-    obj = { ...obj, timeout: 300000 };
-  }
-
   if (
     (obj.proxy === "stealth" ||
       obj.proxy === "enhanced" ||
@@ -678,15 +660,8 @@ const scrapeOptionsBase = baseScrapeOptions.extend({
 
 type ScrapeOptionsBase = z.infer<typeof scrapeOptionsBase>;
 
-const fire1Refine = (obj: ScrapeOptionsBase): boolean => {
-  if (
-    obj.agent?.model?.toLowerCase() === "fire-1" &&
-    obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1"
-  ) {
-    return false;
-  }
-  return true;
-};
+const agentRemovedRefine = (obj: ScrapeOptionsBase): boolean =>
+  !obj.agent && !obj.jsonOptions?.agent && !obj.extract?.agent;
 
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   if (obj && obj.waitFor !== undefined && obj.timeout !== undefined) {
@@ -725,7 +700,7 @@ export const scrapeOptions = scrapeOptionsBase
     },
   )
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -808,6 +783,10 @@ const extractV1Options = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -817,8 +796,8 @@ const extractV1Options = z
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -858,7 +837,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions
 
 export const scrapeRequestSchema = scrapeRequestSchemaBase
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -881,7 +860,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
 export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
   .strict()
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -900,7 +879,7 @@ export const batchScrapeRequestSchemaNoURLValidation =
   batchScrapeRequestSchemaNoURLValidationBase
     .strict()
     .refine(extractRefine, extractRefineOpts)
-    .refine(fire1Refine, fire1RefineOpts)
+    .refine(agentRemovedRefine, agentRemovedRefineOpts)
     .refine(waitForRefine, waitForRefineOpts)
     .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -966,8 +945,8 @@ export const crawlRequestSchema = crawlRequestSchemaBase
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -1716,7 +1695,7 @@ export const searchRequestSchema = z
       .prefault({}),
   })
   .refine(x => extractRefine(x.scrapeOptions), extractRefineOpts)
-  .refine(x => fire1Refine(x.scrapeOptions), fire1RefineOpts)
+  .refine(x => agentRemovedRefine(x.scrapeOptions), agentRemovedRefineOpts)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => ({
     ...x,

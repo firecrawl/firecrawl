@@ -35,6 +35,7 @@ import {
   ZDRViolationError,
 } from "../scraper/scrapeURL/error";
 import { createService, replaceService } from "../service/service";
+import { DATA_CHUNK_BYTES } from "../services/worker/nuq-fdb/queue";
 import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
@@ -53,6 +54,7 @@ import {
 import {
   coreErrors,
   deserializeTransportableError,
+  MAX_SERIALIZED_ERROR_BYTES,
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
@@ -699,6 +701,260 @@ describe("serializeThrownError", () => {
 
     expect(isTransportableError(inner)).toBe(false);
     expect(serializeThrownError(inner)).toMatch(/^UNKNOWN_ERROR\|/);
+  });
+
+  it("leaves out a cause that JSON cannot write", () => {
+    const circular: Record<string, unknown> = { status: 503 };
+    circular.self = circular;
+
+    for (const cause of [circular, { bytes: 10n }]) {
+      const original = new SitemapError("Sitemap fetch failed", cause);
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(() => serializeTransportableError(original)).toThrow(TypeError);
+      expect(serialized).toBe(
+        wire("SCRAPE_SITEMAP_ERROR", {
+          stack: original.stack,
+          message: "Sitemap fetch failed",
+        }),
+      );
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.cause).toBeUndefined();
+    }
+  });
+
+  it.each([
+    [
+      "throws when it writes itself",
+      {
+        serialize: () => {
+          throw new Error("cannot serialize");
+        },
+      },
+    ],
+    [
+      "writes a field that JSON cannot write",
+      { serialize: () => ({ message: "Sitemap fetch failed", pages: 10n }) },
+    ],
+    ["writes nothing", { serialize: () => undefined }],
+    [
+      "writes something that is not an object",
+      { serialize: () => "Sitemap fetch failed" },
+    ],
+    [
+      "writes an object without a message",
+      { serialize: () => ({ pages: 10 }) },
+    ],
+    ["has a code with a space in it", { code: "TWO WORDS" }],
+    ["has an empty code", { code: "" }],
+    ["has a code with the separator in it", { code: "A|B" }],
+  ])(
+    "sends an error that %s as UNKNOWN_ERROR with its message",
+    (_, broken) => {
+      const original = Object.assign(
+        new SitemapError("Sitemap fetch failed"),
+        broken,
+      );
+      const revived = deserializeTransportableError(
+        serializeThrownError(original),
+      )!;
+
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(
+        new UnknownError(new Error("Sitemap fetch failed")).message,
+      );
+      expect(revived.stack).toBe(original.stack);
+    },
+  );
+
+  it.each([
+    ["cannot be made into a string", () => Object.create(null)],
+    [
+      "throws when its message is read",
+      () =>
+        Object.defineProperty(new Error("slow"), "message", {
+          get() {
+            throw new Error("cannot read");
+          },
+        }),
+    ],
+    [
+      "throws when it is asked whether it is an error",
+      () =>
+        new Proxy(
+          {},
+          {
+            getPrototypeOf() {
+              throw new Error("cannot ask");
+            },
+          },
+        ),
+    ],
+  ])("sends a thrown value that %s as UNKNOWN_ERROR", (_, build) => {
+    const revived = deserializeTransportableError(
+      serializeThrownError(build()),
+    )!;
+
+    expect(revived).toBeInstanceOf(UnknownError);
+    expect(revived.code).toBe("UNKNOWN_ERROR");
+    expect(revived.message).toBe(
+      new UnknownError("The thrown value could not be read").message,
+    );
+  });
+
+  describe("an error that is too long for the queue to keep whole", () => {
+    const long = (length: number) => "x".repeat(length);
+    const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+    const cut = (text: string) => `${text.slice(0, 4096)}... [truncated]`;
+
+    it("is too long past what the FoundationDB queue keeps of a reason", () => {
+      expect(MAX_SERIALIZED_ERROR_BYTES).toBe(DATA_CHUNK_BYTES);
+    });
+
+    it("is left as it is while it fits", () => {
+      const original = new SitemapError(long(30_000));
+      const serialized = serializeThrownError(original);
+
+      expect(serialized).toBe(serializeTransportableError(original));
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+    });
+
+    it("gets its stack shortened first", () => {
+      const original = new SitemapError(long(60_000));
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(bytes(serializeTransportableError(original))).toBeGreaterThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.message).toBe(original.message);
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("is measured in bytes, as the queue stores it", () => {
+      const original = new SitemapError("é".repeat(30_000));
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(serializeTransportableError(original).length).toBeLessThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serializeTransportableError(original))).toBeGreaterThan(
+        MAX_SERIALIZED_ERROR_BYTES,
+      );
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived.message).toBe(original.message);
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("then gets its message shortened", () => {
+      const original = new SitemapError(long(200_000), { status: 503 });
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.message).toBe(cut(original.message));
+      expect(revived.stack).toBe(cut(original.stack!));
+      expect(revived.cause).toEqual({ status: 503 });
+    });
+
+    it("is not cut in the middle of a character", () => {
+      const original = new SitemapError(
+        `${long(4095)}\u{1F600}${long(200_000)}`,
+      );
+      const revived = deserializeTransportableError(
+        serializeThrownError(original),
+      )!;
+
+      expect(revived.message).toBe(`${long(4095)}... [truncated]`);
+    });
+
+    it("then loses its cause", () => {
+      const original = new SitemapError("Sitemap fetch failed", {
+        body: long(200_000),
+      });
+      original.stack = "Error: Sitemap fetch failed\n    at fetchSitemap";
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(serialized).toBe(
+        wire("SCRAPE_SITEMAP_ERROR", {
+          stack: original.stack,
+          message: "Sitemap fetch failed",
+        }),
+      );
+      expect(revived).toBeInstanceOf(SitemapError);
+      expect(revived.cause).toBeUndefined();
+    });
+
+    it("then gets every other text it carries shortened", () => {
+      const original = new CrawlDenialError(long(200_000), {
+        robotsBlockedUrl: "https://example.com/private",
+      });
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(
+        serialized,
+      ) as CrawlDenialError;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(CrawlDenialError);
+      expect(revived.code).toBe("CRAWL_DENIAL");
+      expect(revived.reason).toBe(cut(original.reason));
+      expect(revived.robotsBlockedUrl).toBe("https://example.com/private");
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("goes out as UNKNOWN_ERROR with its message when it still does not fit", () => {
+      const original = new NoEnginesLeftError(
+        Array.from({ length: 20_000 }, () => "fetch" as const),
+      );
+      const serialized = serializeThrownError(original);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(
+        new UnknownError(new Error(cut(original.message))).message,
+      );
+      expect(revived.stack).toBe(cut(original.stack!));
+    });
+
+    it("fits whatever characters its texts hold", () => {
+      // A control character takes six bytes when it is written as JSON.
+      const original = Object.assign(
+        new SitemapError("\u0001".repeat(200_000)),
+        {
+          serialize: () => {
+            throw new Error("cannot serialize");
+          },
+        },
+      );
+      const serialized = serializeThrownError(original);
+
+      expect(serialized).toMatch(/^UNKNOWN_ERROR\|/);
+      expect(bytes(serialized)).toBeGreaterThan(40_000);
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(deserializeTransportableError(serialized)).toBeInstanceOf(
+        UnknownError,
+      );
+    });
+
+    it("keeps UNKNOWN_ERROR readable for an error with a very long message", () => {
+      const inner = new Error(long(200_000));
+      const serialized = serializeThrownError(inner);
+      const revived = deserializeTransportableError(serialized)!;
+
+      expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
+      expect(revived).toBeInstanceOf(UnknownError);
+      expect(revived.code).toBe("UNKNOWN_ERROR");
+      expect(revived.message).toBe(cut(new UnknownError(inner).message));
+    });
   });
 
   it("keeps the code of an error built from a second copy of the base class", async () => {
