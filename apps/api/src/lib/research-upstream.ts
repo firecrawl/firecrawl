@@ -115,6 +115,13 @@ export async function fetchQueryFeatures(options: {
   );
 }
 
+function govResearchProxyPercent(): number {
+  if (config.GOV_SEARCH_RESEARCH_PROXY_PERCENT > 0) {
+    return config.GOV_SEARCH_RESEARCH_PROXY_PERCENT;
+  }
+  return config.GOV_SEARCH_VIA_RESEARCH_PROXY ? 100 : 0;
+}
+
 export async function fetchGovUpstream(options: {
   query: string;
   k?: number;
@@ -127,23 +134,63 @@ export async function fetchGovUpstream(options: {
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
+  const payload = {
+    query: options.query,
+    top_k: options.k,
+    jurisdiction: options.jurisdiction,
+    court: options.court,
+    court_type: options.courtType,
+    cites: options.cites,
+    domain: options.domain,
+    sources: options.sources,
+  };
+  const percent = govResearchProxyPercent();
+  const useResearchProxy =
+    percent >= 100 || (percent > 0 && Math.random() * 100 < percent);
+
+  if (!useResearchProxy) {
+    return postSearchPlatform(
+      "/api/v1/gov-search",
+      payload,
+      options.headers,
+      options.timeoutMs,
+      config.SEARCH_PLATFORM_URL,
+    );
+  }
+
+  const fallbackBase =
+    config.SEARCH_PLATFORM_URL &&
+    config.SEARCH_PLATFORM_URL !== config.RESEARCH_PROXY_URL
+      ? config.SEARCH_PLATFORM_URL
+      : undefined;
+  const primaryTimeoutMs = fallbackBase
+    ? Math.min(options.timeoutMs, Math.max(3_000, Math.floor(options.timeoutMs * 0.6)))
+    : options.timeoutMs;
+  const startedAt = Date.now();
+
+  try {
+    const res = await postSearchPlatform(
+      "/api/v1/gov-search",
+      payload,
+      options.headers,
+      primaryTimeoutMs,
+      config.RESEARCH_PROXY_URL,
+    );
+    if (!fallbackBase || (res && res.status !== 429 && res.status < 500)) {
+      return res;
+    }
+    res?.body?.cancel().catch(() => {});
+  } catch (err) {
+    if (!fallbackBase) throw err;
+  }
+
+  const remainingMs = Math.max(2_000, options.timeoutMs - (Date.now() - startedAt));
   return postSearchPlatform(
     "/api/v1/gov-search",
-    {
-      query: options.query,
-      top_k: options.k,
-      jurisdiction: options.jurisdiction,
-      court: options.court,
-      court_type: options.courtType,
-      cites: options.cites,
-      domain: options.domain,
-      sources: options.sources,
-    },
+    payload,
     options.headers,
-    options.timeoutMs,
-    config.GOV_SEARCH_VIA_RESEARCH_PROXY
-      ? config.RESEARCH_PROXY_URL
-      : config.SEARCH_PLATFORM_URL,
+    remainingMs,
+    fallbackBase,
   );
 }
 
