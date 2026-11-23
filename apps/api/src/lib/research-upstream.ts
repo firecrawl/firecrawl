@@ -204,5 +204,8 @@ export async function fetchWebSearchUpstream(options: {
     { query: options.query, top_k: options.k },
     options.headers,
     options.timeoutMs,
+    config.GOV_SEARCH_VIA_RESEARCH_PROXY
+      ? config.RESEARCH_PROXY_URL
+      : config.SEARCH_PLATFORM_URL,
   );
 }
