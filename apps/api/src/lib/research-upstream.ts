@@ -88,8 +88,8 @@ async function postSearchPlatform(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
+  base = config.SEARCH_PLATFORM_URL,
 ) {
-  const base = config.SEARCH_PLATFORM_URL;
   if (!base) return null;
 
   return fetch(base.replace(/\/+$/, "") + path, {
@@ -141,10 +141,11 @@ export async function fetchGovUpstream(options: {
     },
     options.headers,
     options.timeoutMs,
+    config.RESEARCH_PROXY_URL,
   );
 }
 
-/** The search platform's answer to a plain web search routed to it. */
+/** The search proxy's answer to a plain web search routed to the government index. */
 export async function fetchWebSearchUpstream(options: {
   query: string;
   k: number;
@@ -156,5 +157,6 @@ export async function fetchWebSearchUpstream(options: {
     { query: options.query, top_k: options.k },
     options.headers,
     options.timeoutMs,
+    config.RESEARCH_PROXY_URL,
   );
 }

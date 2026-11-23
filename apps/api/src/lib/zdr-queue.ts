@@ -1,5 +1,5 @@
 import amqp from "amqplib";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { config } from "../config";
 import { logger as _logger } from "./logger";
 import {
@@ -28,8 +28,11 @@ const ATTEMPT_HEADER = "zdr-attempt";
 
 const logger = _logger.child({ module: "zdr-queue" });
 
-// A request-level job resolves its blobs from ClickHouse; a blob job names one blob.
-export type ZdrCleanupJob = { requestId: string } | { blobId: string };
+// A request-level job resolves its blobs from ClickHouse; the others name one object.
+export type ZdrCleanupJob =
+  | { requestId: string }
+  | { blobId: string }
+  | { parseUploadPath: string };
 
 type CleanupHandler = (job: ZdrCleanupJob) => Promise<void>;
 
@@ -245,7 +248,12 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
 }
 
 function jobId(job: ZdrCleanupJob): string {
-  return "blobId" in job ? job.blobId : job.requestId;
+  if ("blobId" in job) return job.blobId;
+  // AMQP caps messageId at 255 bytes; the path includes a client filename.
+  if ("parseUploadPath" in job) {
+    return createHash("sha256").update(job.parseUploadPath).digest("hex");
+  }
+  return job.requestId;
 }
 
 function publishConfirmed(
@@ -364,7 +372,9 @@ function isZdrCleanupJob(value: unknown): value is ZdrCleanupJob {
       ? value.blobId
       : "requestId" in value
         ? value.requestId
-        : undefined;
+        : "parseUploadPath" in value
+          ? value.parseUploadPath
+          : undefined;
   return typeof id === "string" && id.length > 0;
 }
 
@@ -422,7 +432,9 @@ async function subscribe(
           setSpanAttributes(span, {
             ...("blobId" in job
               ? { "zdr.blob_id": job.blobId }
-              : { "zdr.request_id": job.requestId }),
+              : "parseUploadPath" in job
+                ? { "zdr.parse_upload_id": jobId(job) }
+                : { "zdr.request_id": job.requestId }),
             "zdr.attempt": attempt,
           });
 

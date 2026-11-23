@@ -11,7 +11,7 @@ Add `firecrawl` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:firecrawl, "~> 1.4"}
+    {:firecrawl, "~> 2.0"}
   ]
 end
 ```

@@ -136,7 +136,7 @@ export async function searchGovIfRouted(
   searchId: string,
   logger: Logger,
 ): Promise<WebSearchResult[] | null> {
-  if (!config.GOV_ROUTING_ENABLED) return null;
+  if (!config.GOV_ROUTING_ENABLED || !config.RESEARCH_PROXY_URL) return null;
   const deadline = Date.now() + options.timeout;
 
   const record = (

@@ -541,3 +541,46 @@ describe("evaluatePolicy — zscaler denied categories", () => {
     expect(decision).toMatchObject({ allowed: true, rule: "default-allow" });
   });
 });
+
+describe("domainMatchesList — large lists", () => {
+  test("matches exact domains, subdomains, and wildcards in a 10,000-entry list", () => {
+    const blacklist = Array.from(
+      { length: 9_998 },
+      (_, i) => `blocked-${i}.example.com`,
+    );
+    blacklist.push("*.wildcard-blocked.example.org", "target.example.net");
+    const p = policy({ blacklist });
+
+    expect(
+      localOnlyDecision("https://sub.target.example.net/path", p),
+    ).toMatchObject({ allowed: false, rule: "blacklist" });
+    expect(
+      localOnlyDecision("https://a.b.wildcard-blocked.example.org/", p),
+    ).toMatchObject({ allowed: false, rule: "blacklist" });
+    expect(
+      localOnlyDecision("https://wildcard-blocked.example.org/", p),
+    ).toBeNull();
+    expect(
+      localOnlyDecision("https://allowed-site.example.com/", p),
+    ).toBeNull();
+  });
+
+  test("reflects in-place mutations on unfrozen lists", () => {
+    const blacklist = ["first.example.com"];
+    const p = policy({ blacklist });
+
+    expect(localOnlyDecision("https://first.example.com/", p)).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+    });
+
+    blacklist.push("second.example.com");
+    expect(localOnlyDecision("https://second.example.com/", p)).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+    });
+
+    blacklist.shift();
+    expect(localOnlyDecision("https://first.example.com/", p)).toBeNull();
+  });
+});

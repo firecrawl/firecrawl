@@ -26,12 +26,12 @@ vi.mock("../../../lib/generic-ai", () => ({
 import { config } from "../../../config";
 import {
   buildJevRequest,
-  cleanFontFamily,
   describeColor,
   loadFirstScreen,
   resetJevBreaker,
   wantsBrandingScreenshot,
 } from "../../../lib/branding/jev";
+import { cleanFontFamily } from "../../../lib/branding/font-names";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { brandingJevScreenshotTotal } from "../../../lib/branding/metrics";
 import {
@@ -1004,6 +1004,82 @@ describe("branding with Jev", () => {
     expect(buildJevRequest(input).fonts[2].role).toBe("body");
   });
 
+  it("does not report a site builder's default on <body> as the body font", () => {
+    // Wix sets body{font-family:Arial} and styles paragraphs in the brand face.
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Arial", heading: "Madefor Display" },
+      fontStacks: {
+        body: ["Arial", "Helvetica", "sans-serif"],
+        heading: [
+          "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41",
+          "wf_e1b10df92bd244baba1e35d63",
+          "orig_madefor_display",
+        ],
+        paragraph: [
+          "wfont_2feeec_a1b10df92bd244baba1e35d632c6fa41",
+          "wf_a1b10df92bd244baba1e35d63",
+          "orig_madefor_text",
+        ],
+      },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Madefor Text", count: 30 },
+      { family: "Madefor Display", count: 8 },
+      { family: "Arial", count: 1 },
+    ];
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", "body"],
+      ["Madefor Display", "heading"],
+      ["Arial", undefined],
+    ]);
+
+    // The same face in headings and paragraphs is the body font, not Arial.
+    input.jsAnalysis.typography.fontStacks!.paragraph =
+      input.jsAnalysis.typography.fontStacks!.heading;
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", undefined],
+      ["Madefor Display", "body"],
+      ["Arial", undefined],
+    ]);
+
+    // A page with no h1 measures <body> as its heading: the default is neither.
+    input.jsAnalysis.typography.fontStacks!.heading =
+      input.jsAnalysis.typography.fontStacks!.body;
+    input.jsAnalysis.typography.fontFamilies!.heading = "Arial";
+    expect(buildJevRequest(input).fonts.map(f => [f.family, f.role])).toEqual([
+      ["Madefor Text", undefined],
+      ["Madefor Display", "body"],
+      ["Arial", undefined],
+    ]);
+  });
+
+  it("never gives a role to a currency glyph face", () => {
+    const ikea = [
+      "Omani Rial",
+      "Emirati Dirham",
+      "Saudi Riyal",
+      "Noto IKEA",
+      "Noto Sans",
+      "sans-serif",
+    ];
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Noto IKEA", heading: "Noto IKEA" },
+      fontStacks: { body: ikea, heading: ikea, paragraph: ikea },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Omani Rial", count: 40 },
+      { family: "Emirati Dirham", count: 40 },
+      { family: "Saudi Riyal", count: 40 },
+      { family: "Noto IKEA", count: 40 },
+      { family: ikea.join(", "), count: 10 },
+    ];
+    expect(buildJevRequest(input).fonts).toEqual([
+      { family: "Noto IKEA", count: 50, role: "body" },
+    ]);
+  });
+
   it("drops the browser's default font when a real face is the body text", async () => {
     const input = baseInput(new CostTracking());
     // The page styles inner elements, so <body> measures the default serif.
@@ -1332,13 +1408,17 @@ describe("Jev request building", () => {
         "wfont_2feeec_e1b10df92bd244baba1e35d632c6fa41, wf_e1b10df92bd244baba1e35d63, orig_libre_baskerville",
       ),
     ).toBe("Libre Baskerville");
-    expect(cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd")).toBeUndefined();
+    expect(
+      cleanFontFamily("wf_38b82f6a99a44d63a0bc6a5d605011dd"),
+    ).toBeUndefined();
     // Monotype spellings on Wix.
     expect(cleanFontFamily("helvetica-w01-roman")).toBe("Helvetica");
     expect(cleanFontFamily("open-sans-v2, sans-serif")).toBe("Open Sans");
     expect(cleanFontFamily("futura-lt-w01-book")).toBe("Futura");
     expect(cleanFontFamily("proxima-n-w01-reg")).toBe("Proxima Nova");
-    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe("DIN Neuzeit Grotesk");
+    expect(cleanFontFamily("dinneuzeitgroteskltw01-_812426")).toBe(
+      "DIN Neuzeit Grotesk",
+    );
     // Self-hosted builds and a weight glued onto a lowercase alias.
     expect(cleanFontFamily("inter-variable-web")).toBe("Inter");
     expect(cleanFontFamily("recoleta-web, Georgia, serif")).toBe("Recoleta");
@@ -1354,7 +1434,9 @@ describe("Jev request building", () => {
     // A system stack asks for the visitor's font: Segoe UI and Roboto are
     // its spellings per platform, not the brand's choice.
     expect(
-      cleanFontFamily("-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"),
+      cleanFontFamily(
+        "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
+      ),
     ).toBeUndefined();
     expect(cleanFontFamily("system-ui, sans-serif")).toBeUndefined();
     // A real face ahead of the system stack is still that face (hyphenated
@@ -1398,6 +1480,49 @@ describe("Jev request building", () => {
     // Acronyms aren't split.
     expect(cleanFontFamily("TIActuBeta")).toBe("TIActuBeta");
     expect(cleanFontFamily("HardwoodLP")).toBe("HardwoodLP");
+  });
+
+  it("keeps brand words whole and splits only a trailing style word", () => {
+    expect(cleanFontFamily("GitLabSans")).toBe("GitLab Sans");
+    expect(cleanFontFamily("HubSpotSans")).toBe("HubSpot Sans");
+    expect(cleanFontFamily("PayPalPro")).toBe("PayPal Pro");
+    expect(cleanFontFamily("figmaSans")).toBe("Figma Sans");
+    expect(cleanFontFamily("eBaySans")).toBe("eBay Sans");
+    expect(cleanFontFamily("SourceSansPro")).toBe("Source Sans Pro");
+    // Already-clean names come back unchanged.
+    expect(cleanFontFamily("GitLab Sans")).toBe("GitLab Sans");
+    expect(cleanFontFamily("HubSpot Sans")).toBe("HubSpot Sans");
+    // A name that already has spaces still splits a run-together word.
+    expect(cleanFontFamily("BasicCommercial LT Std")).toBe(
+      "Basic Commercial LT Std",
+    );
+    expect(cleanFontFamily("PayPal Pro Text")).toBe("PayPal Pro Text");
+  });
+
+  it("strips next/font hashes and glued weights before underscores become spaces", () => {
+    expect(cleanFontFamily("__hashicorpSans_96f0ca")).toBe("Hashicorp Sans");
+    expect(cleanFontFamily("__GitLabSans_1a2b3c")).toBe("GitLab Sans");
+    expect(
+      cleanFontFamily(["__figmaSans_d65c78", "__figmaSans_Fallback_d65c78"]),
+    ).toBe("Figma Sans");
+    expect(cleanFontFamily("nb_international_proregular")).toBe(
+      "Nb International Pro",
+    );
+  });
+
+  it("skips symbol faces listed ahead of the text face", () => {
+    expect(
+      cleanFontFamily(
+        "Omani Rial, Emirati Dirham, Saudi Riyal, Noto IKEA, Noto Sans, sans-serif",
+      ),
+    ).toBe("Noto IKEA");
+    expect(cleanFontFamily("Noto Color Emoji, Inter")).toBe("Inter");
+  });
+
+  it("strips a spaced compound weight", () => {
+    expect(cleanFontFamily("Inter Extra Bold")).toBe("Inter");
+    expect(cleanFontFamily("Inter Semi Bold")).toBe("Inter");
+    expect(cleanFontFamily("Extra Bold")).toBeUndefined();
   });
 
   it("merges a family listed with and without spaces", () => {
@@ -1528,16 +1653,39 @@ describe("logo candidates as Jev sees them", () => {
     input.pageUrl = "https://acme.test/";
     input.logoCandidates = [
       LOGO,
-      { ...LOGO, src: "https://acme.test/home.svg", alt: "home", href: "/home/" },
+      {
+        ...LOGO,
+        src: "https://acme.test/home.svg",
+        alt: "home",
+        href: "/home/",
+      },
       { ...LOGO, src: "https://acme.test/cart.svg", alt: "", href: "/cart" },
-      { ...LOGO, src: "https://acme.test/www.svg", href: "https://www.acme.test/?ref=nav" },
+      {
+        ...LOGO,
+        src: "https://acme.test/www.svg",
+        href: "https://www.acme.test/?ref=nav",
+      },
       { ...LOGO, src: "https://acme.test/x.svg", href: "https://x.com/acme" },
       { ...LOGO, src: "https://acme.test/nolink.svg", href: undefined },
       // The scan resolved these as the home link; we can't tell from the href.
-      { ...LOGO, src: "https://acme.test/sibling.svg", href: "https://acme.io/" },
+      {
+        ...LOGO,
+        src: "https://acme.test/sibling.svg",
+        href: "https://acme.io/",
+      },
       { ...LOGO, src: "https://acme.test/js.svg", href: "javascript:void(0)" },
-      { ...LOGO, src: "https://acme.test/mail.svg", href: "mailto:hi@acme.test", indicators: { ...LOGO.indicators, hrefMatch: false } },
-      { ...LOGO, src: "https://acme.test/other.svg", href: "https://acme.io/pricing", indicators: { ...LOGO.indicators, hrefMatch: false } },
+      {
+        ...LOGO,
+        src: "https://acme.test/mail.svg",
+        href: "mailto:hi@acme.test",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
+      {
+        ...LOGO,
+        src: "https://acme.test/other.svg",
+        href: "https://acme.io/pricing",
+        indicators: { ...LOGO.indicators, hrefMatch: false },
+      },
     ];
     expect(Object.values(candidates(input)).map(c => c.link)).toEqual([
       "links to the homepage",
@@ -1582,4 +1730,3 @@ describe("logo candidates as Jev sees them", () => {
     });
   });
 });
-
