@@ -9,12 +9,17 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { externalRequestId } from "../lib/external-request-id";
 import {
   FRESH_FEED_COLLECTION_HEADER,
+  FRESH_FEED_FILTER_KEYS,
+  FRESH_FEED_UPSTREAM_ROUTES,
   freshFeedUpstreamPath,
   isFreshFeedUpstream,
   isValidFreshFeedCollection,
   normalizeFreshFeedUpstreams,
+  parseFreshFeedFilters,
   resolveFreshFeedVertical,
+  type FreshFeedFilters,
   type FreshFeedUpstream,
+  type FreshFeedUpstreamRouteDefinition,
   type FreshFeedUpstreamUrls,
 } from "../lib/fresh-feed";
 import {
@@ -46,8 +51,7 @@ const FORWARDED_RESPONSE_HEADERS = [
 ];
 
 type FreshFeedRouteSpec =
-  | { kind: "local" }
-  | { kind: "curated" }
+  | { kind: "upstream"; route: FreshFeedUpstreamRouteDefinition }
   | { kind: "vertical" };
 
 interface ResolvedFreshFeedTarget {
@@ -122,17 +126,26 @@ function getResolvedTarget(res: Response): ResolvedFreshFeedTarget | undefined {
 
 function precheckRecordCount(req: Request): number {
   const rawContent = req.query.content;
-  const maxLimit =
-    typeof rawContent === "string" && rawContent.toLowerCase() === "false"
-      ? MAX_METADATA_PAGE_SIZE
-      : MAX_CONTENT_PAGE_SIZE;
+  const isMetadataPage =
+    typeof rawContent === "string"
+      ? rawContent.toLowerCase() === "false"
+      : Array.isArray(rawContent) &&
+        rawContent.some(
+          value => typeof value === "string" && value.toLowerCase() === "false",
+        );
+  const maxLimit = isMetadataPage
+    ? MAX_METADATA_PAGE_SIZE
+    : MAX_CONTENT_PAGE_SIZE;
 
   const rawLimit = req.query.limit;
+  if (rawLimit !== undefined && typeof rawLimit !== "string") {
+    return maxLimit;
+  }
   if (typeof rawLimit !== "string" || !/^\d+$/.test(rawLimit.trim())) {
     return Math.min(DEFAULT_PRECHECK_LIMIT, maxLimit);
   }
   const parsed = Number.parseInt(rawLimit.trim(), 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+  if (parsed < 1) {
     return Math.min(DEFAULT_PRECHECK_LIMIT, maxLimit);
   }
   return Math.min(parsed, maxLimit);
@@ -147,7 +160,9 @@ function requireFreshFeedCredits(
   if (rate === 0) return next();
   const resolved = getResolvedTarget(res);
   const records =
-    resolved?.upstream === "curated" ? precheckRecordCount(req) : 1;
+    resolved !== undefined && resolved.upstream !== "local"
+      ? precheckRecordCount(req)
+      : 1;
   const requiredCredits = Math.min(Number.MAX_SAFE_INTEGER, records * rate);
   return checkCreditsMiddleware(requiredCredits)(
     req as RequestWithAuth<any, any, any>,
@@ -168,43 +183,78 @@ function rejectVerticalHead(req: Request, res: Response) {
   return res.status(404).end();
 }
 
+function isAllowedFilterSubset(inbound: string, lockedValue: string): boolean {
+  const allowed = new Set(lockedValue.split(","));
+  const requested = inbound.split(",");
+  if (requested.length === 0 || requested.length > allowed.size) return false;
+  const seen = new Set<string>();
+  for (const token of requested) {
+    if (token.length === 0 || !allowed.has(token) || seen.has(token)) {
+      return false;
+    }
+    seen.add(token);
+  }
+  return true;
+}
+
 function buildUpstreamTarget(
   originalUrl: string,
   upstreamPath: string,
+  lockedFilters: FreshFeedFilters,
   forcedSubcategory?: string,
 ): { target: string } | { error: string } {
   const queryStart = originalUrl.indexOf("?");
   const rawQuery = queryStart === -1 ? "" : originalUrl.slice(queryStart);
-  if (!forcedSubcategory) {
+  const activeKeys = FRESH_FEED_FILTER_KEYS.filter(
+    key => lockedFilters[key] !== undefined,
+  );
+  if (activeKeys.length === 0) {
     return { target: upstreamPath + rawQuery };
   }
 
   const rawQueryBody =
     queryStart === -1 ? "" : originalUrl.slice(queryStart + 1);
-  const inboundSubcategories = new URLSearchParams(rawQueryBody).getAll(
-    "subcategory",
-  );
-  if (
-    inboundSubcategories.length > 1 ||
-    (inboundSubcategories.length === 1 &&
-      inboundSubcategories[0] !== forcedSubcategory)
-  ) {
-    return {
-      error: "The subcategory parameter conflicts with this vertical route.",
-    };
-  }
-  if (inboundSubcategories.length === 1) {
-    return { target: upstreamPath + rawQuery };
+  const inboundParams = new URLSearchParams(rawQueryBody);
+  const toAppend: string[] = [];
+
+  for (const key of activeKeys) {
+    const lockedValue = lockedFilters[key]!;
+    const inboundValues = inboundParams.getAll(key);
+    if (inboundValues.length > 1) {
+      return {
+        error:
+          key === "subcategory" && forcedSubcategory
+            ? "The subcategory parameter conflicts with this vertical route."
+            : `The ${key} parameter conflicts with the configured feed filter.`,
+      };
+    }
+    if (inboundValues.length === 1) {
+      if (!isAllowedFilterSubset(inboundValues[0], lockedValue)) {
+        return {
+          error:
+            key === "subcategory" && forcedSubcategory
+              ? "The subcategory parameter conflicts with this vertical route."
+              : `The ${key} parameter conflicts with the configured feed filter.`,
+        };
+      }
+      continue;
+    }
+    const encodedValue = lockedValue
+      .split(",")
+      .map(encodeURIComponent)
+      .join(",");
+    toAppend.push(`${key}=${encodedValue}`);
   }
 
-  const encoded = encodeURIComponent(forcedSubcategory);
+  if (toAppend.length === 0) {
+    return { target: upstreamPath + rawQuery };
+  }
+  const suffix = toAppend.join("&");
   if (rawQueryBody.length === 0) {
-    return { target: `${upstreamPath}?subcategory=${encoded}` };
+    return { target: `${upstreamPath}?${suffix}` };
   }
   const sep = rawQueryBody.endsWith("&") ? "" : "&";
-  return {
-    target: `${upstreamPath}?${rawQueryBody}${sep}subcategory=${encoded}`,
-  };
+  return { target: `${upstreamPath}?${rawQueryBody}${sep}${suffix}` };
 }
 
 function resolveFreshFeedTarget(
@@ -214,14 +264,39 @@ function resolveFreshFeedTarget(
   return (req: Request, res: Response, next: NextFunction) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
     const teamId = authedReq.auth?.team_id;
-    let upstream: FreshFeedUpstream;
+    let allowedUpstreams: readonly FreshFeedUpstream[];
+    let defaultUpstream: FreshFeedUpstream | undefined;
     let forcedSubcategory: string | undefined;
 
-    if (spec.kind === "local") {
-      const flagUpstream: unknown = authedReq.acuc?.flags?.freshFeedUpstream;
+    if (spec.kind === "upstream") {
+      allowedUpstreams = spec.route.allowedUpstreams;
+      defaultUpstream = spec.route.defaultUpstream;
+    } else {
+      const rawVertical = req.params.vertical;
+      const vertical =
+        typeof rawVertical === "string"
+          ? resolveFreshFeedVertical(rawVertical)
+          : undefined;
+      if (!vertical) {
+        return freshFeedError(res, 404, "Unknown fresh feed vertical.");
+      }
+      allowedUpstreams = vertical.supportedUpstreams;
+      forcedSubcategory = vertical.subcategory;
+    }
+
+    const flagUpstream: unknown = authedReq.acuc?.flags?.freshFeedUpstream;
+    let upstream: FreshFeedUpstream;
+    if (defaultUpstream !== undefined) {
       if (flagUpstream === undefined || flagUpstream === null) {
-        upstream = "local";
+        upstream = defaultUpstream;
       } else if (isFreshFeedUpstream(flagUpstream)) {
+        if (!allowedUpstreams.includes(flagUpstream)) {
+          return freshFeedError(
+            res,
+            403,
+            "This endpoint is not enabled for this team.",
+          );
+        }
         upstream = flagUpstream;
       } else {
         rootLogger.error("Invalid freshFeedUpstream flag", {
@@ -234,35 +309,52 @@ function resolveFreshFeedTarget(
         });
         return freshFeedError(res, 503, "The feed is temporarily unavailable.");
       }
-    } else if (spec.kind === "curated") {
-      upstream = "curated";
     } else {
-      const rawVertical = req.params.vertical;
-      const vertical =
-        typeof rawVertical === "string"
-          ? resolveFreshFeedVertical(rawVertical)
-          : undefined;
-      if (!vertical) {
-        return freshFeedError(res, 404, "Unknown fresh feed vertical.");
+      if (
+        !isFreshFeedUpstream(flagUpstream) ||
+        !allowedUpstreams.includes(flagUpstream)
+      ) {
+        return freshFeedError(
+          res,
+          403,
+          "This endpoint is not enabled for this team.",
+        );
       }
-      upstream = vertical.upstream;
-      forcedSubcategory = vertical.subcategory;
+      upstream = flagUpstream;
     }
 
-    if (
-      spec.kind !== "local" &&
-      authedReq.acuc?.flags?.freshFeedUpstream !== upstream
-    ) {
-      return freshFeedError(
-        res,
-        403,
-        "This endpoint is not enabled for this team.",
-      );
+    const parsedFilters = parseFreshFeedFilters(
+      authedReq.acuc?.flags?.freshFeedFilters,
+    );
+    if ("error" in parsedFilters) {
+      rootLogger.error("Invalid freshFeedFilters flag", {
+        module: "api/fresh-feed",
+        teamId,
+        upstream,
+        reason: parsedFilters.error,
+      });
+      return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+    }
+
+    const effectiveFilters: FreshFeedFilters = { ...parsedFilters.filters };
+    if (forcedSubcategory) {
+      if (
+        effectiveFilters.subcategory !== undefined &&
+        !effectiveFilters.subcategory.split(",").includes(forcedSubcategory)
+      ) {
+        return freshFeedError(
+          res,
+          403,
+          "This endpoint is not enabled for this team.",
+        );
+      }
+      effectiveFilters.subcategory = forcedSubcategory;
     }
 
     const builtTarget = buildUpstreamTarget(
       req.originalUrl,
       freshFeedUpstreamPath(upstream),
+      effectiveFilters,
       forcedSubcategory,
     );
     if ("error" in builtTarget) {
@@ -351,10 +443,13 @@ function freshFeedController(timeoutMs: number) {
     }
 
     const upstreamStarted = Date.now();
-    const observeUpstream = (status: string) => {
+    const observeUpstream = (
+      status: string,
+      seconds = (Date.now() - upstreamStarted) / 1000,
+    ) => {
       freshFeedUpstreamRequestDurationSeconds
         .labels(resolved.upstream, status)
-        .observe((Date.now() - upstreamStarted) / 1000);
+        .observe(seconds);
     };
 
     let upstream: Dispatcher.ResponseData;
@@ -380,6 +475,7 @@ function freshFeedController(timeoutMs: number) {
       logger.error("Fresh feed proxy error", { error });
       return freshFeedError(res, 502, "The request could not be completed.");
     }
+    const upstreamResponseSeconds = (Date.now() - upstreamStarted) / 1000;
 
     if (![200, 400, 406].includes(upstream.statusCode)) {
       upstream.body.dump().catch(() => {});
@@ -388,7 +484,7 @@ function freshFeedController(timeoutMs: number) {
         seconds: (Date.now() - started) / 1000,
       });
       if (upstream.statusCode === 500 || upstream.statusCode === 503) {
-        observeUpstream("503");
+        observeUpstream("503", upstreamResponseSeconds);
         res.setHeader("Retry-After", "5");
         return freshFeedError(
           res,
@@ -396,7 +492,7 @@ function freshFeedController(timeoutMs: number) {
           "The feed is temporarily unavailable. Retry the same request.",
         );
       }
-      observeUpstream("502");
+      observeUpstream("502", upstreamResponseSeconds);
       return freshFeedError(res, 502, "The request could not be completed.");
     }
 
@@ -427,7 +523,10 @@ function freshFeedController(timeoutMs: number) {
     } catch (error: unknown) {
       logger.warn("Fresh feed stream failed", { error, ...outcome() });
     }
-    observeUpstream(delivered ? String(upstream.statusCode) : "stream_error");
+    observeUpstream(
+      delivered ? String(upstream.statusCode) : "stream_error",
+      delivered ? upstreamResponseSeconds : undefined,
+    );
     httpRequestDurationSeconds
       .labels("v2", req.method, getRoutePattern(req), String(res.statusCode))
       .observe((Date.now() - started) / 1000);
@@ -495,8 +594,9 @@ export function createFreshFeedRouter(
     );
   };
 
-  mountRoute("/local/latest", { kind: "local" });
-  mountRoute("/curated/latest", { kind: "curated" });
+  for (const route of FRESH_FEED_UPSTREAM_ROUTES) {
+    mountRoute(route.path, { kind: "upstream", route });
+  }
   mountRoute("/:vertical/latest", { kind: "vertical" }, rejectVerticalHead);
   return router;
 }

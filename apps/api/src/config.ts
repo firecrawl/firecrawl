@@ -149,6 +149,7 @@ const configSchema = z.object({
   LABS_SEARCH_SECRET: z.string().optional(),
   FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
   FRESH_FEED_CURATED_URL: emptyStringAsUndefined(z.string().url()),
+  FRESH_FEED_GLOBAL_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
