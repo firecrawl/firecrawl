@@ -4,8 +4,8 @@ import { jobContext } from "../request-context";
 import type { ThreatDecision } from "../threat-protection/types";
 import {
   CrawlDenialError,
+  isTransportableError,
   JobCancelledError,
-  TransportableError,
   UnsupportedSiteError,
 } from "../error";
 import { UnsafeDomainBlockedError } from "../threat-protection/error";
@@ -114,7 +114,7 @@ function errorForOutcome(
       ? outcome.error
       : new Error(serializeThrownValue(outcome.error));
   return {
-    code: error instanceof TransportableError ? error.code : null,
+    code: isTransportableError(error) ? error.code : null,
     message: error.message.slice(0, 2048),
   };
 }

@@ -7,7 +7,7 @@ import {
 } from "../controllers/v2/types";
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
-import { TransportableError } from "./error";
+import { isTransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
@@ -133,7 +133,7 @@ export async function calculateCreditsToBeBilled(
     }
 
     if (
-      error instanceof TransportableError &&
+      isTransportableError(error) &&
       error.code === "SCRAPE_LOCKDOWN_CACHE_MISS"
     ) {
       creditsToBeBilled = 1;

@@ -4,9 +4,14 @@ import { config } from "../../../config";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import {
+  getBrowserSession,
+  getBrowserSessionFromScrape,
+} from "../../../lib/browser-sessions";
+import {
   readFeedbackJob,
   type RefundClass,
 } from "../../../lib/feedback-job-store";
+import type { FeedbackTrace } from "../../../lib/feedback-trace";
 import { logger } from "../../../lib/logger";
 import { EndpointFeedbackEndpoint } from "../types";
 import type { SearchResultType } from "../../../lib/entities";
@@ -14,6 +19,7 @@ import {
   FeedbackJobRow,
   FeedbackRecordOptions,
   RefundPolicySnapshot,
+  SessionFeedbackEndpoint,
   ValuableResultInput,
 } from "./internal-types";
 
@@ -218,10 +224,14 @@ function valuableResultDocuments(
 
 function feedbackMetadata(
   options: FeedbackRecordOptions,
+  job: FeedbackJobRow,
   valuableResultDocs: ValuableResultDocument[],
 ): Record<string, unknown> {
   return {
     ...(options.feedback.metadata ?? {}),
+    ...(job.browser_session_id
+      ? { browserSessionId: job.browser_session_id }
+      : {}),
     ...(options.feedback.url ? { url: options.feedback.url } : {}),
     ...(options.feedback.pageNumbers
       ? { pageNumbers: options.feedback.pageNumbers }
@@ -289,6 +299,42 @@ export async function lookupFeedbackJob(
   };
 }
 
+/**
+ * Interact and browser feedback refers to a browser session, which has no
+ * feedback job row. The window runs from the session's last activity, which
+ * cannot be later than the end of its lifetime: settling a session also
+ * touches updated_at, and that can happen long after the session ended.
+ */
+export async function lookupSessionFeedbackJob(
+  endpoint: SessionFeedbackEndpoint,
+  jobId: string,
+  dbTeamId: string,
+): Promise<FeedbackJobRow | null> {
+  const session =
+    endpoint === "interact"
+      ? await getBrowserSessionFromScrape(jobId)
+      : await getBrowserSession(jobId);
+  if (!session || session.team_id !== dbTeamId) return null;
+
+  const lifetimeEndMs =
+    new Date(session.created_at).getTime() + session.ttl_total * 1000;
+  return {
+    endpoint,
+    id: jobId,
+    request_id: session.request_id,
+    team_id: session.team_id,
+    credits_cost: 0,
+    created_at:
+      new Date(session.updated_at).getTime() > lifetimeEndMs
+        ? new Date(lifetimeEndMs).toISOString()
+        : session.updated_at,
+    is_successful: null,
+    options: null,
+    zero_data_retention: session.zero_data_retention,
+    ...(endpoint === "interact" ? { browser_session_id: session.id } : {}),
+  };
+}
+
 function endpointForRefundClass(
   refundClass: RefundClass,
 ): EndpointFeedbackEndpoint {
@@ -302,18 +348,41 @@ function endpointForRefundClass(
   }
 }
 
-export async function insertFeedback(params: {
-  feedbackId: string;
+export type FeedbackWrite = {
   options: FeedbackRecordOptions;
   job: FeedbackJobRow;
   dbTeamId: string;
-  apiKeyId?: number | null;
-}): Promise<DbError | null> {
-  const { feedbackId, options, job, dbTeamId, apiKeyId } = params;
+  trace?: FeedbackTrace;
+};
+
+/** The columns a repeated session rating replaces. */
+function feedbackContent({ options, job, trace }: FeedbackWrite) {
   const valuableResultDocs = valuableResultDocuments(
     job,
     options.feedback.valuableResults,
   );
+  return {
+    overall_rating: options.feedback.rating,
+    issue_types: options.feedback.issues ?? [],
+    tags: options.feedback.tags ?? [],
+    comment: options.feedback.note ?? null,
+    valuable_sources: [
+      ...(options.feedback.valuableSources ?? []),
+      ...valuableResultDocs,
+    ],
+    missing_content: options.feedback.missingContent ?? [],
+    query_suggestions: options.feedback.querySuggestions ?? null,
+    metadata: feedbackMetadata(options, job, valuableResultDocs),
+    integration: options.feedback.integration ?? null,
+    origin: options.feedback.origin ?? null,
+    ...trace,
+  };
+}
+
+export async function insertFeedback(
+  params: FeedbackWrite & { feedbackId: string; apiKeyId?: number | null },
+): Promise<DbError | null> {
+  const { feedbackId, options, job, dbTeamId, apiKeyId } = params;
   try {
     await db.insert(schema.search_feedback).values({
       id: feedbackId,
@@ -324,27 +393,44 @@ export async function insertFeedback(params: {
       api_version: "v2",
       team_id: dbTeamId,
       api_key_id: apiKeyId ?? null,
-      overall_rating: options.feedback.rating,
-      issue_types: options.feedback.issues ?? [],
-      tags: options.feedback.tags ?? [],
-      comment: options.feedback.note ?? null,
-      valuable_sources: [
-        ...(options.feedback.valuableSources ?? []),
-        ...valuableResultDocs,
-      ],
-      missing_content: options.feedback.missingContent ?? [],
-      query_suggestions: options.feedback.querySuggestions ?? null,
-      metadata: feedbackMetadata(options, valuableResultDocs),
+      ...feedbackContent(params),
       job_status: job.is_successful === false ? "failed" : "completed",
       credits_billed: job.credits_cost ?? 0,
       credits_refunded: 0,
       refund_policy: null,
-      integration: options.feedback.integration ?? null,
-      origin: options.feedback.origin ?? null,
     });
     return null;
   } catch (error) {
     return dbError(error);
+  }
+}
+
+/**
+ * Replaces the feedback already stored for this job with a newer rating and
+ * returns the id of that row, or null when no row was there to replace.
+ */
+export async function overwriteFeedback(
+  params: FeedbackWrite,
+): Promise<{ id: string | null; error: DbError | null }> {
+  const { options, dbTeamId } = params;
+  try {
+    const [row] = await db
+      .update(schema.search_feedback)
+      .set({
+        ...feedbackContent(params),
+        updated_at: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(schema.search_feedback.team_id, dbTeamId),
+          eq(schema.search_feedback.endpoint, options.endpoint),
+          eq(schema.search_feedback.job_id, options.jobId),
+        ),
+      )
+      .returning({ id: schema.search_feedback.id });
+    return { id: row?.id ?? null, error: null };
+  } catch (error) {
+    return { id: null, error: dbError(error) };
   }
 }
 

@@ -1,5 +1,5 @@
 import { config } from "../config";
-import type { ErrorCodes } from "./error";
+import type { ErrorCode } from "./error";
 import { logger } from "./logger";
 
 type ExtractV3AgentStatus = {
@@ -34,7 +34,7 @@ type ExtractV3AgentStatus = {
 export class ExtractV3AgentStatusError extends Error {
   constructor(
     public readonly status: number,
-    public readonly code: ErrorCodes,
+    public readonly code: ErrorCode,
     message: string,
     public readonly retryAfterSeconds?: number,
   ) {

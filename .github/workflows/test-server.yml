@@ -239,10 +239,18 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/controllers/v2/feedback/alexandria.test.ts
+          src/controllers/v2/feedback/alexandria-refund.test.ts
           src/controllers/v2/feedback/feedback-window.test.ts
+          src/controllers/v2/feedback/refund-policy.test.ts
+          src/controllers/v2/feedback/session-feedback.test.ts
+          src/controllers/v2/feedback/zdr-persistence.test.ts
           src/controllers/v2/scrape-alexandria.test.ts
           src/lib/alexandria-activity.test.ts
+          src/lib/alexandria-discovery.test.ts
+          src/lib/alexandria-feedback-hint.test.ts
+          src/lib/alexandria-feedback-storage.test.ts
           src/lib/alexandria-feedback-token.test.ts
+          src/services/alexandria/client.test.ts
           --maxWorkers=1 --reporter=default
         working-directory: apps/api
 
@@ -323,6 +331,7 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/search/safe-search.test.ts
+          src/search/alexandria.test.ts
           src/search/execute.test.ts
           src/search/tool-intent.test.ts
           --reporter=default
@@ -475,6 +484,18 @@ jobs:
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+
+      - name: Run computer session file regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          pnpm exec vitest run src/controllers/v2/__tests__/computer-session-files.test.ts --reporter=default
+        working-directory: apps/api
+        env:
+          COMPUTER_SESSION_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 
       - name: Run monitor bounded progress regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
@@ -636,6 +657,16 @@ jobs:
           if failures > 0:
               print(f"::error::{failures} failure(s)")
               sys.exit(1)
+
+      # The tests above start every process as `node dist/src/main.js <role>`.
+      # The Docker image, docker-compose.yaml and examples/kubernetes start a
+      # compiled entry file directly, as in `node dist/src/index.js`, so this
+      # step keeps that form covered. Its processes append to the log files
+      # the next step collects.
+      - name: Start each compiled entry file
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy'
+        run: node .github/scripts/start-entry-files.mjs apps/api
+        timeout-minutes: 10
 
       - name: Copy log files
         if: always()
