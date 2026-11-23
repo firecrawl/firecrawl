@@ -5,6 +5,7 @@ import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { autumnClient } from "./client";
+import { planClassOf, type TeamPlanClass } from "../../lib/team-plan-class";
 import {
   firebillFinalize,
   firebillLock,
@@ -86,6 +87,8 @@ export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  /** The org's plan class from planClassOf; absent when that yields none. */
+  plan_class?: TeamPlanClass;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
@@ -409,24 +412,31 @@ export class AutumnService {
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
+    durableRetry,
   }: FinalizeCreditsLockParams): Promise<boolean> {
     // Without firebill no hold was ever taken, so nothing can have gone
     // unsettled.
     if (!firebillConfigured()) return true;
 
-    // Named only for a gated settle: firebill needs the org to split the
-    // settle and to find the integration to report to. An ordinary finalize
-    // does neither, so it does not carry one.
+    // A confirm that names its team sends the lock it settles: org, team,
+    // feature and hold. A confirm without a team (no org) sends none of
+    // them, so firebill cannot bill its overshoot and parks it as before.
+    // firebill keeps no lock table and Autumn has no read of a lock, so this
+    // is the only place it can learn them. It needs them to bill a run that
+    // cost more than it held when the balance cannot cover the excess
+    // (firebill#69), as well as to split and report a gated run. A release
+    // bills nothing, so it carries them only when gated, as before.
     //
     // A gated caller that cannot name the org passes no team and the settle
-    // still lands, without the label. There is no durable retry on this path —
-    // `billMonitorCheck`'s only caller catches, writes
-    // `billing_status: "failed"`, and moves on, and nothing ever reads that
-    // back — so refusing would abandon the finalize entirely: the hold
-    // expires and the run goes unbilled at Autumn as well as unreported.
+    // still lands, without the label. The durable retry only re-sends a settle
+    // firebill never answered, not one that was never sent, so refusing would
+    // abandon the finalize entirely: the hold expires and the run goes
+    // unbilled at Autumn as well as unreported.
     // Settling and losing the label is the lesser loss, and firebill counts
     // the lost label as `partner_events_total{outcome="no_customer"}`.
-    const customerId = externalRequestId && team ? team.orgId : null;
+    const lock =
+      team && (action === "confirm" || externalRequestId) ? team : null;
+    const customerId = lock?.orgId ?? null;
     // Surfaced, not discarded. firebill answers `false` for a refusal, a
     // timeout, or a non-OK — none of which throw — so a caller that ignores
     // this records a run as billed that nobody billed.
@@ -439,8 +449,12 @@ export class AutumnService {
       properties: team ? eventProperties(properties, team.teamId) : properties,
       externalRequestId,
       customerId,
-      featureId: customerId ? featureId : null,
-      heldValue: customerId ? heldValue : null,
+      featureId: lock ? featureId : null,
+      heldValue: lock ? heldValue : null,
+      // Exactly the entity the hold was taken against, empty for none (MCP
+      // credits), so firebill bills an overshoot on the same balance.
+      entityId: lock ? (billingEntityId(featureId, lock.teamId) ?? "") : null,
+      durableRetry,
     });
   }
 
@@ -490,8 +504,9 @@ export class AutumnService {
    * The team's limits from one uncached Autumn entity read, and its plan from
    * a customer read made in parallel (the ACUC caches both). An entity 404
    * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
-   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
-   * when Autumn errors or the team has no org.
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Its plan
+   * class comes from the same subscriptions (planClassOf), and a customer 404
+   * gives none. Throws when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
@@ -531,6 +546,7 @@ export class AutumnService {
           !subscription.addOn &&
           !FREE_PLAN_IDS.has(subscription.planId),
       ),
+      plan_class: planClassOf(customer?.subscriptions ?? []),
     };
   }
 

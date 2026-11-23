@@ -128,7 +128,6 @@ export enum RateLimiterMode {
   BrowserReplay = "browserReplay",
   Account = "account",
   SupportAsk = "supportAsk",
-  SupportDocsSearch = "supportDocsSearch",
   Research = "research",
   DeveloperSearch = "developerSearch",
   GovSearch = "govSearch",

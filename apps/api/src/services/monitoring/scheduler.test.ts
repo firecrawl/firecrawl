@@ -122,6 +122,24 @@ describe("monitorRefusedForZdr", () => {
       search,
       false,
     ],
+    [
+      "Safe Mode lockdown, search target",
+      { safeMode: true, safeModeConfig: { lockdown: true } },
+      search,
+      true,
+    ],
+    [
+      "Safe Mode lockdown, scrape targets only",
+      { safeMode: true, safeModeConfig: { lockdown: true } },
+      scrape,
+      false,
+    ],
+    [
+      "Safe Mode without lockdown, search target",
+      { safeMode: true },
+      search,
+      false,
+    ],
   ])("%s", (_label, flags, targets, refused) => {
     expect(monitorRefusedForZdr(flags, targets)).toBe(refused);
   });

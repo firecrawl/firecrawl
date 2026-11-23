@@ -3,6 +3,7 @@ import {
   FeedbackJobRow,
   FeedbackRating,
   RefundPolicySnapshot,
+  isSessionEndpoint,
 } from "./internal-types";
 import type { RefundClass } from "../../../lib/feedback-job-store";
 
@@ -116,7 +117,8 @@ function policyForRefundClass(refundClass: RefundClass): RefundablePolicy {
   }
 }
 
-function policyFor(job: FeedbackJobRow): RefundablePolicy {
+function policyFor(job: FeedbackJobRow): RefundablePolicy | null {
+  if (isSessionEndpoint(job.endpoint)) return null;
   if (job.refund_class) return policyForRefundClass(job.refund_class);
   if (job.endpoint !== "scrape") return policyForRefundClass(job.endpoint);
   if (optionListIncludes(job.options, "parsers", "pdf")) {
@@ -143,6 +145,7 @@ export function computeRefundPolicy(
   if (billedCredits <= 0) return none(job, "zero_billed_credits");
 
   const policy = policyFor(job);
+  if (!policy) return none(job, "endpoint_not_refundable");
   if (!policy.ratings.includes(rating)) {
     return none(job, "rating_not_refundable", policy.ratings);
   }

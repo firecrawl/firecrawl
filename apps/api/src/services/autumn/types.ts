@@ -83,6 +83,9 @@ export type FinalizeCreditsLockParams = {
   /** What the lock reserved. Autumn nets outstanding holds out of a reported
    * balance, so firebill adds this back to see what the ghost can really pay. */
   heldValue?: number | null;
+  /** Hand a settle firebill never answered to the durable retry; see
+   * firebillFinalize. Defaults to off. */
+  durableRetry?: boolean;
 };
 
 export type TrackCreditsParams = {

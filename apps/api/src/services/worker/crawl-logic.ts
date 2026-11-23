@@ -121,6 +121,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         jobId: crawlId,
         webhook,
         v0: true,
+        zeroDataRetention,
       });
       if (sender) {
         const documents = fullDocs.map((doc: any) => ({
