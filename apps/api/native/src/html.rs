@@ -35,11 +35,17 @@ fn _extract_base_href_from_document(
   Ok(url.to_string())
 }
 
+/// Base URL of an already-parsed document: its `<base href>` if it has one,
+/// otherwise the page URL.
+pub fn base_href_of_document(document: &NodeRef, url: &Url) -> String {
+  _extract_base_href_from_document(document, url).unwrap_or_else(|_| url.to_string())
+}
+
 fn _extract_base_href(
   html: &str,
   url: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-  let document = parse_html().one(html);
+  let document = parse_html().one(html).document_node;
   let url = Url::parse(url)?;
   _extract_base_href_from_document(&document, &url)
 }
@@ -59,6 +65,33 @@ pub async fn extract_base_href(html: String, url: String) -> napi::Result<String
   res.map_err(to_napi_err)
 }
 
+/// Raw `href` of every link in an already-parsed document.
+pub fn extract_links_from_document(document: &NodeRef) -> Result<Vec<String>, String> {
+  let anchors: Vec<_> = document
+    .select("a[href]")
+    .map_err(|_| "Failed to select links".to_string())?
+    .collect();
+
+  let mut out: Vec<String> = Vec::new();
+
+  for anchor in anchors {
+    let mut href = match anchor.attributes.borrow().get("href") {
+      Some(x) => x.to_string(),
+      None => continue,
+    };
+
+    if href.starts_with("http:/") && !href.starts_with("http://") {
+      href = format!("http://{}", &href[6..]);
+    } else if href.starts_with("https:/") && !href.starts_with("https://") {
+      href = format!("https://{}", &href[7..]);
+    }
+
+    out.push(href);
+  }
+
+  Ok(out)
+}
+
 /// Extract all links from HTML document.
 #[napi]
 pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
@@ -68,31 +101,8 @@ pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
       None => return Ok(Vec::new()),
     };
 
-    let document = parse_html().one(html.as_str());
-
-    let anchors: Vec<_> = document
-      .select("a[href]")
-      .map_err(|_| to_napi_err("Failed to select links"))?
-      .collect();
-
-    let mut out: Vec<String> = Vec::new();
-
-    for anchor in anchors {
-      let mut href = match anchor.attributes.borrow().get("href") {
-        Some(x) => x.to_string(),
-        None => continue,
-      };
-
-      if href.starts_with("http:/") && !href.starts_with("http://") {
-        href = format!("http://{}", &href[6..]);
-      } else if href.starts_with("https:/") && !href.starts_with("https://") {
-        href = format!("https://{}", &href[7..]);
-      }
-
-      out.push(href);
-    }
-
-    Ok(out)
+    let document = parse_html().one(html.as_str()).document_node;
+    extract_links_from_document(&document).map_err(to_napi_err)
   })
   .await
   .map_err(|e| {
@@ -144,7 +154,14 @@ macro_rules! insert_meta_property {
 fn _extract_metadata(
   html: &str,
 ) -> Result<HashMap<String, Value>, Box<dyn std::error::Error + Send + Sync>> {
-  let document = parse_html().one(html);
+  let document = parse_html().one(html).document_node;
+  extract_metadata_from_document(&document)
+}
+
+/// Metadata of an already-parsed document.
+pub fn extract_metadata_from_document(
+  document: &NodeRef,
+) -> Result<HashMap<String, Value>, Box<dyn std::error::Error + Send + Sync>> {
   let mut out = HashMap::<String, Value>::new();
 
   let head_node = document
@@ -428,14 +445,23 @@ struct ImageSource {
 fn _transform_html_inner(
   opts: TransformHtmlOptions,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-  let mut document = parse_html().one(opts.html.as_ref());
+  let document = parse_html().one(opts.html.as_ref()).document_node;
+  Ok(transform_document(document, &opts)?.to_string())
+}
+
+/// Clean an already-parsed document with the same rules as `transform_html`,
+/// without parsing it again. `opts.html` is ignored.
+pub fn transform_document(
+  mut document: NodeRef,
+  opts: &TransformHtmlOptions,
+) -> Result<NodeRef, Box<dyn std::error::Error + Send + Sync>> {
   let url = Url::parse(&_extract_base_href_from_document(
     &document,
     &Url::parse(&opts.url)?,
   )?)?;
 
   if !opts.include_tags.is_empty() {
-    let new_document = parse_html().one("<div></div>");
+    let new_document = parse_html().one("<div></div>").document_node;
     let root = new_document
       .select_first("div")
       .map_err(|_| "Failed to select root element")?;
@@ -678,7 +704,7 @@ fn _transform_html_inner(
     }
   }
 
-  Ok(document.to_string())
+  Ok(document)
 }
 
 /// Transform and clean HTML content based on provided options.
@@ -697,7 +723,13 @@ pub async fn transform_html(opts: TransformHtmlOptions) -> napi::Result<String> 
 }
 
 fn _get_inner_json(html: &str) -> Result<String, ()> {
-  Ok(parse_html().one(html).select_first("body")?.text_contents())
+  Ok(
+    parse_html()
+      .one(html)
+      .document_node
+      .select_first("body")?
+      .text_contents(),
+  )
 }
 
 /// Extract inner text content from HTML body.
@@ -740,7 +772,7 @@ fn _extract_attributes(
   html: &str,
   options: &ExtractAttributesOptions,
 ) -> Result<Vec<ExtractedAttributeResult>, Box<dyn std::error::Error + Send + Sync>> {
-  let document = parse_html().one(html);
+  let document = parse_html().one(html).document_node;
   let mut results = Vec::new();
 
   for selector_config in &options.selectors {
@@ -806,13 +838,16 @@ fn _extract_images(
   html: &str,
   base_url: &str,
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-  let document = parse_html().one(html);
+  let document = parse_html().one(html).document_node;
   let base_url = Url::parse(base_url)?;
   let base_href = _extract_base_href_from_document(&document, &base_url)?;
   let base_href_url = Url::parse(&base_href)?;
   let mut images = HashSet::<String>::new();
 
   let resolve_image_url = |src: &str| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    if src.trim().is_empty() {
+      return Err("empty image URL".into());
+    }
     if src.starts_with("data:") || src.starts_with("blob:") {
       return Ok(src.to_string());
     }
@@ -982,42 +1017,45 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
   res.map_err(to_napi_err)
 }
 
+/// The synchronous body of `post_process_markdown`.
+pub fn post_process_markdown_text(markdown: &str) -> String {
+  let mut link_open_count = 0usize;
+  let mut out = String::with_capacity(markdown.len());
+
+  for ch in markdown.chars() {
+    match ch {
+      '[' => {
+        link_open_count += 1;
+      }
+      ']' => {
+        link_open_count = link_open_count.saturating_sub(1);
+      }
+      _ => {}
+    }
+
+    let inside_link_content = link_open_count > 0;
+    if inside_link_content && ch == '\n' {
+      out.push('\\');
+      out.push('\n');
+    } else {
+      out.push(ch);
+    }
+  }
+
+  remove_skip_to_content_links(&out)
+}
+
 /// Process multi-line links in markdown.
 #[napi]
 pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || {
-    let mut link_open_count = 0usize;
-    let mut out = String::with_capacity(markdown.len());
-
-    for ch in markdown.chars() {
-      match ch {
-        '[' => {
-          link_open_count += 1;
-        }
-        ']' => {
-          link_open_count = link_open_count.saturating_sub(1);
-        }
-        _ => {}
-      }
-
-      let inside_link_content = link_open_count > 0;
-      if inside_link_content && ch == '\n' {
-        out.push('\\');
-        out.push('\n');
-      } else {
-        out.push(ch);
-      }
-    }
-
-    remove_skip_to_content_links(&out)
-  })
-  .await
-  .map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("post_process_markdown join error: {e}"),
-    )
-  })?;
+  let res = task::spawn_blocking(move || post_process_markdown_text(&markdown))
+    .await
+    .map_err(|e| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("post_process_markdown join error: {e}"),
+      )
+    })?;
 
   Ok(res)
 }

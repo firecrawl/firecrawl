@@ -3,7 +3,7 @@ import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { logger } from "../logger";
-import { normalizeUrl, normalizeUrlOnlyHostname } from "../canonical-url";
+import { normalizeUrl } from "../canonical-url";
 
 interface LlmsTextCache {
   origin_url: string;
@@ -20,7 +20,7 @@ export async function getLlmsTextFromCache(
     return null;
   }
 
-  const originUrl = normalizeUrlOnlyHostname(url);
+  const originUrl = normalizeUrl(url);
 
   try {
     const [data] = await dbRr
@@ -60,7 +60,7 @@ export async function saveLlmsTextToCache(
     return;
   }
 
-  const originUrl = normalizeUrlOnlyHostname(url);
+  const originUrl = normalizeUrl(url);
 
   try {
     // First check if there's an existing entry

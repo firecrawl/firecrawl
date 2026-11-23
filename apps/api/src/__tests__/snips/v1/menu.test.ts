@@ -1,9 +1,5 @@
-import {
-  ALLOW_TEST_SUITE_WEBSITE,
-  describeIf,
-  TEST_SUITE_WEBSITE,
-} from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
+import { ALLOW_TEST_SUITE_WEBSITE, TEST_SUITE_WEBSITE } from "../lib";
+import { describeV1, scrape, scrapeTimeout, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -21,7 +17,7 @@ beforeAll(async () => {
 // byte-identical in shape to a pre-feature v1 scrape (no `menu`, no spurious
 // `warning`, markdown + metadata intact). The menu transformer is shared across
 // v1/v2, so this guards the v1 format gate specifically.
-describeIf(ALLOW_TEST_SUITE_WEBSITE)(
+describeV1(ALLOW_TEST_SUITE_WEBSITE)(
   "Menu scrape format (v1 back-compat)",
   () => {
     const base = TEST_SUITE_WEBSITE;

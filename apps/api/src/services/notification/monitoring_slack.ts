@@ -8,6 +8,10 @@ import {
   type MonitorSlackPage,
 } from "../integrations/slack/messages";
 import { buildMonitoringCheckDashboardUrl } from "./monitoring_email";
+import {
+  humanFacingAlertPages,
+  noiseOmittedFromAlertPages,
+} from "./monitoring_alert_pages";
 
 const logger = _logger.child({ module: "monitoring-slack" });
 
@@ -114,7 +118,8 @@ export async function sendMonitoringSlackSummary(params: {
     checkId: params.check.id,
   });
 
-  const slackPages: MonitorSlackPage[] = params.pages.map(page => ({
+  const alertPages = humanFacingAlertPages(params.monitor, params.pages);
+  const slackPages: MonitorSlackPage[] = alertPages.map(page => ({
     url: page.url,
     status: page.status,
     judgment: page.judgment
@@ -135,6 +140,11 @@ export async function sendMonitoringSlackSummary(params: {
     },
     pages: slackPages,
     creditsUsed: params.check.actual_credits,
+    noiseOmitted: noiseOmittedFromAlertPages(
+      params.monitor,
+      params.check,
+      params.pages,
+    ).noiseOmitted,
   });
 
   let res = await postSlackMessage({ token, channel: channelId, text, blocks });

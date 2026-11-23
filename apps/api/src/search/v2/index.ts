@@ -5,6 +5,7 @@ import { searxng_search } from "./searxng";
 import { ddgSearch } from "./ddgsearch";
 import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import type { TeamPlanClass } from "../../lib/team-plan-class";
 
 export async function search({
   query,
@@ -26,6 +27,7 @@ export async function search({
   includeDomains = undefined,
   excludeDomains = undefined,
   usOnly = false,
+  teamPlanClass = undefined,
 }: {
   query: string;
   logger: Logger;
@@ -46,6 +48,8 @@ export async function search({
   includeDomains?: string[];
   excludeDomains?: string[];
   usOnly?: boolean;
+  /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
+  teamPlanClass?: TeamPlanClass;
 }): Promise<SearchV2Response> {
   // The fallback backends below take no US-only routing.
   if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
@@ -70,6 +74,7 @@ export async function search({
         includeDomains,
         excludeDomains,
         usOnly,
+        teamPlanClass,
       });
 
       return results;

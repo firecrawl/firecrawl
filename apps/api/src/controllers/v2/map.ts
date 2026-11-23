@@ -173,7 +173,7 @@ export async function mapController(
         },
         results: avgrabResults,
         credits_cost: creditsCost,
-        zeroDataRetention: false,
+        zeroDataRetention,
       }).catch(error => {
         logger.error(
           `Failed to log job for team ${req.auth.team_id}: ${error}`,

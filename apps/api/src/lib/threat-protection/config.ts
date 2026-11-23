@@ -94,6 +94,10 @@ type ZscalerConfigInput = z.infer<typeof zscalerConfigSchema>;
 // Policy + org config schemas
 // =========================================
 
+const MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES = 10_000;
+const MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES = 1_000;
+const MAX_BLOCKED_TLDS = 1_000;
+
 /**
  * Field-for-field zod schema for {@link ThreatProtectionPolicy}. Every field
  * except `mode` defaults to {@link THREAT_PROTECTION_POLICY_DEFAULTS}.
@@ -108,15 +112,15 @@ export const threatProtectionPolicySchema = z.strictObject({
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.riskScoreThreshold),
   blacklist: z
     .array(domainGlobSchema)
-    .max(1000)
+    .max(MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES)
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.blacklist),
   whitelist: z
     .array(domainGlobSchema)
-    .max(1000)
+    .max(MAX_ORG_POLICY_DOMAIN_LIST_ENTRIES)
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.whitelist),
   blockedTlds: z
     .array(tldSchema)
-    .max(1000)
+    .max(MAX_BLOCKED_TLDS)
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.blockedTlds),
   failurePolicy: z
     .enum(["open", "closed"])
@@ -139,9 +143,15 @@ void _policyContractCheck;
 export const threatProtectionOverrideSchema = z.strictObject({
   mode: z.enum(["off", "manual-only", "normal", "zscaler"]).optional(),
   riskScoreThreshold: z.number().int().min(0).max(100).optional(),
-  blacklist: z.array(domainGlobSchema).max(1000).optional(),
-  whitelist: z.array(domainGlobSchema).max(1000).optional(),
-  blockedTlds: z.array(tldSchema).max(1000).optional(),
+  blacklist: z
+    .array(domainGlobSchema)
+    .max(MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES)
+    .optional(),
+  whitelist: z
+    .array(domainGlobSchema)
+    .max(MAX_REQUEST_OVERRIDE_DOMAIN_LIST_ENTRIES)
+    .optional(),
+  blockedTlds: z.array(tldSchema).max(MAX_BLOCKED_TLDS).optional(),
   failurePolicy: z.enum(["open", "closed"]).optional(),
 });
 

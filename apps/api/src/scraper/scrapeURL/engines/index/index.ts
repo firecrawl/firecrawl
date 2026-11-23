@@ -11,7 +11,6 @@ import {
   generateURLSplits,
   addIndexInsertJob,
   generateDomainSplits,
-  addOMCEJob,
 } from "../../../../services";
 import { queryMaxAge, indexGetRecent5 } from "../../../../db/rpc";
 import {
@@ -52,6 +51,7 @@ import {
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { hasCustomRequestContext } from "../../lib/request-context";
+import { isReservedCapacity } from "../../../../lib/reserved-capacity";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -227,18 +227,19 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         });
       }
 
-      if (domainSplits.length > 0) {
-        try {
-          await addOMCEJob([
-            domainSplits.length - 1,
-            domainSplitsHash.slice(-1)[0],
-          ]);
-        } catch (error) {
-          meta.logger.warn("Failed to add domain to OMCE job queue", {
-            error,
-          });
-        }
-      }
+      // OMCE job inserts are disabled to reduce index DB load.
+      // if (domainSplits.length > 0) {
+      //   try {
+      //     await addOMCEJob([
+      //       domainSplits.length - 1,
+      //       domainSplitsHash.slice(-1)[0],
+      //     ]);
+      //   } catch (error) {
+      //     meta.logger.warn("Failed to add domain to OMCE job queue", {
+      //       error,
+      //     });
+      //   }
+      // }
     } catch (error) {
       meta.logger.error("Failed to save document to index (outer)", {
         error,
@@ -585,6 +586,19 @@ export async function scrapeURLWithIndex(
     !(await meta.imageOcrEnabled())
   ) {
     logLookup("debug", "hit", { imageMismatch: "cached_ocr_not_requested" });
+    throw new IndexMissError();
+  }
+
+  // A parsed PDF or OCR'd image may have been produced on other capacity, so
+  // a team restricted to reserved capacity parses it afresh. Raw PDF
+  // bytes were never parsed and are still served.
+  if (
+    isReservedCapacity(meta.internalOptions.teamFlags ?? undefined) &&
+    !isCachedPdfBase64 &&
+    (doc.contentType === "application/pdf" ||
+      doc.contentType?.startsWith("image/"))
+  ) {
+    logLookup("debug", "hit", { reservedCapacityMismatch: true });
     throw new IndexMissError();
   }
 
