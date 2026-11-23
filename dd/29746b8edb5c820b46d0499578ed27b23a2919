@@ -1,0 +1,37 @@
+apps/api/src/services/alexandria/retrieve.ts
+  s_5c00d0c4ec2dfa::t_03831b2b84d092 2,27,40-46,258,295,297-303,309-331,335,339,341-348,356-363,366,405,436,478,682
+apps/api/src/config.ts
+  s_5c00d0c4ec2dfa::t_c453d0c5e51470 483
+apps/api/src/services/alexandria/README.md
+  s_5c00d0c4ec2dfa::t_e124618c0a3471 77-78,107-110
+  s_5c00d0c4ec2dfa::t_e11ecd4778c62a 73-74,96-106
+apps/api/src/services/alexandria/replay-store.ts
+  s_5c00d0c4ec2dfa::t_32ec0b906a684b 1-101,106-113,115-117,119-127,128-134,135-142,144-157,159-177,178-181,183-184,196-197,211-213,215,217-228,240,248,252,255,256-257,260-263,265-266,268
+  s_5c00d0c4ec2dfa::t_83af7733b7ee41 114,118,158,182,214,216,264,267
+apps/api/src/lib/request-credits-store.ts
+  s_5c00d0c4ec2dfa::t_3f535875420f84 145
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_5c00d0c4ec2dfa::t_1ba2cc4864acc4 953-966
+apps/api/src/services/alexandria/replay-store.test.ts
+  s_5c00d0c4ec2dfa::t_bd33635223f71b 317-318,321,325-326
+  s_5c00d0c4ec2dfa::t_d88c1b12d14937 312,313-314
+  s_5c00d0c4ec2dfa::t_b106bd5283badb 1-65,66-77,78-89,92-101,103-167,168-188,190-191,193,195-197,199-201,203-218,234-238,241-242,243-244,248-250,260-261,263-265,267-268,271-273,274-276,277,281,283-285,291,292-303,304-305,308,309-311
+  s_5c00d0c4ec2dfa::t_6e90b3da078d83 316
+  s_5c00d0c4ec2dfa::t_151ad1b322306f 90-91,102,189,192,194,198,219-233,239-240,245-247,251-259,262,266,269-270,278-280,282,286-290,306-307,315,319-320,322-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd29746b8edb5c820b46d0499578ed27b23a2919",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
